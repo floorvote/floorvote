@@ -193,14 +193,16 @@ const C3 = comment('c3', '42', 'HB 1', '2026-10-14 12:00:00', 'Ann')
 
 const thread = () => document.getElementById('section-comments') as HTMLElement
 const heading = () => within(thread()).getAllByText(/^Comments/)[0]
+// The icon names a line's glyph adds to its text.
+const ICON = /^(flag|thumbs_up_down|edit_note|list|link_2|link_off)/
 const notes = () => within(thread()).queryAllByRole('note').map(n => n.textContent)
 // The thread's comments and activity in page order, by what each says.
 const order = () => Array.from(thread().querySelectorAll('[id^="comment-"], [role="note"], button[aria-expanded]'))
   .map(el => el.id
     ? el.id.replace('comment-', '')
     : el.getAttribute('role') === 'note'
-      ? (el.textContent ?? '').replace(/^[a-z_0-9]+/, '')
-      : `fold:${(el.textContent ?? '').replace(/^[a-z_0-9]+/, '').replace(/[▸▾]/g, '').trim()}`)
+      ? (el.textContent ?? '').replace(ICON, '')
+      : `fold:${(el.textContent ?? '').replace(ICON, '').replace(/[▸▾]/g, '').trim()}`)
 const follows = (a: Node, b: Node) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
 
 describe('the heading of the comments card', () => {
@@ -532,7 +534,7 @@ describe('reading the thread by keyboard and screen reader', () => {
       change('e1', '2026-10-11 10:00:00'), change('e2', '2026-10-11 11:00:00'),
     ] })
     await screen.findByText('c2 text')
-    const label = (el: Element | null) => el?.getAttribute('aria-label') ?? (el?.textContent ?? '').trim()
+    const label = (el: Element | null) => el?.getAttribute('aria-label') ?? (el?.textContent ?? '').replace(ICON, '').replace(/[▸▾]/g, '').trim()
     const mute = within(thread()).getByRole('button', { name: 'Mute comments' })
     for (let i = 0; i < 200 && document.activeElement !== mute; i++) await user.tab()
     expect(mute).toHaveFocus()
@@ -541,7 +543,7 @@ describe('reading the thread by keyboard and screen reader', () => {
       await user.tab()
       seen.push(label(document.activeElement))
     }
-    expect(seen.at(-1)).toMatch(/^2 changes by David Park/)
+    expect(seen[seen.length - 1]).toMatch(/^2 changes by David Park/)
     // Everything on the way is the first comment's.
     expect(seen.slice(0, -1).length).toBeGreaterThan(0)
     for (const el of Array.from(thread().querySelectorAll('button'))) {

@@ -20,10 +20,11 @@ import { parseSubjects, loadSuppressedSubjectStates, isSubjectsSuppressedForStat
 import { displayName, userDisplayNameSql } from '../../lib/displayName'
 import { titleOf, userTitleSql } from '../../lib/userTitle'
 import { groupMemberIds, groupVotes, inGroupOf, loadGroupBills, loadGroupNotes, mergeGroupNotes } from '../../lib/companionGroups'
-import { loadGroupTeamValues } from '../../lib/teamFields'
+import { loadFieldDefs, loadGroupTeamValues } from '../../lib/teamFields'
 import { isReplyParticipant } from '../../lib/replies'
 import { claimLinksEnabled, readClaimSources } from '../../lib/claimSources'
 import type { GroupingEvent, GroupingEventMetadata, GroupingEventType } from '../../../../shared/companionGroups'
+import { FIELD_CHANGED, type FieldChangedMetadata, type FieldChangeEvent } from '../../../../shared/teamFields'
 
 type CentralBillRich = {
   billType?: string | null
@@ -74,6 +75,55 @@ async function firstCommentTimes(db: ReturnType<typeof getDb>, billIds: string[]
   return first
 }
 
+/**
+ * The field changes a bill page's comment thread shows lines for, oldest first, from the `field_changed`
+ * team events of the bill's group. An event whose metadata can't be read is skipped rather than failing
+ * the page. A bulk edit that selected two bills of a group wrote the same change on each, which the group
+ * made once, so a change identical to one already read (same time, actor, field, and values) is dropped,
+ * keeping the one made on this bill. Timestamps come in two shapes (see dbTsToEpoch), so the order is
+ * settled here, on top of the read's order, which breaks a tie by the order the events were written.
+ */
+function readFieldEvents(
+  rows: ReadonlyArray<{ id: string; billId: string; actorId: string | null; actorName: string | null; createdAt: string; metadata: string }>,
+  billId: string,
+  billNumberOf: ReadonlyMap<string, string>,
+  defs: ReadonlyArray<{ id: string; type: string }>,
+): FieldChangeEvent[] {
+  const typeOf = new Map(defs.map(d => [d.id, d.type]))
+  const read: FieldChangeEvent[] = []
+  const seen = new Map<string, number>()
+  for (const row of [...rows].sort((a, b) => dbTsToEpoch(a.createdAt) - dbTsToEpoch(b.createdAt))) {
+    let meta: FieldChangedMetadata
+    try { meta = JSON.parse(row.metadata) as FieldChangedMetadata } catch { continue }
+    if (!meta || typeof meta !== 'object' || typeof meta.field !== 'string') continue
+    const event: FieldChangeEvent = {
+      id: row.id,
+      createdAt: row.createdAt,
+      actorId: row.actorId,
+      actorName: row.actorName ?? null,
+      billId: row.billId,
+      billNumber: billNumberOf.get(row.billId) ?? '',
+      field: meta.field,
+      ...(meta.fieldId !== undefined ? { fieldId: meta.fieldId } : {}),
+      label: meta.label,
+      old: meta.old ?? null,
+      new: meta.new ?? null,
+      ...(meta.fieldId !== undefined && typeOf.has(meta.fieldId) ? { fieldType: typeOf.get(meta.fieldId) } : {}),
+    }
+    // Tags compare as sets, as when the change was recorded.
+    const norm = (v: string | string[] | null) => JSON.stringify(Array.isArray(v) ? [...v].sort() : v)
+    const key = [dbTsToEpoch(row.createdAt), row.actorId, event.field, event.fieldId, norm(event.old), norm(event.new)].join('|')
+    const at = seen.get(key)
+    if (at === undefined) {
+      seen.set(key, read.length)
+      read.push(event)
+    } else if (row.billId === billId && read[at].billId !== billId) {
+      read[at] = event
+    }
+  }
+  return read
+}
+
 export async function buildBillDetail(
   db: ReturnType<typeof getDb>,
   billId: string,
@@ -106,7 +156,7 @@ export async function buildBillDetail(
   // each read below resolves across the group (lib/companionGroups.ts). For an
   // ungrouped bill the group is the bill alone.
   const votes = groupVotes(db, billId)
-  const [groupBills, myVoteRow, myNotes, myMuteRow, isParticipant, teamValues, voteRows, commentRows, commentCountRow, textRows, priorityEventRow, groupingRows] = await Promise.all([
+  const [groupBills, myVoteRow, myNotes, myMuteRow, isParticipant, teamValues, voteRows, commentRows, commentCountRow, textRows, priorityEventRow, threadEventRows, fieldDefs] = await Promise.all([
     loadGroupBills(db, billId),
     db.select({ position: votes.position }).from(votes).where(eq(votes.userId, currentUser.id)).get(),
     loadGroupNotes(db, billId, currentUser.id),
@@ -164,16 +214,23 @@ export async function buildBillDetail(
       .orderBy(desc(feedEvents.createdAt))
       .limit(1)
       .get(),
-    // This bill's own grouping events, for the lines its comment thread shows
-    // where its group formed or split. A companion's are about the companion.
-    db.select({ id: teamEvents.id, type: teamEvents.type, createdAt: teamEvents.createdAt, metadata: teamEvents.metadata, actorName: userDisplayNameSql })
+    // The team events its comment thread shows lines for, in one ordered read. Its own grouping events
+    // say where its group formed or split (a companion's are about the companion). The field changes are
+    // the group's, made on any member: a value is shared, so a change to it is one the whole group made.
+    db.select({ id: teamEvents.id, type: teamEvents.type, billId: teamEvents.billId, actorId: teamEvents.actorUserId, createdAt: teamEvents.createdAt, metadata: teamEvents.metadata, actorName: userDisplayNameSql })
       .from(teamEvents)
       .leftJoin(users, eq(teamEvents.actorUserId, users.id))
-      .where(and(eq(teamEvents.billId, billId), inArray(teamEvents.type, ['grouped', 'split'] satisfies GroupingEventType[])))
+      .where(or(
+        and(eq(teamEvents.billId, billId), inArray(teamEvents.type, ['grouped', 'split'] satisfies GroupingEventType[])),
+        and(inGroupOf(teamEvents.billId, billId), eq(teamEvents.type, FIELD_CHANGED)),
+      ))
       .orderBy(teamEvents.createdAt, rowidOf(teamEvents))
       .all(),
+    // A custom field's type words a yes/no value in a sentence about it.
+    loadFieldDefs(db),
   ])
   const billNumberOf = new Map(groupBills.map(b => [b.billId, b.billNumber]))
+  const groupingRows = threadEventRows.filter(e => e.type !== FIELD_CHANGED)
   const groupingMeta = groupingRows.map(e => JSON.parse(e.metadata) as GroupingEventMetadata)
   // Which of the bills each event joined or left had a comment posted before it. The thread shows an
   // automatic grouping or split line only for that: those comments now appear here, or no longer do.
@@ -191,6 +248,8 @@ export async function buildBillDetail(
     replaced: groupingMeta[i].replaced ?? [],
     ...(groupingMeta[i].undoneSplits?.length ? { undoneSplits: groupingMeta[i].undoneSplits } : {}),
   }))
+
+  const fieldEvents = readFieldEvents(threadEventRows.filter(e => e.type === FIELD_CHANGED), billId, billNumberOf, fieldDefs)
 
   const voteCounts = { support: 0, oppose: 0, neutral: 0, total: 0 }
   for (const v of voteRows) {
@@ -406,6 +465,7 @@ export async function buildBillDetail(
     comments: formattedComments,
     commentsTotal: commentCountRow?.count ?? 0,
     groupingEvents,
+    fieldEvents,
     // The bills in its companion group, this one first: just this one in no group.
     groupBills,
     texts: textRows.map(t => ({

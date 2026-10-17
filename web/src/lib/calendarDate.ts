@@ -38,6 +38,14 @@ export function formatMonthDay(iso: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
+// "Oct 14" — the short month and day of a database timestamp (either UTC
+// shape), in the viewer's time zone. For a comment thread's activity lines.
+export function formatShortMonthDay(dbTs: string): string {
+  const d = new Date(dbTsToEpoch(dbTs))
+  if (isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
 // "October 11" — the full month and day of a database timestamp (either UTC
 // shape), in the viewer's time zone. For prose such as a comment thread's
 // grouping line.

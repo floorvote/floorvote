@@ -70,10 +70,11 @@ import { ProviderExtrasList } from '../components/ProviderExtras'
 import type { BillExtras } from '../../../shared/providerExtras'
 import { RELATIONSHIP_KINDS, RELATIONSHIP_KIND_LABELS, isRelationshipKind, type RelationshipKind } from '../../../shared/relationshipKinds'
 import type { GroupBill, GroupBillLink, GroupingEvent, GroupNote } from '../../../shared/companionGroups'
+import type { FieldChangeEvent } from '../../../shared/teamFields'
 import { GroupWithDialog } from '../components/GroupWithDialog'
 import { splitConfirmText } from '../lib/splitConfirm'
-import { placeGroupingLines } from '../lib/groupingLine'
-import { GroupingLine } from '../components/GroupingLine'
+import { placeThreadLines } from '../lib/groupingLine'
+import { ThreadLineView } from '../components/ActivityLine'
 import { useMultiState } from '../context/ConfigContext'
 import { AnalysisBox, AnalysisProgressChip, DIMMED_WHILE_RUNNING } from '../components/AnalysisBox'
 import { pollForAnalysis, analysisOutcomeMessage, regenerateOutcomeMessage, type AnalysisSnapshot } from '../lib/analysisPoll'
@@ -538,6 +539,8 @@ type BillDetailData = {
   myNotes?: GroupNote[]
   /** Where the bill's companion group formed or split, for the lines in its comment thread. */
   groupingEvents?: GroupingEvent[]
+  /** The changes to the team fields of its companion group, for the same thread. Absent from an older server. */
+  fieldEvents?: FieldChangeEvent[]
   /** The bills in its companion group, this one first: just this one in no group. */
   groupBills?: GroupBillLink[]
   priorityMeta: { setByName: string; updatedAt: string } | null
@@ -686,11 +689,34 @@ export function BillDetail() {
   // loaded `commentsMuted` rather than the live toggle keeps the button in place
   // after a non-participant unmutes.
   const canMuteComments = !!bill && (bill.commentsParticipant || bill.commentsMuted || commentsMute.muted || comments.some(c => c.userId === user?.id))
-  // Lines where the bill's companion group formed or split, placed among the comments by time.
-  const groupingLines = useMemo(() => placeGroupingLines(comments, bill?.groupingEvents ?? []), [comments, bill?.groupingEvents])
+  // The lines of the bill's activity (where its companion group formed or split, and changes to its team
+  // fields), placed among the comments by time, runs of changes by one person folded.
+  const thread = useMemo(() => placeThreadLines(comments, bill?.groupingEvents ?? [], bill?.fieldEvents ?? []), [comments, bill?.groupingEvents, bill?.fieldEvents])
+  const hasActivity = thread.before.size > 0 || thread.after.length > 0
+  // The badge of a companion bill in this bill's group, saying on hover or focus what was done on it. One for a
+  // bill no longer in the group (split off since the page loaded) has no state or session here, so it links by id.
+  const companionBadge = (billId: string, billNumber: string, describeId: string, sentence: string) => {
+    const posted = (bill?.groupBills ?? []).find(g => g.billId === billId)
+    return (
+      <HoverTooltip text={sentence} placement="top" describe={{ id: describeId, interactive: true }}>
+        <BillBadge
+          mini
+          billNumber={billNumber}
+          state={posted?.state}
+          to={billUrl({ id: billId, state: posted?.state, sessionSlug: posted?.sessionSlug, billNumber })}
+          describedBy={describeId}
+        />
+      </HoverTooltip>
+    )
+  }
   const [openPickerFor, setOpenPickerFor] = useState<string | null>(null)
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
   const [config, setConfig] = useState<{ positionVocabulary: string[]; instanceDomains: Record<string, string>; orgNoun: string } | null>(null)
+  // How the thread's activity lines word the position, as the position card does, and mark a change made on a companion.
+  const threadPositionLabel = orgPositionLabel(config?.orgNoun ?? DEFAULT_ORG_NOUN).toLowerCase()
+  const renderChangeBill = (e: FieldChangeEvent) => bill && e.billId !== bill.id && e.billNumber
+    ? companionBadge(e.billId, e.billNumber, `change-on-${e.id}`, `This change was made on ${e.billNumber}, a companion bill in this group.`)
+    : null
   const multiState = useMultiState()
   // What the bill's status means, from its state's provider vocabulary, shown
   // on hover over the status chip.
@@ -2968,14 +2994,14 @@ export function BillDetail() {
           <div id="section-comments" style={{ ...CARD, padding: 16, boxShadow: flashedSectionId === 'section-comments' ? `0 0 0 3px ${color.borderAmber}` : (CARD.boxShadow as string | undefined), transition: 'box-shadow 0.6s ease' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, marginBottom: 14 }}>
               <div style={SECTION_LABEL}>
-                Comments{comments.length > 0 && <span style={{ ...COUNT_BADGE, textTransform: 'none', letterSpacing: 0, marginLeft: 6 }}>{comments.length}</span>}
+                {hasActivity ? 'Comments and activity' : 'Comments'}{comments.length > 0 && <span style={{ ...COUNT_BADGE, textTransform: 'none', letterSpacing: 0, marginLeft: 6 }}>{comments.length}</span>}
               </div>
               {canMuteComments && <CommentsMuteButton muted={commentsMute.muted} pending={commentsMute.pending} onToggle={commentsMute.toggle} />}
             </div>
             {commentsMute.muted && <CommentsMutedNote />}
             {comments.map((comment, idx) => (
               <Fragment key={comment.id}>
-              {groupingLines.before.get(comment.id)?.map(e => <GroupingLine key={e.id} event={e} />)}
+              {thread.before.get(comment.id)?.map(line => <ThreadLineView key={line.key} line={line} positionLabel={threadPositionLabel} renderBill={renderChangeBill} />)}
               <div id={`comment-${comment.id}`} className={newCommentIds.has(comment.id) ? 'comment-new' : ''} style={{ paddingBottom: 14, marginBottom: 14, borderBottom: idx < comments.length - 1 ? `1px solid ${color.surfaceMuted}` : 'none', borderRadius: radius.md, boxShadow: flashedCommentId === comment.id ? `0 0 0 3px ${color.borderAmber}` : 'none', transition: 'box-shadow 0.6s ease' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                   {/* Comment header (name / title / date) — shared with the
@@ -3016,23 +3042,11 @@ export function BillDetail() {
                   {/* A comment posted on a companion in this bill's group: that bill's
                       badge. One from a bill no longer in the group (split off since the
                       page loaded) has no state or session here, so it links by id. */}
-                  {comment.billId && comment.billId !== bill.id && comment.billNumber && (() => {
-                    const posted = (bill.groupBills ?? []).find(g => g.billId === comment.billId)
-                    const describeId = `posted-on-${comment.id}`
-                    return (
-                      <span style={{ marginLeft: 6 }}>
-                        <HoverTooltip text={`This comment was posted on ${comment.billNumber}, a companion bill in this group.`} placement="top" describe={{ id: describeId, interactive: true }}>
-                          <BillBadge
-                            mini
-                            billNumber={comment.billNumber}
-                            state={posted?.state}
-                            to={billUrl({ id: comment.billId, state: posted?.state, sessionSlug: posted?.sessionSlug, billNumber: comment.billNumber })}
-                            describedBy={describeId}
-                          />
-                        </HoverTooltip>
-                      </span>
-                    )
-                  })()}
+                  {comment.billId && comment.billId !== bill.id && comment.billNumber && (
+                    <span style={{ marginLeft: 6 }}>
+                      {companionBadge(comment.billId, comment.billNumber, `posted-on-${comment.id}`, `This comment was posted on ${comment.billNumber}, a companion bill in this group.`)}
+                    </span>
+                  )}
                   </span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span title={absoluteTime(comment.createdAt)} style={{ fontSize: COMMENT_STYLE.dateSize, color: COMMENT_STYLE.dateColor, cursor: 'default' }}>{relativeTime(comment.createdAt)}</span>
@@ -3155,7 +3169,7 @@ export function BillDetail() {
               </div>
               </Fragment>
             ))}
-            {groupingLines.after.map(e => <GroupingLine key={e.id} event={e} />)}
+            {thread.after.map(line => <ThreadLineView key={line.key} line={line} positionLabel={threadPositionLabel} renderBill={renderChangeBill} />)}
             <div style={{ marginTop: 12 }}>
               {/* Key on the bill so navigating to another bill remounts a fresh,
                   empty composer. Without this, the unkeyed editor keeps the prior
