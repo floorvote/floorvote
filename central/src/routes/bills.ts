@@ -4,6 +4,7 @@ import { eq, and, desc, inArray, isNull } from 'drizzle-orm'
 import * as schema from '../db/schema'
 import { secretsMatch } from '../lib/auth'
 import { textCacheKey, getCachedText, putCachedText } from '../lib/billTextCache'
+import { pdfStreamOrNull } from '../lib/storedPdf'
 import { decodeStoredHtml } from '../lib/decodeHtml'
 import { resolveItemDate } from '../lib/itemDate'
 import { parseHandle, toHandle } from '../lib/billHandle'
@@ -446,22 +447,30 @@ billsRoutes.get('/:id/text/:docId', async (c) => {
   if (!obj) return c.json({ error: 'text not found in storage' }, 404)
 
   const isPdf = text.r2Key.endsWith('.pdf')
-  // PDFs stream through as bytes. HTML is decoded by its declared charset and
-  // re-served as UTF-8, so the panel (and anything else reading this endpoint)
-  // never has to guess what a state's server meant.
-  const res = isPdf
-    ? new Response(obj.body, {
-        headers: {
-          'Content-Type': obj.httpMetadata?.contentType ?? 'application/pdf',
-          'Content-Disposition': 'inline',
-        },
-      })
-    : new Response(decodeStoredHtml(await obj.arrayBuffer(), obj.httpMetadata?.contentType), {
-        headers: {
-          'Content-Type': 'text/html; charset=utf-8',
-          'Content-Disposition': 'inline',
-        },
-      })
+  // PDFs stream through as bytes, served as application/pdf whatever type the
+  // object was stored with, and only if the bytes are a PDF: anything else under
+  // a `.pdf` key (a provider's error page, say) is refused rather than rendered
+  // in the app's origin. HTML is decoded by its declared charset and re-served as
+  // UTF-8, so the panel (and anything else reading this endpoint) never has to
+  // guess what a state's server meant.
+  let res: Response
+  if (isPdf) {
+    const pdf = await pdfStreamOrNull(obj.body)
+    if (!pdf) return c.json({ error: 'stored document is not a valid PDF' }, 502)
+    res = new Response(pdf, {
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': 'inline',
+      },
+    })
+  } else {
+    res = new Response(decodeStoredHtml(await obj.arrayBuffer(), obj.httpMetadata?.contentType), {
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Content-Disposition': 'inline',
+      },
+    })
+  }
   c.executionCtx.waitUntil(putCachedText(c.env, cacheKey, res.clone()))
   return res
 })
