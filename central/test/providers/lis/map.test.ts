@@ -311,11 +311,11 @@ describe('buildLisBill', () => {
     }
   })
 
-  it('types a real unbuilt joint resolution and a bill from the sample files', () => {
-    const numbers = [...y2026.records.keys()]
-    const sample = numbers.find(n => /^HJ\d/.test(n)) ?? numbers.find(n => /^SJ\d/.test(n))
-    if (sample) expect(toLisMasterListEntry(y2026.records.get(sample)!, '20261', 1, 'h').bill_type).toBe('JR')
-    expect(toLisMasterListEntry(y2026.records.get('HB1')!, '20261', 1, 'h').bill_type).toBe('B')
+  it('types the sample files\' real rows by prefix', () => {
+    const types = Object.fromEntries([...y2026.records].map(([n, r]) => [n, toLisMasterListEntry(r, '20261', 1, 'h').bill_type]))
+    expect(types.HB1).toBe('B')
+    expect(Object.keys(types).length).toBeGreaterThan(0)
+    for (const [n, t] of Object.entries(types)) expect([n, t]).toEqual([n, /^(HJ|SJ)/.test(n) ? 'JR' : /^(HR|SR)/.test(n) ? 'R' : 'B'])
   })
 
   it('types an unknown prefix as a bill, as the full build does', async () => {
