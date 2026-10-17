@@ -188,6 +188,21 @@ describe('GET /stats/sidebar — upcoming hearings from central', () => {
     expect(body.upcomingHearings.map(h => h.bills.map(b => b.billNumber))).toEqual([['A1129']])
   })
 
+  it('lists the hearings of 60 distinct priority bills, past D1\'s 100-bind limit once each handle has two spellings (#305)', async () => {
+    const numbers = Array.from({ length: 60 }, (_, i) => 4000 + i)
+    for (const n of numbers) await seedBill({ externalId: n % 2 ? `bill:${n}` : `legiscan:${n}`, billNumber: `H${n}`, title: `Bill ${n}`, state: 'NJ', priority: 'high' })
+    const central = {
+      fetch: async () => Response.json(numbers.map(n => ({
+        eventHash: `eh${n}`, type: 'Hearing', kind: 'hearing', date: dateFromNow(3), time: '10:00:00', location: `Room ${n}`,
+        description: `Hearing ${n}`, billId: n, billNumber: `H${n}`, billTitle: `Bill ${n}`, state: 'NJ', sessionName: null,
+      }))),
+    }
+    const res = await app.request('/api/stats/sidebar', { headers: { Cookie: `session=${memberToken}` } }, { ...env, CENTRAL: central } as never)
+    expect(res.status).toBe(200)
+    const body = await res.json() as { upcomingHearings: Array<{ bills: Array<{ billNumber: string }> }> }
+    expect(body.upcomingHearings.flatMap(h => h.bills.map(b => b.billNumber)).sort()).toEqual(numbers.map(n => `H${n}`).sort())
+  })
+
   it('leaves out a deadline, which central sends with its own kind', async () => {
     const central = {
       fetch: async () => Response.json([
