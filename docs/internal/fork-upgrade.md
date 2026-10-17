@@ -21,7 +21,7 @@ Three tests prove this on the fork's own data, which its own code wrote from the
 
 ## What Members Will Notice
 
-- **Council events.** A team with #217 calendar settings keeps seeing the events it chose. Within an hour of the upgrade, once central answers the instance's committee options call, the hourly sync saves those settings as event rules. If they name committees, it waits until at least one committee is known. Until then, and for good if central never answers, every Council event shows, and an admin can save the carried-over rules by hand from the settings page. A team with no #217 settings goes from seeing no Council events to seeing every one until an admin chooses.
+- **Council events.** A team with #217 calendar settings keeps seeing the events it chose. Within an hour of the upgrade, once central answers the instance's committee options call, the hourly sync saves those settings as event rules. If they name committees, it waits until at least one committee is known. Until then, and for good if central never answers, every Council event shows, and an admin can save the carried-over rules from the Calendar page's control (any choice made there saves them). A team with no #217 settings goes from seeing no Council events to seeing every one until an admin chooses.
 - **Deadlines.** A deadline of a tracked bill with no priority leaves the calendar and the ICS feed, as that bill's hearings do. It still shows on the bill page.
 - **Expired bills** are staged enacted (tenant migration 0078), since what expires is mostly emergency and temporary acts that were law until their term ran out.
 - **The bill page** gains "Additional information from DC Council" (law, act, and resolution numbers, review dates, and more) and hearing videos, once each bill is re-ingested (step 2 of "After You Deploy").
@@ -175,7 +175,7 @@ Deploy central, claim DC, then deploy every instance, all before the next top of
 
    It costs one LIMS details call per bill, paced at one a second, and no LegiScan calls.
 
-3. **Check each team's event rules** on its settings page (Calendar events) within the hour. They should match the team's #217 settings: committee names as committees, hearing types as event types, and the tracked-bills choice.
+3. **Check each team's event rules** through the Calendar page's control ("Council events", admins only) within the hour. It shows the committees, and one line, "Kept from an earlier setting: …", for the rest of a carried-over rule: hearing types as event types, topic keywords, and the tracked-bills choice. They should match the team's #217 settings.
 4. **Check the LegiScan budget.** Central migration `0020_legiscan_limit_10k` lowers the dashboard's monthly budget from 30,000 to 10,000 calls (LegiScan's free tier since October 1, 2026) if you never changed it. Raise it on the dashboard if you pay for more.
 5. **Remove `LIMS_STATES`** from `central/wrangler.toml` at your next deploy. Central doesn't read it (#319): only the row decides, and a state changes provider only by a claim or a cutover (`docs/internal/sync-pipeline.md`, "State ownership").
 6. **Drop `council_events`** once every instance is upgraded and its Council rows are body events. Upstream's `body_events` replaced it.
@@ -214,7 +214,7 @@ Deploy central, claim DC, then deploy every instance, all before the next top of
 
   The instance keeps its row for the LegiScan copy, which stops updating. Untrack that bill on the instance too: otherwise it tracks a LegiScan row that no longer updates, beside the LIMS copy.
 
-- **Every Council event shows** after an hour. The carry-over is waiting for central's committee list. The instance logs "[event-rules] central options unavailable" when `GET /api/tenants/<tenant>/body-event-options` fails. An admin can save the carried-over rules by hand from the settings page.
+- **Every Council event shows** after an hour. The carry-over is waiting for central's committee list. The instance logs "[event-rules] central options unavailable" when `GET /api/tenants/<tenant>/body-event-options` fails. An admin can save the carried-over rules by hand from the Calendar page's control (any choice made there saves them).
 - **Hearing briefs find no events.** Code selecting `source = 'council'` wasn't ported (see "Build Your Upgrade Branch From Upstream").
 - **`POST /admin/lims-import` answers 409** until LIMS owns DC.
 - **`POST /tenants/seed-session/:tenantId` answers 404** for a session id central doesn't have, **and 409** for a session whose provider no longer owns its state, such as a LegiScan DC session once LIMS owns DC.

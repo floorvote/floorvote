@@ -124,7 +124,7 @@ export async function loadEventRules(db: AppDb, committees: CommitteeList | null
   // With no committee to match against, every committee name the fork chose would become a keyword for good.
   const namesCommittees = Array.isArray((legacy as { include?: unknown }).include) && (legacy as { include: unknown[] }).include.length > 0
   if (!listed || (namesCommittees && listed.length + held.length === 0)) return { rules: carried, settled: false }
-  // Saved once, so the team's settings page shows them and edits them from here on.
+  // Saved once, so the Calendar page's control shows them and edits them from here on.
   await db.insert(associationConfig).values({ key: EVENT_RULES_KEY, value: JSON.stringify(carried) }).onConflictDoNothing()
   // An admin may have saved rules meanwhile: theirs win, and are what applies.
   const stored = await db.select().from(associationConfig).where(eq(associationConfig.key, EVENT_RULES_KEY)).get()
