@@ -65,11 +65,14 @@ export async function buildBillDetail(
   const subjectsSuppressed = isSubjectsSuppressedForState(suppressedSubjectStates, bill.state)
 
   // Fetch rich supplemental data from central for LegiScan bills (calendar, supplements, votes, etc.)
-  // Purely a read — no queue messages, no API calls, no AI.
+  // No AI here. `view` tells central this is a page view: when the bill is a
+  // stub whose detail is stale, central refreshes it in the background
+  // (central/src/lib/stubRefresh.ts), and this read doesn't wait for it. A demo
+  // sends no flag, since its anonymous visitors would spend the provider budget.
   let centralRich: CentralBillRich | null = null
   if (isHandle(bill.externalId)) {
     try {
-      const res = await centralFetch(env, `/bills/${bill.externalId}`)
+      const res = await centralFetch(env, `/bills/${bill.externalId}${env.DEMO_MODE === 'true' ? '' : '?view=1'}`)
       if (res.ok) centralRich = await res.json() as CentralBillRich
     } catch {
       // Non-fatal — bill detail still works without the supplemental data

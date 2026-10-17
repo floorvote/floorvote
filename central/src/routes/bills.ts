@@ -15,6 +15,7 @@ import { calendarKind } from '../lib/billCalendar'
 import { calendarCoverage } from '../lib/bodyEvents'
 import { providerCapabilities } from '../lib/capabilities'
 import { billReferralDetails, pendingCommittee } from '../lib/committees'
+import { refreshStaleStub } from '../lib/stubRefresh'
 import type { Env } from '../types'
 
 export const billsRoutes = new Hono<{ Bindings: Env }>()
@@ -170,6 +171,13 @@ billsRoutes.get('/:id', async (c) => {
 
   const bill = await db.select().from(schema.bills).where(eq(schema.bills.billId, numeric)).get()
   if (!bill) return c.json({ error: 'not found' }, 404)
+  // An instance's bill page sends `view`. A stale stub's detail is refreshed in
+  // the background (lib/stubRefresh.ts), and this answer doesn't wait for it.
+  // Other reads, such as an instance storing a delivery, never refresh.
+  if (c.req.query('view') !== undefined) {
+    c.executionCtx.waitUntil(refreshStaleStub(db, c.env.INGESTOR_QUEUE, bill)
+      .catch(err => console.error(`[stub-refresh] failed for bill ${bill.billId}`, err)))
+  }
   // The provider that wrote the bill, for its vocabulary.
   const provider = findProvider(bill.provider) ?? getProvider(DEFAULT_PROVIDER_ID)
 
