@@ -25,7 +25,7 @@ interface VoteEntry {
   absent: number
   passed: number
   /** Each legislator's vote on this roll call, where central has them (any provider). */
-  legislatorVotes?: { name: string; vote: string }[]
+  legislatorVotes?: { name: string; vote: string; url?: string | null }[]
 }
 
 interface LegislativeHistoryProps {
@@ -37,7 +37,7 @@ interface LegislativeHistoryProps {
 
 type TimelineItem =
   | { kind: 'action'; date: string; chamber?: string; action: string; importance?: number; videoUrl?: string }
-  | { kind: 'vote'; date: string; chamber: string | null; desc: string; yea: number; nay: number; nv: number; absent: number; passed: number; legislatorVotes?: { name: string; vote: string }[] }
+  | { kind: 'vote'; date: string; chamber: string | null; desc: string; yea: number; nay: number; nv: number; absent: number; passed: number; legislatorVotes?: { name: string; vote: string; url?: string | null }[] }
 
 const TONE_COLOR: Record<VoteTone, string> = {
   yea: color.textSuccessDark,
@@ -45,13 +45,18 @@ const TONE_COLOR: Record<VoteTone, string> = {
   neutral: color.textSecondary,
 }
 
-/** A voter's name. Its own element so a name can become a link to the legislator's profile. */
-function VoterName({ name }: { name: string }) {
-  return <span data-testid="voter-name">{name}</span>
+/** A voter's name: a link to the legislator's profile when central sent an http(s) one, else plain text. */
+function VoterName({ name, url }: { name: string; url?: string | null }) {
+  const href = httpUrl(url)
+  return (
+    <span data-testid="voter-name">
+      {href ? <a href={href} target="_blank" rel="noopener noreferrer" className="blue-link">{name}</a> : name}
+    </span>
+  )
 }
 
-function VoterNames({ names }: { names: string[] }) {
-  return <>{names.map((n, i) => <span key={i}>{i > 0 && ', '}<VoterName name={n} /></span>)}</>
+function VoterNames({ voters }: { voters: { name: string; url?: string | null }[] }) {
+  return <>{voters.map((v, i) => <span key={i}>{i > 0 && ', '}<VoterName name={v.name} url={v.url} /></span>)}</>
 }
 
 /**
@@ -100,10 +105,10 @@ function RollCallTally({ vote }: { vote: Pick<VoteEntry, 'yea' | 'nay' | 'nv' | 
           margin: '6px 0 0', display: 'grid', gridTemplateColumns: 'fit-content(40%) 1fr',
           columnGap: 12, rowGap: 4, fontSize: fontSize.xs, color: color.textSecondary,
         }}>
-          {groups.map(({ group, names }) => (
+          {groups.map(({ group, voters }) => (
             <Fragment key={group.key}>
               <dt style={{ color: TONE_COLOR[group.tone], fontWeight: fontWeight.bold, minWidth: 0, overflowWrap: 'anywhere' }}>{group.label}</dt>
-              <dd style={{ margin: 0, minWidth: 0, overflowWrap: 'anywhere' }}><VoterNames names={names} /></dd>
+              <dd style={{ margin: 0, minWidth: 0, overflowWrap: 'anywhere' }}><VoterNames voters={voters} /></dd>
             </Fragment>
           ))}
         </dl>

@@ -2505,7 +2505,8 @@ describe('GET /bills/:id legislator votes', () => {
     expect(res.status).toBe(200)
     const body = await res.json() as { voteSummary: { desc: string; legislatorVotes: unknown[] }[] }
     expect(body.voteSummary.map(v => [v.desc, v.legislatorVotes])).toEqual([
-      ['Third Reading', legislatorVotes],
+      // No link from central, so none on the page.
+      ['Third Reading', legislatorVotes.map(v => ({ ...v, url: null }))],
       ['Concurrence', []],
     ])
   })
