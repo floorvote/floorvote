@@ -10,6 +10,7 @@ import {
 } from '../../../../shared/searchLimits'
 import { loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../../lib/billSubjects'
 import { newMatchWhere } from '../../lib/newMatch'
+import { loadTaxonomyTagNameSet } from '../../lib/taxonomy'
 import { LEGISCAN_CODE_WORDS } from '../../../../shared/legacyStatusOrder'
 import {
   groupHasNoPosition, groupHasNoPriority, heldCustomFieldOf, heldPositionOf,
@@ -300,14 +301,19 @@ export function positionCondition(positionValues: string[]): BillsCondition | un
  * the filter when the group's current analysis does, and none through an
  * older one. Each bill stores its group's current tags (its group tags), so
  * this tests one column, as the filter did before groups.
+ *
+ * "Any" means a tag in `taxonomyTags`, the tenant's current taxonomy, as the
+ * chips and the options do: a tag an operator removed stays on the bill but no
+ * longer counts. A named tag matches whether or not it is still in the taxonomy.
+ * The tag facet's "Any tag" count uses this same condition (listRoutes.ts).
  */
-export function tagCondition(tagFilters: string[]): BillsCondition | undefined {
+export function tagCondition(tagFilters: string[], taxonomyTags: ReadonlySet<string>): BillsCondition | undefined {
   if (tagFilters.length === 0) return undefined
   const hasAny = tagFilters.includes(FILTER_ANY)
   const realTags = tagFilters.filter(t => t !== FILTER_ANY)
   return t => {
     const parts: SQL[] = []
-    if (hasAny) parts.push(sql`json_array_length(${t.groupTags}) > 0`) // "Any" = has any tag
+    if (hasAny) parts.push(tagMembership([...taxonomyTags], t))
     if (realTags.length > 0) parts.push(tagMembership(realTags, t))
     return and(hasGroupTags(t), parts.length === 1 ? parts[0] : or(...parts)!)!
   }
@@ -478,7 +484,8 @@ export async function buildFilterParts(
     facts.push({ key: `cf:${fieldId}`, condition })
   }
 
-  const tag = tagCondition(p.tagFilters)
+  // The taxonomy is read only for "any tag", the one value that depends on it.
+  const tag = tagCondition(p.tagFilters, p.tagFilters.includes(FILTER_ANY) ? await loadTaxonomyTagNameSet(db) : new Set())
   if (tag) facts.push({ key: 'tag', condition: tag })
 
   if (p.subjectFilters.length > 0) {

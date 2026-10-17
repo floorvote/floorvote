@@ -4,13 +4,13 @@ import { eq, and, sql, SQL } from 'drizzle-orm'
 import { getDb } from '../../db/client'
 import { bills, billSubjects, customFieldDefinitions } from '../../db/schema'
 import type { AppEnv } from '../../types'
-import { billsAs, buildBillsFilter, buildFilterParts, composeFilter, isCheapFilter, loadMyBillsInGroups, myBillsCondition, unvotedCondition, FILTER_ANY, canOptimize, tagMembership, hasGroupTags, type BillsFilter } from './query'
+import { billsAs, buildBillsFilter, buildFilterParts, composeFilter, isCheapFilter, loadMyBillsInGroups, myBillsCondition, unvotedCondition, FILTER_ANY, canOptimize, tagCondition, hasGroupTags, type BillsFilter } from './query'
 import { billStatesForWildcard } from '../../lib/billStates'
 import { getNewMatchMinRelevance, newMatchWhere } from '../../lib/newMatch'
 import { cacheKeyFor, getCachedPage, putCachedPage, listCacheTtl, isPerUserListRequest } from '../../lib/listCache'
 import type { CachedListPage } from '../../lib/listCache'
 import { loadTaxonomyTagNameSet } from '../../lib/taxonomy'
-import { holdsGroupPriority, holdsGroupValue, type BillsTable } from '../../lib/teamFields'
+import { holdsGroupPriority, holdsGroupValue } from '../../lib/teamFields'
 import { loadVotedInGroups } from '../../lib/companionGroups'
 import { countGroups, loadGroupRows, pageOfGroups, trackedBills, type PageOptions } from './groupList'
 import { countBy, countHolders, freshOf, type Counting, type CountRow } from './facetCounts'
@@ -402,8 +402,8 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     }
 
     const tagSet = await loadTaxonomyTagNameSet(db)
-    // "Any tag" = a valid (in-taxonomy) tag.
-    const hasTagCond = (t: BillsTable): SQL => tagSet.size > 0 ? tagMembership([...tagSet], t) : sql`json_array_length(${t.groupTags}) > 0`
+    // "Any tag" = a valid (in-taxonomy) tag: the list filter's own condition, so the two cannot drift.
+    const anyTagCond = tagCondition([FILTER_ANY], tagSet)!
     const voted = await loadVotedInGroups(db, currentUser.id)
     const m = billsAs('m')
     const me = billsAs('me')
@@ -443,7 +443,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       // Every bill of a group has the group's current tags as its group tags, so tags count as a fact about each
       // bill does, starting from the few bills that have any.
       countBy(db, counting('tag'), { values: [sql`jt.value`], from: sql`bills m, json_each(${m.groupTags}) jt`, where: hasGroupTags(m) }),
-      countBy(db, counting('tag'), { values: [], from: sql`bills m`, where: and(hasGroupTags(m), hasTagCond(m)) }),
+      countBy(db, counting('tag'), { values: [], from: sql`bills m`, where: anyTagCond(m) }),
       shiftFacets ? countGroups(db, currentOnM) : Promise.resolve(0),
       // The counts beside the facets: the groups of the current result with a bill of the kind each names.
       mine.length > 0 ? countGroups(db, both(currentOnM, myBillsCondition(mine)(m)), true) : Promise.resolve(0),
