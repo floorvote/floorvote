@@ -347,3 +347,28 @@ describe('the budget floor', () => {
     expect(sent.map(m => m.billId)).toEqual([801, 802, 803, 804, 805, 806])
   })
 })
+
+describe('a bill the bulk seed wrote', () => {
+  // scripts/seed-legiscan.ts writes a session's bills, detail and all, from the
+  // bulk dataset, then queues them with skipFetch, which never reaches the ingest.
+  it('queues no refresh from its first view, and one once the sync moves it on', async () => {
+    const { buildBillStatements } = await import('../../../scripts/lib/build-bill-statements')
+    const seeded = {
+      bill_id: 710, change_hash: 'seed-h1', session_id: 2154, state: 'WI', state_id: 50, bill_number: 'AB710',
+      title: 'Seeded bill', status: 2, status_date: '2026-04-01',
+      history: [
+        { date: '2026-01-15', action: 'Introduced', chamber: 'A', chamber_id: 26, importance: 1 },
+        { date: '2026-04-01', action: 'Passed Assembly', chamber: 'A', chamber_id: 26, importance: 1 },
+      ],
+    }
+    for (const s of buildBillStatements(seeded, 'WI', 2154)) await env.DB.prepare(s).run()
+    await env.DB.prepare(`INSERT INTO bill_tenants (bill_id, tenant_id, match_type) VALUES (710, 'a', NULL)`).run()
+
+    const { env2, sent } = queueEnv()
+    await view(710, env2)
+    expect(sent).toHaveLength(0)
+    await masterListChange(710, 'seed-h2')
+    await view(710, env2)
+    expect(sent).toEqual([{ billId: 710, queuedBy: 'legiscan' }])
+  })
+})
