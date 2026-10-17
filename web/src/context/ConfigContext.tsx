@@ -49,6 +49,8 @@ export interface StateCapabilities {
   bodyEvents: boolean
   /** Bills carry deadlines as calendar entries. */
   deadlines: boolean
+  /** What members call the body that holds those events ("Council"), when the provider names one. */
+  bodyName?: string
 }
 
 interface ConfigValue {

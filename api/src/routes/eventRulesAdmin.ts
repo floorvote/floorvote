@@ -8,10 +8,11 @@ import { parseEventRules, type EventFacets } from '../../../shared/eventRules'
 import type { AppEnv } from '../types'
 
 /**
- * Settings → Calendar events (#298): which body events, the legislature's own
+ * The Calendar page's "Council events" control (#298, #420): which body events, the legislature's own
  * calendar, the instance shows (lib/eventRules.ts). Mounted under /api/admin,
- * which already requires an admin. The web app offers the page only when a
- * covered state has body events (`capabilities` in GET /config).
+ * which already requires an admin. The web app offers the control to admins
+ * only, and only when a covered state has body events (`capabilities` in GET
+ * /config).
  */
 export const eventRulesAdminRouter = new Hono<AppEnv>()
 

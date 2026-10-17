@@ -38,6 +38,14 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
   readonly displayName: string
 
   /**
+   * What members call the body whose calendar `listBodyEvents` returns, such
+   * as "Council": the Calendar page's control reads "Council events". Only a
+   * provider that publishes a calendar needs one; without it the control reads
+   * "Legislature events".
+   */
+  readonly bodyName?: string
+
+  /**
    * The credit instances show for this provider's data, in the footer of
    * every instance covering one of its states: the publisher's name and link,
    * one plain sentence on where the data comes from and its terms, and the

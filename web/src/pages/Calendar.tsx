@@ -15,6 +15,8 @@ import { DayPopover, computeDayPopoverPosition } from '../components/calendar/Da
 import type { PopPanelHandle } from '../components/ui/PopPanel'
 import { EventForm, type EventFormValues } from '../components/calendar/EventForm'
 import { SubscribeCalendar } from '../components/calendar/SubscribeCalendar'
+import { BodyEventsControl } from '../components/calendar/BodyEventsControl'
+import { useHasBodyEvents } from '../lib/capabilities'
 const ImportEvents = lazy(() => import('../components/calendar/ImportEvents').then(m => ({ default: m.ImportEvents })))
 import type { BillOption } from '../components/BillPicker'
 import { getScrollContainer } from '../lib/scrollUtils'
@@ -39,6 +41,9 @@ export function Calendar() {
   const { user } = useAuth()
   const { demoLocked } = useDemo()
   const isAdmin = user?.role === 'admin' || user?.role === 'owner'
+  // Which committee events show is an admin's choice, offered only where a covered state's provider publishes its own calendar.
+  const hasBodyEvents = useHasBodyEvents()
+  const showBodyEventsControl = isAdmin && hasBodyEvents
   const isMobile = useIsBreakpoint('max', 768)
 
   // Events come from calendarLoader (RR7 data router) — resolved before render.
@@ -316,6 +321,7 @@ export function Calendar() {
               </div>
             )}
             <div style={{ flex: 1 }} />
+            {showBodyEventsControl && <BodyEventsControl onChanged={() => { loadEvents().catch(() => {}) }} />}
             <SubscribeCalendar />
             {isAdmin && (
               <button

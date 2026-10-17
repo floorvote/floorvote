@@ -163,7 +163,7 @@ describe('SettingsNav', () => {
     expect(leftFade.getAttribute('aria-hidden')).toBe('true')
   })
 
-  it('offers Calendar events only while a covered state has body events', () => {
+  it('has no Calendar events tab, with or without a covered state that publishes its own calendar (#420: the choice moved to the Calendar page)', () => {
     mockAdminUser()
     const withCapabilities = (capabilities: AppConfig['capabilities']) => (
       <ConfigContext value={{ config: { states: ['DC', 'MD'], capabilities }, multiState: true, loading: false }}>
@@ -173,6 +173,9 @@ describe('SettingsNav', () => {
     const { rerender } = render(withCapabilities({ MD: { bodyEvents: false, deadlines: true } }))
     expect(screen.queryByRole('link', { name: 'Calendar events' })).not.toBeInTheDocument()
     rerender(withCapabilities({ DC: { bodyEvents: true, deadlines: true } }))
-    expect(screen.getByRole('link', { name: 'Calendar events' })).toHaveAttribute('href', '/admin/calendar-events')
+    expect(screen.queryByRole('link', { name: 'Calendar events' })).not.toBeInTheDocument()
+    expect(document.querySelector('a[href="/admin/calendar-events"]')).toBeNull()
+    // The rest of the tabs are as they were.
+    expect(screen.getAllByRole('link').map(a => a.textContent)).toEqual(['Account', 'Config', 'Members', 'Notifications', 'Draft bills'])
   })
 })

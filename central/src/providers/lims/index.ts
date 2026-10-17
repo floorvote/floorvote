@@ -29,6 +29,7 @@ const CATEGORY_BY_PREFIX: Record<string, number> = {
 export const lims: Provider<'LIMS_API_KEY' | 'LIMS_STATES' | 'LIMS_CATEGORIES'> = {
   id: 'lims',
   displayName: 'DC Council',
+  bodyName: 'Council',
   // The Council publishes no license for LIMS, so it is credited without one.
   attribution: {
     name: 'DC Council LIMS',
