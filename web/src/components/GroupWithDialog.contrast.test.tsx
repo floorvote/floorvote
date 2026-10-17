@@ -19,7 +19,7 @@ function renderDialog() {
     if (path === '/calendar/bill-options') return OPTIONS as never
     return {} as never
   })
-  render(<GroupWithDialog billId="b1" billNumber="HB 1" groupBillIds={['b1']} onGrouped={() => {}} onClose={() => {}} />)
+  render(<GroupWithDialog billId="b1" billNumber="HB 1" groupBillIds={['b1']} shares="comments, votes, team position, and priority" onGrouped={() => {}} onClose={() => {}} />)
   return screen.getByRole('dialog')
 }
 

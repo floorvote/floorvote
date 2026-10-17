@@ -62,7 +62,7 @@ export function ReprocessScopeModal({ matchedBillsCount, prioritizedBillsCount, 
         <strong>Yes, all {plural(allCount, 'fully analyzed bill')}</strong>
         <div style={{ marginTop: 2, opacity: 0.85 }}>Bills matching keywords or manually added.</div>
       </button>
-      <button ref={cancelRef} type="button" style={actionBtn(color.accentBlue)} onClick={onDismiss}>
+      <button ref={cancelRef} type="button" style={actionBtn(color.linkBlue)} onClick={onDismiss}>
         <strong>No, just future bill texts</strong>
       </button>
     </Dialog>

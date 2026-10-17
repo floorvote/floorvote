@@ -348,6 +348,8 @@ export async function ingestMeasure(
     updatedAt:          now,
     createdAt:          now,
     textsFetchedAt:     now,
+    // The change the detail is fetched at (0041): the stub refresh reads the detail as stale once the sync moves past it.
+    detailHash:         bill.change_hash,
   }).onConflictDoUpdate({
     target: bills.billId,
     set: {
@@ -371,6 +373,7 @@ export async function ingestMeasure(
       // change, so instances still see it moved and fetch it again.
       updatedAt:          detectedChanges.length > 0 || carriedFrom ? now : sql`updated_at`,
       textsFetchedAt:     now,
+      detailHash:         bill.change_hash,
     },
     setWhere: eq(bills.provider, provider.id),
   }).returning({ billId: bills.billId })

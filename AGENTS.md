@@ -103,7 +103,7 @@ See [`docs/content/self-hosting/index.md`](docs/content/self-hosting/index.md) f
 |---|---|
 | `LEGISCAN_API_KEY` | LegiScan bill data |
 | `ADMIN_SECRET` | Protects `/api/admin/*` and `/api/tenants/*` routes |
-| `RESEND_API_KEY` | Admin dashboard magic-link email. Required for dashboard login: `dash-auth.ts` sends nothing and still answers ok if this or `ADMIN_APP_URL` is unset |
+| `RESEND_API_KEY` | Admin dashboard magic-link email, unless central sends through Cloudflare Email (`EMAIL_PROVIDER=cloudflare` with an `EMAIL` binding). Dashboard login needs one of those two senders plus `ADMIN_APP_URL`: `dash-auth.ts` sends nothing, logs a warning, and still answers ok if either is missing |
 | `CF_QUEUES_TOKEN` | Cloudflare API token (Queues: Edit) for dynamic per-tenant queue delivery |
 | `SUPERADMIN_JWT_PRIVATE_KEY` | ES256 private JWK — central is the sole issuer of superadmin tokens |
 | `SUPERADMIN_EMAILS` | Comma-separated superadmin allowlist |
@@ -210,7 +210,7 @@ Material Symbols icons use an explicit allowlist in `web/index.html` — add new
 
 ### Explanations
 
-`InfoTooltip` (ⓘ) is for explaining how FloorVote works: what a field does, who can change it, where data comes from. Explanations of legislative or data terms (a status, an event type, a provider's field label) go on the term itself, opening below, with no ⓘ. Use `HoverTooltip` (`web/src/components/HoverTooltip.tsx`) with its `describe` option for those: the term becomes a dotted-underlined toggletip button like the ⓘ (hover and focus preview it, click, tap, Enter, or Space pins it open or closed, Escape closes it), with a screen-reader copy of the text, opening below. The cursor is the pointer, never `help`. A chip or other control that is already interactive passes `describe={{ interactive: true }}` and keeps its own click, with no underline.
+`InfoTooltip` (ⓘ) is for explaining how FloorVote works: what a field does, who can change it, where data comes from. Explanations of legislative or data terms (a status, an event type, a provider's field label) go on the term itself, opening below, with no ⓘ. Use `HoverTooltip` (`web/src/components/HoverTooltip.tsx`) with its `describe` option for those: the term becomes a dotted-underlined toggletip button like the ⓘ (hover and focus preview it, click, tap, Enter, or Space pins it open or closed, Escape closes it), with a screen-reader copy of the text, opening below. The cursor is the pointer, never `help`. A chip or other control that is already interactive passes `describe={{ interactive: true }}` and keeps its own click, with no underline. A dotted underline always means this: a trigger with a dotted underline is a button that opens on click or tap, never a hover-only span. For a rich panel rather than a sentence (the change log), pass `toggletip` with the underlined text as the child instead of `describe`.
 
 ### Navigation
 

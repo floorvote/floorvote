@@ -13,6 +13,14 @@ export interface CalendarEventBill {
    *  custom events can carry a draft; hearing events are LegiScan-synced and a
    *  draft has no LegiScan id. */
   isDraft: boolean
+  /** The companion group the bill is in, or null. Its priority above is the group's. */
+  groupKey?: string | null
+}
+
+/** A companion group an event's bills belong to, with every bill in it: a member with no hearing of its own is in it too. */
+export interface CalendarEventGroup {
+  key: string
+  bills: Array<{ id: string; billNumber: string; state: string | null; sessionSlug?: string | null }>
 }
 
 export interface CalendarEvent {
@@ -29,6 +37,8 @@ export interface CalendarEvent {
   eventHashes?: string[]
   billId: string | null
   bills: CalendarEventBill[]
+  /** The companion groups the event's bills belong to, for the popover's links. Absent on a date-field event. */
+  groups?: CalendarEventGroup[]
   date: string | null // YYYY-MM-DD
   time: string | null  // HH:MM[:SS] or null/00:00 = all-day
   location: string | null

@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import * as api from '../lib/api'
 import { ApiError } from '../lib/api'
 import { ConfigContext, type AppConfig } from '../context/ConfigContext'
+import { contrast, resolveColor, type Mode } from '../test/colorTokens'
 
 const demo = vi.hoisted(() => ({ demoLocked: false }))
 
@@ -102,6 +103,30 @@ describe('Profile: change your email', () => {
     fireEvent.click(send)
     await screen.findByRole('status')
     expect(requests(spy)).toEqual([{ email: 'jane@newjob.org', turnstileToken: 'solved-token' }])
+  })
+
+  describe.each<Mode>(['light', 'dark'])('Send confirmation button contrast (%s mode)', (mode) => {
+    const ratioOf = (btn: HTMLElement) =>
+      contrast(resolveColor(btn.style.color, mode), resolveColor(btn.style.background, mode))
+
+    it('enabled: text clears AA on the fill', async () => {
+      mockApi()
+      renderProfile()
+      fireEvent.change(await openForm(), { target: { value: 'jane@newjob.org' } })
+      const send = screen.getByRole('button', { name: 'Send confirmation' })
+      expect(send).toBeEnabled()
+      expect(ratioOf(send)).toBeGreaterThanOrEqual(4.5)
+    })
+
+    it('disabled: text stays legible (3:1 or better) and the button is not dimmed with opacity', async () => {
+      mockApi()
+      renderProfile()
+      await openForm()
+      const send = screen.getByRole('button', { name: 'Send confirmation' })
+      expect(send).toBeDisabled()
+      expect(ratioOf(send)).toBeGreaterThanOrEqual(3)
+      expect(send.style.opacity).toBe('')
+    })
   })
 
   it('cancelling closes the form without a request', async () => {
