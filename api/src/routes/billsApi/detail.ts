@@ -292,7 +292,7 @@ export async function buildBillDetail(
     priorityMeta: priorityEventRow ? { setByName: priorityEventRow.setByName, updatedAt: priorityEventRow.createdAt } : null,
     sponsor: bill.sponsor,
     sponsorParty: bill.sponsorParty,
-    sponsorUrl: centralRich?.sponsors?.find(s => s.primary)?.url ?? bill.sponsorUrl,
+    sponsorUrl: httpUrl(centralRich?.sponsors?.find(s => s.primary)?.url ?? bill.sponsorUrl),
     coSponsors: centralRich?.sponsors
       ? (() => {
           // The primary sponsor shown in bill.sponsor is the first primary-flagged sponsor.
@@ -302,7 +302,7 @@ export async function buildBillDetail(
           const primaryName = bill.sponsor
           return centralRich.sponsors
             .filter(s => s.name !== primaryName)
-            .map(s => ({ name: s.name, url: s.url ?? null, party: s.party ?? null, primary: s.primary ?? false }))
+            .map(s => ({ name: s.name, url: httpUrl(s.url), party: s.party ?? null, primary: s.primary ?? false }))
         })()
       : (bill.coSponsors ? JSON.parse(bill.coSponsors) : []),
     lastAction: bill.lastAction,

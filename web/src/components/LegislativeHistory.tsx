@@ -1,6 +1,7 @@
 import { Fragment, useId, useState } from 'react'
 import { CHROME_TEXT } from '../lib/textStyles'
 import { TabularRow } from './TabularRow'
+import { ExternalLinkIcon } from './ExternalLinkIcon'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 import { httpUrl } from '../../../shared/httpUrl'
 import { groupVotes, type VoteTone } from '../lib/voteWords'
@@ -50,7 +51,7 @@ function VoterName({ name, url }: { name: string; url?: string | null }) {
   const href = httpUrl(url)
   return (
     <span data-testid="voter-name">
-      {href ? <a href={href} target="_blank" rel="noopener noreferrer" className="blue-link">{name}</a> : name}
+      {href ? <a href={href} target="_blank" rel="noopener noreferrer" className="blue-link">{name}<ExternalLinkIcon /></a> : name}
     </span>
   )
 }

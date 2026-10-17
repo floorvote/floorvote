@@ -52,6 +52,7 @@ import { markNotificationsRead } from '../lib/demoReadState'
 import { relativeTime, absoluteTime } from '../lib/time'
 import { COMMENT_STYLE } from '../../../shared/commentStyle'
 import { billDisplayTitle } from '../../../shared/billTitle'
+import { httpUrl } from '../../../shared/httpUrl'
 import { getScrollContainer } from '../lib/scrollUtils'
 import { billUrl } from '../lib/sessionSlug'
 import { OtherSessionNotice, billChoicesFrom, type BillChoice } from '../components/BillChoices'
@@ -85,9 +86,11 @@ function PartyBadge({ party }: { party: string }) {
 }
 
 function SponsorLink({ name, url, party, bold }: { name: string; url: string | null; party: string | null; bold?: boolean }) {
-  if (url) {
+  // Only an http(s) URL becomes a link, whatever central or the instance API sent.
+  const href = httpUrl(url)
+  if (href) {
     return (
-      <a href={url} target="_blank" rel="noreferrer" className="blue-link"
+      <a href={href} target="_blank" rel="noreferrer" className="blue-link"
         style={{ whiteSpace: 'nowrap', fontWeight: bold ? 600 : undefined }}>
         {name}{party && <PartyBadge party={party} />}<ExternalLinkIcon />
       </a>
