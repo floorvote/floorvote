@@ -213,6 +213,7 @@ import { ApiError } from '../../lib/api'
 import { AuthProvider } from '../../context/AuthContext'
 import { SidebarRefreshProvider, useRegisterSidebarRefresh } from '../../context/SidebarRefreshContext'
 import { ConfigContext } from '../../context/ConfigContext'
+import { MAX_SUBJECT_FILTERS } from '../../../../shared/limits'
 
 function Wrapper({ children }: { children: ReactNode }) {
   return (
@@ -517,6 +518,44 @@ describe('BillList list-fetch failure', () => {
     // Filter dropdowns (part of the toolbar) are still present and clickable.
     expect(screen.getByRole('button', { name: 'Status' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Subject' })).toBeInTheDocument()
+  })
+})
+
+// A bookmark or saved view that already holds more subjects than the API allows
+// (#692). The list 400s, so the page must say why inline, and the picker must
+// let the member take subjects off without offering more.
+describe('BillList with a link already over the subject limit', () => {
+  const HINT = `You can pick up to ${MAX_SUBJECT_FILTERS} subjects.`
+  const filler = (n: number) => Array.from({ length: n }, (_, i) => `UT:Filler ${i + 1}`)
+
+  it('keeps the error banner, then stops offering subjects until enough are removed', async () => {
+    FACETS.subjects = { 'UT:Counties': 1, 'UT:Elections': 2 }
+    billsListError.value = `Too many subject filters. The maximum is ${MAX_SUBJECT_FILTERS}.`
+    const subjects = ['UT:Counties', ...filler(MAX_SUBJECT_FILTERS)] // one over
+    const search = subjects.map(s => `subject=${encodeURIComponent(s)}`).join('&')
+    render(
+      <MemoryRouter initialEntries={[`/bills?${search}`]}>
+        <AuthProvider>
+          <SidebarRefreshProvider><BillList /></SidebarRefreshProvider>
+          <LocationProbe />
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText(`Too many subject filters. The maximum is ${MAX_SUBJECT_FILTERS}.`)).toBeInTheDocument()
+
+    fireEvent.click(await screen.findByRole('button', { name: new RegExp(`Subject.*\\(${MAX_SUBJECT_FILTERS + 1}\\)`) }))
+    expect(screen.getByText(`${HINT} This filter has ${MAX_SUBJECT_FILTERS + 1}. Remove 1 to continue.`)).toBeInTheDocument()
+    const elections = screen.getByText('Elections').closest('label')!.querySelector('input') as HTMLInputElement
+    expect(elections.disabled).toBe(true)
+
+    // Unchecking one subject leaves 40: allowed, but the picker is still full.
+    fireEvent.click(screen.getByText('Counties'))
+    await waitFor(() => {
+      const loc = screen.getByTestId('loc').textContent ?? ''
+      expect(new URLSearchParams(loc.split('?')[1]).getAll('subject')).toHaveLength(MAX_SUBJECT_FILTERS)
+    })
+    expect(screen.getByText(HINT)).toBeInTheDocument()
+    expect((screen.getByText('Elections').closest('label')!.querySelector('input') as HTMLInputElement).disabled).toBe(true)
   })
 })
 

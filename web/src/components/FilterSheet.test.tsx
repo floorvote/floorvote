@@ -4,6 +4,7 @@ import type { ComponentProps } from 'react'
 import { FilterSheet } from './FilterSheet'
 import type { SubjectGroup } from '../pages/BillList/FilterPanel'
 import type { CustomFieldDef } from '../pages/BillList/types'
+import { MAX_SUBJECT_FILTERS } from '../../../shared/limits'
 
 function makeDefaults(): ComponentProps<typeof FilterSheet> {
   return {
@@ -618,5 +619,96 @@ describe('FilterSheet — SheetChip accessibility (aria-pressed)', () => {
     fireEvent.click(screen.getByRole('button', { name: /status/i }))
     expect(screen.getByRole('button', { name: /^active/i })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: /^dead/i })).toHaveAttribute('aria-pressed', 'false')
+  })
+})
+
+// The mobile sheet offers the same Subjects list as the desktop picker, and the
+// API answers 400 past MAX_SUBJECT_FILTERS (#692), so the sheet stops at the
+// same number. 80 options per state, every other one selected, so the virtualized
+// window (the first couple of dozen rows) holds both checked and unchecked options.
+describe('FilterSheet — Subjects stop at the subject limit', () => {
+  const HINT = `You can pick up to ${MAX_SUBJECT_FILTERS} subjects.`
+  const everyOther = (state: string, n: number) => Array.from({ length: n }, (_, i) => `${state}:Subject ${i * 2}`)
+  const rows = () => screen.getAllByRole('checkbox') as HTMLInputElement[]
+  const unchecked = () => rows().filter(box => !box.checked)
+  const checked = () => rows().filter(box => box.checked)
+
+  function openSubjects(subjects: string[], onSubjectChange = vi.fn(), subjectGroups = makeSubjectGroups({ UT: 80 })) {
+    const props = { ...makeDefaults(), subjects, onSubjectChange, subjectGroups }
+    const utils = render(<FilterSheet {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: /subject/i }))
+    const rerenderWith = (next: string[]) => utils.rerender(<FilterSheet {...props} subjects={next} />)
+    return { ...utils, rerenderWith, onSubjectChange }
+  }
+
+  it('lets the last allowed subject be picked: with one below the cap, nothing is disabled and no hint shows', () => {
+    const { onSubjectChange } = openSubjects(everyOther('UT', MAX_SUBJECT_FILTERS - 1))
+    expect(unchecked().length).toBeGreaterThan(0)
+    expect(unchecked().every(box => !box.disabled)).toBe(true)
+    expect(screen.queryByText(HINT)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Subject 1'))
+    expect(onSubjectChange).toHaveBeenCalledTimes(1)
+    expect(onSubjectChange.mock.calls[0][0]).toHaveLength(MAX_SUBJECT_FILTERS)
+  })
+
+  it('disables every unchecked option at the cap and says why', () => {
+    openSubjects(everyOther('UT', MAX_SUBJECT_FILTERS))
+    expect(unchecked().length).toBeGreaterThan(0)
+    expect(unchecked().every(box => box.disabled)).toBe(true)
+    expect(screen.getByText(HINT)).toBeInTheDocument()
+  })
+
+  it('keeps the selected options enabled at the cap, so any of them can be unchecked', () => {
+    openSubjects(everyOther('UT', MAX_SUBJECT_FILTERS))
+    expect(checked().length).toBeGreaterThan(0)
+    expect(checked().every(box => !box.disabled)).toBe(true)
+  })
+
+  it('does not select a 41st subject when a disabled option is clicked', () => {
+    const { onSubjectChange } = openSubjects(everyOther('UT', MAX_SUBJECT_FILTERS))
+    fireEvent.click(screen.getByText('Subject 1'))
+    expect(onSubjectChange).not.toHaveBeenCalled()
+  })
+
+  it('re-enables the rest and hides the hint once one of the 40 is unchecked', () => {
+    const { onSubjectChange, rerenderWith } = openSubjects(everyOther('UT', MAX_SUBJECT_FILTERS))
+    fireEvent.click(screen.getByText('Subject 0'))
+    const next = onSubjectChange.mock.calls[0][0] as string[]
+    expect(next).toHaveLength(MAX_SUBJECT_FILTERS - 1)
+
+    rerenderWith(next)
+    expect(unchecked().every(box => !box.disabled)).toBe(true)
+    expect(screen.queryByText(HINT)).not.toBeInTheDocument()
+  })
+
+  it('counts selected subjects across all states, not per state', () => {
+    const selected = [...everyOther('NJ', MAX_SUBJECT_FILTERS / 2), ...everyOther('UT', MAX_SUBJECT_FILTERS / 2)]
+    openSubjects(selected, vi.fn(), makeSubjectGroups({ NJ: 40, UT: 40 }))
+    expect(unchecked().length).toBeGreaterThan(0)
+    expect(unchecked().every(box => box.disabled)).toBe(true)
+    expect(screen.getByText(HINT)).toBeInTheDocument()
+  })
+
+  it('shows how far over a saved view or link already is, and still lets its subjects be unchecked', () => {
+    const over = MAX_SUBJECT_FILTERS + 3
+    const { onSubjectChange } = openSubjects(everyOther('UT', over))
+    expect(unchecked().every(box => box.disabled)).toBe(true)
+    expect(checked().every(box => !box.disabled)).toBe(true)
+    expect(screen.getByText(`${HINT} This filter has ${over}. Remove 3 to continue.`)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Subject 0'))
+    expect(onSubjectChange).toHaveBeenCalledTimes(1)
+    expect((onSubjectChange.mock.calls[0][0] as string[]).length).toBe(over - 1)
+  })
+
+  it('does not cap Tags, which the API does not limit', () => {
+    const tags = makeTagOptions(4 * MAX_SUBJECT_FILTERS)
+    const selected = tags.filter((_, i) => i % 2 === 0) // 2 x the cap, interleaved so the visible rows hold both kinds
+    render(<FilterSheet {...makeDefaults()} tagOptions={tags} tags={selected} />)
+    fireEvent.click(screen.getByRole('button', { name: /tags/i }))
+    expect(unchecked().length).toBeGreaterThan(0)
+    expect(unchecked().every(box => !box.disabled)).toBe(true)
+    expect(screen.queryByText(HINT)).not.toBeInTheDocument()
   })
 })
