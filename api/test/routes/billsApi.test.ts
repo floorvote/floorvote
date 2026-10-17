@@ -2677,3 +2677,33 @@ describe('GET /bills/:id committees', () => {
     expect((await res.json() as { committee: unknown }).committee).toBeNull()
   })
 })
+
+// Central refreshes a stale stub's detail when its page is viewed
+// (central/src/lib/stubRefresh.ts), and tells a view from any other read of the
+// bill by the `view` flag, which only the bill page sends.
+describe('GET /bills/:id tells central it is a page view', () => {
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+  })
+
+  function recordingCentral() {
+    const urls: URL[] = []
+    return { urls, central: { fetch: vi.fn(async (req: Request) => { urls.push(new URL(req.url)); return Response.json({}) }) } }
+  }
+
+  it("flags the bill page's read of the bill as a view, except on a demo instance, whose visitors are anonymous", async () => {
+    const token = await seedSession(await seedUser({ role: 'member' }))
+    const bill = await seedBill({ billNumber: 'AB 7', externalId: 'legiscan:707' })
+    const read = async (bindings: Record<string, unknown>) => {
+      const { urls, central } = recordingCentral()
+      const res = await app.request(`/api/bills/${bill}`, { headers: { Cookie: `session=${token}` } }, { ...env, CENTRAL: central, ...bindings })
+      expect(res.status).toBe(200)
+      const url = urls.find(u => u.pathname === '/api/bills/legiscan:707')
+      expect(url).toBeDefined()
+      return url!.searchParams.get('view')
+    }
+    expect(await read({})).toBe('1')
+    expect(await read({ DEMO_MODE: 'true' })).toBeNull()
+  })
+})

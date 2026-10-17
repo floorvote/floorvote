@@ -89,7 +89,6 @@ const DRAFT = {
   voteSummary: [],
   subjects: [],
   relatedBillIds: [],
-  companionBillIds: [],
   texts: [],
   calendar: [],
   supplements: [],

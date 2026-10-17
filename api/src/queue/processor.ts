@@ -688,7 +688,11 @@ async function applyCentralBill(
   // bill has text to analyse, so it is kept on the bill until the match is
   // recorded and goes on the bill_matched event from there. Once the match
   // is recorded it never changes. With no declaration it stays NULL: bulk.
-  const declaredProvenance = !existing?.newMatchAt && msg.matchProvenance ? msg.matchProvenance : undefined
+  // A group analysis is for a bill that didn't match (lib/companionAnalysis.ts)
+  // and brings no match, so any declaration on it is ignored: it would
+  // otherwise be kept until the bill matched on its own, and be taken for that
+  // match's provenance.
+  const declaredProvenance = !existing?.newMatchAt && !msg.groupAnalysis && msg.matchProvenance ? msg.matchProvenance : undefined
   const matchProvenance = declaredProvenance ?? existing?.matchProvenance ?? null
 
   const upsertData = {

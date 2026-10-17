@@ -136,3 +136,56 @@ describe('buildActivityRowModel', () => {
     expect(m.billCount).toBeNull()
   })
 })
+
+// ── companion groups (#381) ─────────────────────────────────────────────────
+// A group's card holds the events of every member bill, each labeled with its
+// bill's number so the reader knows which chamber's bill it happened on.
+
+describe('buildBillCardModel: companion groups', () => {
+  const member = (billId: string, billNumber: string, over: Partial<FeedEvent> = {}): Partial<FeedEvent> =>
+    ({ billId, billNumber, billGroupKey: 'h1', ...over })
+  const grouped = (events: Partial<FeedEvent>[]) => group(events, {
+    key: 'group:h1::2026-06-03', groupKey: 'h1',
+    bills: [
+      { billId: 's1', billNumber: 'S 202', billState: 'RI', billSessionSlug: '2026', billIsDraft: false },
+      { billId: 'h1', billNumber: 'H 101', billState: 'RI', billSessionSlug: '2026', billIsDraft: false },
+    ],
+  })
+
+  it('labels each row with the number of the bill its event is on, and says which bill that is', () => {
+    const m = buildBillCardModel(grouped([
+      member('h1', 'H 101', { metadata: { changes: [{ changeType: 'action_added', newValue: 'Passed House committee' }] } }),
+      member('s1', 'S 202', { metadata: { changes: [{ changeType: 'action_added', newValue: 'Reported from committee' }] } }),
+    ]))
+    expect(m.rows.map(r => [r.billLabel, r.billId, r.text])).toEqual([
+      ['H 101', 'h1', 'Action: Passed House committee'],
+      ['S 202', 's1', 'Action: Reported from committee'],
+    ])
+  })
+
+  it('labels every kind of row: a hearing, a comment, a priority change', () => {
+    const m = buildBillCardModel(grouped([
+      member('s1', 'S 202', { type: 'hearing_added', metadata: { date: '2026-06-10', description: 'Senate Cmte' } }),
+      member('h1', 'H 101', { type: 'comment_added', metadata: { preview: 'hello' } }),
+      member('h1', 'H 101', { type: 'priority_set', metadata: { priority: 'high' } }),
+    ]))
+    expect(m.rows.map(r => r.billLabel)).toEqual(['S 202', 'H 101', 'H 101'])
+  })
+
+  it('labels a lone member\'s events too, since the card stands for the group', () => {
+    const m = buildBillCardModel(grouped([member('s1', 'S 202', { metadata: { changes: [{ changeType: 'status_change', oldValue: 'a', newValue: 'b' }] } })]))
+    expect(m.rows[0].billLabel).toBe('S 202')
+  })
+
+  it('carries the card\'s bills for the header', () => {
+    const m = buildBillCardModel(grouped([member('s1', 'S 202')]))
+    expect(m.bills!.map(b => b.billNumber)).toEqual(['S 202', 'H 101'])
+  })
+
+  it('leaves a bill in no group unlabeled, with no bills list', () => {
+    const m = buildBillCardModel(group([{ metadata: { changes: [{ changeType: 'status_change', oldValue: 'a', newValue: 'b' }] } }]))
+    expect(m.rows[0].billLabel).toBeNull()
+    expect(m.rows[0].billId).toBe('b1')
+    expect(m.bills).toBeUndefined()
+  })
+})

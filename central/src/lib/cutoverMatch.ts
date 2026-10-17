@@ -4,9 +4,13 @@
  * match the same way.
  */
 
-/** "HB0001" → "HB1", "B26-0400" → "B26-400": bill numbers compared without padding or spaces. */
+/**
+ * "HB0001" → "HB1", "B26-0400" → "B26-400": bill numbers compared without
+ * padding or spaces. A joint resolution's prefix is HJ or SJ either way:
+ * Virginia's LIS numbers them HJ and SJ, and LegiScan writes HJR and SJR.
+ */
 export function comparableNumber(n: string): string {
-  return n.toUpperCase().replace(/\s+/g, '').replace(/(^|\D)0+(?=\d)/g, '$1')
+  return n.toUpperCase().replace(/\s+/g, '').replace(/(^|\D)0+(?=\d)/g, '$1').replace(/^([HS]J)R(?=\d)/, '$1')
 }
 
 /**

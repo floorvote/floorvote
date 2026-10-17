@@ -17,7 +17,8 @@ import { billTypeExplainer, eventTypeExplainer, statusExplainer as explainStatus
 import { getNoAnalysisMessage } from '../lib/billDetailCopy'
 import { REGENERATE_PRESERVES_DESCRIPTION } from '../lib/billDetailCopy'
 import { OverflowMenu, type OverflowMenuRow } from '../components/ui/OverflowMenu'
-import { orgPositionLabel, orgRelevanceLabel, DEFAULT_ORG_NOUN } from '../lib/orgNoun'
+import { orgPositionLabel, orgRelevanceLabel, titleCase as upperFirst, DEFAULT_ORG_NOUN } from '../lib/orgNoun'
+import { groupSharedThings } from '../lib/groupShares'
 import { RelevanceChip } from '../components/RelevanceChip'
 import { SessionChip } from '../components/SessionChip'
 import { SentimentBars } from '../components/SentimentBars'
@@ -38,7 +39,7 @@ import { color, radius, fontSize, fontWeight, shadow } from '../styles/tokens'
 import { primaryButtonColors } from '../styles/primaryButton'
 import { TAG_CHIP, TAG_CHIP_HOVERED } from '../lib/tagChipStyle'
 import { CARD } from '../lib/cardStyle'
-import { COMPANION_TAG, COUNT_BADGE, displayName, ROLE_CHIP, TOOLTIP_STYLE, sortRoles } from '../lib/chipStyles'
+import { COUNT_BADGE, displayName, ROLE_CHIP, TOOLTIP_STYLE, sortRoles } from '../lib/chipStyles'
 import { SECTION_LABEL, CHROME_TEXT, FONT_SANS, FORM_LABEL } from '../lib/textStyles'
 import { HoverTooltip } from '../components/HoverTooltip'
 import { SubjectsTrigger, SubjectsPanel } from '../components/SubjectsDisclosure'
@@ -67,7 +68,7 @@ import { CollapsibleSection } from '../components/CollapsibleSection'
 import { ProviderExtrasList } from '../components/ProviderExtras'
 import type { BillExtras } from '../../../shared/providerExtras'
 import { RELATIONSHIP_KINDS, RELATIONSHIP_KIND_LABELS, isRelationshipKind, type RelationshipKind } from '../../../shared/relationshipKinds'
-import type { GroupBill, GroupingEvent, GroupNote } from '../../../shared/companionGroups'
+import type { GroupBill, GroupBillLink, GroupingEvent, GroupNote } from '../../../shared/companionGroups'
 import { GroupWithDialog } from '../components/GroupWithDialog'
 import { splitConfirmText } from '../lib/splitConfirm'
 import { placeGroupingLines } from '../lib/groupingLine'
@@ -450,7 +451,6 @@ type BillDetailData = {
   voteSummary?: VoteSummaryEntry[]
   subjects: string[]
   relatedBillIds: RelatedBill[]
-  companionBillIds: string[]
   texts: {
     docId: string
     type: string
@@ -530,7 +530,7 @@ type BillDetailData = {
   /** Where the bill's companion group formed or split, for the lines in its comment thread. */
   groupingEvents?: GroupingEvent[]
   /** The bills in its companion group, this one first: just this one in no group. */
-  groupBills?: GroupBill[]
+  groupBills?: GroupBillLink[]
   priorityMeta: { setByName: string; updatedAt: string } | null
   position: { position: string; setByName: string; updatedAt: string } | null
   voteCounts: { support: number; oppose: number; neutral: number; total: number }
@@ -1376,18 +1376,30 @@ export function BillDetail() {
 
         {/* Chip strip */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: (priorityMeta || (isAdmin && bill.matchType === 'keyword' && !!bill.newMatchAt && !priority && !bill.triagedAt && !triageDismissed)) ? 20 : 12 }}>
-          <BillBadge
-            billNumber={bill.billNumber}
-            state={bill.state}
-            isDraft={bill.isDraft}
-            stateUrl={(() => {
-              if (!config || !multiState) return undefined
-              const isHub = window.location.hostname === 'staging.example.com' || window.location.hostname === 'staging.example.org' || window.location.hostname === 'localhost'
-              const instanceDomain = config.instanceDomains[bill.state]
-              if (!isHub || !instanceDomain) return undefined
-              return `https://${instanceDomain}${window.location.pathname}`
-            })()}
-          />
+          {/* A badge for each bill in the group, this page's bill first, as the
+              bill list's group row shows them. Each companion links to its page. */}
+          <div data-testid="bill-group-badges" style={{ display: 'contents' }}>
+            <BillBadge
+              billNumber={bill.billNumber}
+              state={bill.state}
+              isDraft={bill.isDraft}
+              stateUrl={(() => {
+                if (!config || !multiState) return undefined
+                const isHub = window.location.hostname === 'staging.example.com' || window.location.hostname === 'staging.example.org' || window.location.hostname === 'localhost'
+                const instanceDomain = config.instanceDomains[bill.state]
+                if (!isHub || !instanceDomain) return undefined
+                return `https://${instanceDomain}${window.location.pathname}`
+              })()}
+            />
+            {(bill.groupBills ?? []).filter(g => g.billId !== bill.id).map(g => (
+              <BillBadge
+                key={g.billId}
+                billNumber={g.billNumber}
+                state={g.state}
+                to={billUrl({ id: g.billId, state: g.state, sessionSlug: g.sessionSlug, billNumber: g.billNumber })}
+              />
+            ))}
+          </div>
           {bill.isDraft ? <DraftChip /> : (() => {
             const chip = <StatusChip status={decodeStatus(bill.status)} describedBy={statusExplainer ? 'bill-status-explainer' : undefined} onClick={() => navigate(`/bills?status=${encodeURIComponent(bill.status)}`)} />
             // The chip is already a focusable button, so HoverTooltip adds no tab stop; the chip points at its hidden copy.
@@ -1524,7 +1536,7 @@ export function BillDetail() {
                 menuRows.push({
                   key: 'group-with',
                   label: 'Group with…',
-                  description: 'Share one discussion and the team\'s values with an identical bill.',
+                  description: `Share ${groupSharedThings(config?.orgNoun ?? DEFAULT_ORG_NOUN, customFieldDefs.length > 0)} with an identical bill.`,
                   disabled: demoLocked,
                   onSelect: () => setGroupWithOpen(true),
                 })
@@ -1533,7 +1545,7 @@ export function BillDetail() {
                 menuRows.push({
                   key: 'split',
                   label: 'Split from group',
-                  description: `Give ${bill.billNumber} back its own discussion and the team's values.`,
+                  description: `Give ${bill.billNumber} back its own ${groupSharedThings(config?.orgNoun ?? DEFAULT_ORG_NOUN, customFieldDefs.length > 0)}.`,
                   disabled: splitting || demoLocked,
                   onSelect: async () => {
                     if (splitting || demoLocked) return
@@ -1542,7 +1554,7 @@ export function BillDetail() {
                       // The server says what the split would leave, so the
                       // confirmation can name bills that would come apart.
                       const preview = await apiFetch<{ billNumber: string; parts: GroupBill[][] }>(`/bills/${bill.id}/split-preview`)
-                      if (!window.confirm(splitConfirmText(bill.billNumber, preview.parts.map(part => part.map(b => b.billNumber))))) return
+                      if (!window.confirm(splitConfirmText(bill.billNumber, preview.parts.map(part => part.map(b => b.billNumber)), config?.orgNoun ?? DEFAULT_ORG_NOUN, customFieldDefs.length > 0))) return
                       await apiFetch(`/bills/${bill.id}/split`, { method: 'POST' })
                       await refetchBill()
                     } catch {
@@ -1721,12 +1733,16 @@ export function BillDetail() {
           const bodyLabel = chamberLabel ? `${chamberLabel} ${typeNoun}` : null
           const typeLabel = null
           // One line for each kind, identical companions first, whatever labels the legislature used.
+          // The header's badges already name the identical bills in the group, so
+          // this line lists only the identical bills outside it.
+          const groupIds = new Set((bill.groupBills ?? []).map(g => g.billId))
+          const listedRelated = bill.relatedBillIds.filter(r => !(r.kind === 'identical' && r.route && groupIds.has(r.route.id)))
           const grouped = new Map<RelationshipKind, RelatedBill[]>()
           for (const kind of RELATIONSHIP_KINDS) {
-            const ofKind = bill.relatedBillIds.filter(r => (isRelationshipKind(r.kind) ? r.kind : 'related') === kind)
+            const ofKind = listedRelated.filter(r => (isRelationshipKind(r.kind) ? r.kind : 'related') === kind)
             if (ofKind.length > 0) grouped.set(kind, ofKind)
           }
-          const hasAny = bodyLabel || typeLabel || (bill.calendar ?? []).some(e => e.kind === 'deadline') || bill.relatedBillIds.length > 0 || bill.companionBillIds.length > 0 || bill.stateUrl || bill.stateLink || bill.legiscanUrl || (bill.subjects ?? []).length > 0
+          const hasAny = bodyLabel || typeLabel || (bill.calendar ?? []).some(e => e.kind === 'deadline') || listedRelated.length > 0 || bill.stateUrl || bill.stateLink || bill.legiscanUrl || (bill.subjects ?? []).length > 0
           if (!hasAny) return null
 
           // Collect all display items, then render with · separators only between items
@@ -1774,12 +1790,6 @@ export function BillDetail() {
               </span>
             )
           })
-          bill.companionBillIds.forEach((cid, i) => metaItems.push(
-            <span key={`comp-${i}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ color: color.textMuted }}>Companion:</span>
-              <span>{String(cid)}</span>
-            </span>
-          ))
           if ((bill.subjects ?? []).length > 0) metaItems.push(
             <SubjectsTrigger
               key="subjects"
@@ -2865,6 +2875,29 @@ export function BillDetail() {
         )}
       </div>
 
+      {/* Why values this page never set appear here: the group's other bills share them. */}
+      {(() => {
+        const companions = (bill.groupBills ?? []).filter(g => g.billId !== bill.id)
+        if (companions.length === 0) return null
+        return (
+          <p data-testid="group-shares-line" style={{ margin: '16px 0 0', fontSize: fontSize.sm, lineHeight: 1.6, color: color.textMuted }}>
+            {upperFirst(groupSharedThings(config?.orgNoun ?? DEFAULT_ORG_NOUN, customFieldDefs.length > 0))} are shared with{' '}
+            {companions.map((g, i) => (
+              <Fragment key={g.billId}>
+                {i === 0 ? null : companions.length === 2 ? ' and ' : i === companions.length - 1 ? ', and ' : ', '}
+                <BillBadge
+                  mini
+                  billNumber={g.billNumber}
+                  state={g.state}
+                  to={billUrl({ id: g.billId, state: g.state, sessionSlug: g.sessionSlug, billNumber: g.billNumber })}
+                />
+              </Fragment>
+            ))}
+            .
+          </p>
+        )
+      })()}
+
       {/* Two-column layout */}
       <div className="bill-detail-columns" style={{ display: 'flex', gap: 24, padding: '24px 0' }}>
 
@@ -2887,6 +2920,7 @@ export function BillDetail() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                   {/* Comment header (name / title / date) — shared with the
                       @-mention email's card row via COMMENT_STYLE; keep both in sync there. */}
+                  <span>
                   <span
                     style={{ fontSize: COMMENT_STYLE.nameSize, fontWeight: COMMENT_STYLE.nameWeight, color: COMMENT_STYLE.nameColor, position: 'relative', cursor: 'default' }}
                     onMouseEnter={() => setHoveredCommentUser(comment.id)}
@@ -2895,10 +2929,6 @@ export function BillDetail() {
                     {comment.userName}
                     {comment.userTitle && (
                       <span style={{ fontSize: COMMENT_STYLE.titleSize, fontWeight: COMMENT_STYLE.titleWeight, color: COMMENT_STYLE.titleColor, marginLeft: 4 }}>{comment.userTitle}</span>
-                    )}
-                    {/* A comment posted on a companion in this bill's group. */}
-                    {comment.billId && comment.billId !== bill.id && comment.billNumber && (
-                      <span title={`Posted on ${comment.billNumber}`} style={{ ...COMPANION_TAG, marginLeft: 6 }}>{comment.billNumber}</span>
                     )}
                     {hoveredCommentUser === comment.id && (() => {
                       const commenter = usersData.find(u => u.id === comment.userId)
@@ -2922,6 +2952,27 @@ export function BillDetail() {
                         </div>
                       )
                     })()}
+                  </span>
+                  {/* A comment posted on a companion in this bill's group: that bill's
+                      badge. One from a bill no longer in the group (split off since the
+                      page loaded) has no state or session here, so it links by id. */}
+                  {comment.billId && comment.billId !== bill.id && comment.billNumber && (() => {
+                    const posted = (bill.groupBills ?? []).find(g => g.billId === comment.billId)
+                    const describeId = `posted-on-${comment.id}`
+                    return (
+                      <span style={{ marginLeft: 6 }}>
+                        <HoverTooltip text={`Posted on ${comment.billNumber}`} describe={{ id: describeId, interactive: true }}>
+                          <BillBadge
+                            mini
+                            billNumber={comment.billNumber}
+                            state={posted?.state}
+                            to={billUrl({ id: comment.billId, state: posted?.state, sessionSlug: posted?.sessionSlug, billNumber: comment.billNumber })}
+                            describedBy={describeId}
+                          />
+                        </HoverTooltip>
+                      </span>
+                    )
+                  })()}
                   </span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span title={absoluteTime(comment.createdAt)} style={{ fontSize: COMMENT_STYLE.dateSize, color: COMMENT_STYLE.dateColor, cursor: 'default' }}>{relativeTime(comment.createdAt)}</span>
@@ -3147,6 +3198,7 @@ export function BillDetail() {
           billId={bill.id}
           billNumber={bill.billNumber}
           groupBillIds={(bill.groupBills ?? []).map(b => b.billId).concat(bill.id)}
+          shares={groupSharedThings(config?.orgNoun ?? DEFAULT_ORG_NOUN, customFieldDefs.length > 0, 'and', true)}
           onClose={() => setGroupWithOpen(false)}
           onGrouped={() => { setGroupWithOpen(false); void refetchBill() }}
         />
