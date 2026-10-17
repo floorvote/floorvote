@@ -479,4 +479,177 @@ describe('muting comments on a bill', () => {
     expect(ben.html).not.toContain('Mute this bill')
     expect(ben.html).not.toContain('/mute-bill')
   })
+
+  // The page shows Mute only to a participant: someone the reply fan-out would
+  // notify. The route returns that as `commentsParticipant`, decided by the same
+  // helper the fan-out uses, so the control and the emails cannot disagree.
+  describe('who the bill page offers Mute to', () => {
+    async function participantOnPage(as: string, onBill = billId) {
+      const res = await request(`/api/bills/${onBill}`, 'GET', as)
+      expect(res.status).toBe(200)
+      return (await res.json() as { commentsParticipant: boolean }).commentsParticipant
+    }
+    const react = (as: string, onComment: string) =>
+      request(`/api/comments/${onComment}/reactions`, 'POST', as, { emoji: '\u{1F44D}' })
+    async function putInGroup(...billIds: string[]) {
+      const key = [...billIds].sort()[0]
+      for (const id of billIds) await getDb(env.DB).update(bills).set({ groupKey: key }).where(eq(bills.id, id))
+    }
+
+    it('offers Mute to a member who commented on the bill', async () => {
+      await comment('ben', '<p>My view</p>')
+
+      expect(await participantOnPage('ben')).toBe(true)
+    })
+
+    it('offers no Mute to a member with no involvement in the bill', async () => {
+      await comment('ben', '<p>My view</p>')
+
+      expect(await participantOnPage('cara')).toBe(false)
+    })
+
+    it('offers no Mute to a member who was only mentioned', async () => {
+      await comment('ann', `<p>${userMention(ids.cara, 'Cara')} thoughts?</p>`)
+
+      expect(await participantOnPage('cara')).toBe(false)
+    })
+
+    it('offers no Mute to a member who has only reacted', async () => {
+      const commentId = await comment('ann', '<p>A thought</p>')
+      expect((await react('cara', commentId)).status).toBe(200)
+
+      expect(await participantOnPage('cara')).toBe(false)
+    })
+
+    it('offers no Mute to a member who has only voted on the bill or written a note on it', async () => {
+      expect((await request(`/api/bills/${billId}/votes`, 'POST', 'cara', { position: 'support' })).status).toBeLessThan(300)
+      expect((await request(`/api/bills/${billId}/note`, 'PUT', 'cara', { content: '<p>Private</p>' })).status).toBe(200)
+
+      expect(await participantOnPage('cara')).toBe(false)
+    })
+
+    it('offers no Mute to an admin who has not commented, and offers it once they do', async () => {
+      expect(await participantOnPage('ann')).toBe(false)
+
+      await comment('ann', '<p>Admin view</p>')
+
+      expect(await participantOnPage('ann')).toBe(true)
+    })
+
+    it('stops offering Mute once the member\'s only comment is deleted', async () => {
+      const commentId = await comment('ben', '<p>Never mind</p>')
+      expect(await participantOnPage('ben')).toBe(true)
+
+      expect((await request(`/api/comments/${commentId}`, 'DELETE', 'ben')).status).toBe(200)
+
+      expect(await participantOnPage('ben')).toBe(false)
+    })
+
+    it('keeps offering Mute while one live comment remains after another is deleted', async () => {
+      const first = await comment('ben', '<p>First</p>')
+      await comment('ben', '<p>Second</p>')
+
+      await request(`/api/comments/${first}`, 'DELETE', 'ben')
+
+      expect(await participantOnPage('ben')).toBe(true)
+    })
+
+    it('still reports a mute on a bill the member never commented on, so the page can offer Unmute', async () => {
+      await mute('cara')
+
+      expect(await mutedOnPage('cara')).toBe(true)
+      expect(await participantOnPage('cara')).toBe(false)
+    })
+
+    it('reports a muted participant as both, and unmuting leaves them a participant', async () => {
+      await comment('ben', '<p>My view</p>')
+      await mute('ben')
+
+      expect(await mutedOnPage('ben')).toBe(true)
+      expect(await participantOnPage('ben')).toBe(true)
+
+      await unmute('ben')
+
+      expect(await mutedOnPage('ben')).toBe(false)
+      expect(await participantOnPage('ben')).toBe(true)
+    })
+
+    it('offers Mute to a participant who turned reply emails off, who still gets reply notifications in the app', async () => {
+      await member('Dee')
+      await getDb(env.DB).update(users).set({ emailRepliesEnabled: 0 }).where(eq(users.id, ids.dee))
+      await comment('dee', '<p>Quiet one</p>')
+      send.mockClear()
+
+      expect(await participantOnPage('dee')).toBe(true)
+      const commentId = await comment('ann', '<p>Reply</p>')
+      expect(await inboxFor('dee', commentId)).toEqual(['reply'])
+      expect(emailedTo()).not.toContain('dee@example.com')
+    })
+
+    describe('in a companion group, which shares one conversation', () => {
+      let companion: string
+
+      beforeEach(async () => {
+        companion = await seedBill({ billNumber: 'SB 1' })
+        await putInGroup(billId, companion)
+      })
+
+      it('offers Mute on every bill in the group to a member who commented on only one of them', async () => {
+        await comment('ben', '<p>On the senate bill</p>', companion)
+
+        expect(await participantOnPage('ben')).toBe(true)
+        expect(await participantOnPage('ben', companion)).toBe(true)
+        expect(await participantOnPage('cara')).toBe(false)
+        expect(await participantOnPage('cara', companion)).toBe(false)
+      })
+
+      it('offers no Mute for a group once the only comment in it is deleted', async () => {
+        const commentId = await comment('ben', '<p>On the senate bill</p>', companion)
+        await request(`/api/comments/${commentId}`, 'DELETE', 'ben')
+
+        expect(await participantOnPage('ben')).toBe(false)
+      })
+
+      it('does not carry a comment on an unrelated bill into the group', async () => {
+        const unrelated = await seedBill({ billNumber: 'HB 77' })
+        await comment('ben', '<p>Somewhere else</p>', unrelated)
+
+        expect(await participantOnPage('ben')).toBe(false)
+        expect(await participantOnPage('ben', unrelated)).toBe(true)
+      })
+
+      it('shows a muted group as muted to a member who never commented in it', async () => {
+        await mute('cara', companion)
+
+        expect(await mutedOnPage('cara')).toBe(true)
+        expect(await participantOnPage('cara')).toBe(false)
+      })
+    })
+
+    // The control and the emails decide with one helper, so for every kind of
+    // member the flag says yes exactly when a new comment would notify them.
+    it('agrees with the reply fan-out for each kind of member', async () => {
+      const companion = await seedBill({ billNumber: 'SB 1' })
+      await putInGroup(billId, companion)
+      for (const name of ['Dan', 'Eve', 'Finn', 'Gus']) await member(name)
+      await comment('ben', '<p>On this bill</p>')
+      await comment('cara', '<p>On the companion</p>', companion)
+      const soonGone = await comment('dan', '<p>Deleted soon</p>')
+      await request(`/api/comments/${soonGone}`, 'DELETE', 'dan')
+      const anchor = await comment('ann', `<p>${userMention(ids.eve, 'Eve')} look</p>`)
+      expect((await react('finn', anchor)).status).toBe(200)
+      // Gus has no involvement at all.
+      const everyone = ['ben', 'cara', 'dan', 'eve', 'finn', 'gus']
+
+      const flags: Record<string, boolean> = {}
+      for (const who of everyone) flags[who] = await participantOnPage(who)
+      send.mockClear()
+      const newComment = await comment('ann', '<p>A new reply</p>')
+      const notified: Record<string, boolean> = {}
+      for (const who of everyone) notified[who] = (await inboxFor(who, newComment)).includes('reply')
+
+      expect(flags).toEqual({ ben: true, cara: true, dan: false, eve: false, finn: false, gus: false })
+      expect(notified).toEqual(flags)
+    })
+  })
 })
