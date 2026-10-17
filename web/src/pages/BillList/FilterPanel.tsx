@@ -6,6 +6,7 @@ import { useStickyGroupedVirtualList, getRowWrapperStyle } from '../../component
 import { StickyGroupHeader } from '../../components/ui/StickyGroupHeader'
 import { filterDimensionLabel } from '../../lib/filterDimensions'
 import { useMenuAlign } from '../../hooks/useMenuAlign'
+import { isSubjectCapReached, subjectCapHint } from '../../lib/subjectCap'
 import type { SortColumn, SortDir } from './types'
 
 // Sentinel filter value: "has any value in this dimension" (sparse dimensions only —
@@ -439,12 +440,16 @@ export function SubjectFilterDropdown({
 
   if (subjectGroups.length === 0) return null
 
+  // At the cap the unchecked options are disabled, so a 41st subject (which the
+  // API would answer with a 400) cannot be picked. Unchecking one re-enables them.
+  const capReached = isSubjectCapReached(selectedSubjects.length)
+
   function toggle(value: string) {
-    onSubjectChange(
-      selectedSubjects.includes(value)
-        ? selectedSubjects.filter(v => v !== value)
-        : [...selectedSubjects, value],
-    )
+    if (selectedSubjects.includes(value)) {
+      onSubjectChange(selectedSubjects.filter(v => v !== value))
+    } else if (!capReached) {
+      onSubjectChange([...selectedSubjects, value])
+    }
   }
 
   const hasSelection = selectedSubjects.length > 0
@@ -559,6 +564,11 @@ export function SubjectFilterDropdown({
                   border: `1px solid ${color.borderDefault}`, borderRadius: radius.md,
                 }}
               />
+              {capReached && (
+                <div style={{ paddingTop: 6, fontSize: fontSize.sm, color: color.textMuted }}>
+                  {subjectCapHint(selectedSubjects.length)}
+                </div>
+              )}
             </div>
             {rows.length === 0 ? (
               <div style={{ padding: '16px 12px', fontSize: fontSize.sm, color: color.textMuted }}>
@@ -581,13 +591,16 @@ export function SubjectFilterDropdown({
                           <label style={{
                             height: SUBJECT_OPTION_ROW_HEIGHT, boxSizing: 'border-box',
                             display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px',
-                            cursor: 'pointer', fontSize: fontSize.sm,
+                            cursor: capReached && !selectedSubjects.includes(row.value) ? 'not-allowed' : 'pointer',
+                            fontSize: fontSize.sm,
+                            opacity: capReached && !selectedSubjects.includes(row.value) ? 0.5 : 1,
                             color: selectedSubjects.includes(row.value) ? color.linkBlue : color.textSlate,
                             background: selectedSubjects.includes(row.value) ? color.bgInfo : color.white,
                           }}>
                             <input
                               type="checkbox"
                               checked={selectedSubjects.includes(row.value)}
+                              disabled={capReached && !selectedSubjects.includes(row.value)}
                               onChange={() => toggle(row.value)}
                               style={{ margin: 0, accentColor: color.accentBlue, flexShrink: 0 }}
                             />

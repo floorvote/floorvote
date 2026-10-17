@@ -545,17 +545,21 @@ describe('BillList with a link already over the subject limit', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: new RegExp(`Subject.*\\(${MAX_SUBJECT_FILTERS + 1}\\)`) }))
     expect(screen.getByText(`${HINT} This filter has ${MAX_SUBJECT_FILTERS + 1}. Remove 1 to continue.`)).toBeInTheDocument()
-    const elections = screen.getByText('Elections').closest('label')!.querySelector('input') as HTMLInputElement
-    expect(elections.disabled).toBe(true)
+    // The same names also label the active-filter chips, so look only inside the open picker.
+    const picker = () => within(screen.getByRole('group', { name: /subject/i }))
+    const option = (label: string) => picker().getByText(label).closest('label')!.querySelector('input') as HTMLInputElement
+    expect(option('Elections').disabled).toBe(true)
 
     // Unchecking one subject leaves 40: allowed, but the picker is still full.
-    fireEvent.click(screen.getByText('Counties'))
+    fireEvent.click(picker().getByText('Counties'))
     await waitFor(() => {
       const loc = screen.getByTestId('loc').textContent ?? ''
       expect(new URLSearchParams(loc.split('?')[1]).getAll('subject')).toHaveLength(MAX_SUBJECT_FILTERS)
     })
+    // The toolbar remounts on the new URL, which closes the picker; open it again.
+    fireEvent.click(await screen.findByRole('button', { name: new RegExp(`Subject.*\\(${MAX_SUBJECT_FILTERS}\\)`) }))
     expect(screen.getByText(HINT)).toBeInTheDocument()
-    expect((screen.getByText('Elections').closest('label')!.querySelector('input') as HTMLInputElement).disabled).toBe(true)
+    expect(option('Elections').disabled).toBe(true)
   })
 })
 

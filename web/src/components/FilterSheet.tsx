@@ -734,6 +734,7 @@ export function FilterSheet({
               groups={subjectGroups.map(group => ({ key: group.state, heading: group.state, options: group.options }))}
               selected={subjects}
               onToggle={(value) => toggleItem(subjects, value, onSubjectChange)}
+              limitSubjects
             />
           )}
 

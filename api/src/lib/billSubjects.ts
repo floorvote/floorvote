@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { associationConfig, billSubjects } from '../db/schema'
 import type { AppDb } from '../types'
+import { MAX_SUBJECT_FILTERS } from '../../../shared/limits'
 
 /**
  * Drop non-strings, empty strings, and duplicates, preserving first-occurrence
@@ -58,7 +59,8 @@ export function decodeSubjectFilter(value: string): { state: string; name: strin
 // can't push a query (which may share the statement with other filters) over
 // the limit and 500. A request over the cap is rejected with a 400, never
 // truncated (decodeSubjectFiltersChecked).
-export const MAX_SUBJECT_FILTERS = 40
+// The number itself lives in shared/limits, where the web pickers read it too.
+export { MAX_SUBJECT_FILTERS }
 
 /**
  * Decode a raw list of `subject` query values, dropping malformed entries, and
