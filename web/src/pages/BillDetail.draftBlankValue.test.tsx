@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { BillDetail } from './BillDetail'
 import * as api from '../lib/api'
 import { REQUIRED_MESSAGE } from '../components/RequiredField'
+import { expectPrimaryButtonLegible } from '../test/colorTokens'
 import { itGatesQuietly, expectMessageShown, expectMessageHidden, expectQuietlyBlocked, gateMessage } from '../test/quietGate'
 
 // The draft bill-number and State inline editors refuse a blank value with the
@@ -87,7 +88,6 @@ const DRAFT = {
   voteSummary: [],
   subjects: [],
   relatedBillIds: [],
-  companionBillIds: [],
   texts: [],
   calendar: [],
   supplements: [],
@@ -540,5 +540,26 @@ describe('BillDetail draft State editor (Picker): blank value', () => {
     await user.click(screen.getByRole('button', { name: 'Edit state' }))
     await chooseNone(user, await screen.findByRole('button', { name: 'State (required)' }))
     expectMessageHidden(saveButton())
+  })
+})
+
+// Draft editors' Save buttons are primary (solid blue). Nothing around one may dim
+// it: an `opacity` on the button or any ancestor would pull its label below AA.
+describe('BillDetail draft editors: Save button is not dimmed', () => {
+  it.each([
+    ['title', 'Edit title'],
+    ['sponsor', 'Edit sponsor'],
+    ['bill number', 'Edit bill number'],
+    ['year', 'Edit year'],
+  ])('%s editor Save: no opacity on it or any ancestor, AA in both modes', async (_field, label) => {
+    const user = userEvent.setup()
+    mockApi({ tenantState: 'RI' })
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: label }))
+    const save = saveButton()
+    for (let el: HTMLElement | null = save; el; el = el.parentElement) {
+      expect(el.style.opacity, `${el.tagName} ancestor of Save`).toBe('')
+    }
+    expectPrimaryButtonLegible(save, { disabled: false })
   })
 })

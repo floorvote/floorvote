@@ -216,6 +216,256 @@ describe('POST /admin/dash/auth/login', () => {
   })
 })
 
+describe('POST /admin/dash/auth/login — sender gate (Cloudflare Email or Resend)', () => {
+  type Sent = { to: string | string[]; from: string; subject: string; html?: string; text?: string }
+
+  function fakeBinding(opts: { fail?: boolean } = {}) {
+    const sent: Sent[] = []
+    return {
+      sent,
+      binding: {
+        send: async (m: Sent) => {
+          if (opts.fail) throw Object.assign(new Error('binding exploded: secret-detail-xyz'), { code: 'E_SENDER_NOT_VERIFIED' })
+          sent.push(m)
+          return {}
+        },
+      },
+    }
+  }
+
+  // Env with no sender configured; each test layers on what it needs.
+  const BASE_ENV: any = { ...TEST_ENV, RESEND_API_KEY: undefined, EMAIL: undefined, EMAIL_PROVIDER: undefined }
+
+  function login(email: string, envOverride: any, extraHeaders: Record<string, string> = {}) {
+    return app.fetch(
+      new Request('http://central/admin/dash/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...extraHeaders },
+        body: JSON.stringify({ email }),
+      }),
+      envOverride,
+    )
+  }
+
+  function stubResendFetch() {
+    return vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, status: 200, text: () => Promise.resolve('') } as Response)
+  }
+
+  const okBody = async (res: Response) => {
+    const b = await res.json() as { data: { ok: boolean }; meta: { generatedAt: string } }
+    return b.data
+  }
+
+  it('sends one email through the Cloudflare binding with no RESEND_API_KEY', async () => {
+    const { sent, binding } = fakeBinding()
+    const fetchSpy = stubResendFetch()
+    const res = await login('admin@example.com', { ...BASE_ENV, EMAIL_PROVIDER: 'cloudflare', EMAIL: binding })
+    expect(res.status).toBe(200)
+    expect(await okBody(res)).toEqual({ ok: true })
+    expect(sent).toHaveLength(1)
+    expect(sent[0].to).toEqual(['admin@example.com'])
+    expect(fetchSpy).not.toHaveBeenCalled()
+    const db = drizzle(env.DB, { schema })
+    expect((await db.select().from(schema.magicLinks).all()).length).toBe(1)
+  })
+
+  it('keeps the magic link and token unchanged when sent through the binding', async () => {
+    const { sent, binding } = fakeBinding()
+    await login('admin@example.com', { ...BASE_ENV, EMAIL_PROVIDER: 'cloudflare', EMAIL: binding })
+    expect(sent).toHaveLength(1)
+    const m = (sent[0].text ?? '').match(/https:\/\/admin\.test\/admin\/dash\/auth\/callback\?token=([0-9a-zA-Z%_-]+)/)
+    expect(m).not.toBeNull()
+    expect(sent[0].html).toContain(`https://admin.test/admin/dash/auth/callback?token=${m![1]}`)
+    const rawToken = decodeURIComponent(m![1])
+    expect(rawToken.length).toBeGreaterThanOrEqual(32)
+    const db = drizzle(env.DB, { schema })
+    const link = await db.select().from(schema.magicLinks).where(eq(schema.magicLinks.tokenHash, await hashToken(rawToken))).get()
+    expect(link?.email).toBe('admin@example.com')
+    expect(link?.usedAt).toBeNull()
+    // 30-minute TTL is unchanged.
+    const ttl = new Date(link!.expiresAt).getTime() - Date.now()
+    expect(ttl).toBeGreaterThan(29 * 60_000)
+    expect(ttl).toBeLessThanOrEqual(30 * 60_000)
+    expect(sent[0].subject).toMatch(/sign-in link/)
+  })
+
+  it('falls back to the existing Resend sender when the binding is absent', async () => {
+    const fetchSpy = stubResendFetch()
+    const res = await login('admin@example.com', { ...BASE_ENV, RESEND_API_KEY: 'rk_test', EMAIL_PROVIDER: 'cloudflare', EMAIL: undefined })
+    expect(res.status).toBe(200)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(String(fetchSpy.mock.calls[0][0])).toBe('https://api.resend.com/emails')
+  })
+
+  it('leaves Resend-only behavior unchanged', async () => {
+    const fetchSpy = stubResendFetch()
+    const res = await login('admin@example.com', { ...BASE_ENV, RESEND_API_KEY: 'rk_test' })
+    expect(res.status).toBe(200)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    const db = drizzle(env.DB, { schema })
+    expect((await db.select().from(schema.magicLinks).all()).length).toBe(1)
+  })
+
+  it('uses Resend, not the binding, when EMAIL_PROVIDER=resend even if a binding exists', async () => {
+    const { sent, binding } = fakeBinding()
+    const fetchSpy = stubResendFetch()
+    await login('admin@example.com', { ...BASE_ENV, RESEND_API_KEY: 'rk_test', EMAIL_PROVIDER: 'resend', EMAIL: binding })
+    expect(sent).toHaveLength(0)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends nothing when a binding exists but EMAIL_PROVIDER is not cloudflare and no Resend key is set', async () => {
+    const { sent, binding } = fakeBinding()
+    const fetchSpy = stubResendFetch()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const res = await login('admin@example.com', { ...BASE_ENV, EMAIL_PROVIDER: 'resend', EMAIL: binding })
+    expect(res.status).toBe(200)
+    expect(sent).toHaveLength(0)
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(warn).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends nothing, inserts nothing, and warns naming the sender when no sender is configured', async () => {
+    const fetchSpy = stubResendFetch()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const res = await login('admin@example.com', BASE_ENV)
+    expect(res.status).toBe(200)
+    expect(await okBody(res)).toEqual({ ok: true })
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(warn).toHaveBeenCalledTimes(1)
+    const msg = String(warn.mock.calls[0][0])
+    expect(msg).toContain('RESEND_API_KEY')
+    expect(msg).toContain('EMAIL')
+    expect(msg).not.toContain('ADMIN_APP_URL')
+    const db = drizzle(env.DB, { schema })
+    expect((await db.select().from(schema.magicLinks).all()).length).toBe(0)
+  })
+
+  it('sends nothing and warns naming ADMIN_APP_URL when it is unset (binding configured)', async () => {
+    const { sent, binding } = fakeBinding()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const res = await login('admin@example.com', { ...BASE_ENV, ADMIN_APP_URL: undefined, EMAIL_PROVIDER: 'cloudflare', EMAIL: binding })
+    expect(res.status).toBe(200)
+    expect(sent).toHaveLength(0)
+    expect(warn).toHaveBeenCalledTimes(1)
+    const msg = String(warn.mock.calls[0][0])
+    expect(msg).toContain('ADMIN_APP_URL')
+    expect(msg).not.toContain('RESEND_API_KEY')
+  })
+
+  it('names both when neither a sender nor ADMIN_APP_URL is configured', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const res = await login('admin@example.com', { ...BASE_ENV, ADMIN_APP_URL: undefined })
+    expect(res.status).toBe(200)
+    const msg = String(warn.mock.calls[0][0])
+    expect(msg).toContain('ADMIN_APP_URL')
+    expect(msg).toContain('RESEND_API_KEY')
+  })
+
+  it('sends nothing with Resend configured but ADMIN_APP_URL unset', async () => {
+    const fetchSpy = stubResendFetch()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const res = await login('admin@example.com', { ...BASE_ENV, RESEND_API_KEY: 'rk_test', ADMIN_APP_URL: undefined })
+    expect(res.status).toBe(200)
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(String(warn.mock.calls[0][0])).toContain('ADMIN_APP_URL')
+  })
+
+  it('gives an unlisted address the identical response and sends nothing, in every configuration', async () => {
+    const { sent, binding } = fakeBinding()
+    const fetchSpy = stubResendFetch()
+    const configs: any[] = [
+      { ...BASE_ENV, EMAIL_PROVIDER: 'cloudflare', EMAIL: binding },
+      { ...BASE_ENV, RESEND_API_KEY: 'rk_test' },
+      { ...BASE_ENV, RESEND_API_KEY: 'rk_test', EMAIL_PROVIDER: 'cloudflare', EMAIL: binding },
+      BASE_ENV,
+      { ...BASE_ENV, ADMIN_APP_URL: undefined, EMAIL_PROVIDER: 'cloudflare', EMAIL: binding },
+    ]
+    for (const cfg of configs) {
+      const listed = await login('outsider@example.com', cfg)
+      expect(listed.status).toBe(200)
+      expect(await okBody(listed)).toEqual({ ok: true })
+    }
+    expect(sent).toHaveLength(0)
+    expect(fetchSpy).not.toHaveBeenCalled()
+    const db = drizzle(env.DB, { schema })
+    expect((await db.select().from(schema.magicLinks).all()).length).toBe(0)
+  })
+
+  it('returns the same status and body shape for an unlisted and a listed address', async () => {
+    const { binding } = fakeBinding()
+    const cfg = { ...BASE_ENV, EMAIL_PROVIDER: 'cloudflare', EMAIL: binding }
+    const a = await login('admin@example.com', cfg)
+    const b = await login('outsider@example.com', cfg)
+    expect(a.status).toBe(b.status)
+    expect(await okBody(a)).toEqual(await okBody(b))
+    expect(a.headers.get('Content-Type')).toBe(b.headers.get('Content-Type'))
+  })
+
+  it('logs a binding send failure and still returns the plain 200 without leaking it', async () => {
+    const { binding } = fakeBinding({ fail: true })
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const res = await login('admin@example.com', { ...BASE_ENV, EMAIL_PROVIDER: 'cloudflare', EMAIL: binding })
+    expect(res.status).toBe(200)
+    const raw = await res.clone().text()
+    expect(raw).not.toContain('secret-detail-xyz')
+    expect(raw).not.toContain('E_SENDER_NOT_VERIFIED')
+    expect(await okBody(res)).toEqual({ ok: true })
+    expect(err).toHaveBeenCalled()
+    expect(err.mock.calls.map((c) => c.map(String).join(' ')).join('\n')).toContain('secret-detail-xyz')
+  })
+
+  it('logs a Resend send failure without leaking it to the response', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false, status: 500, text: () => Promise.resolve('resend-internal-detail') } as Response)
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const res = await login('admin@example.com', { ...BASE_ENV, RESEND_API_KEY: 'rk_test' })
+    expect(res.status).toBe(200)
+    expect(await res.clone().text()).not.toContain('resend-internal-detail')
+    expect(err).toHaveBeenCalled()
+  })
+
+  it('still applies the per-IP rate limit with the Cloudflare binding (429, no send)', async () => {
+    const { sent, binding } = fakeBinding()
+    const blockingLimiter = { limit: async () => ({ success: false }) }
+    const res = await login('admin@example.com', { ...BASE_ENV, EMAIL_PROVIDER: 'cloudflare', EMAIL: binding, LOGIN_RATE_LIMITER: blockingLimiter })
+    expect(res.status).toBe(429)
+    expect(sent).toHaveLength(0)
+  })
+
+  it('keys the rate limit on the client IP and lets an allowed request through the binding', async () => {
+    const { sent, binding } = fakeBinding()
+    const keys: string[] = []
+    const limiter = { limit: async ({ key }: { key: string }) => { keys.push(key); return { success: true } } }
+    const res = await login('admin@example.com', { ...BASE_ENV, EMAIL_PROVIDER: 'cloudflare', EMAIL: binding, LOGIN_RATE_LIMITER: limiter }, { 'CF-Connecting-IP': '203.0.113.9' })
+    expect(res.status).toBe(200)
+    expect(keys).toEqual(['dash-login:203.0.113.9'])
+    expect(sent).toHaveLength(1)
+  })
+
+  it('still caps active links per address with the Cloudflare binding (6th request sends nothing)', async () => {
+    const { sent, binding } = fakeBinding()
+    const cfg = { ...BASE_ENV, EMAIL_PROVIDER: 'cloudflare', EMAIL: binding }
+    for (let i = 0; i < 5; i++) {
+      const r = await login('admin@example.com', cfg)
+      expect(r.status).toBe(200)
+    }
+    expect(sent).toHaveLength(5)
+    const sixth = await login('admin@example.com', cfg)
+    expect(sixth.status).toBe(200)
+    expect(sent).toHaveLength(5)
+    const db = drizzle(env.DB, { schema })
+    expect((await db.select().from(schema.magicLinks).all()).length).toBe(5)
+  })
+
+  it('treats the allowlist case-insensitively and trims the address before sending via the binding', async () => {
+    const { sent, binding } = fakeBinding()
+    const res = await login('  Admin@Example.com ', { ...BASE_ENV, EMAIL_PROVIDER: 'cloudflare', EMAIL: binding })
+    expect(res.status).toBe(200)
+    expect(sent).toHaveLength(1)
+    expect(sent[0].to).toEqual(['admin@example.com'])
+  })
+})
+
 describe('GET /admin/dash/auth/config', () => {
   it('returns an empty sitekey when TURNSTILE_SITE_KEY is unset (fail-open)', async () => {
     const res = await app.fetch(new Request('http://central/admin/dash/auth/config'), { ...TEST_ENV, TURNSTILE_SITE_KEY: undefined })

@@ -7,13 +7,11 @@ import { DEFAULT_FULL_HOURS_ET, DEFAULT_RAW_HOURS_ET } from '../lib/sync-schedul
 import { getSettingNumber } from '../lib/settings'
 import { nowDb } from '../lib/dbTime'
 import { fetchAiUsage } from '../lib/aiGatewayAnalytics'
+import { legiscanCallsOnly, legiscanCallsThisMonth, monthStartDb } from '../lib/legiscanBudget'
 
-// Other providers' calls are logged to api_call_log too (callType '<provider
-// id>:<operation>', such as 'lims:Members'), but they are not LegiScan calls.
-// Every dashboard query uses this filter, so the dashboard shows only LegiScan
-// calls and they never count against the LegiScan monthly budget. LegiScan's own operation names
-// (getBill, getMasterListRaw, ...) have no colon.
-const legiscanCallsOnly = sql`${schema.apiCallLog.callType} NOT LIKE '%:%'`
+// Every dashboard query of api_call_log uses legiscanCallsOnly
+// (lib/legiscanBudget.ts), so the dashboard shows only LegiScan calls and other
+// providers' calls never count against the LegiScan monthly budget.
 
 export const dashRoutes = new Hono<DashEnv>()
 
@@ -65,16 +63,8 @@ dashRoutes.get('/overview', async (c) => {
     .where(isNull(schema.billTenants.matchType))
     .get()
 
-  // API budget: count of api_call_log this month
-  const monthStart = new Date()
-  monthStart.setUTCDate(1)
-  monthStart.setUTCHours(0, 0, 0, 0)
-  const apiUsedRow = await db
-    .select({ n: sql<number>`COUNT(*)` })
-    .from(schema.apiCallLog)
-    .where(and(gte(schema.apiCallLog.loggedAt, monthStart.toISOString()), legiscanCallsOnly))
-    .get()
-  const apiUsed = Number(apiUsedRow?.n ?? 0)
+  // API budget: this month's LegiScan calls, the count the stub refresh's budget floor reads too.
+  const apiUsed = await legiscanCallsThisMonth(db)
 
   // Last sync (per-state syncs; we pick the most recent)
   const lastSync = await db
@@ -316,14 +306,7 @@ dashRoutes.get('/sync/api-budget', async (c) => {
   const days = Math.min(Number(c.req.query('days') ?? 30), 90)
 
   // Monthly total
-  const monthStart = new Date()
-  monthStart.setUTCDate(1)
-  monthStart.setUTCHours(0, 0, 0, 0)
-  const mtdRow = await db
-    .select({ n: sql<number>`COUNT(*)` })
-    .from(schema.apiCallLog)
-    .where(and(gte(schema.apiCallLog.loggedAt, monthStart.toISOString()), legiscanCallsOnly))
-    .get()
+  const mtd = await legiscanCallsThisMonth(db)
 
   // Daily series: last `days` days
   const since = new Date()
@@ -355,7 +338,7 @@ dashRoutes.get('/sync/api-budget', async (c) => {
       calls: sql<number>`COUNT(*)`,
     })
     .from(schema.apiCallLog)
-    .where(and(gte(schema.apiCallLog.loggedAt, monthStart.toISOString()), legiscanCallsOnly))
+    .where(and(gte(schema.apiCallLog.loggedAt, monthStartDb(new Date())), legiscanCallsOnly))
     .groupBy(schema.apiCallLog.callType)
     .orderBy(desc(sql`COUNT(*)`))
     .limit(10)
@@ -385,7 +368,7 @@ dashRoutes.get('/sync/api-budget', async (c) => {
 
   return c.json({
     data: {
-      monthToDate: Number(mtdRow?.n ?? 0),
+      monthToDate: mtd,
       limit: legiscanLimit,
       daily,
       topCalls: topCalls.map(r => ({ callType: r.callType, calls: Number(r.calls) })),

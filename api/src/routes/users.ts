@@ -238,7 +238,10 @@ usersRouter.get('/me/bills', async (c) => {
   if (billIds.length === 0) return c.json([])
 
   const [billRows, positionRows] = await Promise.all([
-    db.select().from(bills).where(inArray(bills.id, billIds)).all(),
+    // Only the columns the list shows: a full row carries the analysis's
+    // claim sources JSON, which this page has no use for.
+    db.select({ id: bills.id, billNumber: bills.billNumber, title: bills.title, updatedAt: bills.updatedAt })
+      .from(bills).where(inArray(bills.id, billIds)).all(),
     db.select().from(officialPositions).where(inArray(officialPositions.billId, billIds)).all(),
   ])
 

@@ -71,15 +71,16 @@ describe('Profile heading structure', () => {
     expect(h1s[0]).toHaveTextContent('Profile')
   })
 
-  it('exposes the Your Email and Account section titles as level-2 headings', () => {
+  it('exposes the Notifications, Appearance, and Account section titles as level-2 headings', () => {
     mockConfig({})
     render(<MemoryRouter><Profile /></MemoryRouter>)
-    expect(screen.getByRole('heading', { level: 2, name: 'Your Email' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'Notifications' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'Appearance' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 2, name: 'Account' })).toBeInTheDocument()
   })
 })
 
-describe('Profile "Your Email" section', () => {
+describe('Profile Notifications section', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
     Element.prototype.scrollIntoView = vi.fn()
@@ -88,7 +89,7 @@ describe('Profile "Your Email" section', () => {
   it('holds the replies, digest, and week-ahead switches and states that mention emails are always sent', async () => {
     mockConfig({ 'email-digest': { enabled: true }, 'week-ahead': { enabled: true } })
     render(<MemoryRouter><Profile /></MemoryRouter>)
-    const heading = screen.getByRole('heading', { level: 2, name: 'Your Email' })
+    const heading = screen.getByRole('heading', { level: 2, name: 'Notifications' })
     const section = heading.parentElement as HTMLElement
     const replies = within(section).getByRole('switch', { name: /replies on bills you've commented on/i })
     expect(replies).toBeChecked()
@@ -153,7 +154,7 @@ describe('Profile Appearance control', () => {
   })
 
   function appearance() {
-    return within(screen.getByRole('group', { name: 'Appearance' }))
+    return within(screen.getByRole('group', { name: 'Color mode' }))
   }
 
   it('offers System, Light, and Dark, with System chosen by default', () => {
