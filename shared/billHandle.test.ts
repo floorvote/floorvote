@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { HANDLE_PREFIXES, NEUTRAL_HANDLE_PREFIX, handleForms, isHandle, legacyHandle, normalizeHandle, parseHandle, toHandle, toLegacyHandle } from './billHandle'
+import { HANDLE_PREFIXES, NEUTRAL_HANDLE_PREFIX, chunkedForms, handleForms, isHandle, legacyHandle, normalizeHandle, parseHandle, toHandle, toLegacyHandle } from './billHandle'
 
 describe('bill handles', () => {
   it('builds the legacy legiscan: form', () => {
@@ -131,5 +131,31 @@ describe('looking a bill up by handle', () => {
 
   it.each(['ocd-bill/abc', '', '501', 'bill:12abc'])('legacyHandle leaves %j as it is', (value) => {
     expect(legacyHandle(value)).toBe(value)
+  })
+})
+
+describe('chunkedForms', () => {
+  it('expands to both spellings before chunking, so no chunk binds more than its size', () => {
+    const handles = Array.from({ length: 60 }, (_, i) => `legiscan:${1000 + i}`)
+    const chunks = chunkedForms(handles, 40)
+    expect(chunks.map(c => c.length)).toEqual([40, 40, 40])
+    expect(chunks.flat()).toHaveLength(120)
+    expect(new Set(chunks.flat()).size).toBe(120)
+  })
+
+  it('names each bill by both spellings once, whichever spelling or repeat came in', () => {
+    expect(chunkedForms(['bill:7', 'legiscan:7', 'bill:7']).flat().sort()).toEqual(['bill:7', 'legiscan:7'])
+  })
+
+  it('keeps anything that is not a handle as the one spelling', () => {
+    expect(chunkedForms(['ocd-bill/abc', 'bill:7']).flat().sort()).toEqual(['bill:7', 'legiscan:7', 'ocd-bill/abc'])
+  })
+
+  it('returns no chunks for no handles', () => {
+    expect(chunkedForms([])).toEqual([])
+  })
+
+  it('defaults to chunks of 40', () => {
+    expect(chunkedForms(Array.from({ length: 50 }, (_, i) => `bill:${i + 1}`)).map(c => c.length)).toEqual([40, 40, 20])
   })
 })

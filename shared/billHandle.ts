@@ -95,3 +95,15 @@ export function handleForms(handle: string): string[] {
   const id = parseHandle(handle)
   return id === null ? [handle] : [toLegacyHandle(id), `${NEUTRAL_HANDLE_PREFIX}${id}`]
 }
+
+/**
+ * Both spellings of every handle, in chunks of `size` for `inArray`: expand first,
+ * then chunk, so a lookup of N bills binds N x 2 values and D1's 100-bind limit
+ * holds at any N. Leave room in `size` for the query's other binds.
+ */
+export function chunkedForms(handles: Iterable<string>, size = 40): string[][] {
+  const forms = [...new Set([...handles].flatMap(handleForms))]
+  const out: string[][] = []
+  for (let i = 0; i < forms.length; i += size) out.push(forms.slice(i, i + size))
+  return out
+}

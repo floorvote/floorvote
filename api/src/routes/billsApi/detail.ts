@@ -7,7 +7,7 @@ import {
 } from '../../db/schema'
 import type { Env } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
-import { handleForms, isHandle, legacyHandle, normalizeHandle, toHandle } from '../../../../shared/billHandle'
+import { chunkedForms, isHandle, legacyHandle, normalizeHandle, toHandle } from '../../../../shared/billHandle'
 import { isRelationshipKind, type RelationshipKind } from '../../../../shared/relationshipKinds'
 import type { BillExtras } from '../../../../shared/providerExtras'
 import { billSlug, filedSlug } from '../../lib/sessionSlug'
@@ -219,13 +219,14 @@ export async function buildBillDetail(
   let resolvedRelated: ResolvedRelated[] = []
   if (centralRich?.relatedBills?.length) {
     const externalIds = centralRich.relatedBills
-      .flatMap(r => r.sastBillId != null ? handleForms(toHandle(r.sastBillId)) : [])
-    const internalRows = externalIds.length > 0
-      ? await db.select({ id: bills.id, externalId: bills.externalId, billNumber: bills.billNumber, session: bills.session, sessionSlug: bills.sessionSlug, state: bills.state })
-          .from(bills)
-          .where(inArray(bills.externalId, externalIds))
-          .all()
-      : []
+      .flatMap(r => r.sastBillId != null ? [toHandle(r.sastBillId)] : [])
+    const internalRows = []
+    for (const part of chunkedForms(externalIds)) {
+      internalRows.push(...await db.select({ id: bills.id, externalId: bills.externalId, billNumber: bills.billNumber, session: bills.session, sessionSlug: bills.sessionSlug, state: bills.state })
+        .from(bills)
+        .where(inArray(bills.externalId, part))
+        .all())
+    }
     const routeByExternal = new Map(internalRows.map(r => [normalizeHandle(r.externalId), { id: r.id, billNumber: r.billNumber, sessionSlug: filedSlug(r) ?? '', state: r.state }]))
     resolvedRelated = centralRich.relatedBills.map(r => ({
       billId: r.sastBillId ?? 0,
