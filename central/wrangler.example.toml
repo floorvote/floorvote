@@ -155,7 +155,7 @@ namespace_id = "3001"
 # LIS_API_KEY           — Virginia LIS API key (optional; with it, Virginia bills from lis carry their text; non-commercial use only)
 # ADMIN_SECRET          — protects /admin/* and /tenants/* routes
 # CF_QUEUES_TOKEN       — Cloudflare API token (Queues: Edit) for dynamic per-tenant delivery
-# RESEND_API_KEY        — magic-link email (if EMAIL_PROVIDER=resend)
+# RESEND_API_KEY        — magic-link email, only if central sends through Resend (not needed with EMAIL_PROVIDER=cloudflare and the EMAIL binding)
 # SUPERADMIN_JWT_PRIVATE_KEY — ES256 private JWK; central is the sole JWT issuer
 # SUPERADMIN_EMAILS     — comma-separated superadmin allowlist
 # CF_ANALYTICS_TOKEN    — Cloudflare API token (Account Analytics: Read, D1: Read)
