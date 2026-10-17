@@ -37,6 +37,8 @@ let files: Map<string, string>
 /** What the stubbed network answers for the roll call and member files, by address. A test replaces entries. */
 let served: Map<string, () => Response>
 let calls: string[]
+/** The `redirect` mode each request was made with, by address. */
+let redirects: Map<string, RequestInit['redirect'] | undefined>
 
 const seam = mainSeam(govinfo, { tenantId: 'usteam' })
 const { makeRun, getJson, sync, syncAndIngest, queuedIds } = seam
@@ -84,9 +86,11 @@ beforeEach(async () => {
   files = new Map([...fixtureFiles, ...rollCallBillFiles])
   served = rollCallNetwork()
   calls = []
-  fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+  redirects = new Map()
+  fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input instanceof Request ? input.url : input)
     calls.push(url)
+    redirects.set(url, init?.redirect)
     const zip = ZIP_URL.exec(url)
     if (zip && zip[2] === zip[3]) return serveZips()(zip[2])
     const f = FILE_URL.exec(url)
@@ -889,6 +893,100 @@ describe('failing closed', () => {
     served.set(HJR35.house, () => new Response(rollCallFiles.get('house-2025-roll052.xml')!, { status: 200 }))
     await ingest('HJR35')
     expect((await bill('HJR35')).votes).toHaveLength(2)
+  })
+})
+
+describe('a Senate veto override vote', () => {
+  // The Senate writes "Veto Sustained" when an override fails and "Veto Overridden" when it succeeds. The House writes "Passed" or "Failed".
+  const asOverride = (result: string) => (x: string) => x.replace(/Joint Resolution Passed/g, result)
+
+  it('serves "Veto Sustained", an override that failed, as not passed', async () => {
+    await editRoll(HJR35.senate, asOverride('Veto Sustained'))
+    await ingest('HJR35')
+    const s = (await rollsOf('HJR35', 2)).find((v: any) => v.chamber === 'S')
+    expect(s.result).toBe('fail')
+  })
+
+  it('serves "Veto Overridden" as passed, and doesn\'t fail the ingest', async () => {
+    await editRoll(HJR35.senate, asOverride('Veto Overridden'))
+    await ingest('HJR35')
+    const s = (await rollsOf('HJR35', 2)).find((v: any) => v.chamber === 'S')
+    expect(s.result).toBe('pass')
+  })
+
+  it.each([['Amendment Germane', 'pass'], ['Amendment Not Germane', 'fail']])('serves "%s" as %s', async (result, served) => {
+    await editRoll(HJR35.senate, asOverride(result))
+    await ingest('HJR35')
+    expect((await rollsOf('HJR35', 2)).find((v: any) => v.chamber === 'S').result).toBe(served)
+  })
+})
+
+describe('where a roll call or a member file may redirect', () => {
+  it('never follows a redirect, so one off the Clerk\'s or the Senate\'s host fails closed', async () => {
+    await ingest('HJR35')
+    for (const url of [HJR35.house, HJR35.senate, CVC_URL, HISTORICAL_URL]) {
+      expect(redirects.has(url), url).toBe(true)
+      expect(redirects.get(url), url).toBe('manual')
+    }
+  })
+
+  it.each([
+    ['the House Clerk', HJR35.house], ['the Senate', HJR35.senate], ['senate.gov\'s member list', CVC_URL], ['the historical file', HISTORICAL_URL],
+  ])('writes nothing and retries when %s redirects to another host', async (_who, url) => {
+    served.set(url, () => new Response(null, { status: 302, headers: { location: 'https://example.com/elsewhere.xml' } }))
+    await ingestFailing('HJR35')
+    await nothingWritten()
+    expect(calls).not.toContain('https://example.com/elsewhere.xml')
+  })
+})
+
+describe('how long a read file is kept', () => {
+  const asks = (url: string) => calls.filter(u => u === url).length
+
+  it('reuses a roll call and the member files for nine minutes, and reads them again after ten', async () => {
+    await ingest('HJR35')
+    expect([asks(HJR35.house), asks(HJR35.senate), asks(CVC_URL), asks(HISTORICAL_URL)]).toEqual([1, 1, 1, 1])
+    vi.setSystemTime(new Date('2026-09-28T09:09:00Z'))
+    await ingest('HJR35')
+    expect([asks(HJR35.house), asks(HJR35.senate), asks(CVC_URL), asks(HISTORICAL_URL)]).toEqual([1, 1, 1, 1])
+    vi.setSystemTime(new Date('2026-09-28T09:10:01Z'))
+    await ingest('HJR35')
+    expect([asks(HJR35.house), asks(HJR35.senate), asks(CVC_URL), asks(HISTORICAL_URL)]).toEqual([2, 2, 2, 2])
+  })
+
+  it('keeps a failed answer for no time: the next ingest asks again', async () => {
+    served.set(HJR35.house, () => new Response('error', { status: 500 }))
+    await ingestFailing('HJR35')
+    served.set(HJR35.house, () => new Response(rollCallFiles.get('house-2025-roll052.xml')!, { status: 200 }))
+    await ingest('HJR35')
+    expect(asks(HJR35.house)).toBe(2)
+  })
+})
+
+describe('a voter a cutover carried over', () => {
+  it('is served under the kept person id, and the cutover\'s row is left as it was, with no second person added', async () => {
+    await ingest('HB43')
+    const [burchett] = await db().select().from(schema.people).where(eq(schema.people.bioguideId, 'B001309')).all()
+    const minted = burchett.peopleId
+    // Put central back before the cutover: no roll calls, and the voter as the earlier provider's person under the kept id.
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM roll_call_votes'), env.DB.prepare('DELETE FROM roll_calls'),
+      env.DB.prepare('DELETE FROM people WHERE provider = ?').bind('govinfo'),
+    ])
+    const KEPT = 770001
+    await db().insert(schema.people).values({ peopleId: KEPT, name: 'Tim Burchett', firstName: 'Tim', lastName: 'Burchett', bioguideId: 'B001309', party: 'R', stateId: 52, role: 'Rep', roleId: 1, provider: 'legiscan' })
+    await db().insert(schema.cutovers).values({ id: 'cut-1', state: 'US', fromProvider: 'legiscan', toProvider: 'govinfo' })
+    await db().insert(schema.cutoverPeople).values({ cutoverId: 'cut-1', peopleId: KEPT, providerPeopleId: minted, matchedOn: 'bioguide' })
+    clearRollCallCaches()
+    await ingest('HB43')
+    const votes = await rollsOf('HB43', 1)
+    const voter = votes[0].legislatorVotes.find((v: any) => v.personId === String(KEPT))
+    expect(voter, 'the vote is under the kept id').toBeDefined()
+    expect(voter.name).toBe('Tim Burchett')
+    expect(votes[0].legislatorVotes.some((v: any) => v.personId === String(minted))).toBe(false)
+    const rows = await db().select().from(schema.people).where(eq(schema.people.bioguideId, 'B001309')).all()
+    expect(rows.map(r => r.peopleId)).toEqual([KEPT])
+    expect(rows[0]).toMatchObject({ name: 'Tim Burchett', provider: 'legiscan' })
   })
 })
 

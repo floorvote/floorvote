@@ -171,6 +171,11 @@ describe('a Senate roll call file', () => {
     ['Motion to Discharge Rejected', false], ['Motion to Proceed Rejected', false], ['Motion to Recommit Rejected', false],
     ['Joint Resolution Defeated', false], ['Bill Defeated', false], ['Motion to Table Failed', false], ['Concurrent Resolution Rejected', false],
     ['Decision of Chair Not Sustained', false], ['Point of Order Not Well Taken', false],
+    // A veto override vote: the Senate writes "Veto Sustained" when the override fails, which is no passage, and "Veto Overridden" when it succeeds.
+    ['Veto Overridden', true], ['Veto Sustained', false],
+    ['Amendment Germane', true], ['Amendment Not Germane', false],
+    ['Cloture Invoked', true], ['Cloture Not Invoked', false],
+    ['Conference Report Agreed to', true], ['Motion to Waive Agreed to', true], ['Motion to Waive Rejected', false], ['Not Agreed to', false],
   ])('reads the result "%s" as passed: %s', (result, passed) => {
     const xml = roll('senate-119-1-00097.xml').replace('<vote_result>Joint Resolution Passed</vote_result>', `<vote_result>${result}</vote_result>`)
     const rc = parseSenateRollCall('x.xml', xml, senate(1, 97))
