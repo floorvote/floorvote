@@ -1009,6 +1009,21 @@ describe('a sponsor record and the stored Bioguide id', () => {
     expect((await personRowOf(db))?.bioguideId).toBeNull()
   })
 
+  it('inserts people the measure names in one batch whether or not each carries an id, and never writes over a row', async () => {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.people).values({ peopleId: 5003, name: 'Kept', bioguideId: 'T000005' })
+    await ingestMeasure(buildFixtureBill({ people: [
+      { people_id: 5002, name: 'With Id', bioguide_id: 'T000006' },
+      { people_id: 5003, name: 'Rewritten' },
+      { people_id: 5004, name: 'Without Id' },
+    ] }), getProvider('legiscan'), makeEnv(), db, opts)
+    const rows = await db.select().from(schema.people).all()
+    const byId = Object.fromEntries(rows.map(r => [r.peopleId, r]))
+    expect(byId[5002]?.bioguideId).toBe('T000006')
+    expect(byId[5003]).toMatchObject({ name: 'Kept', bioguideId: 'T000005' })
+    expect(byId[5004]?.bioguideId).toBeNull()
+  })
+
   it('still replaces every other column from the sponsor record, and leaves bio_json alone', async () => {
     const db = drizzle(env.DB, { schema })
     await db.insert(schema.people).values({
