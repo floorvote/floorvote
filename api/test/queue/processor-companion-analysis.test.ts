@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
 import { eq, inArray } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedBill, seedUser, seedSession } from '../helpers'
+import { resetDb, applyMigrations, seedBill, seedUser, seedSession, stubFetch } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { processCentralNotification } from '../../src/queue/processor'
 import { runDigest } from '../../src/lib/digest'
 import { associationConfig, bills, feedEvents, teamEvents } from '../../src/db/schema'
 import { MAX_COMPANION_ANALYSES_PER_DELIVERY } from '../../src/lib/companionAnalysis'
+import { groupByHand } from '../../src/lib/companionGroups'
+import { addToNewMatchesRow } from '../../src/lib/newMatch'
 import { rowidOf } from '../../src/db/rowid'
 import type { TenantQueueMessage } from '../../src/types'
 
@@ -261,6 +263,275 @@ describe('companions that didn\'t match are analyzed through their group', () =>
       vi.stubGlobal('fetch', vi.fn(async (_u: string, init: RequestInit) => { sent.push(JSON.parse(String(init.body))); return new Response('{}', { status: 200 }) }))
       await runDigest(env as never, db)
       expect(sent).toEqual([])
+    })
+  })
+
+  // #550: the digest stack (#364 provenance, #366 member digest, #367 feed row) keys on match_type = 'keyword'.
+  // A group analysis never sets that, so a pulled companion stays out of all three without a filter of its own.
+  // These pin it, so a change to either stack that loosened the key would show here.
+  describe('a pulled companion stays out of match provenance, the digest, and the feed\'s new matches (#550)', () => {
+    // A190 is a tracked bill that isn't a new match (a manual add), so anything flagged below is S1713's.
+    async function pull(extraBeforeDelivery?: () => Promise<void>) {
+      await getDb(env.DB).update(bills).set({ textR2Key: 'bills/legiscan:1713.html' }).where(eq(bills.id, 'b1713'))
+      await getDb(env.DB).update(bills).set({ matchType: 'manual', newMatchAt: null, triagedAt: null }).where(eq(bills.id, 'a190'))
+      await extraBeforeDelivery?.()
+      await deliver('legiscan:190')
+      await drain()
+    }
+    /** The pulled companion as it is stored when its analysis is queued again: unanalyzed, so the next message analyzes it. */
+    async function unanalyze() {
+      await getDb(env.DB).update(bills).set({ tenantSummary: null, aiProcessedAt: null, lastAiTextHash: null, aiAttemptedAt: null }).where(eq(bills.id, 'b1713'))
+    }
+    const matchedEvents = async () => (await getDb(env.DB).select().from(feedEvents).where(eq(feedEvents.type, 'bill_matched')).all()).filter(e => e.billId === 'b1713')
+    const newMatchRows = async () => await getDb(env.DB).select().from(feedEvents).where(eq(feedEvents.type, 'new_matches')).all()
+    const rowBillIds = (row: { metadata: string | null }) => (JSON.parse(row.metadata!) as { billIds: string[] }).billIds
+    const feedFor = async (token: string) => {
+      const res = await SELF.fetch('http://localhost/api/feed', { headers: { Cookie: `session=${token}` } })
+      expect(res.status).toBe(200)
+      return await res.json() as { events: Array<{ type: string }>; latestEventAt: string | null }
+    }
+
+    describe('#364: match provenance', () => {
+      beforeEach(async () => { await pull() })
+
+      it('ends with no match provenance and no new-match time', async () => {
+        await expectCompanionAnalyzed()
+        const companion = await billRow('b1713')
+        expect(companion.matchType).toBeNull()
+        expect(companion.matchProvenance).toBeNull()
+        expect(companion.newMatchAt).toBeNull()
+      })
+
+      it('ignores a routine declaration on a group analysis', async () => {
+        await unanalyze()
+        await deliver('legiscan:1713', { groupAnalysis: true, matchProvenance: 'routine' })
+        const companion = await billRow('b1713')
+        expect(companion.aiProcessedAt).not.toBeNull()
+        expect(companion.matchType).toBeNull()
+        expect(companion.matchProvenance).toBeNull()
+        expect(companion.newMatchAt).toBeNull()
+        expect(await matchedEvents()).toEqual([])
+      })
+
+      it('ignores a bulk declaration on a group analysis', async () => {
+        await unanalyze()
+        await deliver('legiscan:1713', { groupAnalysis: true, matchProvenance: 'bulk' })
+        expect((await billRow('b1713')).matchProvenance).toBeNull()
+      })
+
+      it('ignores a declaration on a group analysis that is forced, as the heal and the reprocess route send it', async () => {
+        await unanalyze()
+        await deliver('legiscan:1713', { groupAnalysis: true, forceAI: true, matchProvenance: 'routine' })
+        const companion = await billRow('b1713')
+        expect(companion.aiProcessedAt).not.toBeNull()
+        expect(companion.matchProvenance).toBeNull()
+      })
+
+      it('ignores a declaration on a group analysis of a companion that is already analyzed', async () => {
+        await expectCompanionAnalyzed()
+        await deliver('legiscan:1713', { groupAnalysis: true, forceAI: true, matchProvenance: 'routine' })
+        expect((await billRow('b1713')).matchProvenance).toBeNull()
+      })
+
+      it('does not let a declaration on a group analysis become the provenance of its later match', async () => {
+        await unanalyze()
+        await deliver('legiscan:1713', { groupAnalysis: true, matchProvenance: 'routine' })
+        // Central then says it matches on its own, with no declaration: that is a bulk match, and no routine one.
+        await deliver('legiscan:1713', { matchType: 'keyword' })
+        const companion = await billRow('b1713')
+        expect(companion.matchType).toBe('keyword')
+        expect(companion.matchProvenance).toBeNull()
+        expect(JSON.parse((await matchedEvents())[0].metadata!)).toEqual({})
+        expect(await newMatchRows()).toEqual([])
+      })
+
+      it('takes the provenance central declares when it later matches on its own, and keeps it', async () => {
+        await deliver('legiscan:1713', { matchType: 'keyword', matchProvenance: 'routine' })
+        const companion = await billRow('b1713')
+        expect(companion.matchType).toBe('keyword')
+        expect(companion.matchProvenance).toBe('routine')
+        expect(companion.newMatchAt).not.toBeNull()
+        expect(JSON.parse((await matchedEvents())[0].metadata!)).toEqual({ matchProvenance: 'routine' })
+        // A later declaration changes nothing: the match is recorded.
+        await deliver('legiscan:1713', { matchType: 'keyword', forceAI: true, matchProvenance: 'bulk' })
+        expect((await billRow('b1713')).matchProvenance).toBe('routine')
+      })
+
+      it('takes a bulk declaration the same way, as a match that is new to the list but not to the digest or the feed', async () => {
+        await deliver('legiscan:1713', { matchType: 'keyword', matchProvenance: 'bulk' })
+        const companion = await billRow('b1713')
+        expect(companion.matchProvenance).toBe('bulk')
+        expect(companion.newMatchAt).not.toBeNull()
+        expect(await newMatchRows()).toEqual([])
+      })
+
+      it('takes none when central declares none, which is bulk', async () => {
+        await deliver('legiscan:1713', { matchType: 'keyword' })
+        const companion = await billRow('b1713')
+        expect(companion.matchProvenance).toBeNull()
+        expect(companion.newMatchAt).not.toBeNull()
+      })
+
+      it('records one match, and one place in the day\'s row, however often central says it matches', async () => {
+        await deliver('legiscan:1713', { matchType: 'keyword', matchProvenance: 'routine' })
+        const first = await billRow('b1713')
+        await deliver('legiscan:1713', { matchType: 'keyword', matchProvenance: 'routine' })
+        await deliver('legiscan:1713', { matchType: 'keyword', forceMetadata: true, matchProvenance: 'routine' })
+        const companion = await billRow('b1713')
+        expect(companion.newMatchAt).toBe(first.newMatchAt)
+        expect(await matchedEvents()).toHaveLength(1)
+        const rows = await newMatchRows()
+        expect(rows).toHaveLength(1)
+        expect(rowBillIds(rows[0])).toEqual(['b1713'])
+      })
+
+      it('gets no new-match time, and joins no row, when it was added by hand, since the admin who added it knows', async () => {
+        await deliver('legiscan:1713', { matchType: 'manual', matchProvenance: 'routine' })
+        const companion = await billRow('b1713')
+        expect(companion.matchType).toBe('manual')
+        expect(companion.newMatchAt).toBeNull()
+        expect(await newMatchRows()).toEqual([])
+      })
+    })
+
+    describe('a group formed by hand', () => {
+      beforeEach(async () => {
+        // Central names no relationship: the admin grouped the two.
+        central.set('legiscan:190', { number: 'A190', text: true, relatedBills: [] })
+        central.set('legiscan:1713', { number: 'S1713', text: true, relatedBills: [] })
+        const admin = await seedUser({ role: 'admin', email: 'grouper@example.com' })
+        await pull(async () => { await groupByHand(getDb(env.DB), 'a190', 'b1713', admin) })
+      })
+
+      it('pulls the companion and leaves it with no match type, provenance, or new-match time', async () => {
+        expect((await billRow('a190')).groupKey).toBe((await billRow('b1713')).groupKey)
+        await expectCompanionAnalyzed()
+        const companion = await billRow('b1713')
+        expect(companion.matchType).toBeNull()
+        expect(companion.matchProvenance).toBeNull()
+        expect(companion.newMatchAt).toBeNull()
+        expect(await matchedEvents()).toEqual([])
+        expect(await newMatchRows()).toEqual([])
+      })
+
+      it('ignores a declaration on its group analysis', async () => {
+        await unanalyze()
+        await deliver('legiscan:1713', { groupAnalysis: true, matchProvenance: 'routine' })
+        const companion = await billRow('b1713')
+        expect(companion.aiProcessedAt).not.toBeNull()
+        expect(companion.matchProvenance).toBeNull()
+        expect(companion.newMatchAt).toBeNull()
+        expect(await newMatchRows()).toEqual([])
+      })
+
+      it('is not in the digest', async () => {
+        await expectCompanionAnalyzed()
+        const db = getDb(env.DB)
+        await db.insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'email-digest': true }) })
+        await seedSession(await seedUser({ role: 'admin', email: 'admin@example.com' }))
+        const sent: unknown[] = []
+        stubFetch((_u, init) => { sent.push(JSON.parse(String(init?.body))); return new Response('{}', { status: 200 }) })
+        await runDigest(env as never, db)
+        expect(sent).toEqual([])
+      })
+    })
+
+    describe('#366: the member digest', () => {
+      it('has no new-match section for a pulled companion, for an admin or a member', async () => {
+        await pull()
+        await expectCompanionAnalyzed()
+        const db = getDb(env.DB)
+        await db.insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'email-digest': true }) })
+        await seedSession(await seedUser({ role: 'admin', email: 'admin@example.com' }))
+        await seedSession(await seedUser({ role: 'member', email: 'member@example.com', emailDigestEnabled: true, emailDigestMatchesEnabled: true }))
+        const sent: Array<{ html: string }> = []
+        stubFetch((_u, init) => { sent.push(JSON.parse(String(init?.body))); return new Response('{}', { status: 200 }) })
+        await runDigest(env as never, db)
+        expect(sent).toEqual([])
+      })
+
+      it('lists the companion once it matches on its own with a routine declaration, and not before', async () => {
+        await pull()
+        const db = getDb(env.DB)
+        await db.insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'email-digest': true }) })
+        await seedSession(await seedUser({ role: 'member', email: 'member@example.com', emailDigestEnabled: true, emailDigestMatchesEnabled: true }))
+        const sent: Array<{ html: string }> = []
+        // Mail is captured, and central's answers to the delivery below still come from the suite's own stub.
+        const central = globalThis.fetch
+        stubFetch((u, init) => {
+          if (u.includes('central.test')) return central(u, init)
+          sent.push(JSON.parse(String(init?.body))); return new Response('{}', { status: 200 })
+        })
+        await runDigest(env as never, db)
+        expect(sent).toEqual([])
+
+        await deliver('legiscan:1713', { matchType: 'keyword', matchProvenance: 'routine' })
+        // The first run stamped the window, which would start after a match made in the same second.
+        await db.update(associationConfig).set({ value: '2020-01-01 00:00:00' }).where(eq(associationConfig.key, 'last_digest_at'))
+        await runDigest(env as never, db)
+        expect(sent).toHaveLength(1)
+        expect(sent[0].html).toContain('>1 new match</td>')
+        expect(sent[0].html).toContain('S1713')
+      })
+    })
+
+    describe('#367: the feed\'s new-matches row', () => {
+      let memberToken: string
+      // The row is one per day, so a row written earlier today is the one a match is added to.
+      const earlier = `${new Date().toISOString().slice(0, 10)} 00:00:00`
+      beforeEach(async () => {
+        memberToken = await seedSession(await seedUser({ role: 'member', email: 'member@example.com' }))
+      })
+
+      it('writes no row, and lights no dot, when the companion is analyzed through its group', async () => {
+        await pull()
+        await expectCompanionAnalyzed()
+        expect(await newMatchRows()).toEqual([])
+        expect(await feedFor(memberToken)).toMatchObject({ events: [], latestEventAt: null })
+      })
+
+      it('adds nothing to the day\'s row, and leaves it where it was, when the companion is analyzed through its group', async () => {
+        const db = getDb(env.DB)
+        // The day's row already holds another match, written earlier in the day.
+        await db.insert(feedEvents).values({ id: 'row', type: 'new_matches', billId: null, userId: 'system', metadata: JSON.stringify({ billIds: ['a190'] }), createdAt: earlier })
+        await pull()
+        await unanalyze()
+        await deliver('legiscan:1713', { groupAnalysis: true, forceAI: true, matchProvenance: 'routine' })
+        await expectCompanionAnalyzed()
+        const rows = await newMatchRows()
+        expect(rows).toHaveLength(1)
+        expect(rowBillIds(rows[0])).toEqual(['a190'])
+        expect(rows[0].createdAt).toBe(earlier)
+        expect((await feedFor(memberToken)).latestEventAt).toBe(earlier)
+      })
+
+      it('adds the companion to the row only once it matches on its own with a routine declaration, and brings the row forward then', async () => {
+        const db = getDb(env.DB)
+        await db.insert(feedEvents).values({ id: 'row', type: 'new_matches', billId: null, userId: 'system', metadata: JSON.stringify({ billIds: ['a190'] }), createdAt: earlier })
+        await pull()
+        expect(rowBillIds((await newMatchRows())[0])).toEqual(['a190'])
+
+        await deliver('legiscan:1713', { matchType: 'keyword', matchProvenance: 'routine' })
+        const rows = await newMatchRows()
+        expect(rows).toHaveLength(1)
+        expect(rowBillIds(rows[0])).toEqual(['a190', 'b1713'])
+        expect(rows[0].createdAt > earlier).toBe(true)
+        expect((await feedFor(memberToken)).latestEventAt).toBe(rows[0].createdAt)
+      })
+
+      it('doesn\'t add a companion to the row when asked to, since it isn\'t a keyword match', async () => {
+        await pull()
+        await expectCompanionAnalyzed()
+        await addToNewMatchesRow(getDb(env.DB), 'b1713')
+        expect(await newMatchRows()).toEqual([])
+      })
+
+      it('doesn\'t add it even if a declaration had leaked onto its row, since the match type is what the row asks for', async () => {
+        await pull()
+        await getDb(env.DB).update(bills).set({ matchProvenance: 'routine', newMatchAt: '2026-10-01 09:00:00' }).where(eq(bills.id, 'b1713'))
+        await addToNewMatchesRow(getDb(env.DB), 'b1713')
+        expect(await newMatchRows()).toEqual([])
+      })
     })
   })
 

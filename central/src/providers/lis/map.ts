@@ -597,6 +597,7 @@ export function toLisMasterListEntry(rec: LisRecord, sessionCode: string, billId
     last_action: last?.action,
     last_action_date: last?.date,
     state_link: lisBillUrl(sessionCode, rec.bill.Bill_id),
+    bill_type: billType(rec.bill.Bill_id).type,
   }
 }
 

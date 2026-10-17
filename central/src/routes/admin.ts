@@ -192,7 +192,7 @@ adminRoutes.post('/lims-import', async (c) => {
   const db = drizzle(c.env.DB, { schema })
   // The sync links bills only in states their provider owns, so an import
   // into a state LIMS doesn't own would leave its bills half linked.
-  const owners = await loadStateOwners(c.env, db)
+  const owners = await loadStateOwners(db)
   const unowned = (getProvider('lims').states ?? []).filter(state => ownerOf(owners, state) !== 'lims')
   if (unowned.length > 0) {
     return c.json({ error: `lims doesn't own ${unowned.join(', ')}. Claim it first (POST /api/admin/state-providers/:state).` }, 409)
