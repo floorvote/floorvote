@@ -4,13 +4,16 @@ import { apiFetch } from '../../lib/api'
 import { decodeStatus } from '../../lib/legislativeStatus'
 import { billUrl } from '../../lib/sessionSlug'
 import { normalizeViewQuery, matchesUrlIdentifier } from '../../lib/savedViews'
+import { useMultiState } from '../../context/ConfigContext'
 import { BillBadge } from '../../components/BillBadge'
 import { DraftChip } from '../../components/DraftChip'
 import { StatusChip } from '../../components/StatusChip'
 import { SECTION_LABEL, CHROME_TEXT, SR_ONLY } from '../../lib/textStyles'
 import { color, fontSize, fontWeight } from '../../styles/tokens'
 import { billDisplayTitle } from '../../../../shared/billTitle'
-import { billsApiParamsFromSearch, searchFromListUrl } from './billsQuery'
+import { billsApiParamsFromSearch, billsFilterValuesFromSearch, searchFromListUrl } from './billsQuery'
+import { buildListSummary } from './listSummary'
+import { BillListPaneSummary } from './BillListPaneSummary'
 import { peekBillsListCache, peekCustomFieldDefs } from './index'
 import { groupDisplay, memberPath } from './BillRow'
 import type { Bill } from './types'
@@ -29,19 +32,22 @@ type BillsPage = { bills: Bill[]; pagination: { page: number; pageSize: number; 
 // sidebar's Bills link and BillDetail's "Back to bills" both read it), so the
 // pane shows that same list. A saved view leaves the URL in its short
 // `?view=<slug>` form, which spells out no filters, so it is expanded from
-// /views here the way BillList hydrates it.
-async function resolveListSearch(listUrl: string): Promise<URLSearchParams> {
+// /views here the way BillList hydrates it. The view comes back too, for the
+// summary line to name; a slug that matches nothing returns the bare search.
+type ResolvedList = { search: URLSearchParams; view: SavedView | null }
+
+async function resolveListSearch(listUrl: string): Promise<ResolvedList> {
   const search = searchFromListUrl(listUrl)
   const viewId = search.get('view')
-  if (!viewId || normalizeViewQuery(search.toString()) !== '') return search
+  if (!viewId || normalizeViewQuery(search.toString()) !== '') return { search, view: null }
   try {
     const { views } = await apiFetch<{ views: SavedView[] }>('/views')
     const view = (views ?? []).find(v => matchesUrlIdentifier(v, viewId))
-    if (view) return new URLSearchParams(view.query)
+    if (view) return { search: new URLSearchParams(view.query), view }
   } catch {
     // Fall through to the unfiltered list rather than showing nothing.
   }
-  return search
+  return { search, view: null }
 }
 
 // location.pathname arrives percent-encoded ("HB%205042") while billUrl builds
@@ -80,9 +86,11 @@ const PaneRow = memo(function PaneRow({ bill, path, isCurrent, billPaths, index 
       onMouseLeave={() => setHovered(false)}
       style={{
         display: 'block',
-        padding: '8px 12px 9px',
+        // 15px, not 12: the open row used to mark itself with a 3px left border
+        // (transparent on the others), and that room is now padding so the text
+        // stays where it was. The blue background alone marks the open row.
+        padding: '8px 12px 9px 15px',
         borderBottom: `1px solid ${color.borderDefault}`,
-        borderLeft: `3px solid ${isCurrent ? color.accentBlue : 'transparent'}`,
         background: isCurrent ? color.bgBlueChip : hovered ? color.surfaceSubtle : color.white,
         color: 'inherit',
         textDecoration: 'none',
@@ -139,7 +147,9 @@ const PaneRow = memo(function PaneRow({ bill, path, isCurrent, billPaths, index 
 export function BillListPane() {
   const location = useLocation()
   const [listUrl] = useState(() => sessionStorage.getItem('lastBillsUrl') ?? '/bills')
-  const [search, setSearch] = useState<URLSearchParams | null>(null)
+  const multiState = useMultiState()
+  const [resolved, setResolved] = useState<ResolvedList | null>(null)
+  const search = resolved?.search ?? null
   const [bills, setBills] = useState<Bill[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -150,7 +160,7 @@ export function BillListPane() {
 
   useEffect(() => {
     let cancelled = false
-    void resolveListSearch(listUrl).then(s => { if (!cancelled) setSearch(s) })
+    void resolveListSearch(listUrl).then(r => { if (!cancelled) setResolved(r) })
     return () => { cancelled = true }
   }, [listUrl])
 
@@ -206,6 +216,15 @@ export function BillListPane() {
   // `loading` is a dependency because the list renders only once it is false:
   // were the bills and the end of loading ever committed separately, an effect
   // that ran in between would find no list and never run again.
+  // The summary is of the list the pane shows: the same resolved query its
+  // request is built from, so the line and the rows cannot disagree.
+  const summary = useMemo(() => resolved && buildListSummary({
+    values: billsFilterValuesFromSearch(resolved.search),
+    view: resolved.view,
+    customFieldDefs: peekCustomFieldDefs(),
+    isMultiState: multiState,
+  }), [resolved, multiState])
+
   const hasBills = bills.length > 0
   useLayoutEffect(() => {
     const row = scrollRef.current?.querySelector<HTMLElement>('[aria-current="page"]')
@@ -228,9 +247,12 @@ export function BillListPane() {
         borderRight: `1px solid ${color.borderDefault}`,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '14px 12px 10px 15px', borderBottom: `1px solid ${color.borderDefault}` }}>
-        <Link to={listUrl} style={{ ...SECTION_LABEL, color: color.linkBlue, textDecoration: 'none' }}>Bills</Link>
-        {!loading && !error && <span style={CHROME_TEXT}>{total.toLocaleString()} {total === 1 ? 'bill' : 'bills'}</span>}
+      <div style={{ borderBottom: `1px solid ${color.borderDefault}` }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '14px 12px 10px 15px' }}>
+          <Link to={listUrl} style={{ ...SECTION_LABEL, color: color.linkBlue, textDecoration: 'none' }}>Bills</Link>
+          {!loading && !error && <span style={CHROME_TEXT}>{total.toLocaleString()} {total === 1 ? 'bill' : 'bills'}</span>}
+        </div>
+        {!loading && !error && summary && <BillListPaneSummary summary={summary} listUrl={listUrl} />}
       </div>
       {loading ? (
         <p style={{ ...CHROME_TEXT, padding: '12px 15px', margin: 0 }}>Loading bills…</p>
