@@ -18,6 +18,58 @@ describe('bill matching', () => {
     expect(billMatchKey({ yearStart: 2026, special: 1 }, 'HB1')).not.toBe(billMatchKey({ yearStart: 2026, special: 0 }, 'HB1'))
     expect(billMatchKey({ yearStart: 2025, special: 0 }, 'HB1')).not.toBe(billMatchKey({ yearStart: 2026, special: 0 }, 'HB1'))
   })
+
+  describe('joint resolutions', () => {
+    const key = (n: string, session = { yearStart: 2026, special: 0 }) => billMatchKey(session, n)
+
+    it('pairs LIS\'s HJ and SJ with LegiScan\'s HJR and SJR in the same session', () => {
+      expect(key('HJR 12')).toBe(key('HJ 12'))
+      expect(key('SJR 3')).toBe(key('SJ 3'))
+      expect(key('HJR0012')).toBe(key('HJ12'))
+      expect(key('SJR0003')).toBe(key('sj 3'))
+      expect(key('hjr 100')).toBe(key('HJ0100'))
+      expect(key('HJR1')).toBe(key('HJ1'))
+    })
+
+    it('keeps the House and Senate apart, and joint resolutions apart from bills and simple resolutions', () => {
+      expect(key('HJR 12')).not.toBe(key('SJ 12'))
+      expect(key('SJR 12')).not.toBe(key('HJ 12'))
+      expect(key('HB 12')).not.toBe(key('HJ 12'))
+      expect(key('HB 12')).not.toBe(key('HJR 12'))
+      expect(key('SB 12')).not.toBe(key('SJR 12'))
+      expect(key('HR 12')).not.toBe(key('HJ 12'))
+      expect(key('HR 12')).not.toBe(key('HJR 12'))
+      expect(key('SR 12')).not.toBe(key('SJR 12'))
+    })
+
+    it('keeps different numbers, sessions, and kinds of session apart', () => {
+      expect(key('HJR 12')).not.toBe(key('HJ 13'))
+      expect(key('HJR 12')).not.toBe(key('HJ 112'))
+      expect(key('HJR 12')).not.toBe(key('HJ 12', { yearStart: 2025, special: 0 }))
+      expect(key('HJR 12')).not.toBe(key('HJ 12', { yearStart: 2026, special: 1 }))
+    })
+
+    it('only folds the R of a joint resolution prefix, not other numbers', () => {
+      expect(comparableNumber('HJR 12')).toBe('HJ12')
+      expect(comparableNumber('SJR0003')).toBe('SJ3')
+      expect(comparableNumber('HJ 12')).toBe('HJ12')
+      expect(comparableNumber('HJRES 12')).toBe('HJRES12')
+      expect(comparableNumber('AJR 12')).toBe('AJR12')
+      expect(comparableNumber('HCR 12')).toBe('HCR12')
+      expect(comparableNumber('HR 12')).toBe('HR12')
+      expect(comparableNumber('B26-0400')).toBe('B26-400')
+    })
+  })
+
+  it('leaves the keys of existing matches as they were', () => {
+    const s = { yearStart: 2026, special: 0 }
+    expect(billMatchKey(s, 'HB0001')).toBe('2026|0|HB1')
+    expect(billMatchKey(s, ' hb 0010 ')).toBe('2026|0|HB10')
+    expect(billMatchKey({ yearStart: 2025, special: 1 }, 'SB 100')).toBe('2025|1|SB100')
+    expect(billMatchKey(s, 'HR0007')).toBe('2026|0|HR7')
+    expect(billMatchKey(s, 'B26-0400')).toBe('2026|0|B26-400')
+    expect(billMatchKey(s, 'HCR 5')).toBe('2026|0|HCR5')
+  })
 })
 
 describe('reading names', () => {

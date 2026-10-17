@@ -74,14 +74,6 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
    */
   configured?(env: Readonly<Pick<Env, K>>): boolean
 
-  /**
-   * The env key that named the provider's states before the ownership table,
-   * such as 'LIMS_STATES' (comma-separated). For one release, the first sync
-   * writes an ownership row for each state it names that has no row, under the
-   * same refusal rule as a claim. Goes away with that seeding.
-   */
-  readonly statesEnvKey?: K
-
   /** Every session the provider lists for a state, current and prior. */
   listSessions(state: string, ctx: ProviderContext<K>): Promise<SyncSession[]>
 

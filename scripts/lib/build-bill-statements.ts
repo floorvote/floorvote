@@ -46,9 +46,13 @@ export function buildBillStatements(
     pendingCommitteeId = b.committee.committee_id
   }
 
-  // bills row — r2_key intentionally absent (NULL); ingestor fills it via skipFetch
-  stmts.push(`INSERT OR REPLACE INTO bills (bill_id, change_hash, session_id, state, state_id, bill_number, bill_type, bill_type_id, body, body_id, current_body, current_body_id, title, description, status, status_date, completed, pending_committee_id, url, state_link, progress_json)
-VALUES (${num(b.bill_id)}, ${esc(b.change_hash)}, ${num(b.session_id ?? sessionId)}, ${esc(b.state ?? state)}, ${num(b.state_id)}, ${esc(b.bill_number)}, ${esc(b.bill_type ?? 'B')}, ${esc(b.bill_type_id ?? '1')}, ${esc(b.body ?? '')}, ${num(b.body_id ?? 0)}, ${esc(b.current_body ?? '')}, ${num(b.current_body_id ?? 0)}, ${esc(b.title)}, ${esc(b.description)}, ${num(b.status ?? 1)}, ${esc(b.status_date)}, ${num(b.completed ?? 0)}, ${num(pendingCommitteeId)}, ${esc(b.url)}, ${esc(b.state_link)}, ${esc(b.progress ? JSON.stringify(b.progress) : null)});`)
+  // bills row — r2_key intentionally absent (NULL); ingestor fills it via skipFetch.
+  // The dump is the bill's full detail, so detail_hash records its change as the
+  // detail's, as an ingest does (central migration 0041). Without it central reads
+  // the seeded bill as never fetched, and its first view spends a getBill
+  // (central/src/lib/stubRefresh.ts). REPLACE leaves no refresh claim behind.
+  stmts.push(`INSERT OR REPLACE INTO bills (bill_id, change_hash, detail_hash, session_id, state, state_id, bill_number, bill_type, bill_type_id, body, body_id, current_body, current_body_id, title, description, status, status_date, completed, pending_committee_id, url, state_link, progress_json)
+VALUES (${num(b.bill_id)}, ${esc(b.change_hash)}, ${esc(b.change_hash)}, ${num(b.session_id ?? sessionId)}, ${esc(b.state ?? state)}, ${num(b.state_id)}, ${esc(b.bill_number)}, ${esc(b.bill_type ?? 'B')}, ${esc(b.bill_type_id ?? '1')}, ${esc(b.body ?? '')}, ${num(b.body_id ?? 0)}, ${esc(b.current_body ?? '')}, ${num(b.current_body_id ?? 0)}, ${esc(b.title)}, ${esc(b.description)}, ${num(b.status ?? 1)}, ${esc(b.status_date)}, ${num(b.completed ?? 0)}, ${num(pendingCommitteeId)}, ${esc(b.url)}, ${esc(b.state_link)}, ${esc(b.progress ? JSON.stringify(b.progress) : null)});`)
 
   // Every committee the bill names, pending or referred, so each referral
   // points at a committees row (#299). Upserted as central's ingest does

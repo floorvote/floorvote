@@ -32,6 +32,8 @@ export const lis: Provider<'LIS_API_KEY'> = {
   coverage: { maintainers: ['anotherpanacea-eng'] },
   envKeys: ['LIS_API_KEY'],
   states: [LIS_STATE],
+  // A cutover queues thousands of bills; their own queue keeps them from holding up LegiScan's.
+  ingestQueue: 'LIS_INGESTOR_QUEUE',
   // A bill's record carries every vote (VOTE.CSV is read whole or the pass fails).
   replacesRollCalls: true,
 

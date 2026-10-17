@@ -4,7 +4,8 @@ import { app } from '../../src/index'
 import { and, eq } from 'drizzle-orm'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { associationConfig, bills, calendarEvents, comments, memberVotes, notes, notifications, users } from '../../src/db/schema'
+import { associationConfig, bills, calendarEvents, comments, memberVotes, notes, notifications, teamEvents, users } from '../../src/db/schema'
+import { rowidOf } from '../../src/db/rowid'
 import { syncIdenticalCompanions } from '../../src/lib/companionGroups'
 import { centralFetch } from '../../src/lib/centralFetch'
 
@@ -19,7 +20,9 @@ vi.mock('../../src/lib/centralFetch', () => ({ centralFetch: vi.fn() }))
 type Detail = {
   comments: Array<{ id: string; billId: string; billNumber: string; content: string }>
   commentsTotal: number
-  groupingEvents: Array<{ type: string; actorName: string | null; with: Array<{ billId: string; billNumber: string }>; createdAt: string }>
+  groupBills: Array<{ billId: string; billNumber: string; state: string; sessionSlug: string }>
+  companionBillIds?: unknown
+  groupingEvents: Array<{ type: string; actorName: string | null; with: Array<{ billId: string; billNumber: string }>; createdAt: string; commentBills?: Array<{ billId: string; billNumber: string }> }>
   myVote: string | null
   voteCounts: { support: number; oppose: number; neutral: number; total: number }
   memberVotes?: Array<{ userName: string; position: string }>
@@ -122,6 +125,56 @@ describe('bill routes across a companion group', () => {
     })
   })
 
+  describe('the group bills', () => {
+    beforeEach(async () => {
+      await db().update(bills).set({ sessionSlug: '2026' }).where(eq(bills.id, 'a190'))
+      await db().update(bills).set({ sessionSlug: '2025-2026' }).where(eq(bills.id, 'b1713'))
+    })
+
+    it('carry each bill\'s state and session slug with its id and number, the page\'s bill first, for a group of two', async () => {
+      await group()
+      expect((await detail('ann', 'a190')).groupBills).toEqual([
+        { billId: 'a190', billNumber: 'A190', state: 'NJ', sessionSlug: '2026' },
+        { billId: 'b1713', billNumber: 'S1713', state: 'NJ', sessionSlug: '2025-2026' },
+      ])
+      expect((await detail('ann', 'b1713')).groupBills).toEqual([
+        { billId: 'b1713', billNumber: 'S1713', state: 'NJ', sessionSlug: '2025-2026' },
+        { billId: 'a190', billNumber: 'A190', state: 'NJ', sessionSlug: '2026' },
+      ])
+    })
+
+    it('list every bill of a group of three, the page\'s bill first and the rest by number', async () => {
+      await seedBill({ id: 'c2000', billNumber: 'H2000', state: 'NJ', sessionSlug: '2024', externalId: 'legiscan:2000' })
+      await syncIdenticalCompanions(db(), 'legiscan:1713', [{ sastBillId: 190, kind: 'identical' }, { sastBillId: 2000, kind: 'identical' }])
+      const d = await detail('ann', 'b1713')
+      expect(d.groupBills.map(b => b.billNumber)).toEqual(['S1713', 'A190', 'H2000'])
+      expect(d.groupBills.map(b => b.sessionSlug)).toEqual(['2025-2026', '2026', '2024'])
+    })
+
+    it('carry a bill from another state with that state, since a hand-made group can cross states', async () => {
+      await seedBill({ id: 'g5000', billNumber: 'TX5000', state: 'TX', session: '2027', sessionSlug: '2027', externalId: 'legiscan:5000' })
+      expect((await as('ada', '/bills/a190/group', { method: 'POST', body: JSON.stringify({ withBillId: 'g5000' }) })).status).toBe(200)
+      expect((await detail('ann', 'a190')).groupBills.map(b => [b.billNumber, b.state, b.sessionSlug])).toEqual([['A190', 'NJ', '2026'], ['TX5000', 'TX', '2027']])
+    })
+
+    it('are the page\'s bill alone for a bill in no group', async () => {
+      expect((await detail('ann', 'a190')).groupBills).toEqual([{ billId: 'a190', billNumber: 'A190', state: 'NJ', sessionSlug: '2026' }])
+    })
+
+    it('are the page\'s bill alone again once the group splits', async () => {
+      await group()
+      await split()
+      expect((await detail('ann', 'a190')).groupBills.map(b => b.billNumber)).toEqual(['A190'])
+    })
+
+    it('no longer serve companionBillIds, even for a bill that has the legacy column set', async () => {
+      await db().update(bills).set({ companionBillIds: JSON.stringify(['legacy-1']) }).where(eq(bills.id, 'a190'))
+      const d = await detail('ann', 'a190')
+      expect('companionBillIds' in d).toBe(false)
+      expect(JSON.stringify(d)).not.toContain('legacy-1')
+    })
+  })
+
   describe('the grouping line', () => {
     it("is on each member's page once the group forms, naming the other bill", async () => {
       await group()
@@ -140,6 +193,182 @@ describe('bill routes across a companion group', () => {
 
     it('is absent from a bill that was never grouped', async () => {
       expect((await detail('ann', 'a190')).groupingEvents).toEqual([])
+    })
+  })
+
+  // `commentBills`: the bills a grouping or split line is about because a comment was posted on them before
+  // the event, so the line can say whose comments now appear (or no longer do). Computed from the comments
+  // table at read time, so a split can name what left even though those comments are no longer served.
+  describe('the bills whose earlier comments a grouping line explains', () => {
+    const names = (events: Detail['groupingEvents']) => events.map(e => (e.commentBills ?? ['(absent)']).map(b => typeof b === 'string' ? b : b.billNumber))
+
+    // The events group() and split() just wrote share a clock second, so each test dates them itself.
+    async function dateEvents(billId: string, times: string[]) {
+      const rows = await db().select({ id: teamEvents.id }).from(teamEvents).where(eq(teamEvents.billId, billId)).orderBy(rowidOf(teamEvents)).all()
+      expect(rows).toHaveLength(times.length)
+      for (const [i, row] of rows.entries()) await db().update(teamEvents).set({ createdAt: times[i] }).where(eq(teamEvents.id, row.id))
+    }
+
+    it('names the joined bill when a comment was posted on it before the grouping', async () => {
+      await comment('c2', 'b1713', user.ben, '2026-10-01 10:00:00')
+      await group()
+      await dateEvents('a190', ['2026-10-11 12:00:00'])
+      expect(names((await detail('ann', 'a190')).groupingEvents)).toEqual([['S1713']])
+    })
+
+    it("is empty when only the page's own bill had earlier comments", async () => {
+      await comment('c1', 'a190', user.ann, '2026-10-01 09:00:00')
+      await group()
+      await dateEvents('a190', ['2026-10-11 12:00:00'])
+      await dateEvents('b1713', ['2026-10-11 12:00:00'])
+      expect(names((await detail('ann', 'a190')).groupingEvents)).toEqual([[]])
+      // The same grouping on the other page does explain a change: A190's comments now appear on S1713's page.
+      expect(names((await detail('ann', 'b1713')).groupingEvents)).toEqual([['A190']])
+    })
+
+    it('is empty when the joined bill has comments only after the grouping', async () => {
+      await group()
+      await dateEvents('a190', ['2026-10-11 12:00:00'])
+      await comment('c2', 'b1713', user.ben, '2026-10-12 10:00:00')
+      expect(names((await detail('ann', 'a190')).groupingEvents)).toEqual([[]])
+    })
+
+    it('is empty when neither bill has comments', async () => {
+      await group()
+      expect(names((await detail('ann', 'a190')).groupingEvents)).toEqual([[]])
+    })
+
+    it('names the departed bill on a split, though its comments are no longer served', async () => {
+      await comment('c2', 'b1713', user.ben, '2026-10-01 10:00:00')
+      await group()
+      await split()
+      await dateEvents('a190', ['2026-10-11 12:00:00', '2026-10-12 12:00:00'])
+      const d = await detail('ann', 'a190')
+      expect(d.comments).toEqual([])
+      expect(d.groupingEvents.map(e => e.type)).toEqual(['grouped', 'split'])
+      expect(names(d.groupingEvents)).toEqual([['S1713'], ['S1713']])
+    })
+
+    it('is empty on a split when the bill that left had no comments before it', async () => {
+      await comment('c1', 'a190', user.ann, '2026-10-01 09:00:00')
+      await group()
+      await split()
+      await dateEvents('a190', ['2026-10-11 12:00:00', '2026-10-12 12:00:00'])
+      await comment('c2', 'b1713', user.ben, '2026-10-13 10:00:00')
+      expect(names((await detail('ann', 'a190')).groupingEvents)).toEqual([[], []])
+    })
+
+    it('names only the joined bill that had comments, when three bills group at once', async () => {
+      await seedBill({ id: 'c1714', billNumber: 'S1714', state: 'NJ', externalId: 'legiscan:1714' })
+      await comment('c2', 'b1713', user.ben, '2026-10-01 10:00:00')
+      await comment('c3', 'a190', user.ann, '2026-10-01 11:00:00')
+      await syncIdenticalCompanions(db(), 'legiscan:1713', [{ sastBillId: 190, kind: 'identical' }, { sastBillId: 1714, kind: 'identical' }])
+      await dateEvents('a190', ['2026-10-11 12:00:00'])
+      const events = (await detail('ann', 'a190')).groupingEvents
+      expect(events[0].with.map(b => b.billNumber)).toEqual(['S1713', 'S1714'])
+      expect(events[0].commentBills).toEqual([{ billId: 'b1713', billNumber: 'S1713' }])
+    })
+
+    it('counts a comment posted at the very second of the event as before it, as the thread puts it above the line', async () => {
+      await group()
+      await dateEvents('a190', ['2026-10-11 12:00:00'])
+      await comment('c2', 'b1713', user.ben, '2026-10-11 12:00:00')
+      expect(names((await detail('ann', 'a190')).groupingEvents)).toEqual([['S1713']])
+    })
+
+    it('does not count a comment posted a second after the event', async () => {
+      await group()
+      await dateEvents('a190', ['2026-10-11 12:00:00'])
+      await comment('c2', 'b1713', user.ben, '2026-10-11 12:00:01')
+      expect(names((await detail('ann', 'a190')).groupingEvents)).toEqual([[]])
+    })
+
+    it('reads a comment dated in ISO form against an event dated in the database form', async () => {
+      await group()
+      await dateEvents('a190', ['2026-10-11 12:00:00'])
+      await comment('c2', 'b1713', user.ben, '2026-10-11T11:59:59.000Z')
+      await comment('c3', 'b1713', user.ben, '2026-10-11T12:30:00.000Z')
+      expect(names((await detail('ann', 'a190')).groupingEvents)).toEqual([['S1713']])
+      await db().delete(comments).where(eq(comments.id, 'c2'))
+      expect(names((await detail('ann', 'a190')).groupingEvents)).toEqual([[]])
+    })
+
+    it('does not count a deleted comment, since the thread would never show it', async () => {
+      await comment('c2', 'b1713', user.ben, '2026-10-01 10:00:00')
+      await db().update(comments).set({ deletedAt: '2026-10-02 10:00:00', deletedBy: user.ada }).where(eq(comments.id, 'c2'))
+      await group()
+      await dateEvents('a190', ['2026-10-11 12:00:00'])
+      expect(names((await detail('ann', 'a190')).groupingEvents)).toEqual([[]])
+    })
+
+    it('counts the bill when one of its comments was deleted and another was not', async () => {
+      await comment('c2', 'b1713', user.ben, '2026-10-01 10:00:00')
+      await comment('c3', 'b1713', user.ben, '2026-10-01 11:00:00')
+      await db().update(comments).set({ deletedAt: '2026-10-02 10:00:00', deletedBy: user.ada }).where(eq(comments.id, 'c2'))
+      await group()
+      await dateEvents('a190', ['2026-10-11 12:00:00'])
+      expect(names((await detail('ann', 'a190')).groupingEvents)).toEqual([['S1713']])
+    })
+
+    it("does not count a comment from a deactivated member, whom the thread hides", async () => {
+      await comment('c2', 'b1713', user.ben, '2026-10-01 10:00:00')
+      await db().update(users).set({ deactivatedAt: '2026-10-02 10:00:00' }).where(eq(users.id, user.ben))
+      await group()
+      await dateEvents('a190', ['2026-10-11 12:00:00'])
+      expect(names((await detail('ann', 'a190')).groupingEvents)).toEqual([[]])
+    })
+
+    it('does not count a deleted comment on a split either', async () => {
+      await comment('c2', 'b1713', user.ben, '2026-10-01 10:00:00')
+      await db().update(comments).set({ deletedAt: '2026-10-02 10:00:00', deletedBy: user.ada }).where(eq(comments.id, 'c2'))
+      await group()
+      await split()
+      await dateEvents('a190', ['2026-10-11 12:00:00', '2026-10-12 12:00:00'])
+      expect(names((await detail('ann', 'a190')).groupingEvents)).toEqual([[], []])
+    })
+
+    describe('for a bill that joined, left, and rejoined', () => {
+      async function rejoin() {
+        await group()
+        await split()
+        await group()
+        await dateEvents('a190', ['2026-10-11 12:00:00', '2026-10-12 12:00:00', '2026-10-13 12:00:00'])
+      }
+
+      it('names the bill on every event when its comment came before the first grouping', async () => {
+        await comment('c2', 'b1713', user.ben, '2026-10-01 10:00:00')
+        await rejoin()
+        expect(names((await detail('ann', 'a190')).groupingEvents)).toEqual([['S1713'], ['S1713'], ['S1713']])
+      })
+
+      it('names it from the split on when its comment was posted while the bills were grouped', async () => {
+        await comment('c2', 'b1713', user.ben, '2026-10-11 18:00:00')
+        await rejoin()
+        const d = await detail('ann', 'a190')
+        expect(d.groupingEvents.map(e => e.type)).toEqual(['grouped', 'split', 'grouped'])
+        expect(names(d.groupingEvents)).toEqual([[], ['S1713'], ['S1713']])
+      })
+
+      it('names it only on the regrouping when its comment was posted while the bills were split', async () => {
+        await comment('c2', 'b1713', user.ben, '2026-10-12 18:00:00')
+        await rejoin()
+        expect(names((await detail('ann', 'a190')).groupingEvents)).toEqual([[], [], ['S1713']])
+      })
+    })
+
+    it('is empty on every event when neither bill ever had a comment', async () => {
+      await group()
+      await split()
+      await group()
+      expect(names((await detail('ann', 'a190')).groupingEvents)).toEqual([[], [], []])
+    })
+
+    it('reads the same for any member, since it comes from the comments and not from who is looking', async () => {
+      await comment('c2', 'b1713', user.ben, '2026-10-01 10:00:00')
+      await group()
+      await dateEvents('a190', ['2026-10-11 12:00:00'])
+      expect(names((await detail('ben', 'a190')).groupingEvents)).toEqual([['S1713']])
+      expect(names((await detail('ada', 'a190')).groupingEvents)).toEqual([['S1713']])
     })
   })
 

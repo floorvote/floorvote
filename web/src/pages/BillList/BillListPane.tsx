@@ -1,18 +1,26 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Link, useLocation, useMatch } from 'react-router-dom'
 import { apiFetch } from '../../lib/api'
 import { decodeStatus } from '../../lib/legislativeStatus'
 import { billUrl } from '../../lib/sessionSlug'
 import { normalizeViewQuery, matchesUrlIdentifier } from '../../lib/savedViews'
+import { useMultiState } from '../../context/ConfigContext'
 import { BillBadge } from '../../components/BillBadge'
 import { DraftChip } from '../../components/DraftChip'
 import { StatusChip } from '../../components/StatusChip'
+import { SessionChip } from '../../components/SessionChip'
+import { RelevanceChip } from '../../components/RelevanceChip'
+import { LastActionChip } from '../../components/LastActionChip'
 import { SECTION_LABEL, CHROME_TEXT, SR_ONLY } from '../../lib/textStyles'
 import { color, fontSize, fontWeight } from '../../styles/tokens'
 import { billDisplayTitle } from '../../../../shared/billTitle'
-import { billsApiParamsFromSearch, searchFromListUrl } from './billsQuery'
+import { billsApiParamsFromSearch, billsFilterValuesFromSearch, searchFromListUrl } from './billsQuery'
+import { buildListSummary } from './listSummary'
+import { BillListPaneSummary } from './BillListPaneSummary'
 import { peekBillsListCache, peekCustomFieldDefs } from './index'
-import { groupDisplay, memberPath } from './BillRow'
+import { groupDisplay, memberPath, formatYearChip } from './BillRow'
+import { PANE_MIN_WIDTH, paneGridTemplate, visiblePaneColumns, type PaneColumn } from './paneWidth'
+import { PaneResizeHandle, useBillListPaneWidth } from './BillListPaneResize'
 import type { Bill } from './types'
 import type { SavedView } from './ViewSwitcher'
 
@@ -20,8 +28,9 @@ import type { SavedView } from './ViewSwitcher'
 // the default 230px sidebar and this 300px pane, BillDetail still gets about
 // 900px — what it gets today in a ~1150px window, wide enough that its
 // 272px right column and its main column sit side by side as they do now.
+// The reader can drag it wider (paneWidth.ts holds the bounds); 300px is the
+// width it starts at and the narrowest it goes.
 export const BILL_SPLIT_MIN_WIDTH = 1440
-const PANE_WIDTH = 300
 
 type BillsPage = { bills: Bill[]; pagination: { page: number; pageSize: number; total: number; totalPages: number } }
 
@@ -29,19 +38,22 @@ type BillsPage = { bills: Bill[]; pagination: { page: number; pageSize: number; 
 // sidebar's Bills link and BillDetail's "Back to bills" both read it), so the
 // pane shows that same list. A saved view leaves the URL in its short
 // `?view=<slug>` form, which spells out no filters, so it is expanded from
-// /views here the way BillList hydrates it.
-async function resolveListSearch(listUrl: string): Promise<URLSearchParams> {
+// /views here the way BillList hydrates it. The view comes back too, for the
+// summary line to name; a slug that matches nothing returns the bare search.
+type ResolvedList = { search: URLSearchParams; view: SavedView | null }
+
+async function resolveListSearch(listUrl: string): Promise<ResolvedList> {
   const search = searchFromListUrl(listUrl)
   const viewId = search.get('view')
-  if (!viewId || normalizeViewQuery(search.toString()) !== '') return search
+  if (!viewId || normalizeViewQuery(search.toString()) !== '') return { search, view: null }
   try {
     const { views } = await apiFetch<{ views: SavedView[] }>('/views')
     const view = (views ?? []).find(v => matchesUrlIdentifier(v, viewId))
-    if (view) return new URLSearchParams(view.query)
+    if (view) return { search: new URLSearchParams(view.query), view }
   } catch {
     // Fall through to the unfiltered list rather than showing nothing.
   }
-  return search
+  return { search, view: null }
 }
 
 // location.pathname arrives percent-encoded ("HB%205042") while billUrl builds
@@ -61,14 +73,67 @@ function isOpenBill(bill: Bill, path: string, here: string, legacyId: string | u
 
 const STACK: CSSProperties = { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, minWidth: 0 }
 
-const PaneRow = memo(function PaneRow({ bill, path, isCurrent, billPaths, index }: {
+// The header the columns sit under: sticky at the top of the scrolling list, on
+// the same grid as every row so each header is over its cells.
+const COLUMN_HEADER_HEIGHT = 30
+
+function PaneColumnHeaders({ columns, multiState }: { columns: PaneColumn[]; multiState: boolean }) {
+  return (
+    <li
+      data-pane-columns
+      style={{
+        position: 'sticky', top: 0, zIndex: 1, height: COLUMN_HEADER_HEIGHT, boxSizing: 'border-box',
+        display: 'flex', alignItems: 'center', padding: '0 12px 0 15px',
+        background: color.surfaceSubtle, borderBottom: `1px solid ${color.borderDefault}`,
+      }}
+    >
+      <div data-pane-grid style={{ display: 'grid', gridTemplateColumns: paneGridTemplate(columns, multiState), columnGap: 8, alignItems: 'center', width: '100%' }}>
+        <span />
+        {columns.map(c => (
+          <span key={c.key} data-pane-col-header={c.key} style={{ ...SECTION_LABEL, whiteSpace: 'nowrap' }}>{c.label}</span>
+        ))}
+      </div>
+    </li>
+  )
+}
+
+const PaneRow = memo(function PaneRow({ bill, path, isCurrent, billPaths, index, columns, multiState }: {
   bill: Bill; path: string; isCurrent: boolean; billPaths: string[]; index: number
+  columns: PaneColumn[]; multiState: boolean
 }) {
   const [hovered, setHovered] = useState(false)
   // A companion group is one row (the lead's), drawn as the Bills list draws it:
   // the lead and one other number, "+N" for the rest, each shown status once.
   const group = bill.group ? groupDisplay(bill.group) : null
   const companions = bill.group ? bill.group.slice(1) : []
+  const wide = columns.length > 0
+
+  const numbers = group ? (
+    <div style={STACK}>
+      {group.shown.map((m, n) => (
+        // The priority is the group's, drawn once, on the lead's number.
+        <BillBadge key={m.id} mini billNumber={m.billNumber} state={m.state} priority={n === 0 ? bill.priority : null} />
+      ))}
+      {group.hidden.length > 0 && (
+        <span aria-hidden style={{ ...CHROME_TEXT, fontWeight: fontWeight.semibold }}>+{group.hidden.length}</span>
+      )}
+    </div>
+  ) : (
+    <BillBadge mini billNumber={bill.billNumber} state={bill.state} isDraft={bill.isDraft} priority={bill.priority} />
+  )
+  const priorityForReaders = bill.priority && <span style={SR_ONLY}>, {bill.priority} priority</span>
+
+  // What each column holds: the Bills page's own chips, drawn read-only (the
+  // row is a link, and the pane filters nothing).
+  const cells: Record<PaneColumn['key'], ReactNode> = {
+    status: group
+      ? <div style={{ ...STACK, alignItems: 'flex-start' }}>{group.statuses.map(status => <StatusChip capWidth key={status} status={decodeStatus(status)} />)}</div>
+      : bill.isDraft ? <DraftChip /> : <StatusChip capWidth status={decodeStatus(bill.status)} />,
+    year: <SessionChip session={formatYearChip(bill.yearStart, bill.yearEnd)} />,
+    lastAction: <LastActionChip date={bill.lastActionDate} />,
+    relevance: <RelevanceChip score={bill.relevanceScore} />,
+  }
+
   return (
     <Link
       to={path}
@@ -80,37 +145,38 @@ const PaneRow = memo(function PaneRow({ bill, path, isCurrent, billPaths, index 
       onMouseLeave={() => setHovered(false)}
       style={{
         display: 'block',
-        padding: '8px 12px 9px',
+        // 15px, not 12: the open row used to mark itself with a 3px left border
+        // (transparent on the others), and that room is now padding so the text
+        // stays where it was. The blue background alone marks the open row.
+        padding: '8px 12px 9px 15px',
         borderBottom: `1px solid ${color.borderDefault}`,
-        borderLeft: `3px solid ${isCurrent ? color.accentBlue : 'transparent'}`,
         background: isCurrent ? color.bgBlueChip : hovered ? color.surfaceSubtle : color.white,
         color: 'inherit',
         textDecoration: 'none',
       }}
     >
-      <div style={{ display: 'flex', alignItems: group ? 'flex-start' : 'center', gap: 8, marginBottom: 4 }}>
-        {group ? (
-          <div style={STACK}>
-            {group.shown.map((m, n) => (
-              // The priority is the group's, drawn once, on the lead's number.
-              <BillBadge key={m.id} mini billNumber={m.billNumber} state={m.state} priority={n === 0 ? bill.priority : null} />
-            ))}
-            {group.hidden.length > 0 && (
-              <span aria-hidden style={{ ...CHROME_TEXT, fontWeight: fontWeight.semibold }}>+{group.hidden.length}</span>
-            )}
-          </div>
-        ) : (
-          <BillBadge mini billNumber={bill.billNumber} state={bill.state} isDraft={bill.isDraft} priority={bill.priority} />
-        )}
-        {bill.priority && <span style={SR_ONLY}>, {bill.priority} priority</span>}
-        <span style={{ marginLeft: 'auto', display: 'flex', minWidth: 0 }}>
-          {group ? (
-            <span style={{ ...STACK, alignItems: 'flex-end' }}>
-              {group.statuses.map(status => <StatusChip key={status} status={decodeStatus(status)} />)}
-            </span>
-          ) : bill.isDraft ? <DraftChip mini /> : <StatusChip status={decodeStatus(bill.status)} />}
-        </span>
-      </div>
+      {wide ? (
+        // Wide: the status moves into its column, so it is not also drawn at
+        // the row's top right.
+        <div data-pane-grid style={{ display: 'grid', gridTemplateColumns: paneGridTemplate(columns, multiState), columnGap: 8, alignItems: group ? 'start' : 'center', marginBottom: 4 }}>
+          <div>{numbers}{priorityForReaders}</div>
+          {columns.map(c => (
+            <div key={c.key} data-pane-col={c.key} style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>{cells[c.key]}</div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ display: 'flex', alignItems: group ? 'flex-start' : 'center', gap: 8, marginBottom: 4 }}>
+          {numbers}
+          {priorityForReaders}
+          <span style={{ marginLeft: 'auto', display: 'flex', minWidth: 0 }}>
+            {group ? (
+              <span style={{ ...STACK, alignItems: 'flex-end' }}>
+                {group.statuses.map(status => <StatusChip capWidth key={status} status={decodeStatus(status)} />)}
+              </span>
+            ) : bill.isDraft ? <DraftChip mini /> : <StatusChip capWidth status={decodeStatus(bill.status)} />}
+          </span>
+        </div>
+      )}
       <div style={{
         fontSize: fontSize.sm,
         color: color.textPrimary,
@@ -139,7 +205,9 @@ const PaneRow = memo(function PaneRow({ bill, path, isCurrent, billPaths, index 
 export function BillListPane() {
   const location = useLocation()
   const [listUrl] = useState(() => sessionStorage.getItem('lastBillsUrl') ?? '/bills')
-  const [search, setSearch] = useState<URLSearchParams | null>(null)
+  const multiState = useMultiState()
+  const [resolved, setResolved] = useState<ResolvedList | null>(null)
+  const search = resolved?.search ?? null
   const [bills, setBills] = useState<Bill[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -147,10 +215,12 @@ export function BillListPane() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const scrollRef = useRef<HTMLUListElement>(null)
+  const pane = useBillListPaneWidth()
+  const columns = visiblePaneColumns(pane.width)
 
   useEffect(() => {
     let cancelled = false
-    void resolveListSearch(listUrl).then(s => { if (!cancelled) setSearch(s) })
+    void resolveListSearch(listUrl).then(r => { if (!cancelled) setResolved(r) })
     return () => { cancelled = true }
   }, [listUrl])
 
@@ -200,6 +270,15 @@ export function BillListPane() {
   const legacyId = useMatch('/bills/:billId')?.params.billId
   const paths = useMemo(() => bills.map(b => billUrl({ id: b.id, state: b.state, sessionSlug: b.sessionSlug, billNumber: b.billNumber })), [bills])
 
+  // The summary is of the list the pane shows: the same resolved query its
+  // request is built from, so the line and the rows cannot disagree.
+  const summary = useMemo(() => resolved && buildListSummary({
+    values: billsFilterValuesFromSearch(resolved.search),
+    view: resolved.view,
+    customFieldDefs: peekCustomFieldDefs(),
+    isMultiState: multiState,
+  }), [resolved, multiState])
+
   // Bring the current bill into view only when it is off-screen, and only when
   // the bill changes (or the list first arrives) — never when "Show more"
   // appends, which would yank the reader back from where they scrolled.
@@ -219,7 +298,8 @@ export function BillListPane() {
       aria-label="Bill list"
       className="bill-list-pane"
       style={{
-        width: PANE_WIDTH,
+        position: 'relative',
+        width: pane.width,
         flexShrink: 0,
         height: '100%',
         display: 'flex',
@@ -228,9 +308,12 @@ export function BillListPane() {
         borderRight: `1px solid ${color.borderDefault}`,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '14px 12px 10px 15px', borderBottom: `1px solid ${color.borderDefault}` }}>
-        <Link to={listUrl} style={{ ...SECTION_LABEL, color: color.linkBlue, textDecoration: 'none' }}>Bills</Link>
-        {!loading && !error && <span style={CHROME_TEXT}>{total.toLocaleString()} {total === 1 ? 'bill' : 'bills'}</span>}
+      <div style={{ borderBottom: `1px solid ${color.borderDefault}` }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '14px 12px 10px 15px' }}>
+          <Link to={listUrl} style={{ ...SECTION_LABEL, color: color.linkBlue, textDecoration: 'none' }}>Bills</Link>
+          {!loading && !error && <span style={CHROME_TEXT}>{total.toLocaleString()} {total === 1 ? 'bill' : 'bills'}</span>}
+        </div>
+        {!loading && !error && summary && <BillListPaneSummary summary={summary} listUrl={listUrl} />}
       </div>
       {loading ? (
         <p style={{ ...CHROME_TEXT, padding: '12px 15px', margin: 0 }}>Loading bills…</p>
@@ -239,10 +322,18 @@ export function BillListPane() {
       ) : bills.length === 0 ? (
         <p style={{ ...CHROME_TEXT, padding: '12px 15px', margin: 0 }}>No bills match this list’s filters.</p>
       ) : (
-        <ul ref={scrollRef} style={{ listStyle: 'none', margin: 0, padding: 0, flex: 1, minHeight: 0, overflowY: 'auto', position: 'relative' }}>
+        <ul
+          ref={scrollRef}
+          style={{
+            listStyle: 'none', margin: 0, padding: 0, flex: 1, minHeight: 0, overflowY: 'auto', position: 'relative',
+            // Keeps scrollIntoView from parking the open row under the sticky headers.
+            scrollPaddingTop: columns.length > 0 ? COLUMN_HEADER_HEIGHT : undefined,
+          }}
+        >
+          {columns.length > 0 && <PaneColumnHeaders columns={columns} multiState={multiState} />}
           {bills.map((b, i) => (
             <li key={b.id}>
-              <PaneRow bill={b} path={paths[i]} isCurrent={isOpenBill(b, paths[i], here, legacyId)} billPaths={paths} index={i} />
+              <PaneRow bill={b} path={paths[i]} isCurrent={isOpenBill(b, paths[i], here, legacyId)} billPaths={paths} index={i} columns={columns} multiState={multiState} />
             </li>
           ))}
           {hasMore && (
@@ -259,6 +350,7 @@ export function BillListPane() {
           )}
         </ul>
       )}
+      {pane.max > PANE_MIN_WIDTH && <PaneResizeHandle width={pane.width} max={pane.max} pane={pane} />}
     </nav>
   )
 }
