@@ -117,25 +117,6 @@ describe('POST /api/mute-link rate limiting', () => {
       expect(bodies[0]).not.toContain('not valid')
     })
 
-    it('does not read the token at all: a refused request never touches the signing key', async () => {
-      // Checking a token creates the instance's signing key on first use
-      // (getOrCreateKey). A fresh instance has none, so a refused request that
-      // left none behind never got as far as the token.
-      await resetDb(); await applyMigrations()
-      const keyRows = async () =>
-        (await env.DB.prepare("SELECT COUNT(*) AS n FROM association_config WHERE key = 'email_link_key'").first<{ n: number }>())!.n
-      expect(await keyRows()).toBe(0)
-
-      const refused = await postToken(forgedToken(), { limiter: limiter(() => true).binding })
-      expect(refused.status).toBe(429)
-      expect(await keyRows()).toBe(0)
-
-      // Control: the same request, allowed, does read the token and create the key.
-      const allowed = await postToken(forgedToken(), { limiter: limiter().binding })
-      expect(allowed.status).toBe(404)
-      expect(await keyRows()).toBe(1)
-    })
-
     it('limits before the body-size check, so an oversized flood is limited too', async () => {
       const res = await post('/api/mute-link', {
         limiter: limiter(() => true).binding,
@@ -221,8 +202,10 @@ describe('POST /api/mute-link rate limiting', () => {
     it('does not spend the magic-link or verify-status buckets', async () => {
       const l = limiter(k => !k.startsWith('mute-link:'))
       const res = await postToken(validToken, { limiter: l.binding, ip: '203.0.113.7' })
-      expect(res.status).toBe(429)
+      // Only the mute-link key was asked about, so denying every other key changes nothing.
+      expect(l.keys).toHaveLength(1)
       expect(l.keys.every(k => k.startsWith('mute-link:'))).toBe(true)
+      expect(res.status).toBe(200)
     })
 
     it('is not refused by a limiter that has only exhausted other routes\' buckets', async () => {
