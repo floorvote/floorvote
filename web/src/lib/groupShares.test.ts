@@ -20,4 +20,9 @@ describe('groupSharedThings', () => {
   it('falls back to the default noun for an empty one', () => {
     expect(groupSharedThings('', false)).toBe('comments, votes, and team position')
   })
+
+  it('adds priority before custom fields when asked', () => {
+    expect(groupSharedThings('team', false, 'and', true)).toBe('comments, votes, team position, and priority')
+    expect(groupSharedThings('team', true, 'and', true)).toBe('comments, votes, team position, priority, and custom fields')
+  })
 })

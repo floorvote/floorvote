@@ -203,6 +203,24 @@ describe('grouping and splitting from the overflow menu', () => {
     expect(screen.getByRole('menuitem', { name: /Split from group/ })).toBeInTheDocument()
   })
 
+  it("describes both actions in the page's own terms: comments, votes, and the org noun's position", async () => {
+    const user = userEvent.setup()
+    renderBillDetail(GROUPED)
+    await openMenu(user)
+    expect(screen.getByRole('menuitem', { name: /Group with…/ })).toHaveTextContent('Share comments, votes, and association position with an identical bill.')
+    expect(screen.getByRole('menuitem', { name: /Split from group/ })).toHaveTextContent('Give A190 back its own comments, votes, and association position.')
+  })
+
+  it('says what grouped bills share in the Group with… dialog, priority included', async () => {
+    const user = userEvent.setup()
+    renderBillDetail(GROUPED)
+    await openMenu(user)
+    await user.click(screen.getByRole('menuitem', { name: /Group with…/ }))
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('Grouped bills share comments, votes, association position, and priority.')
+    expect(dialog).not.toHaveTextContent(/discussion|team's/)
+  })
+
   it('offers no "Split from group" on a bill in no group', async () => {
     const user = userEvent.setup()
     renderBillDetail()

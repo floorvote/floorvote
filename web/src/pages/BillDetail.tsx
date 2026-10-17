@@ -1532,7 +1532,7 @@ export function BillDetail() {
                 menuRows.push({
                   key: 'group-with',
                   label: 'Group with…',
-                  description: 'Share one discussion and the team\'s values with an identical bill.',
+                  description: `Share ${groupSharedThings(config?.orgNoun ?? DEFAULT_ORG_NOUN, customFieldDefs.length > 0)} with an identical bill.`,
                   disabled: demoLocked,
                   onSelect: () => setGroupWithOpen(true),
                 })
@@ -3197,6 +3197,7 @@ export function BillDetail() {
           billId={bill.id}
           billNumber={bill.billNumber}
           groupBillIds={(bill.groupBills ?? []).map(b => b.billId).concat(bill.id)}
+          shares={groupSharedThings(config?.orgNoun ?? DEFAULT_ORG_NOUN, customFieldDefs.length > 0, 'and', true)}
           onClose={() => setGroupWithOpen(false)}
           onGrouped={() => { setGroupWithOpen(false); void refetchBill() }}
         />
