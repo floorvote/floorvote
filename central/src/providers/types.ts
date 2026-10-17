@@ -519,6 +519,14 @@ export interface ProviderSnapshot {
    * keeps the stored ETag.
    */
   unchanged?: boolean
+  /**
+   * `records` are only the records that changed since `SnapshotSession.etag`
+   * (a partial snapshot). Core runs the pass on its stored records with
+   * these replacing the ones they name, by bill id, and never removes a
+   * record one leaves out. Answering a null ETag (a read in full) with a
+   * partial snapshot is an error, and the pass fails closed.
+   */
+  partial?: boolean
 }
 
 /**

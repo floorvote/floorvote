@@ -17,12 +17,13 @@ import type { Env, Db } from '../types'
  * hourly cron alongside the LegiScan sync, one job per provider, for the
  * states the ownership table gives it (lib/stateProviders.ts).
  *
- * None of these providers has a modified-since filter, so each full pass
- * takes the provider's snapshot of a session, stores every record whose hash
- * changed, and feeds the whole list to the same applyMasterList the LegiScan
- * full pass uses: keyword matching, monitor stubs, and queueing matched and
- * changed bills. The ingestor then hands each stored record back to the
- * provider's fetchMeasure.
+ * Each full pass takes the provider's snapshot of a session, stores every
+ * record whose hash changed, and feeds the whole list to the same
+ * applyMasterList the LegiScan full pass uses: keyword matching, monitor
+ * stubs, and queueing matched and changed bills. A provider that can tell
+ * what changed since its last read answers with a partial snapshot, and core
+ * fills in the rest from the records it stored. The ingestor then hands each
+ * stored record back to the provider's fetchMeasure.
  */
 
 const BATCH = 80
@@ -220,14 +221,22 @@ async function upsertProviderPeople(db: Db, providerId: string, list: ProviderPe
  * session with no stored ETag. Otherwise the provider gets the ETag of the
  * last snapshot a pass finished, and a feed that says nothing changed (304)
  * saves the download, not the pass: the records stored from the last read
- * stand in for the snapshot. applyMasterList still runs on every record,
- * since it is what links bills to an instance that newly covers the state,
- * re-queues a changed bill whose ingest failed (its change_hash stays
+ * stand in for the snapshot. A partial snapshot (only the records changed
+ * since that ETag) replaces the stored records it names, and the rest stand
+ * in for the others; nothing is removed. applyMasterList still runs on every
+ * record, since it is what links bills to an instance that newly covers the
+ * state, re-queues a changed bill whose ingest failed (its change_hash stays
  * behind until the ingest succeeds), and moves links whose keywords no
- * longer match. The new ETag is stored only once the pass has queued and
- * sent everything, and only while the provider still owns the state, so a
- * pass that fails or loses the state to a claim midway reads in full next
- * time.
+ * longer match.
+ *
+ * A partial snapshot answering a read in full (a null ETag) can't be told
+ * from a session that lost records, so the pass fails closed before writing
+ * anything. The new ETag is stored only once the pass has queued and sent
+ * everything, only while the provider still owns the state, and only while
+ * the stored ETag is still the one this pass read: a pass that fails retries
+ * from the old ETag, a claim midway leaves the claim's null (a read in full
+ * next time), and a pass that ran alongside another one, whose records may
+ * have landed over its own, clears the ETag so the next pass reads in full.
  */
 async function runSnapshotPass(
   provider: SnapshotProvider,
@@ -238,15 +247,28 @@ async function runSnapshotPass(
   ctx: ProviderContext,
   force: boolean,
 ): Promise<{ records: number; queued: number; refreshed: number }> {
-  const etag = force ? null : session.snapshotEtag ?? null
+  const storedEtag = session.snapshotEtag ?? null
+  const etag = force ? null : storedEtag
   const snapshot = await provider.snapshot({ ...storedSession(session), etag }, ctx)
+  if (snapshot.partial && snapshot.unchanged) {
+    throw new Error(`[sync-${provider.id}] ${session.sessionName}: a snapshot can't be both partial and unchanged; writing nothing`)
+  }
+  if (snapshot.partial && etag === null) {
+    throw new Error(`[sync-${provider.id}] ${session.sessionName}: a partial snapshot answered a read in full (no ETag); writing nothing`)
+  }
   if (snapshot.people && snapshot.people.length > 0) await upsertProviderPeople(db, provider.id, snapshot.people)
   if (snapshot.unchanged) console.log(`[sync-${provider.id}] ${session.sessionName} unchanged since its last read; matching its stored records`)
   // Bills a cutover moved to this provider keep their row ids
   // (lib/carriedIds.ts). Stored records were stored under them already.
+  const listed = snapshot.unchanged
+    ? []
+    : withCarriedBillIds(snapshot.records, await carriedBillIds(db, provider.id, session.state))
   const records = snapshot.unchanged
     ? await storedRecords(db, provider.id, session.sessionId)
-    : withCarriedBillIds(snapshot.records, await carriedBillIds(db, provider.id, session.state))
+    : snapshot.partial
+      ? withChanges(await storedRecords(db, provider.id, session.sessionId), listed)
+      : listed
+  if (snapshot.partial) console.log(`[sync-${provider.id}] ${session.sessionName}: ${listed.length} records changed since its last read; matching them with its stored records`)
   // An empty answer is nothing new.
   if (records.length === 0) return { records: 0, queued: 0, refreshed: 0 }
 
@@ -255,9 +277,16 @@ async function runSnapshotPass(
   // Every bill a cutover moved here gets its first ingest, tracked or not.
   const queued = new Set(await applyMasterList(session, entries, covering, env, db, queue,
     { deferQueuedUpdates: true, ingestMovedBills: true }))
-  const newEtag = snapshot.unchanged ? session.snapshotEtag ?? null : snapshot.etag ?? null
-  if (newEtag !== (session.snapshotEtag ?? null) && await ownerOfState(db, session.state) === provider.id) {
-    await db.update(sessions).set({ snapshotEtag: newEtag }).where(eq(sessions.sessionId, session.sessionId))
+  const newEtag = snapshot.unchanged ? storedEtag : snapshot.etag ?? null
+  if (await ownerOfState(db, session.state) === provider.id) {
+    const still = storedEtag === null ? isNull(sessions.snapshotEtag) : eq(sessions.snapshotEtag, storedEtag)
+    const stored = await db.update(sessions).set({ snapshotEtag: newEtag })
+      .where(and(eq(sessions.sessionId, session.sessionId), still))
+      .returning({ sessionId: sessions.sessionId })
+    if (stored.length === 0) {
+      console.warn(`[sync-${provider.id}] ${session.sessionName}: another pass stored an ETag during this one; clearing it so the next pass reads in full`)
+      await db.update(sessions).set({ snapshotEtag: null }).where(eq(sessions.sessionId, session.sessionId))
+    }
   }
 
   const refreshed = provider.detailsRefresh
@@ -287,6 +316,13 @@ async function storedRecords(db: Db, providerId: string, sessionId: number): Pro
     if (page.length < STORED_PAGE) return out
     after = page[page.length - 1].billId
   }
+}
+
+/** The stored records with a partial snapshot's records in place of the ones they name, by bill id, and its new ones after. */
+function withChanges(stored: ProviderRecord[], changed: ProviderRecord[]): ProviderRecord[] {
+  const byId = new Map(stored.map(r => [r.billId, r]))
+  for (const r of changed) byId.set(r.billId, r)
+  return [...byId.values()]
 }
 
 /**
