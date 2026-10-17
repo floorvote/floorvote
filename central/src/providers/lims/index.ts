@@ -26,7 +26,7 @@ const CATEGORY_BY_PREFIX: Record<string, number> = {
   RC: 16, ANC: 16, AU: 16, CFO: 16, IG: 16, HN: 18, HR: 19, AG: 26,
 }
 
-export const lims: Provider<'LIMS_API_KEY' | 'LIMS_STATES' | 'LIMS_CATEGORIES'> = {
+export const lims: Provider<'LIMS_API_KEY' | 'LIMS_CATEGORIES'> = {
   id: 'lims',
   displayName: 'DC Council',
   // The Council publishes no license for LIMS, so it is credited without one.
@@ -35,10 +35,9 @@ export const lims: Provider<'LIMS_API_KEY' | 'LIMS_STATES' | 'LIMS_CATEGORIES'> 
     url: 'https://lims.dccouncil.gov',
   },
   coverage: { maintainers: ['anotherpanacea-eng'] },
-  envKeys: ['LIMS_API_KEY', 'LIMS_STATES', 'LIMS_CATEGORIES'],
+  envKeys: ['LIMS_API_KEY', 'LIMS_CATEGORIES'],
   states: [LIMS_STATE],
   configured: env => !!env.LIMS_API_KEY,
-  statesEnvKey: 'LIMS_STATES',
   // LIMS answers 429 above about two concurrent requests.
   ingestQueue: 'LIMS_INGESTOR_QUEUE',
 

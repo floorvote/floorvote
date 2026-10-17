@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import Papa from 'papaparse'
 import { apiFetch } from '../../lib/api'
 import { color, radius, fontSize, fontWeight, shadow } from '../../styles/tokens'
+import { primaryButtonColors } from '../../styles/primaryButton'
 import { matchHeaders, rowToImport, type ImportRowPreview, type RawRow } from '../../lib/calendarImportParse'
 import { parseIcs, isIcs } from '../../lib/icsImportParse'
 import { useDemo } from '../../context/DemoContext'
@@ -274,7 +275,7 @@ export function ImportEvents({ onClose, onImported }: Props) {
                 type="button"
                 onClick={onClose}
                 style={{
-                  background: color.accentBlue, color: color.textOnFill, border: 'none', borderRadius: radius.md,
+                  ...primaryButtonColors(false), border: 'none', borderRadius: radius.md,
                   padding: '8px 16px', fontSize: fontSize.sm, fontWeight: fontWeight.medium, cursor: 'pointer',
                 }}
               >
@@ -383,11 +384,9 @@ export function ImportEvents({ onClose, onImported }: Props) {
                 onClick={handleConfirm}
                 disabled={okCount === 0 || submitting || demoLocked}
                 style={{
-                  background: (okCount === 0 || demoLocked) ? color.bgRedDisabled : color.accentBlue,
-                  color: color.textOnFill, border: 'none', borderRadius: radius.md,
+                  ...primaryButtonColors(okCount === 0 || submitting || demoLocked), border: 'none', borderRadius: radius.md,
                   padding: '8px 16px', fontSize: fontSize.sm, fontWeight: fontWeight.medium,
                   cursor: okCount === 0 || submitting || demoLocked ? 'not-allowed' : 'pointer',
-                  opacity: submitting ? 0.7 : 1,
                 }}
               >
                 {submitting ? 'Importing…' : `Create ${okCount} event${okCount === 1 ? '' : 's'}`}

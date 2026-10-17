@@ -4,17 +4,24 @@ import { useHasBodyEvents } from '../lib/capabilities'
 import { useEffect, useRef, useState } from 'react'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 import { usePrefersReducedMotion } from '../lib/usePrefersReducedMotion'
+import { useConfig } from '../context/ConfigContext'
+import { orgNotificationsLabel } from '../lib/orgNoun'
 
 const MEMBER_TABS = [
   { to: '/profile', label: 'Account' },
 ]
 
-const ADMIN_TABS = [
-  { to: '/admin/config', label: 'Config' },
-  { to: '/admin/members', label: 'Members' },
-  { to: '/admin/notifications', label: 'Notifications' },
-  { to: '/admin/drafts', label: 'Draft bills' },
-]
+// The notifications tab is named after the instance's org noun (see
+// orgNotificationsLabel), so it distinguishes the instance-wide email switches
+// from a member's own Notifications card on the Account page.
+function adminTabsFor(notificationsLabel: string) {
+  return [
+    { to: '/admin/config', label: 'Config' },
+    { to: '/admin/members', label: 'Members' },
+    { to: '/admin/notifications', label: notificationsLabel },
+    { to: '/admin/drafts', label: 'Draft bills' },
+  ]
+}
 
 // Only while a covered state's provider publishes the legislature's own
 // calendar: rules that can't fire aren't offered (gated on capability, never
@@ -62,7 +69,9 @@ export function SettingsNav() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin' || user?.role === 'owner'
   const hasBodyEvents = useHasBodyEvents()
-  const adminTabs = hasBodyEvents ? [...ADMIN_TABS, CALENDAR_EVENTS_TAB] : ADMIN_TABS
+  const { config } = useConfig()
+  const baseAdminTabs = adminTabsFor(orgNotificationsLabel(config?.orgNoun))
+  const adminTabs = hasBodyEvents ? [...baseAdminTabs, CALENDAR_EVENTS_TAB] : baseAdminTabs
   const navRef = useRef<HTMLElement | null>(null)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(false)

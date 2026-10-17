@@ -52,6 +52,12 @@ in a rolling day, counted from `email_change_requested` rows. The confirmation
 page's status and confirm calls have their own per-IP keys
 (`email-change-status:<ip>`, `email-change-confirm:<ip>`).
 
+The unauthenticated one-click mute (`POST /api/mute-link`, `api/src/routes/muteLink.ts`)
+also uses `LOGIN_RATE_LIMITER`, under `mute-link:<ip>`. The key is the IP alone, not
+IP plus token, so a flooder can't dodge the cap by varying the token. The check runs
+before the body-size check and before the token is read, so a 429 reveals nothing
+about whether a token is valid.
+
 ## 2. Turnstile
 
 Turnstile is fully enabled on both login surfaces. The server gate

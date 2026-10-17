@@ -168,7 +168,7 @@ describe('the Council\'s calendar', () => {
     expect(await syncCalendar()).toEqual([])
     expect(calls).toEqual([])
     expect(await eventsFor()).toMatchObject({ capabilities: {}, events: [] })
-    expect(await getJson('/bills/labels?state=DC')).toMatchObject({ hasEvents: false, capabilities: { bodyEvents: false, deadlines: false } })
+    expect(await getJson('/bills/labels?state=DC')).toMatchObject({ hasEvents: false, capabilities: { bodyEvents: false, deadlines: true } })
   })
 
   it('reaches instances covering DC once DC is claimed, each event under the UID a fork already issued', async () => {
