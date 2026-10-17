@@ -18,7 +18,8 @@
  * Adding a purpose: add its message type to `PurposeMessage` and its rule to
  * `RULES`. Today: sign-in (tenant login, admin-sent login and invite links, the
  * invite queue), account (the email-change emails and the "this wasn't me"
- * report), and notification (mentions and replies). #708 to #710 move the rest.
+ * report), notification (mentions and replies), and bulk (the digest and the
+ * week-ahead email). #709 and #710 move the rest.
  *
  * Tests pass in-memory providers through `SenderOptions.providers`; the real
  * adapters live in `./emailProviders`.
@@ -161,8 +162,11 @@ const RULES: Rules = {
   // Mentions and replies. Same rule as account mail: a member is waiting on the
   // conversation, so a first-provider outage shouldn't drop it.
   notification: { fallback: true, counts: true, from: 'default', suppressedInDemo: () => true },
-  // TODO(#708): stub rule, to be replaced by the real one.
-  bulk: { fallback: true, counts: false, from: 'default', suppressedInDemo: () => false },
+  // The digest and the week-ahead email. Never falls back: an outage on the
+  // first provider must not push a whole recipient list onto the second and burn
+  // its quota. Counts each send to the provider that sent it, goes out from the
+  // bulk From, and a demo instance never sends it.
+  bulk: { fallback: false, counts: true, from: 'bulk', suppressedInDemo: () => true },
 }
 
 function ruleFor(message: PurposeMessage): Rule<PurposeMessage> {

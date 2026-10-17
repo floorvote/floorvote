@@ -644,7 +644,7 @@ describe('bulk purpose: health counting', () => {
     // The flaky recipient is not retried on the second provider, and the bad address never reaches one.
     expect(second.sent).toHaveLength(0)
     expect(recorder.calls).toHaveLength(1)
-    expect(recorder.calls[0].map(a => `${a.provider}:${a.ok}:${a.permanent ?? false}`).sort()).toEqual([
+    expect(recorder.calls[0].map(a => `${a.provider}:${a.ok}:${!a.ok && a.permanent}`).sort()).toEqual([
       'cloudflare:false:false', 'cloudflare:false:true', 'cloudflare:true:false',
     ])
   })
