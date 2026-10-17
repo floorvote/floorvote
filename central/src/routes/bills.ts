@@ -17,6 +17,8 @@ import { calendarCoverage } from '../lib/bodyEvents'
 import { providerCapabilities } from '../lib/capabilities'
 import { billReferralDetails, pendingCommittee } from '../lib/committees'
 import { refreshStaleStub } from '../lib/stubRefresh'
+import { httpUrl } from '../../../shared/httpUrl'
+import { parseBio, profileUrlOf } from '../lib/people'
 import type { Env } from '../types'
 
 export const billsRoutes = new Hono<{ Bindings: Env }>()
@@ -203,6 +205,7 @@ billsRoutes.get('/:id', async (c) => {
       party: schema.people.party,
       role: schema.people.role,
       bioJson: schema.people.bioJson,
+      ballotpedia: schema.people.ballotpedia,
       personProvider: schema.people.provider,
     })
       .from(schema.billSponsors)
@@ -225,6 +228,9 @@ billsRoutes.get('/:id', async (c) => {
       peopleId: schema.rollCallVotes.peopleId,
       name: schema.people.name,
       vote: schema.rollCallVotes.voteText,
+      bioJson: schema.people.bioJson,
+      ballotpedia: schema.people.ballotpedia,
+      personProvider: schema.people.provider,
     })
       .from(schema.rollCallVotes)
       .innerJoin(schema.rollCalls, eq(schema.rollCalls.rollCallId, schema.rollCallVotes.rollCallId))
@@ -237,12 +243,12 @@ billsRoutes.get('/:id', async (c) => {
     billReferralDetails(db, numeric),
   ])
   const coverage = await calendarCoverage(db, provider, numeric, calendarEntries)
-  const legislatorVotesByRc = new Map<number, { personId: string; name: string; vote: string }[]>()
+  const legislatorVotesByRc = new Map<number, { personId: string; name: string; vote: string; url: string | null }[]>()
   for (const r of memberVoteRows) {
     if (r.peopleId == null || !r.vote) continue
     const list = legislatorVotesByRc.get(r.rollCallId) ?? []
-    // Same fallback as sponsors: a person with no people row still counts.
-    list.push({ personId: String(r.peopleId), name: r.name ?? String(r.peopleId), vote: r.vote })
+    // Same fallback as sponsors: a person with no people row still counts. A voter links only to the provider's profile page, never to its last-resort sponsor page.
+    list.push({ personId: String(r.peopleId), name: r.name ?? String(r.peopleId), vote: r.vote, url: profileUrlOf(r) })
     legislatorVotesByRc.set(r.rollCallId, list)
   }
   for (const list of legislatorVotesByRc.values()) list.sort((a, b) => a.name.localeCompare(b.name))
@@ -278,15 +284,9 @@ billsRoutes.get('/:id', async (c) => {
     .sort((a, b) => a.sponsorOrder - b.sponsorOrder)
     .map(s => {
       const name = s.name ?? String(s.peopleId ?? 'Unknown')
-      let url: string | null = null
-      if (s.bioJson) {
-        try {
-          const bio = JSON.parse(s.bioJson) as { social?: { biography?: string } }
-          url = bio.social?.biography ?? null
-        } catch { /* ignore */ }
-      }
-      // A profile link from the provider that wrote the person, when it has one.
-      if (!url && s.peopleId) url = findProvider(s.personProvider ?? DEFAULT_PROVIDER_ID)?.personUrl?.({ state: bill.state, name, peopleId: s.peopleId }) ?? null
+      // The provider's profile page, else the stored bio page, else the provider's last-resort page.
+      let url = profileUrlOf(s) ?? httpUrl(parseBio(s.bioJson)?.social?.biography)
+      if (!url && s.peopleId) url = httpUrl(findProvider(s.personProvider ?? DEFAULT_PROVIDER_ID)?.personUrl?.({ state: bill.state, name, peopleId: s.peopleId }))
       return {
         name,
         party: s.party ?? null,
