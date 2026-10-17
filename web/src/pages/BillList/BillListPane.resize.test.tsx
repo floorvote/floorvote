@@ -834,3 +834,65 @@ describe('the sidebar widening after the pane drew (fix round)', () => {
     expect(localStorage.getItem(STORAGE_KEY)).toBe('670')
   })
 })
+
+describe('a key that changes nothing stores nothing (fix round 2)', () => {
+  it.each([['ArrowRight'], ['End']])('%s at the maximum leaves a wider stored preference alone', async (key) => {
+    setWindow(1440) // shows 510px of a stored 640px: already at the maximum
+    localStorage.setItem(STORAGE_KEY, '640')
+    renderPane()
+    await ready()
+    expect(widthOf()).toBe('510px')
+    fireEvent.keyDown(separator(), { key })
+    expect(widthOf()).toBe('510px')
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('640')
+    setWindow(1600)
+    expect(widthOf()).toBe('640px')
+  })
+
+  it.each([['ArrowLeft'], ['Home']])('%s at the minimum leaves the stored value alone', async (key) => {
+    localStorage.setItem(STORAGE_KEY, '120') // shown as the 300px minimum
+    renderPane()
+    await ready()
+    fireEvent.keyDown(separator(), { key })
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('120')
+  })
+
+  it.each([['ArrowLeft'], ['Home']])('%s at the minimum stores nothing when nothing was stored', async (key) => {
+    renderPane()
+    await ready()
+    fireEvent.keyDown(separator(), { key })
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
+  })
+
+  it('still keeps the page from scrolling on a key that changes nothing', async () => {
+    renderPane()
+    await ready()
+    expect(fireEvent.keyDown(separator(), { key: 'ArrowLeft' })).toBe(false)
+  })
+
+  it('still stores a key press that changed the width', async () => {
+    setWindow(1440)
+    localStorage.setItem(STORAGE_KEY, '640')
+    renderPane()
+    await ready()
+    fireEvent.keyDown(separator(), { key: 'ArrowLeft' })
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('494')
+  })
+})
+
+describe('one pointer at a time (fix round 2)', () => {
+  it('follows only the pointer that started the drag', async () => {
+    renderPane()
+    await ready()
+    fireEvent.pointerDown(separator(), { clientX: 300, button: 0, pointerId: 1 })
+    fireEvent.pointerMove(document, { clientX: 500, pointerId: 2 })
+    expect(widthOf()).toBe('300px')
+    fireEvent.pointerMove(document, { clientX: 400, pointerId: 1 })
+    expect(widthOf()).toBe('400px')
+    fireEvent.pointerUp(document, { clientX: 400, pointerId: 2 })
+    fireEvent.pointerMove(document, { clientX: 450, pointerId: 1 })
+    expect(widthOf()).toBe('450px') // another pointer's release did not end the drag
+    drop(450)
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('450')
+  })
+})

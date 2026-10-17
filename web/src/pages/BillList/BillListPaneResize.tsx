@@ -62,9 +62,11 @@ export function PaneResizeHandle({ width, max, pane }: { width: number; max: num
     const startX = e.clientX
     const startWidth = width
     const startChosen = pane.chosen
+    const pointerId = e.pointerId
     let latest = startWidth
 
     const onMove = (ev: globalThis.PointerEvent) => {
+      if (ev.pointerId !== pointerId) return
       // The limit is read each move: the window or the sidebar may have changed.
       latest = clampPaneWidth(startWidth + ev.clientX - startX, pane.currentMax())
       pane.setChosen(latest)
@@ -81,7 +83,8 @@ export function PaneResizeHandle({ width, max, pane }: { width: number; max: num
     // Only a drag that changed the width is a choice. A bare click, or a drag
     // back to where it began, leaves the stored preference alone (it may be
     // wider than this window shows). What is stored is the width that was shown.
-    const onUp = () => {
+    const onUp = (ev: globalThis.PointerEvent) => {
+      if (ev.pointerId !== pointerId) return
       end()
       const shown = clampPaneWidth(latest, pane.currentMax())
       if (shown === startWidth) pane.setChosen(startChosen)
@@ -101,7 +104,9 @@ export function PaneResizeHandle({ width, max, pane }: { width: number; max: num
     const next = keyboardPaneWidth(width, e.key, max)
     if (next === null) return
     e.preventDefault()
-    pane.choose(next)
+    // At a bound the key changes nothing, and must not overwrite a stored width
+    // wider (or narrower) than this window shows.
+    if (next !== width) pane.choose(next)
   }
 
   const lit = hovered || focused || dragging
