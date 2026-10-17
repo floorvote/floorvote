@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { createSender, resolveFrom, resolveFromBulk, resolveReplyTo, type SignInMessage, type SignInEvent, type HealthRecorder, type SenderEnv } from './emailSender'
+import {
+  createSender, resolveFrom, resolveFromBulk, resolveReplyTo,
+  type SignInMessage, type SignInEvent, type AccountMessage, type NotificationMessage, type HealthRecorder, type SenderEnv,
+} from './emailSender'
 import type { Attempt, EmailProvider, OutgoingEmail, ProviderName } from './emailProviders'
 
 // The sender against in-memory providers: no fetch, no binding. The adapters'
@@ -340,5 +343,149 @@ describe('default providers from env', () => {
     const r = await createSender({ ...env, EMAIL_PROVIDER: 'cloudflare', EMAIL }).send(signIn())
     expect(r).toMatchObject({ ok: false, provider: 'cloudflare', permanent: false })
     expect(fetchStub).not.toHaveBeenCalled()
+  })
+})
+
+// The account purpose (email-change emails and the "this wasn't me" report) and
+// the notification purpose (mentions and replies) share one rule: they fall
+// back, count toward email health, and a demo instance never sends them.
+const account = (overrides: Partial<AccountMessage> = {}): AccountMessage => ({
+  purpose: 'account', to: ['jane@example.com'], subject: 'Confirm your new email', html: '<p>Confirm <a href="https://x.test/c">here</a></p>',
+  ...overrides,
+})
+const notification = (overrides: Partial<NotificationMessage> = {}): NotificationMessage => ({
+  purpose: 'notification', to: ['jane@example.com'], subject: '[HB 1] New comment', html: '<p>Ann commented</p>',
+  headers: { 'In-Reply-To': '<bill-1@x.test>', References: '<bill-1@x.test>' },
+  ...overrides,
+})
+
+describe.each([
+  ['account', account],
+  ['notification', notification],
+] as const)('%s purpose', (_purpose, make) => {
+  it('goes out through the second provider when the first has an outage', async () => {
+    const first = memoryProvider('cloudflare', 'temporary'), second = memoryProvider('resend')
+    const r = await createSender(env, { providers: [first, second] }).send(make())
+    expect(r).toMatchObject({ ok: true, provider: 'resend' })
+    expect(r.attempts.map(a => `${a.provider}:${a.ok}`)).toEqual(['cloudflare:false', 'resend:true'])
+    expect(second.sent[0].to).toEqual(['jane@example.com'])
+  })
+
+  it('goes out through the second provider when the first adapter throws', async () => {
+    const r = await createSender(env, { providers: [memoryProvider('cloudflare', 'throw'), memoryProvider('resend')] }).send(make())
+    expect(r).toMatchObject({ ok: true, provider: 'resend' })
+  })
+
+  it('counts each attempt of a rescued send to its own provider', async () => {
+    const recorder = memoryRecorder()
+    await createSender(env, { recorder, providers: [memoryProvider('cloudflare', 'temporary'), memoryProvider('resend')] }).send(make())
+    expect(recorder.calls).toHaveLength(1)
+    expect(recorder.calls[0].map(a => ({ provider: a.provider, ok: a.ok }))).toEqual([
+      { provider: 'cloudflare', ok: false },
+      { provider: 'resend', ok: true },
+    ])
+  })
+
+  it('counts a send that worked first time, once, to the first provider', async () => {
+    const recorder = memoryRecorder()
+    await createSender(env, { recorder, providers: [memoryProvider('cloudflare'), memoryProvider('resend')] }).send(make())
+    expect(recorder.calls).toEqual([[expect.objectContaining({ provider: 'cloudflare', ok: true })]])
+  })
+
+  it('treats a suppressed recipient as permanent, counts it, and does not retry it through the other provider', async () => {
+    const recorder = memoryRecorder()
+    const first = memoryProvider('cloudflare', 'permanent'), second = memoryProvider('resend')
+    const r = await createSender(env, { recorder, providers: [first, second] }).send(make())
+    expect(r).toMatchObject({ ok: false, provider: 'cloudflare', permanent: true })
+    expect(second.sent).toHaveLength(0)
+    expect(recorder.calls[0]).toEqual([expect.objectContaining({ provider: 'cloudflare', ok: false, permanent: true })])
+  })
+
+  it('reports an outage on both providers as temporary, with one attempt on each and no more', async () => {
+    const first = memoryProvider('cloudflare', 'temporary'), second = memoryProvider('resend', 'temporary')
+    const r = await createSender(env, { providers: [first, second] }).send(make())
+    expect(r).toMatchObject({ ok: false, provider: 'resend', permanent: false })
+    expect(first.sent).toHaveLength(1)
+    expect(second.sent).toHaveLength(1)
+  })
+
+  it('sends from the default From, never the bulk one', async () => {
+    const first = memoryProvider('cloudflare')
+    await createSender({ ...env, EMAIL_FROM_BULK: 'bulk@mail.example.org' }, { providers: [first] }).send(make())
+    expect(first.sent[0].from).toBe('FloorVote <notifications@example.org>')
+  })
+
+  it('is suppressed in demo mode by the rule alone: no provider, no count, and not a failure', async () => {
+    const first = memoryProvider('cloudflare'), recorder = memoryRecorder()
+    const r = await createSender({ ...env, DEMO_MODE: 'true' }, { recorder, providers: [first] }).send(make())
+    expect(r).toMatchObject({ ok: true, provider: null, skipped: 'demo-mode' })
+    expect(first.sent).toHaveLength(0)
+    expect(recorder.calls.flat()).toHaveLength(0)
+  })
+
+  it('sends when demo mode is off', async () => {
+    const first = memoryProvider('cloudflare')
+    expect(await createSender({ ...env, DEMO_MODE: 'false' }, { providers: [first] }).send(make())).toMatchObject({ ok: true })
+    expect(first.sent).toHaveLength(1)
+  })
+
+  it('fails an invalid address as permanent without calling a provider', async () => {
+    const first = memoryProvider('cloudflare')
+    const r = await createSender(env, { providers: [first] }).send(make({ to: ['jane@example.gov;'] }))
+    expect(r).toMatchObject({ ok: false, provider: null, permanent: true })
+    expect(first.sent).toHaveLength(0)
+  })
+
+  it('reports a mixed batch per message, with each rescue counted to the provider that sent it', async () => {
+    const first: EmailProvider = {
+      name: 'cloudflare',
+      async send(email) {
+        if (email.to[0].startsWith('gone')) return { ok: false, provider: 'cloudflare', error: 'E_RECIPIENT_SUPPRESSED: gone', permanent: true }
+        if (email.to[0].startsWith('flaky')) return { ok: false, provider: 'cloudflare', error: 'outage', permanent: false }
+        return { ok: true, provider: 'cloudflare', messageId: 'cf' }
+      },
+    }
+    const second = memoryProvider('resend')
+    const recorder = memoryRecorder()
+    const r = await createSender(env, { recorder, providers: [first, second] }).sendBatch([
+      make({ to: ['ok@example.com'] }), make({ to: ['gone@example.com'] }), make({ to: ['flaky@example.com'] }),
+    ])
+    expect(r).toMatchObject({ sent: 2, failed: 1, skipped: 0 })
+    expect(r.results.map(x => (x.ok ? `ok:${x.provider}` : `fail:${x.permanent ? 'permanent' : 'temporary'}`))).toEqual([
+      'ok:cloudflare', 'fail:permanent', 'ok:resend',
+    ])
+    expect(second.sent.map(e => e.to[0])).toEqual(['flaky@example.com'])
+    expect(recorder.calls).toHaveLength(1)
+    expect(recorder.calls[0].map(a => `${a.provider}:${a.ok}`).sort()).toEqual(['cloudflare:false', 'cloudflare:false', 'cloudflare:true', 'resend:true'])
+  })
+
+  it('suppresses a whole batch in demo mode', async () => {
+    const first = memoryProvider('cloudflare')
+    const r = await createSender({ ...env, DEMO_MODE: 'true' }, { providers: [first] }).sendBatch([make({ to: ['a@example.com'] }), make({ to: ['b@example.com'] })])
+    expect(r).toMatchObject({ sent: 0, failed: 0, skipped: 2 })
+    expect(first.sent).toHaveLength(0)
+  })
+})
+
+describe('notification purpose headers', () => {
+  it('forwards a reply\'s thread and mute headers unchanged to the provider, and again to the fallback', async () => {
+    const first = memoryProvider('cloudflare', 'temporary'), second = memoryProvider('resend')
+    const headers = {
+      'In-Reply-To': '<bill-1@x.test>', References: '<bill-1@x.test>',
+      'List-Unsubscribe': '<https://x.test/api/mute-link?token=t>', 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+    }
+    await createSender(env, { providers: [first, second] }).send(notification({ headers }))
+    expect(first.sent[0].headers).toEqual(headers)
+    expect(second.sent[0].headers).toEqual(headers)
+  })
+})
+
+describe('purposes apart: one rule does not leak into another', () => {
+  it('lets a sign-in login link send in demo mode while account and notification emails do not', async () => {
+    const first = memoryProvider('cloudflare')
+    const r = await createSender({ ...env, DEMO_MODE: 'true' }, { providers: [first] }).sendBatch([
+      signIn({ link: 'login' }), account(), notification(),
+    ])
+    expect(r).toMatchObject({ sent: 1, failed: 0, skipped: 2 })
   })
 })
