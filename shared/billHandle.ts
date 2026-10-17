@@ -12,6 +12,10 @@
  * migration. Hearing UIDs are built from `toLegacyHandle` and stay legacy for
  * good, so subscribers' calendars never churn.
  *
+ * A tenant row may be stored under either spelling while the rename rolls out,
+ * so a lookup by handle matches both (`handleForms`), and a read from central
+ * always uses the legacy spelling (`legacyHandle`).
+ *
  * Every place in the instance API and web app that builds or parses a handle
  * goes through here, so the format lives in one place. Central has its own
  * copy in `central/src/lib/billHandle.ts` (central is a standalone package).
@@ -30,9 +34,6 @@ export const HANDLE_PREFIXES = [LEGACY_HANDLE_PREFIX, NEUTRAL_HANDLE_PREFIX] as 
  * release 2 switches it to the neutral prefix when it migrates stored handles.
  */
 const STORED_PREFIX: (typeof HANDLE_PREFIXES)[number] = LEGACY_HANDLE_PREFIX
-
-/** The prefix tenants store handles under. Kept for callers that filter on it. */
-export const HANDLE_PREFIX = STORED_PREFIX
 
 // Central bill ids are positive integers, so `legiscan:0` isn't a handle.
 const HANDLE_RE = /^(?:legiscan|bill):([1-9]\d*)$/
@@ -64,15 +65,33 @@ export function isHandle(value: string | null | undefined): value is string {
 
 /**
  * The form tenants store a handle under, for a handle that arrived in either
- * form. Anything that isn't a handle comes back unchanged, so the same bill
- * never gets two rows (or two companion links, or two calendar UIDs) because
- * central named it differently.
+ * form. Anything that isn't a handle comes back unchanged.
  */
-export function normalizeHandle<T extends string | null | undefined>(handle: T): T {
+export function normalizeHandle(handle: string): string
+export function normalizeHandle(handle: string | null | undefined): string | null | undefined
+export function normalizeHandle(handle: string | null | undefined): string | null | undefined {
   const id = parseHandle(handle)
-  return (id === null ? handle : toHandle(id)) as T
+  return id === null ? handle : toHandle(id)
 }
 
-// STUBS (red run only)
-export function handleForms(handle: string): string[] { return [handle] }
-export function legacyHandle(handle: string): string { return handle }
+/**
+ * The legacy spelling of a handle that arrived in either form; anything that
+ * isn't a handle comes back unchanged. Tenants ask central for a bill by this,
+ * since a central that predates release 1 can't read a neutral handle.
+ */
+export function legacyHandle(handle: string): string {
+  const id = parseHandle(handle)
+  return id === null ? handle : toLegacyHandle(id)
+}
+
+/**
+ * Every spelling a tenant row for this bill may be stored under, legacy first:
+ * both for a handle, just the value for anything else. Release 2's migration
+ * rewrites stored handles while a release-1 worker may still be running, so a
+ * lookup by handle matches both (`inArray(col, handleForms(h))`) and never
+ * inserts a second row for a bill held under the other spelling.
+ */
+export function handleForms(handle: string): string[] {
+  const id = parseHandle(handle)
+  return id === null ? [handle] : [toLegacyHandle(id), `${NEUTRAL_HANDLE_PREFIX}${id}`]
+}

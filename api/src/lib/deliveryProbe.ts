@@ -2,6 +2,7 @@ import { eq, sql } from 'drizzle-orm'
 import { associationConfig } from '../db/schema'
 import { centralFetch } from './centralFetch'
 import { nowDb } from './dbTime'
+import { legacyHandle } from '../../../shared/billHandle'
 import type { AppDb, Env, TenantQueueMessage } from '../types'
 
 /**
@@ -29,7 +30,7 @@ export interface DeliveryProbeRecord {
 export async function recordDeliveryProbe(msg: TenantQueueMessage, env: Env, db: AppDb): Promise<void> {
   let readStatus = 0
   try {
-    const res = await centralFetch(env, `/bills/${msg.billId}`)
+    const res = await centralFetch(env, `/bills/${legacyHandle(msg.billId)}`)
     readStatus = res.status
     await res.body?.cancel()
   } catch (err) {

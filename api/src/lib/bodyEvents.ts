@@ -5,7 +5,7 @@ import { hearingUid } from './hearingUid'
 import { nowDb } from './dbTime'
 import { applyEventRules, bodyEventFacets, centralOptions, loadEventRules, optionCommittees } from './eventRules'
 import { httpUrl } from '../../../shared/httpUrl'
-import { normalizeHandle } from '../../../shared/billHandle'
+import { handleForms, normalizeHandle } from '../../../shared/billHandle'
 import type { Attribution, ProviderCredit } from '../../../shared/dataAttribution'
 import type { AppDb, Env } from '../types'
 
@@ -264,11 +264,12 @@ async function reconcileBodyEvents(
   }
 
   // Agenda bills the instance holds, by handle.
-  const handles = [...new Set(events.flatMap(e => e.bills).map(normalizeHandle))]
+  // Keyed by the normalized handle, and looked up by both spellings, since a row may be stored under either (#305).
+  const handles = [...new Set(events.flatMap(e => e.bills).flatMap(handleForms))]
   const billByHandle = new Map<string, string>()
   for (const chunk of chunks(handles)) {
     for (const b of await db.select({ id: bills.id, externalId: bills.externalId }).from(bills).where(inArray(bills.externalId, chunk)).all()) {
-      if (b.externalId) billByHandle.set(b.externalId, b.id)
+      if (b.externalId) billByHandle.set(normalizeHandle(b.externalId), b.id)
     }
   }
 

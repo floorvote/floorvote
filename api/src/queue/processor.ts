@@ -15,7 +15,8 @@ import { nowDb } from '../lib/dbTime'
 import { addToNewMatchesRow } from '../lib/newMatch'
 import { LEGACY_STATUS_ORDER, LEGISCAN_CODE_WORDS } from '../../../shared/legacyStatusOrder'
 import { httpUrl } from '../../../shared/httpUrl'
-import { normalizeHandle } from '../../../shared/billHandle'
+import { legacyHandle } from '../../../shared/billHandle'
+import { resolveStoredHandle } from '../lib/storedHandle'
 import type { AppDb, Env, TenantQueueMessage } from '../types'
 
 class AiShedError extends Error {
@@ -179,7 +180,7 @@ export async function processQueue(
       message.ack()
     } catch (err) {
       if (err instanceof AiShedError) {
-        await recordShedAttempt(db, normalizeHandle(message.body.billId), message.attempts, err)
+        await recordShedAttempt(db, await resolveStoredHandle(db, message.body.billId), message.attempts, err)
         console.warn(
           `[processor] AI gateway shed for ${message.body.billId}`
           + ` (status ${err.status ?? 'unknown'})`
@@ -274,8 +275,10 @@ export async function processCentralNotification(
 ): Promise<void> {
   if (msg.tenantId !== env.TENANT_ID) return
   // A handle may arrive in either form (#305). Everything below, including the
-  // bill lookup, its stored handle, and calendar UIDs, sees the stored form.
-  msg = { ...msg, billId: normalizeHandle(msg.billId) }
+  // bill lookup and the handle it is stored under, sees the spelling this
+  // instance stores for the bill. Only the reads from central and the calendar
+  // UIDs use the legacy one.
+  msg = { ...msg, billId: await resolveStoredHandle(db, msg.billId) }
 
   // A delivery check (scripts/verify-instance.sh): record that it arrived and
   // stop. It must reach no bill write, no feed event, and no analysis.
@@ -283,7 +286,7 @@ export async function processCentralNotification(
 
   // When this copy of the bill was read: texts stored later come from a newer one.
   const fetchedAt = nowDb()
-  const res = await centralFetch(env, `/bills/${msg.billId}`)
+  const res = await centralFetch(env, `/bills/${legacyHandle(msg.billId)}`)
   if (!res.ok) throw new Error(`Central API returned ${res.status} for bill ${msg.billId}`)
 
   const centralBill = await res.json() as CentralBill
