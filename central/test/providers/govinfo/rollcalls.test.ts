@@ -197,7 +197,7 @@ describe('a Senate roll call file', () => {
     ['a vote it doesn\'t know', (x: string) => x.replace('<vote_cast>Nay</vote_cast>', '<vote_cast>Guilty</vote_cast>')],
     ['a member with no LIS id', (x: string) => x.replace('<lis_member_id>S428</lis_member_id>', '<lis_member_id/>')],
     ['a member with a LIS id that isn\'t one', (x: string) => x.replace('<lis_member_id>S428</lis_member_id>', '<lis_member_id>428</lis_member_id>')],
-    ['a member named twice', (x: string) => x.replace('<lis_member_id>S428</lis_member_id>', '<lis_member_id>S354</lis_member_id>')],
+    ['a member named twice', (x: string) => x.replace('<lis_member_id>S428</lis_member_id>', '<lis_member_id>S330</lis_member_id>')],
     ['a member with no last name', (x: string) => x.replace('<last_name>Alsobrooks</last_name>', '<last_name/>')],
     ['a member with no state', (x: string) => x.replace(/(<last_name>Alsobrooks<\/last_name>[\s\S]*?)<state>MD<\/state>/, '$1<state/>')],
     ['a root that isn\'t a roll call', (x: string) => x.replace(/roll_call_vote/g, 'html')],
@@ -237,7 +237,7 @@ describe('senate.gov\'s member list', () => {
   it('maps each sitting senator\'s LIS id to their Bioguide id', () => {
     const map = parseSenateMembers(cvcFile)
     expect(map.get('S428')).toBe('A000382')
-    expect(map.get('S354')).toBe('B001230')
+    expect(map.get('S330')).toBe('B001267')
     expect(map.size).toBe(40)
     expect([...map.values()].every(b => /^[A-Z]\d{6}$/.test(b))).toBe(true)
   })

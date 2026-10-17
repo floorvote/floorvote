@@ -82,10 +82,12 @@ describe('the roll call field inventories', () => {
   })
 
   it('leaves no field of a recorded file unused: each entry is a field some file sends', () => {
-    const all = new Set([...paths.house, ...paths.senate])
-    const listed = [...Object.keys(houseRollCallInventory), ...Object.keys(senateRollCallInventory)]
-    expect(listed.length).toBeGreaterThan(40)
-    expect(listed.filter(k => ![...all].some(p => p === k || p.startsWith(`${k}.`)))).toEqual([])
+    const unused = (inventory: object, sent: string[]) => Object.keys(inventory)
+      // An element that is a list is written `member[]` in a path, and an ignored one may be listed without the brackets.
+      .filter(k => !sent.some(p => p.replace(/\[\]/g, '') === k.replace(/\[\]/g, '') || p.replace(/\[\]/g, '').startsWith(`${k.replace(/\[\]/g, '')}.`)))
+    expect(Object.keys(houseRollCallInventory).length + Object.keys(senateRollCallInventory).length).toBeGreaterThan(40)
+    expect(unused(houseRollCallInventory, paths.house)).toEqual([])
+    expect(unused(senateRollCallInventory, paths.senate)).toEqual([])
   })
 })
 

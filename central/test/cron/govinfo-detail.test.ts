@@ -18,6 +18,8 @@ const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
 
 import { govinfo } from '../../src/providers/govinfo'
+import { clearRollCallCaches } from '../../src/providers/govinfo/client'
+import { rollCallNetwork } from '../helpers/govinfoRollCalls'
 import { toHandle } from '../../src/lib/billHandle'
 import { mainSeam, resetCentral } from '../helpers/mainSeam'
 import { BILL_TYPES, buildZip, fileType, fixtureFiles, serveZip } from '../helpers/govinfoZip'
@@ -72,8 +74,13 @@ function serveZips() {
   ), { headers: { 'last-modified': 'Sat, 17 Oct 2026 00:19:30 GMT' } }).response
 }
 
+/** The recorded roll call and member files the stubbed network serves, for the bills that link votes (#618). */
+let rollNet: Map<string, () => Response>
+
 beforeEach(async () => {
   await resetCentral()
+  clearRollCallCaches()
+  rollNet = rollCallNetwork()
   files = new Map(fixtureFiles)
   fileAnswers = new Map()
   missingPdfs = new Set()
@@ -92,6 +99,8 @@ beforeEach(async () => {
     }
     const p = PDF_URL.exec(url)
     if (p) return missingPdfs.has(p[1]) ? new Response('not found', { status: 404 }) : new Response(PDF, { headers: { 'content-type': 'application/pdf' } })
+    const roll = rollNet.get(url)
+    if (roll) return roll()
     return new Response('not found', { status: 404 })
   })
   await seam.addTenant('US', ['choice for veterans'])

@@ -19,6 +19,8 @@ const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
 
 import { govinfo } from '../../src/providers/govinfo'
+import { clearRollCallCaches } from '../../src/providers/govinfo/client'
+import { rollCallNetwork } from '../helpers/govinfoRollCalls'
 import { toHandle } from '../../src/lib/billHandle'
 import { mainSeam, resetCentral, type Run } from '../helpers/mainSeam'
 import { BILL_TYPES, buildZip, fileType, fixtureFiles, serveZip, zipLayout } from '../helpers/govinfoZip'
@@ -58,8 +60,13 @@ const db = () => drizzle(env.DB, { schema })
 const file = (name: string) => `BILLSTATUS-119${name}.xml`
 const xml = (name: string) => fixtureFiles.get(file(name))!
 
+/** The recorded roll call and member files the stubbed network serves, for the bills that link votes (#618). */
+let rollNet: Map<string, () => Response>
+
 beforeEach(async () => {
   await resetCentral()
+  clearRollCallCaches()
+  rollNet = rollCallNetwork()
   files = new Map(fixtureFiles)
   calls = []
   lastModified = 'Sat, 17 Oct 2026 00:19:30 GMT'
@@ -73,6 +80,8 @@ beforeEach(async () => {
     const f = FILE_URL.exec(url)
     if (f && files.has(f[3])) return new Response(files.get(f[3]), { headers: { 'content-type': 'application/xml' } })
     if (PDF_URL.test(url)) return new Response('%PDF-1.7\n%%EOF\n', { headers: { 'content-type': 'application/pdf' } })
+    const roll = rollNet.get(url)
+    if (roll) return roll()
     return new Response('not found', { status: 404 })
   })
   // The instance follows Congress with one keyword, which only the CHOICE for Veterans Act matches.

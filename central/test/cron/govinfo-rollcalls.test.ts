@@ -230,7 +230,8 @@ describe('a bill with one House and one Senate recorded vote', () => {
     expect(s.legislatorVotes).toHaveLength(senate.members.length)
     // No member is shown by a number: each has a name.
     for (const v of [...h.legislatorVotes, ...s.legislatorVotes]) expect(v.name, JSON.stringify(v)).not.toMatch(/^\d+$/)
-    expect(h.legislatorVotes).toContainEqual(expect.objectContaining({ name: 'Adams', vote: 'Yea' }))
+    const adams = house.members.find(m => m.name === 'Adams')!
+    expect(h.legislatorVotes).toContainEqual(expect.objectContaining({ name: 'Adams', vote: adams.vote === 'Aye' ? 'Yea' : adams.vote }))
     expect(s.legislatorVotes).toContainEqual(expect.objectContaining({ name: 'Angela Alsobrooks', vote: 'Nay' }))
   })
 
@@ -281,8 +282,13 @@ describe('House votes', () => {
     await ingest('HB43')
     const house = houseRoll(await rollText(HB43))
     expect(house.members.some(m => /\([A-Z]{2}\)$/.test(m.name))).toBe(true)
-    const names = (await rollsOf('HB43', 1))[0].legislatorVotes.map((v: any) => v.name)
-    expect(names.sort()).toEqual(house.members.map(m => m.name).sort())
+    const bio = await bioguideOf()
+    const votes = (await rollsOf('HB43', 1))[0].legislatorVotes
+    // A member who also sponsors the bill is named as the bill's own file names them, which is fuller.
+    const sponsors = new Set((await bill('HB43')).sponsors.map((s: any) => bio.get(s.personId)))
+    const others = house.members.filter(m => !sponsors.has(m.bioguide))
+    expect(others.length).toBeGreaterThan(20)
+    expect(votes.filter((v: any) => !sponsors.has(bio.get(v.personId))).map((v: any) => v.name).sort()).toEqual(others.map(m => m.name).sort())
   })
 
   it('leaves a sponsor\'s fuller record alone when a roll call names the same member by their last name', async () => {
@@ -437,7 +443,7 @@ describe('a senator the files don\'t know', () => {
   })
 
   it('names every id it can\'t map', async () => {
-    await editRoll(HJR35.senate, x => unknown(x).replace(/<lis_member_id>S354<\/lis_member_id>/, '<lis_member_id>S998</lis_member_id>'))
+    await editRoll(HJR35.senate, x => unknown(x).replace(/<lis_member_id>S330<\/lis_member_id>/, '<lis_member_id>S998</lis_member_id>'))
     const errors = await ingestFailing('HJR35')
     expect(errors).toContain('S999')
     expect(errors).toContain('S998')
@@ -502,7 +508,7 @@ describe('votes on procedure and on amendments, and votes on passage', () => {
     const votes = await rollsOf('HJR140', 4)
     const table = votes.find((v: any) => /Motion to Table/.test(v.motionText))
     expect(table.result).toBe('pass')
-    await editRoll(HJR140.senate[0], x => x.replace('Motion to Table Agreed to', 'Motion to Table Rejected'))
+    await editRoll(HJR140.senate[0], x => x.replace(/Motion to Table Agreed to/g, 'Motion to Table Rejected'))
     clearRollCallCaches()
     await ingest('HJR140')
     expect((await rollsOf('HJR140', 4)).find((v: any) => /Motion to Table/.test(v.motionText)).result).toBe('fail')
@@ -666,30 +672,32 @@ describe('re-ingest', () => {
 
 describe('the hash rule', () => {
   it('changes a bill\'s record hash when a recorded vote is added to its file, and the next ingest adds the roll call', async () => {
-    await ingest('HJR35')
-    expect((await bill('HJR35')).votes).toHaveLength(2)
-    const before = (await db().select().from(schema.providerRecords).where(eq(schema.providerRecords.billId, await billId('HJR35'))).get())!.rawHash
-    edit('hjres35', x => x.replace(/<actions>/, `<actions>
+    await ingest('HB3132')
+    expect((await bill('HB3132')).votes).toEqual([])
+    const hash = async () => (await db().select().from(schema.providerRecords).where(eq(schema.providerRecords.billId, await billId('HB3132'))).get())!.rawHash
+    const before = await hash()
+    edit('hr3132', x => x.replace(/<actions>/, `<actions>
       <item>
-        <actionDate>2025-03-05</actionDate>
-        <text>On motion to table Agreed to by the Yeas and Nays.</text>
+        <actionDate>2025-02-04</actionDate>
+        <text>On motion to suspend the rules and pass the bill Agreed to by the Yeas and Nays.</text>
         <type>Floor</type>
         <sourceSystem><code>2</code><name>House floor actions</name></sourceSystem>
         <recordedVotes>
           <recordedVote>
-            <rollNumber>195</rollNumber>
-            <url>${HR580[1]}</url>
+            <rollNumber>28</rollNumber>
+            <url>${HB43}</url>
             <chamber>House</chamber>
             <congress>119</congress>
-            <date>2025-06-25T20:35:00Z</date>
+            <date>2025-02-04T23:58:50Z</date>
             <sessionNumber>1</sessionNumber>
           </recordedVote>
         </recordedVotes>
       </item>`))
+    // The instance tracks this bill, so the sync queues its ingest.
     const { run } = await syncAndIngest()
-    expect((await db().select().from(schema.providerRecords).where(eq(schema.providerRecords.billId, await billId('HJR35'))).get())!.rawHash).not.toBe(before)
-    expect(queuedIds(run)).toContain(await billId('HJR35'))
-    expect((await bill('HJR35')).votes).toHaveLength(3)
+    expect(await hash()).not.toBe(before)
+    expect(queuedIds(run)).toEqual([await billId('HB3132')])
+    expect(await rollsOf('HB3132', 1)).toHaveLength(1)
   })
 
   it('leaves a bill alone when only the file\'s updateDate moves, roll calls and all', async () => {
@@ -821,7 +829,7 @@ describe('failing closed', () => {
     ['a Senate roll call with a vote that is a verdict', HJR35.senate, (x: string) => x.replace('<vote_cast>Yea</vote_cast>', '<vote_cast>Guilty</vote_cast>')],
     ['a Senate roll call with an unknown result', HJR35.senate, (x: string) => x.replace('<vote_result>Joint Resolution Passed</vote_result>', '<vote_result>Considered</vote_result>')],
     ['a Senate roll call with no result', HJR35.senate, (x: string) => x.replace('<vote_result>Joint Resolution Passed</vote_result>', '')],
-    ['a Senate roll call with no question', HJR35.senate, (x: string) => x.replace(/<vote_question_text>[^<]*<\/vote_question_text>/, '')],
+    ['a Senate roll call with no question', HJR35.senate, (x: string) => x.replace(/<vote_question_text>[^<]*<\/vote_question_text>/, '').replace(/<question>[^<]*<\/question>/, '')],
     ['a Senate roll call with no date', HJR35.senate, (x: string) => x.replace(/<vote_date>[^<]*<\/vote_date>/, '')],
     ['a Senate roll call with a date that isn\'t one', HJR35.senate, (x: string) => x.replace(/<vote_date>[^<]*<\/vote_date>/, '<vote_date>some Tuesday</vote_date>')],
     ['a Senate roll call with no count', HJR35.senate, (x: string) => x.replace(/<count>[\s\S]*?<\/count>/, '')],
@@ -831,7 +839,7 @@ describe('failing closed', () => {
     ['a Senate roll call with no members element', HJR35.senate, (x: string) => x.replace(/<members>[\s\S]*<\/members>/, '')],
     ['a Senate member with no LIS id', HJR35.senate, (x: string) => x.replace('<lis_member_id>S428</lis_member_id>', '')],
     ['a Senate member with an id that isn\'t a LIS id', HJR35.senate, (x: string) => x.replace('<lis_member_id>S428</lis_member_id>', '<lis_member_id>Alsobrooks</lis_member_id>')],
-    ['a Senate member listed twice', HJR35.senate, (x: string) => x.replace('<lis_member_id>S428</lis_member_id>', '<lis_member_id>S354</lis_member_id>')],
+    ['a Senate member listed twice', HJR35.senate, (x: string) => x.replace('<lis_member_id>S428</lis_member_id>', '<lis_member_id>S330</lis_member_id>')],
     ['a Senate member with no vote', HJR35.senate, (x: string) => x.replace(/<vote_cast>Nay<\/vote_cast>/, '<vote_cast></vote_cast>')],
     ['a Senate member with no last name', HJR35.senate, (x: string) => x.replace('<last_name>Alsobrooks</last_name>', '<last_name></last_name>')],
     ['a Senate file that is a House roll call', HJR35.senate, () => '<rollcall-vote><vote-metadata></vote-metadata></rollcall-vote>'],
