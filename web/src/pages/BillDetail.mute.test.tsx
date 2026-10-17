@@ -184,4 +184,30 @@ describe('BillDetail mute comments', () => {
 
     expect(within(commentsSection()).queryByRole('button', { name: /mute comments/i })).not.toBeInTheDocument()
   })
+
+  // A comment posted from this page is added to the list without refetching the
+  // bill, so the page has to count the member's own comment as it appears.
+  it('offers Mute as soon as the member\'s own comment is on the page, without a refetch', async () => {
+    routerMock.loaderData = {
+      ...makeBill('42', 'HB 1'),
+      comments: [{ id: 'c1', userId: 'u1', userName: 'Alice', userTitle: null, content: '<p>Just posted</p>', createdAt: '2025-01-02 00:00:00', reactions: [] }],
+      commentsTotal: 1,
+    }
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await screen.findByText('Bill HB 1')
+
+    expect(within(commentsSection()).getByRole('button', { name: 'Mute comments' })).toBeInTheDocument()
+  })
+
+  it('offers no Mute to a member whose page shows only other people\'s comments', async () => {
+    routerMock.loaderData = {
+      ...makeBill('42', 'HB 1'),
+      comments: [{ id: 'c1', userId: 'u2', userName: 'Bob', userTitle: null, content: '<p>Hello</p>', createdAt: '2025-01-02 00:00:00', reactions: [] }],
+      commentsTotal: 1,
+    }
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await screen.findByText('Bill HB 1')
+
+    expect(within(commentsSection()).queryByRole('button', { name: /mute comments/i })).not.toBeInTheDocument()
+  })
 })
