@@ -8,6 +8,7 @@ import {
 import type { Env } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
 import { isHandle, toHandle } from '../../../../shared/billHandle'
+import { httpUrl } from '../../../../shared/httpUrl'
 import { isRelationshipKind, type RelationshipKind } from '../../../../shared/relationshipKinds'
 import type { BillExtras } from '../../../../shared/providerExtras'
 import { dbTsToEpoch } from '../../../../shared/time'
@@ -20,6 +21,7 @@ import { displayName, userDisplayNameSql } from '../../lib/displayName'
 import { titleOf, userTitleSql } from '../../lib/userTitle'
 import { groupMemberIds, groupVotes, inGroupOf, loadGroupBills, loadGroupNotes, mergeGroupNotes } from '../../lib/companionGroups'
 import { loadGroupTeamValues } from '../../lib/teamFields'
+import { claimLinksEnabled, readClaimSources } from '../../lib/claimSources'
 import type { GroupingEvent, GroupingEventMetadata, GroupingEventType } from '../../../../shared/companionGroups'
 
 type CentralBillRich = {
@@ -28,7 +30,7 @@ type CentralBillRich = {
   statusDate?: string | null
   legiscanUrl?: string | null
   sponsors?: Array<{ name: string; party: string | null; role: string | null; primary: boolean; personId: string | null; url: string | null }>
-  votes?: Array<{ id: string; motionText: string; date: string; result: string; chamber: string; counts: Array<{ option: string; value: number }>; legislatorVotes?: Array<{ personId: string; name: string; vote: string }> }>
+  votes?: Array<{ id: string; motionText: string; date: string; result: string; chamber: string; counts: Array<{ option: string; value: number }>; legislatorVotes?: Array<{ personId: string; name: string; vote: string; url?: string | null }> }>
   relatedBills?: Array<{ identifier: string; sastBillId?: number; session: string; relationType: string; kind?: string }>
   calendar?: Array<{ eventHash: string; typeId: number; type: string; kind?: string | null; date: string; time: string | null; location: string | null; description: string | null }>
   supplements?: Array<{ supplementId: number; typeId: number; type: string; date: string | null; dateResolved: string | null; dateInferred: boolean; title: string | null; description: string | null; mime: string | null; url: string | null; stateLink: string | null }>
@@ -291,6 +293,21 @@ export async function buildBillDetail(
         aiProcessedAt: bills.aiProcessedAt, aiSkipReason: bills.aiSkipReason, textStatus: bills.textStatus,
       }).from(bills).where(eq(bills.id, analysisBillId)).get()) ?? bill
 
+  const linksOn = await claimLinksEnabled(db)
+  const stored = linksOn ? await readClaimSources(db, analysisBill.id) : null
+  const claimSourcesForPage = stored && {
+    billId: stored.billId,
+    document: stored.document,
+    items: stored.items.map(i => ({
+      claim: i.claim,
+      status: i.status,
+      ...(i.quoteAt && i.matched !== undefined ? { quoteAt: i.quoteAt, matched: i.matched } : {}),
+      // A PDF's item links by page, with its quote shown beside the link (#572).
+      // The instance never matched the quote, so these are the model's own.
+      ...(i.status === 'unverified' ? { quote: i.quote, page: typeof i.page === 'number' ? i.page : null } : {}),
+    })),
+  }
+
   const response: Record<string, unknown> = {
     id: bill.id,
     externalId: bill.externalId,
@@ -321,7 +338,7 @@ export async function buildBillDetail(
     priorityMeta: priorityEventRow ? { setByName: priorityEventRow.setByName, updatedAt: priorityEventRow.createdAt } : null,
     sponsor: bill.sponsor,
     sponsorParty: bill.sponsorParty,
-    sponsorUrl: centralRich?.sponsors?.find(s => s.primary)?.url ?? bill.sponsorUrl,
+    sponsorUrl: httpUrl(centralRich?.sponsors?.find(s => s.primary)?.url ?? bill.sponsorUrl),
     coSponsors: centralRich?.sponsors
       ? (() => {
           // The primary sponsor shown in bill.sponsor is the first primary-flagged sponsor.
@@ -331,7 +348,7 @@ export async function buildBillDetail(
           const primaryName = bill.sponsor
           return centralRich.sponsors
             .filter(s => s.name !== primaryName)
-            .map(s => ({ name: s.name, url: s.url ?? null, party: s.party ?? null, primary: s.primary ?? false }))
+            .map(s => ({ name: s.name, url: httpUrl(s.url), party: s.party ?? null, primary: s.primary ?? false }))
         })()
       : (bill.coSponsors ? JSON.parse(bill.coSponsors) : []),
     lastAction: bill.lastAction,
@@ -359,6 +376,17 @@ export async function buildBillDetail(
     analysisAiProcessedAt: analysisBill.aiProcessedAt ?? null,
     analysisAiSkipReason: analysisBill.aiSkipReason ?? null,
     analysisTextStatus: analysisBill.textStatus ?? null,
+    // Whether the instance shows claim links (#570). Off, a bill's stored claim
+    // links render as plain text (#571, #572). It's the instance's setting, the
+    // same for every bill, and the stored links are untouched either way.
+    claimLinksEnabled: linksOn,
+    // The shown analysis's claim sources, for the page to link each claim to
+    // its passage (#571). Read through the analysis's bill, so on a companion's
+    // page they are the analyzed member's, pinned to that member's document,
+    // never the page bill's own text. Null with the setting off, with none
+    // stored, or when the pinned document is no longer in the analyzed bill's
+    // texts. An item is only what a link needs.
+    claimSources: claimSourcesForPage,
     textStatus: bill.textStatus ?? null,
     myVote: myVoteRow?.position ?? null,
     // The member's notes across the group, and the one note they edit, which
@@ -390,7 +418,8 @@ export async function buildBillDetail(
       nv: v.counts.find(c => c.option === 'not voting')?.value ?? 0,
       absent: v.counts.find(c => c.option === 'absent')?.value ?? 0,
       passed: v.result === 'pass' ? 1 : 0,
-      legislatorVotes: v.legislatorVotes ?? [],
+      // Each voter's profile link as central sent it, if it is an http(s) URL.
+      legislatorVotes: (v.legislatorVotes ?? []).map(l => ({ ...l, url: httpUrl(typeof l.url === 'string' ? l.url : null) })),
     })) ?? undefined,
     subjects: subjectsSuppressed ? [] : parseSubjects(bill.subjects),
     calendar: env.DEMO_MODE === 'true'

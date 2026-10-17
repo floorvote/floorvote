@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm'
 import { people } from '../db/schema'
-import type { MeasurePerson } from '../providers'
+import { DEFAULT_PROVIDER_ID, findProvider, type MeasurePerson } from '../providers'
+import { httpUrl } from '../../../shared/httpUrl'
 import type { Db } from '../types'
 
 type PersonRow = typeof people.$inferInsert & { peopleId: number }
@@ -62,4 +63,25 @@ export async function insertMissingPeople(db: Db, rows: PersonRow[]): Promise<nu
   }
   await db.batch(stmts as [typeof stmts[number], ...typeof stmts])
   return 1 + stmts.length
+}
+
+/** A person's stored `bio_json`, parsed. Null when there is none or it is not an object. */
+export function parseBio(bioJson: string | null | undefined): { social?: { biography?: string } } | null {
+  if (!bioJson) return null
+  try {
+    const bio: unknown = JSON.parse(bioJson)
+    return bio && typeof bio === 'object' ? bio : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The profile page the provider that wrote a person declares for them, for a
+ * link on their name. Only an http(s) URL; null when the provider declares
+ * none (or the person has no row).
+ */
+export function profileUrlOf(p: { bioJson: string | null; ballotpedia: string | null; personProvider: string | null }): string | null {
+  const provider = findProvider(p.personProvider ?? DEFAULT_PROVIDER_ID)
+  return httpUrl(provider?.profileUrl?.({ bio: parseBio(p.bioJson), ballotpedia: p.ballotpedia }))
 }

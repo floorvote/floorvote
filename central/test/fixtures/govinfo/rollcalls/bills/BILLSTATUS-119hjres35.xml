@@ -1,0 +1,746 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<billStatus>
+  <version>3.0.0</version>
+  <bill>
+    <number>35</number>
+    <updateDate>2026-08-11T17:44:38Z</updateDate>
+    <updateDateIncludingText>2026-08-11T17:44:38Z</updateDateIncludingText>
+    <originChamber>House</originChamber>
+    <originChamberCode>H</originChamberCode>
+    <type>HJRES</type>
+    <introducedDate>2025-02-04</introducedDate>
+    <congress>119</congress>
+    <legislationUrl>https://www.congress.gov/bill/119th-congress/house-joint-resolution/35</legislationUrl>
+    <constitutionalAuthorityStatementText><![CDATA[<pre>[Congressional Record Volume 171, Number 23 (Tuesday, February 4, 2025)][House]From the Congressional Record Online through the Government Publishing Office [<a href="https://www.gpo.gov">www.gpo.gov</a>]By Mr. PFLUGER:H.J. Res. 35.Congress has the power to enact this legislation pursuantto the following:Article I Section 8[Page H461]</pre>]]></constitutionalAuthorityStatementText>
+    <committees>
+      <item>
+        <systemCode>hsif00</systemCode>
+        <name>Energy and Commerce Committee</name>
+        <chamber>House</chamber>
+        <type>Standing</type>
+        <activities>
+          <item>
+            <name>Referred To</name>
+            <date>2025-02-04T17:03:00Z</date>
+          </item>
+        </activities>
+      </item>
+    </committees>
+    <relatedBills>
+      <item>
+        <title>A joint resolution providing for congressional disapproval under chapter 8 of title 5, United States Code, of the rule submitted by the Environmental Protection Agency relating to "Waste Emissions Charge for Petroleum and Natural Gas Systems: Procedures for Facilitating Compliance, Including Netting and Exemptions".</title>
+        <congress>119</congress>
+        <number>12</number>
+        <type>SJRES</type>
+        <latestAction>
+          <actionDate>2025-02-27</actionDate>
+          <text>Indefinitely postponed by Senate by Unanimous Consent.</text>
+        </latestAction>
+        <relationshipDetails>
+          <item>
+            <type>Public law contains the text</type>
+            <identifiedBy>CRS</identifiedBy>
+          </item>
+          <item>
+            <type>Identical bill</type>
+            <identifiedBy>CRS</identifiedBy>
+          </item>
+        </relationshipDetails>
+      </item>
+      <item>
+        <title>Providing for consideration of the joint resolution (H.J. Res. 20) providing for congressional disapproval under chapter 8 of title 5, United States Code, of the rule submitted by the Department of Energy relating to ‘‘Energy Conservation Program: Energy Conservation Standards for Consumer Gas-fired Instantaneous Water Heaters’’; providing for consideration of the joint resolution (H.J. Res. 35) providing for congressional disapproval under chapter 8 of title 5, United States Code, of the rule submitted by the Environmental Protection Agency relating to ‘‘Waste Emissions Charge for Petroleum and Natural Gas Systems: Procedures for Facilitating Compliance, Including Netting and Exemptions’’; and providing for consideration of the concurrent resolution (H. Con. Res. 14) establishing the congressional budget for the United States Government for fiscal year 2025 and setting forth the appropriate budgetary levels for fiscal years 2026 through 2034.</title>
+        <congress>119</congress>
+        <number>161</number>
+        <type>HRES</type>
+        <latestAction>
+          <actionDate>2025-02-25</actionDate>
+          <text>Motion to reconsider laid on the table Agreed to without objection.</text>
+          <actionTime>14:09:11</actionTime>
+        </latestAction>
+        <relationshipDetails>
+          <item>
+            <type>Related bill</type>
+            <identifiedBy>House</identifiedBy>
+          </item>
+          <item>
+            <type>Procedurally related</type>
+            <identifiedBy>House</identifiedBy>
+          </item>
+        </relationshipDetails>
+      </item>
+    </relatedBills>
+    <actions>
+      <item>
+        <actionDate>2025-03-14</actionDate>
+        <text>Became Public Law No: 119-2.</text>
+        <type>President</type>
+        <actionCode>E40000</actionCode>
+        <sourceSystem>
+          <code>9</code>
+          <name>Library of Congress</name>
+        </sourceSystem>
+      </item>
+      <item>
+        <actionDate>2025-03-14</actionDate>
+        <text>Became Public Law No: 119-2.</text>
+        <type>BecameLaw</type>
+        <actionCode>36000</actionCode>
+        <sourceSystem>
+          <code>9</code>
+          <name>Library of Congress</name>
+        </sourceSystem>
+      </item>
+      <item>
+        <actionDate>2025-03-14</actionDate>
+        <text>Signed by President.</text>
+        <type>President</type>
+        <actionCode>E30000</actionCode>
+        <sourceSystem>
+          <code>9</code>
+          <name>Library of Congress</name>
+        </sourceSystem>
+      </item>
+      <item>
+        <actionDate>2025-03-14</actionDate>
+        <text>Signed by President.</text>
+        <type>BecameLaw</type>
+        <actionCode>36000</actionCode>
+        <sourceSystem>
+          <code>9</code>
+          <name>Library of Congress</name>
+        </sourceSystem>
+      </item>
+      <item>
+        <actionDate>2025-03-04</actionDate>
+        <text>Presented to President.</text>
+        <type>Floor</type>
+        <actionCode>E20000</actionCode>
+        <sourceSystem>
+          <code>2</code>
+          <name>House floor actions</name>
+        </sourceSystem>
+      </item>
+      <item>
+        <actionDate>2025-03-04</actionDate>
+        <text>Presented to President.</text>
+        <type>President</type>
+        <actionCode>28000</actionCode>
+        <sourceSystem>
+          <code>9</code>
+          <name>Library of Congress</name>
+        </sourceSystem>
+      </item>
+      <item>
+        <actionDate>2025-02-27</actionDate>
+        <sourceSystem>
+          <name>Senate</name>
+        </sourceSystem>
+        <text>Message on Senate action sent to the House.</text>
+        <type>Floor</type>
+      </item>
+      <item>
+        <actionDate>2025-02-27</actionDate>
+        <sourceSystem>
+          <name>Senate</name>
+        </sourceSystem>
+        <text>Received in the Senate, read twice, considered, read the third time, and passed without amendment by Yea-Nay Vote. 52 - 47. Record Vote Number: 97. (consideration: CR S1419)</text>
+        <type>Floor</type>
+        <recordedVotes>
+          <recordedVote>
+            <rollNumber>97</rollNumber>
+            <url>https://www.senate.gov/legislative/LIS/roll_call_votes/vote1191/vote_119_1_00097.xml</url>
+            <chamber>Senate</chamber>
+            <congress>119</congress>
+            <date>2025-02-27T18:03:50Z</date>
+            <sessionNumber>1</sessionNumber>
+          </recordedVote>
+        </recordedVotes>
+      </item>
+      <item>
+        <actionDate>2025-02-27</actionDate>
+        <text>Passed/agreed to in Senate: Received in the Senate, read twice, considered, read the third time, and passed without amendment by Yea-Nay Vote. 52 - 47. Record Vote Number: 97.</text>
+        <type>Floor</type>
+        <actionCode>17000</actionCode>
+        <sourceSystem>
+          <code>9</code>
+          <name>Library of Congress</name>
+        </sourceSystem>
+        <recordedVotes>
+          <recordedVote>
+            <rollNumber>97</rollNumber>
+            <url>https://www.senate.gov/legislative/LIS/roll_call_votes/vote1191/vote_119_1_00097.xml</url>
+            <chamber>Senate</chamber>
+            <congress>119</congress>
+            <date>2025-02-27T18:03:50Z</date>
+            <sessionNumber>1</sessionNumber>
+          </recordedVote>
+        </recordedVotes>
+      </item>
+      <item>
+        <actionDate>2025-02-26</actionDate>
+        <actionTime>16:45:32</actionTime>
+        <text>Motion to reconsider laid on the table Agreed to without objection.</text>
+        <type>Floor</type>
+        <actionCode>H38310</actionCode>
+        <sourceSystem>
+          <code>2</code>
+          <name>House floor actions</name>
+        </sourceSystem>
+      </item>
+      <item>
+        <actionDate>2025-02-26</actionDate>
+        <actionTime>16:45:30</actionTime>
+        <text>On passage Passed by the Yeas and Nays: 220 - 206, 1 Present (Roll no. 52). (text: CR H846)</text>
+        <type>Floor</type>
+        <actionCode>H37100</actionCode>
+        <sourceSystem>
+          <code>2</code>
+          <name>House floor actions</name>
+        </sourceSystem>
+        <recordedVotes>
+          <recordedVote>
+            <rollNumber>52</rollNumber>
+            <url>https://clerk.house.gov/evs/2025/roll052.xml</url>
+            <chamber>House</chamber>
+            <congress>119</congress>
+            <date>2025-02-26T21:45:30Z</date>
+            <sessionNumber>1</sessionNumber>
+          </recordedVote>
+        </recordedVotes>
+      </item>
+      <item>
+        <actionDate>2025-02-26</actionDate>
+        <actionTime>16:45:30</actionTime>
+        <text>Passed/agreed to in House: On passage Passed by the Yeas and Nays: 220 - 206, 1 Present (Roll no. 52). (text: CR H846)</text>
+        <type>Floor</type>
+        <actionCode>8000</actionCode>
+        <sourceSystem>
+          <code>9</code>
+          <name>Library of Congress</name>
+        </sourceSystem>
+        <recordedVotes>
+          <recordedVote>
+            <rollNumber>52</rollNumber>
+            <url>https://clerk.house.gov/evs/2025/roll052.xml</url>
+            <chamber>House</chamber>
+            <congress>119</congress>
+            <date>2025-02-26T21:45:30Z</date>
+            <sessionNumber>1</sessionNumber>
+          </recordedVote>
+        </recordedVotes>
+      </item>
+      <item>
+        <actionDate>2025-02-26</actionDate>
+        <actionTime>16:36:28</actionTime>
+        <text>Considered as unfinished business. (consideration: CR H859-860)</text>
+        <type>Floor</type>
+        <actionCode>H30000</actionCode>
+        <sourceSystem>
+          <code>2</code>
+          <name>House floor actions</name>
+        </sourceSystem>
+      </item>
+      <item>
+        <actionDate>2025-02-26</actionDate>
+        <actionTime>13:22:52</actionTime>
+        <text>POSTPONED PROCEEDINGS - At the conclusion of debate on H.J. Res. 35, the Chair put the question on passage of the joint resolution, and by voice vote, announced that the ayes had prevailed. Mr. Pallone demanded the yeas and nays and the Chair postponed further proceedings until a time to be announced.</text>
+        <type>Floor</type>
+        <actionCode>H8D000</actionCode>
+        <sourceSystem>
+          <code>2</code>
+          <name>House floor actions</name>
+        </sourceSystem>
+      </item>
+      <item>
+        <actionDate>2025-02-26</actionDate>
+        <actionTime>13:21:44</actionTime>
+        <text>The previous question was ordered pursuant to the rule.</text>
+        <type>Floor</type>
+        <actionCode>H35000</actionCode>
+        <sourceSystem>
+          <code>2</code>
+          <name>House floor actions</name>
+        </sourceSystem>
+      </item>
+      <item>
+        <actionDate>2025-02-26</actionDate>
+        <actionTime>13:08:36</actionTime>
+        <text>DEBATE - The House resumed debate on H.J. Res. 35.</text>
+        <type>Floor</type>
+        <actionCode>H8D000</actionCode>
+        <sourceSystem>
+          <code>2</code>
+          <name>House floor actions</name>
+        </sourceSystem>
+      </item>
+      <item>
+        <actionDate>2025-02-26</actionDate>
+        <actionTime>12:20:47</actionTime>
+        <text>DEBATE - The House proceeded with one hour of debate on H.J. Res. 35.</text>
+        <type>Floor</type>
+        <actionCode>H8D000</actionCode>
+        <sourceSystem>
+          <code>2</code>
+          <name>House floor actions</name>
+        </sourceSystem>
+      </item>
+      <item>
+        <actionDate>2025-02-26</actionDate>
+        <actionTime>12:20:00</actionTime>
+        <text>Rule provides for consideration of H.J. Res. 20, H.J. Res. 35 and H. Con. Res. 14. The resolution provides for consideration of two joint resolutions, H.J.Res.20, under a closed rule and H.J.Res. 35, under a closed rule. Also, the resolution provides for consideration of H. Con. Res. 14, under a closed rule. The joint resolutions are debated for one hour each and the concurrent resolution is debated for 3 hours.</text>
+        <type>Floor</type>
+        <actionCode>H8D000</actionCode>
+        <sourceSystem>
+          <code>2</code>
+          <name>House floor actions</name>
+        </sourceSystem>
+      </item>
+      <item>
+        <actionDate>2025-02-26</actionDate>
+        <actionTime>12:19:55</actionTime>
+        <text>Considered under the provisions of rule H. Res. 161. (consideration: CR H846-853)</text>
+        <type>Floor</type>
+        <actionCode>H30000</actionCode>
+        <sourceSystem>
+          <code>2</code>
+          <name>House floor actions</name>
+        </sourceSystem>
+      </item>
+      <item>
+        <actionDate>2025-02-25</actionDate>
+        <actionTime>10:35:04</actionTime>
+        <text>Rules Committee Resolution H. Res. 161 Reported to House. Rule provides for consideration of H.J. Res. 20, H.J. Res. 35 and H. Con. Res. 14. The resolution provides for consideration of two joint resolutions, H.J.Res.20, under a closed rule and H.J.Res. 35, under a closed rule. Also, the resolution provides for consideration of H. Con. Res. 14, under a closed rule. The joint resolutions are debatable for one hour each and the concurrent resolution is debatable for 3 hours.</text>
+        <type>Floor</type>
+        <actionCode>H1L210</actionCode>
+        <sourceSystem>
+          <code>2</code>
+          <name>House floor actions</name>
+        </sourceSystem>
+      </item>
+      <item>
+        <actionDate>2025-02-04</actionDate>
+        <text>Referred to the House Committee on Energy and Commerce.</text>
+        <type>IntroReferral</type>
+        <actionCode>H11100</actionCode>
+        <sourceSystem>
+          <code>2</code>
+          <name>House floor actions</name>
+        </sourceSystem>
+        <committees>
+          <item>
+            <systemCode>hsif00</systemCode>
+            <name>Energy and Commerce Committee</name>
+          </item>
+        </committees>
+      </item>
+      <item>
+        <actionDate>2025-02-04</actionDate>
+        <text>Introduced in House</text>
+        <type>IntroReferral</type>
+        <actionCode>Intro-H</actionCode>
+        <sourceSystem>
+          <code>9</code>
+          <name>Library of Congress</name>
+        </sourceSystem>
+      </item>
+      <item>
+        <actionDate>2025-02-04</actionDate>
+        <text>Introduced in House</text>
+        <type>IntroReferral</type>
+        <actionCode>1000</actionCode>
+        <sourceSystem>
+          <code>9</code>
+          <name>Library of Congress</name>
+        </sourceSystem>
+      </item>
+    </actions>
+    <sponsors>
+      <item>
+        <bioguideId>P000048</bioguideId>
+        <fullName>Rep. Pfluger, August [R-TX-11]</fullName>
+        <firstName>August</firstName>
+        <lastName>Pfluger</lastName>
+        <party>R</party>
+        <state>TX</state>
+        <district>11</district>
+        <isByRequest>N</isByRequest>
+      </item>
+    </sponsors>
+    <cosponsors>
+      <item>
+        <bioguideId>A000375</bioguideId>
+        <fullName>Rep. Arrington, Jodey C. [R-TX-19]</fullName>
+        <firstName>Jodey</firstName>
+        <lastName>Arrington</lastName>
+        <party>R</party>
+        <state>TX</state>
+        <middleName>C.</middleName>
+        <district>19</district>
+        <sponsorshipDate>2025-02-04</sponsorshipDate>
+        <isOriginalCosponsor>True</isOriginalCosponsor>
+      </item>
+      <item>
+        <bioguideId>B001306</bioguideId>
+        <fullName>Rep. Balderson, Troy [R-OH-12]</fullName>
+        <firstName>Troy</firstName>
+        <lastName>Balderson</lastName>
+        <party>R</party>
+        <state>OH</state>
+        <district>12</district>
+        <sponsorshipDate>2025-02-04</sponsorshipDate>
+        <isOriginalCosponsor>True</isOriginalCosponsor>
+      </item>
+      <item>
+        <bioguideId>E000300</bioguideId>
+        <fullName>Rep. Evans, Gabe [R-CO-8]</fullName>
+        <firstName>Gabe</firstName>
+        <lastName>Evans</lastName>
+        <party>R</party>
+        <state>CO</state>
+        <district>8</district>
+        <sponsorshipDate>2025-02-04</sponsorshipDate>
+        <isOriginalCosponsor>True</isOriginalCosponsor>
+      </item>
+      <item>
+        <bioguideId>C001126</bioguideId>
+        <fullName>Rep. Carey, Mike [R-OH-15]</fullName>
+        <firstName>Mike</firstName>
+        <lastName>Carey</lastName>
+        <party>R</party>
+        <state>OH</state>
+        <district>15</district>
+        <sponsorshipDate>2025-02-04</sponsorshipDate>
+        <isOriginalCosponsor>True</isOriginalCosponsor>
+      </item>
+      <item>
+        <bioguideId>R000619</bioguideId>
+        <fullName>Rep. Rulli, Michael A. [R-OH-6]</fullName>
+        <firstName>Michael</firstName>
+        <lastName>Rulli</lastName>
+        <party>R</party>
+        <state>OH</state>
+        <middleName>A.</middleName>
+        <district>6</district>
+        <sponsorshipDate>2025-02-04</sponsorshipDate>
+        <isOriginalCosponsor>True</isOriginalCosponsor>
+      </item>
+      <item>
+        <bioguideId>P000609</bioguideId>
+        <fullName>Rep. Palmer, Gary J. [R-AL-6]</fullName>
+        <firstName>Gary</firstName>
+        <lastName>Palmer</lastName>
+        <party>R</party>
+        <state>AL</state>
+        <middleName>J.</middleName>
+        <district>6</district>
+        <sponsorshipDate>2025-02-04</sponsorshipDate>
+        <isOriginalCosponsor>True</isOriginalCosponsor>
+      </item>
+      <item>
+        <bioguideId>C001120</bioguideId>
+        <fullName>Rep. Crenshaw, Dan [R-TX-2]</fullName>
+        <firstName>Dan</firstName>
+        <lastName>Crenshaw</lastName>
+        <party>R</party>
+        <state>TX</state>
+        <district>2</district>
+        <sponsorshipDate>2025-02-04</sponsorshipDate>
+        <isOriginalCosponsor>True</isOriginalCosponsor>
+      </item>
+      <item>
+        <bioguideId>J000302</bioguideId>
+        <fullName>Rep. Joyce, John [R-PA-13]</fullName>
+        <firstName>John</firstName>
+        <lastName>Joyce</lastName>
+        <party>R</party>
+        <state>PA</state>
+        <district>13</district>
+        <sponsorshipDate>2025-02-04</sponsorshipDate>
+        <isOriginalCosponsor>True</isOriginalCosponsor>
+      </item>
+      <item>
+        <bioguideId>W000814</bioguideId>
+        <fullName>Rep. Weber, Randy K. Sr. [R-TX-14]</fullName>
+        <firstName>Randy</firstName>
+        <lastName>Weber</lastName>
+        <party>R</party>
+        <state>TX</state>
+        <middleName>K.</middleName>
+        <district>14</district>
+        <sponsorshipDate>2025-02-04</sponsorshipDate>
+        <isOriginalCosponsor>True</isOriginalCosponsor>
+      </item>
+      <item>
+        <bioguideId>L000566</bioguideId>
+        <fullName>Rep. Latta, Robert E. [R-OH-5]</fullName>
+        <firstName>Robert</firstName>
+        <lastName>Latta</lastName>
+        <party>R</party>
+        <state>OH</state>
+        <middleName>E.</middleName>
+        <district>5</district>
+        <sponsorshipDate>2025-02-04</sponsorshipDate>
+        <isOriginalCosponsor>True</isOriginalCosponsor>
+      </item>
+      <item>
+        <bioguideId>L000600</bioguideId>
+        <fullName>Rep. Langworthy, Nicholas A. [R-NY-23]</fullName>
+        <firstName>Nicholas</firstName>
+        <lastName>Langworthy</lastName>
+        <party>R</party>
+        <state>NY</state>
+        <middleName>A.</middleName>
+        <district>23</district>
+        <sponsorshipDate>2025-02-04</sponsorshipDate>
+        <isOriginalCosponsor>True</isOriginalCosponsor>
+      </item>
+      <item>
+        <bioguideId>C001103</bioguideId>
+        <fullName>Rep. Carter, Earl L. "Buddy" [R-GA-1]</fullName>
+        <firstName>Earl</firstName>
+        <lastName>Carter</lastName>
+        <party>R</party>
+        <state>GA</state>
+        <middleName>L. "Buddy"</middleName>
+        <district>1</district>
+        <sponsorshipDate>2025-02-04</sponsorshipDate>
+        <isOriginalCosponsor>True</isOriginalCosponsor>
+      </item>
+      <item>
+        <bioguideId>M001215</bioguideId>
+        <fullName>Rep. Miller-Meeks, Mariannette [R-IA-1]</fullName>
+        <firstName>Mariannette</firstName>
+        <lastName>Miller-Meeks</lastName>
+        <party>R</party>
+        <state>IA</state>
+        <district>1</district>
+        <sponsorshipDate>2025-02-04</sponsorshipDate>
+        <isOriginalCosponsor>True</isOriginalCosponsor>
+      </item>
+      <item>
+        <bioguideId>G000568</bioguideId>
+        <fullName>Rep. Griffith, H. Morgan [R-VA-9]</fullName>
+        <firstName>H.</firstName>
+        <lastName>Griffith</lastName>
+        <party>R</party>
+        <state>VA</state>
+        <middleName>Morgan</middleName>
+        <district>9</district>
+        <sponsorshipDate>2025-02-13</sponsorshipDate>
+        <isOriginalCosponsor>False</isOriginalCosponsor>
+      </item>
+      <item>
+        <bioguideId>A000372</bioguideId>
+        <fullName>Rep. Allen, Rick W. [R-GA-12]</fullName>
+        <firstName>Rick</firstName>
+        <lastName>Allen</lastName>
+        <party>R</party>
+        <state>GA</state>
+        <middleName>W.</middleName>
+        <district>12</district>
+        <sponsorshipDate>2025-02-14</sponsorshipDate>
+        <isOriginalCosponsor>False</isOriginalCosponsor>
+      </item>
+      <item>
+        <bioguideId>G000576</bioguideId>
+        <fullName>Rep. Grothman, Glenn [R-WI-6]</fullName>
+        <firstName>Glenn</firstName>
+        <lastName>Grothman</lastName>
+        <party>R</party>
+        <state>WI</state>
+        <district>6</district>
+        <sponsorshipDate>2025-02-14</sponsorshipDate>
+        <isOriginalCosponsor>False</isOriginalCosponsor>
+      </item>
+      <item>
+        <bioguideId>S001228</bioguideId>
+        <fullName>Rep. Schmidt, Derek [R-KS-2]</fullName>
+        <firstName>Derek</firstName>
+        <lastName>Schmidt</lastName>
+        <party>R</party>
+        <state>KS</state>
+        <district>2</district>
+        <sponsorshipDate>2025-02-24</sponsorshipDate>
+        <isOriginalCosponsor>False</isOriginalCosponsor>
+      </item>
+      <item>
+        <bioguideId>G000601</bioguideId>
+        <fullName>Rep. Goldman, Craig [R-TX-12]</fullName>
+        <firstName>Craig</firstName>
+        <lastName>Goldman</lastName>
+        <party>R</party>
+        <state>TX</state>
+        <middleName>A.</middleName>
+        <district>12</district>
+        <sponsorshipDate>2025-02-24</sponsorshipDate>
+        <isOriginalCosponsor>False</isOriginalCosponsor>
+      </item>
+      <item>
+        <bioguideId>F000482</bioguideId>
+        <fullName>Rep. Fedorchak, Julie [R-ND-At Large]</fullName>
+        <firstName>Julie</firstName>
+        <lastName>Fedorchak</lastName>
+        <party>R</party>
+        <state>ND</state>
+        <district>0</district>
+        <sponsorshipDate>2025-02-25</sponsorshipDate>
+        <isOriginalCosponsor>False</isOriginalCosponsor>
+      </item>
+    </cosponsors>
+    <cboCostEstimates>
+      <item>
+        <pubDate>2025-02-26T17:12:00Z</pubDate>
+        <title>H.J. Res. 35, a joint resolution providing for Congressional disapproval under chapter 8 of title 5, United States Code, of the rule submitted by the Environmental Protection Agency relating to “Waste Emissions Charge for Petroleum and Natural Gas Systems: Procedures for Facilitating Compliance, Including Netting and Exemptions”</title>
+        <url>https://www.cbo.gov/publication/61228</url>
+        <description>As posted by the House Committee on Rules on February 24, 2025</description>
+      </item>
+    </cboCostEstimates>
+    <laws>
+      <item>
+        <type>Public Law</type>
+        <number>119-2</number>
+      </item>
+    </laws>
+    <policyArea>
+      <name>Environmental Protection</name>
+    </policyArea>
+    <subjects>
+      <legislativeSubjects>
+        <item>
+          <name>Administrative law and regulatory procedures</name>
+          <updateDate>2025-02-26T20:24:47Z</updateDate>
+        </item>
+        <item>
+          <name>Air quality</name>
+          <updateDate>2025-02-26T20:25:12Z</updateDate>
+        </item>
+        <item>
+          <name>Climate change and greenhouse gases</name>
+          <updateDate>2025-02-26T20:25:05Z</updateDate>
+        </item>
+        <item>
+          <name>Congressional oversight</name>
+          <updateDate>2025-03-06T21:39:04Z</updateDate>
+        </item>
+        <item>
+          <name>Environmental Protection Agency (EPA)</name>
+          <updateDate>2025-02-26T20:24:40Z</updateDate>
+        </item>
+        <item>
+          <name>Oil and gas</name>
+          <updateDate>2025-02-26T20:24:57Z</updateDate>
+        </item>
+      </legislativeSubjects>
+      <policyArea>
+        <name>Environmental Protection</name>
+        <updateDate>2026-06-22T18:25:50Z</updateDate>
+      </policyArea>
+    </subjects>
+    <summaries>
+      <summary>
+        <versionCode>00</versionCode>
+        <actionDate>2025-02-04</actionDate>
+        <actionDesc>Introduced in House</actionDesc>
+        <updateDate>2025-02-24T15:19:29Z</updateDate>
+        <text><![CDATA[<p>This joint resolution nullifies the Environmental Protection Agency (EPA) rule titled <em>Waste Emissions Charge for Petroleum and Natural Gas Systems: Procedures for Facilitating Compliance, Including Netting and Exemptions&nbsp;</em>and published on November 18, 2024. The rule outlines compliance requirements under the Methane Emissions Reduction Program. Under the program, the EPA collects an annual charge on emissions of methane and other greenhouse gases from the oil and gas sector if the emissions exceed specified waste emissions thresholds.</p>]]></text>
+      </summary>
+      <summary>
+        <versionCode>49</versionCode>
+        <actionDate>2025-03-14</actionDate>
+        <actionDesc>Public Law</actionDesc>
+        <updateDate>2026-06-05T14:32:27Z</updateDate>
+        <text><![CDATA[<p>This joint resolution eliminates an annual waste emissions charge on&nbsp;oil or gas facilities under the Methane Emissions Reduction Program. Under the program, the Environmental Protection Agency (EPA) currently collects a waste emissions charge from specific types of oil or gas facilities, such as onshore or offshore facilities that produce oil or gas,&nbsp;for exceeding emission thresholds for greenhouse gas emissions and methane emissions.</p><p>Specifically, the joint resolution nullifies the rule titled&nbsp;<em>Waste Emissions Charge for Petroleum and Natural Gas Systems: Procedures for Facilitating Compliance, Including Netting and Exemptions&nbsp;</em>and published by the EPA on November 18, 2024.</p>]]></text>
+      </summary>
+    </summaries>
+    <title>Providing for congressional disapproval under chapter 8 of title 5, United States Code, of the rule submitted by the Environmental Protection Agency relating to "Waste Emissions Charge for Petroleum and Natural Gas Systems: Procedures for Facilitating Compliance, Including Netting and Exemptions".</title>
+    <titles>
+      <item>
+        <titleType>Display Title</titleType>
+        <titleTypeCode>45</titleTypeCode>
+        <title>Providing for congressional disapproval under chapter 8 of title 5, United States Code, of the rule submitted by the Environmental Protection Agency relating to "Waste Emissions Charge for Petroleum and Natural Gas Systems: Procedures for Facilitating Compliance, Including Netting and Exemptions".</title>
+        <updateDate>2026-07-10T15:43:34Z</updateDate>
+      </item>
+      <item>
+        <titleType>Official Titles from EH (Engrossed in House) bill text</titleType>
+        <titleTypeCode>259</titleTypeCode>
+        <title>Providing for congressional disapproval under chapter 8 of title 5, United States Code, of the rule submitted by the Environmental Protection Agency relating to "Waste Emissions Charge for Petroleum and Natural Gas Systems: Procedures for Facilitating Compliance, Including Netting and Exemptions".</title>
+        <updateDate>2026-07-10T15:43:29Z</updateDate>
+        <chamberCode>H</chamberCode>
+        <chamberName>House</chamberName>
+        <billTextVersionName>Engrossed in House</billTextVersionName>
+        <billTextVersionCode>EH</billTextVersionCode>
+      </item>
+      <item>
+        <titleType>Official Title as Introduced</titleType>
+        <titleTypeCode>6</titleTypeCode>
+        <title>Providing for congressional disapproval under chapter 8 of title 5, United States Code, of the rule submitted by the Environmental Protection Agency relating to "Waste Emissions Charge for Petroleum and Natural Gas Systems: Procedures for Facilitating Compliance, Including Netting and Exemptions".</title>
+        <updateDate>2025-02-05T12:03:28Z</updateDate>
+        <billTextVersionName>Introduced in House</billTextVersionName>
+        <billTextVersionCode>IH</billTextVersionCode>
+      </item>
+    </titles>
+    <textVersions>
+      <item>
+        <type>Enrolled Bill</type>
+        <date/>
+        <formats>
+          <item>
+            <url>https://www.govinfo.gov/content/pkg/BILLS-119hjres35enr/uslm/BILLS-119hjres35enr.xml</url>
+            <type>United States Legislative Markup</type>
+          </item>
+          <item>
+            <url>https://www.govinfo.gov/content/pkg/BILLS-119hjres35enr/xml/BILLS-119hjres35enr.xml</url>
+          </item>
+        </formats>
+      </item>
+      <item>
+        <type>Received in Senate</type>
+        <date>2025-02-27T05:00:00Z</date>
+        <formats>
+          <item>
+            <url>https://www.govinfo.gov/content/pkg/BILLS-119hjres35rds/xml/BILLS-119hjres35rds.xml</url>
+          </item>
+        </formats>
+      </item>
+      <item>
+        <type>Engrossed in House</type>
+        <date>2025-02-26T05:00:00Z</date>
+        <formats>
+          <item>
+            <url>https://www.govinfo.gov/content/pkg/BILLS-119hjres35eh/xml/BILLS-119hjres35eh.xml</url>
+          </item>
+        </formats>
+      </item>
+      <item>
+        <type>Introduced in House</type>
+        <date>2025-02-04T05:00:00Z</date>
+        <formats>
+          <item>
+            <url>https://www.govinfo.gov/content/pkg/BILLS-119hjres35ih/xml/BILLS-119hjres35ih.xml</url>
+          </item>
+        </formats>
+      </item>
+      <item>
+        <date>2025-03-15T03:59:59Z</date>
+        <formats>
+          <item>
+            <url>https://www.govinfo.gov/content/pkg/PLAW-119publ2/uslm/PLAW-119publ2.xml</url>
+            <type>United States Legislative Markup</type>
+          </item>
+        </formats>
+        <type>Public Law</type>
+      </item>
+    </textVersions>
+    <latestAction>
+      <actionDate>2025-03-14</actionDate>
+      <text>Became Public Law No: 119-2.</text>
+    </latestAction>
+  </bill>
+  <dublinCore xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:format>text/xml</dc:format>
+    <dc:language>EN</dc:language>
+    <dc:rights>Pursuant to Title 17 Section 105 of the United States Code, this file is not subject to copyright protection and is in the public domain.</dc:rights>
+    <dc:contributor>Congressional Research Service, Library of Congress</dc:contributor>
+    <dc:description>This file contains bill summaries and statuses for federal legislation. A bill summary describes the most significant provisions of a piece of legislation and details the effects the legislative text may have on current law and federal programs. Bill summaries are authored by the Congressional Research Service (CRS) of the Library of Congress. As stated in Public Law 91-510 (2 USC 166 (d)(6)), one of the duties of CRS is "to prepare summaries and digests of bills and resolutions of a public general nature introduced in the Senate or House of Representatives". For more information, refer to the User Guide that accompanies this file.</dc:description>
+  </dublinCore>
+</billStatus>

@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import { billTexts, bills } from '../db/schema'
+import { associationConfig, billTexts, bills } from '../db/schema'
 import type { AppDb } from '../types'
 
 // Claim sources (#568, design in #560): for each claim in an AI summary, a
@@ -62,14 +62,32 @@ export type ResolvedClaimSource = ClaimSource & {
   matched?: string
 }
 
+/** The `association_config` key holding the setting, a JSON boolean. Absent means on. */
+export const CLAIM_LINKS_KEY = 'claim_links_enabled'
+
 /**
- * Whether this instance asks for claim sources. On by default.
- *
- * #570 makes this a per-instance setting admins can turn off. Until it does,
- * every instance reads as on. Off means new analyses don't ask, and store none.
+ * The `association_config` key recording the last change to the setting, a JSON
+ * `{ by, at }`: the admin's user id and a database timestamp. Written together
+ * with the setting by `PUT /admin/claim-links` and by nothing else.
  */
-export async function claimLinksEnabled(_db: AppDb): Promise<boolean> {
-  return true
+export const CLAIM_LINKS_CHANGED_KEY = 'claim_links_changed'
+
+/**
+ * Whether this instance asks for claim sources, and shows their links. On by
+ * default, so a new instance and an existing one with no row both read as on
+ * until an admin turns it off (#570). Only a stored `false` is off: a row that
+ * can't be read is the default rather than a silent switch-off. A bare `false`
+ * padded with whitespace JSON.parse rejects but trim strips (a BOM, a
+ * non-breaking space) still reads as off.
+ *
+ * Off means new analyses don't ask, and store none. Links already stored are
+ * left alone, and the bill page doesn't render them (#571, #572) until it is
+ * turned back on.
+ */
+export async function claimLinksEnabled(db: AppDb): Promise<boolean> {
+  const row = await db.select().from(associationConfig).where(eq(associationConfig.key, CLAIM_LINKS_KEY)).get()
+  if (!row) return true
+  try { return JSON.parse(row.value) !== false } catch { return row.value.trim() !== 'false' }
 }
 
 /**
@@ -106,7 +124,19 @@ export type StoredClaimSources = {
   /** The document the model read and the offsets are into. */
   docId: string
   textHash: string | null
+  /** That document as the bill's text list has it, for the page to open (#571). */
+  document: PinnedDocument
   items: ResolvedClaimSource[]
+}
+
+/** A pinned document's row in the bill's text list, in the shape the bill detail lists texts. */
+export type PinnedDocument = {
+  docId: string
+  type: string
+  date: string
+  mime: string
+  stateLink: string | null
+  altStateLink: string | null
 }
 
 const STATUSES: ReadonlySet<string> = new Set<ClaimSourceStatus>(['exact', 'normalized', 'fuzzy', 'anchored', 'ungrounded', 'unverified'])
@@ -177,7 +207,10 @@ export async function readClaimSources(db: AppDb, billId: string): Promise<Store
   // pin as stale. If that column is ever filled with the value central serves as
   // `textHash` for the document, compare it here, so a document whose content
   // changed under the same id stops reading until a re-analysis re-pins.
-  const listed = await db.select({ id: billTexts.id }).from(billTexts)
+  const listed = await db.select({
+    docId: billTexts.docId, type: billTexts.type, date: billTexts.date, mime: billTexts.mime,
+    stateLink: billTexts.stateLink, altStateLink: billTexts.altStateLink,
+  }).from(billTexts)
     .where(and(eq(billTexts.billId, billId), eq(billTexts.docId, row.docId))).get()
   if (!listed) return null
 
@@ -185,6 +218,7 @@ export async function readClaimSources(db: AppDb, billId: string): Promise<Store
     billId,
     docId: row.docId,
     textHash: row.textHash,
+    document: listed,
     items,
   }
 }

@@ -414,7 +414,7 @@ describe('a fork\'s production central, moved onto upstream', () => {
     expect((await getJson('/admin/state-providers')).states).toEqual([expect.objectContaining({ state: 'DC', provider: 'lims' })])
 
     const { capabilities, events } = await getJson('/tenants/oca/body-events?from=2026-08-01&to=2026-12-31')
-    expect(capabilities).toEqual({ DC: { bodyEvents: true, deadlines: true } })
+    expect(capabilities).toEqual({ DC: { bodyEvents: true, deadlines: true, bodyName: 'Council' } })
     const byUid = new Map<string, any>(events.map((e: any) => [e.uid, e]))
     const council = forkRows.rows.council_events
     expect(events).toHaveLength(council.length)

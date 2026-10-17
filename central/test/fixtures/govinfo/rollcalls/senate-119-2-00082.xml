@@ -1,0 +1,286 @@
+<?xml version="1.0" encoding="UTF-8"?><roll_call_vote>
+  <congress>119</congress>
+  <session>2</session>
+  <congress_year>2026</congress_year>
+  <vote_number>82</vote_number>
+  <vote_date>April 15, 2026,  08:00 PM</vote_date>
+  <modify_date>April 15, 2026,  08:34 PM</modify_date>
+  <vote_question_text>On the Motion to Table H.J.Res. 140</vote_question_text>
+  <vote_document_text>A joint resolution providing for congressional disapproval under chapter 8 of title 5, United States Code, of the rule submitted by the Bureau of Land Management relating to Public Land Order No. 7917 for Withdrawal of Federal Lands; Cook, Lake, and Saint Louis Counties, MN.</vote_document_text>
+  <vote_result_text>Motion to Table Agreed to (51-48)</vote_result_text>
+  <question>On the Motion to Table</question>
+  <vote_title>Motion to Table: Submitted Point of Order Re: H. J. Res. 140</vote_title>
+  <majority_requirement>1/2</majority_requirement>
+  <vote_result>Motion to Table Agreed to</vote_result>
+  <document>
+    <document_congress>119</document_congress>
+    <document_type>H.J.Res.</document_type>
+    <document_number>140</document_number>
+    <document_name>H.J.Res. 140</document_name>
+    <document_title>A joint resolution providing for congressional disapproval under chapter 8 of title 5, United States Code, of the rule submitted by the Bureau of Land Management relating to Public Land Order No. 7917 for Withdrawal of Federal Lands; Cook, Lake, and Saint Louis Counties, MN.</document_title>
+    <document_short_title>A joint resolution providing for congressional disapproval under chapter 8 of title 5, United States Code, of the rule submitted by the Bureau of Land Management relating to Public Land Order No. 7917 for Withdrawal of Federal Lands; Cook, Lake, and Saint Louis Counties, MN.</document_short_title>
+  </document>
+  <amendment>
+    <amendment_number/>
+    <amendment_to_amendment_number/>
+    <amendment_to_amendment_to_amendment_number/>
+    <amendment_to_document_number/>
+    <amendment_to_document_short_title/>
+    <amendment_purpose>No Statement of Purpose on File.</amendment_purpose>
+  </amendment>
+  <count>
+    <yeas>51</yeas>
+    <nays>48</nays>
+    <present/>
+    <absent>1</absent>
+  </count>
+  <tie_breaker>
+    <by_whom/>
+    <tie_breaker_vote/>
+  </tie_breaker>
+  <members>
+    <member>
+      <member_full>Alsobrooks (D-MD)</member_full>
+      <last_name>Alsobrooks</last_name>
+      <first_name>Angela</first_name>
+      <party>D</party>
+      <state>MD</state>
+      <vote_cast>Nay</vote_cast>
+      <lis_member_id>S428</lis_member_id>
+    </member>
+    <member>
+      <member_full>Barrasso (R-WY)</member_full>
+      <last_name>Barrasso</last_name>
+      <first_name>John</first_name>
+      <party>R</party>
+      <state>WY</state>
+      <vote_cast>Yea</vote_cast>
+      <lis_member_id>S317</lis_member_id>
+    </member>
+    <member>
+      <member_full>Blunt Rochester (D-DE)</member_full>
+      <last_name>Blunt Rochester</last_name>
+      <first_name>Lisa</first_name>
+      <party>D</party>
+      <state>DE</state>
+      <vote_cast>Nay</vote_cast>
+      <lis_member_id>S430</lis_member_id>
+    </member>
+    <member>
+      <member_full>Budd (R-NC)</member_full>
+      <last_name>Budd</last_name>
+      <first_name>Ted</first_name>
+      <party>R</party>
+      <state>NC</state>
+      <vote_cast>Yea</vote_cast>
+      <lis_member_id>S417</lis_member_id>
+    </member>
+    <member>
+      <member_full>Collins (R-ME)</member_full>
+      <last_name>Collins</last_name>
+      <first_name>Susan</first_name>
+      <party>R</party>
+      <state>ME</state>
+      <vote_cast>Nay</vote_cast>
+      <lis_member_id>S252</lis_member_id>
+    </member>
+    <member>
+      <member_full>Cotton (R-AR)</member_full>
+      <last_name>Cotton</last_name>
+      <first_name>Tom</first_name>
+      <party>R</party>
+      <state>AR</state>
+      <vote_cast>Yea</vote_cast>
+      <lis_member_id>S374</lis_member_id>
+    </member>
+    <member>
+      <member_full>Curtis (R-UT)</member_full>
+      <last_name>Curtis</last_name>
+      <first_name>John </first_name>
+      <party>R</party>
+      <state>UT</state>
+      <vote_cast>Yea</vote_cast>
+      <lis_member_id>S431</lis_member_id>
+    </member>
+    <member>
+      <member_full>Ernst (R-IA)</member_full>
+      <last_name>Ernst</last_name>
+      <first_name>Joni</first_name>
+      <party>R</party>
+      <state>IA</state>
+      <vote_cast>Yea</vote_cast>
+      <lis_member_id>S376</lis_member_id>
+    </member>
+    <member>
+      <member_full>Gillibrand (D-NY)</member_full>
+      <last_name>Gillibrand</last_name>
+      <first_name>Kirsten</first_name>
+      <party>D</party>
+      <state>NY</state>
+      <vote_cast>Nay</vote_cast>
+      <lis_member_id>S331</lis_member_id>
+    </member>
+    <member>
+      <member_full>Graham (R-SC)</member_full>
+      <last_name>Graham</last_name>
+      <first_name>Lindsey</first_name>
+      <party>R</party>
+      <state>SC</state>
+      <vote_cast>Yea</vote_cast>
+      <lis_member_id>S293</lis_member_id>
+    </member>
+    <member>
+      <member_full>Hassan (D-NH)</member_full>
+      <last_name>Hassan</last_name>
+      <first_name>Maggie</first_name>
+      <party>D</party>
+      <state>NH</state>
+      <vote_cast>Nay</vote_cast>
+      <lis_member_id>S388</lis_member_id>
+    </member>
+    <member>
+      <member_full>Hirono (D-HI)</member_full>
+      <last_name>Hirono</last_name>
+      <first_name>Mazie</first_name>
+      <party>D</party>
+      <state>HI</state>
+      <vote_cast>Nay</vote_cast>
+      <lis_member_id>S361</lis_member_id>
+    </member>
+    <member>
+      <member_full>Johnson (R-WI)</member_full>
+      <last_name>Johnson</last_name>
+      <first_name>Ron</first_name>
+      <party>R</party>
+      <state>WI</state>
+      <vote_cast>Yea</vote_cast>
+      <lis_member_id>S345</lis_member_id>
+    </member>
+    <member>
+      <member_full>Kennedy (R-LA)</member_full>
+      <last_name>Kennedy</last_name>
+      <first_name>John</first_name>
+      <party>R</party>
+      <state>LA</state>
+      <vote_cast>Yea</vote_cast>
+      <lis_member_id>S389</lis_member_id>
+    </member>
+    <member>
+      <member_full>Lankford (R-OK)</member_full>
+      <last_name>Lankford</last_name>
+      <first_name>James</first_name>
+      <party>R</party>
+      <state>OK</state>
+      <vote_cast>Yea</vote_cast>
+      <lis_member_id>S378</lis_member_id>
+    </member>
+    <member>
+      <member_full>Markey (D-MA)</member_full>
+      <last_name>Markey</last_name>
+      <first_name>Edward</first_name>
+      <party>D</party>
+      <state>MA</state>
+      <vote_cast>Nay</vote_cast>
+      <lis_member_id>S369</lis_member_id>
+    </member>
+    <member>
+      <member_full>Merkley (D-OR)</member_full>
+      <last_name>Merkley</last_name>
+      <first_name>Jeff</first_name>
+      <party>D</party>
+      <state>OR</state>
+      <vote_cast>Nay</vote_cast>
+      <lis_member_id>S322</lis_member_id>
+    </member>
+    <member>
+      <member_full>Murkowski (R-AK)</member_full>
+      <last_name>Murkowski</last_name>
+      <first_name>Lisa</first_name>
+      <party>R</party>
+      <state>AK</state>
+      <vote_cast>Yea</vote_cast>
+      <lis_member_id>S288</lis_member_id>
+    </member>
+    <member>
+      <member_full>Padilla (D-CA)</member_full>
+      <last_name>Padilla</last_name>
+      <first_name>Alex</first_name>
+      <party>D</party>
+      <state>CA</state>
+      <vote_cast>Nay</vote_cast>
+      <lis_member_id>S413</lis_member_id>
+    </member>
+    <member>
+      <member_full>Ricketts (R-NE)</member_full>
+      <last_name>Ricketts</last_name>
+      <first_name>Pete</first_name>
+      <party>R</party>
+      <state>NE</state>
+      <vote_cast>Yea</vote_cast>
+      <lis_member_id>S423</lis_member_id>
+    </member>
+    <member>
+      <member_full>Sanders (I-VT)</member_full>
+      <last_name>Sanders</last_name>
+      <first_name>Bernie</first_name>
+      <party>I</party>
+      <state>VT</state>
+      <vote_cast>Nay</vote_cast>
+      <lis_member_id>S313</lis_member_id>
+    </member>
+    <member>
+      <member_full>Schumer (D-NY)</member_full>
+      <last_name>Schumer</last_name>
+      <first_name>Charles</first_name>
+      <party>D</party>
+      <state>NY</state>
+      <vote_cast>Nay</vote_cast>
+      <lis_member_id>S270</lis_member_id>
+    </member>
+    <member>
+      <member_full>Sheehy (R-MT)</member_full>
+      <last_name>Sheehy</last_name>
+      <first_name>Tim</first_name>
+      <party>R</party>
+      <state>MT</state>
+      <vote_cast>Yea</vote_cast>
+      <lis_member_id>S435</lis_member_id>
+    </member>
+    <member>
+      <member_full>Thune (R-SD)</member_full>
+      <last_name>Thune</last_name>
+      <first_name>John</first_name>
+      <party>R</party>
+      <state>SD</state>
+      <vote_cast>Yea</vote_cast>
+      <lis_member_id>S303</lis_member_id>
+    </member>
+    <member>
+      <member_full>Tillis (R-NC)</member_full>
+      <last_name>Tillis</last_name>
+      <first_name>Thomas</first_name>
+      <party>R</party>
+      <state>NC</state>
+      <vote_cast>Not Voting</vote_cast>
+      <lis_member_id>S384</lis_member_id>
+    </member>
+    <member>
+      <member_full>Warner (D-VA)</member_full>
+      <last_name>Warner</last_name>
+      <first_name>Mark</first_name>
+      <party>D</party>
+      <state>VA</state>
+      <vote_cast>Nay</vote_cast>
+      <lis_member_id>S327</lis_member_id>
+    </member>
+    <member>
+      <member_full>Whitehouse (D-RI)</member_full>
+      <last_name>Whitehouse</last_name>
+      <first_name>Sheldon</first_name>
+      <party>D</party>
+      <state>RI</state>
+      <vote_cast>Nay</vote_cast>
+      <lis_member_id>S316</lis_member_id>
+    </member>
+  </members>
+</roll_call_vote>

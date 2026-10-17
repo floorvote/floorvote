@@ -1,0 +1,864 @@
+<senators>
+<lastUpdate>
+<date>Friday, October 16, 2026</date>
+<time>5:00:11 AM EDT</time>
+</lastUpdate>
+<senator lis_member_id="S428">
+<name>
+<prefix>Ms.</prefix>
+<first>Angela D.</first>
+<last>Alsobrooks</last>
+<suffix>        
+</suffix>
+</name>
+<party>D</party>
+<state>MD</state>
+<homeTown>Upper Marlboro</homeTown>
+<stateRank>2</stateRank>
+<bioguideId>A000382</bioguideId>
+<office>374 Russell </office>
+<committees>
+<committee code="SPAG00">Special Committee on Aging</committee>
+<committee code="SSEV00">Committee on Environment and Public Works</committee>
+<committee code="SSBK00">Committee on Banking, Housing, and Urban Affairs</committee>
+<committee code="SSHR00">Committee on Health, Education, Labor, and Pensions</committee>
+</committees>
+</senator>
+<senator lis_member_id="S317">
+<name>
+<prefix>Mr.</prefix>
+<first>John </first>
+<last>Barrasso</last>
+<suffix>        
+</suffix>
+</name>
+<party>R</party>
+<state>WY</state>
+<homeTown>Casper</homeTown>
+<stateRank>1</stateRank>
+<bioguideId>B001261</bioguideId>
+<office>307 Dirksen </office>
+<leadership_position>Majority Whip</leadership_position>
+<committees>
+<committee code="SSFI00">Committee on Finance</committee>
+<committee code="SSFR00">Committee on Foreign Relations</committee>
+<committee code="SSEG00">Committee on Energy and Natural Resources</committee>
+</committees>
+</senator>
+<senator lis_member_id="S330">
+<name>
+<prefix>Mr.</prefix>
+<first>Michael F.</first>
+<last>Bennet</last>
+<suffix>        
+</suffix>
+</name>
+<party>D</party>
+<state>CO</state>
+<homeTown>Denver</homeTown>
+<stateRank>1</stateRank>
+<bioguideId>B001267</bioguideId>
+<office>261 Russell </office>
+<committees>
+<committee code="SLIN00">Select Committee on Intelligence</committee>
+<committee code="SSAF00">Committee on Agriculture, Nutrition, and Forestry</committee>
+<committee code="SSFI00">Committee on Finance</committee>
+<committee code="SSRA00">Committee on Rules and Administration</committee>
+</committees>
+</senator>
+<senator lis_member_id="S430">
+<name>
+<prefix>Ms.</prefix>
+<first>Lisa </first>
+<last>Blunt Rochester</last>
+<suffix>        
+</suffix>
+</name>
+<party>D</party>
+<state>DE</state>
+<homeTown>Wilmington</homeTown>
+<stateRank>2</stateRank>
+<bioguideId>B001303</bioguideId>
+<office>513 Hart </office>
+<committees>
+<committee code="SSEV00">Committee on Environment and Public Works</committee>
+<committee code="SSBK00">Committee on Banking, Housing, and Urban Affairs</committee>
+<committee code="SSHR00">Committee on Health, Education, Labor, and Pensions</committee>
+<committee code="SSCM00">Committee on Commerce, Science, and Transportation</committee>
+</committees>
+</senator>
+<senator lis_member_id="S370">
+<name>
+<prefix>Mr.</prefix>
+<first>Cory A.</first>
+<last>Booker</last>
+<suffix>        
+</suffix>
+</name>
+<party>D</party>
+<state>NJ</state>
+<homeTown>Newark</homeTown>
+<stateRank>1</stateRank>
+<bioguideId>B001288</bioguideId>
+<office>306 Hart </office>
+<committees>
+<committee code="SSAF00">Committee on Agriculture, Nutrition, and Forestry</committee>
+<committee code="SSJU00">Committee on the Judiciary</committee>
+<committee code="SSFR00">Committee on Foreign Relations</committee>
+<committee code="SSSB00">Committee on Small Business and Entrepreneurship</committee>
+</committees>
+</senator>
+<senator lis_member_id="S417">
+<name>
+<prefix>Mr.</prefix>
+<first>Ted </first>
+<last>Budd</last>
+<suffix>        
+</suffix>
+</name>
+<party>R</party>
+<state>NC</state>
+<homeTown>Advance</homeTown>
+<stateRank>2</stateRank>
+<bioguideId>B001305</bioguideId>
+<office>354 Russell </office>
+<committees>
+<committee code="SLIN00">Select Committee on Intelligence</committee>
+<committee code="JSEC00">Joint Economic Committee</committee>
+<committee code="SSAS00">Committee on Armed Services</committee>
+<committee code="SSSB00">Committee on Small Business and Entrepreneurship</committee>
+<committee code="SSCM00">Committee on Commerce, Science, and Transportation</committee>
+</committees>
+</senator>
+<senator lis_member_id="S275">
+<name>
+<prefix>Ms.</prefix>
+<first>Maria</first>
+<last>Cantwell</last>
+<suffix>        
+</suffix>
+</name>
+<party>D</party>
+<state>WA</state>
+<homeTown>Edmonds</homeTown>
+<stateRank>2</stateRank>
+<bioguideId>C000127</bioguideId>
+<office>511 Hart </office>
+<committees>
+<committee code="SLIA00">Committee on Indian Affairs</committee>
+<committee code="JSTX00">Joint Committee on Taxation</committee>
+<committee code="SSFI00">Committee on Finance</committee>
+<committee code="SSEG00">Committee on Energy and Natural Resources</committee>
+<committee code="SSSB00">Committee on Small Business and Entrepreneurship</committee>
+<committee code="SSCM00" position="Ranking">Committee on Commerce, Science, and Transportation</committee>
+</committees>
+</senator>
+<senator lis_member_id="S252">
+<name>
+<prefix>Ms.</prefix>
+<first>Susan M.</first>
+<last>Collins</last>
+<suffix>        
+</suffix>
+</name>
+<party>R</party>
+<state>ME</state>
+<homeTown>Bangor</homeTown>
+<stateRank>1</stateRank>
+<bioguideId>C001035</bioguideId>
+<office>413 Dirksen </office>
+<committees>
+<committee code="SSAP00" position="Chairman">Committee on Appropriations</committee>
+<committee code="SLIN00">Select Committee on Intelligence</committee>
+<committee code="SSHR00">Committee on Health, Education, Labor, and Pensions</committee>
+</committees>
+</senator>
+<senator lis_member_id="S337">
+<name>
+<prefix>Mr.</prefix>
+<first>Christopher A.</first>
+<last>Coons</last>
+<suffix>        
+</suffix>
+</name>
+<party>D</party>
+<state>DE</state>
+<homeTown>Wilmington</homeTown>
+<stateRank>1</stateRank>
+<bioguideId>C001088</bioguideId>
+<office>218 Russell </office>
+<committees>
+<committee code="SSAP00">Committee on Appropriations</committee>
+<committee code="SLET00" position="Vice Chairman">Select Committee on Ethics</committee>
+<committee code="SSJU00">Committee on the Judiciary</committee>
+<committee code="SSFR00">Committee on Foreign Relations</committee>
+<committee code="SSSB00">Committee on Small Business and Entrepreneurship</committee>
+</committees>
+</senator>
+<senator lis_member_id="S374">
+<name>
+<prefix>Mr.</prefix>
+<first>Tom </first>
+<last>Cotton</last>
+<suffix>        
+</suffix>
+</name>
+<party>R</party>
+<state>AR</state>
+<homeTown>Little Rock</homeTown>
+<stateRank>2</stateRank>
+<bioguideId>C001095</bioguideId>
+<office>326 Russell </office>
+<committees>
+<committee code="SLIN00" position="Chairman">Select Committee on Intelligence</committee>
+<committee code="JSEC00">Joint Economic Committee</committee>
+<committee code="SSAS00">Committee on Armed Services</committee>
+<committee code="SSEG00">Committee on Energy and Natural Resources</committee>
+</committees>
+</senator>
+<senator lis_member_id="S398">
+<name>
+<prefix>Mr.</prefix>
+<first>Kevin </first>
+<last>Cramer</last>
+<suffix>        
+</suffix>
+</name>
+<party>R</party>
+<state>ND</state>
+<homeTown>Bismarck</homeTown>
+<stateRank>2</stateRank>
+<bioguideId>C001096</bioguideId>
+<office>313 Hart </office>
+<committees>
+<committee code="SSEV00">Committee on Environment and Public Works</committee>
+<committee code="SSBK00">Committee on Banking, Housing, and Urban Affairs</committee>
+<committee code="SSAS00">Committee on Armed Services</committee>
+<committee code="SSVA00">Committee on Veterans' Affairs</committee>
+</committees>
+</senator>
+<senator lis_member_id="S431">
+<name>
+<prefix>Mr.</prefix>
+<first>John  R. </first>
+<last>Curtis</last>
+<suffix>        
+</suffix>
+</name>
+<party>R</party>
+<state>UT</state>
+<homeTown>Provo</homeTown>
+<stateRank>2</stateRank>
+<bioguideId>C001114</bioguideId>
+<office>502 Hart </office>
+<committees>
+<committee code="SSEV00">Committee on Environment and Public Works</committee>
+<committee code="SSFR00">Committee on Foreign Relations</committee>
+<committee code="SSSB00">Committee on Small Business and Entrepreneurship</committee>
+<committee code="SSCM00">Committee on Commerce, Science, and Transportation</committee>
+</committees>
+</senator>
+<senator lis_member_id="S375">
+<name>
+<prefix>Mr.</prefix>
+<first>Steve </first>
+<last>Daines</last>
+<suffix>        
+</suffix>
+</name>
+<party>R</party>
+<state>MT</state>
+<homeTown>Belgrade</homeTown>
+<stateRank>1</stateRank>
+<bioguideId>D000618</bioguideId>
+<office>320 Hart </office>
+<committees>
+<committee code="SLIA00">Committee on Indian Affairs</committee>
+<committee code="SSFI00">Committee on Finance</committee>
+<committee code="SSFR00">Committee on Foreign Relations</committee>
+<committee code="SSEG00">Committee on Energy and Natural Resources</committee>
+</committees>
+</senator>
+<senator lis_member_id="S376">
+<name>
+<prefix>Ms.</prefix>
+<first>Joni </first>
+<last>Ernst</last>
+<suffix>        
+</suffix>
+</name>
+<party>R</party>
+<state>IA</state>
+<homeTown>Red Oak</homeTown>
+<stateRank>2</stateRank>
+<bioguideId>E000295</bioguideId>
+<office>260 Russell </office>
+<committees>
+<committee code="SSAF00">Committee on Agriculture, Nutrition, and Forestry</committee>
+<committee code="SSAS00">Committee on Armed Services</committee>
+<committee code="SSSB00" position="Chairman">Committee on Small Business and Entrepreneurship</committee>
+<committee code="SSGA00">Committee on Homeland Security and Governmental Affairs</committee>
+</committees>
+</senator>
+<senator lis_member_id="S418">
+<name>
+<prefix>Mr.</prefix>
+<first>John </first>
+<last>Fetterman</last>
+<suffix>        
+</suffix>
+</name>
+<party>D</party>
+<state>PA</state>
+<homeTown>Braddock</homeTown>
+<stateRank>1</stateRank>
+<bioguideId>F000479</bioguideId>
+<office>142 Russell </office>
+<committees>
+<committee code="SSAF00">Committee on Agriculture, Nutrition, and Forestry</committee>
+<committee code="JCSE00">Commission on Security and Cooperation in Europe</committee>
+<committee code="SSGA00">Committee on Homeland Security and Governmental Affairs</committee>
+<committee code="SSCM00">Committee on Commerce, Science, and Transportation</committee>
+</committees>
+</senator>
+<senator lis_member_id="S331">
+<name>
+<prefix>Mrs.</prefix>
+<first>Kirsten E.</first>
+<last>Gillibrand</last>
+<suffix>        
+</suffix>
+</name>
+<party>D</party>
+<state>NY</state>
+<homeTown>Albany</homeTown>
+<stateRank>2</stateRank>
+<bioguideId>G000555</bioguideId>
+<office>478 Russell </office>
+<committees>
+<committee code="SSAP00">Committee on Appropriations</committee>
+<committee code="SLIN00">Select Committee on Intelligence</committee>
+<committee code="SPAG00" position="Ranking">Special Committee on Aging</committee>
+<committee code="SSAS00">Committee on Armed Services</committee>
+</committees>
+</senator>
+<senator lis_member_id="S388">
+<name>
+<prefix>Ms.</prefix>
+<first>Margaret Wood</first>
+<last>Hassan</last>
+<suffix>        
+</suffix>
+</name>
+<party>D</party>
+<state>NH</state>
+<homeTown>Newfields</homeTown>
+<stateRank>2</stateRank>
+<bioguideId>H001076</bioguideId>
+<office>324 Hart </office>
+<committees>
+<committee code="JSEC00" position="Ranking">Joint Economic Committee</committee>
+<committee code="SSFI00">Committee on Finance</committee>
+<committee code="SSHR00">Committee on Health, Education, Labor, and Pensions</committee>
+<committee code="SSVA00">Committee on Veterans' Affairs</committee>
+<committee code="SSGA00">Committee on Homeland Security and Governmental Affairs</committee>
+</committees>
+</senator>
+<senator lis_member_id="S399">
+<name>
+<prefix>Mr.</prefix>
+<first>Josh </first>
+<last>Hawley</last>
+<suffix>        
+</suffix>
+</name>
+<party>R</party>
+<state>MO</state>
+<homeTown>Springfield</homeTown>
+<stateRank>1</stateRank>
+<bioguideId>H001089</bioguideId>
+<office>381 Russell </office>
+<committees>
+<committee code="SSJU00">Committee on the Judiciary</committee>
+<committee code="SSHR00">Committee on Health, Education, Labor, and Pensions</committee>
+<committee code="SSSB00">Committee on Small Business and Entrepreneurship</committee>
+<committee code="SSGA00">Committee on Homeland Security and Governmental Affairs</committee>
+</committees>
+</senator>
+<senator lis_member_id="S361">
+<name>
+<prefix>Ms.</prefix>
+<first>Mazie K.</first>
+<last>Hirono</last>
+<suffix>        
+</suffix>
+</name>
+<party>D</party>
+<state>HI</state>
+<homeTown>Honolulu</homeTown>
+<stateRank>2</stateRank>
+<bioguideId>H001042</bioguideId>
+<office>109 Hart </office>
+<committees>
+<committee code="SSJU00">Committee on the Judiciary</committee>
+<committee code="SSAS00">Committee on Armed Services</committee>
+<committee code="SSEG00">Committee on Energy and Natural Resources</committee>
+<committee code="SSSB00">Committee on Small Business and Entrepreneurship</committee>
+<committee code="SSVA00">Committee on Veterans' Affairs</committee>
+</committees>
+</senator>
+<senator lis_member_id="S344">
+<name>
+<prefix>Mr.</prefix>
+<first>John </first>
+<last>Hoeven</last>
+<suffix>        
+</suffix>
+</name>
+<party>R</party>
+<state>ND</state>
+<homeTown>Bismarck</homeTown>
+<stateRank>1</stateRank>
+<bioguideId>H001061</bioguideId>
+<office>338 Russell </office>
+<committees>
+<committee code="SSAP00">Committee on Appropriations</committee>
+<committee code="SSAF00">Committee on Agriculture, Nutrition, and Forestry</committee>
+<committee code="SLIA00">Committee on Indian Affairs</committee>
+<committee code="SSEG00">Committee on Energy and Natural Resources</committee>
+</committees>
+</senator>
+<senator lis_member_id="S345">
+<name>
+<prefix>Mr.</prefix>
+<first>Ron </first>
+<last>Johnson</last>
+<suffix>        
+</suffix>
+</name>
+<party>R</party>
+<state>WI</state>
+<homeTown>Oshkosh</homeTown>
+<stateRank>1</stateRank>
+<bioguideId>J000293</bioguideId>
+<office>328 Hart </office>
+<committees>
+<committee code="SPAG00">Special Committee on Aging</committee>
+<committee code="SSFI00">Committee on Finance</committee>
+<committee code="SSBU00" position="Chairman">Committee on the Budget</committee>
+<committee code="SSGA00">Committee on Homeland Security and Governmental Affairs</committee>
+</committees>
+</senator>
+<senator lis_member_id="S437">
+<name>
+<prefix>Mr.</prefix>
+<first>James C. </first>
+<last>Justice</last>
+<suffix>        
+</suffix>
+</name>
+<party>R</party>
+<state>WV</state>
+<homeTown>Lewisburg</homeTown>
+<stateRank>2</stateRank>
+<bioguideId>J000312</bioguideId>
+<office>509 Hart </office>
+<committees>
+<committee code="SSAF00">Committee on Agriculture, Nutrition, and Forestry</committee>
+<committee code="SPAG00">Special Committee on Aging</committee>
+<committee code="SSEG00">Committee on Energy and Natural Resources</committee>
+<committee code="SSSB00">Committee on Small Business and Entrepreneurship</committee>
+</committees>
+</senator>
+<senator lis_member_id="S389">
+<name>
+<prefix>Mr.</prefix>
+<first>John</first>
+<last>Kennedy</last>
+<suffix>        
+</suffix>
+</name>
+<party>R</party>
+<state>LA</state>
+<homeTown>Madisonville</homeTown>
+<stateRank>2</stateRank>
+<bioguideId>K000393</bioguideId>
+<office>437 Russell </office>
+<committees>
+<committee code="SSAP00">Committee on Appropriations</committee>
+<committee code="SSJU00">Committee on the Judiciary</committee>
+<committee code="SSBK00">Committee on Banking, Housing, and Urban Affairs</committee>
+<committee code="SSBU00">Committee on the Budget</committee>
+</committees>
+</senator>
+<senator lis_member_id="S426">
+<name>
+<prefix>Mr.</prefix>
+<first>Andy </first>
+<last>Kim</last>
+<suffix>        
+</suffix>
+</name>
+<party>D</party>
+<state>NJ</state>
+<homeTown>Moorestown</homeTown>
+<stateRank>2</stateRank>
+<bioguideId>K000394</bioguideId>
+<office>520 Hart </office>
+<committees>
+<committee code="SPAG00">Special Committee on Aging</committee>
+<committee code="SSBK00">Committee on Banking, Housing, and Urban Affairs</committee>
+<committee code="SSHR00">Committee on Health, Education, Labor, and Pensions</committee>
+<committee code="SSGA00">Committee on Homeland Security and Governmental Affairs</committee>
+<committee code="SSCM00">Committee on Commerce, Science, and Transportation</committee>
+</committees>
+</senator>
+<senator lis_member_id="S378">
+<name>
+<prefix>Mr.</prefix>
+<first>James </first>
+<last>Lankford</last>
+<suffix>        
+</suffix>
+</name>
+<party>R</party>
+<state>OK</state>
+<homeTown>Oklahoma City</homeTown>
+<stateRank>1</stateRank>
+<bioguideId>L000575</bioguideId>
+<office>731 Hart </office>
+<committees>
+<committee code="SLIN00">Select Committee on Intelligence</committee>
+<committee code="SLET00" position="Chairman">Select Committee on Ethics</committee>
+<committee code="SSFI00">Committee on Finance</committee>
+<committee code="SSGA00">Committee on Homeland Security and Governmental Affairs</committee>
+</committees>
+</senator>
+<senator lis_member_id="S346">
+<name>
+<prefix>Mr.</prefix>
+<first>Mike </first>
+<last>Lee</last>
+<suffix>        
+</suffix>
+</name>
+<party>R</party>
+<state>UT</state>
+<homeTown>Provo</homeTown>
+<stateRank>1</stateRank>
+<bioguideId>L000577</bioguideId>
+<office>363 Russell </office>
+<committees>
+<committee code="SSJU00">Committee on the Judiciary</committee>
+<committee code="SSBU00">Committee on the Budget</committee>
+<committee code="SSFR00">Committee on Foreign Relations</committee>
+<committee code="SSEG00" position="Chairman">Committee on Energy and Natural Resources</committee>
+</committees>
+</senator>
+<senator lis_member_id="S369">
+<name>
+<prefix>Mr.</prefix>
+<first>Edward J.</first>
+<last>Markey</last>
+<suffix>        
+</suffix>
+</name>
+<party>D</party>
+<state>MA</state>
+<homeTown>Malden</homeTown>
+<stateRank>2</stateRank>
+<bioguideId>M000133</bioguideId>
+<office>255 Dirksen </office>
+<committees>
+<committee code="SSEV00">Committee on Environment and Public Works</committee>
+<committee code="SSHR00">Committee on Health, Education, Labor, and Pensions</committee>
+<committee code="SSSB00" position="Ranking">Committee on Small Business and Entrepreneurship</committee>
+<committee code="SSCM00">Committee on Commerce, Science, and Transportation</committee>
+</committees>
+</senator>
+<senator lis_member_id="S411">
+<name>
+<prefix>Mr.</prefix>
+<first>Roger </first>
+<last>Marshall</last>
+<suffix>        
+</suffix>
+</name>
+<party>R</party>
+<state>KS</state>
+<homeTown>Great Bend</homeTown>
+<stateRank>2</stateRank>
+<bioguideId>M001198</bioguideId>
+<office>479A Russell </office>
+<committees>
+<committee code="SSAF00">Committee on Agriculture, Nutrition, and Forestry</committee>
+<committee code="SSFI00">Committee on Finance</committee>
+<committee code="SSBU00">Committee on the Budget</committee>
+<committee code="SSHR00">Committee on Health, Education, Labor, and Pensions</committee>
+</committees>
+</senator>
+<senator lis_member_id="S322">
+<name>
+<prefix>Mr.</prefix>
+<first>Jeff </first>
+<last>Merkley</last>
+<suffix>        
+</suffix>
+</name>
+<party>D</party>
+<state>OR</state>
+<homeTown>Portland</homeTown>
+<stateRank>2</stateRank>
+<bioguideId>M001176</bioguideId>
+<office>531 Hart </office>
+<committees>
+<committee code="SSAP00">Committee on Appropriations</committee>
+<committee code="JSPR00">Joint Committee on Printing</committee>
+<committee code="SSEV00">Committee on Environment and Public Works</committee>
+<committee code="SSBU00" position="Ranking">Committee on the Budget</committee>
+<committee code="SSFR00">Committee on Foreign Relations</committee>
+<committee code="SSRA00">Committee on Rules and Administration</committee>
+</committees>
+</senator>
+<senator lis_member_id="S439">
+<name>
+<prefix>Mrs.</prefix>
+<first>Ashley </first>
+<last>Moody</last>
+<suffix>        
+</suffix>
+</name>
+<party>R</party>
+<state>FL</state>
+<homeTown>Tampa</homeTown>
+<stateRank>2</stateRank>
+<bioguideId>M001244</bioguideId>
+<office>387 Russell </office>
+<committees>
+<committee code="JSEC00">Joint Economic Committee</committee>
+<committee code="SPAG00">Special Committee on Aging</committee>
+<committee code="SSJU00">Committee on the Judiciary</committee>
+<committee code="SSAS00">Committee on Armed Services</committee>
+<committee code="SSHR00">Committee on Health, Education, Labor, and Pensions</committee>
+<committee code="SSGA00">Committee on Homeland Security and Governmental Affairs</committee>
+</committees>
+</senator>
+<senator lis_member_id="S288">
+<name>
+<prefix>Ms.</prefix>
+<first>Lisa</first>
+<last>Murkowski</last>
+<suffix>        
+</suffix>
+</name>
+<party>R</party>
+<state>AK</state>
+<homeTown>Girdwood</homeTown>
+<stateRank>1</stateRank>
+<bioguideId>M001153</bioguideId>
+<office>522 Hart </office>
+<committees>
+<committee code="SSAP00">Committee on Appropriations</committee>
+<committee code="SLIA00" position="Chairman">Committee on Indian Affairs</committee>
+<committee code="SSEG00">Committee on Energy and Natural Resources</committee>
+<committee code="SSHR00">Committee on Health, Education, Labor, and Pensions</committee>
+</committees>
+</senator>
+<senator lis_member_id="S413">
+<name>
+<prefix>Mr.</prefix>
+<first>Alex </first>
+<last>Padilla</last>
+<suffix>        
+</suffix>
+</name>
+<party>D</party>
+<state>CA</state>
+<homeTown>Los Angeles</homeTown>
+<stateRank>1</stateRank>
+<bioguideId>P000145</bioguideId>
+<office>331 Hart </office>
+<committees>
+<committee code="JSPR00">Joint Committee on Printing</committee>
+<committee code="JSLC00">Joint Committee of Congress on the Library</committee>
+<committee code="SSJU00">Committee on the Judiciary</committee>
+<committee code="SSEV00">Committee on Environment and Public Works</committee>
+<committee code="SSBU00">Committee on the Budget</committee>
+<committee code="SSEG00">Committee on Energy and Natural Resources</committee>
+<committee code="SSRA00" position="Ranking">Committee on Rules and Administration</committee>
+</committees>
+</senator>
+<senator lis_member_id="S423">
+<name>
+<prefix>Mr.</prefix>
+<first>Pete </first>
+<last>Ricketts</last>
+<suffix>        
+</suffix>
+</name>
+<party>R</party>
+<state>NE</state>
+<homeTown>Omaha</homeTown>
+<stateRank>2</stateRank>
+<bioguideId>R000618</bioguideId>
+<office>139 Russell </office>
+<committees>
+<committee code="SSEV00">Committee on Environment and Public Works</committee>
+<committee code="SSBK00">Committee on Banking, Housing, and Urban Affairs</committee>
+<committee code="SSBU00">Committee on the Budget</committee>
+<committee code="SSFR00">Committee on Foreign Relations</committee>
+</committees>
+</senator>
+<senator lis_member_id="S313">
+<name>
+<prefix>Mr.</prefix>
+<first>Bernard </first>
+<last>Sanders</last>
+<suffix>        
+</suffix>
+</name>
+<party>I</party>
+<state>VT</state>
+<homeTown>Burlington</homeTown>
+<stateRank>1</stateRank>
+<bioguideId>S000033</bioguideId>
+<office>332 Dirksen </office>
+<committees>
+<committee code="SSEV00">Committee on Environment and Public Works</committee>
+<committee code="SSFI00">Committee on Finance</committee>
+<committee code="SSBU00">Committee on the Budget</committee>
+<committee code="SSHR00" position="Ranking">Committee on Health, Education, Labor, and Pensions</committee>
+<committee code="SSVA00">Committee on Veterans' Affairs</committee>
+</committees>
+</senator>
+<senator lis_member_id="S270">
+<name>
+<prefix>Mr.</prefix>
+<first>Charles E.</first>
+<last>Schumer</last>
+<suffix>        
+</suffix>
+</name>
+<party>D</party>
+<state>NY</state>
+<homeTown>Brooklyn</homeTown>
+<stateRank>1</stateRank>
+<bioguideId>S000148</bioguideId>
+<office>322 Hart </office>
+<leadership_position>Democratic Leader Chair of the Conference</leadership_position>
+<committees>
+<committee code="JSIK00">Joint Congressional Committee on Inaugural Ceremonies - 2024</committee>
+<committee code="SLIN00">Select Committee on Intelligence</committee>
+<committee code="SSRA00">Committee on Rules and Administration</committee>
+</committees>
+</senator>
+<senator lis_member_id="S435">
+<name>
+<prefix>Mr.</prefix>
+<first>Tim </first>
+<last>Sheehy</last>
+<suffix>        
+</suffix>
+</name>
+<party>R</party>
+<state>MT</state>
+<homeTown>Bozeman</homeTown>
+<stateRank>2</stateRank>
+<bioguideId>S001232</bioguideId>
+<office>124 Russell </office>
+<committees>
+<committee code="SSAS00">Committee on Armed Services</committee>
+<committee code="SSVA00">Committee on Veterans' Affairs</committee>
+<committee code="SSCM00">Committee on Commerce, Science, and Transportation</committee>
+</committees>
+</senator>
+<senator lis_member_id="S303">
+<name>
+<prefix>Mr.</prefix>
+<first>John </first>
+<last>Thune</last>
+<suffix>        
+</suffix>
+</name>
+<party>R</party>
+<state>SD</state>
+<homeTown>Sioux Falls</homeTown>
+<stateRank>1</stateRank>
+<bioguideId>T000250</bioguideId>
+<office>511 Dirksen </office>
+<leadership_position>Majority Leader</leadership_position>
+<committees>
+<committee code="SLIN00">Select Committee on Intelligence</committee>
+<committee code="SSAF00">Committee on Agriculture, Nutrition, and Forestry</committee>
+<committee code="SSFI00">Committee on Finance</committee>
+<committee code="SSCM00">Committee on Commerce, Science, and Transportation</committee>
+</committees>
+</senator>
+<senator lis_member_id="S384">
+<name>
+<prefix>Mr.</prefix>
+<first>Thom</first>
+<last>Tillis</last>
+<suffix>        
+</suffix>
+</name>
+<party>R</party>
+<state>NC</state>
+<homeTown>Huntersville</homeTown>
+<stateRank>1</stateRank>
+<bioguideId>T000476</bioguideId>
+<office>113 Dirksen </office>
+<committees>
+<committee code="JCSE00">Commission on Security and Cooperation in Europe</committee>
+<committee code="SSJU00">Committee on the Judiciary</committee>
+<committee code="SSFI00">Committee on Finance</committee>
+<committee code="SSBK00">Committee on Banking, Housing, and Urban Affairs</committee>
+<committee code="SSVA00">Committee on Veterans' Affairs</committee>
+</committees>
+</senator>
+<senator lis_member_id="S327">
+<name>
+<prefix>Mr.</prefix>
+<first>Mark R.</first>
+<last>Warner</last>
+<suffix>        
+</suffix>
+</name>
+<party>D</party>
+<state>VA</state>
+<homeTown>Alexandria</homeTown>
+<stateRank>1</stateRank>
+<bioguideId>W000805</bioguideId>
+<office>703 Hart </office>
+<committees>
+<committee code="SLIN00" position="Vice Chairman">Select Committee on Intelligence</committee>
+<committee code="SSFI00">Committee on Finance</committee>
+<committee code="SSBK00">Committee on Banking, Housing, and Urban Affairs</committee>
+<committee code="SSBU00">Committee on the Budget</committee>
+<committee code="SSRA00">Committee on Rules and Administration</committee>
+</committees>
+</senator>
+<senator lis_member_id="S316">
+<name>
+<prefix>Mr.</prefix>
+<first>Sheldon </first>
+<last>Whitehouse</last>
+<suffix>        
+</suffix>
+</name>
+<party>D</party>
+<state>RI</state>
+<homeTown>Newport</homeTown>
+<stateRank>2</stateRank>
+<bioguideId>W000802</bioguideId>
+<office>530 Hart </office>
+<committees>
+<committee code="SCNC00" position="Chairman">United States Senate Caucus on International Narcotics Control</committee>
+<committee code="JCSE00">Commission on Security and Cooperation in Europe</committee>
+<committee code="SSJU00">Committee on the Judiciary</committee>
+<committee code="SSEV00" position="Ranking">Committee on Environment and Public Works</committee>
+<committee code="SSFI00">Committee on Finance</committee>
+<committee code="SSBU00">Committee on the Budget</committee>
+</committees>
+</senator>
+</senators>

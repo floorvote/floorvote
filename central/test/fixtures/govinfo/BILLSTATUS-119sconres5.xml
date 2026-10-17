@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<billStatus>
+  <version>3.0.0</version>
+  <bill>
+    <number>5</number>
+    <updateDate>2025-07-01T11:06:18Z</updateDate>
+    <updateDateIncludingText>2025-07-01T11:06:18Z</updateDateIncludingText>
+    <originChamber>Senate</originChamber>
+    <originChamberCode>S</originChamberCode>
+    <type>SCONRES</type>
+    <introducedDate>2025-01-15</introducedDate>
+    <congress>119</congress>
+    <committees>
+      <item>
+        <systemCode>ssfi00</systemCode>
+        <name>Finance Committee</name>
+        <chamber>Senate</chamber>
+        <type>Standing</type>
+        <activities>
+          <item>
+            <name>Referred To</name>
+            <date>2025-01-15T22:15:33Z</date>
+          </item>
+        </activities>
+      </item>
+    </committees>
+    <actions>
+      <item>
+        <actionDate>2025-01-15</actionDate>
+        <committees>
+          <item>
+            <systemCode>ssfi00</systemCode>
+            <name>Finance Committee</name>
+          </item>
+        </committees>
+        <sourceSystem>
+          <name>Senate</name>
+        </sourceSystem>
+        <text>Referred to the Committee on Finance. (text: CR S187)</text>
+        <type>IntroReferral</type>
+      </item>
+      <item>
+        <actionDate>2025-01-15</actionDate>
+        <text>Introduced in Senate</text>
+        <type>IntroReferral</type>
+        <actionCode>10000</actionCode>
+        <sourceSystem>
+          <code>9</code>
+          <name>Library of Congress</name>
+        </sourceSystem>
+      </item>
+    </actions>
+    <sponsors>
+      <item>
+        <bioguideId>B001319</bioguideId>
+        <fullName>Sen. Britt, Katie Boyd [R-AL]</fullName>
+        <firstName>Katie</firstName>
+        <lastName>Britt</lastName>
+        <party>R</party>
+        <state>AL</state>
+        <isByRequest>N</isByRequest>
+      </item>
+    </sponsors>
+    <cosponsors>
+      <item>
+        <bioguideId>T000278</bioguideId>
+        <fullName>Sen. Tuberville, Tommy [R-AL]</fullName>
+        <firstName>Tommy</firstName>
+        <lastName>Tuberville</lastName>
+        <party>R</party>
+        <state>AL</state>
+        <sponsorshipDate>2025-01-15</sponsorshipDate>
+        <isOriginalCosponsor>True</isOriginalCosponsor>
+      </item>
+    </cosponsors>
+    <policyArea>
+      <name>International Affairs</name>
+    </policyArea>
+    <subjects>
+      <legislativeSubjects/>
+      <policyArea>
+        <name>International Affairs</name>
+        <updateDate>2025-01-27T22:39:40Z</updateDate>
+      </policyArea>
+    </subjects>
+    <summaries>
+      <summary>
+        <versionCode>00</versionCode>
+        <actionDate>2025-01-15</actionDate>
+        <actionDesc>Introduced in Senate</actionDesc>
+        <updateDate>2025-02-18T22:42:33Z</updateDate>
+        <cdata>
+          <text>&lt;p&gt;This concurrent resolution states that, unless it is approved by Congress, the proposed joint interpretation of Annex 14-C of the United States-Mexico-Canada Agreement (USMCA) prepared by Ambassador Katherine Tai (1) is of no legal effect with respect to the United States or any U.S. person, and (2) cannot be invoked by any federal agency in any legal proceeding nor may a federal agency assert that it has any legal consequences for claims made by a U.S. person.&amp;nbsp;(Annex 14-C of the USMCA concerns certain investment claims under the North American Free Trade Agreement, the agreement which preceded USMCA.)&lt;/p&gt;</text>
+        </cdata>
+      </summary>
+    </summaries>
+    <title>A concurrent resolution expressing the sense of Congress that the proposed "joint interpretation" of Annex 14-C of the United States-Mexico-Canada Agreement prepared by United States Trade Representative Katherine Tai is of no legal effect with respect to the United States or any United States person unless it is approved by Congress.</title>
+    <titles>
+      <item>
+        <titleType>Official Title as Introduced</titleType>
+        <titleTypeCode>6</titleTypeCode>
+        <title>A concurrent resolution expressing the sense of Congress that the proposed "joint interpretation" of Annex 14-C of the United States-Mexico-Canada Agreement prepared by United States Trade Representative Katherine Tai is of no legal effect with respect to the United States or any United States person unless it is approved by Congress.</title>
+        <updateDate>2025-01-17T05:18:21Z</updateDate>
+        <billTextVersionName>Introduced in Senate</billTextVersionName>
+        <billTextVersionCode>IS</billTextVersionCode>
+      </item>
+      <item>
+        <titleType>Display Title</titleType>
+        <titleTypeCode>45</titleTypeCode>
+        <title>A concurrent resolution expressing the sense of Congress that the proposed "joint interpretation" of Annex 14-C of the United States-Mexico-Canada Agreement prepared by United States Trade Representative Katherine Tai is of no legal effect with respect to the United States or any United States person unless it is approved by Congress.</title>
+        <updateDate>2025-01-16T11:56:18Z</updateDate>
+      </item>
+    </titles>
+    <textVersions>
+      <item>
+        <type>Introduced in Senate</type>
+        <date>2025-01-15T05:00:00Z</date>
+        <formats>
+          <item>
+            <url>https://www.govinfo.gov/content/pkg/BILLS-119sconres5is/xml/BILLS-119sconres5is.xml</url>
+          </item>
+        </formats>
+      </item>
+    </textVersions>
+    <latestAction>
+      <actionDate>2025-01-15</actionDate>
+      <text>Referred to the Committee on Finance. (text: CR S187)</text>
+    </latestAction>
+  </bill>
+  <dublinCore xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:format>text/xml</dc:format>
+    <dc:language>EN</dc:language>
+    <dc:rights>Pursuant to Title 17 Section 105 of the United States Code, this file is not subject to copyright protection and is in the public domain.</dc:rights>
+    <dc:contributor>Congressional Research Service, Library of Congress</dc:contributor>
+    <dc:description>This file contains bill summaries and statuses for federal legislation. A bill summary describes the most significant provisions of a piece of legislation and details the effects the legislative text may have on current law and federal programs. Bill summaries are authored by the Congressional Research Service (CRS) of the Library of Congress. As stated in Public Law 91-510 (2 USC 166 (d)(6)), one of the duties of CRS is "to prepare summaries and digests of bills and resolutions of a public general nature introduced in the Senate or House of Representatives". For more information, refer to the User Guide that accompanies this file.</dc:description>
+  </dublinCore>
+</billStatus>

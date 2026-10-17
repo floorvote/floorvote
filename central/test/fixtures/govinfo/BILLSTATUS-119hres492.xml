@@ -1,0 +1,297 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<billStatus>
+  <version>3.0.0</version>
+  <bill>
+    <number>492</number>
+    <updateDate>2026-09-08T19:31:27Z</updateDate>
+    <updateDateIncludingText>2026-09-08T19:31:27Z</updateDateIncludingText>
+    <originChamber>House</originChamber>
+    <originChamberCode>H</originChamberCode>
+    <type>HRES</type>
+    <introducedDate>2025-06-10</introducedDate>
+    <congress>119</congress>
+    <legislationUrl>https://www.congress.gov/bill/119th-congress/house-resolution/492</legislationUrl>
+    <cdata/>
+    <committees>
+      <item>
+        <systemCode>hsha00</systemCode>
+        <name>Committee on House Administration</name>
+        <chamber>House</chamber>
+        <type>Standing</type>
+        <activities>
+          <item>
+            <name>Referred To</name>
+            <date>2025-06-10T14:06:10Z</date>
+          </item>
+        </activities>
+      </item>
+      <item>
+        <systemCode>hsbu00</systemCode>
+        <name>Budget Committee</name>
+        <chamber>House</chamber>
+        <type>Standing</type>
+        <activities>
+          <item>
+            <name>Referred To</name>
+            <date>2025-06-10T14:06:05Z</date>
+          </item>
+        </activities>
+      </item>
+    </committees>
+    <relatedBills>
+      <item>
+        <title>An act to provide for reconciliation pursuant to title II of H. Con. Res. 14.</title>
+        <congress>119</congress>
+        <number>1</number>
+        <type>HR</type>
+        <latestAction>
+          <actionDate>2025-07-04</actionDate>
+          <text>Became Public Law No: 119-21.</text>
+        </latestAction>
+        <relationshipDetails>
+          <item>
+            <type>Related bill</type>
+            <identifiedBy>House</identifiedBy>
+          </item>
+        </relationshipDetails>
+      </item>
+      <item>
+        <title>Providing for consideration of the bill (H.R. 4) to rescind certain budget authority proposed to be rescinded in special messages transmitted to the Congress by the President on June 3, 2025, in accordance with section 1012(a) of the Congressional Budget and Impoundment Control Act of 1974, and for other purposes.</title>
+        <congress>119</congress>
+        <number>499</number>
+        <type>HRES</type>
+        <latestAction>
+          <actionDate>2025-06-11</actionDate>
+          <text>Motion to reconsider laid on the table Agreed to without objection.</text>
+          <actionTime>16:51:08</actionTime>
+        </latestAction>
+        <relationshipDetails>
+          <item>
+            <type>Procedurally related</type>
+            <identifiedBy>House</identifiedBy>
+          </item>
+        </relationshipDetails>
+      </item>
+    </relatedBills>
+    <actions>
+      <item>
+        <actionDate>2025-06-11</actionDate>
+        <actionTime>16:51:25</actionTime>
+        <text>Pursuant to the provisions of H. Res. 499, H. Res. 492 is considered passed House. (consideration: CR H2647; text: CR H2647)</text>
+        <type>Floor</type>
+        <actionCode>H1B000</actionCode>
+        <sourceSystem>
+          <code>2</code>
+          <name>House floor actions</name>
+        </sourceSystem>
+      </item>
+      <item>
+        <actionDate>2025-06-11</actionDate>
+        <actionTime>16:51:25</actionTime>
+        <text>Pursuant to the provisions of H. Res. 499, H. Res. 492 is considered passed House.</text>
+        <type>Floor</type>
+        <actionCode>8000</actionCode>
+        <sourceSystem>
+          <code>9</code>
+          <name>Library of Congress</name>
+        </sourceSystem>
+      </item>
+      <item>
+        <actionDate>2025-06-10</actionDate>
+        <text>Referred to the Committee on the Budget, and in addition to the Committee on House Administration, for a period to be subsequently determined by the Speaker, in each case for consideration of such provisions as fall within the jurisdiction of the committee concerned.</text>
+        <type>IntroReferral</type>
+        <actionCode>H11100</actionCode>
+        <sourceSystem>
+          <code>2</code>
+          <name>House floor actions</name>
+        </sourceSystem>
+        <committees>
+          <item>
+            <systemCode>hsha00</systemCode>
+            <name>Committee on House Administration</name>
+          </item>
+        </committees>
+      </item>
+      <item>
+        <actionDate>2025-06-10</actionDate>
+        <text>Referred to the Committee on the Budget, and in addition to the Committee on House Administration, for a period to be subsequently determined by the Speaker, in each case for consideration of such provisions as fall within the jurisdiction of the committee concerned.</text>
+        <type>IntroReferral</type>
+        <actionCode>H11100</actionCode>
+        <sourceSystem>
+          <code>2</code>
+          <name>House floor actions</name>
+        </sourceSystem>
+        <committees>
+          <item>
+            <systemCode>hsbu00</systemCode>
+            <name>Budget Committee</name>
+          </item>
+        </committees>
+      </item>
+      <item>
+        <actionDate>2025-06-10</actionDate>
+        <text>Submitted in House</text>
+        <type>IntroReferral</type>
+        <actionCode>H11100</actionCode>
+        <sourceSystem>
+          <code>9</code>
+          <name>Library of Congress</name>
+        </sourceSystem>
+      </item>
+      <item>
+        <actionDate>2025-06-10</actionDate>
+        <text>Submitted in House</text>
+        <type>IntroReferral</type>
+        <actionCode>1025</actionCode>
+        <sourceSystem>
+          <code>9</code>
+          <name>Library of Congress</name>
+        </sourceSystem>
+      </item>
+    </actions>
+    <sponsors>
+      <item>
+        <bioguideId>A000375</bioguideId>
+        <fullName>Rep. Arrington, Jodey C. [R-TX-19]</fullName>
+        <firstName>Jodey</firstName>
+        <lastName>Arrington</lastName>
+        <party>R</party>
+        <state>TX</state>
+        <middleName>C.</middleName>
+        <district>19</district>
+        <isByRequest>N</isByRequest>
+      </item>
+    </sponsors>
+    <policyArea>
+      <name>Congress</name>
+    </policyArea>
+    <subjects>
+      <legislativeSubjects>
+        <item>
+          <name>Administrative law and regulatory procedures</name>
+          <updateDate>2025-06-26T17:04:54Z</updateDate>
+        </item>
+        <item>
+          <name>Agricultural marketing and promotion</name>
+          <updateDate>2025-06-26T17:04:01Z</updateDate>
+        </item>
+        <item>
+          <name>Department of Health and Human Services</name>
+          <updateDate>2025-06-26T17:04:47Z</updateDate>
+        </item>
+        <item>
+          <name>Energy assistance for the poor and aged</name>
+          <updateDate>2025-06-26T17:03:50Z</updateDate>
+        </item>
+        <item>
+          <name>House of Representatives</name>
+          <updateDate>2025-06-24T17:36:56Z</updateDate>
+        </item>
+        <item>
+          <name>Income tax deductions</name>
+          <updateDate>2025-06-26T17:04:38Z</updateDate>
+        </item>
+        <item>
+          <name>Intelligence activities, surveillance, classified information</name>
+          <updateDate>2025-06-26T17:04:08Z</updateDate>
+        </item>
+        <item>
+          <name>Land use and conservation</name>
+          <updateDate>2025-06-26T17:04:32Z</updateDate>
+        </item>
+        <item>
+          <name>Legislative rules and procedure</name>
+          <updateDate>2025-06-24T17:37:03Z</updateDate>
+        </item>
+        <item>
+          <name>Military procurement, research, weapons development</name>
+          <updateDate>2025-06-26T17:04:15Z</updateDate>
+        </item>
+        <item>
+          <name>Mining</name>
+          <updateDate>2025-06-26T17:04:27Z</updateDate>
+        </item>
+        <item>
+          <name>Minnesota</name>
+          <updateDate>2025-06-26T17:04:59Z</updateDate>
+        </item>
+        <item>
+          <name>Oil and gas</name>
+          <updateDate>2025-06-26T17:04:21Z</updateDate>
+        </item>
+      </legislativeSubjects>
+      <policyArea>
+        <name>Congress</name>
+        <updateDate>2025-06-16T15:28:44Z</updateDate>
+      </policyArea>
+    </subjects>
+    <summaries>
+      <summary>
+        <versionCode>00</versionCode>
+        <actionDate>2025-06-10</actionDate>
+        <actionDesc>Introduced in House</actionDesc>
+        <updateDate>2025-06-17T14:12:23Z</updateDate>
+        <text><![CDATA[<p>This resolution directs the Clerk of the House of Representatives to make several corrections in the engrossment of H.R. 1 (One Big Beautiful Bill Act).&nbsp;</p><p>Specifically, the corrections strike provisions from the bill that&nbsp;</p><ul><li>make a conforming amendment to the Low-Income Home Energy Assistance Act;</li><li>reauthorize,&nbsp;and extend funding for, the Department of Agriculture's biobased markets program (i.e., BioPreferred Program) through FY2031;</li><li>provide funding to the Department of Defense (DOD) for various intelligence-related activities and equipment, including enhancements to military intelligence programs;</li><li>provide funding to DOD for exportable low-cost cruise missiles;</li><li>provide funding for DOD to convert Ohio-class submarine tubes to accept additional missiles;</li><li>specify that revisions to a land use plan may not prevent or delay the Department of the Interior from leasing certain federal land for oil and natural gas development;&nbsp;</li><li>nullify the Bureau of Land Management’s Public Land Order No. 7917 for Withdrawal of Federal Lands; Cook, Lake, and Saint Louis Counties, MN that was published on January 31, 2023;</li><li>reinstate certain&nbsp;hardrock mineral leases in the Superior National Forest in Minnesota;&nbsp;</li><li>increase the penalty for aiding and abetting the understatement of tax liability with respect to the employee retention tax credit (ERTC) by a COVID-ERTC promoter and make other changes related to the&nbsp;ERTC; and</li><li>specify that provisions in the bill&nbsp;regarding certain Department of Health and Human Services regulations also apply to successor regulations.</li></ul>]]></text>
+      </summary>
+    </summaries>
+    <title>Directing the Clerk of the House of Representatives to make a correction in the engrossment of H.R. 1.</title>
+    <titles>
+      <item>
+        <titleType>Display Title</titleType>
+        <titleTypeCode>45</titleTypeCode>
+        <title>Directing the Clerk of the House of Representatives to make a correction in the engrossment of H.R. 1.</title>
+        <updateDate>2026-07-11T20:54:32Z</updateDate>
+      </item>
+      <item>
+        <titleType>Official Titles from EH (Engrossed in House) bill text</titleType>
+        <titleTypeCode>259</titleTypeCode>
+        <title>Directing the Clerk of the House of Representatives to make a correction in the engrossment of H.R. 1.</title>
+        <updateDate>2026-07-11T20:53:22Z</updateDate>
+        <chamberCode>H</chamberCode>
+        <chamberName>House</chamberName>
+        <billTextVersionName>Engrossed in House</billTextVersionName>
+        <billTextVersionCode>EH</billTextVersionCode>
+      </item>
+      <item>
+        <titleType>Official Title as Introduced</titleType>
+        <titleTypeCode>6</titleTypeCode>
+        <title>Directing the Clerk of the House of Representatives to make a correction in the engrossment of H.R. 1.</title>
+        <updateDate>2025-06-11T08:18:21Z</updateDate>
+        <billTextVersionName>Introduced in House</billTextVersionName>
+        <billTextVersionCode>IH</billTextVersionCode>
+      </item>
+    </titles>
+    <textVersions>
+      <item>
+        <type>Engrossed in House</type>
+        <date>2025-06-11T04:00:00Z</date>
+        <formats>
+          <item>
+            <url>https://www.govinfo.gov/content/pkg/BILLS-119hres492eh/xml/BILLS-119hres492eh.xml</url>
+          </item>
+        </formats>
+      </item>
+      <item>
+        <type>Introduced in House</type>
+        <date>2025-06-10T04:00:00Z</date>
+        <formats>
+          <item>
+            <url>https://www.govinfo.gov/content/pkg/BILLS-119hres492ih/xml/BILLS-119hres492ih.xml</url>
+          </item>
+        </formats>
+      </item>
+    </textVersions>
+    <latestAction>
+      <actionDate>2025-06-11</actionDate>
+      <text>Pursuant to the provisions of H. Res. 499, H. Res. 492 is considered passed House. (consideration: CR H2647; text: CR H2647)</text>
+      <actionTime>16:51:25</actionTime>
+    </latestAction>
+  </bill>
+  <dublinCore xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:format>text/xml</dc:format>
+    <dc:language>EN</dc:language>
+    <dc:rights>Pursuant to Title 17 Section 105 of the United States Code, this file is not subject to copyright protection and is in the public domain.</dc:rights>
+    <dc:contributor>Congressional Research Service, Library of Congress</dc:contributor>
+    <dc:description>This file contains bill summaries and statuses for federal legislation. A bill summary describes the most significant provisions of a piece of legislation and details the effects the legislative text may have on current law and federal programs. Bill summaries are authored by the Congressional Research Service (CRS) of the Library of Congress. As stated in Public Law 91-510 (2 USC 166 (d)(6)), one of the duties of CRS is "to prepare summaries and digests of bills and resolutions of a public general nature introduced in the Senate or House of Representatives". For more information, refer to the User Guide that accompanies this file.</dc:description>
+  </dublinCore>
+</billStatus>

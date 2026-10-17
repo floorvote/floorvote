@@ -38,6 +38,14 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
   readonly displayName: string
 
   /**
+   * What members call the body whose calendar `listBodyEvents` returns, such
+   * as "Council": the Calendar page's control reads "Council events". Only a
+   * provider that publishes a calendar needs one; without it the control reads
+   * "Legislature events".
+   */
+  readonly bodyName?: string
+
+  /**
    * The credit instances show for this provider's data, in the footer of
    * every instance covering one of its states: the publisher's name and link,
    * one plain sentence on where the data comes from and its terms, and the
@@ -117,6 +125,16 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
 
   /** A sponsor's profile page on the provider's site, for a person record with no link of its own. */
   personUrl?(person: { state: string; name: string; peopleId: number }): string
+
+  /**
+   * A person's own profile page, for a link on their name wherever it appears:
+   * a sponsor, or a voter in a roll call. Built from what central stored for
+   * the person, `bio` (the parsed `bio_json`) and `ballotpedia`, so it needs no
+   * call to the provider. Null when it has none. Core sends only an http(s) URL,
+   * and a voter with no profile URL is plain text. `personUrl` stays the last
+   * resort for a sponsor alone. Omitted when the provider has no per-person page.
+   */
+  profileUrl?(person: { bio: { social?: { biography?: string } } | null; ballotpedia: string | null }): string | null
 
   /**
    * Keep the calendar identity central gave every entry before identities
@@ -511,6 +529,14 @@ export interface ProviderSnapshot {
    * keeps the stored ETag.
    */
   unchanged?: boolean
+  /**
+   * `records` are only the records that changed since `SnapshotSession.etag`
+   * (a partial snapshot). Core runs the pass on its stored records with
+   * these replacing the ones they name, by bill id, and never removes a
+   * record one leaves out. Answering a null ETag (a read in full) with a
+   * partial snapshot is an error, and the pass fails closed.
+   */
+  partial?: boolean
 }
 
 /**
@@ -527,6 +553,8 @@ export interface ProviderPerson {
   first_name?: string | null
   middle_name?: string | null
   last_name?: string | null
+  /** The member's Bioguide id, for Congress. A cutover matches people on it when both providers have one. */
+  bioguide_id?: string | null
   bio?: MeasurePerson['bio']
 }
 
@@ -833,6 +861,14 @@ export interface CentralMeasure {
   referrals: { date: string; committee_id: number; chamber: string; chamber_id: number; name: string }[]
   progress: { date: string; event: number }[]
   sponsors: MeasureSponsor[]
+  /**
+   * People the measure names besides its sponsors, such as the members who
+   * voted on it (`votes`' `member_votes`), so a vote shows under a name and
+   * not a number. Core adds each one it has no `people` row for and leaves an
+   * existing row alone, so a sponsor's fuller record from another measure is
+   * never cut down to what a roll call says.
+   */
+  people?: MeasurePerson[]
   history: MeasureHistoryEntry[]
   sasts: MeasureSast[]
   subjects: MeasureSubject[]

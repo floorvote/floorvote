@@ -343,17 +343,25 @@ describe('counting a recovered cut-off (#573)', () => {
   })
 })
 
-describe('nothing renders yet', () => {
-  it('returns the same bill detail with or without stored claim sources', async () => {
+describe('what the bill detail carries', () => {
+  it('carries stored claim sources only in `claimSources`, and is otherwise the same with or without them', async () => {
     const db = getDb(env.DB)
     await processCentralNotification(msg, testEnv, db)
     const id = (await row()).id as string
     const user = { id: 'u1', role: 'admin' as const }
     stubFetch(() => new Response('{}', { status: 404 }))
-    const withSources = await buildBillDetail(db, id, user, testEnv)
+    const withSources = await buildBillDetail(db, id, user, testEnv) as Record<string, unknown>
     await env.DB.prepare('UPDATE bills SET claim_sources = NULL, claim_sources_doc_id = NULL, claim_sources_text_hash = NULL WHERE id = ?').bind(id).run()
-    const without = await buildBillDetail(db, id, user, testEnv)
-    expect(withSources).toEqual(without)
-    expect(JSON.stringify(withSources)).not.toMatch(/claim/i)
+    const without = await buildBillDetail(db, id, user, testEnv) as Record<string, unknown>
+    // The claim fields are the instance's setting (#570) and, for the page's
+    // links, the shown analysis's claim sources (#571). Nothing else of what is
+    // stored leaks into the detail.
+    expect(withSources.claimSources).not.toBeNull()
+    expect(without.claimSources).toBeNull()
+    const { claimLinksEnabled, claimSources: _with, ...rest } = withSources
+    const { claimSources: _without, ...restWithout } = without
+    expect(claimLinksEnabled).toBe(true)
+    expect({ claimLinksEnabled, ...rest }).toEqual(restWithout)
+    expect(JSON.stringify(rest)).not.toMatch(/claim/i)
   })
 })

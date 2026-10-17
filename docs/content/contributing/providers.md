@@ -45,7 +45,7 @@ Adding a provider to the registry doesn't change any deployment. A state syncs f
 
 ### Official codes, never LegiScan's
 
-Each provider writes its own status codes, in a block no other provider uses: LegiScan 0 through 12, LIMS the 100s, Maryland's MGA the 200s, Virginia's LIS the 300s. Take the next free hundred.
+Each provider writes its own status codes, in a block no other provider uses: LegiScan 0 through 12, LIMS the 100s, Maryland's MGA the 200s, Virginia's LIS the 300s, Congress's GovInfo the 400s. Take the next free hundred.
 
 ### Every text carries a hash
 
@@ -69,6 +69,8 @@ Providers sync one of two ways:
 - **Listing.** The API can list changes cheaply. You implement `listMeasures` and `listChangeHashes`, as LegiScan does.
 
 Most legislatures publish a file or an API without change filters, so start with a snapshot.
+
+A snapshot provider whose feed can say what changed since its last read can return only those records: set `partial: true` on the snapshot. Central hands the provider the ETag of the last snapshot a pass finished (`SnapshotSession.etag`, which can hold any watermark you choose), replaces the stored records the partial snapshot names, by bill id, and runs the pass on every stored record, so matching and retries work as for a full read. A record you leave out stays as it is, and central never removes one. When `etag` is null (a session's first read, a forced run, or a new claim), read in full: a partial snapshot answering a null ETag fails the pass, and nothing is written.
 
 ## Start from the template
 
