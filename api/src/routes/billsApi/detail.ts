@@ -7,7 +7,7 @@ import {
 } from '../../db/schema'
 import type { Env } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
-import { isHandle, toHandle } from '../../../../shared/billHandle'
+import { chunkedForms, isHandle, legacyHandle, normalizeHandle, toHandle } from '../../../../shared/billHandle'
 import { isRelationshipKind, type RelationshipKind } from '../../../../shared/relationshipKinds'
 import type { BillExtras } from '../../../../shared/providerExtras'
 import { billSlug, filedSlug } from '../../lib/sessionSlug'
@@ -69,7 +69,7 @@ export async function buildBillDetail(
   let centralRich: CentralBillRich | null = null
   if (isHandle(bill.externalId)) {
     try {
-      const res = await centralFetch(env, `/bills/${bill.externalId}`)
+      const res = await centralFetch(env, `/bills/${legacyHandle(bill.externalId)}`)
       if (res.ok) centralRich = await res.json() as CentralBillRich
     } catch {
       // Non-fatal — bill detail still works without the supplemental data
@@ -220,20 +220,21 @@ export async function buildBillDetail(
   if (centralRich?.relatedBills?.length) {
     const externalIds = centralRich.relatedBills
       .flatMap(r => r.sastBillId != null ? [toHandle(r.sastBillId)] : [])
-    const internalRows = externalIds.length > 0
-      ? await db.select({ id: bills.id, externalId: bills.externalId, billNumber: bills.billNumber, session: bills.session, sessionSlug: bills.sessionSlug, state: bills.state })
-          .from(bills)
-          .where(inArray(bills.externalId, externalIds))
-          .all()
-      : []
-    const routeByExternal = new Map(internalRows.map(r => [r.externalId, { id: r.id, billNumber: r.billNumber, sessionSlug: filedSlug(r) ?? '', state: r.state }]))
+    const internalRows = []
+    for (const part of chunkedForms(externalIds)) {
+      internalRows.push(...await db.select({ id: bills.id, externalId: bills.externalId, billNumber: bills.billNumber, session: bills.session, sessionSlug: bills.sessionSlug, state: bills.state })
+        .from(bills)
+        .where(inArray(bills.externalId, part))
+        .all())
+    }
+    const routeByExternal = new Map(internalRows.map(r => [normalizeHandle(r.externalId), { id: r.id, billNumber: r.billNumber, sessionSlug: filedSlug(r) ?? '', state: r.state }]))
     resolvedRelated = centralRich.relatedBills.map(r => ({
       billId: r.sastBillId ?? 0,
       billNumber: r.identifier,
       type: r.relationType,
       // A central that predates kinds sends none, and a bill is then only related.
       kind: isRelationshipKind(r.kind) ? r.kind : 'related',
-      route: r.sastBillId != null ? (routeByExternal.get(toHandle(r.sastBillId)) ?? null) : null,
+      route: r.sastBillId != null ? (routeByExternal.get(normalizeHandle(toHandle(r.sastBillId))) ?? null) : null,
     }))
   } else {
     // Fallback: stored JSON may be an array of bill-number strings (legacy format)

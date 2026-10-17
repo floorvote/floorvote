@@ -4,7 +4,7 @@ import { billGroupOverrides, billIdenticalLinks, bills, memberVotes, notes, team
 import { rowidOf } from '../db/rowid'
 import { nowDb } from './dbTime'
 import { chunk } from './chunk'
-import { isHandle, parseHandle, toHandle } from '../../../shared/billHandle'
+import { handleForms, isHandle, normalizeHandle, parseHandle, toHandle } from '../../../shared/billHandle'
 import type { GroupBill, GroupingEventMetadata, GroupingEventType, GroupNote, ReplacedTeamValue } from '../../../shared/companionGroups'
 import { loadFieldDefs, readTeamValueRows, replacedTeamValues, teamValuesUnchanged } from './teamFields'
 import type { AppDb } from '../types'
@@ -153,17 +153,22 @@ export async function syncIdenticalCompanions(
   opts: RecomputeOptions = {},
 ): Promise<void> {
   if (!isHandle(externalId)) return
-  const next = new Set(relatedBills.flatMap(r =>
-    r.kind === 'identical' && r.sastBillId != null && parseHandle(toHandle(r.sastBillId)) !== null ? [toHandle(r.sastBillId)] : [],
-  ))
-  next.delete(externalId)
-  const current = new Set((await db.select({ companion: billIdenticalLinks.companionExternalId })
-    .from(billIdenticalLinks).where(eq(billIdenticalLinks.externalId, externalId)).all()).map(r => r.companion))
+  // Links are compared by central bill id, never by spelling: a link may be stored as `legiscan:<n>` or
+  // `bill:<n>`, and a bill's own row under either (#305). New links are written in the form `toHandle` builds.
+  const selfId = parseHandle(externalId)
+  const next = new Map<number, string>()
+  for (const r of relatedBills) {
+    const id = r.kind === 'identical' && r.sastBillId != null ? parseHandle(toHandle(r.sastBillId)) : null
+    if (id !== null && id !== selfId) next.set(id, toHandle(id))
+  }
+  const current = (await db.select({ companion: billIdenticalLinks.companionExternalId })
+    .from(billIdenticalLinks).where(inArray(billIdenticalLinks.externalId, handleForms(externalId))).all()).map(r => r.companion)
+  const currentIds = new Set(current.map(h => parseHandle(h)))
 
-  const gone = [...current].filter(h => !next.has(h))
-  const added = [...next].filter(h => !current.has(h))
+  const gone = current.filter(h => { const id = parseHandle(h); return id === null || !next.has(id) })
+  const added = [...next].filter(([id]) => !currentIds.has(id)).map(([, h]) => h)
   for (const part of chunk(gone, 90)) {
-    await db.delete(billIdenticalLinks).where(and(eq(billIdenticalLinks.externalId, externalId), inArray(billIdenticalLinks.companionExternalId, part)))
+    await db.delete(billIdenticalLinks).where(and(inArray(billIdenticalLinks.externalId, handleForms(externalId)), inArray(billIdenticalLinks.companionExternalId, part)))
   }
   for (const part of chunk(added, 40)) {
     await db.insert(billIdenticalLinks).values(part.map(companionExternalId => ({ externalId, companionExternalId }))).onConflictDoNothing()
@@ -175,7 +180,7 @@ export async function syncIdenticalCompanions(
   // bills apart that are in no group with this one (settleGroups), and once it
   // goes they may group again.
   const ids: string[] = []
-  for (const part of chunk([externalId, ...gone], 90)) {
+  for (const part of chunk([externalId, ...gone].flatMap(handleForms), 90)) {
     ids.push(...(await db.select({ id: bills.id }).from(bills).where(inArray(bills.externalId, part)).all()).map(r => r.id))
   }
   if (ids.length > 0) await recomputeGroups(db, ids, opts)
@@ -360,9 +365,9 @@ async function tryRecomputeGroups(
   // instead of writing a grouping computed from a mix of before and after.
   // JSON parameters keep any group size under D1's parameter limit.
   const read = [...nodes.values()].map(n => [n.id, n.groupKey])
-  const handles = [...nodes.values()].flatMap(n => (n.externalId ? [n.externalId] : []))
+  const handles = [...nodes.values()].flatMap(n => (n.externalId ? handleForms(n.externalId) : []))
   const links = [...linksRead.values()]
-  const linkedHandles = [...new Set(links.flat())]
+  const linkedHandles = [...new Set(links.flat().flatMap(handleForms))]
   const linkedBills = [...nodes.values()].filter(n => n.externalId !== null && linkedHandles.includes(n.externalId)).length
   const ids = [...nodes.keys()]
   const overrides = [...overridesRead.values()].map(o => [o.billId, o.otherBillId, o.kind])
@@ -415,7 +420,7 @@ function changesOf(result: unknown): number {
 async function identicalNeighbors(db: AppDb, node: Node, readingOverrides: boolean): Promise<{ linked: Node[]; links: Array<[string, string]>; overrides: Override[] }> {
   const rows = node.externalId ? await readLinks(db, [node.externalId]) : []
   const overrides = readingOverrides ? await readOverrides(db, [node.id]) : []
-  const others = [...new Set(rows.map(([a, b]) => (a === node.externalId ? b : a)))]
+  const others = [...new Set(rows.map(([a, b]) => (normalizeHandle(a) === normalizeHandle(node.externalId) ? b : a)).flatMap(handleForms))]
   const linkedIds = overrides.filter(o => o.kind === 'link').map(o => (o.billId === node.id ? o.otherBillId : o.billId))
   const linked = new Map<string, Node>()
   for (const part of chunk(others, 90)) {
@@ -430,7 +435,7 @@ async function identicalNeighbors(db: AppDb, node: Node, readingOverrides: boole
 /** Every identical link naming any of these handles, or named by one, as `[externalId, companionExternalId]`. */
 async function readLinks(db: AppDb, handles: readonly string[]): Promise<Array<[string, string]>> {
   const out: Array<[string, string]> = []
-  for (const part of chunk([...handles], 45)) {
+  for (const part of chunk([...handles].flatMap(handleForms), 45)) {
     out.push(...(await db.select({ a: billIdenticalLinks.externalId, b: billIdenticalLinks.companionExternalId })
       .from(billIdenticalLinks)
       .where(or(inArray(billIdenticalLinks.externalId, part), inArray(billIdenticalLinks.companionExternalId, part)))
@@ -471,7 +476,7 @@ async function readOverrides(db: AppDb, billIds: readonly string[]): Promise<Ove
  */
 function settleGroups(nodes: readonly Node[], links: ReadonlyArray<readonly [string, string]>, overrides: readonly Override[]): Map<string, string[]> {
   const ids = nodes.map(n => n.id).sort()
-  const idOf = new Map(nodes.flatMap(n => (n.externalId ? [[n.externalId, n.id] as const] : [])))
+  const idOf = new Map(nodes.flatMap(n => (n.externalId ? [[normalizeHandle(n.externalId), n.id] as const] : [])))
   const known = new Set(ids)
   const splits = overrides.filter(o => o.kind === 'split' && known.has(o.billId) && known.has(o.otherBillId))
     .map(o => pair(o.billId, o.otherBillId)).sort((x, y) => pairKey(...x).localeCompare(pairKey(...y)))
@@ -483,7 +488,7 @@ function settleGroups(nodes: readonly Node[], links: ReadonlyArray<readonly [str
     edges.get(a)!.add(b)
     edges.get(b)!.add(a)
   }
-  for (const [a, b] of links) join(provider, idOf.get(a), idOf.get(b))
+  for (const [a, b] of links) join(provider, idOf.get(normalizeHandle(a)), idOf.get(normalizeHandle(b)))
   for (const o of overrides) if (o.kind === 'link') join(manual, o.billId, o.otherBillId)
 
   // Bills that have lost their provider links, and bills that have lost every link.

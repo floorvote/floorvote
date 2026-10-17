@@ -1,6 +1,7 @@
 import { centralFetch } from './centralFetch'
 import { loadAnalysisInputs, loadBillTextForAi } from './analysisInputs'
 import { processBill } from './llm'
+import { legacyHandle } from '../../../shared/billHandle'
 import type { AppDb, Env } from '../types'
 
 export type VerifyAiResult =
@@ -28,7 +29,7 @@ export async function verifyAi(env: Env, db: AppDb, billId: string): Promise<Ver
     return { status: 'skipped', reason: 'no AI is configured (AI_GATEWAY_ENABLED is not "true" and GEMINI_API_KEY is not set)' }
   }
 
-  const res = await centralFetch(env, `/bills/${billId}`)
+  const res = await centralFetch(env, `/bills/${legacyHandle(billId)}`)
   if (!res.ok) throw new Error(`Central API returned ${res.status} for bill ${billId}`)
   const bill = await res.json() as { number: string; title: string; abstract: string | null }
 

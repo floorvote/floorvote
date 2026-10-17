@@ -1,4 +1,4 @@
-import { and, eq, lt, sql } from 'drizzle-orm'
+import { and, eq, inArray, lt, sql } from 'drizzle-orm'
 import { processBill } from '../lib/llm'
 import { filterTagsToTaxonomy } from '../lib/taxonomy'
 import { centralFetch } from '../lib/centralFetch'
@@ -15,6 +15,8 @@ import { nowDb } from '../lib/dbTime'
 import { addToNewMatchesRow } from '../lib/newMatch'
 import { LEGACY_STATUS_ORDER, LEGISCAN_CODE_WORDS } from '../../../shared/legacyStatusOrder'
 import { httpUrl } from '../../../shared/httpUrl'
+import { handleForms, legacyHandle } from '../../../shared/billHandle'
+import { resolveStoredHandle } from '../lib/storedHandle'
 import type { AppDb, Env, TenantQueueMessage } from '../types'
 
 class AiShedError extends Error {
@@ -117,7 +119,7 @@ async function recordShedAttempt(
     // into permanent silence. A later success clears aiError.
     await db.update(bills)
       .set({ aiAttemptedAt: nowDb(), aiError: note.slice(0, 300) })
-      .where(eq(bills.externalId, billId))
+      .where(inArray(bills.externalId, handleForms(billId)))
       .run()
   } catch (recordErr) {
     console.error(`[processor] could not record shed for ${billId}:`, recordErr)
@@ -272,6 +274,11 @@ export async function processCentralNotification(
   db: AppDb,
 ): Promise<void> {
   if (msg.tenantId !== env.TENANT_ID) return
+  // A handle may arrive in either form (#305). Everything below, including the
+  // bill lookup and the handle it is stored under, sees the spelling this
+  // instance stores for the bill. Only the reads from central and the calendar
+  // UIDs use the legacy one.
+  msg = { ...msg, billId: await resolveStoredHandle(db, msg.billId) }
 
   // A delivery check (scripts/verify-instance.sh): record that it arrived and
   // stop. It must reach no bill write, no feed event, and no analysis.
@@ -279,7 +286,7 @@ export async function processCentralNotification(
 
   // When this copy of the bill was read: texts stored later come from a newer one.
   const fetchedAt = nowDb()
-  const res = await centralFetch(env, `/bills/${msg.billId}`)
+  const res = await centralFetch(env, `/bills/${legacyHandle(msg.billId)}`)
   if (!res.ok) throw new Error(`Central API returned ${res.status} for bill ${msg.billId}`)
 
   const centralBill = await res.json() as CentralBill
@@ -957,6 +964,14 @@ async function upsertBill(
   data: Record<string, unknown>,
   existing?: { id: string; matchType: 'keyword' | 'manual' | null; groupKey: string | null } | undefined,
 ): Promise<{ id: string; isNew: boolean }> {
+  // Resolve the stored spelling again just before writing: release 2's migration can rename the
+  // row after the delivery began, and the write's conflict target is the spelling, so a stale one
+  // would insert a second row for the bill (#305).
+  const stored = await resolveStoredHandle(db, externalId)
+  if (stored !== externalId) {
+    externalId = stored
+    data = { ...data, externalId: stored }
+  }
   const startsMatching = existing?.matchType === null && data.matchType != null && existing.groupKey !== null
   // The event is advisory history: failing to read or write it is logged and never fails the delivery.
   const tagsBefore = startsMatching ? await snapshotGroupTags(db, [existing]).catch(err => {
