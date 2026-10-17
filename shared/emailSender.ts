@@ -68,7 +68,10 @@ export type AccountMessage = BaseMessage & { purpose: 'account' }
 /** A mention or reply email. A reply carries its thread and one-click mute headers in `headers`. */
 export type NotificationMessage = BaseMessage & { purpose: 'notification' }
 
-export type PurposeMessage = SignInMessage | AccountMessage | NotificationMessage
+/** A digest or week-ahead email. Carries its unsubscribe header in `headers`. */
+export type BulkMessage = BaseMessage & { purpose: 'bulk' }
+
+export type PurposeMessage = SignInMessage | AccountMessage | NotificationMessage | BulkMessage
 
 export type SendResult =
   | { ok: true; provider: ProviderName; messageId?: string; attempts: Attempt[] }
@@ -158,6 +161,8 @@ const RULES: Rules = {
   // Mentions and replies. Same rule as account mail: a member is waiting on the
   // conversation, so a first-provider outage shouldn't drop it.
   notification: { fallback: true, counts: true, from: 'default', suppressedInDemo: () => true },
+  // TODO(#708): stub rule, to be replaced by the real one.
+  bulk: { fallback: true, counts: false, from: 'default', suppressedInDemo: () => false },
 }
 
 function ruleFor(message: PurposeMessage): Rule<PurposeMessage> {

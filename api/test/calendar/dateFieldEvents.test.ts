@@ -11,7 +11,7 @@ import { runWeekAhead } from '../../src/lib/weekAhead'
 // week-ahead email as a `field` event projected at read time (#342).
 
 const sendBatch = vi.hoisted(() => vi.fn(async () => ({ sent: 1, failed: 0 })))
-vi.mock('../../src/lib/email', async (importOriginal) => ({ ...await importOriginal<typeof import('../../src/lib/email')>(), sendBatch }))
+vi.mock('../../src/lib/email', async (importOriginal) => ({ ...await importOriginal<typeof import('../../src/lib/email')>(), senderFor: (e: unknown) => ({ sendBatch: (messages: unknown[]) => (sendBatch as (...a: unknown[]) => unknown)(e, messages) }) }))
 
 const isoDay = (offsetDays: number) => new Date(Date.now() + offsetDays * 86400_000).toISOString().slice(0, 10)
 
