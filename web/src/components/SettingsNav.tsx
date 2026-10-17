@@ -3,17 +3,24 @@ import { useAuth } from '../hooks/useAuth'
 import { useEffect, useRef, useState } from 'react'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 import { usePrefersReducedMotion } from '../lib/usePrefersReducedMotion'
+import { useConfig } from '../context/ConfigContext'
+import { orgNotificationsLabel } from '../lib/orgNoun'
 
 const MEMBER_TABS = [
   { to: '/profile', label: 'Account' },
 ]
 
-const ADMIN_TABS = [
-  { to: '/admin/config', label: 'Config' },
-  { to: '/admin/members', label: 'Members' },
-  { to: '/admin/notifications', label: 'Notifications' },
-  { to: '/admin/drafts', label: 'Draft bills' },
-]
+// The notifications tab is named after the instance's org noun (see
+// orgNotificationsLabel), so it distinguishes the instance-wide email switches
+// from a member's own Notifications card on the Account page.
+function adminTabsFor(notificationsLabel: string) {
+  return [
+    { to: '/admin/config', label: 'Config' },
+    { to: '/admin/members', label: 'Members' },
+    { to: '/admin/notifications', label: notificationsLabel },
+    { to: '/admin/drafts', label: 'Draft bills' },
+  ]
+}
 
 function Tab({ to, label, variant }: { to: string; label: string; variant: 'member' | 'admin' }) {
   const [hovered, setHovered] = useState(false)
@@ -55,6 +62,8 @@ function Tab({ to, label, variant }: { to: string; label: string; variant: 'memb
 export function SettingsNav() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin' || user?.role === 'owner'
+  const { config } = useConfig()
+  const adminTabs = adminTabsFor(orgNotificationsLabel(config?.orgNoun))
   const navRef = useRef<HTMLElement | null>(null)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(false)
@@ -126,7 +135,7 @@ export function SettingsNav() {
             }}>
               Admin
             </span>
-            {ADMIN_TABS.map(({ to, label }) => (
+            {adminTabs.map(({ to, label }) => (
               <Tab key={to} to={to} label={label} variant="admin" />
             ))}
           </>

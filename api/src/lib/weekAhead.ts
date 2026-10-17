@@ -6,6 +6,7 @@ import { sendBatch, unsubscribeHeaders } from './email'
 import { nowDb } from './dbTime'
 import { prioritizedBillEntry, billEntryGroupKey } from './calendarVisibility'
 import { loadDateFieldEvents } from './dateFieldEvents'
+import { groupHasPriority, loadGroupPriorities, priorityWorn } from './teamFields'
 import type { AppDb, Env } from '../types'
 import { isModuleEnabled, getModuleSetting } from '../../../shared/modules'
 import { PRODUCT_NAME } from '../../../shared/brand'
@@ -79,12 +80,14 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
       ownBillTitle: bills.title,
       ownBillIsDraft: bills.isDraft,
       ownBillPriority: bills.priority,
+      ownBillGroupKey: bills.groupKey,
       linkedBillId: calendarEventBills.billId,
       linkedBillNumber: linkedBills.billNumber,
       linkedBillState: linkedBills.state,
       linkedBillTitle: linkedBills.title,
       linkedBillIsDraft: linkedBills.isDraft,
       linkedBillPriority: linkedBills.priority,
+      linkedBillGroupKey: linkedBills.groupKey,
     })
     .from(calendarEvents)
     .leftJoin(bills, eq(bills.id, calendarEvents.billId))
@@ -106,7 +109,8 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
               .innerJoin(bills, eq(bills.id, calendarEventBills.billId))
               .where(and(
                 eq(calendarEventBills.eventId, calendarEvents.id),
-                isNotNull(bills.priority),
+                // A companion group has one priority: a linked bill qualifies through any member.
+                groupHasPriority(bills),
               ))
           ),
         ),
@@ -126,6 +130,8 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
   // Group rows by event, then events by date. Bill entries for the same real
   // meeting on several bills are one event carrying every bill, as the
   // calendar page shows them.
+  // A companion group's bills wear the group's priority, whichever member holds it.
+  const groupPriorities = await loadGroupPriorities(db, rows.flatMap(r => [r.ownBillGroupKey, r.linkedBillGroupKey]))
   const eventMap = new Map<string, WeekAheadEvent>()
   const eventDateMap = new Map<string, string>()  // eventId → date
   const meetingIds = new Map<string, string>()  // bill entry group key → eventId
@@ -161,8 +167,8 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
     }
     const ev = eventMap.get(eventId)!
     const bill = row.linkedBillId
-      ? { id: row.linkedBillId, number: row.linkedBillNumber, state: row.linkedBillState, title: row.linkedBillTitle, isDraft: row.linkedBillIsDraft, priority: row.linkedBillPriority }
-      : { id: row.ownBillId, number: row.ownBillNumber, state: row.ownBillState, title: row.ownBillTitle, isDraft: row.ownBillIsDraft, priority: row.ownBillPriority }
+      ? { id: row.linkedBillId, number: row.linkedBillNumber, state: row.linkedBillState, title: row.linkedBillTitle, isDraft: row.linkedBillIsDraft, priority: priorityWorn({ priority: row.linkedBillPriority, groupKey: row.linkedBillGroupKey }, groupPriorities) }
+      : { id: row.ownBillId, number: row.ownBillNumber, state: row.ownBillState, title: row.ownBillTitle, isDraft: row.ownBillIsDraft, priority: priorityWorn({ priority: row.ownBillPriority, groupKey: row.ownBillGroupKey }, groupPriorities) }
     if (bill.id && !ev.bills.some(b => b.id === bill.id)) {
       ev.bills.push({
         id: bill.id,

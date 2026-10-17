@@ -13,6 +13,9 @@ api/src/lib/emailShell.ts   renderEmailShell()  — the gray shell every email u
                             formatDateRange()   — the one date-range formatter (spaced en-dash)
 api/src/lib/emailBillCard.ts  renderBillCardOpen / renderCommentRow / BILL_CARD_CLOSE
 api/src/lib/digestEmail.ts    renderDigestEmail()
+                              A companion group is one card (`digestCardKey`), its events in time order, each row labeled with
+                              its bill's number (`billCardRowText`) and linked to that bill, counted once in the headline,
+                              contents box, and subject (`countUpdatedBills`)
 api/src/lib/weekAheadEmail.ts renderWeekAheadEmail()
 api/src/lib/mentions.ts       renderMentionEmail()
 api/src/lib/emailChangeEmail.ts

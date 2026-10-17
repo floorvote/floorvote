@@ -50,17 +50,17 @@ describe("members' digests: new matches", () => {
 
     const adminHtml = to('admin@e.com')[0].html as string
     const onHtml = to('on@e.com')[0].html as string
-    expect(onHtml).toContain('New matches (12)')
+    expect(onHtml).toContain('12 new matches')
     expect(onHtml).toContain('NM 112')
     expect(onHtml).not.toContain('NM 101')
-    expect(onHtml).toContain('…and 2 more')
+    expect(onHtml).toContain('See all 12 new matches')
     // Same list in the same order as the admin's.
     const listed = (html: string) => [...html.matchAll(/NM \d+/g)].map(m => m[0])
     expect(listed(onHtml)).toEqual(listed(adminHtml))
     // The member with it off still gets the updates, and nothing else.
     expect(to('off@e.com')).toHaveLength(1)
     expect(to('off@e.com')[0].html).toContain('PRI 1')
-    expect(to('off@e.com')[0].html).not.toContain('New matches')
+    expect(to('off@e.com')[0].html).not.toContain('new match')
   })
 
   it('sends a member with the option on a digest for a window with only new matches, and one with it off nothing', async () => {
@@ -71,7 +71,7 @@ describe("members' digests: new matches", () => {
 
     expect(to('on@e.com')).toHaveLength(1)
     expect(to('on@e.com')[0].html).toContain('NM 7')
-    expect(to('on@e.com')[0].subject).toContain('1 new bill matching your keywords')
+    expect(to('on@e.com')[0].subject).toBe('Your daily digest: 1 new match')
     expect(to('off@e.com')).toHaveLength(0)
     expect(result).toEqual({ ok: true, recipients: 1, sent: 1, failed: 0 })
   })
@@ -85,8 +85,8 @@ describe("members' digests: new matches", () => {
 
     const html = to('on@e.com')[0].html as string
     expect(html).toContain('PRI 2')
-    expect(html.indexOf('PRI 2')).toBeLessThan(html.indexOf('New matches (1)'))
-    expect(to('on@e.com')[0].subject).toContain('1 priority bill updated')
+    expect(html.indexOf('PRI 2')).toBeLessThan(html.indexOf('id="digest-new-matches"'))
+    expect(to('on@e.com')[0].subject).toBe('Your daily digest: 1 updated bill, 1 new match')
   })
 
   it("never lists a bulk match, one with no declaration, or one under the minimum relevance in a member's digest", async () => {
@@ -101,7 +101,7 @@ describe("members' digests: new matches", () => {
 
     expect(to('on@e.com')).toHaveLength(1)
     const html = to('on@e.com')[0].html as string
-    expect(html).toContain('New matches (1)')
+    expect(html).toContain('1 new match')
     expect(html).toContain('HI 1')
     for (const n of ['BULK 1', 'NONE 1', 'LOW 1']) expect(html).not.toContain(n)
   })

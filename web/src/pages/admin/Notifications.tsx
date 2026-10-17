@@ -9,6 +9,9 @@ import { CARD } from '../../lib/cardStyle'
 import { CARD_TITLE } from '../../lib/textStyles'
 import { useSidebarRefresh } from '../../context/SidebarRefreshContext'
 import { useDemo } from '../../context/DemoContext'
+import { useConfig } from '../../context/ConfigContext'
+import { usePageTitle } from '../../hooks/usePageTitle'
+import { orgNotificationsLabel } from '../../lib/orgNoun'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 
 interface AdminConfigResponse {
@@ -31,6 +34,9 @@ const PAGE: React.CSSProperties = { padding: '24px 32px', maxWidth: 900, margin:
 export function Notifications() {
   const refreshSidebar = useSidebarRefresh()
   const { demoLocked } = useDemo()
+  const { config } = useConfig()
+  const pageName = orgNotificationsLabel(config?.orgNoun)
+  usePageTitle(pageName)
   const [modules, setModules] = useState<ModulesConfig>({})
   const [mentionEmails, setMentionEmails] = useState(true)
   const [loading, setLoading] = useState(true)
@@ -145,7 +151,7 @@ export function Notifications() {
       )}
 
       <div style={{ ...CARD, padding: 24 }}>
-        <h1 style={CARD_TITLE}>Email notifications</h1>
+        <h1 style={CARD_TITLE}>{pageName}</h1>
         <div style={{ fontSize: fontSize.sm, color: color.textSecondary, lineHeight: 1.6, marginTop: 4 }}>
           These are settings for <strong>everyone in the instance</strong>, not just you—turning one off stops that email for all members. To change your own delivery, use the email preferences on your <Link to="/profile" style={{ color: color.linkBlue }}>Account page</Link>.
         </div>

@@ -48,27 +48,49 @@ export async function loadAnalysisInputs(db: AppDb): Promise<{
 /**
  * The text the model reads for a bill: the full document from central, or the
  * title and abstract when central has none. `hasFullText` says which.
+ *
+ * `textDocId` and `textHash` name the document central served, which is the one
+ * the model reads, so claim sources can be pinned to it (#568). Both are null
+ * when the model reads the title and abstract, and when an older central sends
+ * neither field. A value of the wrong type is treated as absent.
  */
 export async function loadBillTextForAi(
   env: Env,
   billId: string,
   bill: { number: string; title: string; abstract: string | null },
-): Promise<{ billText: string; billPdfBase64: string | undefined; hasFullText: boolean }> {
+): Promise<{ billText: string; billPdfBase64: string | undefined; hasFullText: boolean; textDocId: string | null; textHash: string | null }> {
   let billText = `${bill.title}. ${bill.abstract ?? ''}`
   let billPdfBase64: string | undefined
   let hasFullText = false
+  let textDocId: string | null = null
+  let textHash: string | null = null
   try {
     const textRes = await centralFetch(env, `/bills/${billId}/text`)
     if (textRes.ok) {
-      const textData = await textRes.json() as { type: 'html' | 'pdf'; content: string }
-      if (textData.type === 'pdf') billPdfBase64 = textData.content
-      else billText = billHtmlToText(textData.content)
-      hasFullText = true
+      const textData = await textRes.json() as { type: 'html' | 'pdf'; content?: unknown; docId?: unknown; textHash?: unknown }
+      // An empty document is no document: the model reads the title and
+      // abstract, and nothing is pinned to it.
+      if (typeof textData.content === 'string' && textData.content.length > 0) {
+        if (textData.type === 'pdf') billPdfBase64 = textData.content
+        else billText = billHtmlToText(textData.content)
+        hasFullText = true
+        textDocId = readDocId(textData.docId)
+        textHash = typeof textData.textHash === 'string' && textData.textHash.length > 0 ? textData.textHash : null
+      }
     } else if (textRes.status !== 404) {
       console.error(`[processor] central text returned ${textRes.status} for ${bill.number}`)
     }
   } catch (err) {
     console.error(`[processor] failed to fetch text for ${bill.number}:`, err)
   }
-  return { billText, billPdfBase64, hasFullText }
+  // No hash without the document it belongs to.
+  if (textDocId === null) textHash = null
+  return { billText, billPdfBase64, hasFullText, textDocId, textHash }
+}
+
+/** A doc id as instances store them: a non-empty string. Central sends a string, and a whole number is read as one. */
+function readDocId(raw: unknown): string | null {
+  if (typeof raw === 'string') return raw.length > 0 ? raw : null
+  if (typeof raw === 'number' && Number.isInteger(raw)) return String(raw)
+  return null
 }

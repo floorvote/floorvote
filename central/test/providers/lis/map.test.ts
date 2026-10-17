@@ -301,6 +301,29 @@ describe('buildLisBill', () => {
     expect(e.last_action).toMatch(/Chapter text \(CHAP0350\)|Approved by Governor/)
   })
 
+  it('types a master-list row by its prefix, as the full build does, for every Virginia prefix', async () => {
+    const expected: Record<string, string> = { HB: 'B', SB: 'B', HJ: 'JR', SJ: 'JR', HR: 'R', SR: 'R' }
+    for (const [prefix, type] of Object.entries(expected)) {
+      const r = record(`${prefix}12`, {}, [['2026-01-10', 'Prefiled and ordered printed', '']])
+      const built = await buildLisBill(r, '20261', 1, 'h', SESSION, ids())
+      expect([prefix, toLisMasterListEntry(r, '20261', 1, 'h').bill_type]).toEqual([prefix, type])
+      expect([prefix, toLisMasterListEntry(r, '20261', 1, 'h').bill_type]).toEqual([prefix, built.bill_type])
+    }
+  })
+
+  it('types the sample files\' real rows by prefix', () => {
+    const types = Object.fromEntries([...y2026.records].map(([n, r]) => [n, toLisMasterListEntry(r, '20261', 1, 'h').bill_type]))
+    expect(types.HB1).toBe('B')
+    expect(Object.keys(types).length).toBeGreaterThan(0)
+    for (const [n, t] of Object.entries(types)) expect([n, t]).toEqual([n, /^(HJ|SJ)/.test(n) ? 'JR' : /^(HR|SR)/.test(n) ? 'R' : 'B'])
+  })
+
+  it('types an unknown prefix as a bill, as the full build does', async () => {
+    const r = record('XX7', {}, [])
+    expect(toLisMasterListEntry(r, '20261', 1, 'h').bill_type).toBe('B')
+    expect((await buildLisBill(r, '20261', 1, 'h', SESSION, ids())).bill_type).toBe('B')
+  })
+
   it('refers a bill to the committees a re-referral and a plain referral name, not only a first referral', async () => {
     const rec = record('SB9', {}, [
       ['2026-01-10', 'S Referred to Committee on Commerce and Labor', 'S02'],
