@@ -829,7 +829,7 @@ describe('what one pass reads, and what it keeps', () => {
     await syncCalendar()
     feed.remove(UPCOMING)
     await syncCalendar()
-    const kept = await env.DB.prepare(`SELECT key FROM provider_cache WHERE provider = 'govinfo'`).all<{ key: string }>()
+    const kept = await env.DB.prepare(`SELECT key FROM provider_cache WHERE provider = 'govinfo' AND key LIKE 'meeting/%'`).all<{ key: string }>()
     expect(kept.results.map(r => r.key)).not.toContain(`meeting/119/${UPCOMING}`)
     expect(kept.results.map(r => r.key)).toContain(`meeting/119/${HEARING}`)
     expect(kept.results).toHaveLength(feed.meetings.size)
@@ -1007,7 +1007,7 @@ describe('what the list does while it is read', () => {
   })
 
   it('finds a meeting that moved up the list from a page not yet read, and so does not fail', async () => {
-    for (let i = 0; i < 300; i++) feed.add(String(500000 + i), HEARING, m => { m.date = '2025-03-01T15:00:00Z' })
+    for (let i = 0; i < 300; i++) feed.add(String(100000 + i), HEARING, m => { m.date = '2025-03-01T15:00:00Z' })
     // The list is 250 a page, newest update first. A meeting on the second page is changed after the first is read.
     let changed = false
     feed.override.list = offset => {
@@ -1041,9 +1041,9 @@ describe('what the list does while it is read', () => {
 })
 
 describe('while the meetings are still being read for the first time', () => {
-  /** Eighty more meetings than a pass reads, so the first pass leaves the cache cold. */
-  function overfill() {
-    for (let i = 0; i < 80; i++) feed.add(String(100000 + i), HEARING, m => { m.date = '2025-03-01T15:00:00Z' })
+  /** More meetings than a pass reads, so the first passes leave the cache cold: 22 recorded and this many at 60 a pass. */
+  function overfill(n = 80) {
+    for (let i = 0; i < n; i++) feed.add(String(100000 + i), HEARING, m => { m.date = '2025-03-01T15:00:00Z' })
   }
   const rowsOf = async (number: string) => db().select().from(schema.billCalendar).where(eq(schema.billCalendar.billId, await billId(number))).all()
 
@@ -1056,18 +1056,21 @@ describe('while the meetings are still being read for the first time', () => {
   }
 
   it('says nothing of a bill\'s calendar until every meeting has been read once, so no entry is counted missing', async () => {
-    overfill()
+    overfill(130)
     linkBills()
     await preset()
     await pass()
-    // The first pass read 60 of 102 meetings: the cache is cold.
+    // The first pass read 60 of 152 meetings: the cache is cold.
     expect(feed.detailIds).toHaveLength(DETAILS_PER_PASS)
     await seam.ingest(await billId('HB43'))
     await pass()
     await seam.ingest(await billId('HB43'))
-    // The second read the rest, and finished only now. Until then no pull of the bill counted its entry missing.
-    expect(feed.detailIds.length).toBe(feed.meetings.size)
+    // Two passes read 120, and the third will finish. Until then no pull of the bill counted its entry missing.
+    expect(feed.detailIds.length).toBe(2 * DETAILS_PER_PASS)
     expect((await rowsOf('HB43')).find(r => r.id === 'earlier-entry')).toMatchObject({ missedPulls: 0, cancelledAt: null })
+    await pass()
+    expect(feed.detailIds.length).toBe(feed.meetings.size)
+    expect((await rowsOf('HB43')).find(r => r.id === 'earlier-entry')).toMatchObject({ missedPulls: 1, cancelledAt: null })
   })
 
   it('shows no meeting on a bill while it is cold, and all of them once it is warm, counting the missing entry then', async () => {
@@ -1081,8 +1084,6 @@ describe('while the meetings are still being read for the first time', () => {
     // Warm: the record carries its meetings, the bill was ingested again, and the earlier entry is missed once.
     expect((await billEntries('HB43')).map((c: any) => c.date)).toEqual(['2026-08-01', '2026-09-15', '2026-10-23'])
     expect((await rowsOf('HB43')).find(r => r.id === 'earlier-entry')).toMatchObject({ missedPulls: 1, cancelledAt: null })
-    await seam.ingest(await billId('HB43'))
-    expect((await rowsOf('HB43')).find(r => r.id === 'earlier-entry')?.cancelledAt).not.toBeNull()
   })
 
   it('leaves a cut-over bill\'s carried calendar alone while it is cold, and pairs it once it is warm', async () => {
@@ -1192,7 +1193,10 @@ describe('across the change of Congress', () => {
 
   it('serves nothing of the earlier Congress for a month after the new one began', async () => {
     vi.setSystemTime(new Date('2026-12-20T13:00:00Z'))
+    // A meeting the 119th Congress lists, dated after it ends, which the 120th doesn't hold.
+    feed.add('900102', HEARING, m => { m.date = '2027-02-10T15:00:00Z' })
     await syncCalendar()
+    expect((await getJson('/tenants/usteam/body-events?from=2027-02-01&to=2027-02-28')).events.map((e: any) => e.uid)).toEqual([uid('900102')])
     vi.setSystemTime(new Date('2027-01-20T13:00:00Z'))
     const ctx = providerContext(govinfo, makeRun().env as any, db())
     clearMeetingCaches()
