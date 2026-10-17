@@ -59,3 +59,9 @@ describe('neutral bill handles', () => {
     expect(parseHandle(value)).toBeNull()
   })
 })
+
+describe('leading zeros', () => {
+  it.each(['legiscan:012', 'bill:012', '012', 'bill:007'])('rejects %s', (value) => {
+    expect(parseHandle(value)).toBeNull()
+  })
+})

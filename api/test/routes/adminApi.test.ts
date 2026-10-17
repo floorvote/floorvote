@@ -1129,6 +1129,17 @@ describe('POST /admin/reprocess-bill/:externalId for a bill pulled in by its gro
     expect(sent).toEqual([{ tenantId: env.TENANT_ID, billId: 'legiscan:1713', forceAI: true, groupAnalysis: true, interactive: true }])
   })
 
+  it('queues a neutral handle under the spelling the bill is stored with, so a group analysis is still marked (#305)', async () => {
+    expect((await regenerate('bill:1713')).status).toBe(200)
+    expect(sent).toEqual([{ tenantId: env.TENANT_ID, billId: 'legiscan:1713', forceAI: true, groupAnalysis: true, interactive: true }])
+  })
+
+  it('queues a legacy handle under the neutral spelling a migrated bill is stored with', async () => {
+    await getDb(env.DB).update(bills).set({ externalId: 'bill:1713' }).where(eq(bills.id, 'b1713'))
+    expect((await regenerate('legiscan:1713')).status).toBe(200)
+    expect(sent).toEqual([{ tenantId: env.TENANT_ID, billId: 'bill:1713', forceAI: true, groupAnalysis: true, interactive: true }])
+  })
+
   it('leaves a tracked bill\'s regeneration as it was', async () => {
     await regenerate('legiscan:190')
     expect(sent).toEqual([{ tenantId: env.TENANT_ID, billId: 'legiscan:190', forceAI: true, interactive: true }])

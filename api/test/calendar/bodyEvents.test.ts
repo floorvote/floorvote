@@ -3,7 +3,7 @@ import { env, SELF } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { associationConfig, calendarEvents, calendarEventBills } from '../../src/db/schema'
+import { associationConfig, bills, calendarEvents, calendarEventBills } from '../../src/db/schema'
 import { syncBodyEvents, type CentralBodyEvent } from '../../src/lib/bodyEvents'
 import { hearingUid } from '../../src/lib/hearingUid'
 import { app } from '../../src/index'
@@ -470,5 +470,21 @@ describe('body events naming bills by a neutral handle', () => {
     await sync()
     expect(HEARING_UID).toBe('hearing-legiscan-1012600769-hearing-2026-10-23-public-hearing-on-b26-0769@bpc-test')
     expect((await row(HEARING_UID))?.coveredBy).toBe('council-2405@lims.dccouncil.gov')
+  })
+})
+
+// Release 2's migration may have rewritten the instance's bills to `bill:<n>` before this worker
+// is replaced, so agenda bills resolve by either spelling (#305).
+describe('body events for a bill already stored under the neutral handle', () => {
+  beforeEach(async () => {
+    await getDb(env.DB).update(bills).set({ externalId: HANDLE.replace('legiscan:', 'bill:') }).where(eq(bills.id, billId))
+  })
+
+  it.each([HANDLE, HANDLE.replace('legiscan:', 'bill:')])('links an agenda bill named %s', async (handle) => {
+    central.events = [stadiumHearing({ bills: [handle], covers: [] })]
+    await sync()
+    const db = getDb(env.DB)
+    const ev = await db.select().from(calendarEvents).where(eq(calendarEvents.uid, 'council-2405@lims.dccouncil.gov')).get()
+    expect((await db.select().from(calendarEventBills).where(eq(calendarEventBills.eventId, ev!.id)).all()).map(l => l.billId)).toEqual([billId])
   })
 })

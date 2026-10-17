@@ -72,3 +72,7 @@ export function normalizeHandle<T extends string | null | undefined>(handle: T):
   const id = parseHandle(handle)
   return (id === null ? handle : toHandle(id)) as T
 }
+
+// STUBS (red run only)
+export function handleForms(handle: string): string[] { return [handle] }
+export function legacyHandle(handle: string): string { return handle }

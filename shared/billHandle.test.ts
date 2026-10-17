@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { HANDLE_PREFIX, NEUTRAL_HANDLE_PREFIX, isHandle, normalizeHandle, parseHandle, toHandle, toLegacyHandle } from './billHandle'
+import { HANDLE_PREFIXES, NEUTRAL_HANDLE_PREFIX, handleForms, isHandle, legacyHandle, normalizeHandle, parseHandle, toHandle, toLegacyHandle } from './billHandle'
 
 describe('bill handles', () => {
   it('builds the legacy legiscan: form', () => {
@@ -29,12 +29,12 @@ describe('bill handles', () => {
     expect(isHandle('legiscan:501')).toBe(true)
   })
 
-  it('every handle starts with HANDLE_PREFIX, for SQL LIKE filters', () => {
-    expect(toHandle(7).startsWith(HANDLE_PREFIX)).toBe(true)
+  it('every handle starts with one of HANDLE_PREFIXES, for SQL LIKE filters', () => {
+    expect(HANDLE_PREFIXES.some(prefix => toHandle(7).startsWith(prefix))).toBe(true)
   })
 
   it('every handle, neutral or legacy, starts with one of the known prefixes', () => {
-    expect([HANDLE_PREFIX, NEUTRAL_HANDLE_PREFIX]).toEqual(['legiscan:', 'bill:'])
+    expect([...HANDLE_PREFIXES]).toEqual(['legiscan:', 'bill:'])
   })
 })
 
@@ -105,5 +105,31 @@ describe('neutral bill handles', () => {
 
   it('a handle round-trips through normalize without changing the bill', () => {
     for (const id of ids) expect(parseHandle(normalizeHandle(`bill:${id}`))).toBe(id)
+  })
+})
+
+// A tenant row can hold either spelling (release 2's migration rewrites them while an
+// older worker is still running), so a lookup by handle matches both (#305).
+describe('looking a bill up by handle', () => {
+  it.each(['legiscan:501', 'bill:501'])('handleForms(%s) is both spellings of the bill, legacy first', (handle) => {
+    expect(handleForms(handle)).toEqual(['legiscan:501', 'bill:501'])
+  })
+
+  it.each([
+    ['a legacy ocd-bill id', 'ocd-bill/abc'],
+    ['empty', ''],
+    ['a bare number', '501'],
+    ['a malformed handle', 'bill:12abc'],
+  ])('handleForms leaves %s as the only form', (_, value) => {
+    expect(handleForms(value)).toEqual([value])
+  })
+
+  it('legacyHandle is the legacy spelling of a handle in either form', () => {
+    expect(legacyHandle('bill:501')).toBe('legiscan:501')
+    expect(legacyHandle('legiscan:501')).toBe('legiscan:501')
+  })
+
+  it.each(['ocd-bill/abc', '', '501', 'bill:12abc'])('legacyHandle leaves %j as it is', (value) => {
+    expect(legacyHandle(value)).toBe(value)
   })
 })
