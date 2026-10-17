@@ -12,12 +12,19 @@ export interface Capabilities {
   bodyEvents: boolean
   /** The provider sends deadlines: a calendar event type of kind `deadline`. */
   deadlines: boolean
+  /**
+   * What members call the body that holds those events ("Council"), for the
+   * Calendar page's "Council events" control. Present only with `bodyEvents`,
+   * and only when the provider names one (`Provider.bodyName`).
+   */
+  bodyName?: string
 }
 
 export function providerCapabilities(provider: Provider): Capabilities {
   return {
     bodyEvents: !!provider.listBodyEvents,
     deadlines: Object.values(provider.vocabulary.eventTypes).some(t => t.kind === 'deadline'),
+    ...(provider.listBodyEvents && provider.bodyName ? { bodyName: provider.bodyName } : {}),
   }
 }
 

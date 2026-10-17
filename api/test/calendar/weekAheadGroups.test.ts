@@ -72,7 +72,9 @@ describe('the week-ahead email: companion groups', () => {
   it('leaves out a group none of whose members has a priority', async () => {
     await db().update(bills).set({ priority: null }).where(inArray(bills.id, ['a-house']))
     await seedCalendarEvent('b-senate', { kind: 'hearing', date: isoDay(2), description: 'Senate hearing on SB 202' })
-    await body('b3', 'body-3@test')
+    // A body event the instance's rules don't select (rule_match 0): under "All events" (no rules,
+    // #420) every body event reaches the email, so only a deselected one shows the group adding nothing.
+    await body('b3', 'body-3@test', 0)
     await db().insert(calendarEventBills).values({ eventId: 'b3', billId: 'b-senate' })
     expect(await emailed()).toBe('')
   })

@@ -23,7 +23,7 @@
  */
 
 /** Tags whose meaning is the legislature's, passed through untouched. */
-const KEEP_TAG = /^(?:<\/?(?:strike|s|del|ins|u|i|b|em|strong)\b[^>]*>|<font\b[^>]*>|<\/font\s*>)$/i
+export const KEEP_TAG = /^(?:<\/?(?:strike|s|del|ins|u|i|b|em|strong)\b[^>]*>|<font\b[^>]*>|<\/font\s*>)$/i
 
 /** Tags that imply a line break in the rendered document. */
 const BLOCK_TAG = /^<\/?\s*(?:p|div|br|tr|li|h[1-6])\b[^>]*>$/i

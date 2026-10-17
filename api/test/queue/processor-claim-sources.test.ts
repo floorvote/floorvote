@@ -77,6 +77,16 @@ function model(payload: unknown) {
 const analysis = { affectedCitations: [], summary: 'Requires a drop box in each county.', tags: ['Voting'], relevanceScore: 7 }
 const sources = [{ claim: 'Requires a drop box in each county.', quote: 'Each county shall provide at least one drop box.' }]
 
+// What the first of those resolves to: the claim is the whole summary, and the
+// quote is exact in the document, after "Section 1. ".
+const resolvedFirst = {
+  ...sources[0],
+  status: 'exact',
+  claimAt: { start: 0, end: sources[0].claim.length },
+  quoteAt: { start: 'Section 1. '.length, end: 'Section 1. '.length + sources[0].quote.length },
+  matched: sources[0].quote,
+}
+
 async function row() {
   return (await env.DB.prepare('SELECT * FROM bills WHERE external_id = ?').bind(BILL_ID).first()) as Record<string, unknown>
 }
@@ -103,7 +113,7 @@ describe('storing claim sources from an analysis', () => {
     expect(Object.keys(lastSchema().properties.claimSources.items.properties)).toEqual(['claim', 'quote'])
     const r = await row()
     expect(r.tenant_summary).toBe('Requires a drop box in each county.')
-    expect(JSON.parse(r.claim_sources as string)).toEqual(sources)
+    expect(JSON.parse(r.claim_sources as string)).toEqual([resolvedFirst])
   })
 
   it('pins them to the document central served, not last_ai_text_doc_id', async () => {
@@ -120,7 +130,11 @@ describe('storing claim sources from an analysis', () => {
     await processCentralNotification(msg, testEnv, getDb(env.DB))
     expect(Object.keys(lastSchema().properties.claimSources.items.properties)).toEqual(['claim', 'quote', 'page'])
     const r = await row()
-    expect(JSON.parse(r.claim_sources as string)).toEqual([{ ...sources[0], page: 2 }, { claim: 'Requires', quote: 'drop box', page: null }])
+    // A PDF's quote is never matched, since the instance has no PDF text.
+    expect(JSON.parse(r.claim_sources as string)).toEqual([
+      { ...sources[0], page: 2, status: 'unverified', claimAt: resolvedFirst.claimAt },
+      { claim: 'Requires', quote: 'drop box', page: null, status: 'unverified', claimAt: { start: 0, end: 8 } },
+    ])
     expect(r.claim_sources_doc_id).toBe('5001')
   })
 
@@ -164,7 +178,7 @@ describe('storing claim sources from an analysis', () => {
     await processCentralNotification(msg, testEnv, getDb(env.DB))
     const r = await row()
     expect(r).toMatchObject({ claim_sources_doc_id: '5001', claim_sources_text_hash: null })
-    expect(JSON.parse(r.claim_sources as string)).toEqual(sources)
+    expect(JSON.parse(r.claim_sources as string)).toEqual([resolvedFirst])
   })
 
   it('does not ask when the model reads only the title and abstract', async () => {
@@ -186,7 +200,8 @@ describe('re-analysis', () => {
     await processCentralNotification({ ...msg, forceAI: true }, testEnv, getDb(env.DB))
     const r = await row()
     expect(r.tenant_summary).toBe('Moves the deadline.')
-    expect(JSON.parse(r.claim_sources as string)).toEqual(second)
+    // The new quote is not in the new document.
+    expect(JSON.parse(r.claim_sources as string)).toEqual([{ ...second[0], status: 'ungrounded', claimAt: { start: 0, end: 19 } }])
     expect(r).toMatchObject({ claim_sources_doc_id: '5003', claim_sources_text_hash: 'hash-5003' })
   })
 
@@ -217,7 +232,7 @@ describe('re-analysis', () => {
     const r = await row()
     expect(r.ai_skip_reason).toBe('pdf_too_large')
     expect(r.tenant_summary).toBe('Requires a drop box in each county.')
-    expect(JSON.parse(r.claim_sources as string)).toEqual([{ ...sources[0], page: 1 }])
+    expect(JSON.parse(r.claim_sources as string)).toEqual([{ ...sources[0], page: 1, status: 'unverified', claimAt: resolvedFirst.claimAt }])
     expect(r).toMatchObject({ claim_sources_doc_id: '5001', claim_sources_text_hash: 'hash-5001' })
   })
 
@@ -228,7 +243,7 @@ describe('re-analysis', () => {
     const r = await row()
     expect(r.ai_error).toContain('upstream exploded')
     expect(r.tenant_summary).toBe('Requires a drop box in each county.')
-    expect(JSON.parse(r.claim_sources as string)).toEqual(sources)
+    expect(JSON.parse(r.claim_sources as string)).toEqual([resolvedFirst])
     expect(r.claim_sources_doc_id).toBe('5001')
   })
 })
@@ -244,7 +259,7 @@ describe('the shed retry and a cut-off response', () => {
     expect(first.responseSchema.properties).toHaveProperty('claimSources')
     expect(second.responseSchema.properties).toHaveProperty('claimSources')
     const r = await row()
-    expect(JSON.parse(r.claim_sources as string)).toEqual(sources)
+    expect(JSON.parse(r.claim_sources as string)).toEqual([resolvedFirst])
     expect(r).toMatchObject({ claim_sources_doc_id: '5001', claim_sources_text_hash: 'hash-5001' })
   })
 
