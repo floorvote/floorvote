@@ -2509,6 +2509,50 @@ describe('GET /bills/:id legislator votes', () => {
       ['Concurrence', []],
     ])
   })
+
+  describe("a voter's profile link", () => {
+    const counts = [{ option: 'yes', value: 3 }, { option: 'no', value: 0 }, { option: 'not voting', value: 0 }, { option: 'absent', value: 0 }]
+    async function voteSummaryFor(legislatorVotes: unknown[]) {
+      const token = await seedSession(await seedUser({ role: 'member' }))
+      const billId = await seedBill({ externalId: 'legiscan:102' })
+      const central = {
+        fetch: vi.fn(async (req: Request) => new URL(req.url).pathname === '/api/bills/legiscan:102'
+          ? Response.json({ votes: [{ id: '31', motionText: 'Third Reading', date: '2026-03-01', result: 'pass', chamber: 'H', counts, legislatorVotes }] })
+          : Response.json({}, { status: 404 })),
+      }
+      const res = await app.request(`/api/bills/${billId}`, { headers: { Cookie: `session=${token}` } }, { ...env, CENTRAL: central })
+      expect(res.status).toBe(200)
+      return (await res.json() as { voteSummary: { legislatorVotes: { name: string; url?: string | null }[] }[] }).voteSummary[0].legislatorVotes
+    }
+
+    it("passes central's url through for each voter, and null where central sends none", async () => {
+      const voters = await voteSummaryFor([
+        { personId: '1', name: 'Ann Able', vote: 'Yea', url: 'https://legislature.example/members/able' },
+        { personId: '2', name: 'Bo Baker', vote: 'Yea', url: null },
+        // A central from before voter links sends no url field.
+        { personId: '3', name: 'Cy Cole', vote: 'Yea' },
+      ])
+      expect(voters.map(v => [v.name, v.url])).toEqual([
+        ['Ann Able', 'https://legislature.example/members/able'],
+        ['Bo Baker', null],
+        ['Cy Cole', null],
+      ])
+    })
+
+    it('drops a url that is not http or https', async () => {
+      const voters = await voteSummaryFor([
+        { personId: '1', name: 'Ann Able', vote: 'Yea', url: 'javascript:alert(1)' },
+        { personId: '2', name: 'Bo Baker', vote: 'Yea', url: 'data:text/html,<script>alert(1)</script>' },
+        { personId: '3', name: 'Cy Cole', vote: 'Yea', url: '//legislature.example/cole' },
+      ])
+      expect(voters.map(v => v.url)).toEqual([null, null, null])
+    })
+
+    it('keeps the voter list intact when a url is not a string', async () => {
+      const voters = await voteSummaryFor([{ personId: '1', name: 'Ann Able', vote: 'Yea', url: { href: 'https://x.example' } }])
+      expect(voters).toEqual([{ personId: '1', name: 'Ann Able', vote: 'Yea', url: null }])
+    })
+  })
 })
 
 describe('GET /bills/:id provider extras', () => {
