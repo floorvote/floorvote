@@ -56,31 +56,19 @@ export function decodeSubjectFilter(value: string): { state: string; name: strin
 // D1 rejects any statement with >100 bound params, and subjectMembership costs
 // 2 params per value. Cap well under that so a huge or bookmarked filter list
 // can't push a query (which may share the statement with other filters) over
-// the limit and 500. Truncating silently keeps the page usable rather than
-// erroring on an oversized but otherwise harmless URL.
+// the limit and 500. A request over the cap is rejected with a 400, never
+// truncated (decodeSubjectFiltersChecked).
 export const MAX_SUBJECT_FILTERS = 40
 
-/** Decode a raw list of `subject` query values, dropping malformed entries and
- *  capping the result at MAX_SUBJECT_FILTERS. Shared by every route that turns
- *  `?subject=` params into subjectMembership() input, so none of them can
- *  independently forget the cap or the decode rules. */
-export function decodeSubjectFilters(values: string[]): Array<{ state: string; name: string }> {
-  const out: Array<{ state: string; name: string }> = []
-  for (const value of values) {
-    const decoded = decodeSubjectFilter(value)
-    if (!decoded) continue
-    out.push(decoded)
-    if (out.length >= MAX_SUBJECT_FILTERS) break
-  }
-  return out
-}
-
 /**
- * Like decodeSubjectFilters, but reports whether the request exceeded
- * MAX_SUBJECT_FILTERS instead of silently dropping the remainder.
+ * Decode a raw list of `subject` query values, dropping malformed entries, and
+ * report whether the request exceeded MAX_SUBJECT_FILTERS instead of silently
+ * dropping the remainder. Shared by every route that turns `subject` params into
+ * subjectMembership() input (the list, the facets, and the bulk routes), so none
+ * of them can independently forget the cap or the decode rules.
  *
- * The silent truncation is safe for a text search and actively wrong for a
- * filter: it returns FEWER bills than asked for, with nothing to indicate it.
+ * Silently truncating a filter is actively wrong: under AND it returns MORE
+ * bills than asked for, under match=any FEWER, with nothing to indicate it.
  * Routes reject an over-cap request; see
  * docs/superpowers/specs/2026-09-07-filter-group-operator-design.md.
  */

@@ -64,7 +64,7 @@ export function hasGroupTags(t: BillsTable = bills): SQL {
  * operator turned off — rather than making such a value match zero bills
  * (which would read to a caller as "that subject truly has no bills," a
  * confusing and avoidable claim), it is simply ignored, same as a malformed
- * value from decodeSubjectFilters. If every requested value is suppressed the
+ * value from decodeSubjectFiltersChecked. If every requested value is suppressed the
  * remaining list is empty and the caller adds no subject condition at all —
  * equivalent to the param never having been sent. Shared by buildBillsFilter
  * and the /bills/facets route so the list, filter, and facet-count paths

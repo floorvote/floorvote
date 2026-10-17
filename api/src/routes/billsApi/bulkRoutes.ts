@@ -11,7 +11,7 @@ import { nowDb } from '../../lib/dbTime'
 import { billsAs, buildBillsFilter } from './query'
 import { countGroups, matchingGroupKeys, newMatchGroupKeys, newMatchGroupsAmong } from './groupList'
 import { getNewMatchMinRelevance } from '../../lib/newMatch'
-import { decodeSubjectFilters } from '../../lib/billSubjects'
+import { decodeSubjectFiltersChecked, MAX_SUBJECT_FILTERS } from '../../lib/billSubjects'
 import { parseStoredMulti } from '../../../../shared/customFieldValues'
 import { inGroupOf, inGroupsOf } from '../../lib/companionGroups'
 import { loadTeamValuesOf, recordFieldChanges, type FieldChange } from '../../lib/teamFields'
@@ -88,6 +88,11 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
       billIds = body.ids!
     } else {
       const f = body.filter!
+      // Same cap and message as GET /bills, checked before any write.
+      const subjectDecoded = decodeSubjectFiltersChecked(f.subject ?? [])
+      if (subjectDecoded.overflow) {
+        return c.json({ error: `Too many subject filters. The maximum is ${MAX_SUBJECT_FILTERS}.` }, 400)
+      }
       const filter = await buildBillsFilter(db, {
         statuses: f.status ?? [],
         stages: f.stage ?? [],
@@ -97,14 +102,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         years: f.year ?? [],
         states: f.state ?? [],
         tagFilters: f.tag ?? [],
-        // Stays on the truncating decodeSubjectFilters (not decodeSubjectFiltersChecked).
-        // Truncating an AND widens the set (dropped terms stop narrowing it), and under
-        // match=any it narrows the set (a dropped OR arm stops contributing bills) — so
-        // either way the written set can differ from the filter the admin actually chose,
-        // not just "under-select." This is a deliberate open decision, left as-is here
-        // because GET /bills 400s on an over-cap selection before a bulk action can ever
-        // be issued against one, so the truncation isn't reachable in practice today.
-        subjectFilters: decodeSubjectFilters(f.subject ?? []),
+        subjectFilters: subjectDecoded.filters,
         q: f.q,
         minRelevance: f.minRelevance,
         myBillsParam: f.myBills != null ? String(f.myBills) : undefined,
@@ -404,14 +402,15 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
       toDismiss = await newMatchGroupsAmong(db, body.ids!, min)
     } else {
       const f = body.filter!
+      // Same cap and message as GET /bills, checked before any write.
+      const subjectDecoded = decodeSubjectFiltersChecked(f.subject ?? [])
+      if (subjectDecoded.overflow) {
+        return c.json({ error: `Too many subject filters. The maximum is ${MAX_SUBJECT_FILTERS}.` }, 400)
+      }
       const filter = await buildBillsFilter(db, {
         statuses: f.status ?? [], stages: f.stage ?? [], priorities: f.priority ?? [], positionValues: f.position ?? [],
         sessions: f.session ?? [], years: f.year ?? [], states: f.state ?? [], tagFilters: f.tag ?? [],
-        // Same truncation tradeoff as the other bulk call site above: it can widen the
-        // written set under AND or narrow it under match=any, either way diverging from
-        // what the admin picked, but that's unreachable today since GET /bills 400s on
-        // an over-cap selection before this endpoint is ever reached with one.
-        subjectFilters: decodeSubjectFilters(f.subject ?? []),
+        subjectFilters: subjectDecoded.filters,
         q: f.q, minRelevance: f.minRelevance,
         myBillsParam: f.myBills != null ? String(f.myBills) : undefined,
         unvoted: f.unvoted, newMatches: f.newMatches,
@@ -465,11 +464,12 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
       const years = params.getAll('year')
       const states = params.getAll('state')
       const tagFilters = params.getAll('tag')
-      // Same tradeoff as the other bulk call sites: truncation widens the written
-      // set under AND, narrows it under match=any, and either way can differ from
-      // the filter the admin chose — left as-is because GET /bills 400s on an
-      // over-cap selection first, so it isn't reachable in practice today.
-      const subjectFilters = decodeSubjectFilters(params.getAll('subject'))
+      // Same cap and message as GET /bills.
+      const subjectDecoded = decodeSubjectFiltersChecked(params.getAll('subject'))
+      if (subjectDecoded.overflow) {
+        return c.json({ error: `Too many subject filters. The maximum is ${MAX_SUBJECT_FILTERS}.` }, 400)
+      }
+      const subjectFilters = subjectDecoded.filters
       const q = params.get('q') ?? undefined
       const minRelevance = params.get('minRelevance') ?? undefined
       const myBillsParam = params.get('myBills') ?? undefined

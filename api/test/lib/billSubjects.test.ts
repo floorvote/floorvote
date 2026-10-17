@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
-  parseSubjects, encodeSubjectFilter, decodeSubjectFilter, decodeSubjectFilters,
+  parseSubjects, encodeSubjectFilter, decodeSubjectFilter,
   decodeSubjectFiltersChecked, dedupeSubjectNames, MAX_SUBJECT_FILTERS, isSubjectsSuppressedForState,
 } from '../../src/lib/billSubjects'
 
@@ -43,21 +43,20 @@ describe('dedupeSubjectNames', () => {
   })
 })
 
-describe('decodeSubjectFilters', () => {
+describe('decodeSubjectFiltersChecked', () => {
   it('decodes valid values and drops malformed ones', () => {
-    expect(decodeSubjectFilters(['UT:Elections', 'NoColon', 'NJ:Education']))
+    expect(decodeSubjectFiltersChecked(['UT:Elections', 'NoColon', 'NJ:Education']).filters)
       .toEqual([{ state: 'UT', name: 'Elections' }, { state: 'NJ', name: 'Education' }])
   })
 
-  it('caps the result at MAX_SUBJECT_FILTERS so a huge list cannot blow the D1 param budget', () => {
+  it('stops at MAX_SUBJECT_FILTERS decoded filters so a huge list cannot blow the D1 param budget', () => {
     const values = Array.from({ length: MAX_SUBJECT_FILTERS + 20 }, (_, i) => `UT:Subject ${i}`)
-    const decoded = decodeSubjectFilters(values)
-    expect(decoded).toHaveLength(MAX_SUBJECT_FILTERS)
-    expect(decoded[0]).toEqual({ state: 'UT', name: 'Subject 0' })
+    const out = decodeSubjectFiltersChecked(values)
+    expect(out.filters).toHaveLength(MAX_SUBJECT_FILTERS)
+    expect(out.filters[0]).toEqual({ state: 'UT', name: 'Subject 0' })
+    expect(out.overflow).toBe(true)
   })
-})
 
-describe('decodeSubjectFiltersChecked', () => {
   it('reports no overflow at the cap', () => {
     const values = Array.from({ length: MAX_SUBJECT_FILTERS }, (_, i) => `UT:S${i}`)
     const out = decodeSubjectFiltersChecked(values)
