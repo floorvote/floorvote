@@ -402,7 +402,7 @@ describe('the line saying what a group made by hand shares', () => {
   it("renders the same as for a provider's group: naming the companion, linking to its page, though no relationship links them", async () => {
     renderBillDetail({ ...GROUPED, relatedBillIds: [] })
     const line = await screen.findByTestId('group-shares-line')
-    expect(line).toHaveTextContent("Discussion, votes, and the team's values are shared with S1713.")
+    expect(line).toHaveTextContent('Comments, votes, and association position are shared with S1713.')
     expect(within(line).getByRole('link', { name: 'S1713' })).toHaveAttribute('href', '/RI/2026/S1713')
     expect(within(line).queryByText('A190')).toBeNull()
   })

@@ -17,7 +17,8 @@ import { billTypeExplainer, eventTypeExplainer, statusExplainer as explainStatus
 import { getNoAnalysisMessage } from '../lib/billDetailCopy'
 import { REGENERATE_PRESERVES_DESCRIPTION } from '../lib/billDetailCopy'
 import { OverflowMenu, type OverflowMenuRow } from '../components/ui/OverflowMenu'
-import { orgPositionLabel, orgRelevanceLabel, DEFAULT_ORG_NOUN } from '../lib/orgNoun'
+import { orgPositionLabel, orgRelevanceLabel, titleCase as upperFirst, DEFAULT_ORG_NOUN } from '../lib/orgNoun'
+import { groupSharedThings } from '../lib/groupShares'
 import { RelevanceChip } from '../components/RelevanceChip'
 import { SessionChip } from '../components/SessionChip'
 import { SentimentBars } from '../components/SentimentBars'
@@ -1540,7 +1541,7 @@ export function BillDetail() {
                 menuRows.push({
                   key: 'split',
                   label: 'Split from group',
-                  description: `Give ${bill.billNumber} back its own discussion and the team's values.`,
+                  description: `Give ${bill.billNumber} back its own ${groupSharedThings(config?.orgNoun ?? DEFAULT_ORG_NOUN, customFieldDefs.length > 0)}.`,
                   disabled: splitting || demoLocked,
                   onSelect: async () => {
                     if (splitting || demoLocked) return
@@ -1549,7 +1550,7 @@ export function BillDetail() {
                       // The server says what the split would leave, so the
                       // confirmation can name bills that would come apart.
                       const preview = await apiFetch<{ billNumber: string; parts: GroupBill[][] }>(`/bills/${bill.id}/split-preview`)
-                      if (!window.confirm(splitConfirmText(bill.billNumber, preview.parts.map(part => part.map(b => b.billNumber))))) return
+                      if (!window.confirm(splitConfirmText(bill.billNumber, preview.parts.map(part => part.map(b => b.billNumber)), config?.orgNoun ?? DEFAULT_ORG_NOUN, customFieldDefs.length > 0))) return
                       await apiFetch(`/bills/${bill.id}/split`, { method: 'POST' })
                       await refetchBill()
                     } catch {
@@ -2879,7 +2880,7 @@ export function BillDetail() {
         if (companions.length === 0) return null
         return (
           <p data-testid="group-shares-line" style={{ margin: '16px 0 0', fontSize: fontSize.sm, lineHeight: 1.6, color: color.textMuted }}>
-            Discussion, votes, and the team's values are shared with{' '}
+            {upperFirst(groupSharedThings(config?.orgNoun ?? DEFAULT_ORG_NOUN, customFieldDefs.length > 0))} are shared with{' '}
             {companions.map((g, i) => (
               <Fragment key={g.billId}>
                 {i === 0 ? null : companions.length === 2 ? ' and ' : i === companions.length - 1 ? ', and ' : ', '}
