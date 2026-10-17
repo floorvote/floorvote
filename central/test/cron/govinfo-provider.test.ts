@@ -402,15 +402,17 @@ describe('status derived from structured fields, oldest action first', () => {
     expect(await statusOf('s2503', 'SB2503', x => x)).toBe('Passed Senate')
   })
 
-  it('reads the feed as newest first, whatever order the dates are in', async () => {
-    // The same two actions, the feed's way round: the passage is listed first, so it is the later one.
-    const newestFirst = [
-      action('2026-06-12', 'Floor', '8000', 'Passed/agreed to in House: Agreed to.'),
-      action('2026-06-11', 'Floor', '9000', 'Failed of passage/not agreed to in House.'),
-    ]
-    expect(await statusOf('hr9238', 'HB9238', x => withActions(x, newestFirst.join('')))).toBe('Passed House')
-    // Failure listed first is the later action, so the bill is Failed.
-    expect(await statusOf('hr9238', 'HB9238', x => withActions(x, newestFirst.reverse().join('')))).toBe('Failed')
+  it('reads the feed as newest first: the action listed first is the latest', async () => {
+    const referral = action('2026-06-12', 'Committee', null, 'Referred to the Committee on Rules.',
+      '\n        <committees><item><systemCode>hsru00</systemCode><name>Committee on Rules</name></item></committees>')
+    const failure = action('2026-06-11', 'Floor', '9000', 'Failed of passage/not agreed to in House.')
+    // Failed on the 11th, then referred on the 12th: the referral listed first is the later, so the bill is in committee.
+    expect(await statusOf('hr9238', 'HB9238', x => withActions(x, referral + failure))).toBe('In committee')
+    // The same two actions the other way round: referred, then failed.
+    const failedLater = action('2026-06-12', 'Floor', '9000', 'Failed of passage/not agreed to in House.')
+    const referredEarlier = action('2026-06-11', 'Committee', null, 'Referred to the Committee on Rules.',
+      '\n        <committees><item><systemCode>hsru00</systemCode><name>Committee on Rules</name></item></committees>')
+    expect(await statusOf('hr9238', 'HB9238', x => withActions(x, failedLater + referredEarlier))).toBe('Failed')
   })
 
   it('does not take a House duplicate of a veto, coded as a signature, for a law', async () => {

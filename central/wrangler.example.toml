@@ -107,7 +107,7 @@ EMAIL_PROVIDER = "cloudflare"
 # SUPERADMIN_JWT_PUBLIC_KEY = "{...ES256 public JWK JSON...}"  # pairs with private key secret
 # Opt-in providers. A state syncs from LegiScan unless an admin claim gives it
 # to another provider: POST /api/admin/state-providers/<STATE> with
-# {"provider": "lims"}, "mga", or "lis" (docs/internal/sync-pipeline.md).
+# {"provider": "lims"}, "mga", "lis", or "govinfo" (docs/internal/sync-pipeline.md).
 # DC Council LIMS (lims.dccouncil.gov) needs the LIMS_API_KEY secret too.
 # See src/providers/lims.
 # LIMS_CATEGORIES = "1,6,13,14,18"   # bills, resolutions, grant budget mods, reprogrammings, oversight hearing notices
@@ -116,6 +116,9 @@ EMAIL_PROVIDER = "cloudflare"
 # from the LIS API, and only when the optional LIS_API_KEY secret is set.
 # Without it Virginia bills have no text. The API's terms allow
 # non-commercial use only, so setting the key accepts them.
+# Congress (US) from GovInfo Bill Status (www.govinfo.gov, src/providers/govinfo)
+# needs no key. A full read of the 119th Congress takes about 5.5 seconds of CPU
+# in a Worker, so no [limits] cpu_ms is needed for it.
 # For one release only, this older var still seeds a state's claim on the
 # first sync, when the state has none. Remove it once the claim exists.
 # LIMS_STATES = "DC"

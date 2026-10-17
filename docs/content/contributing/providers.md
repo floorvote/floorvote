@@ -45,7 +45,7 @@ Adding a provider to the registry doesn't change any deployment. A state syncs f
 
 ### Official codes, never LegiScan's
 
-Each provider writes its own status codes, in a block no other provider uses: LegiScan 0 through 12, LIMS the 100s, Maryland's MGA the 200s, Virginia's LIS the 300s. Take the next free hundred.
+Each provider writes its own status codes, in a block no other provider uses: LegiScan 0 through 12, LIMS the 100s, Maryland's MGA the 200s, Virginia's LIS the 300s, Congress's GovInfo the 400s. Take the next free hundred.
 
 ### Every text carries a hash
 

@@ -18,8 +18,19 @@ async function read(res: Response, opts?: { maxEntryBytes?: number }) {
   return { got, summary }
 }
 
+/** Text that doesn't compress much, from a seeded generator, so an entry of `size` characters is about that many bytes zipped. */
+function noise(seed: number, size: number): string {
+  let x = seed * 2654435761 >>> 0
+  let out = ''
+  while (out.length < size) {
+    x = (Math.imul(x, 1664525) + 1013904223) >>> 0
+    out += String.fromCharCode(33 + (x >>> 24) % 90)
+  }
+  return out
+}
+
 const entries = (n: number, size = 300) =>
-  Array.from({ length: n }, (_, i) => ({ name: `BILLSTATUS-119hr${i + 1}.xml`, data: `<a>${`bill ${i + 1} `.repeat(size / 8)}</a>` }))
+  Array.from({ length: n }, (_, i) => ({ name: `BILLSTATUS-119hr${i + 1}.xml`, data: `<a>${noise(i + 1, size)}</a>` }))
 
 describe('reading a zip as GovInfo builds it', () => {
   it('reads the entries of a zip GovInfo itself wrote, deflated with data descriptors, in order', async () => {

@@ -5,6 +5,7 @@ import { parseXml } from '../../../src/providers/govinfo/xml'
 import { inventoryProblems, unfedExtras } from '../../helpers/fieldInventory'
 import { xmlObject } from '../../helpers/xmlObject'
 import { fixtureFiles } from '../../helpers/govinfoZip'
+import fieldPathsRaw from '../../fixtures/govinfo/field-paths.json?raw'
 
 // Real Bill Status files recorded from https://www.govinfo.gov/bulkdata/BILLSTATUS/119/
 const fixtures = new Map([...fixtureFiles].map(([name, xml]) => [name, xmlObject(parseXml(xml).root)]))
@@ -31,24 +32,12 @@ describe('the GovInfo field inventory', () => {
     expect(unfedExtras(vocabulary, billInventory)).toEqual([])
   })
 
-  it('covers the fields the full set of 19,690 119th Congress files carries, not just the recorded ones', () => {
-    // Paths seen in every file of the 119th Congress's eight zips on October 16, 2026 that the recorded files lack.
-    const seenElsewhere = [
-      'bill.onBehalfOfSponsor[].bioguideId',
-      'bill.notes[].text',
-      'bill.notes[].links.link[].name',
-      'bill.laws[].number',
-      'bill.laws[].type',
-      'bill.cboCostEstimates[].url',
-      'bill.committeeReports.committeeReport[].citation',
-      'bill.amendments.amendment[].amendedBill.title',
-      'bill.actions.item[].calendarNumber.calendar',
-      'bill.actions.item[].recordedVotes.recordedVote[].rollNumber',
-      'bill.cosponsors[].sponsorshipWithdrawnDate',
-      'bill.relatedBills[].relationshipDetails[].identifiedBy',
-      'bill.titles[].sourceSystem.name',
-    ]
-    const missing = seenElsewhere.filter(path => inventoryProblems(billInventory, [pathObject(path)]).length > 0)
+  it('covers every field in all 19,690 files of the 119th Congress, not just the recorded ones', () => {
+    // The path of every field (an element with no children) in the eight zips on October 16, 2026,
+    // in the form `fieldPaths` gives them. Checked by building an object with each one.
+    const paths = JSON.parse(fieldPathsRaw) as string[]
+    expect(paths.length).toBeGreaterThan(150)
+    const missing = paths.filter(path => inventoryProblems(billInventory, [pathObject(path)]).length > 0)
     expect(missing).toEqual([])
   })
 })

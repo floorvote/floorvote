@@ -18,3 +18,4 @@ This page is generated from what each provider declares in code, so it can't dri
 | DC Council | [`lims`](https://github.com/floorvote/floorvote/tree/main/central/src/providers/lims) | District of Columbia (DC) | [@anotherpanacea-eng](https://github.com/anotherpanacea-eng) |
 | Maryland General Assembly | [`mga`](https://github.com/floorvote/floorvote/tree/main/central/src/providers/mga) | Maryland (MD) | [@anotherpanacea-eng](https://github.com/anotherpanacea-eng) |
 | Virginia General Assembly | [`lis`](https://github.com/floorvote/floorvote/tree/main/central/src/providers/lis) | Virginia (VA) | [@anotherpanacea-eng](https://github.com/anotherpanacea-eng) |
+| GovInfo Bill Status | [`govinfo`](https://github.com/floorvote/floorvote/tree/main/central/src/providers/govinfo) | United States (Congress) (US) | [@wtadler](https://github.com/wtadler) |
