@@ -40,6 +40,7 @@ const lisVote: Vote = {
 const mgaVote: Vote = { date: '2026-07-07', chamber: 'S', desc: 'Third Reading', yea: 30, nay: 2, nv: 0, absent: 0, passed: 1, legislatorVotes: [] }
 
 const toggle = () => screen.getByRole('button', { name: /^Yea/ })
+const termFor = (w: string) => screen.getAllByRole('term').find((t) => t.textContent === w) as HTMLElement
 const groupLabels = () => screen.getAllByRole('term').map((el) => el.textContent)
 
 describe('the collapsed tally is the toggle', () => {
@@ -103,7 +104,7 @@ describe('expanding the tally', () => {
     expect(groupLabels()).toEqual(['Yea', 'Nay', 'Not voting', 'Absent'])
     const defs = screen.getAllByRole('definition').map((el) => el.textContent)
     expect(defs).toEqual(['Ana Diaz, Dee Lane', 'Ben Cole', 'Cy Park', 'Eve Moss'])
-    expect(screen.getByRole('term', { name: 'Yea' }).parentElement!.textContent).not.toMatch(/\(\d+\)/)
+    expect(termFor('Yea').parentElement!.textContent).not.toMatch(/\(\d+\)/)
   })
   it('puts the panel where aria-controls points', async () => {
     const user = userEvent.setup()
@@ -213,7 +214,7 @@ describe('a roll call with no individual votes', () => {
   })
   it('still hides zero optional counts and uses the same order', () => {
     renderVotes([{ ...mgaVote, nv: 4, absent: 3 }])
-    expect(screen.getByText(/Yea 30/).parentElement!.textContent).toMatch(/Yea 30.*Nay 2.*Not voting 4.*Absent 3/)
+    expect(screen.getByText(/Yea 30/).closest('div')!.textContent).toMatch(/Yea 30.*Nay 2.*Not voting 4.*Absent 3/)
   })
 })
 
@@ -249,7 +250,7 @@ describe('colors follow the vote, in the tally and the list', () => {
     expect(inTally('Not voting').style.color).toBe(color.textSecondary)
     expect(inTally('Absent').style.color).toBe(color.textSecondary)
     await user.click(toggle())
-    const term = (w: string) => screen.getByRole('term', { name: w }) as HTMLElement
+    const term = termFor
     expect(term('Yea').style.color).toBe(color.textSuccessDark)
     expect(term('Nay').style.color).toBe(color.textDanger)
     expect(term('Not voting').style.color).toBe(color.textSecondary)
@@ -265,7 +266,7 @@ describe('colors follow the vote, in the tally and the list', () => {
     const user = userEvent.setup()
     renderVotes([{ ...legiscanVote, legislatorVotes: [{ name: 'X', vote: 'Yea' }, { name: 'Y', vote: 'Conflicted' }] }])
     await user.click(toggle())
-    expect((screen.getByRole('term', { name: 'Conflicted' }) as HTMLElement).style.color).toBe(color.textSecondary)
+    expect(termFor('Conflicted').style.color).toBe(color.textSecondary)
   })
 })
 
@@ -308,7 +309,7 @@ describe('long voter lists', () => {
     await user.click(toggle())
     expect(screen.getAllByTestId('voter-name')).toHaveLength(140)
     expect(screen.getByText('Voter Number140')).toBeInTheDocument()
-    expect(screen.getByRole('term', { name: 'Nay' }).nextElementSibling!.querySelectorAll('[data-testid="voter-name"]')).toHaveLength(40)
+    expect(termFor('Nay').nextElementSibling!.querySelectorAll('[data-testid="voter-name"]')).toHaveLength(40)
   })
   it('lets long names wrap instead of overflowing', async () => {
     const user = userEvent.setup()

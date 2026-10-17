@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { Fragment, useId, useState } from 'react'
 import { CHROME_TEXT } from '../lib/textStyles'
 import { TabularRow } from './TabularRow'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 import { httpUrl } from '../../../shared/httpUrl'
+import { groupVotes, type VoteTone } from '../lib/voteWords'
 import { isBillDetailStale, stripDatePrefix, syntheticLatestAction } from '../lib/staleBillDetail'
 
 interface HistoryEntry {
@@ -38,21 +39,76 @@ type TimelineItem =
   | { kind: 'action'; date: string; chamber?: string; action: string; importance?: number; videoUrl?: string }
   | { kind: 'vote'; date: string; chamber: string | null; desc: string; yea: number; nay: number; nv: number; absent: number; passed: number; legislatorVotes?: { name: string; vote: string }[] }
 
-/** How each legislator voted, grouped by vote ("Yes", "No", "Absent", ...), with the no side first to scan. */
-function LegislatorVotes({ votes }: { votes: { name: string; vote: string }[] }) {
-  const groups = new Map<string, string[]>()
-  for (const v of votes) groups.set(v.vote, [...(groups.get(v.vote) ?? []), v.name])
-  const rank = (k: string) => /^(no|nay)$/i.test(k) ? 0 : /^(yes|yea|aye)$/i.test(k) ? 1 : 2
-  const ordered = [...groups].sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0]))
+const TONE_COLOR: Record<VoteTone, string> = {
+  yea: color.textSuccessDark,
+  nay: color.textDanger,
+  neutral: color.textSecondary,
+}
+
+/** A voter's name. Its own element so a name can become a link to the legislator's profile. */
+function VoterName({ name }: { name: string }) {
+  return <span data-testid="voter-name">{name}</span>
+}
+
+function VoterNames({ names }: { names: string[] }) {
+  return <>{names.map((n, i) => <span key={i}>{i > 0 && ', '}<VoterName name={n} /></span>)}</>
+}
+
+/**
+ * A roll call's tally: "Yea 11 · Nay 2", plus Not voting and Absent when nonzero.
+ * With each legislator's vote it is the toggle for the list (a button with the same
+ * ▶ as the Subjects control); without them it is plain text, since nothing would open.
+ */
+function RollCallTally({ vote }: { vote: Pick<VoteEntry, 'yea' | 'nay' | 'nv' | 'absent' | 'legislatorVotes'> }) {
+  const [open, setOpen] = useState(false)
+  const panelId = useId()
+  const counts: { word: string; n: number; tone: VoteTone }[] = [
+    { word: 'Yea', n: vote.yea, tone: 'yea' },
+    { word: 'Nay', n: vote.nay, tone: 'nay' },
+    ...(vote.nv > 0 ? [{ word: 'Not voting', n: vote.nv, tone: 'neutral' as const }] : []),
+    ...(vote.absent > 0 ? [{ word: 'Absent', n: vote.absent, tone: 'neutral' as const }] : []),
+  ]
+  const items = counts.map((c, i) => (
+    <span key={c.word} style={{ display: 'inline-block' }}>
+      {i > 0 && <>{' '}<span aria-hidden="true" style={{ color: color.textMuted, margin: '0 3px' }}>·</span>{' '}</>}
+      <span style={{ color: TONE_COLOR[c.tone], fontWeight: fontWeight.medium, fontVariantNumeric: 'tabular-nums' }}>{`${c.word} ${c.n}`}</span>
+    </span>
+  ))
+  const groups = vote.legislatorVotes && vote.legislatorVotes.length > 0 ? groupVotes(vote.legislatorVotes) : []
+  if (groups.length === 0) return <div style={{ color: color.textSecondary }}>{items}</div>
   return (
-    <details style={{ marginTop: 4 }}>
-      <summary style={{ cursor: 'pointer', color: color.linkBlue, fontSize: fontSize.xs }}>How each legislator voted</summary>
-      <div style={{ marginTop: 4, display: 'grid', gap: 3, fontSize: fontSize.xs, color: color.textSecondary }}>
-        {ordered.map(([vote, names]) => (
-          <div key={vote}><strong style={{ color: rank(vote) === 0 ? color.textDanger : rank(vote) === 1 ? color.textSuccess : color.textSlate }}>{vote} ({names.length}):</strong> {names.join(', ')}</div>
-        ))}
-      </div>
-    </details>
+    <>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={panelId}
+        onClick={() => setOpen(o => !o)}
+        style={{
+          font: 'inherit', background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+          borderRadius: radius.xs, color: color.textSecondary,
+          display: 'inline-flex', alignItems: 'center', gap: 4, flexWrap: 'wrap',
+        }}
+      >
+        <span aria-hidden="true" style={{
+          fontSize: fontSize.xs, color: color.textMuted, display: 'inline-block',
+          transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.12s ease',
+        }}>▶</span>
+        <span>{items}</span>
+      </button>
+      {open && (
+        <dl id={panelId} style={{
+          margin: '6px 0 0', display: 'grid', gridTemplateColumns: 'max-content 1fr',
+          columnGap: 12, rowGap: 4, fontSize: fontSize.xs, color: color.textSecondary,
+        }}>
+          {groups.map(({ group, names }) => (
+            <Fragment key={group.key}>
+              <dt style={{ color: TONE_COLOR[group.tone], fontWeight: fontWeight.bold }}>{group.label}</dt>
+              <dd style={{ margin: 0, minWidth: 0, overflowWrap: 'anywhere' }}><VoterNames names={names} /></dd>
+            </Fragment>
+          ))}
+        </dl>
+      )}
+    </>
   )
 }
 
@@ -86,11 +142,13 @@ export const chamberLabel = (c?: string) =>
   : c === 'J' ? 'Joint'
   : c ?? ''
 
+const isCouncil = (c?: string) => c === 'C'
+
 export const chamberStyle = (c?: string): React.CSSProperties => ({
   fontSize: fontSize.xs,
   fontWeight: fontWeight.bold,
-  color: isUpper(c) ? color.textTealSenate : color.textAmberDark,
-  background: isUpper(c) ? color.bgTeal : color.bgAmberPriority,
+  color: isUpper(c) ? color.textTealSenate : isCouncil(c) ? color.textVioletChip : color.textAmberDark,
+  background: isUpper(c) ? color.bgTeal : isCouncil(c) ? color.bgVioletChip : color.bgAmberPriority,
   padding: '1px 5px',
   borderRadius: radius.sm,
   alignSelf: 'flex-start',
@@ -168,7 +226,7 @@ export function LegislativeHistory({ entries, votes, lastAction, lastActionDate,
                       padding: '1px 5px', borderRadius: radius.sm, whiteSpace: 'nowrap',
                       alignSelf: 'flex-start',
                     }}>
-                      {item.passed ? 'VOTE: PASSED' : 'VOTE: FAILED'}
+                      {item.passed ? 'Passed' : 'Failed'}
                     </span>
                   )}
                 </>
@@ -184,13 +242,7 @@ export function LegislativeHistory({ entries, votes, lastAction, lastActionDate,
               ) : (
                 <div>
                   <div style={{ color: color.textSlate, fontWeight: fontWeight.medium, marginBottom: 3 }}>{item.desc}</div>
-                  <div style={{ display: 'flex', gap: 10, color: color.textSecondary, flexWrap: 'wrap' }}>
-                    <span>Yea: <strong style={{ color: color.textSuccess }}>{item.yea}</strong></span>
-                    <span>Nay: <strong style={{ color: color.textDanger }}>{item.nay}</strong></span>
-                    {item.nv > 0 && <span>NV: {item.nv}</span>}
-                    {item.absent > 0 && <span>Absent: {item.absent}</span>}
-                  </div>
-                  {item.legislatorVotes && item.legislatorVotes.length > 0 && <LegislatorVotes votes={item.legislatorVotes} />}
+                  <RollCallTally vote={item} />
                 </div>
               )}
             />

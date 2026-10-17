@@ -130,7 +130,7 @@ describe('LegislativeHistory vote rows', () => {
 
   it('shows vote counts in the Yea, Nay, Not voting order', () => {
     render(<LegislativeHistory {...baseProps} entries={[]} votes={[passedVote]} />)
-    expect(screen.getByText(/Yea 30/).parentElement!.textContent).toMatch(/Yea 30.*Nay 1.*Not voting 7/)
+    expect(screen.getByText(/Yea 30/).closest('div')!.textContent).toMatch(/Yea 30.*Nay 1.*Not voting 7/)
   })
 })
 
