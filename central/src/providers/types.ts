@@ -119,6 +119,16 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
   personUrl?(person: { state: string; name: string; peopleId: number }): string
 
   /**
+   * A person's own profile page, for a link on their name wherever it appears:
+   * a sponsor, or a voter in a roll call. Built from what central stored for
+   * the person, `bio` (the parsed `bio_json`) and `ballotpedia`, so it needs no
+   * call to the provider. Null when it has none. Core sends only an http(s) URL,
+   * and a voter with no profile URL is plain text. `personUrl` stays the last
+   * resort for a sponsor alone. Omitted when the provider has no per-person page.
+   */
+  profileUrl?(person: { bio: { social?: { biography?: string } } | null; ballotpedia: string | null }): string | null
+
+  /**
    * Keep the calendar identity central gave every entry before identities
    * were stored: the event type id plus the description, without the date.
    * Only LegiScan sets this. Its entries' identities are in every subscriber's
