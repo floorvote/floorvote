@@ -9,7 +9,7 @@ import {
 } from '../db/schema'
 import { gt, and, inArray, sql, type SQL } from 'drizzle-orm'
 import { centralFetch } from '../lib/centralFetch'
-import { HANDLE_PREFIXES, parseHandle } from '../../../shared/billHandle'
+import { HANDLE_PREFIXES, legacyHandle, parseHandle } from '../../../shared/billHandle'
 import { EXPORT_TABLES, type ExportTable } from '../../../shared/exportTables'
 import { loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../lib/billSubjects'
 import type { AppEnv } from '../types'
@@ -159,7 +159,7 @@ exportApiRouter.get('/rich', async (c) => {
 
   type Rich = { amendments?: any[]; supplements?: any[]; votes?: any[] }
   let byId: Record<string, Rich> = {}
-  const ids = billRows.map(b => b.externalId).filter((id): id is string => !!id)
+  const ids = billRows.map(b => b.externalId).filter((id): id is string => !!id).map(legacyHandle)
   if (ids.length > 0) {
     try {
       const res = await centralFetch(c.env, '/bills/rich-batch', {

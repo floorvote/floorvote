@@ -1,4 +1,4 @@
-import { and, eq, lt, sql } from 'drizzle-orm'
+import { and, eq, inArray, lt, sql } from 'drizzle-orm'
 import { processBill } from '../lib/llm'
 import { filterTagsToTaxonomy } from '../lib/taxonomy'
 import { centralFetch } from '../lib/centralFetch'
@@ -15,7 +15,7 @@ import { nowDb } from '../lib/dbTime'
 import { addToNewMatchesRow } from '../lib/newMatch'
 import { LEGACY_STATUS_ORDER, LEGISCAN_CODE_WORDS } from '../../../shared/legacyStatusOrder'
 import { httpUrl } from '../../../shared/httpUrl'
-import { legacyHandle } from '../../../shared/billHandle'
+import { handleForms, legacyHandle } from '../../../shared/billHandle'
 import { resolveStoredHandle } from '../lib/storedHandle'
 import type { AppDb, Env, TenantQueueMessage } from '../types'
 
@@ -119,7 +119,7 @@ async function recordShedAttempt(
     // into permanent silence. A later success clears aiError.
     await db.update(bills)
       .set({ aiAttemptedAt: nowDb(), aiError: note.slice(0, 300) })
-      .where(eq(bills.externalId, billId))
+      .where(inArray(bills.externalId, handleForms(billId)))
       .run()
   } catch (recordErr) {
     console.error(`[processor] could not record shed for ${billId}:`, recordErr)
@@ -180,7 +180,7 @@ export async function processQueue(
       message.ack()
     } catch (err) {
       if (err instanceof AiShedError) {
-        await recordShedAttempt(db, await resolveStoredHandle(db, message.body.billId), message.attempts, err)
+        await recordShedAttempt(db, message.body.billId, message.attempts, err)
         console.warn(
           `[processor] AI gateway shed for ${message.body.billId}`
           + ` (status ${err.status ?? 'unknown'})`
@@ -964,6 +964,14 @@ async function upsertBill(
   data: Record<string, unknown>,
   existing?: { id: string; matchType: 'keyword' | 'manual' | null; groupKey: string | null } | undefined,
 ): Promise<{ id: string; isNew: boolean }> {
+  // Resolve the stored spelling again just before writing: release 2's migration can rename the
+  // row after the delivery began, and the write's conflict target is the spelling, so a stale one
+  // would insert a second row for the bill (#305).
+  const stored = await resolveStoredHandle(db, externalId)
+  if (stored !== externalId) {
+    externalId = stored
+    data = { ...data, externalId: stored }
+  }
   const startsMatching = existing?.matchType === null && data.matchType != null && existing.groupKey !== null
   // The event is advisory history: failing to read or write it is logged and never fails the delivery.
   const tagsBefore = startsMatching ? await snapshotGroupTags(db, [existing]).catch(err => {

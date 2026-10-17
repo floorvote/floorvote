@@ -11,7 +11,7 @@ import { registerWithCentral } from '../cron/sync'
 import { matchesKeywords, billMatchText } from '../lib/keywords'
 import { summarizeKeywordMatches } from '../lib/keywordMatchSummary'
 import { centralFetch } from '../lib/centralFetch'
-import { parseHandle } from '../../../shared/billHandle'
+import { legacyHandle, parseHandle } from '../../../shared/billHandle'
 import { resolveStoredHandle } from '../lib/storedHandle'
 import { isWildcardKeyword } from '../../../shared/keywords'
 import { ensureAssociationName } from '../lib/associationName'
@@ -1014,8 +1014,8 @@ adminApiRouter.post('/keyword-resync', async (c) => {
     protectedAsManual = toManual.length
 
     const centralUpdates: Array<{ externalId: string; matchType: 'manual' | null }> = [
-      ...toManual.map(b => ({ externalId: b.externalId!, matchType: 'manual' as const })),
-      ...toDemote.map(b => ({ externalId: b.externalId!, matchType: null })),
+      ...toManual.map(b => ({ externalId: legacyHandle(b.externalId!), matchType: 'manual' as const })),
+      ...toDemote.map(b => ({ externalId: legacyHandle(b.externalId!), matchType: null })),
     ]
     try {
       const mtRes = await centralFetch(c.env, `/admin/update-bill-match-types/${c.env.TENANT_ID}`, {

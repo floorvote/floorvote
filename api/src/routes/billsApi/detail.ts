@@ -7,7 +7,7 @@ import {
 } from '../../db/schema'
 import type { Env } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
-import { isHandle, legacyHandle, toHandle } from '../../../../shared/billHandle'
+import { handleForms, isHandle, legacyHandle, normalizeHandle, toHandle } from '../../../../shared/billHandle'
 import { isRelationshipKind, type RelationshipKind } from '../../../../shared/relationshipKinds'
 import type { BillExtras } from '../../../../shared/providerExtras'
 import { billSlug, filedSlug } from '../../lib/sessionSlug'
@@ -219,21 +219,21 @@ export async function buildBillDetail(
   let resolvedRelated: ResolvedRelated[] = []
   if (centralRich?.relatedBills?.length) {
     const externalIds = centralRich.relatedBills
-      .flatMap(r => r.sastBillId != null ? [toHandle(r.sastBillId)] : [])
+      .flatMap(r => r.sastBillId != null ? handleForms(toHandle(r.sastBillId)) : [])
     const internalRows = externalIds.length > 0
       ? await db.select({ id: bills.id, externalId: bills.externalId, billNumber: bills.billNumber, session: bills.session, sessionSlug: bills.sessionSlug, state: bills.state })
           .from(bills)
           .where(inArray(bills.externalId, externalIds))
           .all()
       : []
-    const routeByExternal = new Map(internalRows.map(r => [r.externalId, { id: r.id, billNumber: r.billNumber, sessionSlug: filedSlug(r) ?? '', state: r.state }]))
+    const routeByExternal = new Map(internalRows.map(r => [normalizeHandle(r.externalId), { id: r.id, billNumber: r.billNumber, sessionSlug: filedSlug(r) ?? '', state: r.state }]))
     resolvedRelated = centralRich.relatedBills.map(r => ({
       billId: r.sastBillId ?? 0,
       billNumber: r.identifier,
       type: r.relationType,
       // A central that predates kinds sends none, and a bill is then only related.
       kind: isRelationshipKind(r.kind) ? r.kind : 'related',
-      route: r.sastBillId != null ? (routeByExternal.get(toHandle(r.sastBillId)) ?? null) : null,
+      route: r.sastBillId != null ? (routeByExternal.get(normalizeHandle(toHandle(r.sastBillId))) ?? null) : null,
     }))
   } else {
     // Fallback: stored JSON may be an array of bill-number strings (legacy format)
