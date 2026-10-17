@@ -1,4 +1,4 @@
-import { and, eq, ne, isNotNull, gte, lt, exists, or, sql } from 'drizzle-orm'
+import { and, eq, ne, isNull, isNotNull, gte, lt, exists, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/sqlite-core'
 import { calendarEvents, calendarEventBills, bills, users, sessions, associationConfig } from '../db/schema'
 import { renderWeekAheadEmail, type WeekAheadEvent, type WeekAheadDay } from './weekAheadEmail'
@@ -55,9 +55,9 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
   // agenda bills, so one with a prioritized bill on the agenda is in. The
   // instance's event rules never hide those (lib/eventRules.ts), but a bill
   // prioritized since the rules last ran would wait an hour without this. So
-  // is any body event the rules select (rule_match 1). With no rules every
-  // body event shows on the calendar, but only those with a prioritized bill
-  // reach the email, so a state's whole calendar never floods it.
+  // is any body event the calendar shows: one the rules select (rule_match 1),
+  // or every one while the instance has no rules (rule_match null, "All
+  // events"), so the email lists what the calendar does (#420).
   const linkedBills = alias(bills, 'linked_bills')
   const rows = await db
     .select({
@@ -99,7 +99,7 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
         or(
           and(prioritizedBillEntry, sql`${calendarEvents.kind} IS NOT 'deadline'`),
           eq(calendarEvents.source, 'custom'),
-          and(eq(calendarEvents.source, 'body'), eq(calendarEvents.ruleMatch, 1)),
+          and(eq(calendarEvents.source, 'body'), or(isNull(calendarEvents.ruleMatch), eq(calendarEvents.ruleMatch, 1))),
           exists(
             db.select({ _: sql`1` })
               .from(calendarEventBills)
