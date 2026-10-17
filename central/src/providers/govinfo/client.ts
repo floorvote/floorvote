@@ -35,25 +35,35 @@ function httpDate(value: string | null): string | null {
 
 /**
  * Read one zip, handing each file's text to `onFile` as it is unpacked, with
- * the time GovInfo says it built the zip. Resolves with the number of files.
+ * the time GovInfo says it built the zip. Resolves with whether the zip
+ * exists, and how many files it held.
  *
- * Fails closed with an error that names the zip: a download that isn't a
- * complete zip (an HTTP error, a web page, a body cut off), a file that isn't
- * UTF-8, and anything `onFile` throws for a file it can't read.
+ * A 404 is a zip GovInfo hasn't published yet, such as a type with no bills at
+ * the start of a Congress: `found` is false and no file is handed over. The
+ * caller decides what that means, since all eight missing can't be told from
+ * a changed address.
+ *
+ * Every other failure throws an error that names the zip: a download that
+ * isn't a complete zip (an HTTP error, a web page, a body cut off), a file
+ * that isn't UTF-8, and anything `onFile` throws for a file it can't read.
  */
 export async function readBillStatusZip(
   congress: number,
   type: GovInfoType,
   onFile: (name: string, xml: string, modified: string | null) => void | Promise<void>,
   onRequest?: () => void,
-): Promise<number> {
+): Promise<{ found: boolean; entries: number }> {
   const url = billStatusZipUrl(congress, type)
   try {
     const res = await rateLimitedFetch(url, { headers: { Accept: 'application/zip' } },
       { ratePerSec: GOVINFO_RATE_PER_SEC, bucketKey: 'govinfo', onRequest })
+    if (res.status === 404) {
+      await res.body?.cancel().catch(() => {})
+      return { found: false, entries: 0 }
+    }
     const modified = httpDate(res.headers.get('Last-Modified'))
     const { entries } = await readZip(res, (name, data) => onFile(name, utf8.decode(data), modified))
-    return entries
+    return { found: true, entries }
   } catch (err) {
     throw new Error(`GovInfo ${congress}/${type}: ${err instanceof Error ? err.message : String(err)}`)
   }

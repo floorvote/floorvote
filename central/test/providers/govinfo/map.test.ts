@@ -4,6 +4,7 @@ import { vocabulary } from '../../../src/providers/govinfo/vocabulary'
 import { parseXml } from '../../../src/providers/govinfo/xml'
 import { inventoryProblems, unfedExtras } from '../../helpers/fieldInventory'
 import { xmlObject } from '../../helpers/xmlObject'
+import { parseBillFile } from '../../../src/providers/govinfo/map'
 import { fixtureFiles } from '../../helpers/govinfoZip'
 import fieldPathsRaw from '../../fixtures/govinfo/field-paths.json?raw'
 
@@ -53,3 +54,15 @@ function pathObject(path: string): unknown {
   }
   return build(0)
 }
+
+describe('the congress.gov address of a bill', () => {
+  // congress.gov writes the Congress with its ordinal: 111th, 121st, 122nd, 123rd.
+  it.each([
+    [111, '111th'], [112, '112th'], [113, '113th'], [119, '119th'], [120, '120th'],
+    [121, '121st'], [122, '122nd'], [123, '123rd'], [124, '124th'], [131, '131st'],
+  ])('is %i\'s %s-congress', async (congress, ordinal) => {
+    const xml = fixtureFiles.get('BILLSTATUS-119hr3132.xml')!.replace('<congress>119</congress>', `<congress>${congress}</congress>`)
+    const { record } = await parseBillFile('BILLSTATUS.xml', xml, { congress, type: 'HR' }, null)
+    expect(record.url).toBe(`https://www.congress.gov/bill/${ordinal}-congress/house-bill/3132`)
+  })
+})

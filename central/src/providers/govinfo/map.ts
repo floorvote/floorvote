@@ -144,7 +144,7 @@ export async function parseBillFile(
     status: derived.status,
     statusDate: derived.date,
     latestAction: latestText && DATE.test(latestDate) ? { date: latestDate, text: latestText } : null,
-    url: `https://www.congress.gov/bill/${congress}th-congress/${info.slug}/${number}`,
+    url: `https://www.congress.gov/bill/${ordinal(congress)}-congress/${info.slug}/${number}`,
     modified,
   }
   // Every string read from the file is a slice of its text, and V8 keeps a slice's whole parent alive. A
@@ -185,11 +185,16 @@ export function legiscanNumber(r: Pick<GovInfoRecord, 'type' | 'number'>): strin
   return `${BILL_TYPE[r.type].prefix}${r.number}`
 }
 
-/** "119" → "119th Congress", "121" → "121st Congress". */
+/** 119 → "119th", 121 → "121st", 112 → "112th" (the teens are all "th"). */
+export function ordinal(n: number): string {
+  const tens = n % 100
+  const suffix = tens >= 11 && tens <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' } as Record<number, string>)[n % 10] ?? 'th'
+  return `${n}${suffix}`
+}
+
+/** 119 → "119th Congress", 121 → "121st Congress". */
 export function congressName(congress: number): string {
-  const tens = congress % 100
-  const suffix = tens >= 11 && tens <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' } as Record<number, string>)[congress % 10] ?? 'th'
-  return `${congress}${suffix} Congress`
+  return `${ordinal(congress)} Congress`
 }
 
 /**

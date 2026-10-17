@@ -487,7 +487,6 @@ describe('the credit', () => {
       id: 'govinfo',
       name: 'GovInfo Bill Status (GPO and Library of Congress), public domain; roll calls from the House Clerk and the Senate',
       url: 'https://www.govinfo.gov/bulkdata/BILLSTATUS',
-      note: 'Bill data from GovInfo Bill Status (GPO and Library of Congress), public domain; roll calls from the House Clerk and the Senate.',
     })] })
     // The credit never says FloorVote publishes official data.
     expect(JSON.stringify(events.attribution)).not.toMatch(/official/i)
@@ -524,7 +523,7 @@ describe('failing closed', () => {
     const good = () => zipOf(type)
     const cutAt = (at: number) => () => serveZip(good().slice(0, at), { contentLength: null }).response
 
-    it.each([500, 503, 403, 404, 429, 204, 301])('answering %i', async (status) => {
+    it.each([500, 503, 403, 429, 204, 301])('answering %i', async (status) => {
       await breaksWith(type, () => new Response(status === 204 ? null : 'nope', { status }), new RegExp(`GovInfo.*${status}|${status}`))
     })
 
@@ -571,6 +570,59 @@ describe('failing closed', () => {
       const entries = [...files].filter(([n]) => fileType(n) === type).map(([name, d]) => ({ name, data: d }))
       entries.splice(1, 0, { name: `BILLSTATUS-119${type}77777.xml`, data })
       await breaksWith(type, () => serveZip(buildZip(entries)).response, /GovInfo/)
+    })
+  })
+
+  describe('a zip GovInfo hasn\'t published yet (a 404)', () => {
+    const notFound = () => new Response('not found', { status: 404 })
+
+    it.each(BILL_TYPES)('is no bills of that type when the %s zip is the only one missing', async (type) => {
+      await claim()
+      answers.set(type, notFound)
+      const run = makeRun()
+      const reports = await sync(run)
+      const others = BILLS.filter(([name]) => name.replace(/\d+$/, '') !== type)
+      expect(reports).toEqual([expect.objectContaining({ records: others.length })])
+      for (const [, number] of others) expect(await bill(number)).toMatchObject({ number })
+      // All eight were asked for.
+      expect(calls.map(c => c.url)).toEqual(BILL_TYPES.map(t => zipUrl(t)))
+    })
+
+    it('is no bills of the types GovInfo has no zips for yet, the start of a Congress', async () => {
+      await claim()
+      for (const t of ['hjres', 'sjres', 'hconres', 'sconres'] as const) answers.set(t, notFound)
+      const reports = await sync()
+      expect(reports).toEqual([expect.objectContaining({ records: BILLS.filter(([n]) => !/^(hjres|sjres|hconres|sconres)/.test(n)).length })])
+    })
+
+    it('fails closed when all eight are missing, which can\'t be told from a changed address', async () => {
+      await claim()
+      for (const t of BILL_TYPES) answers.set(t, notFound)
+      const run = makeRun()
+      await expect(sync(run)).rejects.toThrow(/GovInfo.*404|all eight/i)
+      await nothingWritten(run)
+    })
+
+    it('still fails closed on any other answer, even when the other zips are fine', async () => {
+      await claim()
+      answers.set('sres', notFound)
+      answers.set('hjres', () => new Response('', { status: 500 }))
+      const run = makeRun()
+      await expect(sync(run)).rejects.toThrow(/500/)
+      await nothingWritten(run)
+    })
+
+    it('never removes what was stored: a type that goes missing keeps its bills and says nothing to instances', async () => {
+      await claim()
+      await syncAndIngest()
+      const stored = await bill('SCR5')
+      answers.set('sconres', notFound)
+      const run = makeRun()
+      await sync(run)
+      expect(await bill('SCR5')).toEqual(stored)
+      expect((await db().select().from(schema.providerRecords).all())).toHaveLength(BILLS.length)
+      expect(queuedIds(run)).toEqual([])
+      expect(sentToTenant(run)).toEqual([])
     })
   })
 

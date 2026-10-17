@@ -26,11 +26,11 @@ export const govinfo: Provider = {
   id: 'govinfo',
   displayName: 'GovInfo Bill Status',
   // Public domain data asks for no credit, so this names the sources as the
-  // spec words them, and never says FloorVote publishes official data.
+  // spec words them, and never says FloorVote publishes official data. Footers
+  // render only the name for an unlicensed credit, so the name carries the line.
   attribution: {
     name: 'GovInfo Bill Status (GPO and Library of Congress), public domain; roll calls from the House Clerk and the Senate',
     url: 'https://www.govinfo.gov/bulkdata/BILLSTATUS',
-    note: 'Bill data from GovInfo Bill Status (GPO and Library of Congress), public domain; roll calls from the House Clerk and the Senate.',
   },
   coverage: { maintainers: ['wtadler'] },
   envKeys: [],
@@ -65,16 +65,20 @@ export const govinfo: Provider = {
     const keys = new Set<string>()
     // One zip at a time, each read to its end before the next is asked for. A failure in any
     // of the eight throws before an id is minted, so a bad pass writes nothing.
+    let published = 0
     for (const type of GOVINFO_TYPES) {
       const expected = { congress, type: type.toUpperCase() as CongressBillType }
-      await readBillStatusZip(congress, type, async (name, xml, modified) => {
+      const { found: zipExists } = await readBillStatusZip(congress, type, async (name, xml, modified) => {
         const { record, hash } = await parseBillFile(name, xml, expected, modified)
         const key = govinfoNativeKey(congress, record.type, record.number)
         if (keys.has(key)) throw new Error(`${name} repeats ${key}`)
         keys.add(key)
         found.push({ key, record, hash })
       }, () => ctx.logCall('govinfo:BillStatusZip', { congress, type }))
+      if (zipExists) published++
     }
+    // A type with no zip yet has no bills yet. All eight missing can't be told from a changed address.
+    if (published === 0) throw new Error(`GovInfo ${congress}: none of the eight Bill Status zips exists (404)`)
     const ids = await ctx.ids('bill', found.map(f => f.key))
     const records = found.map((f): ProviderRecord => ({ billId: ids.get(f.key)!, nativeKey: f.key, raw: f.record, hash: f.hash }))
     return { records }
