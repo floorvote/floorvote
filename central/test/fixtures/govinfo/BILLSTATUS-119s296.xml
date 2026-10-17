@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<billStatus>
+  <version>3.0.0</version>
+  <bill>
+    <number>296</number>
+    <updateDate>2026-09-08T18:09:59Z</updateDate>
+    <updateDateIncludingText>2026-09-08T18:09:59Z</updateDateIncludingText>
+    <originChamber>Senate</originChamber>
+    <originChamberCode>S</originChamberCode>
+    <type>S</type>
+    <introducedDate>2025-01-29</introducedDate>
+    <congress>119</congress>
+    <legislationUrl>https://www.congress.gov/bill/119th-congress/senate-bill/296</legislationUrl>
+    <committees>
+      <item>
+        <systemCode>sseg00</systemCode>
+        <name>Energy and Natural Resources Committee</name>
+        <chamber>Senate</chamber>
+        <type>Standing</type>
+        <activities>
+          <item>
+            <name>Referred To</name>
+            <date>2025-01-29T17:48:33Z</date>
+          </item>
+        </activities>
+      </item>
+    </committees>
+    <relatedBills>
+      <item>
+        <title>Finish the Arkansas Valley Conduit Act</title>
+        <congress>119</congress>
+        <number>131</number>
+        <type>HR</type>
+        <latestAction>
+          <actionDate>2026-01-08</actionDate>
+          <text>The Chair directed the Clerk to notify the Senate of the action of the House.</text>
+          <actionTime>15:24:41</actionTime>
+        </latestAction>
+        <relationshipDetails>
+          <item>
+            <type>Identical bill</type>
+            <identifiedBy>CRS</identifiedBy>
+          </item>
+        </relationshipDetails>
+      </item>
+    </relatedBills>
+    <actions>
+      <item>
+        <actionDate>2025-01-29</actionDate>
+        <committees>
+          <item>
+            <systemCode>sseg00</systemCode>
+            <name>Energy and Natural Resources Committee</name>
+          </item>
+        </committees>
+        <sourceSystem>
+          <name>Senate</name>
+        </sourceSystem>
+        <text>Read twice and referred to the Committee on Energy and Natural Resources.</text>
+        <type>IntroReferral</type>
+      </item>
+      <item>
+        <actionDate>2025-01-29</actionDate>
+        <text>Introduced in Senate</text>
+        <type>IntroReferral</type>
+        <actionCode>10000</actionCode>
+        <sourceSystem>
+          <code>9</code>
+          <name>Library of Congress</name>
+        </sourceSystem>
+      </item>
+    </actions>
+    <sponsors>
+      <item>
+        <bioguideId>B001267</bioguideId>
+        <fullName>Sen. Bennet, Michael F. [D-CO]</fullName>
+        <firstName>Michael</firstName>
+        <lastName>Bennet</lastName>
+        <party>D</party>
+        <state>CO</state>
+        <isByRequest>N</isByRequest>
+      </item>
+    </sponsors>
+    <cosponsors>
+      <item>
+        <bioguideId>H000273</bioguideId>
+        <fullName>Sen. Hickenlooper, John W. [D-CO]</fullName>
+        <firstName>John</firstName>
+        <lastName>Hickenlooper</lastName>
+        <party>D</party>
+        <state>CO</state>
+        <middleName>W.</middleName>
+        <sponsorshipDate>2025-01-29</sponsorshipDate>
+        <isOriginalCosponsor>True</isOriginalCosponsor>
+      </item>
+    </cosponsors>
+    <policyArea>
+      <name>Water Resources Development</name>
+    </policyArea>
+    <subjects>
+      <legislativeSubjects>
+        <item>
+          <name>Colorado</name>
+          <updateDate>2025-04-23T13:56:38Z</updateDate>
+        </item>
+        <item>
+          <name>Pipelines</name>
+          <updateDate>2025-04-23T13:56:38Z</updateDate>
+        </item>
+        <item>
+          <name>Water resources funding</name>
+          <updateDate>2025-04-23T13:56:38Z</updateDate>
+        </item>
+        <item>
+          <name>Water use and supply</name>
+          <updateDate>2025-04-23T13:56:38Z</updateDate>
+        </item>
+      </legislativeSubjects>
+      <policyArea>
+        <name>Water Resources Development</name>
+        <updateDate>2025-04-22T20:42:23Z</updateDate>
+      </policyArea>
+    </subjects>
+    <summaries>
+      <summary>
+        <versionCode>00</versionCode>
+        <actionDate>2025-01-29</actionDate>
+        <actionDesc>Introduced in Senate</actionDesc>
+        <updateDate>2025-04-25T01:10:41Z</updateDate>
+        <text><![CDATA[<p><strong>Finish the Arkansas Valley Conduit Act</strong></p><p>This bill reduces payments that communities within the Arkansas River Valley must pay to the Bureau of Reclamation for the construction of the Arkansas Valley Conduit, a pipeline in Colorado for delivering water from the Pueblo Reservoir to such communities. Specifically, it removes interest payments and extends the repayment period to 100 years.</p>]]></text>
+      </summary>
+    </summaries>
+    <title>Finish the Arkansas Valley Conduit Act</title>
+    <titles>
+      <item>
+        <titleType>Display Title</titleType>
+        <titleTypeCode>45</titleTypeCode>
+        <title>Finish the Arkansas Valley Conduit Act</title>
+        <updateDate>2025-03-01T04:53:26Z</updateDate>
+      </item>
+      <item>
+        <titleType>Short Title(s) as Introduced</titleType>
+        <titleTypeCode>101</titleTypeCode>
+        <title>Finish the Arkansas Valley Conduit Act</title>
+        <updateDate>2025-03-01T04:53:25Z</updateDate>
+        <billTextVersionName>Introduced in Senate</billTextVersionName>
+        <billTextVersionCode>IS</billTextVersionCode>
+      </item>
+      <item>
+        <titleType>Official Title as Introduced</titleType>
+        <titleTypeCode>6</titleTypeCode>
+        <title>A bill to make certain modifications to the repayment for the Arkansas Valley Conduit in the State of Colorado.</title>
+        <updateDate>2025-03-01T04:48:34Z</updateDate>
+        <billTextVersionName>Introduced in Senate</billTextVersionName>
+        <billTextVersionCode>IS</billTextVersionCode>
+      </item>
+    </titles>
+    <textVersions>
+      <item>
+        <type>Introduced in Senate</type>
+        <date>2025-01-29T05:00:00Z</date>
+        <formats>
+          <item>
+            <url>https://www.govinfo.gov/content/pkg/BILLS-119s296is/xml/BILLS-119s296is.xml</url>
+          </item>
+        </formats>
+      </item>
+    </textVersions>
+    <latestAction>
+      <actionDate>2025-01-29</actionDate>
+      <text>Read twice and referred to the Committee on Energy and Natural Resources.</text>
+    </latestAction>
+  </bill>
+  <dublinCore xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:format>text/xml</dc:format>
+    <dc:language>EN</dc:language>
+    <dc:rights>Pursuant to Title 17 Section 105 of the United States Code, this file is not subject to copyright protection and is in the public domain.</dc:rights>
+    <dc:contributor>Congressional Research Service, Library of Congress</dc:contributor>
+    <dc:description>This file contains bill summaries and statuses for federal legislation. A bill summary describes the most significant provisions of a piece of legislation and details the effects the legislative text may have on current law and federal programs. Bill summaries are authored by the Congressional Research Service (CRS) of the Library of Congress. As stated in Public Law 91-510 (2 USC 166 (d)(6)), one of the duties of CRS is "to prepare summaries and digests of bills and resolutions of a public general nature introduced in the Senate or House of Representatives". For more information, refer to the User Guide that accompanies this file.</dc:description>
+  </dublinCore>
+</billStatus>

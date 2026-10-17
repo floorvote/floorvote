@@ -24,6 +24,9 @@ import { mainSeam, resetCentral, type Run } from '../helpers/mainSeam'
 import { BILL_TYPES, buildZip, fileType, fixtureFiles, serveZip, zipLayout } from '../helpers/govinfoZip'
 
 const ZIP_URL = /^https:\/\/www\.govinfo\.gov\/bulkdata\/BILLSTATUS\/(\d+)\/([a-z]+)\/BILLSTATUS-\d+-([a-z]+)\.zip$/
+// A tracked bill's own file and its text PDFs, which its ingest downloads (#617).
+const FILE_URL = /^https:\/\/www\.govinfo\.gov\/bulkdata\/BILLSTATUS\/(\d+)\/([a-z]+)\/(BILLSTATUS-\d+[a-z]+\d+\.xml)$/
+const PDF_URL = /^https:\/\/www\.govinfo\.gov\/content\/pkg\/[A-Za-z0-9-]+\/pdf\/[A-Za-z0-9-]+\.pdf$/
 const zipUrl = (type: string, congress = 119) => `https://www.govinfo.gov/bulkdata/BILLSTATUS/${congress}/${type}/BILLSTATUS-${congress}-${type}.zip`
 
 type Type = typeof BILL_TYPES[number]
@@ -67,6 +70,9 @@ beforeEach(async () => {
     calls.push({ method, url, accept: new Headers(init?.headers).get('Accept') })
     const m = ZIP_URL.exec(url)
     if (m && m[2] === m[3] && m[1] === '119') return answers.get(m[2] as Type)!()
+    const f = FILE_URL.exec(url)
+    if (f && files.has(f[3])) return new Response(files.get(f[3]), { headers: { 'content-type': 'application/xml' } })
+    if (PDF_URL.test(url)) return new Response('%PDF-1.7\n%%EOF\n', { headers: { 'content-type': 'application/pdf' } })
     return new Response('not found', { status: 404 })
   })
   // The instance follows Congress with one keyword, which only the CHOICE for Veterans Act matches.
@@ -97,6 +103,10 @@ const BILLS: [string, string, string, string][] = [
   ['sjres133', 'SJR133', 'Reported', 'JR'],
   ['hconres74', 'HCR74', 'Agreed to', 'CR'],
   ['sconres5', 'SCR5', 'In committee', 'CR'],
+  ['hr6222', 'HB6222', 'In committee', 'B'],
+  ['s296', 'SB296', 'In committee', 'B'],
+  ['hr361', 'HB361', 'In committee', 'B'],
+  ['hr43', 'HB43', 'Became law', 'B'],
 ]
 
 /** Stage and rank of each status label, as #612's Status table has them. */
@@ -126,7 +136,10 @@ describe('Congress from GovInfo Bill Status', () => {
     expect((await claim()).status).toBe(200)
     await syncAndIngest()
     // One download of each type's zip, and nothing else.
-    expect(calls.map(c => [c.method, c.url])).toEqual(BILL_TYPES.map(t => ['GET', zipUrl(t)]))
+    expect(calls.filter(c => ZIP_URL.test(c.url)).map(c => [c.method, c.url])).toEqual(BILL_TYPES.map(t => ['GET', zipUrl(t)]))
+    // The one bill the instance's keyword matches is then read from its own file (#617), and nothing else is asked of GovInfo.
+    expect(calls.filter(c => !ZIP_URL.test(c.url) && !PDF_URL.test(c.url)).map(c => c.url))
+      .toEqual(['https://www.govinfo.gov/bulkdata/BILLSTATUS/119/hr/BILLSTATUS-119hr3132.xml'])
     for (const [name, number, , billType] of BILLS) {
       const b = await bill(number)
       expect(b, name).toMatchObject({ number, state: 'US', billType })
