@@ -84,7 +84,7 @@ export async function checkVoteDatasets(env: Env, db: Db): Promise<void> {
     .from(tenants).where(eq(tenants.active, true)).all()
   if (activeTenants.length === 0) return
   const trackedStates = await loadTrackedStates(db, activeTenants)
-  const owners = await loadStateOwners(env, db)
+  const owners = await loadStateOwners(db)
   for (const state of trackedStates) if (ownerOf(owners, state) !== provider.id) trackedStates.delete(state)
   if (trackedStates.size === 0) return
 

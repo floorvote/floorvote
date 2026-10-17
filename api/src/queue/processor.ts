@@ -732,7 +732,11 @@ async function applyCentralBill(
   // bill has text to analyse, so it is kept on the bill until the match is
   // recorded and goes on the bill_matched event from there. Once the match
   // is recorded it never changes. With no declaration it stays NULL: bulk.
-  const declaredProvenance = !existing?.newMatchAt && msg.matchProvenance ? msg.matchProvenance : undefined
+  // A group analysis is for a bill that didn't match (lib/companionAnalysis.ts)
+  // and brings no match, so any declaration on it is ignored: it would
+  // otherwise be kept until the bill matched on its own, and be taken for that
+  // match's provenance.
+  const declaredProvenance = !existing?.newMatchAt && !msg.groupAnalysis && msg.matchProvenance ? msg.matchProvenance : undefined
   const matchProvenance = declaredProvenance ?? existing?.matchProvenance ?? null
 
   const upsertData = {
@@ -806,16 +810,26 @@ async function applyCentralBill(
 
   // Tags are a team field (lib/teamFields.ts), set only by the analysis. The
   // group's tags before this one, for the team event recording a change.
-  const tagsBefore = aiResult && existing ? (await loadGroupTeamValues(db, existing.id)).analysis?.tags ?? [] : []
+  // The event is advisory history: failing to read or write it is logged and never fails the delivery.
+  const tagsBefore = aiResult && existing
+    ? await loadGroupTeamValues(db, existing.id).then(v => v.analysis?.tags ?? []).catch(err => {
+      console.error(`[processor] reading group tags before the analysis failed for ${msg.billId}:`, err)
+      return null
+    })
+    : []
   // An analysis records the tags it leaves the group with, including the effect of the match type it
   // arrives with, so the upsert records a match type's effect only when no analysis runs.
   const { id: billInternalId, isNew } = await upsertBill(db, msg.billId, upsertData, aiResult ? undefined : existing)
-  if (aiResult) {
-    // The group's tags after this analysis: its own when the bill is tracked or
-    // the group has no tracked analysis, the tracked bill's otherwise, so a
-    // pulled companion's analysis records no change to them.
-    const tagsAfter = (await loadGroupTeamValues(db, billInternalId)).analysis?.tags ?? []
-    await recordFieldChanges(db, [{ billId: billInternalId, field: 'tags', label: 'tags', old: tagsBefore, new: tagsAfter }], null)
+  if (aiResult && tagsBefore) {
+    try {
+      // The group's tags after this analysis: its own when the bill is tracked or
+      // the group has no tracked analysis, the tracked bill's otherwise, so a
+      // pulled companion's analysis records no change to them.
+      const tagsAfter = (await loadGroupTeamValues(db, billInternalId)).analysis?.tags ?? []
+      await recordFieldChanges(db, [{ billId: billInternalId, field: 'tags', label: 'tags', old: tagsBefore, new: tagsAfter }], null)
+    } catch (err) {
+      console.error(`[processor] recording the tags event failed for ${msg.billId}:`, err)
+    }
   }
   await syncBillSubjects(db, billInternalId, centralBill.state, centralBill.subjects ?? [])
 

@@ -6,7 +6,7 @@ import { coverageCapabilities, stateCapabilities } from '../../src/lib/capabilit
 // provider can do should change that deliberately, so this fails until
 // someone updates the expectation here.
 const PINNED = {
-  legiscan: { bodyEvents: false, deadlines: false },
+  legiscan: { bodyEvents: false, deadlines: true },
   lims: { bodyEvents: true, deadlines: true },
   mga: { bodyEvents: false, deadlines: false },
   lis: { bodyEvents: false, deadlines: false },
@@ -25,6 +25,7 @@ describe('what tenants receive for a state', () => {
     expect(coverageCapabilities(owned('DC', 'lims'), ['DC'])).toEqual({ DC: { bodyEvents: true, deadlines: true } })
     expect(coverageCapabilities(owned('MD', 'mga'), ['MD'])).toEqual({})
     expect(coverageCapabilities(owned('VA', 'lis'), ['VA'])).toEqual({})
-    expect(coverageCapabilities(new Map(), ['TX'])).toEqual({})
+    // A state without an ownership row falls back to LegiScan, which sends deadlines (calendar type 10).
+    expect(coverageCapabilities(new Map(), ['TX'])).toEqual({ TX: { bodyEvents: false, deadlines: true } })
   })
 })

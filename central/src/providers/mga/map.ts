@@ -227,6 +227,7 @@ export function toMgaMasterListEntry(
     last_action: r.Status?.trim() || undefined,
     last_action_date: lastActionDate(history),
     state_link: mgaBillUrl(sessionCode, r.BillNumber),
+    bill_type: mgaBillType(r.BillNumber).type,
   }
 }
 

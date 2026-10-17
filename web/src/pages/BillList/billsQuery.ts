@@ -90,7 +90,11 @@ export function billsFilterValuesFromSearch(search: URLSearchParams): BillsFilte
     matchAny: search.get('match') === 'any',
     tags: search.getAll('tag'),
     subjects: search.getAll('subject'),
-    search: '', // q is never carried in the /bills URL — sidebar nav never has a search term
+    // The Bills page never writes q to its URL (the search box is state, and the
+    // sidebar's links carry none), so this is empty for every URL the app builds.
+    // It is read all the same so a list URL that does carry one is filtered, and
+    // summarized, as what it says it is.
+    search: search.get('q') ?? '',
     sortCol: sortRaw && SORT_COLS.includes(sortRaw as SortColumn) ? (sortRaw as SortColumn) : 'default',
     sortDir: search.get('dir') === 'desc' ? 'desc' : 'asc',
     cfFilters,
