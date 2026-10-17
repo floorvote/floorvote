@@ -44,6 +44,11 @@ export function BodyEventsControl({ onChanged }: { onChanged?: () => void }) {
   const rulesRef = useRef<EventRules | null>(null)
   const confirmedRef = useRef<EventRules | null>(null)
   const queueRef = useRef<Promise<void>>(Promise.resolve())
+  // Each commit's order, and the run of saves a failure cancels (bumped on every failure).
+  const seqRef = useRef(0)
+  const epochRef = useRef(0)
+  /** The last rules "All events" cleared, for switching back to "Only these committees". */
+  const stashedRef = useRef<EventRules | null>(null)
   const onChangedRef = useRef(onChanged)
   onChangedRef.current = onChanged
 
@@ -65,17 +70,30 @@ export function BodyEventsControl({ onChanged }: { onChanged?: () => void }) {
 
   if (!hasBodyEvents) return null
 
-  /** Show the choice at once and save it, one save after another so they land in the order made. */
+  /**
+   * Show the choice at once and save it, one save after another so they land
+   * in the order made. A failed save reverts to what the server last took and
+   * drops the saves queued behind it: they were built on a state the server
+   * never accepted, so sending them would leave it holding rules the screen
+   * does not show.
+   */
   function commit(next: EventRules | null) {
+    // "All events" is undoable in the session: keep the rules it clears.
+    if (next === null && rulesRef.current) stashedRef.current = rulesRef.current
+    const seq = ++seqRef.current
+    const epoch = epochRef.current
     setRules(next)
     setMessage(null)
     queueRef.current = queueRef.current.then(async () => {
+      if (epoch !== epochRef.current) return
       try {
         await apiFetch('/admin/event-rules', { method: 'PUT', body: JSON.stringify({ rules: next }) })
         confirmedRef.current = next
-        setMessage({ text: 'Saved.' })
+        // The newest save is the one on screen; an older one landing later must not replace it.
+        if (seq === seqRef.current) { setRules(next); setMessage({ text: 'Saved.' }) }
         onChangedRef.current?.()
       } catch (e) {
+        epochRef.current++
         setRules(confirmedRef.current)
         setMessage({ text: e instanceof ApiError ? e.message : 'Could not save. Try again.', error: true })
       }
@@ -145,7 +163,7 @@ export function BodyEventsControl({ onChanged }: { onChanged?: () => void }) {
               </label>
               <label style={row}>
                 <input type="radio" name="body-events-choice" checked={!!rules} disabled={demoLocked}
-                  onChange={() => { if (!rules) void commit(EMPTY_EVENT_RULES) }} />
+                  onChange={() => { if (!rules) void commit(stashedRef.current ?? EMPTY_EVENT_RULES) }} />
                 Only these committees
               </label>
             </div>

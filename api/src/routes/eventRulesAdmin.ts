@@ -16,13 +16,13 @@ import type { AppEnv } from '../types'
  */
 export const eventRulesAdminRouter = new Hono<AppEnv>()
 
-/** How far ahead the settings page previews the rules. */
+/** How far ahead GET returns upcoming events with what the rules read of each. The Calendar control (#420) shows no preview, so nothing reads them now. */
 const PREVIEW_DAYS = 120
 
 // GET /api/admin/event-rules: the saved rules (null for none: every event
 // shows), the committees and kinds to choose from, and the upcoming body
-// events, each with what the rules read of it, so the page previews a choice
-// before it's saved. The choices are central's lists for each covered state,
+// events, each with what the rules read of it (the old settings page previewed
+// a choice with them; the Calendar control reads none of it). The choices are central's lists for each covered state,
 // plus any committee or kind the instance's events or saved rules name, so a
 // central outage or a committee since gone never drops a choice.
 eventRulesAdminRouter.get('/', async (c) => {

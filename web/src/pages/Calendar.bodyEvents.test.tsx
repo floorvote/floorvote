@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
@@ -61,7 +61,14 @@ function renderCalendar(capabilities: AppConfig['capabilities'] | undefined) {
   )
 }
 
-beforeEach(() => { state.role = 'admin'; state.calls = []; state.saved = null })
+// Switching view scrolls the shared container to the top; jsdom has no scrollTo.
+let originalScrollTo: typeof Element.prototype.scrollTo
+beforeEach(() => {
+  state.role = 'admin'; state.calls = []; state.saved = null
+  originalScrollTo = Element.prototype.scrollTo
+  Element.prototype.scrollTo = vi.fn() as unknown as typeof Element.prototype.scrollTo
+})
+afterEach(() => { Element.prototype.scrollTo = originalScrollTo })
 
 describe('Calendar page and the committee events control', () => {
   it('shows no control, and asks for no rules, without body-event coverage', async () => {
