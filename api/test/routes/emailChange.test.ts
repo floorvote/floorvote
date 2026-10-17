@@ -289,6 +289,8 @@ describe('POST /users/me/email-change: limits', () => {
   })
 
   it("says so when the confirmation can't be sent, and leaves nothing to confirm", async () => {
+    // Both providers are down: the binding throws, and the fallback (Resend) answers 500.
+    stubFetch(() => new Response('upstream error', { status: 500 }))
     const failing = { send: async () => { throw new Error('provider down') } }
     const r = await request(janeCookie, 'jane@newjob.org', {}, { EMAIL: failing })
     expect(r.status).toBe(502)
