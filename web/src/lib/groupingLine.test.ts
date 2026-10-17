@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { GroupingEvent } from '../../../shared/companionGroups'
-import { groupingLineText, placeGroupingLines, showsGroupingLine } from './groupingLine'
+import type { FieldChangeEvent } from '../../../shared/teamFields'
+import { groupingLineText, placeGroupingLines, placeThreadLines, showsGroupingLine, type ThreadLine } from './groupingLine'
 
 // The line a comment thread shows where a bill's companion group formed or
 // split. Timestamps are the database's UTC format, at midday so the date is
@@ -181,6 +182,156 @@ describe('placeGroupingLines', () => {
 
   it('puts a comment posted at the very second of an event above its line, as the server counts it before the event', () => {
     const e = event({ id: 'g', createdAt: '2026-10-10 12:00:00', commentBills: [bill('A190')] })
+    expect(placeGroupingLines(comments, [e]).before.get('c2')).toEqual([e])
+  })
+})
+
+// The thread's activity beside its comments: grouping lines and team field
+// changes in one time order, a run of changes by one person folded into one line.
+describe('placeThreadLines', () => {
+  const comments = [{ id: 'c1', createdAt: '2026-10-10 12:00:00' }, { id: 'c2', createdAt: '2026-10-12 12:00:00' }]
+  const change = (id: string, createdAt: string, over: Partial<FieldChangeEvent> = {}): FieldChangeEvent => ({
+    id, createdAt, actorId: 'u-david', actorName: 'David Park', billId: 'a190', billNumber: 'A190',
+    field: 'priority', label: 'priority', old: null, new: 'high', ...over,
+  })
+  const shownGrouping = (id: string, createdAt: string) => event({ id, createdAt, actorName: 'Ada' })
+  // A line as a short label: the event id, "id+id" for a fold.
+  const label = (l: ThreadLine) => l.kind === 'fold' ? l.events.map(e => e.id).join('+') : l.event.id
+  const labels = (lines: ThreadLine[] | undefined) => (lines ?? []).map(label)
+
+  it('puts a change before the first comment posted after it, and one after every comment at the end', () => {
+    const placed = placeThreadLines(comments, [], [change('early', '2026-10-11 12:00:00'), change('late', '2026-10-13 12:00:00')])
+    expect(labels(placed.before.get('c2'))).toEqual(['early'])
+    expect(placed.before.has('c1')).toBe(false)
+    expect(labels(placed.after)).toEqual(['late'])
+  })
+
+  it('puts a change that predates every comment before the first', () => {
+    const placed = placeThreadLines(comments, [], [change('first', '2026-10-09 12:00:00')])
+    expect(labels(placed.before.get('c1'))).toEqual(['first'])
+  })
+
+  it('places everything after, with nothing to put it before, in a thread with no comments', () => {
+    const placed = placeThreadLines([], [], [change('a', '2026-10-10 12:00:00', { actorName: 'Ann', actorId: 'u-ann' }), change('b', '2026-10-11 12:00:00')])
+    expect(placed.before.size).toBe(0)
+    expect(labels(placed.after)).toEqual(['a', 'b'])
+  })
+
+  it('places nothing for a thread with comments only, and something once a change is added', () => {
+    expect(placeThreadLines(comments, [], [])).toEqual({ before: new Map(), after: [] })
+    expect(labels(placeThreadLines(comments, [], [change('a', '2026-10-13 12:00:00')]).after)).toEqual(['a'])
+  })
+
+  it('puts a comment posted at the very second of a change above its line', () => {
+    const placed = placeThreadLines(comments, [], [change('same', '2026-10-10 12:00:00')])
+    expect(labels(placed.before.get('c2'))).toEqual(['same'])
+  })
+
+  it('interleaves grouping lines and changes by time, and ties go to the grouping line', () => {
+    const placed = placeThreadLines(comments, [shownGrouping('g', '2026-10-11 12:00:00')],
+      [change('f1', '2026-10-11 11:00:00', { actorName: 'Ann', actorId: 'u-ann' }), change('f2', '2026-10-11 12:00:00', { actorName: 'Ann', actorId: 'u-ann' }), change('f3', '2026-10-11 13:00:00', { actorName: 'Ann', actorId: 'u-ann' })])
+    expect(placed.before.get('c2')?.map(l => l.kind)).toEqual(['change', 'grouping', 'fold'])
+    expect(labels(placed.before.get('c2'))).toEqual(['f1', 'g', 'f2+f3'])
+  })
+
+  it('leaves out a grouping line that would show nothing, as the thread always has, and keeps a change beside it', () => {
+    const hidden = event({ id: 'hidden', createdAt: '2026-10-11 12:00:00' })
+    expect(placeThreadLines(comments, [hidden], [])).toEqual({ before: new Map(), after: [] })
+    expect(labels(placeThreadLines(comments, [hidden], [change('a', '2026-10-13 12:00:00')]).after)).toEqual(['a'])
+  })
+
+  describe('folding', () => {
+    it('folds two consecutive changes by one person into one line, oldest first', () => {
+      const placed = placeThreadLines(comments, [], [change('a', '2026-10-11 10:00:00'), change('b', '2026-10-11 11:00:00')])
+      const [fold] = placed.before.get('c2') ?? []
+      expect(fold).toMatchObject({ kind: 'fold', actorName: 'David Park', key: 'fold-a' })
+      expect(fold.kind === 'fold' && fold.events.map(e => e.id)).toEqual(['a', 'b'])
+    })
+
+    it('folds three or more the same way', () => {
+      const placed = placeThreadLines(comments, [], ['a', 'b', 'c', 'd'].map((id, i) => change(id, `2026-10-11 1${i}:00:00`)))
+      expect(labels(placed.before.get('c2'))).toEqual(['a+b+c+d'])
+    })
+
+    it('leaves a single change as its own line', () => {
+      const placed = placeThreadLines(comments, [], [change('a', '2026-10-11 10:00:00')])
+      expect(placed.before.get('c2')?.map(l => l.kind)).toEqual(['change'])
+    })
+
+    it('breaks a run at a comment: changes on either side fold apart, or stay single', () => {
+      const placed = placeThreadLines(comments, [], [
+        change('a', '2026-10-09 10:00:00'), change('b', '2026-10-09 11:00:00'), change('c', '2026-10-11 10:00:00'), change('d', '2026-10-13 10:00:00'), change('e', '2026-10-13 11:00:00'),
+      ])
+      expect(labels(placed.before.get('c1'))).toEqual(['a+b'])
+      expect(labels(placed.before.get('c2'))).toEqual(['c'])
+      expect(labels(placed.after)).toEqual(['d+e'])
+    })
+
+    it('folds runs by different people separately, in order', () => {
+      const ann = { actorId: 'u-ann', actorName: 'Ann' }
+      const placed = placeThreadLines(comments, [], [
+        change('a1', '2026-10-11 10:00:00'), change('a2', '2026-10-11 10:30:00'), change('n1', '2026-10-11 11:00:00', ann), change('n2', '2026-10-11 11:30:00', ann), change('a3', '2026-10-11 12:00:00'),
+      ])
+      const lines = placed.before.get('c2') ?? []
+      expect(labels(lines)).toEqual(['a1+a2', 'n1+n2', 'a3'])
+      expect(lines.map(l => l.kind)).toEqual(['fold', 'fold', 'change'])
+    })
+
+    it('does not fold one person\'s changes across another person\'s, since they are not consecutive', () => {
+      const placed = placeThreadLines(comments, [], [
+        change('a1', '2026-10-11 10:00:00'), change('n1', '2026-10-11 11:00:00', { actorId: 'u-ann', actorName: 'Ann' }), change('a2', '2026-10-11 12:00:00'),
+      ])
+      expect(labels(placed.before.get('c2'))).toEqual(['a1', 'n1', 'a2'])
+    })
+
+    it('folds FloorVote\'s changes together, apart from any person\'s', () => {
+      const robot = { actorId: null, actorName: null }
+      const placed = placeThreadLines(comments, [], [
+        change('r1', '2026-10-11 10:00:00', robot), change('r2', '2026-10-11 11:00:00', robot), change('a1', '2026-10-11 12:00:00'),
+      ])
+      const lines = placed.before.get('c2') ?? []
+      expect(labels(lines)).toEqual(['r1+r2', 'a1'])
+      expect(lines[0]).toMatchObject({ kind: 'fold', actorName: null })
+    })
+
+    it('tells two people with the same name apart by who they are', () => {
+      const placed = placeThreadLines(comments, [], [
+        change('a', '2026-10-11 10:00:00', { actorId: 'u-1', actorName: 'Sam Lee' }), change('b', '2026-10-11 11:00:00', { actorId: 'u-2', actorName: 'Sam Lee' }),
+      ])
+      expect(labels(placed.before.get('c2'))).toEqual(['a', 'b'])
+    })
+
+    it('breaks a run at a grouping line that shows', () => {
+      const placed = placeThreadLines(comments, [shownGrouping('g', '2026-10-11 11:00:00')], [
+        change('a', '2026-10-11 10:00:00'), change('b', '2026-10-11 12:00:00'), change('c', '2026-10-11 13:00:00'),
+      ])
+      expect(labels(placed.before.get('c2'))).toEqual(['a', 'g', 'b+c'])
+    })
+
+    it('does not break a run at a grouping line that does not show', () => {
+      const hidden = event({ id: 'hidden', createdAt: '2026-10-11 11:00:00' })
+      const placed = placeThreadLines(comments, [hidden], [change('a', '2026-10-11 10:00:00'), change('b', '2026-10-11 12:00:00')])
+      expect(labels(placed.before.get('c2'))).toEqual(['a+b'])
+    })
+
+    it('folds changes made on a companion with this bill\'s, keeping each one\'s own bill', () => {
+      const placed = placeThreadLines(comments, [], [change('a', '2026-10-11 10:00:00'), change('b', '2026-10-11 11:00:00', { billId: 'b1713', billNumber: 'S1713' })])
+      const [fold] = placed.before.get('c2') ?? []
+      expect(fold.kind === 'fold' && fold.events.map(e => e.billNumber)).toEqual(['A190', 'S1713'])
+    })
+
+    it('keys each line by its first event, so a fold keeps its place when a later change joins the run', () => {
+      const one = placeThreadLines(comments, [], [change('a', '2026-10-11 10:00:00'), change('b', '2026-10-11 11:00:00')]).before.get('c2')?.[0].key
+      const more = placeThreadLines(comments, [], [change('a', '2026-10-11 10:00:00'), change('b', '2026-10-11 11:00:00'), change('c', '2026-10-11 12:00:00')]).before.get('c2')?.[0].key
+      expect(one).toBe('fold-a')
+      expect(more).toBe(one)
+    })
+  })
+
+  it('does not change what placeGroupingLines places', () => {
+    const e = shownGrouping('g', '2026-10-11 12:00:00')
+    const placed = placeThreadLines(comments, [e], [])
+    expect(placed.before.get('c2')).toEqual([{ kind: 'grouping', key: 'g', event: e }])
     expect(placeGroupingLines(comments, [e]).before.get('c2')).toEqual([e])
   })
 })

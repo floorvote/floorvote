@@ -1,4 +1,5 @@
 import type { GroupingEvent } from '../../../shared/companionGroups'
+import type { FieldChangeEvent } from '../../../shared/teamFields'
 import { formatLongMonthDay } from './calendarDate'
 import { dbTsToEpoch } from '../../../shared/time'
 
@@ -64,6 +65,20 @@ export function placeGroupingLines(
     else after.push(event)
   }
   return { before, after }
+}
+
+/** A line of a comment thread's activity: a grouping line, a team field change, or a run of changes folded into one. */
+export type ThreadLine =
+  | { kind: 'grouping'; key: string; event: GroupingEvent }
+  | { kind: 'change'; key: string; event: FieldChangeEvent }
+  | { kind: 'fold'; key: string; actorName: string | null; events: FieldChangeEvent[] }
+
+export function placeThreadLines(
+  _comments: readonly { id: string; createdAt: string }[],
+  _groupingEvents: readonly GroupingEvent[],
+  _fieldEvents: readonly FieldChangeEvent[],
+): { before: Map<string, ThreadLine[]>; after: ThreadLine[] } {
+  return { before: new Map(), after: [] }
 }
 
 // "A1", "A1 and A2", "A1, A2, and A3"

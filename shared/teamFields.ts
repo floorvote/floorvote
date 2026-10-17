@@ -27,6 +27,29 @@ export type FieldChangedMetadata = {
   new: string | string[] | null
 }
 
+/**
+ * A change to a team field as the bill page reads it, for the activity lines of
+ * its comment thread. The bill page serves one for each `field_changed` team
+ * event on a bill in the page's companion group, oldest first. `actorName` is
+ * null when FloorVote made the change (an analysis's tags). `billId` and
+ * `billNumber` name the bill where the value was set. `fieldType` is a custom
+ * field's type, which a sentence needs to word a yes/no value.
+ */
+export type FieldChangeEvent = {
+  id: string
+  createdAt: string
+  actorId: string | null
+  actorName: string | null
+  billId: string
+  billNumber: string
+  field: TeamField
+  fieldId?: string
+  label: string
+  old: string | string[] | null
+  new: string | string[] | null
+  fieldType?: string
+}
+
 // A long text custom field is cut short in a sentence about it.
 const MAX_VALUE_TEXT = 60
 
