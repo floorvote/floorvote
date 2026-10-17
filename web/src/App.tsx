@@ -22,7 +22,7 @@ import { Profile } from './pages/Profile'
 import { Members } from './pages/admin/Members'
 import { Config } from './pages/admin/Config'
 import { Notifications } from './pages/admin/Notifications'
-import { EventRules } from './pages/admin/EventRules'
+import { CalendarEventsMoved } from './pages/admin/CalendarEventsMoved'
 import { DraftBills } from './pages/admin/DraftBills'
 import { Calendar, calendarLoader } from './pages/Calendar'
 import { useAuth } from './hooks/useAuth'
@@ -214,7 +214,7 @@ export const routes = createRoutesFromElements(
           <Route path="admin/config" element={<Config />} />
           <Route path="admin/notifications" element={<Notifications />} />
           <Route path="admin/drafts" element={<DraftBills />} />
-          <Route path="admin/calendar-events" element={<EventRules />} />
+          <Route path="admin/calendar-events" element={<CalendarEventsMoved />} />
         </Route>
         {/* Canonical + legacy bill URLs — greedy param routes; React Router
             ranks static segments above these, so order vs. /admin etc. is safe. */}

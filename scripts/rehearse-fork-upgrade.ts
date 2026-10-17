@@ -22,7 +22,10 @@
  * Options:
  *   --central <file>      a central copy: a `wrangler d1 export` SQL dump, or a SQLite file
  *   --instance <file>     an instance copy, the same way (repeat for each instance)
- *   --lims-states <list>  your central's LIMS_STATES (default DC)
+ *   --claim-states <list> the states you will claim for LIMS after deploying (default DC).
+ *                         Each is checked for LegiScan bills instances track, which
+ *                         would make upstream refuse the claim. (--lims-states is the
+ *                         old name.)
  *   --upstream-ref <ref>  the git ref whose migration files are upstream's (default
  *                         upstream/main). Every other file in the folders is your own,
  *                         so the tables and columns your files create are checked too.
@@ -45,7 +48,7 @@ const FOLDERS: Record<DbKind, string> = {
 const DEFAULT_REF = 'upstream/main'
 
 const copies: { kind: DbKind; path: string }[] = []
-let limsStates = ['DC']
+let claimStates = ['DC']
 let saveDir: string | null = null
 let upstreamRef: string | null = null
 const argv = process.argv.slice(2)
@@ -58,14 +61,14 @@ for (let i = 0; i < argv.length; i++) {
   }
   if (a === '--central') copies.push({ kind: 'central', path: value() })
   else if (a === '--instance' || a === '--tenant') copies.push({ kind: 'instance', path: value() })
-  else if (a === '--lims-states') limsStates = value().split(',').map(s => s.trim()).filter(Boolean)
+  else if (a === '--claim-states' || a === '--lims-states') claimStates = value().split(',').map(s => s.trim()).filter(Boolean)
   else if (a === '--save') saveDir = value()
   else if (a === '--upstream-ref') upstreamRef = value()
   else if (a === '--help' || a === '-h') copies.length = 0
   else throw new Error(`unknown argument ${a} (see --help)`)
 }
 if (copies.length === 0) {
-  console.log('Usage: npx tsx scripts/rehearse-fork-upgrade.ts --central central.sql --instance tenant.sql [--instance ...] [--lims-states DC] [--upstream-ref upstream/main] [--save dir]')
+  console.log('Usage: npx tsx scripts/rehearse-fork-upgrade.ts --central central.sql --instance tenant.sql [--instance ...] [--claim-states DC] [--upstream-ref upstream/main] [--save dir]')
   console.log('See docs/internal/fork-upgrade.md.')
   process.exit(argv.length === 0 ? 1 : 0)
 }
@@ -96,7 +99,7 @@ for (const kind of new Set(copies.map(c => c.kind))) {
 let ok = true
 for (const { kind, path } of copies) {
   const db = openCopy(path)
-  const report = rehearse(db, kind, basename(path), readMigrations(join(REPO_ROOT, FOLDERS[kind])), { limsStates, upstreamNames: upstreamNames.get(kind) })
+  const report = rehearse(db, kind, basename(path), readMigrations(join(REPO_ROOT, FOLDERS[kind])), { claimStates, upstreamNames: upstreamNames.get(kind) })
   console.log(formatReport(report))
   console.log('')
   ok &&= passed(report)

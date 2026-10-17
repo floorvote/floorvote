@@ -1,3 +1,5 @@
+import { groupSharedThings } from './groupShares'
+
 /**
  * The confirmation before "Split from group" (#382): what the split leaves,
  * from `GET /bills/:id/split-preview`'s parts (the groups the rest of the
@@ -5,15 +7,15 @@
  * It claims back only what does: a member's merged note and a value cleared
  * while the bills were grouped stay as they are.
  */
-export function splitConfirmText(billNumber: string, parts: readonly (readonly string[])[]): string {
-  const after = "Each bill's own comments, votes, and team values show on its page again. Notes a member already merged, and values cleared while the bills were grouped, stay as they are."
-  return `Split ${billNumber} from its group? ${leftBehind(parts)} ${after}`
+export function splitConfirmText(billNumber: string, parts: readonly (readonly string[])[], noun: string, hasCustomFields = false): string {
+  const after = `Each bill's own ${groupSharedThings(noun, hasCustomFields)} show on its page again. Notes a member already merged, and values cleared while the bills were grouped, stay as they are.`
+  return `Split ${billNumber} from its group? ${leftBehind(parts, noun, hasCustomFields)} ${after}`
 }
 
-function leftBehind(parts: readonly (readonly string[])[]): string {
+function leftBehind(parts: readonly (readonly string[])[], noun: string, hasCustomFields: boolean): string {
   if (parts.length === 1) {
     return parts[0].length === 1
-      ? `It will no longer share a discussion or the team's values with ${parts[0][0]}.`
+      ? `It will no longer share ${groupSharedThings(noun, hasCustomFields, 'or')} with ${parts[0][0]}.`
       : `${listBills(parts[0])} stay grouped with each other.`
   }
   if (parts.every(p => p.length === 1)) {

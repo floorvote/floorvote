@@ -43,6 +43,8 @@ import type { AppDb, Env } from '../types'
 export interface StateCapabilities {
   bodyEvents: boolean
   deadlines: boolean
+  /** What members call the body that holds the events ("Council"), when the provider names one. */
+  bodyName?: string
 }
 
 /** A body event as central sends it (GET /tenants/:tenantId/body-events). */

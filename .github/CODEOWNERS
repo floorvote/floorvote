@@ -13,6 +13,9 @@
 /central/eslint.config.mjs                   @wtadler
 /central/eslint-provider-boundary.mjs        @wtadler
 /central/scripts/check-provider-boundary.mjs @wtadler
+# govinfo: GovInfo Bill Status (United States (Congress))
+/central/src/providers/govinfo/              @wtadler
+/central/test/providers/govinfo/             @wtadler
 # legiscan: LegiScan (all states, the District of Columbia, and Congress)
 /central/src/providers/legiscan/             @wtadler
 /central/test/providers/legiscan/            @wtadler

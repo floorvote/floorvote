@@ -7,12 +7,13 @@ import { legiscan } from './legiscan'
 import { lims } from './lims'
 import { mga } from './mga'
 import { lis } from './lis'
+import { govinfo } from './govinfo'
 import type { Provider } from './types'
 
 export type * from './types'
 
 /** Every provider central knows. A deployment turns on each non-default one by configuration. */
-export const PROVIDERS: readonly Provider[] = [legiscan, lims, mga, lis]
+export const PROVIDERS: readonly Provider[] = [legiscan, lims, mga, lis, govinfo]
 
 /** The provider central uses wherever nothing names another. */
 export const DEFAULT_PROVIDER_ID = 'legiscan'

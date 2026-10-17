@@ -80,6 +80,7 @@ describe('related bills stored under either spelling', () => {
     const res = await app.request(`/api/bills/${id}`, { headers: { Cookie: member } }, { ...env })
     const related = (await res.json() as any).relatedBillIds as Array<{ route: { id: string } | null }>
     expect(related[0].route?.id).toBe('a2')
-    expect(asked().map(a => a[0])).toEqual(['/bills/legiscan:101'])
+    // Central reads the legacy spelling; `?view=1` is #558's page-view marker (lib/stubRefresh on central).
+    expect(asked().map(a => a[0])).toEqual(['/bills/legiscan:101?view=1'])
   })
 })

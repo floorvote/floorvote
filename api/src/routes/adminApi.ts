@@ -36,6 +36,7 @@ import { mayChangeEmail, refuseSuperadmin, requestEmailChange } from '../lib/ema
 import { recordGroupTagChanges, snapshotGroupTags } from '../lib/teamFields'
 import { centralEmail, type DeliveryStatus, type SuppressionStatus } from '../lib/centralEmail'
 import { userTitleSql } from '../lib/userTitle'
+import { readClaimLinksSetting, writeClaimLinksSetting } from '../lib/claimLinksSetting'
 
 export const adminApiRouter = new Hono<AppEnv>()
 
@@ -806,6 +807,10 @@ adminApiRouter.get('/config', async (c) => {
     typeof result.position_label === 'string' ? result.position_label : null,
   )
   result.accountDeletionEnabled = await getAccountDeletionEnabled(db)
+  const claimLinks = await readClaimLinksSetting(db)
+  result.claim_links_enabled = claimLinks.enabled
+  result.claim_links_changed_at = claimLinks.changedAt
+  result.claim_links_changed_by = claimLinks.changedBy
   return c.json(result)
 })
 
@@ -818,6 +823,17 @@ adminApiRouter.put('/deletion-policy', requireOwner, async (c) => {
     .values({ key: ACCOUNT_DELETION_KEY, value: JSON.stringify(body.enabled) })
     .onConflictDoUpdate({ target: associationConfig.key, set: { value: sql`excluded.value` } })
   return c.json({ enabled: body.enabled })
+})
+
+// PUT /admin/claim-links — turn claim links on or off for the instance (#570).
+// Its own route rather than a config key, so the change always records the admin
+// and the time. On a demo instance the write guard refuses it, as it does the
+// other settings.
+adminApiRouter.put('/claim-links', async (c) => {
+  const body = await c.req.json<{ enabled?: unknown }>().catch(() => null)
+  if (!body || typeof body.enabled !== 'boolean') return c.json({ error: 'enabled (boolean) is required' }, 400)
+  const setting = await writeClaimLinksSetting(getDb(c.env.DB), body.enabled, c.get('user').id)
+  return c.json(setting)
 })
 
 // PUT /admin/config

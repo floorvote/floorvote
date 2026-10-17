@@ -218,6 +218,15 @@ The `entrypoint = "TenantApi"` on the `CENTRAL` binding is what lets outbound te
 
 > [!TIP]
 > To show your organization's logo in the app, add a file named exactly `web/public/operator-logo.svg` before you deploy, since the deploy builds it in. If it's absent, no logo renders (and a harmless `404` for `/operator-logo.svg` in the browser network log is expected).
+>
+> The app has a light and a dark color mode, so you can add a second, optional file, `web/public/operator-logo-dark.svg`, for the dark one. In dark mode the app uses the dark file when it's there and falls back to `operator-logo.svg` when it isn't, so a deployment with only the regular file keeps working. Light mode needs the regular file: with only a dark file, light mode shows no logo. The logo follows the mode the reader is in, whether they chose Light or Dark on their profile or left it on System, and it swaps if their device switches while the app is open.
+>
+> | File | Shown on | Keep contrast against |
+> |------|----------|-----------------------|
+> | `web/public/operator-logo.svg` | Light mode (and dark mode, when there is no dark file) | A light background |
+> | `web/public/operator-logo-dark.svg` (optional) | Dark mode | A dark background |
+>
+> A logo drawn for a light page, with gray or dark text, can nearly vanish on the dark background, so check each file against the background it appears on. If you ship only the regular file, make sure it stays legible on both. A missing dark file also shows as a harmless `404` in the browser network log.
 
 `api/wrangler.toml` is gitignored because it holds your account and database IDs, so don't commit it. That also leaves it with no version history, so keep a copy somewhere safe: set `WRANGLER_BACKUP_DIR` and `npm run deploy:tenant` copies it there after each deploy.
 
@@ -356,7 +365,7 @@ Each key is a row, so `INSERT OR REPLACE` also works for a key you set earlier, 
 
 To analyze every bill instead, set the keywords to a single `*`. That is a keyword, not the `["*"]` in `state_coverage`, which means every state. It works only as the sole keyword: in a longer list it is ignored, since it would make every other keyword redundant. Saving it asks for confirmation and shows how many bills it would queue, and every one of them costs AI usage, so treat it as a cost decision.
 
-While you're here, set **What you call your group** under **Labels** (team, association, coalition, or a word of your own) — it drives the labels on the positions section. When you later change your AI instructions, **Save AI instructions** asks whether to apply them to bills that are already analyzed: prioritized bills only, all analyzed bills, or only future bill texts.
+While you're here, set **What you call your group** under **Labels** (team, association, coalition, or a word of your own) — it drives the labels on the positions section. When you later change your AI instructions, **Save AI instructions** asks whether to apply them to bills that are already analyzed: prioritized bills only, all analyzed bills, or only future bill texts. Under the bill summary instructions, **Claim links** is on by default and saves as soon as you toggle it. Turning it on offers to re-run AI on prioritized or all analyzed bills, since existing summaries get links only when re-analyzed. Turned off, new analyses don't ask the model for claim links and links already stored show as plain text, and turned back on, stored links show again. (A bill re-analyzed while it's off loses its stored links.) See [how much it costs](/overview/how-much-does-it-cost#ai-bill-summaries) for what the links add per analysis.
 
 ## Step 12: Seed the active session(s)
 

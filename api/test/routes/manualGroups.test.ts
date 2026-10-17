@@ -5,6 +5,7 @@ import { asc, eq } from 'drizzle-orm'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { billGroupOverrides, bills, comments, officialPositions, teamEvents } from '../../src/db/schema'
+import { rowidOf } from '../../src/db/rowid'
 import { previewSplit, syncIdenticalCompanions } from '../../src/lib/companionGroups'
 import { centralFetch } from '../../src/lib/centralFetch'
 
@@ -18,10 +19,10 @@ import { centralFetch } from '../../src/lib/centralFetch'
 vi.mock('../../src/lib/centralFetch', () => ({ centralFetch: vi.fn() }))
 
 type Detail = {
-  groupBills: Array<{ billId: string; billNumber: string }>
+  groupBills: Array<{ billId: string; billNumber: string; state: string; sessionSlug: string }>
   comments: Array<{ id: string }>
   position: { position: string } | null
-  groupingEvents: Array<{ type: string; actorName: string | null; with: Array<{ billNumber: string }>; undoneSplits?: Array<Array<{ billNumber: string }>> }>
+  groupingEvents: Array<{ type: string; actorName: string | null; with: Array<{ billNumber: string }>; undoneSplits?: Array<Array<{ billNumber: string }>>; commentBills?: Array<{ billId: string; billNumber: string }> }>
 }
 
 describe('grouping and splitting bills by hand', () => {
@@ -112,6 +113,17 @@ describe('grouping and splitting bills by hand', () => {
       expect(res.status).toBe(200)
       expect(await keys('c1714', 'd2000')).toEqual(['c1714', 'c1714'])
       expect((await detail('d2000')).groupBills.map(b => b.billNumber)).toEqual(['H2000', 'S1714'])
+    })
+
+    it('lists a hand-made group on both pages with each bill\'s state and session slug, though no provider relates the bills', async () => {
+      await db().update(bills).set({ sessionSlug: '2026' }).where(eq(bills.id, 'c1714'))
+      await db().update(bills).set({ sessionSlug: '2025-2026' }).where(eq(bills.id, 'd2000'))
+      expect((await groupWith('ada', 'c1714', 'd2000')).status).toBe(200)
+      expect((await detail('c1714')).groupBills).toEqual([
+        { billId: 'c1714', billNumber: 'S1714', state: 'RI', sessionSlug: '2026' },
+        { billId: 'd2000', billNumber: 'H2000', state: 'RI', sessionSlug: '2025-2026' },
+      ])
+      expect((await detail('d2000')).groupBills.map(b => [b.billNumber, b.state, b.sessionSlug])).toEqual([['H2000', 'RI', '2025-2026'], ['S1714', 'RI', '2026']])
     })
 
     it("joins the bill's group with the other bill's group", async () => {
@@ -553,6 +565,56 @@ describe('grouping and splitting bills by hand', () => {
       await sync('legiscan:3000', [2000])
       await sync('legiscan:4000', [3000, 1713])
       expect(await keys('a190', 'b1713', 'c1714', 'd2000', 'e3000', 'f4000')).toEqual(['a190', null, 'a190', 'a190', null, null])
+    })
+  })
+
+  // The bills a hand-made grouping or split line is about because a comment was posted on them before it.
+  // The line itself always appears when an admin made it (the web decides that), but whether it has a
+  // comments sentence follows `commentBills`.
+  describe('the bills whose earlier comments a hand-made line explains', () => {
+    const named = async (billId: string) => (await detail(billId)).groupingEvents.map(e => [e.type, e.actorName, e.commentBills ? e.commentBills.map(b => b.billNumber) : 'absent'])
+
+    it('is empty for a grouping by hand when neither bill has comments', async () => {
+      expect((await groupWith('ada', 'a190', 'b1713')).status).toBe(200)
+      expect(await named('a190')).toEqual([['grouped', 'ada', []]])
+    })
+
+    it('names the other bill when it had a comment before the admin grouped them', async () => {
+      await db().insert(comments).values({ id: 'c1', billId: 'b1713', userId: user.ann, content: '<p>hi</p>', createdAt: '2020-01-01 00:00:00' })
+      expect((await groupWith('ada', 'a190', 'b1713')).status).toBe(200)
+      expect(await named('a190')).toEqual([['grouped', 'ada', ['S1713']]])
+      expect((await detail('a190')).groupingEvents[0].commentBills).toEqual([{ billId: 'b1713', billNumber: 'S1713' }])
+      expect(await named('b1713')).toEqual([['grouped', 'ada', []]])
+    })
+
+    it('names the bill that left on a split by hand, though its comments are no longer served', async () => {
+      await db().insert(comments).values({ id: 'c1', billId: 'b1713', userId: user.ann, content: '<p>hi</p>', createdAt: '2020-01-01 00:00:00' })
+      expect((await groupWith('ada', 'a190', 'b1713')).status).toBe(200)
+      expect((await splitOff('ada', 'b1713')).status).toBe(200)
+      expect((await detail('a190')).comments).toEqual([])
+      expect(await named('a190')).toEqual([['grouped', 'ada', ['S1713']], ['split', 'ada', ['S1713']]])
+      // On S1713's own page the split event is about A190, which had no comments.
+      expect(await named('b1713')).toEqual([['grouped', 'ada', []], ['split', 'ada', []]])
+    })
+
+    it('is empty for a split by hand when the bill that left had no earlier comments', async () => {
+      expect((await groupWith('ada', 'a190', 'b1713')).status).toBe(200)
+      expect((await splitOff('ada', 'b1713')).status).toBe(200)
+      expect(await named('a190')).toEqual([['grouped', 'ada', []], ['split', 'ada', []]])
+    })
+
+    it('reads a split followed by a regroup, naming the bill again on the regrouping when it commented in between', async () => {
+      expect((await groupWith('ada', 'a190', 'b1713')).status).toBe(200)
+      expect((await splitOff('ada', 'b1713')).status).toBe(200)
+      expect((await groupWith('ada', 'a190', 'b1713')).status).toBe(200)
+      // Dated so the comment falls between the split and the regrouping.
+      const rows = await db().select({ id: teamEvents.id }).from(teamEvents).where(eq(teamEvents.billId, 'a190')).orderBy(rowidOf(teamEvents)).all()
+      expect(rows).toHaveLength(3)
+      for (const [i, at] of ['2026-10-01 12:00:00', '2026-10-02 12:00:00', '2026-10-04 12:00:00'].entries()) {
+        await db().update(teamEvents).set({ createdAt: at }).where(eq(teamEvents.id, rows[i].id))
+      }
+      await db().insert(comments).values({ id: 'c1', billId: 'b1713', userId: user.ann, content: '<p>hi</p>', createdAt: '2026-10-03 12:00:00' })
+      expect(await named('a190')).toEqual([['grouped', 'ada', []], ['split', 'ada', []], ['grouped', 'ada', ['S1713']]])
     })
   })
 

@@ -4,7 +4,7 @@ interface IosToggleProps {
   checked: boolean
   /** Permanently disabled (demo lock, etc.). Shows not-allowed cursor. */
   disabled: boolean
-  /** Transient saving state. Blocks interaction without changing cursor. */
+  /** Transient saving state. Blocks changes without changing cursor, and keeps keyboard focus (aria-disabled, not disabled). */
   busy: boolean
   onChange: (next: boolean) => void
   ariaLabel: string
@@ -30,7 +30,8 @@ export function IosToggle({ checked, disabled, busy, onChange, ariaLabel }: IosT
         role="switch"
         aria-label={ariaLabel}
         checked={checked}
-        disabled={interactionBlocked}
+        disabled={disabled}
+        aria-disabled={busy || disabled}
         onChange={(e) => { if (!interactionBlocked) onChange(e.target.checked) }}
         style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
       />

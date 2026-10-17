@@ -46,7 +46,7 @@ const BILL = {
   sponsor: null, sponsorParty: null, sponsorUrl: null, coSponsors: [],
   lastAction: 'Referred to Judiciary', lastActionDate: '2026-03-02',
   history: [{ date: '2026-03-02', action: 'Referred to Judiciary', chamber: 'S' }],
-  voteSummary: [], subjects: [], relatedBillIds: [], companionBillIds: [], texts: [], calendar: [], supplements: [],
+  voteSummary: [], subjects: [], relatedBillIds: [], texts: [], calendar: [], supplements: [],
   amendments: [], customFieldValues: {}, matchType: 'keyword' as const, isDraft: false, draftText: null,
   createdAt: '2025-01-01 00:00:00', updatedAt: '2025-01-01 00:00:00', centralSyncedAt: null, aiProcessedAt: null,
   aiSkipReason: null, lastAiTextDocId: null, textStatus: 'not_checked' as const, myVote: null, myNote: null,

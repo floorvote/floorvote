@@ -237,3 +237,34 @@ describe('the seeded calendar', () => {
     expect(calendar(db)).toEqual([{ event_hash: 'ev1', cancelled_at: null }, { event_hash: 'ev2', cancelled_at: '2026-02-15 12:00:00' }])
   })
 })
+
+describe('the seeded detail marker', () => {
+  // The bulk seed writes a bill's full detail, so it records the change it is
+  // at as the detail's (central migration 0041), as an ingest does. Otherwise
+  // central reads every seeded stub as never fetched, and its first view spends
+  // a getBill on detail central already holds (central/src/lib/stubRefresh.ts).
+  const migrated = () => {
+    const db = new DatabaseSync(':memory:')
+    const dir = join(__dirname, '../../central/migrations-legiscan')
+    for (const file of readdirSync(dir).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(join(dir, file), 'utf8'))
+    return db
+  }
+  const seed = (db: DatabaseSync) => { for (const s of buildBillStatements(completeBill, 'WI', 2154)) db.exec(s) }
+  const marker = (db: DatabaseSync) => db.prepare(
+    'SELECT change_hash, detail_hash, detail_requested_hash, detail_requested_at FROM bills WHERE bill_id = 12345').get()
+
+  it("marks the seeded detail as fetched at the dump's change", () => {
+    const db = migrated()
+    seed(db)
+    expect(marker(db)).toEqual({ change_hash: 'abc123', detail_hash: 'abc123', detail_requested_hash: null, detail_requested_at: null })
+  })
+
+  it('leaves a re-seeded bill current at the dump, with no refresh claim left over', () => {
+    const db = migrated()
+    seed(db)
+    // Since the seed: the sync moved the bill on, and a view claimed a refresh of that change.
+    db.exec(`UPDATE bills SET change_hash = 'def456', detail_requested_hash = 'def456', detail_requested_at = '2026-03-01 12:00:00' WHERE bill_id = 12345`)
+    seed(db)
+    expect(marker(db)).toEqual({ change_hash: 'abc123', detail_hash: 'abc123', detail_requested_hash: null, detail_requested_at: null })
+  })
+})
