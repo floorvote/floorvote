@@ -201,7 +201,7 @@ Deploy central, claim DC, then deploy every instance, all before the next top of
 
   The instance keeps its row for the LegiScan copy, which stops updating. Untrack that bill on the instance too: otherwise it tracks a LegiScan row that no longer updates, beside the LIMS copy.
 
-- **Every Council event shows** after an hour. The carry-over is waiting for central's committee list. The instance logs "[event-rules] central options unavailable" when `GET /api/tenants/<tenant>/body-event-options` fails. An admin can save the carried-over rules by hand from the settings page.
+- **Every Council event shows** after an hour. The carry-over is waiting for central's committee list. The instance logs "[event-rules] central options unavailable" when `GET /api/tenants/<tenant>/body-event-options` fails. An admin can save the carried-over rules by hand from the Calendar page's control (any choice made there saves them).
 - **Hearing briefs find no events.** Code selecting `source = 'council'` wasn't ported (see "Build Your Upgrade Branch From Upstream").
 - **`POST /admin/lims-import` answers 409** until LIMS owns DC.
 - **`POST /tenants/seed-session/:tenantId` answers 404** for a session id central doesn't have, **and 409** for a session whose provider no longer owns its state, such as a LegiScan DC session once LIMS owns DC.
