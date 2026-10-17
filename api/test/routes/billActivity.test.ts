@@ -3,7 +3,7 @@ import { env, SELF } from 'cloudflare:test'
 import { count, eq } from 'drizzle-orm'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { comments, customFieldDefinitions, notifications, teamEvents } from '../../src/db/schema'
+import { comments, customFieldDefinitions, notifications, teamEvents, users } from '../../src/db/schema'
 import { syncIdenticalCompanions } from '../../src/lib/companionGroups'
 import { centralFetch } from '../../src/lib/centralFetch'
 
@@ -158,6 +158,53 @@ describe('a bill page\'s team activity', () => {
       await db().insert(teamEvents).values({ id: 'bad', billId: 'h9', type: 'field_changed', actorUserId: user.ann, metadata: 'not json', createdAt: '2026-10-10 12:00:00' })
       await fieldEvent('good', 'h9', user.ann, '2026-10-11 12:00:00', priorityChange(null, 'low'))
       expect((await detail('h9')).fieldEvents.map(e => e.id)).toEqual(['good'])
+    })
+  })
+
+  // A member's activity is hidden from member-facing surfaces while they are deactivated (lib/accountDeletion.ts),
+  // as their comments are.
+  describe('by a deactivated member', () => {
+    const deactivate = (name: string) => db().update(users).set({ deactivatedAt: '2026-10-13 12:00:00' }).where(eq(users.id, user[name])).run()
+    const reactivate = (name: string) => db().update(users).set({ deactivatedAt: null }).where(eq(users.id, user[name])).run()
+
+    it('hides their field changes, as it hides their comments, and shows an active member\'s', async () => {
+      await db().insert(comments).values({ id: 'c-ben', billId: 'h9', userId: user.ben, content: '<p>x</p>', createdAt: '2026-10-10 11:00:00' })
+      await fieldEvent('ben-change', 'h9', user.ben, '2026-10-10 12:00:00', priorityChange(null, 'low'))
+      await fieldEvent('ann-change', 'h9', user.ann, '2026-10-11 12:00:00', priorityChange('low', 'high'))
+      await deactivate('ben')
+      const d = await detail('h9', 'ann')
+      expect(d.comments.map(c => c.id)).toEqual([])
+      expect(d.fieldEvents.map(e => e.id)).toEqual(['ann-change'])
+    })
+
+    it('shows them again once the member is reactivated', async () => {
+      await fieldEvent('ben-change', 'h9', user.ben, '2026-10-10 12:00:00', priorityChange(null, 'low'))
+      await deactivate('ben')
+      expect((await detail('h9')).fieldEvents).toEqual([])
+      await reactivate('ben')
+      expect((await detail('h9')).fieldEvents.map(e => e.id)).toEqual(['ben-change'])
+    })
+
+    it('leaves them out of a companion group\'s changes too, and keeps FloorVote\'s', async () => {
+      await group()
+      await fieldEvent('ben-on-companion', 'b1713', user.ben, '2026-10-10 12:00:00', priorityChange(null, 'low'))
+      await fieldEvent('robot', 'b1713', null, '2026-10-11 12:00:00', { field: 'tags', label: 'tags', old: [], new: ['Energy'] })
+      await deactivate('ben')
+      expect((await detail('a190')).fieldEvents.map(e => e.id)).toEqual(['robot'])
+    })
+
+    it('does not count them in what is served, so a run of three with one of them hidden is two', async () => {
+      await fieldEvent('a1', 'h9', user.ann, '2026-10-10 12:00:00', priorityChange(null, 'low'))
+      await fieldEvent('b1', 'h9', user.ben, '2026-10-10 13:00:00', priorityChange('low', 'medium'))
+      await fieldEvent('a2', 'h9', user.ann, '2026-10-10 14:00:00', priorityChange('medium', 'high'))
+      await deactivate('ben')
+      expect((await detail('h9')).fieldEvents.map(e => e.id)).toEqual(['a1', 'a2'])
+    })
+
+    it('leaves an active member\'s changes as they were', async () => {
+      await fieldEvent('ann-change', 'h9', user.ann, '2026-10-10 12:00:00', priorityChange(null, 'low'))
+      await deactivate('ben')
+      expect((await detail('h9')).fieldEvents.map(e => [e.id, e.actorName])).toEqual([['ann-change', 'ann']])
     })
   })
 
