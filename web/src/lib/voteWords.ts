@@ -51,14 +51,14 @@ export function normalizeVoteWord(word: string | null | undefined): VoteGroup {
   return { key: `other:${label.toLowerCase()}`, label, tone: 'neutral', rank: OTHER_RANK }
 }
 
-/** Group voters by normalized vote word, in display order. Names keep the order they arrived in. */
-export function groupVotes(votes: readonly { name: string; vote: string }[]): { group: VoteGroup; names: string[] }[] {
-  const byKey = new Map<string, { group: VoteGroup; names: string[] }>()
+/** Group voters by normalized vote word, in display order. Names (and the voters behind them) keep the order they arrived in. */
+export function groupVotes<T extends { name: string; vote: string }>(votes: readonly T[]): { group: VoteGroup; names: string[]; voters: T[] }[] {
+  const byKey = new Map<string, { group: VoteGroup; names: string[]; voters: T[] }>()
   for (const v of votes) {
     const group = normalizeVoteWord(v.vote)
     const entry = byKey.get(group.key)
-    if (entry) entry.names.push(v.name)
-    else byKey.set(group.key, { group, names: [v.name] })
+    if (entry) { entry.names.push(v.name); entry.voters.push(v) }
+    else byKey.set(group.key, { group, names: [v.name], voters: [v] })
   }
   return [...byKey.values()].sort((a, b) => a.group.rank - b.group.rank || a.group.label.localeCompare(b.group.label))
 }

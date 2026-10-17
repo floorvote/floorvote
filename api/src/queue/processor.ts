@@ -4,7 +4,8 @@ import { filterTagsToTaxonomy } from '../lib/taxonomy'
 import { centralFetch } from '../lib/centralFetch'
 import { recordDeliveryProbe } from '../lib/deliveryProbe'
 import { loadAnalysisInputs, loadBillTextForAi } from '../lib/analysisInputs'
-import { claimLinksEnabled } from '../lib/claimSources'
+import { claimLinksEnabled, type ResolvedClaimSource } from '../lib/claimSources'
+import { resolveClaimSources } from '../lib/claimResolution'
 import { hearingUid } from '../lib/hearingUid'
 import { matchesKeywords, billMatchText } from '../lib/keywords'
 import { bills, associationConfig, feedEvents, billTexts, calendarEvents } from '../db/schema'
@@ -601,6 +602,8 @@ async function applyCentralBill(
   let aiResult: ProcessBillResult | null = null
   // The document the model read, which claim sources are pinned to (#568).
   let claimSourcesPin: { docId: string; textHash: string | null } | null = null
+  // The model's claim sources, each resolved against that document and the summary (#569).
+  let resolvedClaimSources: ResolvedClaimSource[] | null = null
   let aiSkipReason: AiSkipReason | null = null
   // Transient failure text, recorded so a bill that failed is distinguishable
   // from one never attempted. Truncated — this is a diagnostic breadcrumb, not a log.
@@ -671,6 +674,26 @@ async function applyCentralBill(
         console.warn(`[processor] dropped ${dropped.length} off-taxonomy tag(s) for ${centralBill.number}: ${JSON.stringify(dropped)}`)
       }
       aiResult.tags = filterTagsToTaxonomy(aiResult.tags, allowed)
+
+      // Resolve the claim sources here, while the document the model read is in
+      // hand: a PDF has no text to match, so its quotes stay unverified.
+      if (Array.isArray(aiResult.claimSources) && claimSourcesPin !== null) {
+        try {
+          const resolved = resolveClaimSources(aiResult.claimSources, aiResult.summary, billPdfBase64 === undefined ? billText : null)
+          resolvedClaimSources = resolved.items
+          if (resolved.dropped > 0) {
+            console.warn(`[processor] dropped ${resolved.dropped} claim source(s) for ${centralBill.number} whose claim is not in the summary`)
+          }
+          if (resolved.capped > 0 || resolved.unsearched > 0) {
+            console.warn(`[processor] ${resolved.capped} claim source(s) past the limit and ${resolved.unsearched} fuzzy search(es) past the work budget left ungrounded for ${centralBill.number}`)
+          }
+        } catch (err) {
+          // Extra to the analysis, so it never fails it: the summary, tags, and
+          // score are the contract.
+          console.error(`[processor] could not resolve claim sources for ${centralBill.number}:`, err)
+          resolvedClaimSources = []
+        }
+      }
     }
   }
 
@@ -721,8 +744,8 @@ async function applyCentralBill(
       // Every analysis writes all three, so a re-analysis replaces the list,
       // and one that did not ask clears it: a list never outlives its summary.
       // Not yet surfaced anywhere.
-      ...(Array.isArray(aiResult.claimSources) && claimSourcesPin !== null ? {
-        claimSources: JSON.stringify(aiResult.claimSources),
+      ...(resolvedClaimSources !== null && claimSourcesPin !== null ? {
+        claimSources: JSON.stringify(resolvedClaimSources),
         claimSourcesDocId: claimSourcesPin.docId,
         claimSourcesTextHash: claimSourcesPin.textHash,
       } : { claimSources: null, claimSourcesDocId: null, claimSourcesTextHash: null }),

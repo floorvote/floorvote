@@ -311,12 +311,12 @@ describe('the week-ahead email', () => {
     return call?.[1][0].html ?? ''
   }
 
-  it('lists only body events with a prioritized bill while there are no rules', async () => {
+  it('lists every body event the calendar shows while there are no rules (All events)', async () => {
     await sync()
     await runWeekAhead(env as any, getDb(env.DB))
     expect(emailed()).toContain('Committee of the Whole hearing')
-    expect(emailed()).not.toContain('Housing roundtable')
-    expect(emailed()).not.toContain('Legislative Meeting')
+    expect(emailed()).toContain('Housing roundtable')
+    expect(emailed()).toContain('Legislative Meeting')
   })
 
   it('lists the body events the rules select, and still a prioritized bill\'s', async () => {
@@ -326,6 +326,72 @@ describe('the week-ahead email', () => {
     expect(emailed()).toContain('Housing roundtable')
     expect(emailed()).toContain('Committee of the Whole hearing')
     expect(emailed()).not.toContain('Legislative Meeting')
+  })
+})
+
+describe('the week-ahead email and the calendar, under the Calendar page\'s one control (#420)', () => {
+  const TITLES: Record<string, string> = { [ROUNDTABLE]: 'Housing roundtable', [STADIUM]: 'Committee of the Whole hearing', [MEETING]: 'Legislative Meeting' }
+
+  beforeEach(async () => {
+    const weekday = String(new Date().getUTCDay())
+    await getDb(env.DB).insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'week-ahead': { enabled: true, settings: { weeklyDay: weekday } } }) })
+  })
+
+  // The control saves committees and nothing else. A rule saved earlier may also carry kinds, event types, topics, or tracked bills.
+  it.each([
+    ['no rules at all (All events)', null],
+    ['one committee', { committees: [HOUSING], kinds: [], topics: [], trackedBills: false }],
+    ['two committees', { committees: [HOUSING, COW], kinds: [], topics: [], trackedBills: false }],
+    ['no committees chosen', { committees: [], kinds: [], topics: [], trackedBills: false }],
+    ['a rule saved earlier with a kind', { committees: [HOUSING], kinds: ['Meeting'], topics: [], trackedBills: false }],
+    ['a rule saved earlier with an event type', { committees: [], kinds: ['roundtable'], topics: [], trackedBills: false }],
+    ['a rule saved earlier with a topic', { committees: [], kinds: [], topics: [{ name: 'Housing agencies', keywords: ['housing authority'] }], trackedBills: false }],
+    ['a rule saved earlier with tracked bills', { committees: [], kinds: [], topics: [], trackedBills: true }],
+    ['a rule saved earlier with a committee narrowed to a kind', { committees: [{ ...HOUSING, kind: 'Roundtable' }, { ...COW, kind: 'meeting' }], kinds: [], topics: [], trackedBills: false }],
+  ])('list the same body events in the email as the calendar shows: %s', async (_name, rules) => {
+    await sync()
+    if (rules) await saveRules(rules)
+    const shown = (await calendarUids()).filter(uid => uid in TITLES)
+    await runWeekAhead(env as any, getDb(env.DB))
+    const call = sendBatch.mock.calls.at(-1) as unknown as [unknown, { html: string }[]] | undefined
+    const html = call?.[1][0].html ?? ''
+    for (const [uid, title] of Object.entries(TITLES)) expect(html.includes(title), `${title}: calendar ${shown.includes(uid) ? 'shows' : 'hides'} it`).toBe(shown.includes(uid))
+  })
+
+  it('follow the same rule in the calendar feed', async () => {
+    await sync()
+    await saveRules({ committees: [HOUSING], kinds: [], topics: [], trackedBills: false })
+    const shown = await calendarUids()
+    const ics = await feed()
+    for (const uid of Object.keys(TITLES)) expect(ics.includes(`UID:${uid}`)).toBe(shown.includes(uid))
+  })
+
+  it('an instance with no rules shows every body event on the calendar, in the feed, and in the email', async () => {
+    await sync()
+    expect((await calendarUids()).filter(uid => uid in TITLES)).toEqual([ROUNDTABLE, MEETING, STADIUM].sort())
+    const ics = await feed()
+    for (const uid of Object.keys(TITLES)) expect(ics).toContain(`UID:${uid}`)
+    await runWeekAhead(env as any, getDb(env.DB))
+    const call = sendBatch.mock.calls.at(-1) as unknown as [unknown, { html: string }[]] | undefined
+    const html = call?.[1][0].html ?? ''
+    for (const title of Object.values(TITLES)) expect(html).toContain(title)
+  })
+
+  it('clearing the rules puts every body event back in the email too', async () => {
+    await sync()
+    await saveRules({ committees: [HOUSING], kinds: [], topics: [], trackedBills: false })
+    await saveRules(null)
+    await runWeekAhead(env as any, getDb(env.DB))
+    const call = sendBatch.mock.calls.at(-1) as unknown as [unknown, { html: string }[]] | undefined
+    const html = call?.[1][0].html ?? ''
+    for (const title of Object.values(TITLES)) expect(html).toContain(title)
+  })
+
+  it('refuses a member the rules: only an admin changes which events show', async () => {
+    await sync()
+    expect((await saveRules({ committees: [HOUSING], kinds: [], topics: [], trackedBills: false }, member)).status).toBe(403)
+    expect((await api('/admin/event-rules', {}, member)).status).toBe(403)
+    expect(await calendarUids()).toEqual([ROUNDTABLE, MEETING, STADIUM].sort())
   })
 })
 

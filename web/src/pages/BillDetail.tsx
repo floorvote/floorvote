@@ -53,6 +53,7 @@ import { markNotificationsRead } from '../lib/demoReadState'
 import { relativeTime, absoluteTime } from '../lib/time'
 import { COMMENT_STYLE } from '../../../shared/commentStyle'
 import { billDisplayTitle } from '../../../shared/billTitle'
+import { httpUrl } from '../../../shared/httpUrl'
 import { getScrollContainer } from '../lib/scrollUtils'
 import { billUrl } from '../lib/sessionSlug'
 import { OtherSessionNotice, billChoicesFrom, type BillChoice } from '../components/BillChoices'
@@ -86,9 +87,11 @@ function PartyBadge({ party }: { party: string }) {
 }
 
 function SponsorLink({ name, url, party, bold }: { name: string; url: string | null; party: string | null; bold?: boolean }) {
-  if (url) {
+  // Only an http(s) URL becomes a link, whatever central or the instance API sent.
+  const href = httpUrl(url)
+  if (href) {
     return (
-      <a href={url} target="_blank" rel="noreferrer" className="blue-link"
+      <a href={href} target="_blank" rel="noreferrer" className="blue-link"
         style={{ whiteSpace: 'nowrap', fontWeight: bold ? 600 : undefined }}>
         {name}{party && <PartyBadge party={party} />}<ExternalLinkIcon />
       </a>
@@ -403,7 +406,7 @@ type Comment = {
 }
 
 type CoSponsor = { name: string; party: string | null; role?: string; district?: string; url: string | null; primary?: boolean }
-type VoteSummaryEntry = { date: string; chamber: string; desc: string; yea: number; nay: number; nv: number; absent: number; passed: number; legislatorVotes?: { personId?: string; name: string; vote: string }[] }
+type VoteSummaryEntry = { date: string; chamber: string; desc: string; yea: number; nay: number; nv: number; absent: number; passed: number; legislatorVotes?: { personId?: string; name: string; vote: string; url?: string | null }[] }
 // `kind` is what the bill's provider makes of the legislature's label (`type`). A central that predates kinds sends none.
 type RelatedBill = { billId: number; billNumber: string; type: string; kind?: RelationshipKind; route: { id: string; billNumber: string; sessionSlug: string; state: string } | null }
 
