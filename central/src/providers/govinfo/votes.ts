@@ -1,7 +1,7 @@
 import type { CentralMeasure, MeasurePerson } from '../sdk'
 import { bioguideIdsOfSenators, fetchRollCall } from './client'
 import type { RecordedVote, RollCall, Voter, VoteWord } from './rollcalls'
-import { US_STATE_ID } from './map'
+import { mintedId, US_STATE_ID } from './map'
 
 /**
  * A bill's roll calls, as the ingest writes them (#618): each linked roll call
@@ -80,6 +80,9 @@ const DELEGATE_STATES = new Set(['DC', 'PR', 'GU', 'VI', 'AS', 'MP'])
 
 export interface VoteIds { person: Map<string, number>; rollcall: Map<string, number> }
 
+/** A bill's votes in the shapes the ingest writes, and the people who voted. */
+export interface ResolvedVotes { votes: CentralMeasure['votes']; people: MeasurePerson[] }
+
 /**
  * The bill's votes in the shape the ingest writes, and the people who voted,
  * for core to add where it has no row for them: the vote of a member nobody has
@@ -88,12 +91,8 @@ export interface VoteIds { person: Map<string, number>; rollcall: Map<string, nu
  * first and last), which a sponsor's record from the bill's own file only adds
  * to: core leaves an existing person alone.
  */
-export function resolveVotes(billKey: string, rolls: readonly VotedRollCall[], ids: VoteIds): { votes: CentralMeasure['votes']; people: MeasurePerson[] } {
-  const id = (kind: keyof VoteIds, key: string): number => {
-    const found = ids[kind].get(key)
-    if (found === undefined) throw new Error(`central minted no ${kind} id for ${key}`)
-    return found
-  }
+export function resolveVotes(billKey: string, rolls: readonly VotedRollCall[], ids: VoteIds): ResolvedVotes {
+  const id = (kind: keyof VoteIds, key: string) => mintedId(ids, kind, key)
   const people = new Map<string, MeasurePerson>()
   const votes: CentralMeasure['votes'] = rolls.map(({ rollCall: r, voters }) => {
     for (const v of voters) {

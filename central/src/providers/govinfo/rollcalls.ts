@@ -134,10 +134,15 @@ function voteWord(file: string, who: string, raw: string): VoteWord {
   return word
 }
 
-/** Results that say a question was turned down. Checked first, since "Not Sustained" holds "Sustained". */
-const TURNED_DOWN = /\b(rejected|defeated|failed|not sustained|not well taken|not agreed to)\b/i
+/**
+ * Results that say a question was turned down. Checked first, since several hold a word that
+ * says the opposite: "Not Sustained" and "Veto Sustained" hold "Sustained", "Not Germane" holds
+ * "Germane", and "Not Invoked" holds "Invoked". A Senate vote to override a veto is "Veto
+ * Sustained" when the override fails (the veto stands) and "Veto Overridden" when it succeeds.
+ */
+const TURNED_DOWN = /\b(rejected|defeated|failed|not sustained|veto sustained|not well taken|not germane|not invoked|not agreed to)\b/i
 /** Results that say it was carried. */
-const CARRIED = /\b(agreed to|passed|sustained|well taken|confirmed|adopted|concurred)\b/i
+const CARRIED = /\b(agreed to|passed|sustained|overridden|well taken|germane|invoked|confirmed|adopted|concurred)\b/i
 
 /**
  * Whether a chamber carried the question, from the result it wrote ("Passed",

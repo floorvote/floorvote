@@ -127,7 +127,12 @@ const ROLL_CALL_RATE_PER_SEC = 2
  * a Worker that lives for days, and a failed answer is never kept.
  */
 const KEEP_MS = 10 * 60 * 1000
-/** A roll call's votes are a few dozen KB, so this holds a few MB at most. */
+/**
+ * A roll call is kept as a plain copy of its votes (below), a few dozen KB for a
+ * House roll call of 435 members, so this holds a few MB at most. Without the copy
+ * each string would be a slice of the file's text, and a kept roll call would hold
+ * the whole file (the same reason map.ts copies a bill's record).
+ */
 const KEEP_ROLL_CALLS = 128
 
 interface Kept<T> { at: number; value: T }
@@ -147,7 +152,8 @@ const fresh = <T>(k: Kept<T> | null | undefined): k is Kept<T> => !!k && Date.no
 /** The body of a 200 answer as UTF-8 text. Any other answer, and a body that isn't text, throws an error that names the file. */
 async function fetchText(url: string, accept: string, bucketKey: string, what: string, onRequest?: () => void): Promise<string> {
   try {
-    const res = await rateLimitedFetch(url, { headers: { Accept: accept } },
+    // A redirect isn't followed: an answer of 30x is no 200, so one off the host that was asked fails closed.
+    const res = await rateLimitedFetch(url, { headers: { Accept: accept }, redirect: 'manual' },
       { ratePerSec: ROLL_CALL_RATE_PER_SEC, bucketKey, onRequest })
     if (res.status !== 200) {
       await res.body?.cancel().catch(() => {})
@@ -176,7 +182,7 @@ export async function fetchRollCall(vote: RecordedVote, onRequest?: () => void):
   const house = vote.chamber === 'H'
   const name = `${house ? 'House' : 'Senate'} roll call ${vote.url}`
   const xml = await fetchText(vote.url, 'application/xml', house ? 'house-clerk' : 'senate-gov', `GovInfo ${name}`, onRequest)
-  const rollCall = (house ? parseHouseRollCall : parseSenateRollCall)(name, xml, vote)
+  const rollCall = JSON.parse(JSON.stringify((house ? parseHouseRollCall : parseSenateRollCall)(name, xml, vote))) as RollCall
   rollCalls.delete(vote.url)
   rollCalls.set(vote.url, { at: Date.now(), value: rollCall })
   while (rollCalls.size > KEEP_ROLL_CALLS) rollCalls.delete(rollCalls.keys().next().value!)

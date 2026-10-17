@@ -1,7 +1,7 @@
 import { sha256Hex, type CentralMeasure, type SyncEntry } from '../sdk'
 import { child, childText, deriveStatus } from './status'
 import type { ResolvedDetail } from './detail'
-import type { resolveVotes } from './votes'
+import type { ResolvedVotes } from './votes'
 import { parseXml, XmlError, type XmlNode } from './xml'
 
 /**
@@ -178,6 +178,13 @@ function hashWithout(xml: string, spans: readonly [number, number][]): Promise<s
   return sha256Hex(out + xml.slice(at))
 }
 
+/** The central id of a key of this kind, from the ids central minted for the ingest. A key with none is a bug, so the ingest throws. */
+export function mintedId<K extends string>(ids: Record<K, ReadonlyMap<string, number>>, kind: K, key: string): number {
+  const found = ids[kind].get(key)
+  if (found === undefined) throw new Error(`central minted no ${kind} id for ${key}`)
+  return found
+}
+
 /** The bill's key in provider_ids and provider_records: "119/HR3132". */
 export function govinfoNativeKey(congress: number, type: string, number: string): string {
   return `${congress}/${type}${number}`
@@ -243,7 +250,7 @@ export function buildGovInfoMeasure(
   billId: number,
   hash: string,
   session: CentralMeasure['session'],
-  detail: ResolvedDetail & ReturnType<typeof resolveVotes>,
+  detail: ResolvedDetail & ResolvedVotes,
 ): CentralMeasure {
   const info = BILL_TYPE[r.type]
   const bodyId = (c: 'H' | 'S') => (c === 'H' ? 1 : 2)

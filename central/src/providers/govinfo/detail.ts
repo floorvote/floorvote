@@ -1,5 +1,5 @@
 import { htmlToText, sha256Hex, type CentralMeasure } from '../sdk'
-import { BILL_TYPE, govinfoNativeKey, invalidBillFile, legiscanNumber, ordinal, type CongressBillType, type GovInfoRecord } from './map'
+import { BILL_TYPE, govinfoNativeKey, invalidBillFile, legiscanNumber, mintedId, ordinal, type CongressBillType, type GovInfoRecord } from './map'
 import { actionItems, child, childText, GOVINFO_STATUS } from './status'
 import { readRecordedVotes, type RecordedVote } from './rollcalls'
 import { parseXml, XmlError, type XmlNode } from './xml'
@@ -442,11 +442,7 @@ export type ResolvedDetail = Pick<CentralMeasure,
 
 /** A bill's detail in the shapes the ingest writes, with every key replaced by its central id. */
 export async function resolveDetail(d: BillDetail, ids: DetailIds): Promise<ResolvedDetail> {
-  const id = (kind: keyof DetailIds, key: string): number => {
-    const found = ids[kind].get(key)
-    if (found === undefined) throw new Error(`central minted no ${kind} id for ${key}`)
-    return found
-  }
+  const id = (kind: keyof DetailIds, key: string) => mintedId(ids, kind, key)
   const committeeOf = new Map(d.committees.map(c => [c.systemCode, c]))
   const committeeRef = (systemCode: string) => {
     const c = committeeOf.get(systemCode)!
