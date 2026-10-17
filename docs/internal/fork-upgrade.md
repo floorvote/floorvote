@@ -137,6 +137,8 @@ When upstream changes a feature you extended, such as a simpler event-rules UI (
 
 Deploy central, claim DC, then deploy every instance, all before the next top of the hour. The first DC sync after the upgrade runs then and sends each instance its notifications, which each instance should take in on upstream's code.
 
+**A fork on a build older than v2026.10.0** (before the ownership table, #303) upgrades in two steps. Deploy v2026.10.0 first, with `LIMS_STATES` set, and let one top-of-the-hour sync write DC's ownership row. Then deploy this release. That closes the late-claim window, and the claim step below finds DC already owned.
+
 1. **Central.** `cd central && npm run deploy:legiscan`. It builds the dashboard, applies the migrations, and deploys, so the code follows the migrations within a minute or so. Start at least 15 minutes after the hour, once the LIMS ingestor queue shows no backlog in the Cloudflare dashboard, so the old code's hourly LIMS pass isn't running.
 
    Between the migrations and the new code, the old LIMS sync and ingest fail (migration 0029 drops `lims_records`) and their messages retry. A message that runs out of retries before the new code deploys is lost. A tracked bill recovers at the re-ingest below, and any other bill at its next change. A bill the old code inserts in that window is labeled LegiScan's and blocks DC's ownership row (see "If Something Goes Wrong"). To rule both out, first deploy your current code with `crons = []` under `[env.legiscan.triggers]`, then upgrade. Deleting the triggers block wouldn't do it: wrangler changes a Worker's schedules only when the config defines `crons`, so without one the hourly cron keeps firing. The upgrade's configuration brings the hourly cron back.
