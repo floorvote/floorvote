@@ -843,6 +843,14 @@ export interface CentralMeasure {
   referrals: { date: string; committee_id: number; chamber: string; chamber_id: number; name: string }[]
   progress: { date: string; event: number }[]
   sponsors: MeasureSponsor[]
+  /**
+   * People the measure names besides its sponsors, such as the members who
+   * voted on it (`votes`' `member_votes`), so a vote shows under a name and
+   * not a number. Core adds each one it has no `people` row for and leaves an
+   * existing row alone, so a sponsor's fuller record from another measure is
+   * never cut down to what a roll call says.
+   */
+  people?: MeasurePerson[]
   history: MeasureHistoryEntry[]
   sasts: MeasureSast[]
   subjects: MeasureSubject[]

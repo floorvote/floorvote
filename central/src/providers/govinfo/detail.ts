@@ -1,6 +1,7 @@
 import { htmlToText, sha256Hex, type CentralMeasure } from '../sdk'
 import { BILL_TYPE, govinfoNativeKey, invalidBillFile, legiscanNumber, ordinal, type CongressBillType, type GovInfoRecord } from './map'
 import { actionItems, child, childText, GOVINFO_STATUS } from './status'
+import { readRecordedVotes, type RecordedVote } from './rollcalls'
 import { parseXml, XmlError, type XmlNode } from './xml'
 
 /**
@@ -14,6 +15,10 @@ import { parseXml, XmlError, type XmlNode } from './xml'
  * central's id table is asked for a single id. `resolveDetail` then turns the
  * keys it read (a Bioguide id, a package id, a committee system code) into
  * central ids, in the shapes the ingest writes.
+ *
+ * The roll calls a bill's actions link are named here (`recordedVotes`) and
+ * checked, but each is a file of its own, which the ingest reads next
+ * (rollcalls.ts, votes.ts).
  *
  * Fails closed: a missing or malformed entry throws, so the ingest writes
  * nothing for the bill and is retried. A version GovInfo has published no
@@ -104,6 +109,8 @@ export interface BillDetail {
   subjects: string[]
   related: DetailRelated[]
   extras: Record<string, string>
+  /** The roll calls the bill's actions link, oldest action first, each once. */
+  recordedVotes: RecordedVote[]
 }
 
 /** The text of every child of `node` named `name`, trimmed, blanks left out. */
@@ -147,6 +154,7 @@ export function readBillDetail(name: string, xml: string, record: GovInfoRecord)
     subjects: readSubjects(name, bill),
     related: readRelated(name, bill, record),
     extras: readExtras(bill),
+    recordedVotes: readRecordedVotes(name, bill, record),
   }
 }
 
@@ -398,7 +406,7 @@ function readExtras(bill: XmlNode): Record<string, string> {
   const law = items(child(bill, 'laws')).find(l => childText(l, 'type') === 'Public Law' && childText(l, 'number'))
   if (law) extras.publicLaw = childText(law, 'number')
 
-  const policyArea = childText(child(bill, 'policyArea') ?? { name: '', text: '', children: [] }, 'name')
+  const policyArea = childText(child(bill, 'policyArea') ?? { name: '', attrs: {}, text: '', children: [] }, 'name')
   if (policyArea) extras.policyArea = policyArea
 
   // The newest cost estimate with a link.

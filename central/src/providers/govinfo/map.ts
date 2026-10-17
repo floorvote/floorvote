@@ -1,6 +1,7 @@
 import { sha256Hex, type CentralMeasure, type SyncEntry } from '../sdk'
 import { child, childText, deriveStatus } from './status'
 import type { ResolvedDetail } from './detail'
+import type { resolveVotes } from './votes'
 import { parseXml, XmlError, type XmlNode } from './xml'
 
 /**
@@ -233,14 +234,16 @@ export function toGovInfoEntry(r: GovInfoRecord, billId: number, hash: string): 
 /**
  * One bill's measure: the bill-level fields from its stored record, and the
  * rest (history, sponsors, texts, committees, subjects, related bills, and
- * extras) from the detail read out of its whole file (detail.ts).
+ * extras) from the detail read out of its whole file (detail.ts), and its
+ * roll calls and the people who voted on them from the files its actions
+ * link (votes.ts).
  */
 export function buildGovInfoMeasure(
   r: GovInfoRecord,
   billId: number,
   hash: string,
   session: CentralMeasure['session'],
-  detail: ResolvedDetail,
+  detail: ResolvedDetail & ReturnType<typeof resolveVotes>,
 ): CentralMeasure {
   const info = BILL_TYPE[r.type]
   const bodyId = (c: 'H' | 'S') => (c === 'H' ? 1 : 2)
@@ -265,7 +268,6 @@ export function buildGovInfoMeasure(
     session_id: session.session_id,
     session,
     progress: [],
-    votes: [],
     amendments: [],
     supplements: [],
     ...detail,

@@ -14,7 +14,7 @@ import { carriedPeopleIds, measureWithCarriedPeople } from '../lib/carriedIds'
 import { clearProviderData } from '../lib/cutover'
 import { calendarCoverage } from '../lib/bodyEvents'
 import type { Env, Db, IngestorMessage, BillMessage, MatchProvenance, NotificationMessage, CalendarBlock } from '../types'
-import { personRow } from '../lib/people'
+import { insertMissingPeople, personRow } from '../lib/people'
 import { deleteOtherRollCalls, knownRollCallIds } from '../lib/billRollCalls'
 import { writeMemberVotes, type RollCallMemberVotes } from '../lib/rollCallVotes'
 import { loadVoteDataset, VOTE_DATASET_DEFER_SECONDS, VOTE_DATASET_RETRY_SECONDS } from '../cron/vote-datasets'
@@ -430,6 +430,12 @@ export async function ingestMeasure(
       committeeSponsor: (s as any).committee_sponsor ?? 0,
       committeeId: (s as any).committee_id || null,
     })
+  }
+
+  // People the measure names besides its sponsors (the members who voted, say): added where central
+  // has no row for them, and never written over a row it has, whose fields a sponsor record filled.
+  if (bill.people && bill.people.length > 0) {
+    await insertMissingPeople(db, bill.people.map(p => ({ ...personRow(p, bill.state_id ?? null), provider: provider.id })))
   }
 
   await db.delete(billSasts).where(eq(billSasts.billId, bill.bill_id))

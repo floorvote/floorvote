@@ -2,15 +2,17 @@
  * A small, strict XML reader for GovInfo's Bill Status files, which are
  * machine-written and well-formed. A Worker has no DOM parser, and a
  * dependency would be a lot of code for one file shape, so this reads exactly
- * what those files use: elements, text, the five predefined entities and
- * numeric references, CDATA, comments, the declaration, and attributes it
- * checks and ignores.
+ * what those files use: elements, text, attributes, the five predefined
+ * entities and numeric references, CDATA, comments, and the declaration.
+ * (Bill Status files use no attributes. The House Clerk's roll call files name
+ * each voter in them, and senate.gov's member list gives a senator's LIS id in
+ * one.)
  *
  * It is strict, since the provider fails closed on anything that isn't a
  * Bill Status file. Anything else throws an `XmlError`: unclosed or mismatched
  * tags, text or a second element outside the root, an entity it doesn't know,
  * a DOCTYPE (so no entity can be declared), a stray `<`, a bare `&`, an
- * unquoted attribute, or nesting past `MAX_DEPTH`.
+ * unquoted attribute or one named twice, or nesting past `MAX_DEPTH`.
  *
  * It builds the whole tree of one file, which is the most the provider ever
  * holds (the largest 119th Congress file is 2.5 MB of XML).
@@ -18,6 +20,8 @@
 
 export interface XmlNode {
   name: string
+  /** The element's attributes, entities decoded. An element with none shares one empty set. */
+  attrs: Readonly<Record<string, string>>
   /** The element's own text: entities decoded, CDATA included, and any run of only whitespace left out. */
   text: string
   children: XmlNode[]
@@ -35,7 +39,8 @@ const MAX_DEPTH = 100
 
 const NAME = /[A-Za-z_][A-Za-z0-9_.:-]*/y
 const CLOSE_TAG = /<\/([A-Za-z_][A-Za-z0-9_.:-]*)[ \t\r\n]*>/y
-const ATTRIBUTE = /[ \t\r\n]+[A-Za-z_][A-Za-z0-9_.:-]*[ \t\r\n]*=[ \t\r\n]*(?:"[^"<]*"|'[^'<]*')/y
+const ATTRIBUTE = /[ \t\r\n]+([A-Za-z_][A-Za-z0-9_.:-]*)[ \t\r\n]*=[ \t\r\n]*(?:"([^"<]*)"|'([^'<]*)')/y
+const NO_ATTRS: Readonly<Record<string, string>> = Object.freeze(Object.create(null))
 const SPACE = /[ \t\r\n]*/y
 const NOT_AN_ENTITY = /&(?!(?:#x[0-9A-Fa-f]+|#[0-9]+|amp|lt|gt|quot|apos);)/
 const ENTITY = /&(#x[0-9A-Fa-f]+|#[0-9]+|amp|lt|gt|quot|apos);/g
@@ -119,12 +124,16 @@ export function parseXml(
       NAME.lastIndex = i + 1
       const m = NAME.exec(text)
       if (!m) throw new XmlError('a < that doesn\'t start a tag', i)
-      const node: XmlNode = { name: m[0], text: '', children: [] }
+      const node: XmlNode = { name: m[0], attrs: NO_ATTRS, text: '', children: [] }
       let p = i + 1 + m[0].length
       for (;;) {
         ATTRIBUTE.lastIndex = p
         const a = ATTRIBUTE.exec(text)
         if (!a) break
+        if (node.attrs === NO_ATTRS) node.attrs = Object.create(null) as Record<string, string>
+        const attrs = node.attrs as Record<string, string>
+        if (a[1] in attrs) throw new XmlError(`<${node.name}> names the attribute ${a[1]} twice`, p)
+        attrs[a[1]] = decode(a[2] ?? a[3], p)
         p += a[0].length
       }
       SPACE.lastIndex = p

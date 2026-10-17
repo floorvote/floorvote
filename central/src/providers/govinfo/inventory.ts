@@ -16,11 +16,10 @@ import type { FieldInventory } from '../sdk'
  * The full read reads a few fields into a bill's compact record (map.ts). The
  * ingest of a tracked bill downloads the whole file again and reads the rest
  * (detail.ts): history, sponsors, texts, committees, subjects, related bills,
- * and the four extras the vocabulary declares. "Read at ingest" below means a
- * field the ingest of roll calls reads (#618), which isn't built yet.
+ * the four extras the vocabulary declares, and the roll calls a bill's actions
+ * link (rollcalls.ts), each of which is a file of its own. Those two shapes,
+ * the House Clerk's and the Senate's, have inventories below.
  */
-
-const ingest = (what: string) => ({ ignored: `Read at ingest by the roll call ticket (#618), not by the bill detail ingest: ${what}.` })
 
 export const billInventory: FieldInventory = {
   version: { ignored: 'The file format\'s version (3.0.0 on every file). The structure is checked instead: a file the record can\'t be read from fails closed.' },
@@ -59,7 +58,13 @@ export const billInventory: FieldInventory = {
   'bill.actions.item[].committees.item[].systemCode': { ignored: 'The committee an action names. That it names one puts the bill In committee, and the committee is read from the bill\'s own list.' },
   'bill.actions.item[].actionTime': { ignored: 'The time of day. Actions are ordered as the feed lists them (newest first), never by time.' },
   'bill.actions.item[].calendarNumber': { ignored: 'The calendar number an action placed the bill on, which the action\'s own text already says.' },
-  'bill.actions.item[].recordedVotes': ingest('the roll calls an action links'),
+  // The roll calls an action links: the address, checked against the fields, is how the ingest finds each roll call file.
+  'bill.actions.item[].recordedVotes.recordedVote[].url': 'mapped',
+  'bill.actions.item[].recordedVotes.recordedVote[].chamber': 'mapped',
+  'bill.actions.item[].recordedVotes.recordedVote[].congress': 'mapped',
+  'bill.actions.item[].recordedVotes.recordedVote[].sessionNumber': 'mapped',
+  'bill.actions.item[].recordedVotes.recordedVote[].rollNumber': 'mapped',
+  'bill.actions.item[].recordedVotes.recordedVote[].date': { ignored: 'When the vote was taken, in UTC. The roll call file gives the day it was taken, in Washington\'s time, so that is the one shown.' },
   // An action's chamber comes from its source system, and the Library of Congress's duplicate introduction is dropped by it.
   'bill.actions.item[].sourceSystem.name': 'mapped',
   'bill.actions.item[].sourceSystem.code': { ignored: 'The number for the source system\'s name, which is read by name.' },
@@ -149,5 +154,73 @@ export const billInventory: FieldInventory = {
   dublinCore: { ignored: 'The Dublin Core block: format, language, rights, contributor, and a description of the file. The same on every file, and left out of the record hash.' },
 }
 
-export const houseRollCallInventory: FieldInventory = {}
-export const senateRollCallInventory: FieldInventory = {}
+/**
+ * Every field of a House Clerk roll call file (`clerk.house.gov/evs/2026/roll009.xml`),
+ * written like the Bill Status inventory above, from the file's root element,
+ * which isn't named. A voter's `legislator` element is mapped whole: its text
+ * is the name the Clerk prints, and its attributes `name-id` (the Bioguide id),
+ * `party`, and `state` are read with it. `sort-field`, `unaccented-name`, and
+ * `role` (`legislator` or `speaker`) are not.
+ */
+export const houseRollCallInventory: FieldInventory = {
+  'vote-metadata.congress': 'mapped',
+  'vote-metadata.session': 'mapped',
+  'vote-metadata.rollcall-num': 'mapped',
+  'vote-metadata.vote-question': 'mapped',
+  'vote-metadata.amendment-num': 'mapped',
+  'vote-metadata.amendment-author': 'mapped',
+  'vote-metadata.action-date': 'mapped',
+  'vote-metadata.vote-result': 'mapped',
+  'vote-metadata.vote-totals.totals-by-vote.yea-total': 'mapped',
+  'vote-metadata.vote-totals.totals-by-vote.nay-total': 'mapped',
+  'vote-metadata.vote-totals.totals-by-vote.present-total': 'mapped',
+  'vote-metadata.vote-totals.totals-by-vote.not-voting-total': 'mapped',
+  'vote-metadata.vote-totals.totals-by-vote.total-stub': { ignored: 'The label "Totals".' },
+  'vote-metadata.vote-totals.totals-by-party': { ignored: 'The tally by party. The total of all parties is read, and a member\'s party comes with the member.' },
+  'vote-metadata.vote-totals.totals-by-party-header': { ignored: 'The column headings of the tally by party.' },
+  'vote-data.recorded-vote[].legislator': 'mapped',
+  'vote-data.recorded-vote[].vote': 'mapped',
+  'vote-metadata.chamber': { ignored: 'The words "U.S. House of Representatives". The chamber is the one the bill file linked the roll call under.' },
+  'vote-metadata.majority': { ignored: 'The party in the majority (R or D).' },
+  'vote-metadata.legis-num': { ignored: 'The measure voted on ("H R 131"). The bill file linked the roll call, so the bill is known.' },
+  'vote-metadata.vote-type': { ignored: 'The kind of vote ("YEA-AND-NAY", "RECORDED VOTE", "2/3 YEA-AND-NAY"). The result says whether the question was carried.' },
+  'vote-metadata.vote-desc': { ignored: 'The measure\'s title, for a vote on passage, and empty for most others. The question is read.' },
+  'vote-metadata.committee': { ignored: 'The words "U.S. House of Representatives", on some files, where chamber is on the rest.' },
+  'vote-metadata.action-time': { ignored: 'The time of day. The day is read.' },
+}
+
+/**
+ * Every field of a Senate roll call file
+ * (`senate.gov/legislative/LIS/roll_call_votes/vote1192/vote_119_2_00082.xml`),
+ * written the same way. A member is named by `lis_member_id`, which senate.gov's
+ * member list and congress-legislators' historical file map to a Bioguide id.
+ */
+export const senateRollCallInventory: FieldInventory = {
+  congress: 'mapped',
+  session: 'mapped',
+  vote_number: 'mapped',
+  vote_date: 'mapped',
+  vote_question_text: 'mapped',
+  question: 'mapped',
+  vote_result: 'mapped',
+  'count.yeas': 'mapped',
+  'count.nays': 'mapped',
+  'count.present': 'mapped',
+  'count.absent': 'mapped',
+  'members.member[].lis_member_id': 'mapped',
+  'members.member[].last_name': 'mapped',
+  'members.member[].first_name': 'mapped',
+  'members.member[].party': 'mapped',
+  'members.member[].state': 'mapped',
+  'members.member[].vote_cast': 'mapped',
+  'members.member[].member_full': { ignored: 'The name, party, and state as one string ("Alsobrooks (D-MD)"), which the fields it is made of give.' },
+  congress_year: { ignored: 'The calendar year. The day of the vote is read.' },
+  modify_date: { ignored: 'When the Senate last changed the file.' },
+  vote_title: { ignored: 'A shorter title of the question, such as "Motion to Invoke Cloture: Motion to Proceed to S. 5". The question text is read.' },
+  vote_result_text: { ignored: 'The result with its count ("Cloture Motion Agreed to (84-9, 3/5 majority required)"). The result and the count are read.' },
+  vote_document_text: { ignored: 'A statement of what was voted on, such as an amendment\'s purpose or the bill\'s title.' },
+  majority_requirement: { ignored: 'The majority the question needed ("1/2", "3/5"). The result says whether it was carried.' },
+  document: { ignored: 'The measure voted on. The bill file linked the roll call, so the bill is known.' },
+  amendment: { ignored: 'The amendment voted on, when the vote was on one. The question text names it.' },
+  tie_breaker: { ignored: 'The Vice President\'s tie-breaking vote, when there was one. The result says how the question came out.' },
+}
