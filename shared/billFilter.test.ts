@@ -24,7 +24,7 @@ function rng(seed: number) {
 
 // Values that stress the query string: separators, encodings, spaces, quotes, and non-ASCII.
 const AWKWARD = [
-  'a', 'Passed', 'In committee', 'a&b', 'k=v', '50%', 'a+b', 'a b', '#tag', 'x,y', '"quoted phrase"', "it's", 'café', '日本', '🗳', 'a/b?c', '',
+  'a', 'Passed', 'In committee', 'a&b', 'k=v', '50%', 'a+b', 'a b', '#tag', 'x,y', '"quoted phrase"', "it's", 'café', '日本', '🗳', 'a/b?c', ' padded ', '',
 ]
 
 function generate(seed: number): BillFilter {
@@ -44,7 +44,7 @@ function generate(seed: number): BillFilter {
       { state: 'TX', name: ' spaced ' }, { state: 'UT', name: '日本' },
     ]),
     minRelevance: r() < 0.5 ? null : int(106) - 5,
-    q: pick(['', '', 'election', '"voter id", mail', 'a&b', 'café +plus']),
+    q: pick(['', '', 'election', '"voter id", mail', 'a&b', 'café +plus', ' padded ', 'tab\there', '  ']),
     myBills: r() < 0.5, unvoted: r() < 0.5, newMatches: r() < 0.5, drafts: r() < 0.5,
     match: r() < 0.5 ? 'any' : 'all',
     cf,
