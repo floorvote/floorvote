@@ -20,6 +20,7 @@ const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
 
 import { processIngestorQueue, validateTextPayload, ingestMeasure, isVersionAddressable } from '../../src/queue/processor'
+import { startsWithPdfMagic } from '../../src/lib/storedPdf'
 import { getProvider } from '../../src/providers'
 import { limsBillId, limsDocId, limsSessionId } from '../../src/providers/lims/ids'
 import * as legiscan from '../../src/providers/legiscan/client'
@@ -472,6 +473,24 @@ describe('validateTextPayload', () => {
 
   it('accepts real PDF bytes', () => {
     expect(validateTextPayload(abuf(REAL_PDF), 'application/pdf', null)).toBeNull()
+  })
+
+  it('rejects a PDF-mime body that is shorter than the magic, or has it only after a byte order mark or whitespace', () => {
+    for (const body of ['%PDF', '%', '\ufeff%PDF-1.7', ' %PDF-1.7', '%pdf-1.7']) {
+      expect(validateTextPayload(abuf(body), 'application/pdf', null), JSON.stringify(body)).toMatch(/expected a PDF/)
+    }
+  })
+
+  it('accepts a PDF-mime body that is exactly the magic', () => {
+    expect(validateTextPayload(abuf('%PDF-'), 'application/pdf', null)).toBeNull()
+  })
+
+  it('agrees with the byte check the serving routes make, for every body in a shared list', () => {
+    for (const body of ['%PDF-1.7', '%PDF-', '%PDF', '', '<html>', '%pdf-1', ' %PDF-1']) {
+      const bytes = Uint8Array.from(body, ch => ch.charCodeAt(0))
+      const accepted = body.length > 0 && validateTextPayload(bytes.buffer as ArrayBuffer, 'application/pdf', null) === null
+      expect(accepted, JSON.stringify(body)).toBe(startsWithPdfMagic(bytes))
+    }
   })
 
   it('rejects an empty body', () => {

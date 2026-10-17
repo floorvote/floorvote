@@ -6,6 +6,11 @@
 
 const MAGIC = new TextEncoder().encode('%PDF-')
 
+/** Whether `bytes` start with `%PDF-`. */
+export function startsWithPdfMagic(_bytes: Uint8Array): boolean {
+  return undefined as unknown as boolean
+}
+
 /**
  * Check that `body` starts with `%PDF-`, reading only as far as the first five
  * bytes. Returns a stream with every byte of the original, in order, to serve; or

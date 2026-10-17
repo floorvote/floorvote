@@ -56,6 +56,10 @@ async function inline(docId: number, ctx: ExecutionContext = makeCtx().ctx) {
   return app.request(`/api/bills/300/text/${docId}`, { headers }, env, ctx)
 }
 
+async function json(ctx: ExecutionContext = makeCtx().ctx) {
+  return app.request('/api/bills/300/text', { headers }, env, ctx)
+}
+
 async function serve(bytes: Uint8Array, contentType: string | undefined, ext: 'html' | 'pdf' = 'pdf') {
   const { docId } = await store(bytes, contentType, ext)
   const res = await inline(docId)
@@ -126,23 +130,23 @@ describe('stored PDFs are served as PDFs, whatever type was recorded', () => {
   })
 })
 
-describe('stored bytes that are not a PDF are never served as a PDF or rendered inline', () => {
-  const NOT_A_PDF: Array<[string, Uint8Array, string | undefined]> = [
-    ['an HTML error page recorded as HTML', utf8(ERROR_PAGE), 'text/html'],
-    ['an HTML error page recorded as application/pdf', utf8(ERROR_PAGE), 'application/pdf'],
-    ['an HTML error page recorded as octet-stream', utf8(ERROR_PAGE), 'application/octet-stream'],
-    ['an HTML error page with no recorded type', utf8(ERROR_PAGE), undefined],
-    ['SVG with script', utf8('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'), 'image/svg+xml'],
-    ['plain text', utf8('Not Found'), 'text/plain'],
-    ['an empty body', new Uint8Array(0), 'application/pdf'],
-    ['a truncated magic (%PDF)', utf8('%PDF'), 'application/pdf'],
-    ['the magic without its dash (%PDF1.7)', utf8('%PDF1.7\n'), 'application/pdf'],
-    ['a lowercase magic (%pdf-)', utf8('%pdf-1.7\n'), 'application/pdf'],
-    ['whitespace before the magic', utf8(' %PDF-1.7\n'), 'application/pdf'],
-    ['a BOM before the magic', Uint8Array.from([0xef, 0xbb, 0xbf, ...PDF_HEAD]), 'application/pdf'],
-    ['HTML that merely mentions %PDF- later on', utf8('<p>%PDF-1.7</p>'), 'text/html'],
-  ]
+const NOT_A_PDF: Array<[string, Uint8Array, string | undefined]> = [
+  ['an HTML error page recorded as HTML', utf8(ERROR_PAGE), 'text/html'],
+  ['an HTML error page recorded as application/pdf', utf8(ERROR_PAGE), 'application/pdf'],
+  ['an HTML error page recorded as octet-stream', utf8(ERROR_PAGE), 'application/octet-stream'],
+  ['an HTML error page with no recorded type', utf8(ERROR_PAGE), undefined],
+  ['SVG with script', utf8('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'), 'image/svg+xml'],
+  ['plain text', utf8('Not Found'), 'text/plain'],
+  ['an empty body', new Uint8Array(0), 'application/pdf'],
+  ['a truncated magic (%PDF)', utf8('%PDF'), 'application/pdf'],
+  ['the magic without its dash (%PDF1.7)', utf8('%PDF1.7\n'), 'application/pdf'],
+  ['a lowercase magic (%pdf-)', utf8('%pdf-1.7\n'), 'application/pdf'],
+  ['whitespace before the magic', utf8(' %PDF-1.7\n'), 'application/pdf'],
+  ['a BOM before the magic', Uint8Array.from([0xef, 0xbb, 0xbf, ...PDF_HEAD]), 'application/pdf'],
+  ['HTML that merely mentions %PDF- later on', utf8('<p>%PDF-1.7</p>'), 'text/html'],
+]
 
+describe('stored bytes that are not a PDF are never served as a PDF or rendered inline', () => {
   for (const [label, bytes, type] of NOT_A_PDF) {
     it(`refuses ${label}: a clear error, not inline, not a PDF`, async () => {
       const { res, bytes: body } = await serve(bytes, type)
@@ -242,5 +246,121 @@ describe('the response cache', () => {
     const b = await inline(docId)
     expect(b.status).toBe(200)
     expect(b.headers.get('content-type')).toBe('application/pdf')
+  })
+})
+
+// GET /bills/:id/text is the JSON route the analysis path reads. It returns a stored
+// `.pdf` base64-encoded, so a client that decodes it as a PDF would take a provider's
+// error page for one. It makes the same byte check as the inline route above.
+describe('the JSON text route byte-checks stored PDFs', () => {
+  const stored = () => store(PDF, 'application/pdf')
+
+  it('returns a valid PDF as base64 with the doc id and hash, as before', async () => {
+    const { docId } = await stored()
+    const res = await json()
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toContain('application/json')
+    const body = await res.json() as { type: string; content: string; docId: string; textHash: string }
+    expect(body).toMatchObject({ type: 'pdf', docId: String(docId), textHash: `hash-${docId}` })
+    expect(Uint8Array.from(Buffer.from(body.content, 'base64'))).toEqual(PDF)
+  })
+
+  it('returns a valid PDF whatever content type it was stored with', async () => {
+    for (const type of ['text/html', 'application/octet-stream', undefined]) {
+      await store(PDF, type)
+      const res = await json()
+      expect(res.status, String(type)).toBe(200)
+      expect((await res.json() as { type: string }).type).toBe('pdf')
+    }
+  })
+
+  it('returns a multi-megabyte PDF byte for byte', async () => {
+    const big = new Uint8Array(3 * 1024 * 1024 + 7)
+    for (let i = 0; i < big.length; i++) big[i] = (i * 31) & 0xff
+    big.set(PDF_HEAD, 0)
+    await store(big, 'application/pdf')
+    const res = await json()
+    expect(res.status).toBe(200)
+    const body = await res.json() as { content: string }
+    expect(Uint8Array.from(Buffer.from(body.content, 'base64'))).toEqual(big)
+  })
+
+  it('returns a PDF that is exactly the five magic bytes', async () => {
+    await store(Uint8Array.from(PDF_HEAD), 'application/pdf')
+    const res = await json()
+    expect(res.status).toBe(200)
+    const body = await res.json() as { type: string; content: string }
+    expect(body.type).toBe('pdf')
+    expect(Uint8Array.from(Buffer.from(body.content, 'base64'))).toEqual(Uint8Array.from(PDF_HEAD))
+  })
+
+  for (const [label, bytes, type] of NOT_A_PDF) {
+    it(`refuses ${label}: a clear error, no base64, no stored bytes`, async () => {
+      await store(bytes, type)
+      const res = await json()
+      expect(res.status).toBe(502)
+      expect(res.headers.get('content-type') ?? '').toContain('application/json')
+      const text = await res.text()
+      expect(JSON.parse(text)).toEqual({ error: 'stored document is not a valid PDF' })
+      expect(text).not.toContain('content')
+      expect(text).not.toContain(Buffer.from(bytes).toString('base64').slice(0, 12) || 'impossible-empty')
+    })
+  }
+
+  it('does not cache a refusal: the document is served once its bytes are replaced', async () => {
+    const { r2Key } = await store(utf8(ERROR_PAGE), 'text/html')
+    const first = makeCtx()
+    const a = await json(first.ctx)
+    expect(a.status).toBe(502)
+    await a.arrayBuffer()
+    await first.settle()
+
+    await env.BILLS_BUCKET.put(r2Key, PDF, { httpMetadata: { contentType: 'application/pdf' } })
+    const b = await json()
+    expect(b.status).toBe(200)
+    expect((await b.json() as { type: string }).type).toBe('pdf')
+  })
+
+  it('serves a cached valid PDF without reading storage again', async () => {
+    const { r2Key } = await stored()
+    const first = makeCtx()
+    const a = await json(first.ctx)
+    expect(a.status).toBe(200)
+    await a.arrayBuffer()
+    await first.settle()
+
+    await env.BILLS_BUCKET.delete(r2Key) // only a cache hit can answer now
+    const b = await json()
+    expect(b.status).toBe(200)
+    expect((await b.json() as { type: string }).type).toBe('pdf')
+  })
+
+  it('checks the newest text, not an older one', async () => {
+    await store(PDF, 'application/pdf') // older doc id: valid
+    await store(utf8(ERROR_PAGE), 'text/html') // newest: not a PDF
+    expect((await json()).status).toBe(502)
+  })
+
+  it('leaves stored HTML alone, even when it starts like nothing in particular', async () => {
+    await store(utf8('<p>“Sample Act” § café</p>'), 'text/html; charset=utf-8', 'html')
+    const res = await json()
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ type: 'html', content: '<p>“Sample Act” § café</p>' })
+  })
+
+  it('leaves an empty stored HTML body alone', async () => {
+    await store(new Uint8Array(0), 'text/html', 'html')
+    const res = await json()
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ type: 'html', content: '' })
+  })
+
+  it('still 404s a bill with no stored text and a row whose object is gone', async () => {
+    expect((await json()).status).toBe(404)
+    const { r2Key } = await stored()
+    await env.BILLS_BUCKET.delete(r2Key)
+    const res = await json()
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ error: 'text not found in storage' })
   })
 })
