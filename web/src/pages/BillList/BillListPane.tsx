@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Link, useLocation, useMatch } from 'react-router-dom'
 import { apiFetch } from '../../lib/api'
 import { decodeStatus } from '../../lib/legislativeStatus'
@@ -8,6 +8,9 @@ import { useMultiState } from '../../context/ConfigContext'
 import { BillBadge } from '../../components/BillBadge'
 import { DraftChip } from '../../components/DraftChip'
 import { StatusChip } from '../../components/StatusChip'
+import { SessionChip } from '../../components/SessionChip'
+import { RelevanceChip } from '../../components/RelevanceChip'
+import { LastActionChip } from '../../components/LastActionChip'
 import { SECTION_LABEL, CHROME_TEXT, SR_ONLY } from '../../lib/textStyles'
 import { color, fontSize, fontWeight } from '../../styles/tokens'
 import { billDisplayTitle } from '../../../../shared/billTitle'
@@ -15,7 +18,9 @@ import { billsApiParamsFromSearch, billsFilterValuesFromSearch, searchFromListUr
 import { buildListSummary } from './listSummary'
 import { BillListPaneSummary } from './BillListPaneSummary'
 import { peekBillsListCache, peekCustomFieldDefs } from './index'
-import { groupDisplay, memberPath } from './BillRow'
+import { groupDisplay, memberPath, formatYearChip } from './BillRow'
+import { PANE_MIN_WIDTH, paneGridTemplate, visiblePaneColumns, type PaneColumn } from './paneWidth'
+import { PaneResizeHandle, useBillListPaneWidth } from './BillListPaneResize'
 import type { Bill } from './types'
 import type { SavedView } from './ViewSwitcher'
 
@@ -23,8 +28,9 @@ import type { SavedView } from './ViewSwitcher'
 // the default 230px sidebar and this 300px pane, BillDetail still gets about
 // 900px — what it gets today in a ~1150px window, wide enough that its
 // 272px right column and its main column sit side by side as they do now.
+// The reader can drag it wider (paneWidth.ts holds the bounds); 300px is the
+// width it starts at and the narrowest it goes.
 export const BILL_SPLIT_MIN_WIDTH = 1440
-const PANE_WIDTH = 300
 
 type BillsPage = { bills: Bill[]; pagination: { page: number; pageSize: number; total: number; totalPages: number } }
 
@@ -67,14 +73,67 @@ function isOpenBill(bill: Bill, path: string, here: string, legacyId: string | u
 
 const STACK: CSSProperties = { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, minWidth: 0 }
 
-const PaneRow = memo(function PaneRow({ bill, path, isCurrent, billPaths, index }: {
+// The header the columns sit under: sticky at the top of the scrolling list, on
+// the same grid as every row so each header is over its cells.
+const COLUMN_HEADER_HEIGHT = 30
+
+function PaneColumnHeaders({ columns, multiState }: { columns: PaneColumn[]; multiState: boolean }) {
+  return (
+    <li
+      data-pane-columns
+      style={{
+        position: 'sticky', top: 0, zIndex: 1, height: COLUMN_HEADER_HEIGHT, boxSizing: 'border-box',
+        display: 'flex', alignItems: 'center', padding: '0 12px 0 15px',
+        background: color.surfaceSubtle, borderBottom: `1px solid ${color.borderDefault}`,
+      }}
+    >
+      <div data-pane-grid style={{ display: 'grid', gridTemplateColumns: paneGridTemplate(columns, multiState), columnGap: 8, alignItems: 'center', width: '100%' }}>
+        <span />
+        {columns.map(c => (
+          <span key={c.key} data-pane-col-header={c.key} style={{ ...SECTION_LABEL, whiteSpace: 'nowrap' }}>{c.label}</span>
+        ))}
+      </div>
+    </li>
+  )
+}
+
+const PaneRow = memo(function PaneRow({ bill, path, isCurrent, billPaths, index, columns, multiState }: {
   bill: Bill; path: string; isCurrent: boolean; billPaths: string[]; index: number
+  columns: PaneColumn[]; multiState: boolean
 }) {
   const [hovered, setHovered] = useState(false)
   // A companion group is one row (the lead's), drawn as the Bills list draws it:
   // the lead and one other number, "+N" for the rest, each shown status once.
   const group = bill.group ? groupDisplay(bill.group) : null
   const companions = bill.group ? bill.group.slice(1) : []
+  const wide = columns.length > 0
+
+  const numbers = group ? (
+    <div style={STACK}>
+      {group.shown.map((m, n) => (
+        // The priority is the group's, drawn once, on the lead's number.
+        <BillBadge key={m.id} mini billNumber={m.billNumber} state={m.state} priority={n === 0 ? bill.priority : null} />
+      ))}
+      {group.hidden.length > 0 && (
+        <span aria-hidden style={{ ...CHROME_TEXT, fontWeight: fontWeight.semibold }}>+{group.hidden.length}</span>
+      )}
+    </div>
+  ) : (
+    <BillBadge mini billNumber={bill.billNumber} state={bill.state} isDraft={bill.isDraft} priority={bill.priority} />
+  )
+  const priorityForReaders = bill.priority && <span style={SR_ONLY}>, {bill.priority} priority</span>
+
+  // What each column holds: the Bills page's own chips, drawn read-only (the
+  // row is a link, and the pane filters nothing).
+  const cells: Record<PaneColumn['key'], ReactNode> = {
+    status: group
+      ? <div style={{ ...STACK, alignItems: 'flex-start' }}>{group.statuses.map(status => <StatusChip key={status} status={decodeStatus(status)} />)}</div>
+      : bill.isDraft ? <DraftChip /> : <StatusChip status={decodeStatus(bill.status)} />,
+    year: <SessionChip session={formatYearChip(bill.yearStart, bill.yearEnd)} />,
+    lastAction: <LastActionChip date={bill.lastActionDate} />,
+    relevance: <RelevanceChip score={bill.relevanceScore} />,
+  }
+
   return (
     <Link
       to={path}
@@ -96,29 +155,28 @@ const PaneRow = memo(function PaneRow({ bill, path, isCurrent, billPaths, index 
         textDecoration: 'none',
       }}
     >
-      <div style={{ display: 'flex', alignItems: group ? 'flex-start' : 'center', gap: 8, marginBottom: 4 }}>
-        {group ? (
-          <div style={STACK}>
-            {group.shown.map((m, n) => (
-              // The priority is the group's, drawn once, on the lead's number.
-              <BillBadge key={m.id} mini billNumber={m.billNumber} state={m.state} priority={n === 0 ? bill.priority : null} />
-            ))}
-            {group.hidden.length > 0 && (
-              <span aria-hidden style={{ ...CHROME_TEXT, fontWeight: fontWeight.semibold }}>+{group.hidden.length}</span>
-            )}
-          </div>
-        ) : (
-          <BillBadge mini billNumber={bill.billNumber} state={bill.state} isDraft={bill.isDraft} priority={bill.priority} />
-        )}
-        {bill.priority && <span style={SR_ONLY}>, {bill.priority} priority</span>}
-        <span style={{ marginLeft: 'auto', display: 'flex', minWidth: 0 }}>
-          {group ? (
-            <span style={{ ...STACK, alignItems: 'flex-end' }}>
-              {group.statuses.map(status => <StatusChip key={status} status={decodeStatus(status)} />)}
-            </span>
-          ) : bill.isDraft ? <DraftChip mini /> : <StatusChip status={decodeStatus(bill.status)} />}
-        </span>
-      </div>
+      {wide ? (
+        // Wide: the status moves into its column, so it is not also drawn at
+        // the row's top right.
+        <div data-pane-grid style={{ display: 'grid', gridTemplateColumns: paneGridTemplate(columns, multiState), columnGap: 8, alignItems: group ? 'start' : 'center', marginBottom: 4 }}>
+          <div>{numbers}{priorityForReaders}</div>
+          {columns.map(c => (
+            <div key={c.key} data-pane-col={c.key} style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>{cells[c.key]}</div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ display: 'flex', alignItems: group ? 'flex-start' : 'center', gap: 8, marginBottom: 4 }}>
+          {numbers}
+          {priorityForReaders}
+          <span style={{ marginLeft: 'auto', display: 'flex', minWidth: 0 }}>
+            {group ? (
+              <span style={{ ...STACK, alignItems: 'flex-end' }}>
+                {group.statuses.map(status => <StatusChip key={status} status={decodeStatus(status)} />)}
+              </span>
+            ) : bill.isDraft ? <DraftChip mini /> : <StatusChip status={decodeStatus(bill.status)} />}
+          </span>
+        </div>
+      )}
       <div style={{
         fontSize: fontSize.sm,
         color: color.textPrimary,
@@ -157,6 +215,8 @@ export function BillListPane() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const scrollRef = useRef<HTMLUListElement>(null)
+  const pane = useBillListPaneWidth()
+  const columns = visiblePaneColumns(pane.width)
 
   useEffect(() => {
     let cancelled = false
@@ -238,7 +298,8 @@ export function BillListPane() {
       aria-label="Bill list"
       className="bill-list-pane"
       style={{
-        width: PANE_WIDTH,
+        position: 'relative',
+        width: pane.width,
         flexShrink: 0,
         height: '100%',
         display: 'flex',
@@ -261,10 +322,18 @@ export function BillListPane() {
       ) : bills.length === 0 ? (
         <p style={{ ...CHROME_TEXT, padding: '12px 15px', margin: 0 }}>No bills match this list’s filters.</p>
       ) : (
-        <ul ref={scrollRef} style={{ listStyle: 'none', margin: 0, padding: 0, flex: 1, minHeight: 0, overflowY: 'auto', position: 'relative' }}>
+        <ul
+          ref={scrollRef}
+          style={{
+            listStyle: 'none', margin: 0, padding: 0, flex: 1, minHeight: 0, overflowY: 'auto', position: 'relative',
+            // Keeps scrollIntoView from parking the open row under the sticky headers.
+            scrollPaddingTop: columns.length > 0 ? COLUMN_HEADER_HEIGHT : undefined,
+          }}
+        >
+          {columns.length > 0 && <PaneColumnHeaders columns={columns} multiState={multiState} />}
           {bills.map((b, i) => (
             <li key={b.id}>
-              <PaneRow bill={b} path={paths[i]} isCurrent={isOpenBill(b, paths[i], here, legacyId)} billPaths={paths} index={i} />
+              <PaneRow bill={b} path={paths[i]} isCurrent={isOpenBill(b, paths[i], here, legacyId)} billPaths={paths} index={i} columns={columns} multiState={multiState} />
             </li>
           ))}
           {hasMore && (
@@ -281,6 +350,7 @@ export function BillListPane() {
           )}
         </ul>
       )}
+      {pane.max > PANE_MIN_WIDTH && <PaneResizeHandle width={pane.width} max={pane.max} pane={pane} />}
     </nav>
   )
 }

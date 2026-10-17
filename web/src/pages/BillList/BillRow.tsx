@@ -10,6 +10,7 @@ import { PriorityBadge } from '../../components/PriorityBadge'
 import { StatusChip } from '../../components/StatusChip'
 import { RelevanceChip } from '../../components/RelevanceChip'
 import { SessionChip } from '../../components/SessionChip'
+import { LastActionChip } from '../../components/LastActionChip'
 import { CompactPositionSelect } from '../../components/CompactPositionSelect'
 import { CompactPrioritySelect } from '../../components/CompactPrioritySelect'
 import { NewMatchTriageControl } from '../../components/NewMatchTriageControl'
@@ -317,13 +318,7 @@ export const BillRow = memo(function BillRow({
               )
             })()}
           </span>
-          <span className="bill-col-lastaction" style={{
-            display: 'inline-flex', alignItems: 'center',
-            fontSize: fontSize.sm, fontWeight: fontWeight.semibold, padding: '3px 10px', borderRadius: radius.sm,
-            border: '1px solid transparent', background: color.countChipBg, color: color.textSecondary,
-          }}>
-            {bill.lastActionDate ?? '—'}
-          </span>
+          <LastActionChip className="bill-col-lastaction" date={bill.lastActionDate} />
           <RelevanceChip
             score={bill.relevanceScore}
             onClick={bill.relevanceScore != null ? () => onRelevanceClick(bill.relevanceScore!) : undefined}
