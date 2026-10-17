@@ -199,15 +199,26 @@ describe('people matching by Bioguide id', () => {
     expect(result.sharedBioguide.map(s => [s.side, s.bioguideId, s.people.map(p => p.id)])).toEqual([['new', 'X000015', [101, 102]]])
   })
 
-  it('doesn\'t name-match people who share a Bioguide id the other side lacks', () => {
+  it('still name-matches people who share a Bioguide id the other side lacks, and flags the id', () => {
+    // The id can't tell them apart, but the other side has no id to contest, so the names and districts decide, as before.
     const result = matchPeople(
       [person(1, 'Kim Orr', 'X000016', 1, 'HD-003'), person(2, 'Kim Orr', 'X000016', 1, 'HD-005')],
       [person(101, 'Kim Orr', null, 1, '3')],
     )
-    expect(result.matched).toEqual([])
-    expect(result.unmatchedFrom.map(p => p.id)).toEqual([1, 2])
-    expect(result.unmatchedTo.map(p => p.id)).toEqual([101])
-    expect(result.sharedBioguide.map(s => [s.side, s.bioguideId])).toEqual([['old', 'X000016']])
+    expect(summary(result)).toEqual([[1, 101, 'full', ['name', 'chamber', 'district'], false]])
+    expect(result.unmatchedFrom.map(p => p.id)).toEqual([2])
+    expect(result.unmatchedTo).toEqual([])
+    expect(result.sharedBioguide.map(s => [s.side, s.bioguideId, s.people.map(p => p.id)])).toEqual([['old', 'X000016', [1, 2]]])
+  })
+
+  it('still name-matches new people who share a Bioguide id the old side lacks', () => {
+    const result = matchPeople(
+      [person(1, 'Liv Tate', null, 2, 'SD-002')],
+      [person(101, 'Liv Tate', 'X000022', 2, '2'), person(102, 'Olive Tate', 'X000022', 2, '6')],
+    )
+    expect(summary(result)).toEqual([[1, 101, 'full', ['name', 'chamber', 'district'], false]])
+    expect(result.unmatchedTo.map(p => p.id)).toEqual([102])
+    expect(result.sharedBioguide.map(s => [s.side, s.bioguideId, s.people.map(p => p.id)])).toEqual([['new', 'X000022', [101, 102]]])
   })
 
   it('compares Bioguide ids without case or spaces, and treats a blank one as none', () => {

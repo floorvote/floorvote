@@ -212,13 +212,13 @@ describe('a snapshot provider\'s people', () => {
   async function sync() {
     await runSnapshotSync(example, makeEnv().env, drizzle(env.DB, { schema }), { force: true })
   }
-  const bioguideOf = async (name: string) =>
+  const storedBioguide = async (name: string) =>
     (await env.DB.prepare(`SELECT bioguide_id FROM people WHERE name = ? AND provider = 'example'`).bind(name).first<any>())?.bioguide_id
 
   it('store their Bioguide ids', async () => {
     await sync()
-    expect(await bioguideOf('Robert J. Smith Jr.')).toBe('X000001')
-    expect(await bioguideOf('Gil Ross')).toBe('X000005')
+    expect(await storedBioguide('Robert J. Smith Jr.')).toBe('X000001')
+    expect(await storedBioguide('Gil Ross')).toBe('X000005')
   })
 
   it('keep a stored Bioguide id when the feed leaves it out, and clear it when the feed says null', async () => {
@@ -230,8 +230,8 @@ describe('a snapshot provider\'s people', () => {
       return p
     })
     await sync()
-    expect(await bioguideOf('Robert J. Smith Jr.')).toBe('X000001')
-    expect(await bioguideOf('Eve Hart')).toBeNull()
-    expect(await bioguideOf('Dee Park')).toBe('X000009')
+    expect(await storedBioguide('Robert J. Smith Jr.')).toBe('X000001')
+    expect(await storedBioguide('Eve Hart')).toBeNull()
+    expect(await storedBioguide('Dee Park')).toBe('X000009')
   })
 })

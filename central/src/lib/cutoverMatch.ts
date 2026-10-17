@@ -58,8 +58,10 @@ export interface PeopleMatch<A extends PersonFacts, B extends PersonFacts> {
   /** New people left unmatched, other than the ambiguous ones. */
   unmatchedTo: B[]
   /**
-   * Bioguide ids two or more people on one side share. They match no one,
-   * by the id or by name, since there's no telling which is which.
+   * Bioguide ids two or more people on one side share. When the other side
+   * has the id too, none of them match, by the id or by name, since there's no
+   * telling which is which. When it doesn't, the id decides nothing, and
+   * they're matched by name as anyone else is.
    */
   sharedBioguide: ({ side: 'old'; bioguideId: string; people: A[] } | { side: 'new'; bioguideId: string; people: B[] })[]
 }
@@ -129,8 +131,9 @@ function sameName(tier: Tier, a: { first: string | null; last: string }, b: { fi
 /**
  * Match legislators across two providers of one state. Two people with the
  * same Bioguide id match on it alone, strongly, before anything else is
- * compared. A Bioguide id people on one side share matches no one, and they're
- * left out of the name comparisons too.
+ * compared. A Bioguide id people on one side share matches no one when the
+ * other side has it too, and they're left out of the name comparisons as well.
+ * When the other side lacks it, it's flagged and decides nothing.
  *
  * Everyone else is matched on name, chamber, and district: each compared only
  * where both records have it, and any that disagree rule a pair out, as two
@@ -160,10 +163,10 @@ export function matchPeople<A extends PersonFacts, B extends PersonFacts>(from: 
   const matched: PersonMatch<A, B>[] = []
   const ambiguous: PeopleMatch<A, B>['ambiguous'] = []
   const sharedBioguide: PeopleMatch<A, B>['sharedBioguide'] = []
-  const setAsideTo: B[] = []
 
   // Bioguide ids first, like a bill's match key: one person on each side
-  // matches, and an id people on one side share matches neither.
+  // matches, and an id people on one side share matches no one the other
+  // side's holders of it could be. With no holders there, it decides nothing.
   const byBioguide = <P extends PersonFacts>(list: P[]) => {
     const out = new Map<string, P[]>()
     for (const p of list) {
@@ -187,11 +190,11 @@ export function matchPeople<A extends PersonFacts, B extends PersonFacts>(from: 
     if (olds.length <= 1 && news.length <= 1) continue
     if (olds.length > 1) sharedBioguide.push({ side: 'old', bioguideId: id, people: olds })
     if (news.length > 1) sharedBioguide.push({ side: 'new', bioguideId: id, people: news })
+    if (olds.length === 0 || news.length === 0) continue
     for (const o of olds) freeFrom.delete(o)
     for (const p of news) {
       freeTo.delete(p)
-      if (olds.length > 0) ambiguous.push({ person: p, candidates: olds })
-      else setAsideTo.push(p)
+      ambiguous.push({ person: p, candidates: olds })
     }
   }
 
@@ -222,5 +225,5 @@ export function matchPeople<A extends PersonFacts, B extends PersonFacts>(from: 
       freeTo.delete(person)
     }
   }
-  return { matched, ambiguous, unmatchedFrom: from.filter(p => !matchedFrom.has(p)), unmatchedTo: [...setAsideTo, ...freeTo], sharedBioguide }
+  return { matched, ambiguous, unmatchedFrom: from.filter(p => !matchedFrom.has(p)), unmatchedTo: [...freeTo], sharedBioguide }
 }

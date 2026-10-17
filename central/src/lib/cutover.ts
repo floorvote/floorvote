@@ -730,7 +730,7 @@ export function cutoverReport(plan: CutoverPlan) {
         old: plan.people.unmatchedFrom.map(p => ({ personId: String(p.id), name: p.name })),
         new: plan.people.unmatchedTo.map(p => ({ name: p.name })),
       },
-      // Bioguide ids people on one side share, so none of them matched.
+      // Bioguide ids people on one side share. None of them matched by it, nor by name where the other side has it too.
       sharedBioguide: plan.people.sharedBioguide.map(s => ({
         side: s.side, bioguideId: s.bioguideId,
         people: s.people.map(p => (s.side === 'old' ? { personId: String(p.id), name: p.name } : { name: p.name })),
