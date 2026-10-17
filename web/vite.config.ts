@@ -1,12 +1,15 @@
-import { defineConfig } from 'vite'
+import { defineConfig, normalizePath } from 'vite'
 import react from '@vitejs/plugin-react'
 import fs from 'node:fs'
 import path from 'path'
 import { PRODUCT_NAME } from '../shared/brand'
 import { colorVariablesCss } from './src/styles/colorModes'
 
-const sharedDir = path.resolve(__dirname, '../shared') + path.sep
-const sharedTokens = path.resolve(__dirname, '../shared/tokens.ts')
+// Vite gives module ids forward slashes on every OS, so these are compared in
+// that form too. Built with backslashes, the Windows build never matched and
+// shipped the literal palette, which ignores dark mode.
+const sharedDir = normalizePath(path.resolve(__dirname, '../shared')) + '/'
+const sharedTokens = normalizePath(path.resolve(__dirname, '../shared/tokens.ts'))
 const webTokens = path.resolve(__dirname, 'src/styles/tokens.ts')
 
 export default defineConfig({
@@ -35,9 +38,9 @@ export default defineConfig({
       name: 'shared-tokens-as-variables',
       enforce: 'pre',
       async resolveId(source, importer) {
-        if (!importer?.startsWith(sharedDir) || !/(^|\/)tokens(\.ts)?$/.test(source)) return null
+        if (!importer || !normalizePath(importer).startsWith(sharedDir) || !/(^|\/)tokens(\.ts)?$/.test(source)) return null
         const resolved = await this.resolve(source, importer, { skipSelf: true })
-        return resolved?.id === sharedTokens ? webTokens : null
+        return resolved && normalizePath(resolved.id) === sharedTokens ? webTokens : null
       },
     },
     {
