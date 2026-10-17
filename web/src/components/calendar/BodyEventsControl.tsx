@@ -195,7 +195,7 @@ export function BodyEventsControl({ onChanged }: { onChanged?: () => void }) {
               </p>
             )}
 
-            <p style={small}>Events with a prioritized bill always show.</p>
+            <p style={small}>Events with a prioritized bill always show up on the calendar.</p>
             {loaded?.optionsError && <p style={{ ...small, color: color.textAmberDark }}>{loaded.optionsError}</p>}
             <div role="status" style={{ ...small, color: color.textSuccess, minHeight: 0 }}>{message && !message.error ? message.text : ''}</div>
             {message?.error && <div role="alert" style={{ ...small, color: color.textErrorRed }}>{message.text}</div>}

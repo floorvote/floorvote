@@ -133,7 +133,7 @@ describe('the Calendar page\'s committee events control', () => {
     expect(all).toBeChecked()
     expect(some).not.toBeChecked()
     expect(within(menu).getAllByRole('radio')).toHaveLength(2)
-    expect(within(menu).getByText('Events with a prioritized bill always show.')).toBeInTheDocument()
+    expect(within(menu).getByText('Events with a prioritized bill always show up on the calendar.')).toBeInTheDocument()
     expect(within(menu).queryByRole('checkbox')).not.toBeInTheDocument()
     expect(within(menu).queryByRole('button', { name: /^Save/ })).not.toBeInTheDocument()
   })
