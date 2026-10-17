@@ -523,7 +523,7 @@ describe('runDigest', () => {
 
         expect(calls).toHaveLength(2)
         for (const c of calls) {
-          expect(c.html).toContain('New matches (1)')
+          expect(c.html).toContain('>1 new match</td>')
           expect(c.html).toContain('SOLO 1')
           expect(c.html).not.toContain('PUL 1')
         }
@@ -541,7 +541,7 @@ describe('runDigest', () => {
 
         expect(calls).toHaveLength(2)
         for (const c of calls) {
-          expect(c.html).toContain('New matches (1)')
+          expect(c.html).toContain('>1 new match</td>')
           expect(c.html).toContain('TRK 1')
           expect(c.html).not.toContain('PUL 1')
         }
@@ -574,7 +574,7 @@ describe('runDigest', () => {
 
         expect(calls).toHaveLength(2)
         for (const c of calls) {
-          expect(c.html).toContain('New matches (1)')
+          expect(c.html).toContain('>1 new match</td>')
           expect(c.html).toContain('PUL 1')
         }
       })

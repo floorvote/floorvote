@@ -470,7 +470,7 @@ describe('companions that didn\'t match are analyzed through their group', () =>
         await db.update(associationConfig).set({ value: '2020-01-01 00:00:00' }).where(eq(associationConfig.key, 'last_digest_at'))
         await runDigest(env as never, db)
         expect(sent).toHaveLength(1)
-        expect(sent[0].html).toContain('New matches (1)')
+        expect(sent[0].html).toContain('>1 new match</td>')
         expect(sent[0].html).toContain('S1713')
       })
     })
