@@ -224,3 +224,7 @@ export const senateRollCallInventory: FieldInventory = {
   amendment: { ignored: 'The amendment voted on, when the vote was on one. The question text names it.' },
   tie_breaker: { ignored: 'The Vice President\'s tie-breaking vote, when there was one. The result says how the question came out.' },
 }
+
+// Stubs: the red tests run against these empty inventories (#619).
+export const meetingInventory: FieldInventory = {}
+export const meetingListInventory: FieldInventory = {}

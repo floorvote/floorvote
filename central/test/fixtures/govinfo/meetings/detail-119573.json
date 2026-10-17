@@ -1,0 +1,145 @@
+{
+  "committeeMeeting": {
+    "chamber": "House",
+    "committees": [
+      {
+        "name": "House Energy and Commerce",
+        "systemCode": "hsif00",
+        "url": "https://api.congress.gov/v3/committee/house/hsif00?format=json"
+      }
+    ],
+    "congress": 119,
+    "date": "2026-09-16T14:00:00Z",
+    "eventId": "119573",
+    "location": {
+      "building": "Rayburn House Office Building",
+      "room": "2123"
+    },
+    "meetingDocuments": [
+      {
+        "description": "Notice",
+        "documentType": "Support Document",
+        "format": "PDF",
+        "name": "Notice",
+        "url": "https://www.congress.gov/119/meeting/house/119573/documents/HMKP-119-IF00-20260916-SD001.pdf"
+      }
+    ],
+    "meetingStatus": "Scheduled",
+    "relatedItems": {
+      "bills": [
+        {
+          "congress": 119,
+          "number": "2713",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/2713?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "6207",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/6207?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "5967",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/5967?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "6152",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/6152?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "2805",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/2805?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "7294",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/7294?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "7502",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/7502?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "10152",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/10152?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "8255",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/8255?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "9385",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/9385?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "7945",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/7945?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "4950",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/4950?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "10158",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/10158?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "10170",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/10170?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "6832",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/6832?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "10163",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/10163?format=json"
+        }
+      ]
+    },
+    "title": "Markup of Sixteen Bills",
+    "type": "Markup",
+    "updateDate": "2026-09-18T18:48:27Z",
+    "videos": [
+      {
+        "name": "Full Committee Markup of 16 Bills",
+        "url": "https://www.congress.gov/event/119th-Congress/house-event/119573"
+      }
+    ]
+  },
+  "request": {
+    "chamber": "house",
+    "congress": "119",
+    "contentType": "application/json",
+    "eventId": "119573",
+    "format": "json"
+  }
+}
