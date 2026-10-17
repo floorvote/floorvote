@@ -1,5 +1,6 @@
 import type React from 'react'
 import { color, radius, fontSize } from '../styles/tokens'
+import { primaryButtonColors } from '../styles/primaryButton'
 
 // Save/Cancel for an inline rename form. Shared so the saved-views switcher
 // and the custom-fields editor cannot drift apart again — they had diverged on
@@ -19,8 +20,7 @@ export function inlineEditSaveStyle(disabled = false): React.CSSProperties {
   return {
     ...base,
     border: 'none',
-    background: disabled ? color.borderDefault : color.accentBlue,
-    color: disabled ? color.textMuted : color.textOnFill,
+    ...primaryButtonColors(disabled),
     cursor: disabled ? 'not-allowed' : 'pointer',
   }
 }

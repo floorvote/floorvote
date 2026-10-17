@@ -15,6 +15,7 @@ import { MemberNameCell } from '../../components/MemberNameCell'
 import { usePageTitle } from '../../hooks/usePageTitle'
 import { useDemo } from '../../context/DemoContext'
 import { color, radius, fontSize, fontWeight, shadow } from '../../styles/tokens'
+import { primaryButtonColors } from '../../styles/primaryButton'
 import { orgRolesLabel } from '../../lib/orgNoun'
 import { MissingRequiredReason, useRequiredSubmit } from '../../components/RequiredField'
 import { inlineEditCancelStyle, inlineEditSaveStyle } from '../../lib/inlineEditStyles'
@@ -684,8 +685,7 @@ export function Members() {
     fontFamily: 'inherit',
   }
   const btnPrimary: React.CSSProperties = {
-    background: color.accentBlue,
-    color: color.textOnFill,
+    ...primaryButtonColors(false),
     border: 'none',
     borderRadius: radius.md,
     padding: '8px 20px',
@@ -785,7 +785,7 @@ export function Members() {
             </select>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <button type="submit" disabled={inviteLoading || demoLocked} style={{ ...btnPrimary, opacity: inviteLoading || demoLocked ? 0.6 : 1, cursor: demoLocked ? 'not-allowed' : 'pointer' }}>
+            <button type="submit" disabled={inviteLoading || demoLocked} style={{ ...btnPrimary, ...primaryButtonColors(inviteLoading || demoLocked), cursor: inviteLoading || demoLocked ? 'not-allowed' : 'pointer' }}>
               {inviteLoading ? 'Sending…' : 'Send invites'}
             </button>
             {inviteError && <span style={{ fontSize: fontSize.sm, color: color.textErrorRed }}>{inviteError}</span>}
@@ -922,7 +922,7 @@ export function Members() {
             />
             <button
               {...addRoleGate.buttonProps(handleAddRole)}
-              style={{ fontSize: fontSize.sm, padding: '5px 14px', borderRadius: radius.md, border: 'none', background: !addRoleGate.disabled ? color.accentBlue : color.borderDefault, color: !addRoleGate.disabled ? color.textOnFill : color.textMuted, cursor: !addRoleGate.disabled ? 'pointer' : 'not-allowed', fontWeight: fontWeight.medium }}
+              style={{ fontSize: fontSize.sm, padding: '5px 14px', borderRadius: radius.md, border: 'none', ...primaryButtonColors(addRoleGate.disabled), cursor: !addRoleGate.disabled ? 'pointer' : 'not-allowed', fontWeight: fontWeight.medium }}
             >
               {addingRole ? 'Adding…' : 'Add'}
             </button>

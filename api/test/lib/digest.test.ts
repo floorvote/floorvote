@@ -221,9 +221,9 @@ describe('runDigest', () => {
     expect(calls).toHaveLength(2)
     const adminCall = calls.find(c => c.to[0] === 'admin@e.com')
     const memberCall = calls.find(c => c.to[0] === 'a@e.com')
-    expect(adminCall.html).toContain('New matches (1)')
+    expect(adminCall.html).toContain('1 new match')
     expect(adminCall.html).toContain('NM 42')
-    expect(memberCall.html).toContain('New matches (1)')
+    expect(memberCall.html).toContain('1 new match')
     expect(memberCall.html).toContain('NM 42')
   })
 
@@ -239,7 +239,7 @@ describe('runDigest', () => {
     expect(result.sent).toBe(2)
   })
 
-  it('caps the admin new-match section at the 10 most relevant, with the full count and an "and N more" link', async () => {
+  it('caps the admin new-match section at the 10 most relevant, with the full count and a "See all N new matches" link', async () => {
     const db = getDb(env.DB); await enableModule(db)
     const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
     for (let i = 1; i <= 12; i++) {
@@ -250,14 +250,98 @@ describe('runDigest', () => {
     await runDigest(env as any, db)
     const adminCall = calls.find(c => c.to[0] === 'admin@e.com')
     const html: string = adminCall.html
-    expect(html).toContain('New matches (12)')
+    expect(html).toContain('12 new matches')
     expect(html).toContain('NM 112')                 // most relevant is listed
     expect(html).not.toContain('NM 101')             // the two least relevant are cut
     expect(html).not.toContain('NM 102')
     expect(html).toContain('NM 103')                 // the 10th most relevant is the last listed
-    expect(html).toContain('…and 2 more')
+    expect(html).toContain('See all 12 new matches')
     expect(html).toContain(`${env.APP_URL}/bills?newMatches=1`)
-    expect(adminCall.subject).toContain('12 new bills matching your keywords')
+    expect(adminCall.subject).toBe('Your daily digest: 12 new matches')
+  })
+
+  // ── #586: the subject names each kind and its count; new matches are full cards ──
+  const capture = () => {
+    const calls: any[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
+    return calls
+  }
+  const newMatch = (billNumber: string, extra: Record<string, unknown> = {}) =>
+    seedBill({ billNumber, state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 70, ...extra })
+
+  it('subject: an admin whose digest has both kinds sees both counts, a member with the option off sees only updates', async () => {
+    const db = getDb(env.DB); await enableModule(db)
+    const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
+    const off = await seedUser({ email: 'off@e.com', role: 'member', emailDigestMatchesEnabled: false }); await seedSession(off)
+    await addEvent(db, billId, 'position_set', JSON.stringify({ position: 'Support' }))
+    await newMatch('NM 1'); await newMatch('NM 2'); await newMatch('NM 3')
+    const calls = capture()
+    await runDigest(env as any, db)
+    expect(calls.find(c => c.to[0] === 'admin@e.com').subject).toBe('Your daily digest: 1 updated bill, 3 new matches')
+    expect(calls.find(c => c.to[0] === 'a@e.com').subject).toBe('Your daily digest: 1 updated bill, 3 new matches')
+    const offCall = calls.find(c => c.to[0] === 'off@e.com')
+    expect(offCall.subject).toBe('Your daily digest: 1 updated bill')
+    expect(offCall.html).not.toContain('In this digest')
+    expect(offCall.html).not.toContain('digest-new-matches')
+  })
+
+  it('subject: a window of seven days is a weekly digest', async () => {
+    const db = getDb(env.DB)
+    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-06-03T11:00:00Z'))
+    await enableWeekly(db, '3')
+    await db.insert(associationConfig).values({ key: 'last_digest_at', value: '2026-05-27 11:00:00' })
+    await addEvent(db, billId, 'position_set', JSON.stringify({ position: 'Support' }))
+    await newMatch('NM 1')
+    const calls = capture()
+    await runDigest(env as any, db)
+    expect(calls[0].subject).toBe('Your weekly digest: 1 updated bill, 1 new match')
+    expect(calls[0].html).toContain('Your digest for the last week')
+  })
+
+  it('subject: updates only, daily', async () => {
+    const db = getDb(env.DB); await enableModule(db)
+    await addEvent(db, billId, 'position_set', JSON.stringify({ position: 'Support' }))
+    const calls = capture()
+    await runDigest(env as any, db)
+    expect(calls[0].subject).toBe('Your daily digest: 1 updated bill')
+  })
+
+  it('subject: counts distinct updated bills, not events', async () => {
+    const db = getDb(env.DB); await enableModule(db)
+    const other = await seedBill({ billNumber: 'H 2', state: 'RI', session: '2026', priority: 'low' })
+    await addEvent(db, billId, 'position_set', JSON.stringify({ position: 'Support' }))
+    await addEvent(db, billId, 'comment_added', JSON.stringify({ preview: 'Noted.' }))
+    await addEvent(db, other, 'position_set', JSON.stringify({ position: 'Oppose' }))
+    const calls = capture()
+    await runDigest(env as any, db)
+    expect(calls[0].subject).toBe('Your daily digest: 2 updated bills')
+  })
+
+  it('a new match\'s summary reaches its card, and a match with none gets no preview', async () => {
+    const db = getDb(env.DB); await enableModule(db)
+    const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
+    await newMatch('NM 1', { tenantSummary: 'Lets counties start mail ballot processing early.' })
+    await newMatch('NM 2')
+    const calls = capture()
+    await runDigest(env as any, db)
+    const html: string = calls.find(c => c.to[0] === 'admin@e.com').html
+    expect(html).toContain('Lets counties start mail ballot processing early.')
+    expect(html.match(/padding:0 14px 10px 14px/g) ?? []).toHaveLength(1)
+    expect(html).toContain('>New match<')
+  })
+
+  it('no digest, to an admin or a member, ever says "keyword"', async () => {
+    const db = getDb(env.DB); await enableModule(db)
+    const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
+    await addEvent(db, billId, 'position_set', JSON.stringify({ position: 'Support' }))
+    for (let i = 1; i <= 11; i++) await newMatch(`NM ${i}`, { relevanceScore: 50 + i })
+    const calls = capture()
+    await runDigest(env as any, db)
+    expect(calls.length).toBeGreaterThanOrEqual(2)
+    for (const c of calls) {
+      expect(c.html).not.toMatch(/keyword/i)
+      expect(c.subject).not.toMatch(/keyword/i)
+    }
   })
 
   it('excludes prioritized and dismissed bills from the new-match section', async () => {
@@ -344,7 +428,7 @@ describe('runDigest', () => {
       // The admin and the member (option on by default) each get one digest.
       expect(calls).toHaveLength(2)
       for (const c of calls) {
-        expect(c.html).toContain('New matches (1)')
+        expect(c.html).toContain('1 new match')
         expect(c.html).toContain('SOLO 1')
         expect(c.html).not.toContain('GRP 1')
       }
@@ -363,7 +447,7 @@ describe('runDigest', () => {
 
       expect(calls).toHaveLength(2)
       for (const c of calls) {
-        expect(c.html).toContain('New matches (1)')
+        expect(c.html).toContain('1 new match')
         expect(c.html).toContain('GRP 1')
       }
     })
@@ -380,7 +464,7 @@ describe('runDigest', () => {
 
       expect(calls).toHaveLength(2)
       for (const c of calls) {
-        expect(c.html).toContain('New matches (2)')
+        expect(c.html).toContain('2 new matches')
         expect(c.html).toContain('GRP 1')
         expect(c.html).toContain('GRP 2')
       }

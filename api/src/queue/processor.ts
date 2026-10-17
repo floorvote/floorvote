@@ -758,16 +758,26 @@ async function applyCentralBill(
 
   // Tags are a team field (lib/teamFields.ts), set only by the analysis. The
   // group's tags before this one, for the team event recording a change.
-  const tagsBefore = aiResult && existing ? (await loadGroupTeamValues(db, existing.id)).analysis?.tags ?? [] : []
+  // The event is advisory history: failing to read or write it is logged and never fails the delivery.
+  const tagsBefore = aiResult && existing
+    ? await loadGroupTeamValues(db, existing.id).then(v => v.analysis?.tags ?? []).catch(err => {
+      console.error(`[processor] reading group tags before the analysis failed for ${msg.billId}:`, err)
+      return null
+    })
+    : []
   // An analysis records the tags it leaves the group with, including the effect of the match type it
   // arrives with, so the upsert records a match type's effect only when no analysis runs.
   const { id: billInternalId, isNew } = await upsertBill(db, msg.billId, upsertData, aiResult ? undefined : existing)
-  if (aiResult) {
-    // The group's tags after this analysis: its own when the bill is tracked or
-    // the group has no tracked analysis, the tracked bill's otherwise, so a
-    // pulled companion's analysis records no change to them.
-    const tagsAfter = (await loadGroupTeamValues(db, billInternalId)).analysis?.tags ?? []
-    await recordFieldChanges(db, [{ billId: billInternalId, field: 'tags', label: 'tags', old: tagsBefore, new: tagsAfter }], null)
+  if (aiResult && tagsBefore) {
+    try {
+      // The group's tags after this analysis: its own when the bill is tracked or
+      // the group has no tracked analysis, the tracked bill's otherwise, so a
+      // pulled companion's analysis records no change to them.
+      const tagsAfter = (await loadGroupTeamValues(db, billInternalId)).analysis?.tags ?? []
+      await recordFieldChanges(db, [{ billId: billInternalId, field: 'tags', label: 'tags', old: tagsBefore, new: tagsAfter }], null)
+    } catch (err) {
+      console.error(`[processor] recording the tags event failed for ${msg.billId}:`, err)
+    }
   }
   await syncBillSubjects(db, billInternalId, centralBill.state, centralBill.subjects ?? [])
 

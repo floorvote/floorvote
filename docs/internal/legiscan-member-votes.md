@@ -1,6 +1,6 @@
 # Per-Member Votes for LegiScan States
 
-Bill pages list how each legislator voted on each roll call, under "How each legislator voted." Central serves these as `legislatorVotes` on each vote in `GET /api/bills/:id`, read from `roll_call_votes` joined to `people`. The display reads that table whatever the provider, so a provider whose feed carries per-member votes only needs to write it (`writeMemberVotes` in `central/src/lib/rollCallVotes.ts`).
+Bill pages list how each legislator voted on each roll call: the tally ("Yea 11 · Nay 2") is a button that opens the voter list. The page maps every provider's vote words onto one vocabulary and order (Yea, Nay, Not voting, Absent, then other words as their own groups) in `web/src/lib/voteWords.ts`. Central serves these as `legislatorVotes` on each vote in `GET /api/bills/:id`, read from `roll_call_votes` joined to `people`. The display reads that table whatever the provider, so a provider whose feed carries per-member votes only needs to write it (`writeMemberVotes` in `central/src/lib/rollCallVotes.ts`).
 
 For LegiScan states, the votes come from LegiScan's weekly bulk datasets, not from `getRollCall`.
 
