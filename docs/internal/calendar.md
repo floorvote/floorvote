@@ -12,6 +12,10 @@ GET /api/calendar/feed/:slugIcs
 
 `:slugIcs` is a per-tenant **capability URL**: a 26-character base-36 token (~134 bits of entropy) drawn from `crypto.getRandomValues` (optionally suffixed `.ics`). Knowledge of the slug is the only thing required to read the feed — there is no login, cookie, or API key. This is intentional, so that standard calendar clients (Google Calendar, Apple Calendar, Outlook) and link-unfurl bots can subscribe by URL alone, none of which can complete an authenticated flow.
 
+## Companion groups
+
+A hearing on a bill shows when the bill's companion group has a priority, whichever member holds it (`prioritizedBillEntry`, which uses `groupHasPriority`). Each member's hearing stays its own entry, labeled by its bill, because they are real hearings in different chambers. Hearings that are the same meeting (same date, time, description, and location) still merge into one entry listing both bills. `GET /api/calendar/events` adds `groups` to each entry, the groups its bills are in with every bill in each, so the popover can link to the group's bills.
+
 ## Why it is unauthenticated
 
 The same reasoning behind not enabling zone-wide Bot Fight Mode applies here: an authenticated or challenge-gated feed would break calendar-client polling and is incompatible with the ICS subscription model. The capability-URL pattern is the standard, intended way to publish a private calendar feed.

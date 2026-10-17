@@ -4,6 +4,7 @@ import { eq, and, desc, inArray, isNull } from 'drizzle-orm'
 import * as schema from '../db/schema'
 import { secretsMatch } from '../lib/auth'
 import { textCacheKey, getCachedText, putCachedText } from '../lib/billTextCache'
+import { pdfStreamOrNull } from '../lib/storedPdf'
 import { decodeStoredHtml } from '../lib/decodeHtml'
 import { resolveItemDate } from '../lib/itemDate'
 import { parseHandle, toHandle } from '../lib/billHandle'
@@ -15,6 +16,7 @@ import { calendarKind } from '../lib/billCalendar'
 import { calendarCoverage } from '../lib/bodyEvents'
 import { providerCapabilities } from '../lib/capabilities'
 import { billReferralDetails, pendingCommittee } from '../lib/committees'
+import { refreshStaleStub } from '../lib/stubRefresh'
 import type { Env } from '../types'
 
 export const billsRoutes = new Hono<{ Bindings: Env }>()
@@ -170,6 +172,13 @@ billsRoutes.get('/:id', async (c) => {
 
   const bill = await db.select().from(schema.bills).where(eq(schema.bills.billId, numeric)).get()
   if (!bill) return c.json({ error: 'not found' }, 404)
+  // An instance's bill page sends `view`. A stale stub's detail is refreshed in
+  // the background (lib/stubRefresh.ts), and this answer doesn't wait for it.
+  // Other reads, such as an instance storing a delivery, never refresh.
+  if (c.req.query('view') !== undefined) {
+    c.executionCtx.waitUntil(refreshStaleStub(db, c.env.INGESTOR_QUEUE, bill)
+      .catch(err => console.error(`[stub-refresh] failed for bill ${bill.billId}`, err)))
+  }
   // The provider that wrote the bill, for its vocabulary.
   const provider = findProvider(bill.provider) ?? getProvider(DEFAULT_PROVIDER_ID)
 
@@ -446,22 +455,30 @@ billsRoutes.get('/:id/text/:docId', async (c) => {
   if (!obj) return c.json({ error: 'text not found in storage' }, 404)
 
   const isPdf = text.r2Key.endsWith('.pdf')
-  // PDFs stream through as bytes. HTML is decoded by its declared charset and
-  // re-served as UTF-8, so the panel (and anything else reading this endpoint)
-  // never has to guess what a state's server meant.
-  const res = isPdf
-    ? new Response(obj.body, {
-        headers: {
-          'Content-Type': obj.httpMetadata?.contentType ?? 'application/pdf',
-          'Content-Disposition': 'inline',
-        },
-      })
-    : new Response(decodeStoredHtml(await obj.arrayBuffer(), obj.httpMetadata?.contentType), {
-        headers: {
-          'Content-Type': 'text/html; charset=utf-8',
-          'Content-Disposition': 'inline',
-        },
-      })
+  // PDFs stream through as bytes, served as application/pdf whatever type the
+  // object was stored with, and only if the bytes are a PDF: anything else under
+  // a `.pdf` key (a provider's error page, say) is refused rather than rendered
+  // in the app's origin. HTML is decoded by its declared charset and re-served as
+  // UTF-8, so the panel (and anything else reading this endpoint) never has to
+  // guess what a state's server meant.
+  let res: Response
+  if (isPdf) {
+    const pdf = await pdfStreamOrNull(obj.body)
+    if (!pdf) return c.json({ error: 'stored document is not a valid PDF' }, 502)
+    res = new Response(pdf, {
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': 'inline',
+      },
+    })
+  } else {
+    res = new Response(decodeStoredHtml(await obj.arrayBuffer(), obj.httpMetadata?.contentType), {
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Content-Disposition': 'inline',
+      },
+    })
+  }
   c.executionCtx.waitUntil(putCachedText(c.env, cacheKey, res.clone()))
   return res
 })
@@ -473,7 +490,9 @@ billsRoutes.get('/:id/text', async (c) => {
 
   const db = drizzle(c.env.DB, { schema })
 
-  const texts = await db.select({ r2Key: schema.billTexts.r2Key, docId: schema.billTexts.docId, date: schema.billTexts.date })
+  const texts = await db.select({
+    r2Key: schema.billTexts.r2Key, docId: schema.billTexts.docId, date: schema.billTexts.date, textHash: schema.billTexts.textHash,
+  })
     .from(schema.billTexts)
     .where(eq(schema.billTexts.billId, numeric))
     .all()
@@ -481,6 +500,11 @@ billsRoutes.get('/:id/text', async (c) => {
   const withKey = newestStoredText(texts)
 
   if (!withKey?.r2Key) return c.json({ error: 'no text available' }, 404)
+
+  // Names the document served, so an instance can pin what its model read to
+  // it (claim sources, #568). The doc id is a string, as in the bill route's
+  // `texts`. It is the same document whose hash the bill route sends.
+  const served = { docId: String(withKey.docId), textHash: withKey.textHash ?? null }
 
   const cacheKey = textCacheKey('json', withKey.r2Key)
   const cached = await getCachedText(c.env, cacheKey)
@@ -496,9 +520,9 @@ billsRoutes.get('/:id/text', async (c) => {
     // loop on multi-MB PDFs, and avoids ~200 MB of transient heap allocation).
     // Requires nodejs_compat — set in wrangler.toml.
     const buf = await obj.arrayBuffer()
-    res = c.json({ type: 'pdf', content: Buffer.from(buf).toString('base64') })
+    res = c.json({ type: 'pdf', content: Buffer.from(buf).toString('base64'), ...served })
   } else {
-    res = c.json({ type: 'html', content: decodeStoredHtml(await obj.arrayBuffer(), obj.httpMetadata?.contentType) })
+    res = c.json({ type: 'html', content: decodeStoredHtml(await obj.arrayBuffer(), obj.httpMetadata?.contentType), ...served })
   }
   c.executionCtx.waitUntil(putCachedText(c.env, cacheKey, res.clone()))
   return res

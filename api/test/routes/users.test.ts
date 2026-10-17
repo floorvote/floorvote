@@ -306,6 +306,17 @@ describe('GET /users/me/bills', () => {
     expect(first).toHaveProperty('position')
   })
 
+  it('returns each bill with exactly the fields the list shows', async () => {
+    const res = await SELF.fetch('http://localhost/api/users/me/bills', {
+      headers: { Cookie: `session=${memberToken}` },
+    })
+    const body = await res.json() as Record<string, unknown>[]
+    const one = body.find(b => b.billNumber === 'HB 1')!
+    expect(Object.keys(one).sort()).toEqual(['billNumber', 'commentPreview', 'hasComment', 'hasNote', 'id', 'lastTouched', 'myVote', 'notePreview', 'position', 'title'])
+    expect(one).toMatchObject({ billNumber: 'HB 1', title: 'Bill One', myVote: 'support' })
+    expect(typeof one.id).toBe('string')
+  })
+
   it('includes commentPreview — non-null when comment exists, null when none', async () => {
     const res = await SELF.fetch('http://localhost/api/users/me/bills', {
       headers: { Cookie: `session=${memberToken}` },

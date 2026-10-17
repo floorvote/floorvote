@@ -66,7 +66,6 @@ export function ChangeHistoryTooltip({ changes, lastActionDate, relativeTime }: 
   const trigger = (
     <span style={{
       ...CHROME_TEXT,
-      cursor: 'default',
       borderBottom: changes.length > 0 ? `1px dotted ${color.textMuted}` : undefined,
     }}>
       Updated {relativeTime(displayTs)}
@@ -107,7 +106,9 @@ export function ChangeHistoryTooltip({ changes, lastActionDate, relativeTime }: 
   )
 
   return (
-    <HoverTooltip placement="bottom" maxWidth={360} text={panel}>
+    // A toggletip, like the ⓘ and the term explainers: the trigger is a button, so a
+    // click, tap, Enter, or Space pins the log open or closed and Escape closes it.
+    <HoverTooltip toggletip placement="bottom" maxWidth={360} text={panel}>
       {trigger}
     </HoverTooltip>
   )
