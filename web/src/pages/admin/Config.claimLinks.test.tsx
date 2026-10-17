@@ -3,7 +3,7 @@ import { render, screen, waitFor, within, act } from '@testing-library/react'
 import React from 'react'
 import userEvent from '@testing-library/user-event'
 
-// The claim links toggle in Settings (#570), in the AI instructions card.
+// The claim links switch in Settings (#570), in the AI instructions card, right under the bill summary instructions.
 
 vi.mock('react-router-dom', () => ({
   useNavigate: () => vi.fn(),
@@ -50,8 +50,8 @@ const BASE_CONFIG = {
   ai_context: '',
   relevance_question: '',
   tag_taxonomy: [] as { name: string; description?: string }[],
-  matched_bills_count: 0,
-  prioritized_bills_count: 0,
+  matched_bills_count: 7,
+  prioritized_bills_count: 3,
 }
 
 function mockConfig(extra: Record<string, unknown> = {}, onClaimLinks?: (body: unknown) => unknown) {
@@ -59,6 +59,7 @@ function mockConfig(extra: Record<string, unknown> = {}, onClaimLinks?: (body: u
     if (path === '/admin/config') return { ...BASE_CONFIG, ...extra }
     if (path === '/admin/custom-fields') return []
     if (path === '/bills/drafts') return { drafts: [] }
+    if (path.startsWith('/admin/reprocess-llm-all') && init?.method === 'POST') return { queued: 3 }
     if (path === '/admin/claim-links' && init?.method === 'PUT') {
       return onClaimLinks ? onClaimLinks(JSON.parse(init.body as string)) : { enabled: false }
     }
@@ -70,8 +71,11 @@ function renderConfig() {
   render(<UnsavedTextContext.Provider value={createUnsavedRegistry()}><Config /></UnsavedTextContext.Provider>)
 }
 
-const toggle = () => screen.findByRole('checkbox', { name: /link summary claims to the bill text/i })
+const COPY = "Links claims in a bill's summary to the associated passage in the bill. This will increase AI costs slightly."
+const toggle = () => screen.findByRole('switch', { name: /claim links/i })
 const putsToClaimLinks = () => mockFetch.mock.calls.filter(([p, init]) => p === '/admin/claim-links' && (init as RequestInit | undefined)?.method === 'PUT')
+const reprocessPosts = () => mockFetch.mock.calls.filter(([p, init]) => String(p).startsWith('/admin/reprocess-llm-all') && (init as RequestInit | undefined)?.method === 'POST')
+const scopeDialog = () => screen.findByRole('dialog', { name: /claim links turned on/i })
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -79,12 +83,30 @@ beforeEach(() => {
   mockConfig()
 })
 
-describe('Config: the claim links toggle', () => {
+describe('Config: the claim links switch', () => {
   it('sits in the AI instructions card', async () => {
     renderConfig()
     const box = await toggle()
     const card = screen.getByRole('heading', { name: 'AI instructions' }).parentElement as HTMLElement
     expect(card).toContainElement(box)
+  })
+
+  it('is a switch, not a checkbox', async () => {
+    renderConfig()
+    await toggle()
+    expect(screen.queryByRole('checkbox', { name: /claim/i })).toBeNull()
+  })
+
+  it('sits directly under the bill summary instructions, before the relevance score', async () => {
+    renderConfig()
+    const box = await toggle()
+    const summary = await screen.findByLabelText('Bill summary')
+    const relevance = screen.getByLabelText('Relevance score')
+    expect(summary.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(box.compareDocumentPosition(relevance) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // And after the summary's own hint, so it reads as part of that field.
+    const hint = screen.getByText(/system instructions sent to the ai for every bill/i)
+    expect(hint.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('is on for an instance whose config says nothing about it', async () => {
@@ -104,25 +126,16 @@ describe('Config: the claim links toggle', () => {
     expect(await toggle()).not.toBeChecked()
   })
 
-  it('says it may increase AI costs slightly, and gives no figure', async () => {
-    renderConfig()
-    const box = await toggle()
-    const card = (screen.getByRole('heading', { name: 'AI instructions' }).parentElement as HTMLElement)
-    const copy = within(card).getByTestId('claim-links-copy').textContent ?? ''
-    expect(box).toBeTruthy()
-    expect(copy).toMatch(/may increase (your )?AI costs slightly/i)
-    // No dollar amount, cents, token count, or percentage in the app.
-    expect(copy).not.toMatch(/[$¢%]/)
-    expect(copy).not.toMatch(/\d/)
-    expect(copy).not.toMatch(/\b(dollars?|cents?|tokens?)\b/i)
-  })
-
-  it('explains what off does and that turning it back on shows stored links', async () => {
+  it('has exactly the agreed description', async () => {
     renderConfig()
     await toggle()
-    const copy = screen.getByTestId('claim-links-copy').textContent ?? ''
-    expect(copy).toMatch(/plain text/i)
-    expect(copy).toMatch(/back on/i)
+    expect(screen.getByTestId('claim-links-copy').textContent).toBe(COPY)
+  })
+
+  it('has a short label', async () => {
+    renderConfig()
+    await toggle()
+    expect(screen.getByTestId('claim-links-label').textContent).toBe('Claim links')
   })
 
   it('saves off right away through the claim links route, not the AI instructions save', async () => {
@@ -155,37 +168,28 @@ describe('Config: the claim links toggle', () => {
     expect((summary as HTMLTextAreaElement).value).toBe('Draft instructions')
   })
 
-  it('shows who changed it and when, from the response', async () => {
-    mockConfig({}, () => ({
-      enabled: false,
-      changedAt: '2026-10-20 14:05:09',
-      changedBy: { id: 'u9', name: 'Avery Admin', email: 'avery@example.com' },
-    }))
-    renderConfig()
-    await userEvent.click(await toggle())
-    await waitFor(() => expect(screen.getByTestId('claim-links-changed')).toHaveTextContent(/Avery Admin/))
-    expect(screen.getByTestId('claim-links-changed')).toHaveTextContent(/October 20, 2026/)
-  })
-
-  it('shows who last changed it, as loaded with the settings', async () => {
+  it('shows no changed-by or changed-at text, however the settings come back', async () => {
     mockConfig({
       claim_links_enabled: false,
       claim_links_changed_at: '2026-10-20 14:05:09',
-      claim_links_changed_by: { id: 'u9', name: null, email: 'avery@example.com' },
-    })
+      claim_links_changed_by: { id: 'u9', name: 'Avery Admin', email: 'avery@example.com' },
+    }, () => ({
+      enabled: true,
+      changedAt: '2026-10-21 09:00:00',
+      changedBy: { id: 'u9', name: 'Avery Admin', email: 'avery@example.com' },
+    }))
     renderConfig()
-    await toggle()
-    // A member with no name is shown by email.
-    expect(screen.getByTestId('claim-links-changed')).toHaveTextContent(/avery@example\.com/)
-  })
-
-  it('shows no change line for an instance nobody has changed it on', async () => {
-    renderConfig()
-    await toggle()
+    const box = await toggle()
+    expect(screen.queryByText(/last changed/i)).toBeNull()
     expect(screen.queryByTestId('claim-links-changed')).toBeNull()
+    await userEvent.click(box)
+    await waitFor(() => expect(putsToClaimLinks()).toHaveLength(1))
+    expect(screen.queryByText(/last changed/i)).toBeNull()
+    expect(screen.queryByText(/Avery Admin/)).toBeNull()
+    expect(screen.queryByText(/October 2\d, 2026/)).toBeNull()
   })
 
-  it('puts the box back and shows the error when the save fails', async () => {
+  it('puts the switch back and shows the error when the save fails', async () => {
     const { ApiError } = await import('../../lib/api')
     mockConfig({}, () => { throw new ApiError(500, 'Could not save claim links.') })
     renderConfig()
@@ -202,7 +206,114 @@ describe('Config: the claim links toggle', () => {
   })
 })
 
-describe('Config: the claim links toggle, for keyboard and screen reader users', () => {
+describe('Config: turning claim links on offers a re-run', () => {
+  async function turnOn() {
+    mockConfig({ claim_links_enabled: false }, () => ({ enabled: true }))
+    renderConfig()
+    await userEvent.click(await toggle())
+  }
+
+  it('opens the reprocess dialog with the claim links intro', async () => {
+    await turnOn()
+    const dialog = await scopeDialog()
+    expect(within(dialog).getByText(/existing summaries get claim links only when/i)).toBeInTheDocument()
+    expect(within(dialog).queryByText(/instructions you just saved/i)).toBeNull()
+    expect(screen.queryByRole('dialog', { name: 'Instructions saved' })).toBeNull()
+  })
+
+  it('offers prioritized and all bills, and a way to decline', async () => {
+    await turnOn()
+    const dialog = await scopeDialog()
+    expect(within(dialog).getByRole('button', { name: /all 3 prioritized bills/i })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: /all 7 fully analyzed bills/i })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: /no, just future bill texts/i })).toBeInTheDocument()
+  })
+
+  it('posts the prioritized scope when that is chosen', async () => {
+    await turnOn()
+    const dialog = await scopeDialog()
+    await userEvent.click(within(dialog).getByRole('button', { name: /prioritized bills/i }))
+    await waitFor(() => expect(reprocessPosts()).toHaveLength(1))
+    expect(reprocessPosts()[0][0]).toBe('/admin/reprocess-llm-all?scope=prioritized')
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('posts the all scope when that is chosen', async () => {
+    await turnOn()
+    const dialog = await scopeDialog()
+    await userEvent.click(within(dialog).getByRole('button', { name: /fully analyzed bills/i }))
+    await waitFor(() => expect(reprocessPosts()).toHaveLength(1))
+    expect(reprocessPosts()[0][0]).toBe('/admin/reprocess-llm-all?scope=all')
+  })
+
+  it('posts nothing when dismissed', async () => {
+    await turnOn()
+    const dialog = await scopeDialog()
+    await userEvent.click(within(dialog).getByRole('button', { name: /no, just future bill texts/i }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(reprocessPosts()).toHaveLength(0)
+  })
+
+  it('opens nothing when turned off', async () => {
+    mockConfig({}, () => ({ enabled: false }))
+    renderConfig()
+    const box = await toggle()
+    await userEvent.click(box)
+    await waitFor(() => expect(putsToClaimLinks()).toHaveLength(1))
+    expect(box).not.toBeChecked()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('opens nothing when the save fails, and puts the switch back', async () => {
+    const { ApiError } = await import('../../lib/api')
+    mockConfig({ claim_links_enabled: false }, () => { throw new ApiError(500, 'Could not save claim links.') })
+    renderConfig()
+    const box = await toggle()
+    await userEvent.click(box)
+    expect(await screen.findByText('Could not save claim links.')).toBeInTheDocument()
+    expect(box).not.toBeChecked()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('does not open before the save has succeeded', async () => {
+    let settle!: (v: unknown) => void
+    const promise = new Promise((res) => { settle = res })
+    mockConfig({ claim_links_enabled: false }, () => promise)
+    renderConfig()
+    await userEvent.click(await toggle())
+    await waitFor(() => expect(putsToClaimLinks()).toHaveLength(1))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await act(async () => { settle({ enabled: true }) })
+    expect(await scopeDialog()).toBeInTheDocument()
+  })
+
+  it('has nothing to re-run on an instance with no fully analyzed bills, so opens nothing', async () => {
+    mockConfig({ claim_links_enabled: false, matched_bills_count: 0, prioritized_bills_count: 0 }, () => ({ enabled: true }))
+    renderConfig()
+    const box = await toggle()
+    await userEvent.click(box)
+    await waitFor(() => expect(box).toBeChecked())
+    await waitFor(() => expect(putsToClaimLinks()).toHaveLength(1))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('still opens the usual instructions dialog, with its own text, after saving instructions', async () => {
+    mockConfig({ ai_context: 'Original instructions' })
+    renderConfig()
+    const summary = await screen.findByLabelText('Bill summary')
+    await userEvent.clear(summary)
+    await userEvent.type(summary, 'Different instructions')
+    mockFetch.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/admin/config' && init?.method === 'PUT') return { queued: 0 }
+      throw new Error('unexpected path: ' + path)
+    })
+    await userEvent.click(screen.getByRole('button', { name: 'Save AI instructions' }))
+    expect(await screen.findByRole('dialog', { name: 'Instructions saved' })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: /claim links turned on/i })).toBeNull()
+  })
+})
+
+describe('Config: the claim links switch, for keyboard and screen reader users', () => {
   /** A save that stays in flight until the test settles it. */
   function pendingSave() {
     let settle!: (v: unknown) => void
@@ -212,7 +323,7 @@ describe('Config: the claim links toggle, for keyboard and screen reader users',
     return { settle, fail }
   }
 
-  it('keeps focus on the checkbox through a keyboard toggle and its save', async () => {
+  it('keeps focus on the switch through a keyboard toggle and its save', async () => {
     const save = pendingSave()
     renderConfig()
     const box = await toggle()
@@ -223,9 +334,9 @@ describe('Config: the claim links toggle, for keyboard and screen reader users',
     expect(document.activeElement).toBe(box)
     expect(box).not.toBeDisabled()
     expect(box).toHaveAttribute('aria-disabled', 'true')
-    await act(async () => { save.settle({ enabled: false, changedAt: '2026-10-20 14:05:09', changedBy: null }) })
+    await act(async () => { save.settle({ enabled: false }) })
     expect(document.activeElement).toBe(box)
-    expect(box).toHaveAttribute('aria-disabled', 'false')
+    expect(box).not.toHaveAttribute('aria-disabled', 'true')
   })
 
   it('ignores a second toggle while the first save is in flight', async () => {
@@ -249,7 +360,8 @@ describe('Config: the claim links toggle, for keyboard and screen reader users',
     renderConfig()
     const box = await toggle()
     await userEvent.click(box)
-    await waitFor(() => expect(box).toHaveAttribute('aria-disabled', 'false'))
+    await waitFor(() => expect(box).not.toHaveAttribute('aria-disabled', 'true'))
+    // Turning it back on opens the re-run dialog, which is dismissed here.
     await userEvent.click(box)
     await waitFor(() => expect(putsToClaimLinks()).toHaveLength(2))
     expect(box).toBeChecked()

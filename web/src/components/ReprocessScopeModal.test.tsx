@@ -73,4 +73,12 @@ describe('ReprocessScopeModal', () => {
     mount()
     expect(screen.getByText(/Comments, votes, priority, positions, and notes are untouched/)).toBeInTheDocument()
   })
+
+  it('takes its own title and intro for a case other than saved instructions', () => {
+    mount({ title: 'Claim links turned on', intro: 'Existing summaries get claim links only when re-run.' })
+    expect(screen.getByRole('dialog', { name: 'Claim links turned on' })).toBeTruthy()
+    expect(screen.getByText(/only when re-run/)).toBeInTheDocument()
+    expect(screen.queryByText(/instructions you just saved/i)).toBeNull()
+    expect(screen.queryByRole('dialog', { name: /instructions saved/i })).toBeNull()
+  })
 })

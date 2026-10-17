@@ -12,13 +12,24 @@ interface Props {
   prioritizedBillsCount: number | null
   onChoose: (scope: ReprocessScope) => void
   onDismiss: () => void
+  /** Heading, for a case other than saved AI instructions. */
+  title?: string
+  /** Intro under the heading, for a case other than saved AI instructions. */
+  intro?: string
 }
 
 function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? '' : 's'}`
 }
 
-export function ReprocessScopeModal({ matchedBillsCount, prioritizedBillsCount, onChoose, onDismiss }: Props) {
+const DEFAULT_TITLE = 'Instructions saved'
+const DEFAULT_INTRO =
+  'New bill texts will automatically use the instructions you just saved. Do you want to apply the instructions retroactively, to existing bills?'
+
+export function ReprocessScopeModal({
+  matchedBillsCount, prioritizedBillsCount, onChoose, onDismiss,
+  title = DEFAULT_TITLE, intro = DEFAULT_INTRO,
+}: Props) {
   // Reprocessing is destructive/consequential, so initial focus must NOT land
   // on either "Yes, reprocess..." button. Focus the cancel-equivalent control
   // ("No, just future bill texts") instead.
@@ -42,11 +53,10 @@ export function ReprocessScopeModal({ matchedBillsCount, prioritizedBillsCount, 
       cardStyle={{ width: 460 }}
     >
       <div id="reprocess-scope-title" style={{ fontWeight: fontWeight.bold, fontSize: fontSize.base, color: color.textPrimary, marginBottom: 8 }}>
-        Instructions saved
+        {title}
       </div>
       <div style={{ fontSize: fontSize.sm, color: color.textSecondary, marginBottom: 16, lineHeight: 1.5 }}>
-        New bill texts will automatically use the instructions you just saved. Do you want to apply the
-        instructions retroactively, to existing bills?
+        {intro}
       </div>
       <div style={{ fontSize: fontSize.xs, color: color.textSecondary, marginBottom: 12, lineHeight: 1.5 }}>
         {REGENERATE_PRESERVES_DESCRIPTION}
