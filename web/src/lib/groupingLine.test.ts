@@ -294,6 +294,14 @@ describe('placeThreadLines', () => {
       expect(lines[0]).toMatchObject({ kind: 'fold', actorName: null })
     })
 
+    it('folds a change by a member whose account is gone with FloorVote\'s, since the line names both FloorVote', () => {
+      const gone = { actorId: 'u-deleted', actorName: null }
+      const placed = placeThreadLines(comments, [], [
+        change('g1', '2026-10-11 10:00:00', gone), change('r1', '2026-10-11 11:00:00', { actorId: null, actorName: null }),
+      ])
+      expect(labels(placed.before.get('c2'))).toEqual(['g1+r1'])
+    })
+
     it('tells two people with the same name apart by who they are', () => {
       const placed = placeThreadLines(comments, [], [
         change('a', '2026-10-11 10:00:00', { actorId: 'u-1', actorName: 'Sam Lee' }), change('b', '2026-10-11 11:00:00', { actorId: 'u-2', actorName: 'Sam Lee' }),

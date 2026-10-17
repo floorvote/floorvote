@@ -4,7 +4,7 @@ import { dbTsToEpoch } from '../../../shared/time'
 import { fieldChangeText, foldText } from '../lib/activityLine'
 import { formatShortMonthDay } from '../lib/calendarDate'
 import type { ThreadLine } from '../lib/groupingLine'
-import { color, fontSize } from '../styles/tokens'
+import { color, fontSize, fontWeight } from '../styles/tokens'
 import { GroupingLine, THREAD_LINE_STYLE } from './GroupingLine'
 
 type Options = {
@@ -33,11 +33,16 @@ const Icon = ({ name }: { name: string }) => (
 export function ActivityLine({ event, positionLabel, renderBill, style }: { event: FieldChangeEvent; style?: CSSProperties } & Options) {
   const date = formatShortMonthDay(event.createdAt)
   const bill = renderBill?.(event)
+  // The sentence opens with who made the change, set in the heavier weight a comment's author name has.
+  const who = event.actorName ?? 'FloorVote'
+  const sentence = fieldChangeText(event, { positionLabel })
   return (
     <div role="note" style={{ ...THREAD_LINE_STYLE, ...style }}>
       <Icon name={FIELD_ICONS[event.field] ?? 'edit_note'} />
       <span>
-        {fieldChangeText(event, { positionLabel })}
+        {sentence.startsWith(who)
+          ? <><span style={{ fontWeight: fontWeight.semibold, color: color.textSecondary }}>{who}</span>{sentence.slice(who.length)}</>
+          : sentence}
         {date && <><span aria-hidden="true"> · </span><time dateTime={new Date(dbTsToEpoch(event.createdAt)).toISOString()}>{date}</time></>}
         {bill && <span style={{ marginLeft: 6 }}>{bill}</span>}
       </span>
