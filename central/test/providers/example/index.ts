@@ -1,4 +1,4 @@
-import { sha256Hex, type CentralMeasure, type Provider, type ProviderRecord } from '../../../src/providers/sdk'
+import { sha256Hex, type CentralMeasure, type Provider, type ProviderPerson, type ProviderRecord } from '../../../src/providers/sdk'
 import { vocabulary } from './vocabulary'
 
 /**
@@ -28,8 +28,25 @@ export const EXAMPLE_STATE = 'ZZ'
 const SESSION = '2026'
 const STATUS_CODES: Record<ExampleRecord['Status'], number> = { Introduced: 1, Enacted: 2 }
 
-/** What the example feed returns for its one session. */
-export const exampleFeed: { records: ExampleRecord[] } = { records: [] }
+/**
+ * What the example feed returns for its one session. `people`, when set, are
+ * the legislators its snapshot lists, each under the feed's own key, which
+ * the provider mints a person id from.
+ */
+export const exampleFeed: {
+  records: ExampleRecord[]
+  people?: (Omit<ProviderPerson, 'people_id'> & { key: string })[]
+  /** The ETag the feed answers with (ProviderSnapshot.etag). Left out when undefined. */
+  etag?: string | null
+  /** Answer with `records` as only the changes since the ETag core passed (ProviderSnapshot.partial). */
+  partial?: boolean
+  /** Answer that nothing changed since the ETag core passed (ProviderSnapshot.unchanged). */
+  unchanged?: boolean
+  /** The ETag core passed to each snapshot, oldest first. */
+  asked: (string | null)[]
+  /** Awaited after the feed is read and before it answers, so a test can hold a pass midway. */
+  hold?: () => Promise<void>
+} = { records: [], asked: [] }
 
 export const example: Provider = {
   id: 'example',
@@ -46,12 +63,25 @@ export const example: Provider = {
 
   selectSessions: sessions => sessions,
 
-  async snapshot(_session, ctx) {
-    const ids = await ctx.ids('bill', exampleFeed.records.map(r => r.Number))
-    const records = await Promise.all(exampleFeed.records.map(async (r): Promise<ProviderRecord> => ({
+  async snapshot(session, ctx) {
+    exampleFeed.asked.push(session.etag)
+    // Read before the hold, as a real feed's answer is fixed once it's fetched.
+    const { etag, partial, unchanged, hold } = exampleFeed
+    const feed = structuredClone(exampleFeed.records)
+    await hold?.()
+    const ids = await ctx.ids('bill', feed.map(r => r.Number))
+    const records = await Promise.all(feed.map(async (r): Promise<ProviderRecord> => ({
       billId: ids.get(r.Number)!, nativeKey: r.Number, raw: r, hash: await sha256Hex(JSON.stringify(r)),
     })))
-    return { records }
+    const answer = {
+      records,
+      ...(etag !== undefined ? { etag } : {}),
+      ...(partial ? { partial: true } : {}),
+      ...(unchanged ? { unchanged: true } : {}),
+    }
+    if (!exampleFeed.people) return answer
+    const personIds = await ctx.ids('person', exampleFeed.people.map(p => p.key))
+    return { ...answer, people: exampleFeed.people.map(({ key, ...p }) => ({ ...p, people_id: personIds.get(key)! })) }
   },
 
   async toEntry(record) {

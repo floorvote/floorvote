@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rollcall-vote>
+  <vote-metadata>
+    <majority>R</majority>
+    <congress>119</congress>
+    <session>1st</session>
+    <chamber>U.S. House of Representatives</chamber>
+    <rollcall-num>52</rollcall-num>
+    <legis-num>H J RES 35</legis-num>
+    <vote-question>On Passage</vote-question>
+    <vote-type>YEA-AND-NAY</vote-type>
+    <vote-result>Passed</vote-result>
+    <action-date>26-Feb-2025</action-date>
+    <action-time time-etz="16:43">4:43 PM</action-time>
+    <vote-desc>Providing for congressional disapproval under chapter 8 of title 5, United States Code, of the rule submitted by the Environmental Protection Agency relating to “Waste Emissions Charge for Petroleum and Natural Gas Systems: Procedures for Facilitating Compliance, Including Netting and Exemptions”</vote-desc>
+    <vote-totals>
+      <totals-by-party-header>
+        <party-header>Party</party-header>
+        <yea-header>Yeas</yea-header>
+        <nay-header>Nays</nay-header>
+        <present-header>Answered “Present”</present-header>
+        <not-voting-header>Not Voting</not-voting-header>
+      </totals-by-party-header>
+      <totals-by-party>
+        <party>Republican</party>
+        <yea-total>214</yea-total>
+        <nay-total>1</nay-total>
+        <present-total>0</present-total>
+        <not-voting-total>3</not-voting-total>
+      </totals-by-party>
+      <totals-by-party>
+        <party>Democratic</party>
+        <yea-total>6</yea-total>
+        <nay-total>205</nay-total>
+        <present-total>1</present-total>
+        <not-voting-total>3</not-voting-total>
+      </totals-by-party>
+      <totals-by-party>
+        <party>Independent</party>
+        <yea-total>0</yea-total>
+        <nay-total>0</nay-total>
+        <present-total>0</present-total>
+        <not-voting-total>0</not-voting-total>
+      </totals-by-party>
+      <totals-by-vote>
+        <total-stub>Totals</total-stub>
+        <yea-total>220</yea-total>
+        <nay-total>206</nay-total>
+        <present-total>1</present-total>
+        <not-voting-total>6</not-voting-total>
+      </totals-by-vote>
+    </vote-totals>
+  </vote-metadata>
+  <vote-data>
+    <recorded-vote>
+      <legislator name-id="A000370" sort-field="Adams" unaccented-name="Adams" party="D" state="NC" role="legislator">Adams</legislator>
+      <vote>Nay</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="B001281" sort-field="Beatty" unaccented-name="Beatty" party="D" state="OH" role="legislator">Beatty</legislator>
+      <vote>Present</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="B001323" sort-field="Begich" unaccented-name="Begich" party="R" state="AK" role="legislator">Begich</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="B001309" sort-field="Burchett" unaccented-name="Burchett" party="R" state="TN" role="legislator">Burchett</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="C001067" sort-field="Clarke (NY)" unaccented-name="Clarke (NY)" party="D" state="NY" role="legislator">Clarke (NY)</legislator>
+      <vote>Nay</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="C001121" sort-field="Crow" unaccented-name="Crow" party="D" state="CO" role="legislator">Crow</legislator>
+      <vote>Nay</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="E000246" sort-field="Edwards" unaccented-name="Edwards" party="R" state="NC" role="legislator">Edwards</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="F000474" sort-field="Flood" unaccented-name="Flood" party="R" state="NE" role="legislator">Flood</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="G000601" sort-field="Goldman (TX)" unaccented-name="Goldman (TX)" party="R" state="TX" role="legislator">Goldman (TX)</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="G000551" sort-field="Grijalva" unaccented-name="Grijalva" party="D" state="AZ" role="legislator">Grijalva</legislator>
+      <vote>Not Voting</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="H001099" sort-field="Haridopolos" unaccented-name="Haridopolos" party="R" state="FL" role="legislator">Haridopolos</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="I000056" sort-field="Issa" unaccented-name="Issa" party="R" state="CA" role="legislator">Issa</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="J000299" sort-field="Johnson (LA)" unaccented-name="Johnson (LA)" party="R" state="LA" role="speaker">Johnson (LA)</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="K000388" sort-field="Kelly (MS)" unaccented-name="Kelly (MS)" party="R" state="MS" role="legislator">Kelly (MS)</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="L000597" sort-field="Lee (FL)" unaccented-name="Lee (FL)" party="R" state="FL" role="legislator">Lee (FL)</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="M001184" sort-field="Massie" unaccented-name="Massie" party="R" state="KY" role="legislator">Massie</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="M001233" sort-field="Messmer" unaccented-name="Messmer" party="R" state="IN" role="legislator">Messmer</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="M001225" sort-field="Mullin" unaccented-name="Mullin" party="D" state="CA" role="legislator">Mullin</legislator>
+      <vote>Not Voting</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="N000026" sort-field="Nehls" unaccented-name="Nehls" party="R" state="TX" role="legislator">Nehls</legislator>
+      <vote>Not Voting</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="P000197" sort-field="Pelosi" unaccented-name="Pelosi" party="D" state="CA" role="legislator">Pelosi</legislator>
+      <vote>Nay</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="P000620" sort-field="Pettersen" unaccented-name="Pettersen" party="D" state="CO" role="legislator">Pettersen</legislator>
+      <vote>Not Voting</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="R000612" sort-field="Rose" unaccented-name="Rose" party="R" state="TN" role="legislator">Rose</legislator>
+      <vote>Not Voting</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="R000603" sort-field="Rouzer" unaccented-name="Rouzer" party="R" state="NC" role="legislator">Rouzer</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="S000250" sort-field="Sessions" unaccented-name="Sessions" party="R" state="TX" role="legislator">Sessions</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="S001196" sort-field="Stefanik" unaccented-name="Stefanik" party="R" state="NY" role="legislator">Stefanik</legislator>
+      <vote>Not Voting</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="S001215" sort-field="Stevens" unaccented-name="Stevens" party="D" state="MI" role="legislator">Stevens</legislator>
+      <vote>Nay</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="T000474" sort-field="Torres (CA)" unaccented-name="Torres (CA)" party="D" state="CA" role="legislator">Torres (CA)</legislator>
+      <vote>Nay</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="W000814" sort-field="Weber (TX)" unaccented-name="Weber (TX)" party="R" state="TX" role="legislator">Weber (TX)</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+  </vote-data>
+</rollcall-vote>

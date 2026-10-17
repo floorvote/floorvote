@@ -13,11 +13,12 @@
  * after them is ordinary markdown and is treated as such.
  */
 
-import React, { useMemo } from 'react'
+import React, { useEffect, useMemo, useRef } from 'react'
 import { marked } from 'marked'
 import { color, radius } from '../styles/tokens'
 import { sanitizeHtml } from '../lib/sanitizeHtml'
 import { isHtml, htmlToMarkdown, normalizeInlineBullets, normalizeListIndent, separateBlocks, stripMarkdown } from '../lib/markdown'
+import { linkClaimsInHtml } from '../lib/claimLinks'
 
 // Re-exported for existing importers (BillList, BillHoverTooltip).
 export { stripMarkdown }
@@ -38,15 +39,49 @@ interface Props {
   color?: string
   lineHeight?: number | string
   fontFamily?: string
+  /**
+   * Claims whose own text becomes a link to the passage behind it (#571), by
+   * their index in the bill's claim sources. None, or absent, renders the
+   * summary exactly as before.
+   */
+  claimLinks?: readonly { index: number; claim: string }[]
+  /** Called with a claim's index when its link is activated, by click or Enter. */
+  onClaimActivate?: (index: number) => void
 }
 
-export function MarkdownSummary({ children, fontSize, color: textColor = color.textSlate, lineHeight = 1.5, fontFamily = "'Source Serif 4', serif" }: Props) {
-  const html = useMemo(() => {
+export function MarkdownSummary({ children, fontSize, color: textColor = color.textSlate, lineHeight = 1.5, fontFamily = "'Source Serif 4', serif", claimLinks, onClaimActivate }: Props) {
+  const sanitized = useMemo(() => {
     const raw = children.trim()
     const md = isHtml(raw) ? htmlToMarkdown(raw) : raw
     const parsed = marked.parse(separateBlocks(normalizeListIndent(normalizeInlineBullets(md))), { async: false, gfm: true }) as string
     return sanitizeHtml(parsed, { allowedTags: ALLOWED_TAGS, allowedAttr: ALLOWED_ATTR })
   }, [children])
+
+  // Claims are linked after sanitizing: the links are the page's own elements,
+  // made from text, and nothing of the claim becomes markup (lib/claimLinks.ts).
+  const claimsKey = JSON.stringify(claimLinks ?? [])
+  const html = useMemo(
+    () => linkClaimsInHtml(sanitized, JSON.parse(claimsKey) as { index: number; claim: string }[]),
+    [sanitized, claimsKey],
+  )
+  const hasClaimLinks = html !== sanitized
+
+  // One listener for every claim link, since the links are in the HTML string.
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el || !onClaimActivate) return
+    const onClick = (e: MouseEvent) => {
+      // The class, not data-claim alone: sanitizing keeps data-* attributes,
+      // but not class, so only the page's own claim links have it.
+      const link = (e.target as Element | null)?.closest?.('a.claim-link[data-claim]')
+      if (!link || !el.contains(link)) return
+      e.preventDefault()
+      onClaimActivate(Number(link.getAttribute('data-claim')))
+    }
+    el.addEventListener('click', onClick)
+    return () => el.removeEventListener('click', onClick)
+  }, [onClaimActivate])
 
   return (
     <>
@@ -67,7 +102,21 @@ export function MarkdownSummary({ children, fontSize, color: textColor = color.t
         .markdown-summary table { border-collapse: collapse; }
         .markdown-summary th, .markdown-summary td { border: 1px solid ${color.borderDefault}; padding: 2px 6px; text-align: left; }
       `}</style>
+      {hasClaimLinks && (
+        <style>{`
+          .markdown-summary a.claim-link {
+            color: inherit; cursor: pointer; border-radius: ${radius.xs}px;
+            text-decoration: underline; text-decoration-color: ${color.claimUnderline};
+            text-decoration-thickness: 2px; text-underline-offset: 3px;
+          }
+          .markdown-summary a.claim-link:hover { background: ${color.claimHoverBg}; }
+          .markdown-summary a.claim-link:focus-visible {
+            background: ${color.claimHoverBg}; outline: 2px solid ${color.focusRing}; outline-offset: 2px;
+          }
+        `}</style>
+      )}
       <div
+        ref={ref}
         className="markdown-summary"
         style={{ fontSize, color: textColor, lineHeight, fontFamily }}
         dangerouslySetInnerHTML={{ __html: html }}

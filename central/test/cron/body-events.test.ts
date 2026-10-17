@@ -168,7 +168,7 @@ describe('the Council\'s calendar', () => {
     expect(await syncCalendar()).toEqual([])
     expect(calls).toEqual([])
     expect(await eventsFor()).toMatchObject({ capabilities: {}, events: [] })
-    expect(await getJson('/bills/labels?state=DC')).toMatchObject({ hasEvents: false, capabilities: { bodyEvents: false, deadlines: false } })
+    expect(await getJson('/bills/labels?state=DC')).toMatchObject({ hasEvents: false, capabilities: { bodyEvents: false, deadlines: true } })
   })
 
   it('reaches instances covering DC once DC is claimed, each event under the UID a fork already issued', async () => {
@@ -182,7 +182,7 @@ describe('the Council\'s calendar', () => {
     expect(logged).toHaveLength(5)
 
     const { capabilities, events, byUid } = await eventsFor()
-    expect(capabilities).toEqual({ DC: { bodyEvents: true, deadlines: true } })
+    expect(capabilities).toEqual({ DC: { bodyEvents: true, deadlines: true, bodyName: 'Council' } })
     expect(events).toHaveLength(october.length)
     expect(byUid.get('council-2408@lims.dccouncil.gov')).toEqual({
       uid: 'council-2408@lims.dccouncil.gov',
@@ -346,7 +346,7 @@ describe('the Council\'s calendar', () => {
     ])
     expect(await eventsFor('md')).toMatchObject({ capabilities: {}, events: [] })
     expect((await eventsFor('all')).events).toHaveLength(october.length)
-    expect((await eventsFor('all')).capabilities).toEqual({ DC: { bodyEvents: true, deadlines: true } })
+    expect((await eventsFor('all')).capabilities).toEqual({ DC: { bodyEvents: true, deadlines: true, bodyName: 'Council' } })
   })
 
   it('lists the committees and kinds an instance\'s event rules can choose from, once DC is claimed', async () => {

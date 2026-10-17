@@ -1,6 +1,6 @@
 import { getBill, getBillText, getDatasetList, getDatasetRaw, getMasterListBySession, getMasterListRaw, getSessionList } from './client'
 import { vocabulary } from './vocabulary'
-import { LEGISCAN_ATTRIBUTION, type Provider } from '../sdk'
+import { LEGISCAN_ATTRIBUTION, httpUrl, type Provider } from '../sdk'
 
 /**
  * LegiScan, the default provider: one API for every state, paid for out of a
@@ -48,6 +48,14 @@ export const legiscan: Provider<'LEGISCAN_API_KEY'> = {
 
   personUrl: ({ state, name, peopleId }) =>
     `https://legiscan.com/${state}/people/${name.replace(/ /g, '-')}/id/${peopleId}`,
+
+  // The legislature's own bio page, else Ballotpedia: both are already stored
+  // with the person, so a link costs no LegiScan call. The legiscan.com page
+  // above is only a sponsor's last resort.
+  profileUrl: ({ bio, ballotpedia }) => {
+    const page = ballotpedia?.trim()
+    return httpUrl(bio?.social?.biography) ?? (page ? `https://ballotpedia.org/${encodeURIComponent(page)}` : null)
+  },
 
   // getBill carries only roll call totals, and getRollCall costs a call per
   // roll call. The weekly bulk dataset holds every getRollCall record for a

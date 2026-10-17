@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useVerticalResize, ResizeHandle } from './ResizeHandle'
 import { BillTextChip } from './BillTextChip'
 import { ExternalLinkIcon } from './ExternalLinkIcon'
 import { getScrollContainer } from '../lib/scrollUtils'
 import { canRenderPdfInline } from '../lib/pdfInline'
 import { parseHandle } from '../../../shared/billHandle'
+import { focusPassage, markPassage, PASSAGE_ID, type ClaimDocument, type Span } from '../lib/claimLinks'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 
 function DownloadIcon({ size = 14, style }: { size?: number; style?: React.CSSProperties }) {
@@ -24,14 +25,24 @@ interface TextVersion {
   altStateLink: string | null
 }
 
+/**
+ * A request to show a claim's passage (#571): the document the claim sources
+ * are pinned to, on the bill whose analysis the page shows, and the passage in
+ * it. That bill can be another member of the page bill's companion group, whose
+ * document then opens beside this bill's own versions. Each request has a new
+ * `key`, so asking for the same passage again opens it again.
+ */
+export type PassageRequest = { key: number; billId: string; billNumber: string | null; document: ClaimDocument; matched: string; quoteAt: Span }
+
 interface BillTextPanelProps {
   billId: string
   texts: TextVersion[]
   externalOpen?: boolean
   requestedDocId?: string | null
+  passage?: PassageRequest | null
 }
 
-export function BillTextPanel({ billId, texts, externalOpen, requestedDocId }: BillTextPanelProps) {
+export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, passage }: BillTextPanelProps) {
   const [internalOpen, setInternalOpen] = useState(false)
   const open = externalOpen !== undefined ? externalOpen : internalOpen
   const [selectedDocId, setSelectedDocId] = useState<string | null>(
@@ -44,8 +55,20 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId }: B
   const blobUrlsRef = useRef<Map<string, string>>(new Map())
   const panelRef = useRef<HTMLDivElement>(null)
   const [highlight, setHighlight] = useState(false)
+  const pendingRef = useRef<Set<string>>(new Set())
+  const consumedPassageRef = useRef<number | null>(null)
 
-  const selectedVersion = texts.find(t => t.docId === selectedDocId) ?? texts[0] ?? null
+  // Another bill's version: the analyzed member's document a claim on a
+  // companion's page opens, which is never in this bill's list (#571).
+  const [foreign, setForeign] = useState<{ billId: string; billNumber: string | null; version: TextVersion } | null>(null)
+  // The claim passage being shown, until the reader picks a version.
+  const [activePassage, setActivePassage] = useState<PassageRequest | null>(null)
+  const allTexts = foreign && !texts.some(t => t.docId === foreign.version.docId) ? [...texts, foreign.version] : texts
+  const textBillId = (docId: string | null) => (foreign && docId === foreign.version.docId ? foreign.billId : billId)
+  const textUrl = (docId: string | null, from = textBillId(docId)) => `/api/bills/${from}/text/${docId}`
+
+  const selectedVersion = allTexts.find(t => t.docId === selectedDocId) ?? allTexts[0] ?? null
+  const content = selectedDocId !== null ? (loadedContent.get(selectedDocId) ?? null) : null
   const isPdf = selectedVersion?.mime === 'application/pdf'
   const [inlinePdf] = useState(() => canRenderPdfInline())
   const { height: pdfHeight, handlePointerDown: handlePdfResize } = useVerticalResize(480, 200)
@@ -57,10 +80,13 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId }: B
     return () => { blobUrls.forEach(url => URL.revokeObjectURL(url)) }
   }, [])
 
-  // Load content when panel opens or version changes
+  // Load content when panel opens or version changes. A passage request not yet
+  // taken up chooses the version itself, so the version shown before it (this
+  // bill's newest) isn't fetched on the way.
   useEffect(() => {
     if (!open || selectedDocId === null) return
-    const version = texts.find(t => t.docId === selectedDocId)
+    if (passage && consumedPassageRef.current !== passage.key) return
+    const version = allTexts.find(t => t.docId === selectedDocId)
     if (!version) return
     if (version.mime === 'application/pdf') {
       if (!blobUrlsRef.current.has(selectedDocId)) loadPdf(selectedDocId)
@@ -81,7 +107,54 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId }: B
     const target = texts.find(t => t.docId === requestedDocId)
     if (!target) return
     void handleSelectVersion(requestedDocId)
+    const rafId = reveal()
+    return () => cancelAnimationFrame(rafId)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedDocId, texts])
 
+  // A claim's passage (#571): open its document, beside this bill's versions
+  // when it is another bill's, and show it highlighted. The frame takes focus
+  // when it loads (below).
+  useEffect(() => {
+    if (!passage) return
+    consumedPassageRef.current = passage.key
+    const doc = passage.document
+    const own = passage.billId === billId && texts.some(t => t.docId === doc.docId)
+    if (!own) setForeign({ billId: passage.billId, billNumber: passage.billNumber, version: doc })
+    setActivePassage(passage)
+    setSelectedDocId(doc.docId)
+    if (doc.mime === 'application/pdf') {
+      if (!blobUrlsRef.current.has(doc.docId)) void loadPdf(doc.docId, passage.billId)
+    } else if (!loadedContent.has(doc.docId)) {
+      void loadText(doc.docId, passage.billId)
+    }
+    const rafId = reveal()
+    return () => cancelAnimationFrame(rafId)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [passage?.key])
+
+  // The highlighted document, for a frame that keeps `sandbox=""`: the mark is
+  // put in before it renders, and the frame loads at the mark's fragment so the
+  // browser scrolls to it (lib/claimLinks.ts). A blob URL, unlike srcdoc, can
+  // carry the fragment. Null when the passage isn't in the document.
+  const passageShown = activePassage && activePassage.document.docId === selectedDocId ? activePassage : null
+  const marked = useMemo(() => (passageShown && content !== null ? markPassage(content, passageShown) : null), [passageShown, content])
+  const passageMissing = passageShown !== null && content !== null && marked === null
+  const [passageUrl, setPassageUrl] = useState<string | null>(null)
+  useEffect(() => {
+    if (marked === null) {
+      setPassageUrl(null)
+      return
+    }
+    const url = URL.createObjectURL(new Blob([marked], { type: 'text/html;charset=utf-8' }))
+    setPassageUrl(url)
+    return () => URL.revokeObjectURL(url)
+  }, [marked, passageShown?.key])
+  // Focus moves to the passage's frame once per request, when it loads.
+  const focusedUrlRef = useRef<string | null>(null)
+
+  /** Bring the panel into view and glow it briefly. Returns the frame request to cancel. */
+  function reveal(): number {
     // Defer measure-and-scroll one frame so the panel's expanded layout is committed
     // (the chip click can also flip externalOpen false→true, which resizes the panel).
     const rafId = requestAnimationFrame(() => {
@@ -103,15 +176,15 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId }: B
       setHighlight(false)
       highlightTimerRef.current = null
     }, 1200)
+    return rafId
+  }
 
-    return () => cancelAnimationFrame(rafId)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requestedDocId, texts])
-
-  async function loadPdf(docId: string) {
+  async function loadPdf(docId: string, from = textBillId(docId)) {
+    if (pendingRef.current.has(docId)) return
+    pendingRef.current.add(docId)
     setLoading(true)
     try {
-      const res = await fetch(`/api/bills/${billId}/text/${docId}`, { credentials: 'include' })
+      const res = await fetch(textUrl(docId, from), { credentials: 'include' })
       if (!res.ok) {
         setFailedDocIds(prev => new Set(prev).add(docId))
         return
@@ -126,14 +199,17 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId }: B
       blobUrlsRef.current.set(docId, url)
       setPdfBlobUrls(prev => new Map(prev).set(docId, url))
     } finally {
+      pendingRef.current.delete(docId)
       setLoading(false)
     }
   }
 
-  async function loadText(docId: string) {
+  async function loadText(docId: string, from = textBillId(docId)) {
+    if (pendingRef.current.has(docId)) return
+    pendingRef.current.add(docId)
     setLoading(true)
     try {
-      const res = await fetch(`/api/bills/${billId}/text/${docId}`, { credentials: 'include' })
+      const res = await fetch(textUrl(docId, from), { credentials: 'include' })
       if (!res.ok) {
         setFailedDocIds(prev => new Set(prev).add(docId))
         return
@@ -145,13 +221,14 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId }: B
       const text = new TextDecoder(charset).decode(buf)
       setLoadedContent(prev => new Map(prev).set(docId, text))
     } finally {
+      pendingRef.current.delete(docId)
       setLoading(false)
     }
   }
 
   async function handleOpen() {
     if (!open && selectedDocId !== null) {
-      const version = texts.find(t => t.docId === selectedDocId)
+      const version = allTexts.find(t => t.docId === selectedDocId)
       if (version?.mime === 'application/pdf') {
         if (!blobUrlsRef.current.has(selectedDocId)) await loadPdf(selectedDocId)
       } else {
@@ -162,8 +239,10 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId }: B
   }
 
   async function handleSelectVersion(docId: string) {
+    // Picking a version shows it plain: the highlight was for the passage's request.
+    setActivePassage(null)
     setSelectedDocId(docId)
-    const version = texts.find(t => t.docId === docId)
+    const version = allTexts.find(t => t.docId === docId)
     if (version?.mime === 'application/pdf') {
       if (!blobUrlsRef.current.has(docId)) await loadPdf(docId)
     } else {
@@ -171,7 +250,7 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId }: B
     }
   }
 
-  if (texts.length === 0) {
+  if (allTexts.length === 0) {
     return (
       <div>
         {externalOpen === undefined && (
@@ -187,7 +266,6 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId }: B
     )
   }
 
-  const content = selectedDocId !== null ? (loadedContent.get(selectedDocId) ?? null) : null
   const pdfBlobUrl = selectedDocId !== null ? (pdfBlobUrls.get(selectedDocId) ?? null) : null
   const loadFailed = selectedDocId !== null && failedDocIds.has(selectedDocId)
 
@@ -211,11 +289,12 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId }: B
 
       {open && (
         <div style={{ marginTop: 8 }}>
-          {texts.length > 0 && (
+          {allTexts.length > 0 && (
             <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
-              {texts.map(t => (
+              {allTexts.map(t => (
                 <BillTextChip
                   key={t.docId}
+                  billNumber={foreign && t.docId === foreign.version.docId ? foreign.billNumber ?? undefined : undefined}
                   type={t.type}
                   date={t.date}
                   selected={t.docId === selectedDocId}
@@ -231,7 +310,7 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId }: B
                 This browser can't show the PDF inline.
               </p>
               <a
-                href={`/api/bills/${billId}/text/${selectedDocId}`}
+                href={textUrl(selectedDocId)}
                 target="_blank"
                 rel="noreferrer"
                 style={{ background: color.billBadgeNavy, color: color.textOnFill, fontSize: fontSize.base, fontWeight: fontWeight.semibold, padding: '10px 20px', borderRadius: radius.md, textDecoration: 'none' }}
@@ -274,7 +353,7 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId }: B
                   </span>
                 ) : (
                   <>
-                    {!loadFailed && <a href={`/api/bills/${billId}/text/${selectedDocId}`} target="_blank" rel="noreferrer" className="blue-link" style={{ fontSize: fontSize.sm }}>Open in new tab <ExternalLinkIcon size={14} /></a>}
+                    {!loadFailed && <a href={textUrl(selectedDocId)} target="_blank" rel="noreferrer" className="blue-link" style={{ fontSize: fontSize.sm }}>Open in new tab <ExternalLinkIcon size={14} /></a>}
                     {!loadFailed && selectedVersion?.stateLink && <span style={{ color: color.borderStrong }}>·</span>}
                     {selectedVersion?.stateLink && (
                       <a href={selectedVersion.stateLink} target="_blank" rel="noreferrer" className="blue-link" style={{ fontSize: fontSize.sm }}>
@@ -294,6 +373,20 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId }: B
                       <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <p style={{ fontSize: fontSize.sm, color: color.textMuted, margin: 0 }}>Loading…</p>
                       </div>
+                    ) : passageUrl && passageShown ? (
+                      // The same sandbox as the plain text: no permissions at all.
+                      <iframe
+                        key={passageUrl}
+                        src={`${passageUrl}#${PASSAGE_ID}`}
+                        sandbox=""
+                        style={{ width: '100%', height: '100%', border: 'none', display: 'block', background: color.white }}
+                        title="Bill text, with the claim's passage highlighted"
+                        onLoad={e => {
+                          if (focusedUrlRef.current === passageUrl) return
+                          focusedUrlRef.current = passageUrl
+                          focusPassage(e.currentTarget, passageUrl)
+                        }}
+                      />
                     ) : (
                       <iframe
                         srcDoc={content ?? ''}
@@ -304,6 +397,11 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId }: B
                     )}
                   </div>
                   <ResizeHandle onPointerDown={handleHtmlResize} />
+                  {passageMissing && (
+                    <p role="status" style={{ fontSize: fontSize.sm, color: color.textMuted, margin: '4px 0 0' }}>
+                      Couldn't find the passage in this version of the text.
+                    </p>
+                  )}
                 </>
               )}
               <div style={{ display: 'flex', gap: 12, marginTop: 4, alignItems: 'center' }}>
@@ -316,7 +414,7 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId }: B
                   </span>
                 ) : (
                   <>
-                    {!loadFailed && <a href={`/api/bills/${billId}/text/${selectedDocId}`} target="_blank" rel="noreferrer" className="blue-link" style={{ fontSize: fontSize.sm }}>Open in new tab <ExternalLinkIcon size={14} /></a>}
+                    {!loadFailed && <a href={textUrl(selectedDocId)} target="_blank" rel="noreferrer" className="blue-link" style={{ fontSize: fontSize.sm }}>Open in new tab <ExternalLinkIcon size={14} /></a>}
                     {!loadFailed && selectedVersion?.stateLink && <span style={{ color: color.borderStrong }}>·</span>}
                     {selectedVersion?.stateLink && (
                       <a href={selectedVersion.stateLink} target="_blank" rel="noreferrer" className="blue-link" style={{ fontSize: fontSize.sm }}>
@@ -327,7 +425,7 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId }: B
                     {selectedVersion?.altStateLink && (
                       <a
                         href={selectedVersion.altStateLink}
-                        download={`${parseHandle(billId) ?? billId}-${selectedVersion?.type ?? 'text'}.pdf`}
+                        download={`${parseHandle(textBillId(selectedDocId)) ?? textBillId(selectedDocId)}-${selectedVersion?.type ?? 'text'}.pdf`}
                         className="blue-link"
                         style={{ fontSize: fontSize.sm }}
                       >

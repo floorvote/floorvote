@@ -17,14 +17,16 @@ import { billTypeExplainer, eventTypeExplainer, statusExplainer as explainStatus
 import { getNoAnalysisMessage } from '../lib/billDetailCopy'
 import { REGENERATE_PRESERVES_DESCRIPTION } from '../lib/billDetailCopy'
 import { OverflowMenu, type OverflowMenuRow } from '../components/ui/OverflowMenu'
-import { orgPositionLabel, orgRelevanceLabel, DEFAULT_ORG_NOUN } from '../lib/orgNoun'
+import { orgPositionLabel, orgRelevanceLabel, titleCase as upperFirst, DEFAULT_ORG_NOUN } from '../lib/orgNoun'
+import { groupSharedThings } from '../lib/groupShares'
 import { RelevanceChip } from '../components/RelevanceChip'
 import { SessionChip } from '../components/SessionChip'
 import { SentimentBars } from '../components/SentimentBars'
 import { LegislativeHistory, syntheticLatestAction } from '../components/LegislativeHistory'
 import { CommitteeLine, type CommitteeRef, type ReferralRef } from '../components/CommitteeLine'
 import { TabularRow } from '../components/TabularRow'
-import { BillTextPanel } from '../components/BillTextPanel'
+import { BillTextPanel, type PassageRequest } from '../components/BillTextPanel'
+import { linkableClaims, type ClaimSourcesDetail } from '../lib/claimLinks'
 import { BillTextChip } from '../components/BillTextChip'
 import { PersonalNote } from '../components/PersonalNote'
 import { InfoTooltip } from '../components/InfoTooltip'
@@ -35,9 +37,10 @@ import { usePolling } from '../hooks/usePolling'
 import { useSidebarRefresh } from '../context/SidebarRefreshContext'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { color, radius, fontSize, fontWeight, shadow } from '../styles/tokens'
+import { primaryButtonColors } from '../styles/primaryButton'
 import { TAG_CHIP, TAG_CHIP_HOVERED } from '../lib/tagChipStyle'
 import { CARD } from '../lib/cardStyle'
-import { COMPANION_TAG, COUNT_BADGE, displayName, ROLE_CHIP, TOOLTIP_STYLE, sortRoles } from '../lib/chipStyles'
+import { COUNT_BADGE, displayName, ROLE_CHIP, TOOLTIP_STYLE, sortRoles } from '../lib/chipStyles'
 import { SECTION_LABEL, CHROME_TEXT, FONT_SANS, FORM_LABEL } from '../lib/textStyles'
 import { HoverTooltip } from '../components/HoverTooltip'
 import { SubjectsTrigger, SubjectsPanel } from '../components/SubjectsDisclosure'
@@ -51,12 +54,14 @@ import { markNotificationsRead } from '../lib/demoReadState'
 import { relativeTime, absoluteTime } from '../lib/time'
 import { COMMENT_STYLE } from '../../../shared/commentStyle'
 import { billDisplayTitle } from '../../../shared/billTitle'
+import { httpUrl } from '../../../shared/httpUrl'
 import { getScrollContainer } from '../lib/scrollUtils'
 import { billUrl } from '../lib/sessionSlug'
 import { OtherSessionNotice, billChoicesFrom, type BillChoice } from '../components/BillChoices'
 import { todayIso } from '../lib/calendarGrid'
 import { safeDate, safeTime } from '../lib/dates'
 import { ExternalLinkIcon } from '../components/ExternalLinkIcon'
+import { BillNavArrow } from '../components/BillNavArrow'
 import { isEditableTarget } from '../lib/isEditableTarget'
 import { BillPicker, type BillOption } from '../components/BillPicker'
 import { editableFieldBox } from '../lib/editableFieldStyle'
@@ -64,7 +69,7 @@ import { CollapsibleSection } from '../components/CollapsibleSection'
 import { ProviderExtrasList } from '../components/ProviderExtras'
 import type { BillExtras } from '../../../shared/providerExtras'
 import { RELATIONSHIP_KINDS, RELATIONSHIP_KIND_LABELS, isRelationshipKind, type RelationshipKind } from '../../../shared/relationshipKinds'
-import type { GroupBill, GroupingEvent, GroupNote } from '../../../shared/companionGroups'
+import type { GroupBill, GroupBillLink, GroupingEvent, GroupNote } from '../../../shared/companionGroups'
 import { GroupWithDialog } from '../components/GroupWithDialog'
 import { splitConfirmText } from '../lib/splitConfirm'
 import { placeGroupingLines } from '../lib/groupingLine'
@@ -83,9 +88,11 @@ function PartyBadge({ party }: { party: string }) {
 }
 
 function SponsorLink({ name, url, party, bold }: { name: string; url: string | null; party: string | null; bold?: boolean }) {
-  if (url) {
+  // Only an http(s) URL becomes a link, whatever central or the instance API sent.
+  const href = httpUrl(url)
+  if (href) {
     return (
-      <a href={url} target="_blank" rel="noreferrer" className="blue-link"
+      <a href={href} target="_blank" rel="noreferrer" className="blue-link"
         style={{ whiteSpace: 'nowrap', fontWeight: bold ? 600 : undefined }}>
         {name}{party && <PartyBadge party={party} />}<ExternalLinkIcon />
       </a>
@@ -380,9 +387,7 @@ function ItemDateText({ item }: { item: { date: string | null; dateResolved?: st
   if (!d) return <>—</>
   if (item.dateInferred) {
     return (
-      <HoverTooltip text="Date parsed from title">
-        <span style={{ borderBottom: `1px dotted ${color.textMuted}`, cursor: 'default' }}>{d}</span>
-      </HoverTooltip>
+      <HoverTooltip text="Date parsed from title" describe>{d}</HoverTooltip>
     )
   }
   return <>{d}</>
@@ -402,7 +407,7 @@ type Comment = {
 }
 
 type CoSponsor = { name: string; party: string | null; role?: string; district?: string; url: string | null; primary?: boolean }
-type VoteSummaryEntry = { date: string; chamber: string; desc: string; yea: number; nay: number; nv: number; absent: number; passed: number; legislatorVotes?: { personId?: string; name: string; vote: string }[] }
+type VoteSummaryEntry = { date: string; chamber: string; desc: string; yea: number; nay: number; nv: number; absent: number; passed: number; legislatorVotes?: { personId?: string; name: string; vote: string; url?: string | null }[] }
 // `kind` is what the bill's provider makes of the legislature's label (`type`). A central that predates kinds sends none.
 type RelatedBill = { billId: number; billNumber: string; type: string; kind?: RelationshipKind; route: { id: string; billNumber: string; sessionSlug: string; state: string } | null }
 
@@ -447,7 +452,6 @@ type BillDetailData = {
   voteSummary?: VoteSummaryEntry[]
   subjects: string[]
   relatedBillIds: RelatedBill[]
-  companionBillIds: string[]
   texts: {
     docId: string
     type: string
@@ -518,6 +522,14 @@ type BillDetailData = {
   analysisAiProcessedAt?: string | null
   analysisAiSkipReason?: 'pdf_too_large' | null
   analysisTextStatus?: 'not_checked' | 'no_texts' | 'available' | 'in_r2' | null
+  /** Whether the instance shows claim links (#570). Absent from a server that predates the setting. */
+  claimLinksEnabled?: boolean
+  /**
+   * The shown analysis's claim sources (#571), pinned to its bill's document,
+   * which on a companion's page can be another member's. Null when there are
+   * none to show, and absent from a server that predates them.
+   */
+  claimSources?: ClaimSourcesDetail | null
   lastAiTextDocId: string | null
   textStatus: 'not_checked' | 'no_texts' | 'available' | 'in_r2' | null
   myVote: 'support' | 'oppose' | 'neutral' | null
@@ -527,7 +539,7 @@ type BillDetailData = {
   /** Where the bill's companion group formed or split, for the lines in its comment thread. */
   groupingEvents?: GroupingEvent[]
   /** The bills in its companion group, this one first: just this one in no group. */
-  groupBills?: GroupBill[]
+  groupBills?: GroupBillLink[]
   priorityMeta: { setByName: string; updatedAt: string } | null
   position: { position: string; setByName: string; updatedAt: string } | null
   voteCounts: { support: number; oppose: number; neutral: number; total: number }
@@ -617,8 +629,7 @@ export async function billDetailLoader({ params, request }: LoaderFunctionArgs) 
 function draftSaveStyle(disabled: boolean): React.CSSProperties {
   return {
     fontSize: fontSize.sm, fontWeight: fontWeight.medium, border: 'none', borderRadius: radius.md, padding: '4px 10px',
-    background: disabled ? color.borderDefault : color.accentBlue,
-    color: disabled ? color.textMuted : color.textOnFill,
+    ...primaryButtonColors(disabled),
     cursor: disabled ? 'not-allowed' : 'pointer',
   }
 }
@@ -715,6 +726,11 @@ export function BillDetail() {
   const [hoveredTag, setHoveredTag] = useState<string | null>(null)
   const [showBillText, setShowBillText] = useState(false)
   const [requestedDocId, setRequestedDocId] = useState<string | null>(null)
+  // A claim's passage to show in the bill text panel (#571), a new key for each request.
+  const [passage, setPassage] = useState<PassageRequest | null>(null)
+  const passageKeyRef = useRef(0)
+  const billIdForPassage = bill?.id
+  useLayoutEffect(() => { setPassage(null) }, [billIdForPassage])
   const [showHearings, setShowHearings] = useState(false)
   const [changeLog, setChangeLog] = useState<ChangeRecord[]>([])
   const [subjectsOpen, setSubjectsOpen] = useState(false)
@@ -1352,8 +1368,36 @@ export function BillDetail() {
   // cannot appear for a bill the menu won't offer the action on.
   const hasAnalysis = !!bill.tenantSummary || bill.tags.length > 0 || bill.relevanceScore != null
 
-  // Separators between collapsible sections — no border above the first one
-  const hasBillText = bill.texts.length > 0 && !!bill.textR2Key
+  // Claim links (#571): the shown analysis's resolved claims, each linked to its
+  // passage. The analysis's bill can be another member of the group, whose
+  // document the links open, never this bill's own text. When the analysis is
+  // this bill's, its pinned document must still be one of its texts (the server
+  // checked another member's).
+  const claimSources = bill.claimSources ?? null
+  const claimLinks = claimSources && (claimSources.billId !== bill.id || bill.texts.some(t => t.docId === claimSources.document.docId))
+    ? linkableClaims(claimSources, bill.claimLinksEnabled)
+    : []
+  // A summary from another member of the group says whose it is, links or not (#560).
+  const borrowedFrom = bill.analysisBillId && bill.analysisBillId !== bill.id && bill.analysisBillNumber
+    ? { billId: bill.analysisBillId, billNumber: bill.analysisBillNumber }
+    : null
+  const openClaim = (index: number) => {
+    const link = claimLinks.find(c => c.index === index)
+    if (!link || !claimSources) return
+    setShowBillText(true)
+    setPassage({
+      key: ++passageKeyRef.current,
+      billId: claimSources.billId,
+      billNumber: claimSources.billId === bill.id ? bill.billNumber : (bill.analysisBillNumber ?? null),
+      document: claimSources.document,
+      matched: link.matched,
+      quoteAt: link.quoteAt,
+    })
+  }
+
+  // Separators between collapsible sections — no border above the first one.
+  // A claim's passage opens the bill text even where this bill has none of its own.
+  const hasBillText = (bill.texts.length > 0 && !!bill.textR2Key) || passage !== null
   const hasAmendments = (bill.amendments ?? []).filter(a => a.url || a.stateLink).length > 0
   const hasActions = !!bill.lastAction
   const hasHearings = (bill.calendar ?? []).length > 0
@@ -1374,18 +1418,30 @@ export function BillDetail() {
 
         {/* Chip strip */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: (priorityMeta || (isAdmin && bill.matchType === 'keyword' && !!bill.newMatchAt && !priority && !bill.triagedAt && !triageDismissed)) ? 20 : 12 }}>
-          <BillBadge
-            billNumber={bill.billNumber}
-            state={bill.state}
-            isDraft={bill.isDraft}
-            stateUrl={(() => {
-              if (!config || !multiState) return undefined
-              const isHub = window.location.hostname === 'staging.example.com' || window.location.hostname === 'staging.example.org' || window.location.hostname === 'localhost'
-              const instanceDomain = config.instanceDomains[bill.state]
-              if (!isHub || !instanceDomain) return undefined
-              return `https://${instanceDomain}${window.location.pathname}`
-            })()}
-          />
+          {/* A badge for each bill in the group, this page's bill first, as the
+              bill list's group row shows them. Each companion links to its page. */}
+          <div data-testid="bill-group-badges" style={{ display: 'contents' }}>
+            <BillBadge
+              billNumber={bill.billNumber}
+              state={bill.state}
+              isDraft={bill.isDraft}
+              stateUrl={(() => {
+                if (!config || !multiState) return undefined
+                const isHub = window.location.hostname === 'staging.example.com' || window.location.hostname === 'staging.example.org' || window.location.hostname === 'localhost'
+                const instanceDomain = config.instanceDomains[bill.state]
+                if (!isHub || !instanceDomain) return undefined
+                return `https://${instanceDomain}${window.location.pathname}`
+              })()}
+            />
+            {(bill.groupBills ?? []).filter(g => g.billId !== bill.id).map(g => (
+              <BillBadge
+                key={g.billId}
+                billNumber={g.billNumber}
+                state={g.state}
+                to={billUrl({ id: g.billId, state: g.state, sessionSlug: g.sessionSlug, billNumber: g.billNumber })}
+              />
+            ))}
+          </div>
           {bill.isDraft ? <DraftChip /> : (() => {
             const chip = <StatusChip status={decodeStatus(bill.status)} describedBy={statusExplainer ? 'bill-status-explainer' : undefined} onClick={() => navigate(`/bills?status=${encodeURIComponent(bill.status)}`)} />
             // The chip is already a focusable button, so HoverTooltip adds no tab stop; the chip points at its hidden copy.
@@ -1466,14 +1522,16 @@ export function BillDetail() {
                   onClick={() => prevPath && navigateToBill(prevPath, { billPaths: navState!.billPaths!, currentIndex: navState!.currentIndex! - 1 })}
                   disabled={!prevPath || billNavPending}
                   style={{ fontSize: fontSize.sm, color: prevPath ? color.linkBlue : color.borderStrong, background: 'none', border: 'none', cursor: prevPath && !billNavPending ? 'pointer' : 'default', padding: '2px 4px' }}
-                  title="Previous bill (←)"
-                >←</button>
+                  title="Previous bill"
+                  aria-label="Previous bill"
+                ><BillNavArrow direction="up" /></button>
                 <button
                   onClick={() => nextPath && navigateToBill(nextPath, { billPaths: navState!.billPaths!, currentIndex: navState!.currentIndex! + 1 })}
                   disabled={!nextPath || billNavPending}
                   style={{ fontSize: fontSize.sm, color: nextPath ? color.linkBlue : color.borderStrong, background: 'none', border: 'none', cursor: nextPath && !billNavPending ? 'pointer' : 'default', padding: '2px 4px' }}
-                  title="Next bill (→)"
-                >→</button>
+                  title="Next bill"
+                  aria-label="Next bill"
+                ><BillNavArrow direction="down" /></button>
               </>
             )}
             <OverflowMenu rows={(() => {
@@ -1520,7 +1578,7 @@ export function BillDetail() {
                 menuRows.push({
                   key: 'group-with',
                   label: 'Group with…',
-                  description: 'Share one discussion and the team\'s values with an identical bill.',
+                  description: `Share ${groupSharedThings(config?.orgNoun ?? DEFAULT_ORG_NOUN, customFieldDefs.length > 0)} with an identical bill.`,
                   disabled: demoLocked,
                   onSelect: () => setGroupWithOpen(true),
                 })
@@ -1529,7 +1587,7 @@ export function BillDetail() {
                 menuRows.push({
                   key: 'split',
                   label: 'Split from group',
-                  description: `Give ${bill.billNumber} back its own discussion and the team's values.`,
+                  description: `Give ${bill.billNumber} back its own ${groupSharedThings(config?.orgNoun ?? DEFAULT_ORG_NOUN, customFieldDefs.length > 0)}.`,
                   disabled: splitting || demoLocked,
                   onSelect: async () => {
                     if (splitting || demoLocked) return
@@ -1538,7 +1596,7 @@ export function BillDetail() {
                       // The server says what the split would leave, so the
                       // confirmation can name bills that would come apart.
                       const preview = await apiFetch<{ billNumber: string; parts: GroupBill[][] }>(`/bills/${bill.id}/split-preview`)
-                      if (!window.confirm(splitConfirmText(bill.billNumber, preview.parts.map(part => part.map(b => b.billNumber))))) return
+                      if (!window.confirm(splitConfirmText(bill.billNumber, preview.parts.map(part => part.map(b => b.billNumber)), config?.orgNoun ?? DEFAULT_ORG_NOUN, customFieldDefs.length > 0))) return
                       await apiFetch(`/bills/${bill.id}/split`, { method: 'POST' })
                       await refetchBill()
                     } catch {
@@ -1600,11 +1658,9 @@ export function BillDetail() {
                     type="button"
                     {...linkGate.buttonProps(handleLinkDraft)}
                     style={{
-                      background: linkGate.disabled ? color.accentBlueMuted : color.accentBlue,
-                      color: color.textOnFill, border: 'none', borderRadius: radius.md,
+                      ...primaryButtonColors(linkGate.disabled), border: 'none', borderRadius: radius.md,
                       padding: '8px 14px', cursor: linkGate.disabled ? 'not-allowed' : 'pointer',
                       fontSize: fontSize.sm, fontWeight: fontWeight.medium, lineHeight: 1.4, whiteSpace: 'nowrap',
-                      opacity: demoLocked ? 0.5 : 1,
                     }}
                   >
                     {linking ? 'Linking…' : 'Link & merge into filed bill'}
@@ -1659,7 +1715,7 @@ export function BillDetail() {
                   outline: 'none',
                 }}
               />
-              <button type="submit" style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, background: color.accentBlue, color: color.textOnFill, border: 'none', borderRadius: radius.md, padding: '6px 12px', cursor: 'pointer' }}>Save</button>
+              <button type="submit" style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, ...primaryButtonColors(false), border: 'none', borderRadius: radius.md, padding: '6px 12px', cursor: 'pointer' }}>Save</button>
               <button type="button" onClick={() => { setEditingDraftField(null); setDraftFieldError(null) }} style={{ fontSize: fontSize.sm, color: color.textMuted, background: 'none', border: 'none', cursor: 'pointer', padding: '6px 8px' }}>Cancel</button>
             </form>
           </div>
@@ -1719,12 +1775,16 @@ export function BillDetail() {
           const bodyLabel = chamberLabel ? `${chamberLabel} ${typeNoun}` : null
           const typeLabel = null
           // One line for each kind, identical companions first, whatever labels the legislature used.
+          // The header's badges already name the identical bills in the group, so
+          // this line lists only the identical bills outside it.
+          const groupIds = new Set((bill.groupBills ?? []).map(g => g.billId))
+          const listedRelated = bill.relatedBillIds.filter(r => !(r.kind === 'identical' && r.route && groupIds.has(r.route.id)))
           const grouped = new Map<RelationshipKind, RelatedBill[]>()
           for (const kind of RELATIONSHIP_KINDS) {
-            const ofKind = bill.relatedBillIds.filter(r => (isRelationshipKind(r.kind) ? r.kind : 'related') === kind)
+            const ofKind = listedRelated.filter(r => (isRelationshipKind(r.kind) ? r.kind : 'related') === kind)
             if (ofKind.length > 0) grouped.set(kind, ofKind)
           }
-          const hasAny = bodyLabel || typeLabel || (bill.calendar ?? []).some(e => e.kind === 'deadline') || bill.relatedBillIds.length > 0 || bill.companionBillIds.length > 0 || bill.stateUrl || bill.stateLink || bill.legiscanUrl || (bill.subjects ?? []).length > 0
+          const hasAny = bodyLabel || typeLabel || (bill.calendar ?? []).some(e => e.kind === 'deadline') || listedRelated.length > 0 || bill.stateUrl || bill.stateLink || bill.legiscanUrl || (bill.subjects ?? []).length > 0
           if (!hasAny) return null
 
           // Collect all display items, then render with · separators only between items
@@ -1772,12 +1832,6 @@ export function BillDetail() {
               </span>
             )
           })
-          bill.companionBillIds.forEach((cid, i) => metaItems.push(
-            <span key={`comp-${i}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ color: color.textMuted }}>Companion:</span>
-              <span>{String(cid)}</span>
-            </span>
-          ))
           if ((bill.subjects ?? []).length > 0) metaItems.push(
             <SubjectsTrigger
               key="subjects"
@@ -1870,7 +1924,7 @@ export function BillDetail() {
                     padding: '3px 7px', color: color.textPrimary, background: color.white, outline: 'none', minWidth: 220,
                   }}
                 />
-                <button type="submit" style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, background: color.accentBlue, color: color.textOnFill, border: 'none', borderRadius: radius.md, padding: '4px 10px', cursor: 'pointer' }}>Save</button>
+                <button type="submit" style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, ...primaryButtonColors(false), border: 'none', borderRadius: radius.md, padding: '4px 10px', cursor: 'pointer' }}>Save</button>
                 <button type="button" onClick={() => setEditingDraftField(null)} style={{ fontSize: fontSize.sm, color: color.textMuted, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px' }}>Cancel</button>
               </form>
             ) : (
@@ -2057,7 +2111,7 @@ export function BillDetail() {
                       />
                     )
                   })()}
-                  <button type="submit" style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, background: color.accentBlue, color: color.textOnFill, border: 'none', borderRadius: radius.md, padding: '4px 10px', cursor: 'pointer' }}>Save</button>
+                  <button type="submit" style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, ...primaryButtonColors(false), border: 'none', borderRadius: radius.md, padding: '4px 10px', cursor: 'pointer' }}>Save</button>
                   <button type="button" onClick={() => { setEditingDraftField(null); setDraftFieldError(null) }} style={{ fontSize: fontSize.sm, color: color.textMuted, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px' }}>Cancel</button>
                 </form>
               ) : (
@@ -2295,8 +2349,7 @@ export function BillDetail() {
                       onClick={handlePromote}
                       disabled={generateDisabled}
                       style={{
-                        background: generateDisabled ? color.accentBlueMuted : color.accentBlue,
-                        color: color.textOnFill,
+                        ...primaryButtonColors(generateDisabled),
                         border: 'none',
                         borderRadius: radius.md,
                         padding: '8px 14px',
@@ -2513,8 +2566,14 @@ export function BillDetail() {
                     />
                   </div>
                 </div>
+                {/* A borrowed summary says whose it is, and its claim links open that bill's text (#571). */}
+                {borrowedFrom && (
+                  <div style={{ fontSize: fontSize.sm, color: color.textMuted, marginBottom: 6 }}>
+                    Summary of <Link to={billUrl({ id: borrowedFrom.billId, billNumber: borrowedFrom.billNumber })} className="blue-link">{borrowedFrom.billNumber}</Link>, this bill's identical companion
+                  </div>
+                )}
                 <div style={regenerating ? DIMMED_WHILE_RUNNING : undefined}>
-                <MarkdownSummary fontSize={fontSize.base} color={color.textSlate} lineHeight={1.5}>
+                <MarkdownSummary fontSize={fontSize.base} color={color.textSlate} lineHeight={1.5} claimLinks={claimLinks} onClaimActivate={openClaim}>
                   {bill.tenantSummary}
                 </MarkdownSummary>
                 </div>
@@ -2673,14 +2732,14 @@ export function BillDetail() {
         )}
 
         {/* Bill text collapsible */}
-        {!bill.isDraft && bill.texts.length > 0 && bill.textR2Key && (
+        {!bill.isDraft && hasBillText && (
           <CollapsibleSection
             label="Bill texts"
-            count={bill.texts.length}
+            count={bill.texts.length > 0 ? bill.texts.length : 1}
             open={showBillText}
             onToggle={() => setShowBillText(v => !v)}
           >
-            <BillTextPanel key={bill.id} billId={bill.id} texts={bill.texts ?? []} externalOpen={showBillText} requestedDocId={requestedDocId} />
+            <BillTextPanel key={bill.id} billId={bill.id} texts={bill.texts ?? []} externalOpen={showBillText} requestedDocId={requestedDocId} passage={passage} />
           </CollapsibleSection>
         )}
 
@@ -2864,6 +2923,29 @@ export function BillDetail() {
         )}
       </div>
 
+      {/* Why values this page never set appear here: the group's other bills share them. */}
+      {(() => {
+        const companions = (bill.groupBills ?? []).filter(g => g.billId !== bill.id)
+        if (companions.length === 0) return null
+        return (
+          <p data-testid="group-shares-line" style={{ margin: '16px 0 0', fontSize: fontSize.sm, lineHeight: 1.6, color: color.textMuted }}>
+            {upperFirst(groupSharedThings(config?.orgNoun ?? DEFAULT_ORG_NOUN, customFieldDefs.length > 0))} are shared with{' '}
+            {companions.map((g, i) => (
+              <Fragment key={g.billId}>
+                {i === 0 ? null : companions.length === 2 ? ' and ' : i === companions.length - 1 ? ', and ' : ', '}
+                <BillBadge
+                  mini
+                  billNumber={g.billNumber}
+                  state={g.state}
+                  to={billUrl({ id: g.billId, state: g.state, sessionSlug: g.sessionSlug, billNumber: g.billNumber })}
+                />
+              </Fragment>
+            ))}
+            .
+          </p>
+        )
+      })()}
+
       {/* Two-column layout */}
       <div className="bill-detail-columns" style={{ display: 'flex', gap: 24, padding: '24px 0' }}>
 
@@ -2886,6 +2968,7 @@ export function BillDetail() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                   {/* Comment header (name / title / date) — shared with the
                       @-mention email's card row via COMMENT_STYLE; keep both in sync there. */}
+                  <span>
                   <span
                     style={{ fontSize: COMMENT_STYLE.nameSize, fontWeight: COMMENT_STYLE.nameWeight, color: COMMENT_STYLE.nameColor, position: 'relative', cursor: 'default' }}
                     onMouseEnter={() => setHoveredCommentUser(comment.id)}
@@ -2894,10 +2977,6 @@ export function BillDetail() {
                     {comment.userName}
                     {comment.userTitle && (
                       <span style={{ fontSize: COMMENT_STYLE.titleSize, fontWeight: COMMENT_STYLE.titleWeight, color: COMMENT_STYLE.titleColor, marginLeft: 4 }}>{comment.userTitle}</span>
-                    )}
-                    {/* A comment posted on a companion in this bill's group. */}
-                    {comment.billId && comment.billId !== bill.id && comment.billNumber && (
-                      <span title={`Posted on ${comment.billNumber}`} style={{ ...COMPANION_TAG, marginLeft: 6 }}>{comment.billNumber}</span>
                     )}
                     {hoveredCommentUser === comment.id && (() => {
                       const commenter = usersData.find(u => u.id === comment.userId)
@@ -2921,6 +3000,27 @@ export function BillDetail() {
                         </div>
                       )
                     })()}
+                  </span>
+                  {/* A comment posted on a companion in this bill's group: that bill's
+                      badge. One from a bill no longer in the group (split off since the
+                      page loaded) has no state or session here, so it links by id. */}
+                  {comment.billId && comment.billId !== bill.id && comment.billNumber && (() => {
+                    const posted = (bill.groupBills ?? []).find(g => g.billId === comment.billId)
+                    const describeId = `posted-on-${comment.id}`
+                    return (
+                      <span style={{ marginLeft: 6 }}>
+                        <HoverTooltip text={`Posted on ${comment.billNumber}`} describe={{ id: describeId, interactive: true }}>
+                          <BillBadge
+                            mini
+                            billNumber={comment.billNumber}
+                            state={posted?.state}
+                            to={billUrl({ id: comment.billId, state: posted?.state, sessionSlug: posted?.sessionSlug, billNumber: comment.billNumber })}
+                            describedBy={describeId}
+                          />
+                        </HoverTooltip>
+                      </span>
+                    )
+                  })()}
                   </span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span title={absoluteTime(comment.createdAt)} style={{ fontSize: COMMENT_STYLE.dateSize, color: COMMENT_STYLE.dateColor, cursor: 'default' }}>{relativeTime(comment.createdAt)}</span>
@@ -3146,6 +3246,7 @@ export function BillDetail() {
           billId={bill.id}
           billNumber={bill.billNumber}
           groupBillIds={(bill.groupBills ?? []).map(b => b.billId).concat(bill.id)}
+          shares={groupSharedThings(config?.orgNoun ?? DEFAULT_ORG_NOUN, customFieldDefs.length > 0, 'and', true)}
           onClose={() => setGroupWithOpen(false)}
           onGrouped={() => { setGroupWithOpen(false); void refetchBill() }}
         />

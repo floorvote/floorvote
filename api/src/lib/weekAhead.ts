@@ -1,4 +1,4 @@
-import { and, eq, ne, isNotNull, gte, lt, exists, or, sql } from 'drizzle-orm'
+import { and, eq, ne, isNull, isNotNull, gte, lt, exists, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/sqlite-core'
 import { calendarEvents, calendarEventBills, bills, users, sessions, associationConfig } from '../db/schema'
 import { renderWeekAheadEmail, type WeekAheadEvent, type WeekAheadDay } from './weekAheadEmail'
@@ -6,6 +6,7 @@ import { sendBatch, unsubscribeHeaders } from './email'
 import { nowDb } from './dbTime'
 import { prioritizedBillEntry, billEntryGroupKey } from './calendarVisibility'
 import { loadDateFieldEvents } from './dateFieldEvents'
+import { groupHasPriority, loadGroupPriorities, priorityWorn } from './teamFields'
 import type { AppDb, Env } from '../types'
 import { isModuleEnabled, getModuleSetting } from '../../../shared/modules'
 import { PRODUCT_NAME } from '../../../shared/brand'
@@ -55,9 +56,9 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
   // agenda bills, so one with a prioritized bill on the agenda is in. The
   // instance's event rules never hide those (lib/eventRules.ts), but a bill
   // prioritized since the rules last ran would wait an hour without this. So
-  // is any body event the rules select (rule_match 1). With no rules every
-  // body event shows on the calendar, but only those with a prioritized bill
-  // reach the email, so a state's whole calendar never floods it.
+  // is any body event the calendar shows: one the rules select (rule_match 1),
+  // or every one while the instance has no rules (rule_match null, "All
+  // events"), so the email lists what the calendar does (#420).
   const linkedBills = alias(bills, 'linked_bills')
   const rows = await db
     .select({
@@ -79,12 +80,14 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
       ownBillTitle: bills.title,
       ownBillIsDraft: bills.isDraft,
       ownBillPriority: bills.priority,
+      ownBillGroupKey: bills.groupKey,
       linkedBillId: calendarEventBills.billId,
       linkedBillNumber: linkedBills.billNumber,
       linkedBillState: linkedBills.state,
       linkedBillTitle: linkedBills.title,
       linkedBillIsDraft: linkedBills.isDraft,
       linkedBillPriority: linkedBills.priority,
+      linkedBillGroupKey: linkedBills.groupKey,
     })
     .from(calendarEvents)
     .leftJoin(bills, eq(bills.id, calendarEvents.billId))
@@ -99,14 +102,15 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
         or(
           and(prioritizedBillEntry, sql`${calendarEvents.kind} IS NOT 'deadline'`),
           eq(calendarEvents.source, 'custom'),
-          and(eq(calendarEvents.source, 'body'), eq(calendarEvents.ruleMatch, 1)),
+          and(eq(calendarEvents.source, 'body'), or(isNull(calendarEvents.ruleMatch), eq(calendarEvents.ruleMatch, 1))),
           exists(
             db.select({ _: sql`1` })
               .from(calendarEventBills)
               .innerJoin(bills, eq(bills.id, calendarEventBills.billId))
               .where(and(
                 eq(calendarEventBills.eventId, calendarEvents.id),
-                isNotNull(bills.priority),
+                // A companion group has one priority: a linked bill qualifies through any member.
+                groupHasPriority(bills),
               ))
           ),
         ),
@@ -126,6 +130,8 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
   // Group rows by event, then events by date. Bill entries for the same real
   // meeting on several bills are one event carrying every bill, as the
   // calendar page shows them.
+  // A companion group's bills wear the group's priority, whichever member holds it.
+  const groupPriorities = await loadGroupPriorities(db, rows.flatMap(r => [r.ownBillGroupKey, r.linkedBillGroupKey]))
   const eventMap = new Map<string, WeekAheadEvent>()
   const eventDateMap = new Map<string, string>()  // eventId → date
   const meetingIds = new Map<string, string>()  // bill entry group key → eventId
@@ -161,8 +167,8 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
     }
     const ev = eventMap.get(eventId)!
     const bill = row.linkedBillId
-      ? { id: row.linkedBillId, number: row.linkedBillNumber, state: row.linkedBillState, title: row.linkedBillTitle, isDraft: row.linkedBillIsDraft, priority: row.linkedBillPriority }
-      : { id: row.ownBillId, number: row.ownBillNumber, state: row.ownBillState, title: row.ownBillTitle, isDraft: row.ownBillIsDraft, priority: row.ownBillPriority }
+      ? { id: row.linkedBillId, number: row.linkedBillNumber, state: row.linkedBillState, title: row.linkedBillTitle, isDraft: row.linkedBillIsDraft, priority: priorityWorn({ priority: row.linkedBillPriority, groupKey: row.linkedBillGroupKey }, groupPriorities) }
+      : { id: row.ownBillId, number: row.ownBillNumber, state: row.ownBillState, title: row.ownBillTitle, isDraft: row.ownBillIsDraft, priority: priorityWorn({ priority: row.ownBillPriority, groupKey: row.ownBillGroupKey }, groupPriorities) }
     if (bill.id && !ev.bills.some(b => b.id === bill.id)) {
       ev.bills.push({
         id: bill.id,

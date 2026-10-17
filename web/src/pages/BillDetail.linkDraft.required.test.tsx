@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { BillDetail } from './BillDetail'
 import * as api from '../lib/api'
+import { expectPrimaryButtonLegible } from '../test/colorTokens'
 import { itGatesQuietly, expectMessageHidden, expectMessageShown, expectQuietlyBlocked } from '../test/quietGate'
 
 // The quiet required-field gate on the "Link draft" control: a filed bill must
@@ -88,7 +89,6 @@ const DRAFT = {
   voteSummary: [],
   subjects: [],
   relatedBillIds: [],
-  companionBillIds: [],
   texts: [],
   calendar: [],
   supplements: [],
@@ -283,5 +283,32 @@ describe('BillDetail link draft: other disabled reasons show no message', () => 
     expect(busy).not.toHaveAttribute('aria-disabled')
     expectMessageHidden(busy)
     await act(async () => { release() })
+  })
+})
+
+// The link button is a primary (solid blue) button: no opacity may sit over its
+// colors, or the label drops below the AA bar (enabled) or the 3:1 bar (disabled).
+describe('BillDetail link draft: button colors', () => {
+  it('enabled once a bill is chosen: the blue fill, no opacity, AA in both modes', async () => {
+    mockApi()
+    const { user } = await setup()
+    await pick(user, 'H 1', 'H 100')
+    expect(linkButton()).toBeEnabled()
+    expectPrimaryButtonLegible(linkButton(), { disabled: false })
+  })
+
+  it('demo-locked with a bill chosen: disabled colors, no opacity, 3:1 in both modes', async () => {
+    demoState.demoLocked = true
+    mockApi()
+    const { user } = await setup()
+    await pick(user, 'H 1', 'H 100')
+    expect(linkButton()).toBeDisabled()
+    expectPrimaryButtonLegible(linkButton(), { disabled: true })
+  })
+
+  it('no bill chosen yet: disabled colors, no opacity, 3:1 in both modes', async () => {
+    mockApi()
+    await setup()
+    expectPrimaryButtonLegible(linkButton(), { disabled: true })
   })
 })

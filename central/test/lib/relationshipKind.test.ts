@@ -31,6 +31,14 @@ describe('relationshipKind', () => {
     expect(relationshipKind(getProvider('lis'), 'VA', 'Carry Over')).toBe('related')
   })
 
+  it('reads Congress\'s labels, and only its "Identical bill" as identical', () => {
+    const govinfo = getProvider('govinfo')
+    expect(relationshipKind(govinfo, 'US', 'Identical bill')).toBe('identical')
+    for (const label of ['Related bill', 'Procedurally related', 'Cross-Congress related bill', 'Contained in public law', 'Public law contains the text']) {
+      expect(relationshipKind(govinfo, 'US', label), label).toBe('related')
+    }
+  })
+
   it('reads a provider\'s own label, not another\'s', () => {
     expect(relationshipKind(mga, 'MD', 'Cross-filed')).toBe('identical')
   })

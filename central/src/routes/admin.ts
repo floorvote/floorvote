@@ -140,7 +140,7 @@ adminRoutes.post('/state-providers/:state/cutover', async (c) => {
       ok: true, cutover: id, state, from: plan.from.id, to: plan.to.id,
       bills: { matched: report.bills.matched, tracked: report.bills.tracked,
         unmatched: { old: report.bills.unmatched.old.length, new: report.bills.unmatched.new.length } },
-      people: { matched: report.people.matched, weak: report.people.weak },
+      people: { matched: report.people.matched, weak: report.people.weak, bioguide: report.people.bioguide },
       sync,
     })
   } catch (err) {
@@ -192,7 +192,7 @@ adminRoutes.post('/lims-import', async (c) => {
   const db = drizzle(c.env.DB, { schema })
   // The sync links bills only in states their provider owns, so an import
   // into a state LIMS doesn't own would leave its bills half linked.
-  const owners = await loadStateOwners(c.env, db)
+  const owners = await loadStateOwners(db)
   const unowned = (getProvider('lims').states ?? []).filter(state => ownerOf(owners, state) !== 'lims')
   if (unowned.length > 0) {
     return c.json({ error: `lims doesn't own ${unowned.join(', ')}. Claim it first (POST /api/admin/state-providers/:state).` }, 409)

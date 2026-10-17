@@ -53,13 +53,14 @@ export function withCarriedPeople(list: ProviderPerson[], carried: Map<number, n
   })
 }
 
-/** The measure, with its sponsors and member votes under kept person ids where a cutover carried them. */
+/** The measure, with its sponsors, the people it names, and member votes under kept person ids where a cutover carried them. */
 export function measureWithCarriedPeople(measure: CentralMeasure, carried: Map<number, number>): CentralMeasure {
   if (carried.size === 0) return measure
   const kept = (id: number) => carried.get(id) ?? id
   return {
     ...measure,
     sponsors: (measure.sponsors ?? []).map(s => (s.people_id ? { ...s, people_id: kept(s.people_id) } : s)),
+    ...(measure.people ? { people: measure.people.map(p => ({ ...p, people_id: kept(p.people_id) })) } : {}),
     votes: (measure.votes ?? []).map(v => (v.member_votes
       ? { ...v, member_votes: v.member_votes.map(mv => (mv.people_id == null ? mv : { ...mv, people_id: kept(mv.people_id) })) }
       : v)),
