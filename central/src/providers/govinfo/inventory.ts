@@ -148,3 +148,6 @@ export const billInventory: FieldInventory = {
 
   dublinCore: { ignored: 'The Dublin Core block: format, language, rights, contributor, and a description of the file. The same on every file, and left out of the record hash.' },
 }
+
+export const houseRollCallInventory: FieldInventory = {}
+export const senateRollCallInventory: FieldInventory = {}

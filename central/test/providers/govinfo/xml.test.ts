@@ -62,6 +62,50 @@ describe('reading well-formed XML', () => {
   })
 })
 
+describe('attributes', () => {
+  // The House Clerk's roll call files name each voter in attributes (`name-id`, `party`, `state`), and senate.gov's member list gives each senator's LIS id in one.
+  it('reads an element\'s attributes by name, in either kind of quote', () => {
+    const r = root(`<a x="1" y='two'><b name-id="A000370" party="D">Adams</b></a>`)
+    expect(r.attrs).toEqual({ x: '1', y: 'two' })
+    expect(r.children[0].attrs).toEqual({ 'name-id': 'A000370', party: 'D' })
+    expect(r.children[0].text).toBe('Adams')
+  })
+
+  it('reads the attributes of a self-closing element, and of an element with spaces around its equals signs', () => {
+    const r = root('<a><b id = "7" /><c   k="v"  /></a>')
+    expect(r.children.map(c => c.attrs)).toEqual([{ id: '7' }, { k: 'v' }])
+  })
+
+  it('decodes entities in an attribute value, once', () => {
+    expect(root('<a v="Tom &amp; Jerry&apos;s &#8212; &amp;lt;"/>').attrs).toEqual({ v: 'Tom & Jerry\'s — &lt;' })
+  })
+
+  it('gives an element with no attributes an empty set, and one with an empty value an empty string', () => {
+    const r = root('<a><b/><c k=""/></a>')
+    expect(r.attrs).toEqual({})
+    expect(r.children[0].attrs).toEqual({})
+    expect(r.children[1].attrs).toEqual({ k: '' })
+  })
+
+  it('keeps an attribute value that holds the other kind of quote', () => {
+    expect(root(`<a v="it's" w='say "hi"'/>`).attrs).toEqual({ v: 'it\'s', w: 'say "hi"' })
+  })
+
+  it.each([
+    ['an attribute named twice', '<a x="1" x="2"/>'],
+    ['an attribute value with an & that isn\'t an entity', '<a x="fish & chips"/>'],
+    ['an attribute value with an unknown entity', '<a x="&nbsp;"/>'],
+  ])('throws on %s', (_what, text) => {
+    expect(() => parseXml(text)).toThrow(XmlError)
+  })
+
+  it('reads every attribute of a recorded House Clerk file\'s voters', () => {
+    const rollcall = '<rollcall-vote><vote-data><recorded-vote><legislator name-id="A000370" sort-field="Adams" unaccented-name="Adams" party="D" state="NC" role="legislator">Adams</legislator><vote>Yea</vote></recorded-vote></vote-data></rollcall-vote>'
+    const legislator = root(rollcall).children[0].children[0].children[0]
+    expect(legislator.attrs).toEqual({ 'name-id': 'A000370', 'sort-field': 'Adams', 'unaccented-name': 'Adams', party: 'D', state: 'NC', role: 'legislator' })
+  })
+})
+
 describe('the spans of the elements to leave out of a hash', () => {
   const xml = '<a><updateDate>1</updateDate><b><updateDate>2</updateDate><keep>k</keep></b><dublinCore><x>y</x></dublinCore></a>'
 

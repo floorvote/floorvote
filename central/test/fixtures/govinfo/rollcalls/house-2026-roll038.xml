@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rollcall-vote>
+  <vote-metadata>
+    <majority>R</majority>
+    <congress>119</congress>
+    <session>2nd</session>
+    <chamber>U.S. House of Representatives</chamber>
+    <rollcall-num>38</rollcall-num>
+    <legis-num>H J RES 140</legis-num>
+    <vote-question>On Passage</vote-question>
+    <vote-type>YEA-AND-NAY</vote-type>
+    <vote-result>Passed</vote-result>
+    <action-date>21-Jan-2026</action-date>
+    <action-time time-etz="16:45">4:45 PM</action-time>
+    <vote-desc>Providing for congressional disapproval under chapter 8 of title 5, United States Code, of the rule submitted by the Bureau of Land Management relating to Public Land Order No. 7917 for Withdrawal of Federal Lands; Cook, Lake, and Saint Louis Counties, MN</vote-desc>
+    <vote-totals>
+      <totals-by-party-header>
+        <party-header>Party</party-header>
+        <yea-header>Yeas</yea-header>
+        <nay-header>Nays</nay-header>
+        <present-header>Answered “Present”</present-header>
+        <not-voting-header>Not Voting</not-voting-header>
+      </totals-by-party-header>
+      <totals-by-party>
+        <party>Republican</party>
+        <yea-total>213</yea-total>
+        <nay-total>1</nay-total>
+        <present-total>0</present-total>
+        <not-voting-total>4</not-voting-total>
+      </totals-by-party>
+      <totals-by-party>
+        <party>Democratic</party>
+        <yea-total>1</yea-total>
+        <nay-total>207</nay-total>
+        <present-total>0</present-total>
+        <not-voting-total>5</not-voting-total>
+      </totals-by-party>
+      <totals-by-party>
+        <party>Independent</party>
+        <yea-total>0</yea-total>
+        <nay-total>0</nay-total>
+        <present-total>0</present-total>
+        <not-voting-total>0</not-voting-total>
+      </totals-by-party>
+      <totals-by-vote>
+        <total-stub>Totals</total-stub>
+        <yea-total>214</yea-total>
+        <nay-total>208</nay-total>
+        <present-total>0</present-total>
+        <not-voting-total>9</not-voting-total>
+      </totals-by-vote>
+    </vote-totals>
+  </vote-metadata>
+  <vote-data>
+    <recorded-vote>
+      <legislator name-id="A000370" sort-field="Adams" unaccented-name="Adams" party="D" state="NC" role="legislator">Adams</legislator>
+      <vote>Nay</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="B001323" sort-field="Begich" unaccented-name="Begich" party="R" state="AK" role="legislator">Begich</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="B001309" sort-field="Burchett" unaccented-name="Burchett" party="R" state="TN" role="legislator">Burchett</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="C001131" sort-field="Casar" unaccented-name="Casar" party="D" state="TX" role="legislator">Casar</legislator>
+      <vote>Not Voting</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="C001067" sort-field="Clarke (NY)" unaccented-name="Clarke (NY)" party="D" state="NY" role="legislator">Clarke (NY)</legislator>
+      <vote>Nay</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="C001136" sort-field="Conaway" unaccented-name="Conaway" party="D" state="NJ" role="legislator">Conaway</legislator>
+      <vote>Not Voting</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="C001063" sort-field="Cuellar" unaccented-name="Cuellar" party="D" state="TX" role="legislator">Cuellar</legislator>
+      <vote>Nay</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="E000301" sort-field="Elfreth" unaccented-name="Elfreth" party="D" state="MD" role="legislator">Elfreth</legislator>
+      <vote>Nay</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="F000474" sort-field="Flood" unaccented-name="Flood" party="R" state="NE" role="legislator">Flood</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="G000601" sort-field="Goldman (TX)" unaccented-name="Goldman (TX)" party="R" state="TX" role="legislator">Goldman (TX)</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="H001052" sort-field="Harris (MD)" unaccented-name="Harris (MD)" party="R" state="MD" role="legislator">Harris (MD)</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="H001095" sort-field="Hunt" unaccented-name="Hunt" party="R" state="TX" role="legislator">Hunt</legislator>
+      <vote>Not Voting</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="J000311" sort-field="Jack" unaccented-name="Jack" party="R" state="GA" role="legislator">Jack</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="J000299" sort-field="Johnson (LA)" unaccented-name="Johnson (LA)" party="R" state="LA" role="speaker">Johnson (LA)</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="K000402" sort-field="Kennedy (NY)" unaccented-name="Kennedy (NY)" party="D" state="NY" role="legislator">Kennedy (NY)</legislator>
+      <vote>Nay</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="L000557" sort-field="Larson (CT)" unaccented-name="Larson (CT)" party="D" state="CT" role="legislator">Larson (CT)</legislator>
+      <vote>Not Voting</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="L000273" sort-field="Leger Fernandez" unaccented-name="Leger Fernandez" party="D" state="NM" role="legislator">Leger Fernandez</legislator>
+      <vote>Nay</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="M001208" sort-field="McBath" unaccented-name="McBath" party="D" state="GA" role="legislator">McBath</legislator>
+      <vote>Nay</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="M001177" sort-field="McClintock" unaccented-name="McClintock" party="R" state="CA" role="legislator">McClintock</legislator>
+      <vote>Not Voting</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="M001211" sort-field="Miller (IL)" unaccented-name="Miller (IL)" party="R" state="IL" role="legislator">Miller (IL)</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="N000015" sort-field="Neal" unaccented-name="Neal" party="D" state="MA" role="legislator">Neal</legislator>
+      <vote>Nay</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="P000605" sort-field="Perry" unaccented-name="Perry" party="R" state="PA" role="legislator">Perry</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="R000599" sort-field="Ruiz" unaccented-name="Ruiz" party="D" state="CA" role="legislator">Ruiz</legislator>
+      <vote>Nay</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="S000344" sort-field="Sherman" unaccented-name="Sherman" party="D" state="CA" role="legislator">Sherman</legislator>
+      <vote>Nay</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="S001196" sort-field="Stefanik" unaccented-name="Stefanik" party="R" state="NY" role="legislator">Stefanik</legislator>
+      <vote>Not Voting</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="S001188" sort-field="Stutzman" unaccented-name="Stutzman" party="R" state="IN" role="legislator">Stutzman</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="S001193" sort-field="Swalwell" unaccented-name="Swalwell" party="D" state="CA" role="legislator">Swalwell</legislator>
+      <vote>Not Voting</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="T000491" sort-field="Tran" unaccented-name="Tran" party="D" state="CA" role="legislator">Tran</legislator>
+      <vote>Nay</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="W000821" sort-field="Westerman" unaccented-name="Westerman" party="R" state="AR" role="legislator">Westerman</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+  </vote-data>
+</rollcall-vote>

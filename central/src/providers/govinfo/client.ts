@@ -105,3 +105,6 @@ export async function fetchBillStatusFile(
     throw new Error(`GovInfo ${congress}/${type}/${number}: ${err instanceof Error ? err.message : String(err)}`)
   }
 }
+
+/** Forget every roll call and member file read so far (for tests: a real ingest lets them expire). */
+export function clearRollCallCaches(): void {}
