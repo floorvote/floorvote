@@ -29,6 +29,12 @@ export const CHIP_MINI = {
   borderRadius: CHIP_MINI_DIMS.radius,
 }
 
+// The widest a status chip may be where it opts in to the cap (StatusChip's
+// `capWidth`: the bill table and the split pane). It is the width of the Bills
+// page's status track (CHIP_GRID) and the pane's status track, so a capped chip
+// fits its column; a test keeps the three in step.
+export const STATUS_CHIP_MAX_WIDTH = 100
+
 // Dark navy bill number badge
 export const BILL_BADGE_BASE = {
   display: 'inline-flex' as const,

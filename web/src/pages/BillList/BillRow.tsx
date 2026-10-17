@@ -227,6 +227,7 @@ export const BillRow = memo(function BillRow({
     ? (bill.isDraft
         ? <DraftChip />
         : <StatusChip
+            capWidth
             status={decodeStatus(bill.status)}
             onClick={interactive ? () => onStatusClick(bill.status) : undefined}
             isActive={interactive ? filterStatuses.includes(bill.status) : undefined}
@@ -235,6 +236,7 @@ export const BillRow = memo(function BillRow({
       <div style={STACK}>
         {shownStatuses.map(status => (
           <StatusChip
+            capWidth
             key={status}
             status={decodeStatus(status)}
             onClick={interactive ? () => onStatusClick(status) : undefined}

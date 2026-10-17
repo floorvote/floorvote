@@ -55,6 +55,7 @@ function renderRow(bill: Partial<Bill>, props: { onStatusClick?: (s: string) => 
         onRelevanceClick={vi.fn()}
         onPriorityChange={vi.fn()}
         onPositionChange={vi.fn()}
+        onVote={vi.fn()}
         filterStatuses={props.filterStatuses ?? []}
         filterPriorities={[]}
         filterPositions={[]}

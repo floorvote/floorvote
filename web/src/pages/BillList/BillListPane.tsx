@@ -127,8 +127,8 @@ const PaneRow = memo(function PaneRow({ bill, path, isCurrent, billPaths, index,
   // row is a link, and the pane filters nothing).
   const cells: Record<PaneColumn['key'], ReactNode> = {
     status: group
-      ? <div style={{ ...STACK, alignItems: 'flex-start' }}>{group.statuses.map(status => <StatusChip key={status} status={decodeStatus(status)} />)}</div>
-      : bill.isDraft ? <DraftChip /> : <StatusChip status={decodeStatus(bill.status)} />,
+      ? <div style={{ ...STACK, alignItems: 'flex-start' }}>{group.statuses.map(status => <StatusChip capWidth key={status} status={decodeStatus(status)} />)}</div>
+      : bill.isDraft ? <DraftChip /> : <StatusChip capWidth status={decodeStatus(bill.status)} />,
     year: <SessionChip session={formatYearChip(bill.yearStart, bill.yearEnd)} />,
     lastAction: <LastActionChip date={bill.lastActionDate} />,
     relevance: <RelevanceChip score={bill.relevanceScore} />,
@@ -171,9 +171,9 @@ const PaneRow = memo(function PaneRow({ bill, path, isCurrent, billPaths, index,
           <span style={{ marginLeft: 'auto', display: 'flex', minWidth: 0 }}>
             {group ? (
               <span style={{ ...STACK, alignItems: 'flex-end' }}>
-                {group.statuses.map(status => <StatusChip key={status} status={decodeStatus(status)} />)}
+                {group.statuses.map(status => <StatusChip capWidth key={status} status={decodeStatus(status)} />)}
               </span>
-            ) : bill.isDraft ? <DraftChip mini /> : <StatusChip status={decodeStatus(bill.status)} />}
+            ) : bill.isDraft ? <DraftChip mini /> : <StatusChip capWidth status={decodeStatus(bill.status)} />}
           </span>
         </div>
       )}

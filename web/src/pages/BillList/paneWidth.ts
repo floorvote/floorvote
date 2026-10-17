@@ -11,7 +11,7 @@ export interface PaneColumn { key: PaneColumnKey; label: string; at: number }
 /**
  * The pane's columns, in the order they appear as it widens, and their headers
  * (the Bills page's words). Priority and position stay out: they are controls,
- * and the pane only reads. #404 sizes the status chip within `status`.
+ * and the pane only reads. The status chip is capped to that track's width (#404).
  */
 export const PANE_COLUMNS: PaneColumn[] = [
   { key: 'status', label: 'Status', at: 400 },
@@ -57,8 +57,8 @@ export function visiblePaneColumns(width: number): PaneColumn[] {
 
 // Grid tracks, the Bills page's own (constants.ts CHIP_GRID): the bill number,
 // then each column that shows. Header and rows share this template so every
-// cell sits under its header. `status` is the track #404 sizes the status chip
-// against.
+// cell sits under its header. `status` is as wide as the status chip's cap
+// (STATUS_CHIP_MAX_WIDTH), so a capped chip fits its track (#404).
 const BILL_TRACK = '70px'
 const BILL_TRACK_MULTISTATE = '105px'
 const COLUMN_TRACKS: Record<PaneColumnKey, string> = {

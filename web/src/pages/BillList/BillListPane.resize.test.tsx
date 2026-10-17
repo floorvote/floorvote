@@ -683,10 +683,10 @@ describe('the cells are the Bills page\'s own components', () => {
     expect(cell(rowOf(pane, /Title of HB 1/), 'relevance')!.innerHTML).toBe(alone.container.innerHTML)
   })
 
-  it('renders the status as a StatusChip, byte for byte', async () => {
+  it('renders the status as a StatusChip with the cap, byte for byte (#404)', async () => {
     renderPane()
     const pane = await ready()
-    const alone = render(<StatusChip status={decodeStatus('Passed')} />)
+    const alone = render(<StatusChip capWidth status={decodeStatus('Passed')} />)
     expect(cell(rowOf(pane, /Title of HB 1/), 'status')!.innerHTML).toBe(alone.container.innerHTML)
   })
 
