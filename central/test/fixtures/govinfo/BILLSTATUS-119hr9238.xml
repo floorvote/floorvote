@@ -1,0 +1,326 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<billStatus>
+  <version>3.0.0</version>
+  <bill>
+    <number>9238</number>
+    <updateDate>2026-07-01T21:46:04Z</updateDate>
+    <updateDateIncludingText>2026-07-01T21:46:04Z</updateDateIncludingText>
+    <originChamber>House</originChamber>
+    <originChamberCode>H</originChamberCode>
+    <type>HR</type>
+    <introducedDate>2026-06-10</introducedDate>
+    <congress>119</congress>
+    <legislationUrl>https://www.congress.gov/bill/119th-congress/house-bill/9238</legislationUrl>
+    <constitutionalAuthorityStatementText><![CDATA[<pre>[Congressional Record Volume 172, Number 98 (Wednesday, June 10, 2026)][House]From the Congressional Record Online through the Government Publishing Office [<a href="https://www.gpo.gov">www.gpo.gov</a>]By Mr. CRAWFORD:H.R. 9238.Congress has the power to enact this legislation pursuantto the following:article 1 section 8[Page H4085]</pre>]]></constitutionalAuthorityStatementText>
+    <committees>
+      <item>
+        <systemCode>hlig00</systemCode>
+        <name>Intelligence (Permanent Select) Committee</name>
+        <chamber>House</chamber>
+        <type>Select</type>
+        <activities>
+          <item>
+            <name>Referred To</name>
+            <date>2026-06-10T14:02:40Z</date>
+          </item>
+        </activities>
+      </item>
+      <item>
+        <systemCode>hsju00</systemCode>
+        <name>Judiciary Committee</name>
+        <chamber>House</chamber>
+        <type>Standing</type>
+        <activities>
+          <item>
+            <name>Referred To</name>
+            <date>2026-06-10T14:02:35Z</date>
+          </item>
+        </activities>
+      </item>
+    </committees>
+    <relatedBills>
+      <item>
+        <title>To amend the FISA Amendments Act of 2008 to extend the authorities of title VII of the Foreign Intelligence Surveillance Act of 1978, and for other purposes.</title>
+        <congress>119</congress>
+        <number>9115</number>
+        <type>HR</type>
+        <latestAction>
+          <actionDate>2026-06-03</actionDate>
+          <text>Referred to the Committee on the Judiciary, and in addition to the Committees on Intelligence (Permanent Select), and Financial Services, for a period to be subsequently determined by the Speaker, in each case for consideration of such provisions as fall within the jurisdiction of the committee concerned.</text>
+        </latestAction>
+        <relationshipDetails>
+          <item>
+            <type>Related bill</type>
+            <identifiedBy>CRS</identifiedBy>
+          </item>
+        </relationshipDetails>
+      </item>
+      <item>
+        <title>A bill to amend the FISA Amendments Act of 2008 to extend the authorities of title VII of the Foreign Intelligence Surveillance Act of 1978, and for other purposes.</title>
+        <congress>119</congress>
+        <number>4764</number>
+        <type>S</type>
+        <latestAction>
+          <actionDate>2026-06-11</actionDate>
+          <text>Read twice and referred to the Select Committee on Intelligence.</text>
+        </latestAction>
+        <relationshipDetails>
+          <item>
+            <type>Related bill</type>
+            <identifiedBy>CRS</identifiedBy>
+          </item>
+        </relationshipDetails>
+      </item>
+      <item>
+        <title>A bill to amend the FISA Amendments Act of 2008 to extend the authorities of title VII of the Foreign Intelligence Surveillance Act of 1978, and for other purposes.</title>
+        <congress>119</congress>
+        <number>4760</number>
+        <type>S</type>
+        <latestAction>
+          <actionDate>2026-06-11</actionDate>
+          <text>Read twice and referred to the Select Committee on Intelligence.</text>
+        </latestAction>
+        <relationshipDetails>
+          <item>
+            <type>Related bill</type>
+            <identifiedBy>CRS</identifiedBy>
+          </item>
+        </relationshipDetails>
+      </item>
+    </relatedBills>
+    <actions>
+      <item>
+        <actionDate>2026-06-11</actionDate>
+        <actionTime>10:35:00</actionTime>
+        <text>On motion to suspend the rules and pass the bill Failed by the Yeas and Nays: (2/3 required): 198 - 218 (Roll no. 221).</text>
+        <type>Floor</type>
+        <actionCode>H37300</actionCode>
+        <sourceSystem>
+          <code>2</code>
+          <name>House floor actions</name>
+        </sourceSystem>
+        <recordedVotes>
+          <recordedVote>
+            <rollNumber>221</rollNumber>
+            <url>https://clerk.house.gov/evs/2026/roll221.xml</url>
+            <chamber>House</chamber>
+            <congress>119</congress>
+            <date>2026-06-11T14:35:00Z</date>
+            <sessionNumber>2</sessionNumber>
+          </recordedVote>
+        </recordedVotes>
+      </item>
+      <item>
+        <actionDate>2026-06-11</actionDate>
+        <actionTime>10:35:00</actionTime>
+        <text>Failed of passage/not agreed to in House On motion to suspend the rules and pass the bill Failed by the Yeas and Nays: (2/3 required): 198 - 218 (Roll no. 221).</text>
+        <type>Floor</type>
+        <actionCode>9000</actionCode>
+        <sourceSystem>
+          <code>9</code>
+          <name>Library of Congress</name>
+        </sourceSystem>
+        <recordedVotes>
+          <recordedVote>
+            <rollNumber>221</rollNumber>
+            <url>https://clerk.house.gov/evs/2026/roll221.xml</url>
+            <chamber>House</chamber>
+            <congress>119</congress>
+            <date>2026-06-11T14:35:00Z</date>
+            <sessionNumber>2</sessionNumber>
+          </recordedVote>
+        </recordedVotes>
+      </item>
+      <item>
+        <actionDate>2026-06-11</actionDate>
+        <actionTime>10:05:31</actionTime>
+        <text>Considered as unfinished business. (consideration: CR H4098-4099)</text>
+        <type>Floor</type>
+        <actionCode>H30000</actionCode>
+        <sourceSystem>
+          <code>2</code>
+          <name>House floor actions</name>
+        </sourceSystem>
+      </item>
+      <item>
+        <actionDate>2026-06-10</actionDate>
+        <actionTime>18:18:06</actionTime>
+        <text>At the conclusion of debate, the Yeas and Nays were demanded and ordered. Pursuant to the provisions of clause 8, rule XX, the Chair announced that further proceedings on the motion would be postponed.</text>
+        <type>Floor</type>
+        <actionCode>H37220</actionCode>
+        <sourceSystem>
+          <code>2</code>
+          <name>House floor actions</name>
+        </sourceSystem>
+      </item>
+      <item>
+        <actionDate>2026-06-10</actionDate>
+        <actionTime>17:41:49</actionTime>
+        <text>DEBATE - The House proceeded with forty minutes of debate on H.R. 9238.</text>
+        <type>Floor</type>
+        <actionCode>H8D000</actionCode>
+        <sourceSystem>
+          <code>2</code>
+          <name>House floor actions</name>
+        </sourceSystem>
+      </item>
+      <item>
+        <actionDate>2026-06-10</actionDate>
+        <actionTime>17:41:48</actionTime>
+        <text>Considered under suspension of the rules. (consideration: CR H4079-4083; text: CR H4079)</text>
+        <type>Floor</type>
+        <actionCode>H30000</actionCode>
+        <sourceSystem>
+          <code>2</code>
+          <name>House floor actions</name>
+        </sourceSystem>
+      </item>
+      <item>
+        <actionDate>2026-06-10</actionDate>
+        <actionTime>17:41:36</actionTime>
+        <text>Mr. Jordan moved to suspend the rules and pass the bill.</text>
+        <type>Floor</type>
+        <actionCode>H30300</actionCode>
+        <sourceSystem>
+          <code>2</code>
+          <name>House floor actions</name>
+        </sourceSystem>
+      </item>
+      <item>
+        <actionDate>2026-06-10</actionDate>
+        <text>Referred to the Committee on the Judiciary, and in addition to the Committee on Intelligence (Permanent Select), for a period to be subsequently determined by the Speaker, in each case for consideration of such provisions as fall within the jurisdiction of the committee concerned.</text>
+        <type>IntroReferral</type>
+        <actionCode>H11100</actionCode>
+        <sourceSystem>
+          <code>2</code>
+          <name>House floor actions</name>
+        </sourceSystem>
+        <committees>
+          <item>
+            <systemCode>hlig00</systemCode>
+            <name>Intelligence (Permanent Select) Committee</name>
+          </item>
+        </committees>
+      </item>
+      <item>
+        <actionDate>2026-06-10</actionDate>
+        <text>Referred to the Committee on the Judiciary, and in addition to the Committee on Intelligence (Permanent Select), for a period to be subsequently determined by the Speaker, in each case for consideration of such provisions as fall within the jurisdiction of the committee concerned.</text>
+        <type>IntroReferral</type>
+        <actionCode>H11100</actionCode>
+        <sourceSystem>
+          <code>2</code>
+          <name>House floor actions</name>
+        </sourceSystem>
+        <committees>
+          <item>
+            <systemCode>hsju00</systemCode>
+            <name>Judiciary Committee</name>
+          </item>
+        </committees>
+      </item>
+      <item>
+        <actionDate>2026-06-10</actionDate>
+        <text>Introduced in House</text>
+        <type>IntroReferral</type>
+        <actionCode>Intro-H</actionCode>
+        <sourceSystem>
+          <code>9</code>
+          <name>Library of Congress</name>
+        </sourceSystem>
+      </item>
+      <item>
+        <actionDate>2026-06-10</actionDate>
+        <text>Introduced in House</text>
+        <type>IntroReferral</type>
+        <actionCode>1000</actionCode>
+        <sourceSystem>
+          <code>9</code>
+          <name>Library of Congress</name>
+        </sourceSystem>
+      </item>
+    </actions>
+    <sponsors>
+      <item>
+        <bioguideId>C001087</bioguideId>
+        <fullName>Rep. Crawford, Eric A. "Rick" [R-AR-1]</fullName>
+        <firstName>Eric</firstName>
+        <lastName>Crawford</lastName>
+        <party>R</party>
+        <state>AR</state>
+        <middleName>A. "Rick"</middleName>
+        <district>1</district>
+        <isByRequest>N</isByRequest>
+      </item>
+    </sponsors>
+    <policyArea>
+      <name>Armed Forces and National Security</name>
+    </policyArea>
+    <subjects>
+      <legislativeSubjects>
+        <item>
+          <name>Citizenship and naturalization</name>
+          <updateDate>2026-06-15T17:58:45Z</updateDate>
+        </item>
+        <item>
+          <name>Intelligence activities, surveillance, classified information</name>
+          <updateDate>2026-06-15T17:58:45Z</updateDate>
+        </item>
+        <item>
+          <name>Telephone and wireless communication</name>
+          <updateDate>2026-06-15T17:58:45Z</updateDate>
+        </item>
+      </legislativeSubjects>
+      <policyArea>
+        <name>Armed Forces and National Security</name>
+        <updateDate>2026-06-11T13:36:09Z</updateDate>
+      </policyArea>
+    </subjects>
+    <summaries>
+      <summary>
+        <versionCode>00</versionCode>
+        <actionDate>2026-06-10</actionDate>
+        <actionDesc>Introduced in House</actionDesc>
+        <updateDate>2026-06-11T13:54:19Z</updateDate>
+        <text><![CDATA[<p>This&nbsp;bill extends the authorities of Title VII of the Foreign Intelligence Surveillance Act (FISA) until July 2, 2026.</p><p>Title VII of&nbsp;FISA generally addresses electronic surveillance and other methods of acquiring foreign intelligence information that are directed at targets outside the United States. Title VII includes surveillance under&nbsp;Section 702, which concerns acquiring communications of non-U.S. persons believed to be outside the United States to obtain foreign intelligence information. Information about U.S. persons may incidentally be acquired by this type of surveillance and subsequently <em>queried </em>(searched)&nbsp;under certain circumstances.</p><p>For additional information, see</p><ul><li>CRS In Focus, <a href="https://www.congress.gov/crs-product/IF11451">IF11451 Foreign Intelligence Surveillance Act (FISA)</a>; and</li><li>CRS Report, <a href="https://www.congress.gov/crs-product/R48592">R48592 FISA Section 702 and the 2024 Reforming Intelligence and Securing America Act</a>.</li></ul>]]></text>
+      </summary>
+    </summaries>
+    <title>To amend the FISA Amendments Act of 2008 to extend the authorities of title VII of the Foreign Intelligence Surveillance Act of 1978, and for other purposes.</title>
+    <titles>
+      <item>
+        <titleType>Display Title</titleType>
+        <titleTypeCode>45</titleTypeCode>
+        <title>To amend the FISA Amendments Act of 2008 to extend the authorities of title VII of the Foreign Intelligence Surveillance Act of 1978, and for other purposes.</title>
+        <updateDate>2026-06-11T08:07:16Z</updateDate>
+      </item>
+      <item>
+        <titleType>Official Title as Introduced</titleType>
+        <titleTypeCode>6</titleTypeCode>
+        <title>To amend the FISA Amendments Act of 2008 to extend the authorities of title VII of the Foreign Intelligence Surveillance Act of 1978, and for other purposes.</title>
+        <updateDate>2026-06-11T08:07:16Z</updateDate>
+      </item>
+    </titles>
+    <textVersions>
+      <item>
+        <type>Committee Discharged House</type>
+        <date>2026-06-10T04:00:00Z</date>
+        <formats>
+          <item>
+            <url>https://www.govinfo.gov/content/pkg/BILLS-119hr9238cdh/xml/BILLS-119hr9238cdh.xml</url>
+          </item>
+        </formats>
+      </item>
+    </textVersions>
+    <latestAction>
+      <actionDate>2026-06-11</actionDate>
+      <text>On motion to suspend the rules and pass the bill Failed by the Yeas and Nays: (2/3 required): 198 - 218 (Roll no. 221).</text>
+      <actionTime>10:35:00</actionTime>
+    </latestAction>
+  </bill>
+  <dublinCore xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:format>text/xml</dc:format>
+    <dc:language>EN</dc:language>
+    <dc:rights>Pursuant to Title 17 Section 105 of the United States Code, this file is not subject to copyright protection and is in the public domain.</dc:rights>
+    <dc:contributor>Congressional Research Service, Library of Congress</dc:contributor>
+    <dc:description>This file contains bill summaries and statuses for federal legislation. A bill summary describes the most significant provisions of a piece of legislation and details the effects the legislative text may have on current law and federal programs. Bill summaries are authored by the Congressional Research Service (CRS) of the Library of Congress. As stated in Public Law 91-510 (2 USC 166 (d)(6)), one of the duties of CRS is "to prepare summaries and digests of bills and resolutions of a public general nature introduced in the Senate or House of Representatives". For more information, refer to the User Guide that accompanies this file.</dc:description>
+  </dublinCore>
+</billStatus>

@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<billStatus>
+  <version>3.0.0</version>
+  <bill>
+    <number>4126</number>
+    <updateDate>2026-03-31T20:35:40Z</updateDate>
+    <updateDateIncludingText>2026-03-31T20:35:40Z</updateDateIncludingText>
+    <originChamber>Senate</originChamber>
+    <originChamberCode>S</originChamberCode>
+    <type>S</type>
+    <introducedDate>2026-03-17</introducedDate>
+    <congress>119</congress>
+    <legislationUrl>https://www.congress.gov/bill/119th-congress/senate-bill/4126</legislationUrl>
+    <actions>
+      <item>
+        <actionDate>2026-03-18</actionDate>
+        <sourceSystem>
+          <name>Senate</name>
+        </sourceSystem>
+        <text>Read the second time. Placed on Senate Legislative Calendar under General Orders. Calendar No. 361.</text>
+        <type>Calendars</type>
+      </item>
+      <item>
+        <actionDate>2026-03-17</actionDate>
+        <sourceSystem>
+          <name>Senate</name>
+        </sourceSystem>
+        <text>Introduced in the Senate. Read the first time. Placed on Senate Legislative Calendar under Read the First Time.</text>
+        <type>Calendars</type>
+      </item>
+      <item>
+        <actionDate>2026-03-17</actionDate>
+        <text>Introduced in Senate</text>
+        <type>IntroReferral</type>
+        <actionCode>10000</actionCode>
+        <sourceSystem>
+          <code>9</code>
+          <name>Library of Congress</name>
+        </sourceSystem>
+      </item>
+    </actions>
+    <sponsors>
+      <item>
+        <bioguideId>G000574</bioguideId>
+        <fullName>Sen. Gallego, Ruben [D-AZ]</fullName>
+        <firstName>Ruben</firstName>
+        <lastName>Gallego</lastName>
+        <party>D</party>
+        <state>AZ</state>
+        <isByRequest>N</isByRequest>
+      </item>
+    </sponsors>
+    <policyArea>
+      <name>Armed Forces and National Security</name>
+    </policyArea>
+    <subjects>
+      <legislativeSubjects/>
+      <policyArea>
+        <name>Armed Forces and National Security</name>
+        <updateDate>2026-03-31T20:35:39Z</updateDate>
+      </policyArea>
+    </subjects>
+    <title>A bill to address the ineligibility of Ashli Babbitt for military funeral honors.</title>
+    <titles>
+      <item>
+        <titleType>Display Title</titleType>
+        <titleTypeCode>45</titleTypeCode>
+        <title>A bill to address the ineligibility of Ashli Babbitt for military funeral honors.</title>
+        <updateDate>2026-03-18T10:56:21Z</updateDate>
+      </item>
+      <item>
+        <titleType>Official Title as Introduced</titleType>
+        <titleTypeCode>6</titleTypeCode>
+        <title>A bill to address the ineligibility of Ashli Babbitt for military funeral honors.</title>
+        <updateDate>2026-03-18T10:56:21Z</updateDate>
+      </item>
+    </titles>
+    <textVersions>
+      <item>
+        <type>Placed on Calendar Senate</type>
+        <date>2026-03-18T04:00:00Z</date>
+        <formats>
+          <item>
+            <url>https://www.govinfo.gov/content/pkg/BILLS-119s4126pcs/xml/BILLS-119s4126pcs.xml</url>
+          </item>
+        </formats>
+      </item>
+    </textVersions>
+    <latestAction>
+      <actionDate>2026-03-18</actionDate>
+      <text>Read the second time. Placed on Senate Legislative Calendar under General Orders. Calendar No. 361.</text>
+    </latestAction>
+  </bill>
+  <dublinCore xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:format>text/xml</dc:format>
+    <dc:language>EN</dc:language>
+    <dc:rights>Pursuant to Title 17 Section 105 of the United States Code, this file is not subject to copyright protection and is in the public domain.</dc:rights>
+    <dc:contributor>Congressional Research Service, Library of Congress</dc:contributor>
+    <dc:description>This file contains bill summaries and statuses for federal legislation. A bill summary describes the most significant provisions of a piece of legislation and details the effects the legislative text may have on current law and federal programs. Bill summaries are authored by the Congressional Research Service (CRS) of the Library of Congress. As stated in Public Law 91-510 (2 USC 166 (d)(6)), one of the duties of CRS is "to prepare summaries and digests of bills and resolutions of a public general nature introduced in the Senate or House of Representatives". For more information, refer to the User Guide that accompanies this file.</dc:description>
+  </dublinCore>
+</billStatus>

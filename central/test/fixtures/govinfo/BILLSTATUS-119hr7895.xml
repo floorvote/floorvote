@@ -1,0 +1,262 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<billStatus>
+  <version>3.0.0</version>
+  <bill>
+    <number>7895</number>
+    <updateDate>2026-08-20T22:41:39Z</updateDate>
+    <updateDateIncludingText>2026-08-20T22:41:39Z</updateDateIncludingText>
+    <originChamber>House</originChamber>
+    <originChamberCode>H</originChamberCode>
+    <type>HR</type>
+    <introducedDate>2026-03-12</introducedDate>
+    <congress>119</congress>
+    <legislationUrl>https://www.congress.gov/bill/119th-congress/house-bill/7895</legislationUrl>
+    <cdata/>
+    <committees>
+      <item>
+        <systemCode>hsed00</systemCode>
+        <name>Education and Workforce Committee</name>
+        <chamber>House</chamber>
+        <type>Standing</type>
+        <activities>
+          <item>
+            <name>Reported By</name>
+            <date>2026-07-02T14:33:59Z</date>
+          </item>
+          <item>
+            <name>Markup By</name>
+            <date>2026-05-21T20:08:48Z</date>
+          </item>
+          <item>
+            <name>Referred To</name>
+            <date>2026-03-12T13:34:45Z</date>
+          </item>
+        </activities>
+      </item>
+    </committees>
+    <committeeReports>
+      <committeeReport>
+        <citation>H. Rept. 119-729</citation>
+      </committeeReport>
+    </committeeReports>
+    <actions>
+      <item>
+        <actionDate>2026-07-02</actionDate>
+        <text>Placed on the Union Calendar, Calendar No. 634.</text>
+        <type>Calendars</type>
+        <actionCode>H12410</actionCode>
+        <sourceSystem>
+          <code>2</code>
+          <name>House floor actions</name>
+        </sourceSystem>
+        <calendarNumber>
+          <calendar>U00634</calendar>
+        </calendarNumber>
+      </item>
+      <item>
+        <actionDate>2026-07-02</actionDate>
+        <text>Reported (Amended) by the Committee on Education and Workforce. H. Rept. 119-729.</text>
+        <type>Committee</type>
+        <actionCode>H12200</actionCode>
+        <sourceSystem>
+          <code>2</code>
+          <name>House floor actions</name>
+        </sourceSystem>
+        <committees>
+          <item>
+            <systemCode>hsed00</systemCode>
+            <name>Education and Workforce Committee</name>
+          </item>
+        </committees>
+      </item>
+      <item>
+        <actionDate>2026-07-02</actionDate>
+        <text>Reported (Amended) by the Committee on Education and Workforce. H. Rept. 119-729.</text>
+        <type>Committee</type>
+        <actionCode>5000</actionCode>
+        <sourceSystem>
+          <code>9</code>
+          <name>Library of Congress</name>
+        </sourceSystem>
+        <committees>
+          <item>
+            <systemCode>hsed00</systemCode>
+            <name>Education and Workforce Committee</name>
+          </item>
+        </committees>
+      </item>
+      <item>
+        <actionDate>2026-05-21</actionDate>
+        <committees>
+          <item>
+            <systemCode>hsed00</systemCode>
+            <name>Education and Workforce Committee</name>
+          </item>
+        </committees>
+        <sourceSystem>
+          <code>1</code>
+          <name>House committee actions</name>
+        </sourceSystem>
+        <text>Ordered to be Reported (Amended) by the Yeas and Nays: 34 - 0.</text>
+        <type>Committee</type>
+      </item>
+      <item>
+        <actionDate>2026-05-21</actionDate>
+        <committees>
+          <item>
+            <systemCode>hsed00</systemCode>
+            <name>Education and Workforce Committee</name>
+          </item>
+        </committees>
+        <sourceSystem>
+          <code>1</code>
+          <name>House committee actions</name>
+        </sourceSystem>
+        <text>Committee Consideration and Mark-up Session Held</text>
+        <type>Committee</type>
+      </item>
+      <item>
+        <actionDate>2026-03-12</actionDate>
+        <text>Referred to the House Committee on Education and Workforce.</text>
+        <type>IntroReferral</type>
+        <actionCode>H11100</actionCode>
+        <sourceSystem>
+          <code>2</code>
+          <name>House floor actions</name>
+        </sourceSystem>
+        <committees>
+          <item>
+            <systemCode>hsed00</systemCode>
+            <name>Education and Workforce Committee</name>
+          </item>
+        </committees>
+      </item>
+      <item>
+        <actionDate>2026-03-12</actionDate>
+        <text>Introduced in House</text>
+        <type>IntroReferral</type>
+        <actionCode>Intro-H</actionCode>
+        <sourceSystem>
+          <code>9</code>
+          <name>Library of Congress</name>
+        </sourceSystem>
+      </item>
+      <item>
+        <actionDate>2026-03-12</actionDate>
+        <text>Introduced in House</text>
+        <type>IntroReferral</type>
+        <actionCode>1000</actionCode>
+        <sourceSystem>
+          <code>9</code>
+          <name>Library of Congress</name>
+        </sourceSystem>
+      </item>
+    </actions>
+    <sponsors>
+      <item>
+        <bioguideId>A000372</bioguideId>
+        <fullName>Rep. Allen, Rick W. [R-GA-12]</fullName>
+        <firstName>Rick</firstName>
+        <lastName>Allen</lastName>
+        <party>R</party>
+        <state>GA</state>
+        <middleName>W.</middleName>
+        <district>12</district>
+        <isByRequest>N</isByRequest>
+      </item>
+    </sponsors>
+    <policyArea>
+      <name>Health</name>
+    </policyArea>
+    <subjects>
+      <legislativeSubjects>
+        <item>
+          <name>Fraud offenses and financial crimes</name>
+          <updateDate>2026-06-26T20:05:29Z</updateDate>
+        </item>
+        <item>
+          <name>Health care costs and insurance</name>
+          <updateDate>2026-06-26T20:05:17Z</updateDate>
+        </item>
+        <item>
+          <name>Health personnel</name>
+          <updateDate>2026-06-26T20:05:26Z</updateDate>
+        </item>
+        <item>
+          <name>Prescription drugs</name>
+          <updateDate>2026-06-26T20:05:22Z</updateDate>
+        </item>
+      </legislativeSubjects>
+      <policyArea>
+        <name>Health</name>
+        <updateDate>2026-07-09T23:23:24Z</updateDate>
+      </policyArea>
+    </subjects>
+    <title>PBM Kickback Prohibition Act</title>
+    <titles>
+      <item>
+        <titleType>Short Title(s) as Reported to House</titleType>
+        <titleTypeCode>102</titleTypeCode>
+        <title>PBM Kickback Prohibition Act</title>
+        <updateDate>2026-07-03T03:38:19Z</updateDate>
+        <chamberCode>H</chamberCode>
+        <chamberName>House</chamberName>
+        <billTextVersionName>Reported in House</billTextVersionName>
+        <billTextVersionCode>RH</billTextVersionCode>
+      </item>
+      <item>
+        <titleType>Display Title</titleType>
+        <titleTypeCode>45</titleTypeCode>
+        <title>PBM Kickback Prohibition Act</title>
+        <updateDate>2026-04-02T05:38:27Z</updateDate>
+      </item>
+      <item>
+        <titleType>Short Title(s) as Introduced</titleType>
+        <titleTypeCode>101</titleTypeCode>
+        <title>PBM Kickback Prohibition Act</title>
+        <updateDate>2026-04-02T05:38:26Z</updateDate>
+        <billTextVersionName>Introduced in House</billTextVersionName>
+        <billTextVersionCode>IH</billTextVersionCode>
+      </item>
+      <item>
+        <titleType>Official Title as Introduced</titleType>
+        <titleTypeCode>6</titleTypeCode>
+        <title>To amend section 408 of the Employee Retirement Income Security Act of 1974 to prohibit kickbacks to pharmacy benefit managers.</title>
+        <updateDate>2026-04-02T05:33:36Z</updateDate>
+        <billTextVersionName>Introduced in House</billTextVersionName>
+        <billTextVersionCode>IH</billTextVersionCode>
+      </item>
+    </titles>
+    <textVersions>
+      <item>
+        <type>Reported in House</type>
+        <date>2026-07-02T04:00:00Z</date>
+        <formats>
+          <item>
+            <url>https://www.govinfo.gov/content/pkg/BILLS-119hr7895rh/xml/BILLS-119hr7895rh.xml</url>
+          </item>
+        </formats>
+      </item>
+      <item>
+        <type>Introduced in House</type>
+        <date>2026-03-12T04:00:00Z</date>
+        <formats>
+          <item>
+            <url>https://www.govinfo.gov/content/pkg/BILLS-119hr7895ih/xml/BILLS-119hr7895ih.xml</url>
+          </item>
+        </formats>
+      </item>
+    </textVersions>
+    <latestAction>
+      <actionDate>2026-07-02</actionDate>
+      <text>Placed on the Union Calendar, Calendar No. 634.</text>
+    </latestAction>
+  </bill>
+  <dublinCore xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:format>text/xml</dc:format>
+    <dc:language>EN</dc:language>
+    <dc:rights>Pursuant to Title 17 Section 105 of the United States Code, this file is not subject to copyright protection and is in the public domain.</dc:rights>
+    <dc:contributor>Congressional Research Service, Library of Congress</dc:contributor>
+    <dc:description>This file contains bill summaries and statuses for federal legislation. A bill summary describes the most significant provisions of a piece of legislation and details the effects the legislative text may have on current law and federal programs. Bill summaries are authored by the Congressional Research Service (CRS) of the Library of Congress. As stated in Public Law 91-510 (2 USC 166 (d)(6)), one of the duties of CRS is "to prepare summaries and digests of bills and resolutions of a public general nature introduced in the Senate or House of Representatives". For more information, refer to the User Guide that accompanies this file.</dc:description>
+  </dublinCore>
+</billStatus>

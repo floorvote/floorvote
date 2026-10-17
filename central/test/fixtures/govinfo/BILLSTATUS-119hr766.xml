@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<billStatus>
+  <version>3.0.0</version>
+  <bill>
+    <number>766</number>
+    <updateDate>2026-10-08T17:34:12Z</updateDate>
+    <updateDateIncludingText>2026-10-08T17:34:12Z</updateDateIncludingText>
+    <originChamber>House</originChamber>
+    <originChamberCode>H</originChamberCode>
+    <type>HR</type>
+    <introducedDate>2025-01-28</introducedDate>
+    <congress>119</congress>
+    <legislationUrl>https://www.congress.gov/bill/119th-congress/house-bill/766</legislationUrl>
+    <constitutionalAuthorityStatementText><![CDATA[<pre>[Congressional Record Volume 171, Number 18 (Tuesday, January 28, 2025)][House]From the Congressional Record Online through the Government Publishing Office [<a href="https://www.gpo.gov">www.gpo.gov</a>]By Mr. GARCIA of California:H.R. 766.Congress has the power to enact this legislation pursuantto the following:Article 1, Section 8[Page H406]</pre>]]></constitutionalAuthorityStatementText>
+    <committees>
+      <item>
+        <systemCode>hsif00</systemCode>
+        <name>Energy and Commerce Committee</name>
+        <chamber>House</chamber>
+        <type>Standing</type>
+        <activities>
+          <item>
+            <name>Referred To</name>
+            <date>2025-01-28T16:03:40Z</date>
+          </item>
+        </activities>
+      </item>
+    </committees>
+    <actions>
+      <item>
+        <actionDate>2025-01-28</actionDate>
+        <text>Referred to the House Committee on Energy and Commerce.</text>
+        <type>IntroReferral</type>
+        <actionCode>H11100</actionCode>
+        <sourceSystem>
+          <code>2</code>
+          <name>House floor actions</name>
+        </sourceSystem>
+        <committees>
+          <item>
+            <systemCode>hsif00</systemCode>
+            <name>Energy and Commerce Committee</name>
+          </item>
+        </committees>
+      </item>
+      <item>
+        <actionDate>2025-01-28</actionDate>
+        <text>Introduced in House</text>
+        <type>IntroReferral</type>
+        <actionCode>Intro-H</actionCode>
+        <sourceSystem>
+          <code>9</code>
+          <name>Library of Congress</name>
+        </sourceSystem>
+      </item>
+      <item>
+        <actionDate>2025-01-28</actionDate>
+        <text>Introduced in House</text>
+        <type>IntroReferral</type>
+        <actionCode>1000</actionCode>
+        <sourceSystem>
+          <code>9</code>
+          <name>Library of Congress</name>
+        </sourceSystem>
+      </item>
+    </actions>
+    <sponsors>
+      <item>
+        <bioguideId>G000598</bioguideId>
+        <fullName>Rep. Garcia, Robert [D-CA-42]</fullName>
+        <firstName>Robert</firstName>
+        <lastName>Garcia</lastName>
+        <party>D</party>
+        <state>CA</state>
+        <district>42</district>
+        <isByRequest>N</isByRequest>
+      </item>
+    </sponsors>
+    <cosponsors>
+      <item>
+        <bioguideId>B001298</bioguideId>
+        <fullName>Rep. Bacon, Don [R-NE-2]</fullName>
+        <firstName>Don</firstName>
+        <lastName>Bacon</lastName>
+        <party>R</party>
+        <state>NE</state>
+        <district>2</district>
+        <sponsorshipDate>2025-01-28</sponsorshipDate>
+        <isOriginalCosponsor>True</isOriginalCosponsor>
+      </item>
+      <item>
+        <bioguideId>F000466</bioguideId>
+        <fullName>Rep. Fitzpatrick, Brian K. [R-PA-1]</fullName>
+        <firstName>Brian</firstName>
+        <lastName>Fitzpatrick</lastName>
+        <party>R</party>
+        <state>PA</state>
+        <middleName>K.</middleName>
+        <district>1</district>
+        <sponsorshipDate>2025-03-06</sponsorshipDate>
+        <isOriginalCosponsor>False</isOriginalCosponsor>
+      </item>
+    </cosponsors>
+    <laws>
+      <item>
+        <type>Public Law</type>
+        <number>119-120</number>
+      </item>
+    </laws>
+    <policyArea>
+      <name>Health</name>
+    </policyArea>
+    <subjects>
+      <legislativeSubjects>
+        <item>
+          <name>Hazardous wastes and toxic substances</name>
+          <updateDate>2025-03-27T15:26:46Z</updateDate>
+        </item>
+        <item>
+          <name>Health programs administration and funding</name>
+          <updateDate>2025-03-27T15:26:32Z</updateDate>
+        </item>
+        <item>
+          <name>Infectious and parasitic diseases</name>
+          <updateDate>2025-03-27T15:26:38Z</updateDate>
+        </item>
+        <item>
+          <name>Water quality</name>
+          <updateDate>2025-03-27T15:26:43Z</updateDate>
+        </item>
+      </legislativeSubjects>
+      <policyArea>
+        <name>Health</name>
+        <updateDate>2025-03-01T14:34:31Z</updateDate>
+      </policyArea>
+    </subjects>
+    <summaries>
+      <summary>
+        <versionCode>00</versionCode>
+        <actionDate>2025-01-28</actionDate>
+        <actionDesc>Introduced in House</actionDesc>
+        <updateDate>2025-04-09T19:57:08Z</updateDate>
+        <text><![CDATA[<p><strong>Surveilling Effluent Water for Epidemic Response Act or the SEWER Act</strong></p><p>This bill provides statutory authority for the Centers for Disease Control and Prevention (CDC) National Wastewater Surveillance System (NWSS) program, which detects and monitors pathogens in wastewater. It requires the CDC to expand and intensify the activities of the NWSS, including with respect to SARS-CoV-2&nbsp;(the virus that causes&nbsp;COVID-19), influenza, mpox, dengue, West Nile virus, and respiratory syncytial virus (RSV).&nbsp;</p><p>The&nbsp;NWSS&nbsp;provides funding and guidance to public health departments for wastewater surveillance activities.&nbsp;Under the NWSS, health departments and other partners coordinate on wastewater&nbsp;surveillance at sampling sites and share data with the CDC. The NWSS was initially&nbsp;implemented&nbsp;to monitor&nbsp;SARS-CoV-2&nbsp;and has since expanded to include influenza A, avian influenza A,&nbsp;mpox, and RSV. &nbsp; &nbsp;&nbsp;</p>]]></text>
+      </summary>
+    </summaries>
+    <title>SEWER Act</title>
+    <titles>
+      <item>
+        <titleType>Display Title</titleType>
+        <titleTypeCode>45</titleTypeCode>
+        <title>SEWER Act</title>
+        <updateDate>2025-02-26T05:23:20Z</updateDate>
+      </item>
+      <item>
+        <titleType>Short Title(s) as Introduced</titleType>
+        <titleTypeCode>101</titleTypeCode>
+        <title>SEWER Act</title>
+        <updateDate>2025-02-26T05:23:18Z</updateDate>
+        <billTextVersionName>Introduced in House</billTextVersionName>
+        <billTextVersionCode>IH</billTextVersionCode>
+      </item>
+      <item>
+        <titleType>Short Title(s) as Introduced</titleType>
+        <titleTypeCode>101</titleTypeCode>
+        <title>Surveilling Effluent Water for Epidemic Response Act</title>
+        <updateDate>2025-02-26T05:23:18Z</updateDate>
+        <billTextVersionName>Introduced in House</billTextVersionName>
+        <billTextVersionCode>IH</billTextVersionCode>
+      </item>
+      <item>
+        <titleType>Official Title as Introduced</titleType>
+        <titleTypeCode>6</titleTypeCode>
+        <title>To amend the Public Health Service Act to require the Secretary to award grants, contracts, or cooperative agreements to eligible entities to establish, maintain, or improve activities related to the detection and monitoring of infectious diseases through wastewater for public health emergency preparedness and response purposes, and for other purposes.</title>
+        <updateDate>2025-02-26T05:18:33Z</updateDate>
+        <billTextVersionName>Introduced in House</billTextVersionName>
+        <billTextVersionCode>IH</billTextVersionCode>
+      </item>
+    </titles>
+    <textVersions>
+      <item>
+        <type>Introduced in House</type>
+        <date>2025-01-28T05:00:00Z</date>
+        <formats>
+          <item>
+            <url>https://www.govinfo.gov/content/pkg/BILLS-119hr766ih/xml/BILLS-119hr766ih.xml</url>
+          </item>
+        </formats>
+      </item>
+      <item>
+        <date>2026-10-08T03:59:59Z</date>
+        <formats/>
+        <type>Public Law</type>
+      </item>
+    </textVersions>
+    <latestAction>
+      <actionDate>2025-01-28</actionDate>
+      <text>Referred to the House Committee on Energy and Commerce.</text>
+    </latestAction>
+  </bill>
+  <dublinCore xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:format>text/xml</dc:format>
+    <dc:language>EN</dc:language>
+    <dc:rights>Pursuant to Title 17 Section 105 of the United States Code, this file is not subject to copyright protection and is in the public domain.</dc:rights>
+    <dc:contributor>Congressional Research Service, Library of Congress</dc:contributor>
+    <dc:description>This file contains bill summaries and statuses for federal legislation. A bill summary describes the most significant provisions of a piece of legislation and details the effects the legislative text may have on current law and federal programs. Bill summaries are authored by the Congressional Research Service (CRS) of the Library of Congress. As stated in Public Law 91-510 (2 USC 166 (d)(6)), one of the duties of CRS is "to prepare summaries and digests of bills and resolutions of a public general nature introduced in the Senate or House of Representatives". For more information, refer to the User Guide that accompanies this file.</dc:description>
+  </dublinCore>
+</billStatus>
