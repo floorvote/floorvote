@@ -123,6 +123,14 @@ When upstream changes a feature you extended, such as a simpler event-rules UI (
       WHERE b.state = 'DC' AND (b.bill_id < 1000000000 OR b.bill_id >= 2000000000)"
    ```
 
+   To see which bills those are, list their ids instead of counting them:
+
+   ```bash
+   npx wrangler d1 execute <central-db> --remote --env legiscan --command \
+     "SELECT DISTINCT b.bill_id, b.bill_number FROM bills b JOIN bill_tenants bt ON bt.bill_id = b.bill_id
+      WHERE b.state = 'DC' AND (b.bill_id < 1000000000 OR b.bill_id >= 2000000000) ORDER BY b.bill_id"
+   ```
+
    It must be 0: no LegiScan DC bill is tracked by an instance. Otherwise upstream refuses the claim of DC for LIMS, since instances would hold both providers' copies of the same bills, and DC stays on LegiScan (see "If Something Goes Wrong").
 
 ## Deploy
@@ -178,7 +186,7 @@ Deploy central, claim DC, then deploy every instance, all before the next top of
 
 ## If Something Goes Wrong
 
-- **The claim answered 409,** and DC has no row, so LegiScan keeps syncing it. The 409 names the instances tracking LegiScan DC bills. Most likely a DC bill the old code wrote between the migrations and the deploy is labeled LegiScan's. The 409 body has only `owner`, `trackedBills`, and `instances`, no bill ids, so find the bills with the preflight's query ("Before You Deploy", step 3) and check their ids. Ids from 1000000000 up to 2000000000 are old-code bills labeled LegiScan's: give them back to LIMS, then claim DC again. The statements below relabel bills, sessions, and people. `central/test/cron/fork-upgrade.test.ts` covers only the `bills` one. Ids below 1000000000 are LegiScan's own DC bills, and the claim was late: a LegiScan sync linked them before DC had a row, so the instances hold LegiScan copies of those bills. Relabeling doesn't help; go to the cutover paragraph below. After a relabel, run the preflight query again: if late LegiScan bills also exist, the next claim answers 409 again.
+- **The claim answered 409,** and DC has no row, so LegiScan keeps syncing it. The 409 names the instances tracking LegiScan DC bills. Most likely a DC bill the old code wrote between the migrations and the deploy is labeled LegiScan's. The 409 body has only `owner`, `trackedBills`, and `instances`, no bill ids, so list the bills with the preflight's id query ("Before You Deploy", step 3, the second command) and check their ids. Ids from 1000000000 up to 2000000000 are old-code bills labeled LegiScan's: give them back to LIMS, then claim DC again. The statements below relabel bills, sessions, and people. `central/test/cron/fork-upgrade.test.ts` covers only the `bills` one. Ids below 1000000000 are LegiScan's own DC bills, and the claim was late: a LegiScan sync linked them before DC had a row, so the instances hold LegiScan copies of those bills. Relabeling doesn't help; go to the cutover paragraph below. After a relabel, run the preflight query again: if late LegiScan bills also exist, the next claim answers 409 again.
 
   ```sql
   SELECT bill_id, bill_number FROM bills
