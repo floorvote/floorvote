@@ -38,15 +38,14 @@ describe('PartyBadge sizes', () => {
     expect(s.textDecoration).toBe('none')
   })
 
-  it('makes the mini chip smaller in type and padding than the default', () => {
+  it('makes the mini chip tighter in padding than the default, with the same type token', () => {
     const { unmount } = render(<PartyBadge party="D" />)
     const full = chip('D').style
-    const fullFont = parseFloat(full.fontSize)
     const fullPad = full.padding
     unmount()
     render(<PartyBadge party="D" size="mini" />)
     const mini = chip('D').style
-    expect(parseFloat(mini.fontSize)).toBeLessThan(fullFont)
+    expect(mini.fontSize).toBe(`${fontSize.xs}px`)
     expect(mini.padding).not.toBe(fullPad)
     expect(parseFloat(mini.padding.split(' ').pop() as string)).toBeLessThan(4)
   })
@@ -59,6 +58,15 @@ describe('PartyBadge sizes', () => {
 })
 
 describe('PartyBadge accessibility', () => {
+  it.each([['D', 'Democratic'], ['R', 'Republican'], ['I', 'Independent'], ['Green', 'Green']])(
+    'gives party %s the accessible name "%s", in both sizes', (code, name) => {
+      const { unmount } = render(<PartyBadge party={code} />)
+      expect(screen.getByRole('img', { name })).toBeInTheDocument()
+      unmount()
+      render(<PartyBadge party={code} size="mini" />)
+      expect(screen.getByRole('img', { name })).toBeInTheDocument()
+    })
+
   it('says the party in text, so color is never the only signal', () => {
     render(<PartyBadge party="R" size="mini" />)
     expect(chip('R')).toBeVisible()

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { LegislativeHistory } from './LegislativeHistory'
-import { color } from '../styles/tokens'
+import { color, fontSize } from '../styles/tokens'
 
 type LegislatorVote = { name: string; vote: string; url?: string | null; party?: string | null }
 
@@ -35,7 +35,9 @@ describe('party chips in the roll call', () => {
 
   it('uses the mini size', async () => {
     await renderExpanded([{ name: 'Ana Diaz', vote: 'Yea', party: 'D' }])
-    expect(parseFloat(within(voter('Ana Diaz')).getByText('D').style.fontSize)).toBeLessThan(10)
+    const chip = within(voter('Ana Diaz')).getByText('D')
+    expect(chip.style.fontSize).toBe(`${fontSize.xs}px`)
+    expect(chip.style.padding).toBe('0px 3px')
   })
 
   it('puts the chip after the name, and after the profile link icon when there is one', async () => {
@@ -71,6 +73,12 @@ describe('party chips in the roll call', () => {
     expect(green.style.color).toBe(color.textSlate500)
     expect(green.style.background).toBe(color.surfaceMuted)
     expect(within(voter('Ben Cole')).getByText('NP')).toBeInTheDocument()
+  })
+
+  it('gives the chip the full party name as its accessible name', async () => {
+    await renderExpanded([{ name: 'Ana Diaz', vote: 'Yea', party: 'D' }, { name: 'Ben Cole', vote: 'Yea', party: 'R' }])
+    expect(within(voter('Ana Diaz')).getByRole('img', { name: 'Democratic' })).toBeInTheDocument()
+    expect(within(voter('Ben Cole')).getByRole('img', { name: 'Republican' })).toBeInTheDocument()
   })
 
   it('names the party in text a screen reader reads, not by color alone', async () => {
