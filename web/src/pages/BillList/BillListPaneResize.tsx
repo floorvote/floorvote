@@ -133,9 +133,11 @@ export function PaneResizeHandle({ width, max, pane }: { width: number; max: num
         position: 'absolute', top: 0, right: 0, bottom: 0, width: 8,
         display: 'flex', justifyContent: 'flex-end',
         cursor: 'col-resize', touchAction: 'none', zIndex: 5,
+        // The keyboard focus ring: the app's neutral focus token, drawn inside the 8px strip.
+        outline: focused ? `2px solid ${color.focusRing}` : undefined, outlineOffset: -2,
       }}
     >
-      <span data-resize-line aria-hidden style={{ width: 3, height: '100%', background: lit ? color.accentAmber : 'transparent', transition: 'background 0.15s' }} />
+      <span data-resize-line aria-hidden style={{ width: 3, height: '100%', background: lit ? color.borderStrong : 'transparent', transition: 'background 0.15s' }} />
     </div>
   )
   /* eslint-enable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */

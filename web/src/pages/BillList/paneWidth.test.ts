@@ -205,6 +205,6 @@ describe('paneGridTemplate', () => {
   })
   it('returns the same columns array for the same width, so memoized rows keep their props', () => {
     expect(visiblePaneColumns(500)).toBe(visiblePaneColumns(520))
-    expect(visiblePaneColumns(300)).toBe(visiblePaneColumns(399))
+    expect(visiblePaneColumns(300)).toBe(visiblePaneColumns(339))
   })
 })

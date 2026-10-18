@@ -87,7 +87,7 @@ describe('bill titles in the pane', () => {
   it('take their family and weight from the shared title style', async () => {
     hoisted.bills = [bill()]
     const inPane = getComputedStyle(await paneTitle('A bill about roads'))
-    expect(inPane.fontFamily).toBe(String(BILL_TITLE_TEXT.fontFamily))
+    expect(inPane.fontFamily.replace(/["']/g, "")).toBe(String(BILL_TITLE_TEXT.fontFamily).replace(/["']/g, ""))
     expect(String(inPane.fontWeight)).toBe(String(BILL_TITLE_TEXT.fontWeight))
   })
 
@@ -109,7 +109,7 @@ describe('bill titles in the pane', () => {
   it('keep the two-line clamp', async () => {
     hoisted.bills = [bill()]
     const title = await paneTitle('A bill about roads')
-    expect(title.style.WebkitLineClamp).toBe('2')
+    expect((title.style as unknown as Record<string, string>).WebkitLineClamp).toBe('2')
   })
 
   it('keep the same family for a draft with no title ("Untitled draft")', async () => {

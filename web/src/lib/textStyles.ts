@@ -14,6 +14,13 @@ export const SECTION_LABEL: React.CSSProperties = {
   textTransform: 'uppercase',
 }
 
+// A bill's title wherever it is listed or headed: the Bills table, the split
+// pane. Family and weight only; each place sets its own size and clamp.
+export const BILL_TITLE_TEXT: React.CSSProperties = {
+  fontFamily: "'Source Serif 4', serif",
+  fontWeight: fontWeight.bold,
+}
+
 export const CHROME_TEXT: React.CSSProperties = {
   fontSize: fontSize.xs,
   color: color.textMuted,

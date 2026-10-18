@@ -613,7 +613,7 @@ describe('columns appear sooner (#683)', () => {
   })
 
   it('shows no step with the same columns as the one before, and one more column from the second step on', async () => {
-    const steps: string[][] = []
+    const steps: (string | null)[][] = []
     for (const w of [300, 340, 480, 570]) steps.push(await headersAt(w))
     expect(steps.map(s => s.length)).toEqual([0, 2, 3, 4])
     for (let i = 1; i < steps.length; i++) expect(steps[i]).not.toEqual(steps[i - 1])
@@ -753,7 +753,7 @@ describe('the row at a wide pane', () => {
   })
 
   it('has as many grid tracks as columns showing, plus the bill number', async () => {
-    localStorage.setItem(STORAGE_KEY, '500')
+    localStorage.setItem(STORAGE_KEY, '400')
     renderPane()
     const pane = await ready()
     const header = pane.querySelector('[data-pane-columns]') as HTMLElement

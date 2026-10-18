@@ -17,7 +17,7 @@ import { NewMatchTriageControl } from '../../components/NewMatchTriageControl'
 import { HoverTooltip } from '../../components/HoverTooltip'
 import { TAG_CHIP, TAG_CHIP_HOVERED, TAG_CHIP_ACTIVE } from '../../lib/tagChipStyle'
 import { TOOLTIP_STYLE, chipOutline } from '../../lib/chipStyles'
-import { SECTION_LABEL, CHROME_TEXT } from '../../lib/textStyles'
+import { SECTION_LABEL, CHROME_TEXT, BILL_TITLE_TEXT } from '../../lib/textStyles'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { billDisplayTitle } from '../../../../shared/billTitle'
 import { voteButtonStyle, type VoteKey } from '../../lib/voteButtonStyle'
@@ -353,7 +353,7 @@ export const BillRow = memo(function BillRow({
               : null
           }
         </div>
-        <div style={{ fontSize: fontSize.base, fontWeight: fontWeight.bold, color: color.textPrimary, marginBottom: 3, lineHeight: 1.35, fontFamily: "'Source Serif 4', serif", display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}>
+        <div style={{ ...BILL_TITLE_TEXT, fontSize: fontSize.base, color: color.textPrimary, marginBottom: 3, lineHeight: 1.35, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}>
           {/* Mid-width fallback for the Draft marker — hidden by default (see
               mobile.css .bill-title-draft-marker). The title's own box is the
               full-width flexible column (unlike the fixed-pixel chip-grid

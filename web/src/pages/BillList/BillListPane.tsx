@@ -11,7 +11,7 @@ import { StatusChip } from '../../components/StatusChip'
 import { SessionChip } from '../../components/SessionChip'
 import { RelevanceChip } from '../../components/RelevanceChip'
 import { LastActionChip } from '../../components/LastActionChip'
-import { SECTION_LABEL, CHROME_TEXT, SR_ONLY } from '../../lib/textStyles'
+import { SECTION_LABEL, CHROME_TEXT, SR_ONLY, BILL_TITLE_TEXT } from '../../lib/textStyles'
 import { color, fontSize, fontWeight } from '../../styles/tokens'
 import { billDisplayTitle } from '../../../../shared/billTitle'
 import { billsApiParamsFromSearch, billsFilterValuesFromSearch, searchFromListUrl } from './billsQuery'
@@ -178,6 +178,7 @@ const PaneRow = memo(function PaneRow({ bill, path, isCurrent, billPaths, index,
         </div>
       )}
       <div style={{
+        ...BILL_TITLE_TEXT,
         fontSize: fontSize.sm,
         color: color.textPrimary,
         lineHeight: 1.35,

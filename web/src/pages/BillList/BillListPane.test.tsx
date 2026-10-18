@@ -470,7 +470,7 @@ describe('BillListPane: filter and sort summary', () => {
       listAt('/bills?view=watch-list')
       const pane = await paneReady()
       expect(within(pane).getByText('Watch list · Sorted by Bill')).toBeInTheDocument()
-      expect(within(pane).queryByText(/filters/)).toBeNull()
+      expect(within(pane).queryByText(/ filters · /)).toBeNull()
     })
 
     it('finds the view by its id or its previous slug, as the pane’s list does', async () => {

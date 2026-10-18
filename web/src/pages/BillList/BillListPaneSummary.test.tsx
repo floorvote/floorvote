@@ -7,8 +7,10 @@ import type { ListSummary } from './listSummary'
 // The line under the pane's "Bills" header (#683): the summary, then the link
 // that goes back to the list, right after it rather than at the far right.
 
-const ONE_FILTER: ListSummary = { text: '1 filter · Sorted by default order', filters: ['Status: Passed'] } as ListSummary
-const NO_FILTERS: ListSummary = { text: 'No filters · Sorted by default order', filters: [] } as ListSummary
+const summaryOf = (text: string, filters: string[]): ListSummary =>
+  ({ text, sortName: 'default order', filterCount: filters.length, filters, viewName: null })
+const ONE_FILTER = summaryOf('1 filter · Sorted by default order', ['Status: Passed'])
+const NO_FILTERS = summaryOf('All bills · Sorted by default order', [])
 
 function renderSummary(summary: ListSummary, listUrl = '/bills?status=2') {
   return render(<MemoryRouter><BillListPaneSummary summary={summary} listUrl={listUrl} /></MemoryRouter>)
@@ -50,7 +52,7 @@ describe('BillListPaneSummary edit link', () => {
   })
 
   it('still lets a long summary shrink and wrap while the link keeps its size', () => {
-    renderSummary({ text: 'x'.repeat(200) + ' · Sorted by default order', filters: [] } as ListSummary)
+    renderSummary(summaryOf('x'.repeat(200) + ' · Sorted by default order', []))
     const first = row().children[0] as HTMLElement
     const link = screen.getByRole('link', { name: 'Edit filters' })
     expect(first.style.minWidth).toBe('0px')
