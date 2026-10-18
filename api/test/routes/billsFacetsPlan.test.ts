@@ -35,14 +35,17 @@ describe('GET /bills/facets query plans', () => {
     const { results } = await env.DB.prepare(`EXPLAIN QUERY PLAN ${stmt.sql}`).bind(...stmt.params).all<{ detail: string }>()
     return results.map(r => r.detail).join('\n')
   }
-  // The facet statements: the ones that count bills, which no other read of a request names.
+  // The facet statements: the ones that tally bills, by COUNT or by SUM (the status groups' per-bill tally), which no
+  // other read of a request names. A tally by SUM once slipped past a filter on COUNT alone.
   async function facetPlans(qs = ''): Promise<Planned[]> {
     const out: Planned[] = []
     for (const s of await statementsFor(qs)) {
-      if (/COUNT\(/i.test(s.sql)) out.push({ sql: s.sql, plan: await plan(s) })
+      if (/COUNT\(|SUM\(/i.test(s.sql)) out.push({ sql: s.sql, plan: await plan(s) })
     }
     return out
   }
+  // The statement behind `statusGroups` (#677): each status label's stage and highest rank.
+  const STATUS_GROUPS = /MAX\([^)]*status_rank/i
   const select = (plans: Planned[], needle: RegExp) => plans.filter(p => needle.test(p.sql))
   // A full read of a table, not of an index.
   const TABLE_SCAN = /SCAN (bills|m|me|fb|bs|p|cv|bcfv|official_positions)\b(?! USING)/
@@ -71,7 +74,7 @@ describe('GET /bills/facets query plans', () => {
   })
 
   it('counts the grouped bills of a bill-column facet from the group key index alone', async () => {
-    const status = select(await facetPlans(), /m\.status|"m"\."status"/)
+    const status = select(await facetPlans(), /m\.status|"m"\."status"/).filter(p => !STATUS_GROUPS.test(p.sql))
     expect(status.length, 'the facets prepared no status count').toBeGreaterThanOrEqual(2)
     // The statement of the grouped bills reads the covering group key index, never the table.
     const grouped = status.filter(p => /group_key/.test(p.sql) && /IS NOT NULL/.test(p.sql))
@@ -82,9 +85,18 @@ describe('GET /bills/facets query plans', () => {
     }
   })
 
+  it('reads the status groups from a covering index, so a request never reads every bill row for a rank (#677)', async () => {
+    for (const qs of ['', 'state=NJ', 'status=Passed&priority=high']) {
+      const groups = select(await facetPlans(qs), STATUS_GROUPS)
+      expect(groups.length, `no statusGroups statement for "${qs}"`).toBe(1)
+      expect(groups[0].plan, `${groups[0].sql}\n${groups[0].plan}`).toMatch(/USING COVERING INDEX/)
+      expect(groups[0].plan, `${groups[0].sql}\n${groups[0].plan}`).not.toMatch(TABLE_SCAN)
+    }
+  })
+
   it('keeps the whole-population count of a bill-column facet on the index it used before groups', async () => {
     const plans = await facetPlans()
-    const whole = plans.find(p => /m\.status|"m"\."status"/.test(p.sql) && !/IS NOT NULL/.test(p.sql))
+    const whole = plans.find(p => /m\.status|"m"\."status"/.test(p.sql) && !/IS NOT NULL/.test(p.sql) && !STATUS_GROUPS.test(p.sql))
     expect(whole, 'no whole-population status count').toBeDefined()
     expect(whole!.plan, whole!.plan).toMatch(/SCAN m USING COVERING INDEX idx_bills_status/)
   })
