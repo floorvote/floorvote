@@ -261,6 +261,111 @@ describe('POST /api/mute-link rate limiting', () => {
     })
   })
 
+  // #685: the one-click POSTs from a mail provider arrive from a few shared IPs,
+  // so the mute link has its own, higher budget on its own binding. A Workers
+  // rate-limit binding's limit is per binding, so that takes a second binding.
+  // Instances that haven't added it yet fall back to LOGIN_RATE_LIMITER.
+  describe('dedicated MUTE_LINK_RATE_LIMITER binding', () => {
+    type Env = { login?: Binding; mute?: Binding }
+    const postWith = (bindings: Env, opts: { ip?: string; token?: string } = {}) => {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (opts.ip) headers['CF-Connecting-IP'] = opts.ip
+      return app.request('/api/mute-link', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ token: opts.token ?? validToken }),
+      }, { ...env, LOGIN_RATE_LIMITER: bindings.login, MUTE_LINK_RATE_LIMITER: bindings.mute })
+    }
+
+    it('uses the mute binding, under mute-link:<ip>, and leaves the login binding alone', async () => {
+      const login = limiter()
+      const mute = limiter()
+      const res = await postWith({ login: login.binding, mute: mute.binding }, { ip: '203.0.113.5' })
+      expect(res.status).toBe(200)
+      expect(mute.keys).toEqual(['mute-link:203.0.113.5'])
+      expect(login.keys).toEqual([])
+    })
+
+    it('is not blocked by an exhausted login budget', async () => {
+      const login = limiter(() => true)
+      const res = await postWith({ login: login.binding, mute: limiter().binding })
+      expect(res.status).toBe(200)
+      expect(await muted()).toBe(true)
+    })
+
+    it('does not spend the login budget when the mute budget is exhausted', async () => {
+      const login = limiter()
+      const mute = limiter(() => true)
+      expect((await postWith({ login: login.binding, mute: mute.binding })).status).toBe(429)
+      // A login-side route on the same binding pair is not refused...
+      const status = await app.request('/api/auth/verify/status?token=x', {},
+        { ...env, LOGIN_RATE_LIMITER: login.binding, MUTE_LINK_RATE_LIMITER: mute.binding })
+      expect(status.status).not.toBe(429)
+      // ...and it never asked the mute binding about its own key.
+      expect(mute.keys).toEqual(['mute-link:unknown'])
+      expect(login.keys).toEqual(['verify-status:unknown'])
+    })
+
+    it('trips at the configured count per key and no earlier', async () => {
+      const mute = windowedLimiter(3)
+      const statuses: number[] = []
+      for (let i = 0; i < 5; i++) statuses.push((await postWith({ mute: mute.binding }, { ip: '203.0.113.5' })).status)
+      expect(statuses).toEqual([200, 200, 200, 429, 429])
+      // Another address has its own count.
+      expect((await postWith({ mute: mute.binding }, { ip: '203.0.113.6' })).status).not.toBe(429)
+      mute.rollWindow()
+      expect((await postWith({ mute: mute.binding }, { ip: '203.0.113.5' })).status).not.toBe(429)
+    })
+
+    it('does not let the login binding\'s tighter limit cap the mute link', async () => {
+      const login = windowedLimiter(2)
+      const mute = windowedLimiter(100)
+      const statuses: number[] = []
+      for (let i = 0; i < 5; i++) statuses.push((await postWith({ login: login.binding, mute: mute.binding })).status)
+      expect(statuses).not.toContain(429)
+    })
+
+    it('answers a 429 identically for a valid, forged, and missing token', async () => {
+      const mute = limiter(() => true).binding
+      const responses = await Promise.all([
+        postWith({ mute }, { token: validToken }),
+        postWith({ mute }, { token: forgedToken() }),
+        postWith({ mute }, { token: '' }),
+      ])
+      const bodies = await Promise.all(responses.map(r => r.text()))
+      for (const r of responses) expect(r.status).toBe(429)
+      for (const b of bodies) expect(b).toBe(bodies[0])
+      expect(await muted()).toBe(false)
+    })
+
+    it('falls back to the login binding when the mute binding is absent', async () => {
+      const login = limiter()
+      const res = await postWith({ login: login.binding }, { ip: '203.0.113.7' })
+      expect(res.status).toBe(200)
+      expect(login.keys).toEqual(['mute-link:203.0.113.7'])
+    })
+
+    it('still 429s on the login binding when the mute binding is absent and login refuses', async () => {
+      const res = await postWith({ login: limiter(() => true).binding })
+      expect(res.status).toBe(429)
+      expect(await muted()).toBe(false)
+    })
+
+    it('fails open, without crashing, when neither binding is present', async () => {
+      const res = await postWith({})
+      expect(res.status).toBe(200)
+      expect(await muted()).toBe(true)
+    })
+
+    it('fails open when the mute binding throws, without falling back to login', async () => {
+      const login = limiter()
+      const throwing: Binding = { limit: async () => { throw new Error('limiter down') } }
+      const res = await postWith({ login: login.binding, mute: throwing })
+      expect(res.status).toBe(200)
+      expect(login.keys).toEqual([])
+    })
+  })
+
   describe('other requests', () => {
     // RFC 8058: only the POST mutes. GET and HEAD, which mail scanners use, are
     // not routed here, so they neither mute nor spend the limiter.
