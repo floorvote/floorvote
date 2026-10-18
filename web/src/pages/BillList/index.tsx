@@ -25,9 +25,10 @@ import type { Bill, CustomFieldDef, FacetCounts, NormalizedSession } from './typ
 import { useBillSort } from '../../hooks/useBillSort'
 import { useBillFilters } from '../../hooks/useBillFilters'
 import { useBulkActions } from '../../hooks/useBulkActions'
-import { billsApiParams, billsApiParamsFromSearch, searchFromListUrl } from './billsQuery'
+import { billsApiParams, billsApiParamsFromSearch, billsFacetParams, searchFromListUrl } from './billsQuery'
+import { serializeBillFilter } from '../../../../shared/billFilter'
 import { searchWarnings } from '../../../../shared/searchLimits'
-import { filterDimensionLabel, isFilterDimensionVisible } from '../../lib/filterDimensions'
+import { STAGE_FILTER_LABEL, filterDimensionLabel, isFilterDimensionVisible, isStatusGroupedByStage } from '../../lib/filterDimensions'
 import { useStageFilterUseful } from '../../lib/capabilities'
 import { filterableCustomFields } from '../../lib/customFieldFilters'
 import { ViewSwitcher, type SavedView } from './ViewSwitcher'
@@ -46,6 +47,8 @@ let cachedFacetCounts: FacetCounts | null = null
 export const knownStates: Set<string> = new Set()
 export const knownSessions: Set<string> = new Set()
 export const knownStatuses: Set<string> = new Set()
+/** Each status label seen in a facets reply, with the stage and rank it came with, so a status with no bills now still sits under its stage. */
+export const knownStatusGroups: Map<string, { stage: string | null; rank: number }> = new Map()
 export const knownTagsCache: Set<string> = new Set()
 
 /**
@@ -151,9 +154,10 @@ export async function billListLoader({ request }: LoaderFunctionArgs): Promise<n
 // Accumulate known values from every facet response so bounded filters show 0-count options instead of disappearing
 export function updateKnownStates(counts: FacetCounts) {
   Object.keys(counts.state).forEach(s => knownStates.add(s))
-  Object.keys(counts.session).forEach(s => knownSessions.add(s))
+  Object.keys(counts.sessionName).forEach(s => knownSessions.add(s))
   Object.keys(counts.status).forEach(s => knownStatuses.add(s))
-  Object.keys(counts.tags).forEach(t => knownTagsCache.add(t))
+  Object.entries(counts.statusGroups ?? {}).forEach(([label, info]) => knownStatusGroups.set(label, info))
+  Object.keys(counts.tag).forEach(t => knownTagsCache.add(t))
 }
 
 export function BillList() {
@@ -165,7 +169,7 @@ export function BillList() {
   const [total, setTotal] = useState(0)
   const [hasMore, setHasMore] = useState(false)
   const [facetCounts, setFacetCounts] = useState<FacetCounts>(() => {
-    const initial = cachedFacetCounts ?? { status: {}, stage: {}, priority: {}, session: {}, year: {}, state: {}, position: {}, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0, hasDrafts: false }
+    const initial = cachedFacetCounts ?? { status: {}, stage: {}, priority: {}, sessionName: {}, year: {}, state: {}, position: {}, tag: {}, subject: {}, field: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0, hasDrafts: false }
     if (cachedFacetCounts) updateKnownStates(cachedFacetCounts)
     return initial
   })
@@ -184,10 +188,6 @@ export function BillList() {
 
   const hasFetchedOnce = useRef(false)
   const [customFieldDefs, setCustomFieldDefs] = useState<CustomFieldDef[]>(cachedCustomFieldDefs ?? [])
-  // Read by fetchBills for its cache key without joining its deps: defs arriving
-  // must not refetch on their own (a cf filter's key change already does).
-  const customFieldDefsRef = useRef(customFieldDefs)
-  customFieldDefsRef.current = customFieldDefs
 
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin' || user?.role === 'owner'
@@ -214,17 +214,29 @@ export function BillList() {
   // this same context so they can't drift on which dimensions appear.
   const stageUseful = useStageFilterUseful()
   const { config } = useConfig()
-  const filterDimensionCtx = { uniqueStates: f.uniqueStates, isAdmin, isMultiState: f.isMultiState, hasDrafts: facetCounts.hasDrafts, draftsActive: f.drafts, newMatchesActive: f.newMatches, stageUseful, stageActive: f.filterStages.length > 0 }
+  // What each row marks on its own chips, as one value that changes only when one of its filters does, so the
+  // memoized rows re-render only then.
+  const rowFilter = useMemo(
+    () => ({ status: f.status, priority: f.priority, position: f.position, year: f.year, minRelevance: f.minRelevance, tag: f.tag }),
+    [f.status, f.priority, f.position, f.year, f.minRelevance, f.tag],
+  )
+  const filterDimensionCtx = { uniqueStates: f.uniqueStates, isAdmin, isMultiState: f.isMultiState, hasDrafts: facetCounts.hasDrafts, draftsActive: f.drafts, newMatchesActive: f.newMatches, stageUseful, stageActive: f.stage.length > 0 }
+  // Where Stage was offered, Status is one control grouped under stage headings (#677). An API that sends no
+  // statusGroups cannot say which stage a status is in, so the page keeps the two separate controls it had.
+  // Until the first facets reply is applied nothing says which API this is, so it is the grouped control that waits
+  // (empty, like the Status list it replaces), and an older API's reply is what turns it back into two.
+  const stageOffered = isStatusGroupedByStage(filterDimensionCtx)
+  const statusGrouped = stageOffered && (f.statusGroupOptions !== null || facetCountsKey === null)
 
   // Relevance slider: track the thumb locally so it moves instantly while
   // dragging, but only commit the value (which drives the URL + bill query) on
   // release. This fires exactly one fetch per interaction regardless of drag
   // speed, instead of one per step. Stays in sync when the value changes
   // elsewhere (URL nav, reset).
-  const [relevanceDraft, setRelevanceDraft] = useState(f.filterMinRelevance)
-  useEffect(() => { setRelevanceDraft(f.filterMinRelevance) }, [f.filterMinRelevance])
+  const [relevanceDraft, setRelevanceDraft] = useState(f.minRelevance)
+  useEffect(() => { setRelevanceDraft(f.minRelevance) }, [f.minRelevance])
   const commitRelevance = () => {
-    if (relevanceDraft !== f.filterMinRelevance) f.setFilterMinRelevance(relevanceDraft)
+    if (relevanceDraft !== f.minRelevance) f.setMinRelevance(relevanceDraft)
   }
 
   // Stable ref so handleVote doesn't close over allBills state
@@ -242,18 +254,13 @@ export function BillList() {
   // --- bulk selection (hook) ---
   const { selection, isSelectionMode, handleToggleSelect, handleSelectAllFilters, handleClearSelection } = useBulkActions({
     sortedRef,
-    // currentFilters is memoized over every filter dimension (custom fields
-    // included), so a new dimension added there resets the selection too.
-    resetDeps: [f.currentFilters, sortCol, sortDir],
+    // The filter is one immutable value, so a change to any filter (custom
+    // fields included, and any filter added later) is a new value and resets the selection.
+    resetDeps: [f.filter, sortCol, sortDir],
   })
 
   const fetchBills = useCallback(async (nextPage: number, append: boolean) => {
-    const paramsStr = billsApiParams({
-      statuses: f.filterStatuses, stages: f.filterStages, priorities: f.filterPriorities, positions: f.filterPositions,
-      years: f.filterYears, states: f.filterStates, minRelevance: f.filterMinRelevance,
-      myBills: f.myBills, unvoted: f.unvotedOnly, newMatches: f.newMatches, drafts: f.drafts, matchAny: f.matchAny,
-      tags: f.selectedTags, subjects: f.selectedSubjects, search: f.search, sortCol, sortDir, cfFilters: f.cfFilters,
-    }, nextPage, PAGE_SIZE, customFieldDefsRef.current)
+    const paramsStr = billsApiParams({ filter: f.filter, sortCol, sortDir }, nextPage, PAGE_SIZE)
     const hitCache = nextPage === 1 && !append && !hasFetchedOnce.current && billsListCache?.params === paramsStr
     if (hitCache) {
       setAllBills(billsListCache!.page.bills)
@@ -288,30 +295,12 @@ export function BillList() {
       setLoading(false)
       setRefreshing(false)
     }
-  }, [f.filterStatuses, f.filterStages, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.drafts, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, sortCol, sortDir, f.cfFilters])
+  }, [f.filter, sortCol, sortDir])
 
   const facetSeqRef = useRef(0)
-  const filtersKey = JSON.stringify(f.currentFilters)
+  const filtersKey = serializeBillFilter(f.filter)
   const fetchFacets = useCallback(async () => {
-    const params = new URLSearchParams()
-    if (f.filterStatuses.length > 0) f.filterStatuses.forEach(s => params.append('status', s))
-    f.filterStages.forEach(s => params.append('stage', s))
-    if (f.filterPriorities.length > 0) f.filterPriorities.forEach(p => params.append('priority', p))
-    if (f.filterPositions.length > 0) f.filterPositions.forEach(p => params.append('position', p))
-    if (f.filterYears.length > 0) f.filterYears.forEach(y => params.append('year', String(y)))
-    if (f.filterStates.length > 0) f.filterStates.forEach(s => params.append('state', s))
-    if (f.filterMinRelevance > 0) params.set('minRelevance', String(f.filterMinRelevance))
-    if (f.myBills) params.set('myBills', '1')
-    if (f.unvotedOnly) params.set('unvoted', '1')
-    if (f.newMatches) params.set('newMatches', '1')
-    if (f.drafts) params.set('drafts', '1')
-    if (f.matchAny) params.set('match', 'any')
-    f.selectedTags.forEach(t => params.append('tag', t))
-    f.selectedSubjects.forEach(s => params.append('subject', s))
-    if (f.search) params.set('q', f.search)
-    for (const [key, values] of Object.entries(f.cfFilters)) {
-      values.forEach(v => params.append(`cf_${key}`, v))
-    }
+    const params = billsFacetParams(f.filter)
     // Only the newest request may write the counts. The dismiss button acts on
     // the filters as they stand now, so a slower reply to an earlier request
     // (a search cleared before its reply returned) must not overwrite them.
@@ -326,7 +315,7 @@ export function BillList() {
     } catch {
       // non-fatal — leave previous counts in place
     }
-  }, [f.filterStatuses, f.filterStages, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.drafts, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, f.cfFilters, filtersKey])
+  }, [f.filter, filtersKey])
 
   // Infinite scroll — fire next page fetch when the sentinel enters the viewport
   useEffect(() => {
@@ -446,7 +435,7 @@ export function BillList() {
 
   // Fetch bills + facets whenever filters/sort change (search debounced). The
   // relevance slider commits its value only on release (see relevanceDraft), so
-  // a drag produces a single filterMinRelevance change and one fetch here.
+  // a drag produces a single minRelevance change and one fetch here.
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const prevSearchRef = useRef(f.search)
   useEffect(() => {
@@ -532,9 +521,9 @@ export function BillList() {
     setAllBills(prev => prev.map(b => b.id === billId ? { ...b, position } : b))
   }, [])
 
-  // Triage dismiss already hit the API in NewMatchTriageControl. Mark the bill
-  // dismissed locally so the row's triage control reverts to a plain priority
-  // select, and refresh facets and the sidebar so both "new" counts drop.
+  // Triage dismiss already hit the API in the priority dropdown. Mark the bill
+  // dismissed locally so the row's amber new-match dropdown reverts to a plain
+  // "Set priority", and refresh facets and the sidebar so both "new" counts drop.
   const handleTriageDismiss = useCallback((billId: string) => {
     setAllBills(prev => prev.map(b => b.id === billId ? { ...b, triagedAt: new Date().toISOString() } : b))
     fetchFacets()
@@ -644,29 +633,30 @@ export function BillList() {
   if (loading) return <div style={{ padding: 32, color: color.textMuted }}>Loading…</div>
 
   const activeFilterGroups = buildActiveFilterGroups({
-    filterStates: f.filterStates,
-    filterStatuses: f.filterStatuses,
-    filterStages: f.filterStages,
-    filterPositions: f.filterPositions,
-    filterPriorities: f.filterPriorities,
-    filterYears: f.filterYears,
-    selectedTags: f.selectedTags,
-    selectedSubjects: f.selectedSubjects,
-    cfFilters: f.cfFilters,
-    filterMinRelevance: f.filterMinRelevance,
+    state: f.state,
+    status: f.status,
+    stage: f.stage,
+    position: f.position,
+    priority: f.priority,
+    year: f.year,
+    tag: f.tag,
+    subject: f.subject,
+    field: f.field,
+    minRelevance: f.minRelevance,
     positionOptions: f.positionOptions,
     customFieldDefs,
     isMultiState: f.isMultiState,
-    onRemoveState: s => f.setFilterStates(prev => prev.filter(x => x !== s)),
-    onRemoveStatus: s => f.setFilterStatuses(prev => prev.filter(x => x !== s)),
-    onRemoveStage: s => f.setFilterStages(prev => prev.filter(x => x !== s)),
-    onRemovePosition: p => f.setFilterPositions(prev => prev.filter(x => x !== p)),
-    onRemovePriority: p => f.setFilterPriorities(prev => prev.filter(x => x !== p)),
-    onRemoveYear: y => f.setFilterYears(prev => prev.filter(x => x !== y)),
+    active: f.activeFilters,
+    onRemoveState: s => f.setState(prev => prev.filter(x => x !== s)),
+    onRemoveStatus: s => f.setStatus(prev => prev.filter(x => x !== s)),
+    onRemoveStage: s => f.setStage(prev => prev.filter(x => x !== s)),
+    onRemovePosition: p => f.setPosition(prev => prev.filter(x => x !== p)),
+    onRemovePriority: p => f.setPriority(prev => prev.filter(x => x !== p)),
+    onRemoveYear: y => f.setYear(prev => prev.filter(x => x !== y)),
     onRemoveTag: tag => f.handleTagClick(tag),
-    onRemoveSubject: subject => f.handleSubjectsChange(f.selectedSubjects.filter(s => s !== subject)),
-    onRemoveCf: (fieldId, v) => f.setCfFilter(fieldId, (f.cfFilters[fieldId] ?? []).filter(x => x !== v)),
-    onRemoveMinRelevance: () => f.setFilterMinRelevance(0),
+    onRemoveSubject: subject => f.handleSubjectsChange(f.subject.filter(s => s !== subject)),
+    onRemoveField: (fieldId, v) => f.setField(fieldId, (f.field[fieldId] ?? []).filter(x => x !== v)),
+    onRemoveMinRelevance: () => f.setMinRelevance(0),
   })
 
   return (
@@ -850,8 +840,8 @@ export function BillList() {
           <HoverTooltip text="Show only bills you haven't voted on yet">
             <FilterToggle
               label={filterDimensionLabel('unvoted')}
-              active={f.unvotedOnly}
-              onToggle={() => f.setUnvotedOnly(!f.unvotedOnly)}
+              active={f.unvoted}
+              onToggle={() => f.setUnvoted(!f.unvoted)}
               count={filterCounts.unvotedCount}
             />
           </HoverTooltip>
@@ -875,42 +865,63 @@ export function BillList() {
               <FilterDropdown
                 placeholder={filterDimensionLabel('state')}
                 options={f.uniqueStates.map(s => ({ value: s }))}
-                selected={f.filterStates}
-                onChange={f.setFilterStates}
+                selected={f.state}
+                onChange={f.setState}
                 multi
                 counts={filterCounts.state}
               />
             </HoverTooltip>
           )}
-          <HoverTooltip text="Filter by current legislative status">
-            <FilterDropdown
-              placeholder={filterDimensionLabel('status')}
-              options={f.statuses.map(s => ({ value: s, label: decodeStatus(s) ?? s }))}
-              selected={f.filterStatuses}
-              onChange={f.setFilterStatuses}
-              multi
-              counts={filterCounts.status}
-            />
-          </HoverTooltip>
-          {isFilterDimensionVisible('stage', filterDimensionCtx) && (
-            <HoverTooltip text="Filter by common stage, which compares bills across states whose statuses differ">
+          {statusGrouped ? (
+            // One Status control, its options under stage headings (#677): a heading selects the whole stage, a status
+            // one status, and the counts beside them are the facets' own.
+            <HoverTooltip text="Filter by current legislative status, grouped by common stage, which compares bills across states whose statuses differ">
               <FilterDropdown
-                placeholder={filterDimensionLabel('stage')}
-                options={f.stageOptions}
-                selected={f.filterStages}
-                onChange={f.setFilterStages}
+                placeholder={filterDimensionLabel('status')}
+                options={[]}
+                selected={f.status}
+                onChange={f.setStatus}
                 multi
-                counts={filterCounts.stage ?? {}}
+                counts={filterCounts.status}
+                groups={f.statusGroupOptions ?? []}
+                selectedGroups={f.stage}
+                onGroupsChange={f.setStage}
               />
             </HoverTooltip>
+          ) : (
+            <>
+              <HoverTooltip text="Filter by current legislative status">
+                <FilterDropdown
+                  placeholder={filterDimensionLabel('status')}
+                  options={f.statuses.map(s => ({ value: s, label: decodeStatus(s) ?? s }))}
+                  selected={f.status}
+                  onChange={f.setStatus}
+                  multi
+                  counts={filterCounts.status}
+                />
+              </HoverTooltip>
+              {/* The separate Stage control stays only for an API that sends no statusGroups to group by. */}
+              {stageOffered && (
+                <HoverTooltip text="Filter by common stage, which compares bills across states whose statuses differ">
+                  <FilterDropdown
+                    placeholder={STAGE_FILTER_LABEL}
+                    options={f.stageOptions}
+                    selected={f.stage}
+                    onChange={f.setStage}
+                    multi
+                    counts={filterCounts.stage ?? {}}
+                  />
+                </HoverTooltip>
+              )}
+            </>
           )}
           {f.yearFacetKeys.length > 0 && (
             <HoverTooltip text="Filter by legislative session year">
               <FilterDropdown
-                placeholder={filterDimensionLabel('session')}
+                placeholder={filterDimensionLabel('year')}
                 options={f.yearFacetKeys.map(y => ({ value: y }))}
-                selected={f.filterYears.map(String)}
-                onChange={v => f.setFilterYears(v.map(Number).filter(n => !isNaN(n)))}
+                selected={f.year.map(String)}
+                onChange={v => f.setYear(v.map(Number).filter(n => !isNaN(n)))}
                 multi
                 counts={facetCounts.year}
               />
@@ -959,8 +970,8 @@ export function BillList() {
             <FilterDropdown
               placeholder={filterDimensionLabel('position')}
               options={f.positionOptions}
-              selected={f.filterPositions}
-              onChange={f.setFilterPositions}
+              selected={f.position}
+              onChange={f.setPosition}
               multi
               counts={filterCounts.position}
               anyIsFilter
@@ -975,8 +986,8 @@ export function BillList() {
                 { value: 'low', label: 'Low Priority' },
                 { value: 'none', label: 'Not set' },
               ]}
-              selected={f.filterPriorities}
-              onChange={f.setFilterPriorities}
+              selected={f.priority}
+              onChange={f.setPriority}
               multi
               counts={filterCounts.priority}
               anyIsFilter
@@ -985,12 +996,12 @@ export function BillList() {
           {f.allTags.length > 0 && (
             <HoverTooltip text="Filter by your team's AI-generated tags">
               <FilterDropdown
-                placeholder={filterDimensionLabel('tags')}
+                placeholder={filterDimensionLabel('tag')}
                 options={f.allTags.map(t => ({ value: t }))}
-                selected={f.selectedTags}
+                selected={f.tag}
                 onChange={f.handleTagsChange}
                 multi
-                counts={filterCounts.tags}
+                counts={filterCounts.tag}
                 anyIsFilter
               />
             </HoverTooltip>
@@ -1002,7 +1013,7 @@ export function BillList() {
             >
               <SubjectFilterDropdown
                 subjectGroups={f.subjectGroups}
-                selectedSubjects={f.selectedSubjects}
+                selectedSubjects={f.subject}
                 onSubjectChange={f.handleSubjectsChange}
               />
             </HoverTooltip>
@@ -1013,7 +1024,7 @@ export function BillList() {
               (and the parity test) — this surface may not re-derive it. */}
           {filterableCustomFields(customFieldDefs)
             .map(({ def: field, kind }) => {
-              const selectedValues = f.cfFilters[field.id] ?? []
+              const selectedValues = f.field[field.id] ?? []
               if (kind === 'toggle') {
                 const isActive = selectedValues.includes('1')
                 return (
@@ -1021,8 +1032,8 @@ export function BillList() {
                     key={field.id}
                     label={field.name}
                     active={isActive}
-                    onToggle={() => f.setCfFilter(field.id, isActive ? [] : ['1'])}
-                    count={filterCounts.customFields[field.id]?.['1'] ?? 0}
+                    onToggle={() => f.setField(field.id, isActive ? [] : ['1'])}
+                    count={filterCounts.field[field.id]?.['1'] ?? 0}
                     showCheck
                   />
                 )
@@ -1035,9 +1046,9 @@ export function BillList() {
                   placeholder={field.name}
                   options={opts.map(o => ({ value: o }))}
                   selected={selectedValues}
-                  onChange={v => f.setCfFilter(field.id, v)}
+                  onChange={v => f.setField(field.id, v)}
                   multi
-                  counts={filterCounts.customFields[field.id] ?? {}}
+                  counts={filterCounts.field[field.id] ?? {}}
                   anyIsFilter
                 />
               )
@@ -1055,7 +1066,7 @@ export function BillList() {
       <div data-testid="active-filter-chips" style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 4, alignItems: 'center' }}>
         {activeFilterGroups.flatMap((g, i) => i === 0
           ? g.chips
-          : [<GroupOperator key={`op-${g.key}`} matchAny={f.matchAny} onToggle={() => f.setMatchAny(!f.matchAny)} />, ...g.chips])}
+          : [<GroupOperator key={`op-${g.key}`} match={f.match} onToggle={() => f.setMatch(f.match === 'any' ? 'all' : 'any')} />, ...g.chips])}
       </div>
       )}
 
@@ -1165,7 +1176,6 @@ export function BillList() {
                 <BillRow
                   bill={sorted[virtualRow.index]}
                   index={virtualRow.index}
-                  selectedTags={f.selectedTags}
                   onTagClick={f.handleTagClick}
                   isAdmin={isAdmin}
                   positionVocabulary={positionVocabulary}
@@ -1178,11 +1188,7 @@ export function BillList() {
                   onPositionChange={handlePositionChange}
                   onTriageDismiss={handleTriageDismiss}
                   onVote={user?.canVote ? handleVote : undefined}
-                  filterStatuses={f.filterStatuses}
-                  filterPriorities={f.filterPriorities}
-                  filterPositions={f.filterPositions}
-                  filterYears={f.filterYears}
-                  filterMinRelevance={f.filterMinRelevance}
+                  filter={rowFilter}
                   sortedPaths={sortedPaths}
                   isMultiState={f.isMultiState}
                   onNavigate={handleBillNavigate}
@@ -1207,30 +1213,32 @@ export function BillList() {
       <FilterSheet
         isOpen={f.filterSheetOpen}
         onClose={() => f.setFilterSheetOpen(false)}
-        statuses={f.filterStatuses}
-        stages={f.filterStages}
-        priorities={f.filterPriorities}
-        positions={f.filterPositions}
-        tags={f.selectedTags}
-        subjects={f.selectedSubjects}
-        sessions={f.filterYears.map(String)}
-        minRelevance={f.filterMinRelevance}
+        status={f.status}
+        stage={f.stage}
+        priority={f.priority}
+        position={f.position}
+        tag={f.tag}
+        subject={f.subject}
+        year={f.year.map(String)}
+        minRelevance={f.minRelevance}
         myBills={f.myBills}
-        states={f.filterStates}
+        search={f.search}
+        state={f.state}
         isAdmin={isAdmin}
         newMatches={f.newMatches}
         newMatchesCount={filterCounts.newMatchesCount}
-        unvotedOnly={f.unvotedOnly}
+        unvoted={f.unvoted}
         unvotedCount={filterCounts.unvotedCount}
         drafts={f.drafts}
         draftCount={filterCounts.draftCount}
         hasDrafts={filterCounts.hasDrafts}
-        matchAny={f.matchAny}
-        onMatchAnyChange={f.setMatchAny}
+        match={f.match}
+        onMatchChange={f.setMatch}
         uniqueStates={f.uniqueStates}
         isMultiState={f.isMultiState}
         statusOptions={f.statuses.map(s => ({ value: s, label: decodeStatus(s) ?? s }))}
         stageOptions={f.stageOptions}
+        statusGroups={statusGrouped ? (f.statusGroupOptions ?? []) : null}
         priorityOptions={[
           { value: 'high', label: 'High' },
           { value: 'medium', label: 'Medium' },
@@ -1239,29 +1247,29 @@ export function BillList() {
         positionOptions={positionVocabulary.map(p => ({ value: p, label: p }))}
         tagOptions={f.allTags}
         subjectGroups={f.subjectGroups}
-        sessionOptions={f.yearFacetKeys.map(y => ({ value: y, label: y }))}
-        totalSessionCount={f.yearFacetKeys.length}
+        yearOptions={f.yearFacetKeys.map(y => ({ value: y, label: y }))}
+        totalYearCount={f.yearFacetKeys.length}
         stateOptions={f.uniqueStates.map(s => ({ value: s, label: s }))}
         customFieldDefs={customFieldDefs}
-        cfFilters={f.cfFilters}
-        onCfFilterChange={f.setCfFilter}
-        onStatusChange={f.setFilterStatuses}
-        onStageChange={f.setFilterStages}
-        onPriorityChange={f.setFilterPriorities}
-        onPositionChange={f.setFilterPositions}
+        field={f.field}
+        onFieldChange={f.setField}
+        onStatusChange={f.setStatus}
+        onStageChange={f.setStage}
+        onPriorityChange={f.setPriority}
+        onPositionChange={f.setPosition}
         onTagChange={f.handleTagsChange}
         onSubjectChange={f.handleSubjectsChange}
-        onSessionChange={v => f.setFilterYears(v.map(Number).filter(n => !isNaN(n)))}
-        onStateChange={f.setFilterStates}
-        onMinRelevanceChange={f.setFilterMinRelevance}
+        onYearChange={v => f.setYear(v.map(Number).filter(n => !isNaN(n)))}
+        onStateChange={f.setState}
+        onMinRelevanceChange={f.setMinRelevance}
         onMyBillsChange={f.setMyBills}
         onNewMatchesChange={f.setNewMatches}
-        onUnvotedOnlyChange={f.setUnvotedOnly}
+        onUnvotedChange={f.setUnvoted}
         onDraftsChange={f.setDrafts}
-        counts={{ ...filterCounts, session: filterCounts.year }}
+        counts={filterCounts}
         // Mobile's reset is the SAME operation as desktop's — calling the shared
         // handler rather than re-listing setters. The previous inline copy had
-        // drifted (it missed search, unvoted, tags, matchAny, and custom fields)
+        // drifted (it missed search, unvoted, tags, the group operator, and custom fields)
         // and its trailing setSearchParams({}) raced the setters it did call.
         onClearAll={f.handleResetFilters}
       />
@@ -1271,7 +1279,7 @@ export function BillList() {
           total={total}
           positionVocabulary={positionVocabulary}
           customFieldDefs={customFieldDefs.filter((fld): fld is typeof fld & { type: 'binary' | 'dropdown' } => fld.type === 'binary' || fld.type === 'dropdown')}
-          currentFilters={f.currentFilters}
+          currentFilters={f.filter}
           // 0 hides the dismiss button until the reply for the current filters lands
           // (filter change in flight, or its request failed): never offer a count
           // for filters other than the ones the dismiss request will carry.
