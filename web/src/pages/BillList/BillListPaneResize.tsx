@@ -116,6 +116,8 @@ export function PaneResizeHandle({ width, max, pane }: { width: number; max: num
   return (
     <div
       role="separator"
+      // The keyboard ring is the global :focus-visible rule (mobile.css), inset by .pane-resize-handle.
+      className="pane-resize-handle"
       aria-orientation="vertical"
       aria-label="Resize bill list"
       aria-valuenow={width}
@@ -133,8 +135,6 @@ export function PaneResizeHandle({ width, max, pane }: { width: number; max: num
         position: 'absolute', top: 0, right: 0, bottom: 0, width: 8,
         display: 'flex', justifyContent: 'flex-end',
         cursor: 'col-resize', touchAction: 'none', zIndex: 5,
-        // The keyboard focus ring: the app's neutral focus token, drawn inside the 8px strip.
-        outline: focused ? `2px solid ${color.focusRing}` : undefined, outlineOffset: -2,
       }}
     >
       <span data-resize-line aria-hidden style={{ width: 3, height: '100%', background: lit ? color.borderStrong : 'transparent', transition: 'background 0.15s' }} />
