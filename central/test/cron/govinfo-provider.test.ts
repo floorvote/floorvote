@@ -778,6 +778,43 @@ describe('a missing type zip is logged, and a type that vanishes after it had bi
     expect(await bill('SCR5')).toEqual(stored)
   })
 
+  it('alerts once for an outage, not on every full read while the type stays missing, and logs every 404', async () => {
+    await claim()
+    await syncAndIngest()
+    answers.set('sconres', notFound)
+    await forcedSync()
+    await forcedSync()
+    vi.setSystemTime(new Date('2026-10-20T09:00:00Z'))
+    await sync()
+    expect(alerts()).toHaveLength(1)
+    expect(warnings(warn).filter(m => /sconres/.test(m))).toHaveLength(3)
+  })
+
+  it('alerts again when the type vanishes again after its zip answered once', async () => {
+    await claim()
+    await syncAndIngest()
+    answers.set('sconres', notFound)
+    await forcedSync()
+    expect(alerts()).toHaveLength(1)
+    answers.set('sconres', serve('sconres'))
+    await forcedSync()
+    expect(alerts()).toHaveLength(1)
+    answers.set('sconres', notFound)
+    await forcedSync()
+    expect(alerts()).toHaveLength(2)
+  })
+
+  it('keeps the alert for one type from silencing another that vanishes later', async () => {
+    await claim()
+    await syncAndIngest()
+    answers.set('sconres', notFound)
+    await forcedSync()
+    answers.set('hr', notFound)
+    await forcedSync()
+    expect(alerts()).toHaveLength(2)
+    expect(alertText(alerts()[1])).toMatch(/\bhr\b/)
+  })
+
   it('alerts once for each vanished type', async () => {
     await claim()
     await syncAndIngest()
