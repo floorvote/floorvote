@@ -387,6 +387,23 @@ describe('the week-ahead email and the calendar, under the Calendar page\'s one 
     for (const title of Object.values(TITLES)) expect(html).toContain(title)
   })
 
+  it('past the 30-event cap, the email lists what it can and counts the rest, so listed plus left out is what the calendar shows (#675)', async () => {
+    await sync()
+    const db = getDb(env.DB)
+    for (let i = 0; i < 40; i++) {
+      await db.insert(calendarEvents).values({ id: `cap-${i}`, uid: `cap-${i}@test`, billId: null, source: 'body', sequence: 0, date: isoDay(1 + (i % 5)), time: `${String(8 + Math.floor(i / 5)).padStart(2, '0')}:00:00`, description: `Capped week event ${i} end`, status: 'confirmed', ruleMatch: null })
+    }
+    const shown = (await calendarUids()).filter(uid => uid in TITLES || uid.startsWith('cap-'))
+    await runWeekAhead(env as any, getDb(env.DB))
+    const call = sendBatch.mock.calls.at(-1) as unknown as [unknown, { html: string }[]] | undefined
+    const html = call?.[1][0].html ?? ''
+    const listedCount = Array.from(html.matchAll(/Capped week event \d+ end|Housing roundtable|Committee of the Whole hearing|Legislative Meeting/g)).length
+    const omitted = Number(html.match(/and (\d+) more on the calendar/)?.[1])
+    expect(shown).toHaveLength(43)
+    expect(listedCount + omitted).toBe(shown.length)
+    expect(omitted).toBeGreaterThan(0)
+  })
+
   it('refuses a member the rules: only an admin changes which events show', async () => {
     await sync()
     expect((await saveRules({ committees: [HOUSING], kinds: [], topics: [], trackedBills: false }, member)).status).toBe(403)
