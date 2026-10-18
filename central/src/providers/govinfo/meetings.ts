@@ -1,5 +1,5 @@
 import { rateLimitedFetch, sha256Hex, type BodyEvent, type CalendarKind, type MeasureCalendarEntry, type ProviderContext } from '../sdk'
-import { BILL_TYPE, govinfoNativeKey, legiscanNumber, ordinal, type CongressBillType } from './map'
+import { BILL_TYPE, congressOn, govinfoNativeKey, legiscanNumber, ordinal, type CongressBillType } from './map'
 
 /**
  * Committee meetings from the Congress.gov API: the hearings, markups, and
@@ -62,7 +62,20 @@ export const DETAILS_PER_PASS = 60
  */
 export const QUARANTINE_AFTER = 3
 
-export const earlierCongressStillNeeded = (_today: string): boolean => true
+/** The first Congress this provider kept meetings of, so none before it has rows to prune. */
+const FIRST_CONGRESS_KEPT = 119
+
+/**
+ * Whether the calendar window still reaches before the current Congress began
+ * (January 3), so the earlier Congress's kept meetings are still served
+ * (`listBodyEvents`). Core reads last month through three months ahead
+ * (BODY_EVENT_MONTHS, `back: 1`), so the window starts on the first of last
+ * month: February 1 is the first start on or after January 3, from March.
+ */
+export function earlierCongressStillNeeded(today: string): boolean {
+  const first = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 2, 1)).toISOString().slice(0, 10)
+  return first < `${congressOn(today).yearStart}-01-03`
+}
 
 /** More pages than the API could ever need, so a list that never ends fails and doesn't loop. */
 const MAX_PAGES = 100
@@ -569,6 +582,7 @@ async function runPass(ctx: Context, key: string, congress: number): Promise<Mee
     ...(cold ? [WARM(congress)] : []),
     ...[...committed.kept.keys()].filter(id => !current.has(id)).map(id => `${COMMITTED(congress)}${id}`),
   ])
+  await pruneEarlierCongresses(ctx, congress)
   return listed.flatMap(l => {
     const k = committed.kept.get(l.eventId)
     return k ? [k.meeting] : []
@@ -576,6 +590,24 @@ async function runPass(ctx: Context, key: string, congress: number): Promise<Mee
 }
 
 /** The one alert for the meetings a pass quarantined: each by its event id, with why it can't be read. */
+/**
+ * Drops every row of the Congresses before this one (kept meetings, staged
+ * reads, failing counts, and the warm mark) once no calendar the window reads
+ * can reach them. While the window still reaches before January 3 they stay:
+ * `listBodyEvents` serves them. Only an earlier Congress's rows go, whatever
+ * state they are in, a quarantined meeting's strikes and alert flag included,
+ * since nothing will ask for that Congress's meetings again. The current
+ * Congress's rows are never listed here. With none dropped, a no-op.
+ */
+async function pruneEarlierCongresses(ctx: Pick<ProviderContext, 'cache' | 'today'>, congress: number): Promise<void> {
+  if (earlierCongressStillNeeded(ctx.today)) return
+  for (let earlier = congress - 1; earlier >= FIRST_CONGRESS_KEPT; earlier--) {
+    const rows = await Promise.all([COMMITTED(earlier), STAGED(earlier), FAILING(earlier), WARM(earlier)].map(prefix => ctx.cache.list(prefix)))
+    const keys = rows.flatMap(r => [...r.keys()])
+    if (keys.length > 0) await ctx.cache.drop(keys)
+  }
+}
+
 async function alertQuarantined(ctx: Pick<ProviderContext, 'alert'>, congress: number, meetings: [id: string, f: { error: string }][]): Promise<void> {
   const ids = meetings.map(([id]) => id)
   await ctx.alert({

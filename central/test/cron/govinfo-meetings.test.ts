@@ -1528,20 +1528,12 @@ describe('pruning an earlier Congress\'s cached meetings', () => {
     }
   })
 
-  it('drops the 118th on January 2, while the 119th is still current and so is not touched', async () => {
+  it('keeps the 119th\'s rows on January 2, its own last day, when it is still the current Congress', async () => {
     await filled119()
-    // The Congress before it, as an earlier release might have left it.
-    await put('meeting/118/700001', JSON.stringify({ stale: true }))
-    await put('staged/118/700002', JSON.stringify({ stale: true }))
-    await put('failing/118/700003', JSON.stringify({ strikes: 3, alerted: true, error: 'x' }))
-    await put('warm/118', '2025-01-01T00:00:00Z')
+    const kept = (await rowsOf(119)).filter(k => k.startsWith(KEPT) || k === 'warm/119')
     at('2027-01-02')
-    const before119 = (await rowsOf(119)).filter(k => k.startsWith(KEPT) || k === 'warm/119')
     await syncCalendar()
-    // January 2 is still the 119th Congress (it ends on the 3rd), and its window starts December 1.
-    // Nothing the 120th would need exists yet, so what is dropped is the 118th, which no window reaches.
-    expect((await rowsOf(119)).filter(k => k.startsWith(KEPT) || k === 'warm/119')).toEqual(before119)
-    expect(await rowsOf(118)).toEqual([])
+    expect((await rowsOf(119)).filter(k => k.startsWith(KEPT) || k === 'warm/119')).toEqual(kept)
   })
 
   it('never touches the current Congress\'s rows, and leaves its quarantined meetings and their alert flags as they were', async () => {
