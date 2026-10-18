@@ -150,11 +150,13 @@ dashAuthRoutes.post('/login', async (c) => {
   })
 
   const url = `${c.env.ADMIN_APP_URL}/admin/dash/auth/callback?token=${encodeURIComponent(rawToken)}`
-  try {
-    await sendAdminMagicLink(email, url, c.env)
-  } catch (err) {
-    console.error('sendAdminMagicLink failed', err)
-  }
+  // The provider round-trip, the largest part of this request, runs after the
+  // response is sent, so a listed address answers about as fast as an unlisted
+  // one (which returns above without it). A failed send is logged, never thrown
+  // into the response, and the promise handed to waitUntil never rejects.
+  c.executionCtx.waitUntil(
+    sendAdminMagicLink(email, url, c.env).catch((err) => console.error('sendAdminMagicLink failed', err)),
+  )
   return c.json({ data: { ok: true }, meta: { generatedAt: new Date().toISOString() } })
 })
 

@@ -7,6 +7,7 @@ import { emailIconSrc } from '../../../shared/emailIcons'
 import { renderBillCardOpen, BILL_CARD_CLOSE } from './emailBillCard'
 import { renderEmailShell, emailButton, emailFooterLink, formatDateRange } from './emailShell'
 import { billUrl } from '../../../shared/sessionSlug'
+import { billsListPath } from '../../../shared/billFilter'
 import { dbTsToEpoch } from '../../../shared/time'
 import type { GroupedBillEvents, GroupedBill, FeedEvent } from '../../../shared/feedUtils'
 
@@ -260,7 +261,7 @@ function renderNewMatchSection(items: NewMatchDigestItem[], appUrl: string, forM
   const seeAll = items.length > top.length
     ? `
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tbody>
-  <tr><td style="padding:6px 2px 0 2px;font-size:${fontSize.sm}px;"><a href="${escHtml(`${appUrl}/bills?newMatches=1`)}" style="color:${color.accentBlue};font-weight:${fontWeight.semibold};text-decoration:none;">See all ${items.length} new matches</a></td></tr>
+  <tr><td style="padding:6px 2px 0 2px;font-size:${fontSize.sm}px;"><a href="${escHtml(`${appUrl}${billsListPath({ newMatches: true })}`)}" style="color:${color.accentBlue};font-weight:${fontWeight.semibold};text-decoration:none;">See all ${items.length} new matches</a></td></tr>
 </tbody></table>`
     : ''
   return `${renderSectionHeader({
@@ -313,7 +314,7 @@ ${billOrder.map(id => renderBillCard(billGroups.get(id)!, input.appUrl)).join('\
   const newMatchSection = renderNewMatchSection(newMatches, input.appUrl, input.forMember ?? false, hasUpdates)
   const ctaHtml = hasUpdates
     ? emailButton(`${input.appUrl}/bills`, 'View bill updates')
-    : emailButton(`${input.appUrl}/bills?newMatches=1`, 'View newly matched bills')
+    : emailButton(`${input.appUrl}${billsListPath({ newMatches: true })}`, 'View newly matched bills')
 
   return renderEmailShell({
     instanceName: input.assocName,

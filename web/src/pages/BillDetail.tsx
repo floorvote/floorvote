@@ -80,6 +80,7 @@ import { AnalysisBox, AnalysisProgressChip, DIMMED_WHILE_RUNNING } from '../comp
 import { pollForAnalysis, analysisOutcomeMessage, regenerateOutcomeMessage, type AnalysisSnapshot } from '../lib/analysisPoll'
 import { MissingRequiredReason, requiredName, useRequiredSubmit } from '../components/RequiredField'
 import { useCommentsMute, CommentsMuteButton, CommentsMutedNote } from '../components/CommentsMuteToggle'
+import { billsListPath } from '../../../shared/billFilter'
 
 function PartyBadge({ party }: { party: string }) {
   const bg = party === 'D' ? color.bgBlueChip : party === 'R' ? color.bgRedPriority : color.surfaceMuted
@@ -1449,7 +1450,7 @@ export function BillDetail() {
             ))}
           </div>
           {bill.isDraft ? <DraftChip /> : (() => {
-            const chip = <StatusChip status={decodeStatus(bill.status)} describedBy={statusExplainer ? 'bill-status-explainer' : undefined} onClick={() => navigate(`/bills?status=${encodeURIComponent(bill.status)}`)} />
+            const chip = <StatusChip status={decodeStatus(bill.status)} describedBy={statusExplainer ? 'bill-status-explainer' : undefined} onClick={() => navigate(billsListPath({ status: [bill.status] }))} />
             // The chip is already a focusable button, so HoverTooltip adds no tab stop; the chip points at its hidden copy.
             return <HoverTooltip text={statusExplainer} describe={{ id: 'bill-status-explainer', interactive: true }}>{chip}</HoverTooltip>
           })()}
@@ -1458,9 +1459,9 @@ export function BillDetail() {
               session={bill.session}
               onClick={() => {
                 if (bill.yearStart) {
-                  navigate(`/bills?year=${bill.yearStart}${bill.state ? `&state=${bill.state}` : ''}`)
+                  navigate(billsListPath({ year: [String(bill.yearStart)], ...(bill.state ? { state: [bill.state] } : {}) }))
                 } else {
-                  navigate(`/bills?session=${encodeURIComponent(bill.session)}`)
+                  navigate(billsListPath({ sessionName: [bill.session] }))
                 }
               }}
             />
@@ -1499,7 +1500,7 @@ export function BillDetail() {
                 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', position: 'relative' }}>
                     <HoverTooltip text="This bill's priority level">
-                      <PriorityBadge priority={priority} onClick={() => navigate(`/bills?priority=${priority}`)} />
+                      <PriorityBadge priority={priority} onClick={() => navigate(billsListPath({ priority: [priority] }))} />
                     </HoverTooltip>
                     {priorityMeta && (
                       <div title={absoluteTime(priorityMeta.updatedAt)} style={{ ...CHROME_TEXT, marginTop: 3, cursor: 'default', position: 'absolute', top: '100%', left: 0, whiteSpace: 'nowrap' }}>
@@ -1872,7 +1873,7 @@ export function BillDetail() {
             subjects={bill.subjects ?? []}
             open={subjectsOpen}
             onSubjectClick={name =>
-              navigate(`/bills?subject=${encodeURIComponent(`${bill.state}:${name}`)}`)}
+              navigate(billsListPath({ subject: [{ state: bill.state, name }] }))}
           />
         )}
 
@@ -2551,7 +2552,7 @@ export function BillDetail() {
                         <span style={SECTION_LABEL}>
                           {orgRelevanceLabel(config?.orgNoun ?? DEFAULT_ORG_NOUN)}
                         </span>
-                        <RelevanceChip score={bill.relevanceScore} onClick={() => navigate(`/bills?minRelevance=${bill.relevanceScore}`)} />
+                        <RelevanceChip score={bill.relevanceScore} onClick={() => navigate(billsListPath({ minRelevance: bill.relevanceScore }))} />
                       </div>
                     )}
                     <InfoTooltip
@@ -2575,7 +2576,7 @@ export function BillDetail() {
             )}
             {!bill.tenantSummary && bill.relevanceScore != null && (
               <div style={{ display: 'flex', justifyContent: 'flex-end', ...(regenerating ? DIMMED_WHILE_RUNNING : {}) }}>
-                <RelevanceChip score={bill.relevanceScore} showLabel onClick={() => navigate(`/bills?minRelevance=${bill.relevanceScore}`)} />
+                <RelevanceChip score={bill.relevanceScore} showLabel onClick={() => navigate(billsListPath({ minRelevance: bill.relevanceScore }))} />
               </div>
             )}
             {bill.tags.length > 0 && (
@@ -2584,7 +2585,7 @@ export function BillDetail() {
                   {bill.tags.map((tag) => (
                     <button
                       key={tag}
-                      onClick={() => navigate(`/bills?tag=${encodeURIComponent(tag)}`)}
+                      onClick={() => navigate(billsListPath({ tag: [tag] }))}
                       onMouseEnter={() => setHoveredTag(tag)}
                       onMouseLeave={() => setHoveredTag(null)}
                       style={hoveredTag === tag ? TAG_CHIP_HOVERED : TAG_CHIP}

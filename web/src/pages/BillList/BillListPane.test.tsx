@@ -183,18 +183,18 @@ describe('BillListPane: group rows', () => {
 describe('BillListPane: request params', () => {
   it('turns a custom-field slug in the URL into the field id, as the Bills page does', async () => {
     hoisted.defs = [{ id: 'cf-uuid-1', slug: 'tracked_by_team' }]
-    sessionStorage.setItem('lastBillsUrl', '/bills?cf_tracked_by_team=yes&sort=bill&dir=asc')
+    sessionStorage.setItem('lastBillsUrl', '/bills?field.tracked_by_team=yes&sort=bill&dir=asc')
     renderPane('/RI/2026/HB%201')
     await waitFor(() => expect(hoisted.calls.some(c => c.startsWith('/bills?'))).toBe(true))
     const q = new URLSearchParams(hoisted.calls.find(c => c.startsWith('/bills?'))!.slice('/bills?'.length))
-    expect(q.getAll('cf_cf-uuid-1')).toEqual(['yes'])
-    expect(q.has('cf_tracked_by_team')).toBe(false)
+    expect(q.getAll('field.cf-uuid-1')).toEqual(['yes'])
+    expect(q.has('field.tracked_by_team')).toBe(false)
   })
 
   it('paints from the Bills page’s warmed cache for a custom-field list, then refreshes', async () => {
     hoisted.defs = [{ id: 'cf-uuid-1', slug: 'tracked_by_team' }]
-    sessionStorage.setItem('lastBillsUrl', '/bills?cf_tracked_by_team=yes')
-    const cachedParams = new URLSearchParams([['page', '1'], ['pageSize', '100'], ['cf_cf-uuid-1', 'yes']])
+    sessionStorage.setItem('lastBillsUrl', '/bills?field.tracked_by_team=yes')
+    const cachedParams = new URLSearchParams([['page', '1'], ['pageSize', '100'], ['field.cf-uuid-1', 'yes']])
     hoisted.cache = { params: cachedParams.toString(), page: { bills: [bill('c1', 'HB 77')], total: 1, totalPages: 1 } }
     // The refresh never settles, so what shows is the cache's.
     hoisted.respond = () => new Promise(() => {})
@@ -364,11 +364,11 @@ describe('BillListPane: filter and sort summary', () => {
   })
 
   it('counts a search term as one filter', async () => {
-    listAt('/bills?q=water')
+    listAt('/bills?search=water')
     const pane = await paneReady()
     expect(within(pane).getByText('1 filter · Sorted by default order')).toBeInTheDocument()
     // The same search narrows the pane's own list, so the line is not a lie.
-    expect(hoisted.calls.find(c => c.startsWith('/bills?'))).toContain('q=water')
+    expect(hoisted.calls.find(c => c.startsWith('/bills?'))).toContain('search=water')
   })
 
   it('draws the line under the header, between the title row and the list', async () => {
@@ -384,7 +384,7 @@ describe('BillListPane: filter and sort summary', () => {
 
   it('shows the active filters on hover, labelled as the Bills page’s chips are', async () => {
     hoisted.defs = [{ id: 'f1', slug: 'team', name: 'Team', type: 'dropdown' } as never]
-    listAt('/bills?priority=high&year=2026&minRelevance=5&cf_team=Alpha')
+    listAt('/bills?priority=high&year=2026&minRelevance=5&field.team=Alpha')
     const pane = await paneReady()
     expect(screen.queryByRole('tooltip')).toBeNull()
     hover(within(pane).getByRole('button', { name: /4 filters · Sorted by/ }))
@@ -414,7 +414,7 @@ describe('BillListPane: filter and sort summary', () => {
   })
 
   it('lists a search term in the hover list as a quoted search', async () => {
-    listAt('/bills?q=water&year=2026')
+    listAt('/bills?search=water&year=2026')
     const pane = await paneReady()
     hover(within(pane).getByRole('button', { name: /2 filters/ }))
     expect(await screen.findByRole('tooltip')).toHaveTextContent('Search: “water”')
@@ -452,7 +452,7 @@ describe('BillListPane: filter and sort summary', () => {
   })
 
   it('has no control that changes or removes a filter', async () => {
-    listAt('/bills?status=2&status=3&q=water')
+    listAt('/bills?status=2&status=3&search=water')
     const pane = await paneReady()
     const header = within(pane).getByRole('link', { name: 'Bills' }).parentElement!.parentElement!
     // The one button is the summary's own hover trigger; the only links are "Bills" and "Edit".
