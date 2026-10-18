@@ -54,9 +54,13 @@ describe("members' digests: new matches", () => {
     expect(onHtml).toContain('NM 112')
     expect(onHtml).not.toContain('NM 101')
     expect(onHtml).toContain('See all 12 new matches')
-    // Same list in the same order as the admin's.
-    const listed = (html: string) => [...html.matchAll(/NM \d+/g)].map(m => m[0])
+    // Same list in the same order as the admin's. Counts each card's badge, not
+    // every mention: an admin's cards also link to the bill from "Set priority".
+    const listed = (html: string) => [...html.matchAll(/>[^<>]*?(NM \d+)</g)].map(m => m[1])
     expect(listed(onHtml)).toEqual(listed(adminHtml))
+    expect(listed(onHtml).length).toBeGreaterThanOrEqual(10)
+    expect(adminHtml.match(/>Set priority</g)).toHaveLength(10)
+    expect(onHtml).not.toContain('>Set priority<')
     // The member with it off still gets the updates, and nothing else.
     expect(to('off@e.com')).toHaveLength(1)
     expect(to('off@e.com')[0].html).toContain('PRI 1')
