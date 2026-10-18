@@ -1,11 +1,13 @@
-import type { BillsFilterValues } from './billsQuery'
+import type { BillsQuery } from './billsQuery'
+import { encodeSubjectFilter, type BillFilter } from '../../../../shared/billFilter'
 import { filterDimensionLabel, type FilterDimensionKey } from '../../lib/filterDimensions'
 import { activeFilterLabelGroups, type ChipFieldDef } from './activeFilterGroups'
 import type { SortColumn } from './types'
 
 export type SummaryFieldDef = ChipFieldDef
 export type ListSummaryInput = {
-  values: BillsFilterValues
+  /** The list's query: its bill filter, and its sort. */
+  values: BillsQuery
   /** The saved view the list was opened from, if one is applied. */
   view?: { name: string } | null
   customFieldDefs?: ReadonlyArray<SummaryFieldDef>
@@ -39,11 +41,11 @@ const unique = <T,>(xs: T[]): T[] => [...new Set(xs)]
 // the app links to lists that carry only one (/bills?newMatches=1), so a summary
 // that left them out would read "All bills" over a narrowed list. (The ticket
 // counts only chips; counting these is a deliberate departure.)
-const SCOPE_PILLS: { key: FilterDimensionKey; on: (v: BillsFilterValues) => boolean }[] = [
-  { key: 'myBills', on: v => v.myBills },
-  { key: 'newMatches', on: v => v.newMatches },
-  { key: 'unvoted', on: v => v.unvoted },
-  { key: 'drafts', on: v => v.drafts },
+const SCOPE_PILLS: { key: FilterDimensionKey; on: (f: BillFilter) => boolean }[] = [
+  { key: 'myBills', on: f => f.myBills },
+  { key: 'newMatches', on: f => f.newMatches },
+  { key: 'unvoted', on: f => f.unvoted },
+  { key: 'drafts', on: f => f.drafts },
 ]
 
 /**
@@ -54,25 +56,26 @@ const SCOPE_PILLS: { key: FilterDimensionKey; on: (v: BillsFilterValues) => bool
  * not a filter.
  */
 export function buildListSummary({ values, view, customFieldDefs = [], isMultiState = false }: ListSummaryInput): ListSummary {
-  const cfFilters = Object.fromEntries(Object.entries(values.cfFilters).map(([k, v]) => [k, unique(v)]))
+  const { filter } = values
+  const cfFilters = Object.fromEntries(Object.entries(filter.cf).map(([k, v]) => [k, unique([...v])]))
   const chipLabels = activeFilterLabelGroups({
-    filterStates: unique(values.states),
-    filterStatuses: unique(values.statuses),
-    filterStages: unique(values.stages),
-    filterPositions: unique(values.positions),
-    filterPriorities: unique(values.priorities),
-    filterYears: unique(values.years),
-    selectedTags: unique(values.tags),
-    selectedSubjects: unique(values.subjects),
+    filterStates: unique([...filter.state]),
+    filterStatuses: unique([...filter.status]),
+    filterStages: unique([...filter.stage]),
+    filterPositions: unique([...filter.position]),
+    filterPriorities: unique([...filter.priority]),
+    filterYears: unique(filter.year.map(Number)),
+    selectedTags: unique([...filter.tag]),
+    selectedSubjects: unique(filter.subject.map(s => encodeSubjectFilter(s.state, s.name))),
     cfFilters,
-    filterMinRelevance: values.minRelevance,
+    filterMinRelevance: filter.minRelevance ?? 0,
     positionOptions: [{ value: 'none', label: 'Not set' }],
     customFieldDefs,
     isMultiState,
   }).flatMap(g => g.labels)
 
-  const term = values.search.trim()
-  const pillLabels = SCOPE_PILLS.filter(p => p.on(values)).map(p => filterDimensionLabel(p.key))
+  const term = filter.q.trim()
+  const pillLabels = SCOPE_PILLS.filter(p => p.on(filter)).map(p => filterDimensionLabel(p.key))
   const filters = [...(term ? [`Search: “${term}”`] : []), ...pillLabels, ...chipLabels]
   const sortName = values.sortCol === 'default' ? DEFAULT_SORT_NAME : SORT_NAMES[values.sortCol] ?? DEFAULT_SORT_NAME
   const viewName = view?.name.trim() ? view.name.trim() : null

@@ -1,48 +1,99 @@
 import type { SortColumn, SortDir } from './types'
 import { PAGE_SIZE } from './constants'
+import {
+  BILL_FILTER_DEFS, parseBillFilter, serializeBillFilter, withBillFilter, type BillFilter,
+} from '../../../../shared/billFilter'
 
-export type BillsFilterValues = {
-  statuses: string[]; stages: string[]; priorities: string[]; positions: string[]; years: number[]; states: string[]
-  minRelevance: number; myBills: boolean; unvoted: boolean; newMatches: boolean; drafts: boolean; matchAny: boolean
-  tags: string[]; subjects: string[]; search: string; sortCol: SortColumn; sortDir: SortDir; cfFilters: Record<string, string[]>
+/** A bill list's query: the bill filter, one immutable value, and the sort, which is the list's order and not a filter. */
+export type BillsQuery = { filter: BillFilter; sortCol: SortColumn; sortDir: SortDir }
+
+/** A custom field's definition, as far as naming it goes: the URL carries its slug, and the Bills page holds its id. */
+export type CustomFieldNames = { id: string; slug: string | null }
+
+/**
+ * The bill filter with each custom field named by its id or by its slug. A field the defs do not know keeps the key it
+ * had, and two keys for one field (its slug and its id) become one, each value once. A filter whose fields are already
+ * named that way is returned as it is.
+ */
+export function withCustomFieldKeys(
+  filter: BillFilter, defs: ReadonlyArray<CustomFieldNames>, as: 'id' | 'slug',
+): BillFilter {
+  const fields = new Map<string, string[]>()
+  let changed = false
+  for (const [key, values] of Object.entries(filter.cf)) {
+    const def = defs.find(d => d.slug === key || d.id === key)
+    const named = def ? (as === 'id' ? def.id : def.slug ?? def.id) : key
+    if (named !== key) changed = true
+    const bucket = fields.get(named)
+    if (bucket) changed = true
+    const into = bucket ?? []
+    for (const v of values) {
+      if (into.includes(v)) changed = true
+      else into.push(v)
+    }
+    fields.set(named, into)
+  }
+  if (!changed) return filter
+  // A key may be any text, so the fields are built into an object by defining each key as an own property.
+  const cf = Object.freeze(Object.fromEntries([...fields].map(([key, values]) => [key, Object.freeze(values)])))
+  return withBillFilter({ cf }, filter)
 }
 
-// The one place a custom-field key becomes the form the bills request (and so
-// the list cache key) uses: the field id when the defs know the field, else the
-// key as given. The URL carries slugs, the filter state carries ids, so the
-// loader's prefetch and the list's fetch must both pass through here or their
-// keys differ and the prefetched page is never reused.
-export function billsApiParams(
-  v: BillsFilterValues, page: number, pageSize: number,
-  customFieldDefs: ReadonlyArray<{ id: string; slug: string | null }> = [],
-): string {
-  const params = new URLSearchParams()
-  params.set('page', String(page))
-  params.set('pageSize', String(pageSize))
-  v.statuses.forEach(s => params.append('status', s))
-  v.stages.forEach(s => params.append('stage', s))
-  v.priorities.forEach(p => params.append('priority', p))
-  v.positions.forEach(p => params.append('position', p))
-  v.years.forEach(y => params.append('year', String(y)))
-  v.states.forEach(s => params.append('state', s))
-  if (v.minRelevance > 0) params.set('minRelevance', String(v.minRelevance))
-  if (v.myBills) params.set('myBills', '1')
-  if (v.unvoted) params.set('unvoted', '1')
-  if (v.newMatches) params.set('newMatches', '1')
-  if (v.drafts) params.set('drafts', '1')
-  if (v.matchAny) params.set('match', 'any')
-  v.tags.forEach(t => params.append('tag', t))
-  v.subjects.forEach(s => params.append('subject', s))
-  if (v.search) params.set('q', v.search)
-  if (v.sortCol !== 'default') {
-    params.set('sort', v.sortCol)
-    params.set('dir', v.sortDir)
+/**
+ * A URL's search read as the Bills page holds it: the shared parse, then the three things this page holds differently.
+ * A custom field is held by its id (the URL carries slugs), a year is a number, and a minimum relevance of zero is no
+ * minimum. Every place that reads a filter from a URL, a saved view, or the sidebar's links reads it here, so the page
+ * and the loader's prefetch hold the same value.
+ */
+export function billFilterFromSearch(
+  search: URLSearchParams, defs: ReadonlyArray<CustomFieldNames> = [],
+): BillFilter {
+  const parsed = withCustomFieldKeys(parseBillFilter(search), defs, 'id')
+  const year = parsed.year.filter(y => y !== '' && !Number.isNaN(Number(y)))
+  const minRelevance = parsed.minRelevance !== null && parsed.minRelevance > 0 ? parsed.minRelevance : null
+  if (year.length === parsed.year.length && minRelevance === parsed.minRelevance) return parsed
+  return withBillFilter({ year: Object.freeze(year), minRelevance }, parsed)
+}
+
+const SORT_COLS: SortColumn[] = ['priority', 'status', 'relevance', 'position', 'year', 'session', 'lastAction', 'bill']
+
+/** A list URL's search as a query: its filter (see `billFilterFromSearch`) and its sort. */
+export function billsQueryFromSearch(
+  search: URLSearchParams, defs: ReadonlyArray<CustomFieldNames> = [],
+): BillsQuery {
+  const sortRaw = search.get('sort')
+  return {
+    filter: billFilterFromSearch(search, defs),
+    sortCol: sortRaw && SORT_COLS.includes(sortRaw as SortColumn) ? (sortRaw as SortColumn) : 'default',
+    sortDir: search.get('dir') === 'desc' ? 'desc' : 'asc',
   }
-  for (const [key, values] of Object.entries(v.cfFilters)) {
-    const id = customFieldDefs.find(d => d.slug === key || d.id === key)?.id ?? key
-    values.forEach(val => params.append(`cf_${id}`, val))
-  }
-  return params.toString()
+}
+
+/**
+ * The one place a bills request is written, and so the list cache key: the page, the filter as the shared serialize
+ * writes it (custom fields by id, the form the hook holds), and the sort. The loader's prefetch, the split pane, and the
+ * list's own fetch all come here, so they key the same list the same way and a warmed cache entry is found.
+ */
+export function billsApiParams(q: BillsQuery, page: number, pageSize: number): string {
+  const parts = [`page=${page}`, `pageSize=${pageSize}`]
+  const filter = serializeBillFilter(q.filter)
+  if (filter !== '') parts.push(filter)
+  if (q.sortCol !== 'default') parts.push(new URLSearchParams({ sort: q.sortCol, dir: q.sortDir }).toString())
+  return parts.join('&')
+}
+
+/** The query string of GET /bills/facets for a filter: the same bill filter the list sends, with no page or sort. */
+export function billsFacetParams(filter: BillFilter): string {
+  return serializeBillFilter(filter)
+}
+
+/**
+ * The filter as the Bills page's own URL carries it: a custom field by its slug, which is what a member sees and a
+ * saved view stores, and without the search box, which is state and never reaches the URL.
+ */
+export function billFilterForUrl(filter: BillFilter, defs: ReadonlyArray<CustomFieldNames> = []): BillFilter {
+  const named = withCustomFieldKeys(filter, defs, 'slug')
+  return named.q === '' ? named : withBillFilter({ q: '' }, named)
 }
 
 /** The query string of a list URL ("/bills?status=2"), as search params. */
@@ -57,48 +108,22 @@ export function searchFromListUrl(listUrl: string): URLSearchParams {
  * entry is found).
  */
 export function billsApiParamsFromSearch(
-  search: URLSearchParams, page: number,
-  customFieldDefs: ReadonlyArray<{ id: string; slug: string | null }> = [],
+  search: URLSearchParams, page: number, defs: ReadonlyArray<CustomFieldNames> = [],
 ): string {
-  return billsApiParams(billsFilterValuesFromSearch(search), page, PAGE_SIZE, customFieldDefs)
+  return billsApiParams(billsQueryFromSearch(search, defs), page, PAGE_SIZE)
 }
 
-const SORT_COLS: SortColumn[] = ['priority', 'status', 'relevance', 'position', 'year', 'session', 'lastAction', 'bill']
+/** Whether a filter is set: a list with a value, a toggle that is on, or a minimum above zero. The group operator and the search box are not asked for here. */
+const isSet = (value: unknown): boolean =>
+  Array.isArray(value) ? value.length > 0
+    : typeof value === 'boolean' ? value
+    : typeof value === 'number' ? value > 0
+    : typeof value === 'object' && value !== null ? Object.keys(value).length > 0
+    : false
 
-export function billsFilterValuesFromSearch(search: URLSearchParams): BillsFilterValues {
-  const sortRaw = search.get('sort')
-  const cfFilters: Record<string, string[]> = {}
-  for (const [key, value] of search.entries()) {
-    if (key.startsWith('cf_')) {
-      const id = key.slice(3)
-      if (!cfFilters[id]) cfFilters[id] = []
-      cfFilters[id].push(value)
-    }
-  }
-  return {
-    statuses: search.getAll('status'),
-    stages: search.getAll('stage'),
-    priorities: search.getAll('priority'),
-    positions: search.getAll('position'),
-    years: search.getAll('year').map(Number).filter(n => !isNaN(n)),
-    states: search.getAll('state'),
-    minRelevance: search.get('minRelevance') ? Number(search.get('minRelevance')) : 0,
-    myBills: search.get('myBills') === '1',
-    unvoted: search.get('unvoted') === '1',
-    newMatches: search.get('newMatches') === '1',
-    drafts: search.get('drafts') === '1',
-    matchAny: search.get('match') === 'any',
-    tags: search.getAll('tag'),
-    subjects: search.getAll('subject'),
-    // The Bills page never writes q to its URL (the search box is state, and the
-    // sidebar's links carry none), so this is empty for every URL the app builds.
-    // It is read all the same so a list URL that does carry one is filtered, and
-    // summarized, as what it says it is.
-    search: search.get('q') ?? '',
-    sortCol: sortRaw && SORT_COLS.includes(sortRaw as SortColumn) ? (sortRaw as SortColumn) : 'default',
-    sortDir: search.get('dir') === 'desc' ? 'desc' : 'asc',
-    cfFilters,
-  }
+/** Whether any filter but the named ones is set. Every filter the shared module names is asked, so a new one counts without an edit here. */
+function anyFilterBut(filter: BillFilter, ignored: ReadonlyArray<keyof BillFilter>): boolean {
+  return BILL_FILTER_DEFS.some(def => !ignored.includes(def.name) && isSet(filter[def.name]))
 }
 
 // Which Bills-nav count chip (if any) is "selected" — i.e. the current view is
@@ -109,13 +134,9 @@ export function billsFilterValuesFromSearch(search: URLSearchParams): BillsFilte
 // Any other filter — or being off the /bills list — selects neither.
 export function billsChipSelection(pathname: string, search: string): { allBills: boolean; newMatches: boolean } {
   if (pathname !== '/bills') return { allBills: false, newMatches: false }
-  const v = billsFilterValuesFromSearch(new URLSearchParams(search))
-  const otherFiltersActive =
-    v.statuses.length > 0 || v.stages.length > 0 || v.priorities.length > 0 || v.positions.length > 0 ||
-    v.years.length > 0 || v.states.length > 0 || v.minRelevance > 0 ||
-    v.myBills || v.unvoted || v.drafts || v.tags.length > 0 || v.subjects.length > 0 || Object.keys(v.cfFilters).length > 0
-  if (otherFiltersActive) return { allBills: false, newMatches: false }
-  if (v.newMatches) return { allBills: false, newMatches: true }
+  const f = billFilterFromSearch(new URLSearchParams(search))
+  if (anyFilterBut(f, ['newMatches', 'q', 'match'])) return { allBills: false, newMatches: false }
+  if (f.newMatches) return { allBills: false, newMatches: true }
   return { allBills: true, newMatches: false }
 }
 
@@ -123,7 +144,7 @@ const PRIORITY_TIERS = ['high', 'medium', 'low']
 
 // True when the active priority filter is exactly all three tiers — no more,
 // no less — matching the prioritized-bills widget's canonical destination.
-function isExactlyPriorityTiers(priorities: string[]): boolean {
+function isExactlyPriorityTiers(priorities: readonly string[]): boolean {
   return priorities.length === 3 && PRIORITY_TIERS.every(tier => priorities.includes(tier))
 }
 
@@ -138,13 +159,9 @@ function isExactlyPriorityTiers(priorities: string[]): boolean {
 // Any other filter combination — or being off the /bills list — selects neither.
 export function prioritizedChipSelection(pathname: string, search: string): { priority: boolean; unvoted: boolean } {
   if (pathname !== '/bills') return { priority: false, unvoted: false }
-  const v = billsFilterValuesFromSearch(new URLSearchParams(search))
-  if (!isExactlyPriorityTiers(v.priorities)) return { priority: false, unvoted: false }
-  const otherFiltersActive =
-    v.statuses.length > 0 || v.stages.length > 0 || v.positions.length > 0 ||
-    v.years.length > 0 || v.states.length > 0 || v.minRelevance > 0 ||
-    v.myBills || v.newMatches || v.drafts || v.tags.length > 0 || v.subjects.length > 0 || Object.keys(v.cfFilters).length > 0
-  if (otherFiltersActive) return { priority: false, unvoted: false }
-  if (v.unvoted) return { priority: false, unvoted: true }
+  const f = billFilterFromSearch(new URLSearchParams(search))
+  if (!isExactlyPriorityTiers(f.priority)) return { priority: false, unvoted: false }
+  if (anyFilterBut(f, ['priority', 'unvoted', 'q', 'match'])) return { priority: false, unvoted: false }
+  if (f.unvoted) return { priority: false, unvoted: true }
   return { priority: true, unvoted: false }
 }

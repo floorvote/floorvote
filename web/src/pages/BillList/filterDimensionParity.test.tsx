@@ -686,8 +686,10 @@ describe('filter UI parity — both surfaces serialize the same bill filter', ()
   const phonePick = ({ dimension, phone }: Pick) => {
     fireEvent.click(document.querySelector('.mobile-filter-btn') as HTMLElement)
     // The sheet is the last thing BillList renders, after the toolbar and the list's column headers.
-    fireEvent.click(screen.getAllByRole('button', { name: new RegExp(`^${filterDimensionLabel(dimension)}`) }).at(-1)!)
-    fireEvent.click(screen.getAllByText(phone).at(-1)!)
+    const rows = screen.getAllByRole('button', { name: new RegExp(`^${filterDimensionLabel(dimension)}`) })
+    fireEvent.click(rows[rows.length - 1])
+    const options = screen.getAllByText(phone)
+    fireEvent.click(options[options.length - 1])
     fireEvent.click(screen.getByRole('button', { name: /back to filters/i }))
     fireEvent.click(screen.getByRole('button', { name: /close filters/i }))
   }

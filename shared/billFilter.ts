@@ -203,3 +203,21 @@ export function serializeBillFilter(filter: BillFilter): string {
   for (const name of NAMES) part(name).write(filter[name], out)
   return out.toString()
 }
+
+/**
+ * A bill filter with some parts set: the parts of `patch` laid over `base`, which is the filter with nothing set unless
+ * a filter is given. The result is immutable, and neither argument is changed.
+ */
+export function withBillFilter(patch: Partial<BillFilter>, base: BillFilter = EMPTY_BILL_FILTER): BillFilter {
+  return Object.freeze({ ...base, ...patch })
+}
+
+/**
+ * The path of the Bills page filtered as `patch` says (`/bills?priority=high`), or `/bills` for a filter that sets
+ * nothing. Every link to a filtered list builds its URL here, so a link is written by the same `serializeBillFilter`
+ * the page writes its own URL with.
+ */
+export function billsListPath(patch: Partial<BillFilter> = {}): string {
+  const query = serializeBillFilter(withBillFilter(patch))
+  return query === '' ? '/bills' : `/bills?${query}`
+}

@@ -25,7 +25,8 @@ import type { Bill, CustomFieldDef, FacetCounts, NormalizedSession } from './typ
 import { useBillSort } from '../../hooks/useBillSort'
 import { useBillFilters } from '../../hooks/useBillFilters'
 import { useBulkActions } from '../../hooks/useBulkActions'
-import { billsApiParams, billsApiParamsFromSearch, searchFromListUrl } from './billsQuery'
+import { billsApiParams, billsApiParamsFromSearch, billsFacetParams, searchFromListUrl } from './billsQuery'
+import { serializeBillFilter } from '../../../../shared/billFilter'
 import { searchWarnings } from '../../../../shared/searchLimits'
 import { filterDimensionLabel, isFilterDimensionVisible } from '../../lib/filterDimensions'
 import { useStageFilterUseful } from '../../lib/capabilities'
@@ -184,10 +185,6 @@ export function BillList() {
 
   const hasFetchedOnce = useRef(false)
   const [customFieldDefs, setCustomFieldDefs] = useState<CustomFieldDef[]>(cachedCustomFieldDefs ?? [])
-  // Read by fetchBills for its cache key without joining its deps: defs arriving
-  // must not refetch on their own (a cf filter's key change already does).
-  const customFieldDefsRef = useRef(customFieldDefs)
-  customFieldDefsRef.current = customFieldDefs
 
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin' || user?.role === 'owner'
@@ -242,18 +239,13 @@ export function BillList() {
   // --- bulk selection (hook) ---
   const { selection, isSelectionMode, handleToggleSelect, handleSelectAllFilters, handleClearSelection } = useBulkActions({
     sortedRef,
-    // currentFilters is memoized over every filter dimension (custom fields
-    // included), so a new dimension added there resets the selection too.
-    resetDeps: [f.currentFilters, sortCol, sortDir],
+    // The filter is one immutable value, so a change to any filter (custom
+    // fields included, and any filter added later) is a new value and resets the selection.
+    resetDeps: [f.filter, sortCol, sortDir],
   })
 
   const fetchBills = useCallback(async (nextPage: number, append: boolean) => {
-    const paramsStr = billsApiParams({
-      statuses: f.filterStatuses, stages: f.filterStages, priorities: f.filterPriorities, positions: f.filterPositions,
-      years: f.filterYears, states: f.filterStates, minRelevance: f.filterMinRelevance,
-      myBills: f.myBills, unvoted: f.unvotedOnly, newMatches: f.newMatches, drafts: f.drafts, matchAny: f.matchAny,
-      tags: f.selectedTags, subjects: f.selectedSubjects, search: f.search, sortCol, sortDir, cfFilters: f.cfFilters,
-    }, nextPage, PAGE_SIZE, customFieldDefsRef.current)
+    const paramsStr = billsApiParams({ filter: f.filter, sortCol, sortDir }, nextPage, PAGE_SIZE)
     const hitCache = nextPage === 1 && !append && !hasFetchedOnce.current && billsListCache?.params === paramsStr
     if (hitCache) {
       setAllBills(billsListCache!.page.bills)
@@ -288,30 +280,12 @@ export function BillList() {
       setLoading(false)
       setRefreshing(false)
     }
-  }, [f.filterStatuses, f.filterStages, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.drafts, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, sortCol, sortDir, f.cfFilters])
+  }, [f.filter, sortCol, sortDir])
 
   const facetSeqRef = useRef(0)
-  const filtersKey = JSON.stringify(f.currentFilters)
+  const filtersKey = serializeBillFilter(f.filter)
   const fetchFacets = useCallback(async () => {
-    const params = new URLSearchParams()
-    if (f.filterStatuses.length > 0) f.filterStatuses.forEach(s => params.append('status', s))
-    f.filterStages.forEach(s => params.append('stage', s))
-    if (f.filterPriorities.length > 0) f.filterPriorities.forEach(p => params.append('priority', p))
-    if (f.filterPositions.length > 0) f.filterPositions.forEach(p => params.append('position', p))
-    if (f.filterYears.length > 0) f.filterYears.forEach(y => params.append('year', String(y)))
-    if (f.filterStates.length > 0) f.filterStates.forEach(s => params.append('state', s))
-    if (f.filterMinRelevance > 0) params.set('minRelevance', String(f.filterMinRelevance))
-    if (f.myBills) params.set('myBills', '1')
-    if (f.unvotedOnly) params.set('unvoted', '1')
-    if (f.newMatches) params.set('newMatches', '1')
-    if (f.drafts) params.set('drafts', '1')
-    if (f.matchAny) params.set('match', 'any')
-    f.selectedTags.forEach(t => params.append('tag', t))
-    f.selectedSubjects.forEach(s => params.append('subject', s))
-    if (f.search) params.set('q', f.search)
-    for (const [key, values] of Object.entries(f.cfFilters)) {
-      values.forEach(v => params.append(`cf_${key}`, v))
-    }
+    const params = billsFacetParams(f.filter)
     // Only the newest request may write the counts. The dismiss button acts on
     // the filters as they stand now, so a slower reply to an earlier request
     // (a search cleared before its reply returned) must not overwrite them.
@@ -326,7 +300,7 @@ export function BillList() {
     } catch {
       // non-fatal — leave previous counts in place
     }
-  }, [f.filterStatuses, f.filterStages, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.drafts, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, f.cfFilters, filtersKey])
+  }, [f.filter, filtersKey])
 
   // Infinite scroll — fire next page fetch when the sentinel enters the viewport
   useEffect(() => {
@@ -1271,7 +1245,7 @@ export function BillList() {
           total={total}
           positionVocabulary={positionVocabulary}
           customFieldDefs={customFieldDefs.filter((fld): fld is typeof fld & { type: 'binary' | 'dropdown' } => fld.type === 'binary' || fld.type === 'dropdown')}
-          currentFilters={f.currentFilters}
+          currentFilters={f.filter}
           // 0 hides the dismiss button until the reply for the current filters lands
           // (filter change in flight, or its request failed): never offer a count
           // for filters other than the ones the dismiss request will carry.

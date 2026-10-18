@@ -13,7 +13,7 @@ import { buildBillsFilter } from './filterTable'
 import { countGroups, matchingGroupKeys, newMatchGroupKeys, newMatchGroupsAmong } from './groupList'
 import { getNewMatchMinRelevance } from '../../lib/newMatch'
 import { parseBillFilter } from '../../../../shared/billFilter'
-import { billFilterFromBulkBody, subjectCapError, type BulkFilterBody } from './filterRequest'
+import { BULK_FILTER_ERROR, parseBulkFilter, subjectCapError } from './filterRequest'
 import { parseStoredMulti } from '../../../../shared/customFieldValues'
 import { inGroupOf, inGroupsOf } from '../../lib/companionGroups'
 import { loadTeamValuesOf, recordFieldChanges, type FieldChange } from '../../lib/teamFields'
@@ -30,7 +30,8 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
 
     type BulkBody = {
       ids?: string[]
-      filter?: BulkFilterBody
+      /** The bill filter as a query string, as GET /bills takes it. */
+      filter?: string
       priority?: string | null
       position?: string | null
       customFields?: Array<
@@ -50,6 +51,9 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
     if (hasIds === hasFilter) {
       return c.json({ error: 'Provide exactly one of: ids or filter' }, 400)
     }
+    // The filter is read as the list reads a query string, so the two select the same bills.
+    const f = hasFilter ? parseBulkFilter(body.filter) : null
+    if (hasFilter && !f) return c.json(BULK_FILTER_ERROR, 400)
 
     const hasPriority = 'priority' in body
     const hasPosition = 'position' in body
@@ -71,14 +75,12 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
     if (hasIds) {
       billIds = body.ids!
     } else {
-      // The filter is read as the list reads a query string, so the two select the same bills.
-      const f = billFilterFromBulkBody(body.filter)
       // Same cap and message as GET /bills, checked before any write.
-      const capError = subjectCapError(f)
+      const capError = subjectCapError(f!)
       if (capError) return c.json(capError, 400)
-      const filter = await buildBillsFilter(db, f, {
+      const filter = await buildBillsFilter(db, f!, {
         userId: currentUser.id,
-        newMatchMinRelevance: f.newMatches ? await getNewMatchMinRelevance(db) : 0,
+        newMatchMinRelevance: f!.newMatches ? await getNewMatchMinRelevance(db) : 0,
       })
       selected = filter(billsAs('m'))
       // One more than the cap tells an over-cap selection from one at it.
@@ -336,13 +338,16 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
     const db = getDb(c.env.DB)
     const currentUser = c.get('user')
 
-    type Body = { ids?: string[]; filter?: BulkFilterBody }
+    type Body = { ids?: string[]; /** The bill filter as a query string, as GET /bills takes it. */ filter?: string }
 
     const body = await c.req.json<Body>().catch(() => null)
     if (!body) return c.json({ error: 'Invalid body' }, 400)
     const hasIds = Array.isArray(body.ids) && body.ids.length > 0
     const hasFilter = body.filter != null
     if (hasIds === hasFilter) return c.json({ error: 'Provide exactly one of: ids or filter' }, 400)
+    // Read as POST /bulk reads it, and as the list reads a query string.
+    const f = hasFilter ? parseBulkFilter(body.filter) : null
+    if (hasFilter && !f) return c.json(BULK_FILTER_ERROR, 400)
 
     // Computed up front — the groups to dismiss are only those on the new-match queue,
     // even when the "New matches" chip (f.newMatches) is off but the dismiss action is
@@ -354,12 +359,10 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
       // The groups of the bills named that are on the new-match queue.
       toDismiss = await newMatchGroupsAmong(db, body.ids!, min)
     } else {
-      // Read as POST /bulk reads it, and as the list reads a query string.
-      const f = billFilterFromBulkBody(body.filter)
       // Same cap and message as GET /bills, checked before any write.
-      const capError = subjectCapError(f)
+      const capError = subjectCapError(f!)
       if (capError) return c.json(capError, 400)
-      const filter = await buildBillsFilter(db, f, { userId: currentUser.id, newMatchMinRelevance: f.newMatches ? min : 0 })
+      const filter = await buildBillsFilter(db, f!, { userId: currentUser.id, newMatchMinRelevance: f!.newMatches ? min : 0 })
       // One bill per group, named by its key bill: a group is dismissed as one. One statement, so the
       // groups the filter names (every group on a broad filter) never travel as a parameter.
       toDismiss = await newMatchGroupKeys(db, filter(billsAs('m')), min)

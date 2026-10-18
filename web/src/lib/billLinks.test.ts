@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
+import { BILL_FILTER_DEFS, CUSTOM_FIELD_KEY_PREFIX } from '../../../shared/billFilter'
 
 // Every link to a filtered Bills list is built with the shared serialize (`billsListPath`), never written out by
 // hand: a hand-written `/bills?status=` is a second place that names a filter's key and its value's encoding, and the
@@ -18,8 +19,10 @@ function sourceFiles(dir: string): string[] {
 }
 
 const isComment = (line: string) => /^\s*(\/\/|\/\*|\*|\{\/\*)/.test(line)
-// `/bills?` followed by a key and `=`: a filter written into a path. A request built from a variable (`/bills?${params}`) is not.
-const HAND_BUILT = /\/bills\?[A-Za-z_]+=/
+// `/bills?` followed by one of the filter's keys and `=`: a filter written into a path. The keys come from the shared
+// definitions, so a filter added later is covered. A request built from a variable (`/bills?${params}`) is not a link.
+const KEYS = [...BILL_FILTER_DEFS.filter(d => d.kind !== 'custom-field').map(d => d.name), CUSTOM_FIELD_KEY_PREFIX]
+const HAND_BUILT = new RegExp(`/bills\\?(${KEYS.join('|')})`)
 
 describe('links to the Bills page', () => {
   const files = SOURCE_DIRS.flatMap(dir => sourceFiles(join(ROOT, dir)))
