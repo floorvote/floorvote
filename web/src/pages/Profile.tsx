@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useReducer, useId } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useConfig } from '../context/ConfigContext'
@@ -18,6 +18,8 @@ import type { ModulesConfig } from '../lib/modules'
 import { DEFAULT_ORG_NOUN } from '../lib/orgNoun'
 import { emailChangedLabel, ownEmailChangeLabel, type EmailChangeStepFields } from '../lib/emailChangedLabel'
 import { getColorMode, setColorMode, type ColorMode } from '../lib/colorMode'
+import { emailChangeReducer, IDLE as EMAIL_CHANGE_IDLE } from '../lib/emailChangeState'
+import { EmailChangePill } from '../components/EmailChangePill'
 
 const SECTION_CARD: React.CSSProperties = { ...CARD, padding: 24, marginBottom: 20 }
 
@@ -262,26 +264,46 @@ export function Profile() {
     }
   }
 
-  // Change email. Nothing changes until the new address confirms, so the form
-  // only asks for the address and reports where the link went. The request is
+  // Change email, inline in the email row. Nothing changes until the new
+  // address confirms, so the row only asks for the address and reports where
+  // the link went. The states live in lib/emailChangeState. The request is
   // gated by Turnstile like the sign-in form, when the instance has a site key.
-  const [changeEmailOpen, setChangeEmailOpen] = useState(false)
-  const [newEmail, setNewEmail] = useState('')
-  const [changeEmailSending, setChangeEmailSending] = useState(false)
-  const [changeEmailError, setChangeEmailError] = useState<string | null>(null)
-  const [changeEmailSentTo, setChangeEmailSentTo] = useState<string | null>(null)
+  const [emailChange, dispatchEmailChange] = useReducer(emailChangeReducer, EMAIL_CHANGE_IDLE)
   // null until /auth/demo-mode answers; '' means no widget.
   const [turnstileSiteKey, setTurnstileSiteKey] = useState<string | null>(null)
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
   const [turnstileKey, setTurnstileKey] = useState(0) // bump for a fresh single-use token
-  const changeEmailReady = !changeEmailSending && !!newEmail.trim() && turnstileSiteKey !== null
-    && (!turnstileSiteKey || !!turnstileToken)
+  const turnstileOk = turnstileSiteKey !== null && (!turnstileSiteKey || !!turnstileToken)
+  const changeEmailReady = emailChange.kind === 'editing' && !emailChange.sending && !!emailChange.value.trim() && turnstileOk
+  const resendReady = emailChange.kind === 'pending' && !emailChange.busy && turnstileOk
+  const resendBusy = emailChange.kind === 'pending' && emailChange.busy
+  const emailErrorId = useId()
+  const emailInputRef = useRef<HTMLInputElement>(null)
+  const changeEmailButtonRef = useRef<HTMLButtonElement>(null)
+  const resendButtonRef = useRef<HTMLButtonElement>(null)
+  // Where keyboard focus goes after the next render. The `n` makes a repeat
+  // request for the same place count as a new one.
+  const [emailFocus, setEmailFocus] = useState<{ target: 'input' | 'open' | 'resend'; n: number } | null>(null)
+  function focusEmail(target: 'input' | 'open' | 'resend') {
+    setEmailFocus(prev => ({ target, n: (prev?.n ?? 0) + 1 }))
+  }
+  useEffect(() => {
+    if (!emailFocus) return
+    const el = { input: emailInputRef, open: changeEmailButtonRef, resend: resendButtonRef }[emailFocus.target].current
+    el?.focus()
+  }, [emailFocus, emailChange.kind, resendBusy])
+
+  // The change confirmed from the new address: the account email caught up.
+  useEffect(() => {
+    if (emailChange.kind === 'pending' && user?.email && user.email.toLowerCase() === emailChange.to.toLowerCase()) {
+      dispatchEmailChange({ type: 'confirmed', email: user.email })
+    }
+  }, [user?.email, emailChange])
 
   function openChangeEmail() {
     if (demoLocked) return
-    setChangeEmailOpen(true)
-    setChangeEmailError(null)
-    setNewEmail('')
+    dispatchEmailChange({ type: 'open' })
+    focusEmail('input')
     if (turnstileSiteKey === null) {
       apiFetch<{ turnstileSiteKey?: string }>('/auth/demo-mode')
         .then((r) => setTurnstileSiteKey(r.turnstileSiteKey ?? ''))
@@ -289,26 +311,55 @@ export function Profile() {
     }
   }
 
-  async function handleChangeEmail(e: React.FormEvent) {
-    e.preventDefault()
-    if (!changeEmailReady) return
-    setChangeEmailSending(true)
-    setChangeEmailError(null)
+  function cancelChangeEmail() {
+    dispatchEmailChange({ type: 'cancel' })
+    focusEmail('open')
+  }
+
+  function escapeCancelsEdit(e: React.KeyboardEvent) {
+    if (e.key === 'Escape' && !(emailChange.kind === 'editing' && emailChange.sending)) {
+      e.preventDefault()
+      cancelChangeEmail()
+    }
+  }
+
+  async function requestEmailChange(email: string, resend: boolean) {
+    dispatchEmailChange({ type: resend ? 'resend' : 'send' })
     try {
       const r = await apiFetch<{ ok: true; email: string }>('/users/me/email-change', {
         method: 'POST',
-        body: JSON.stringify({ email: newEmail, turnstileToken }),
+        body: JSON.stringify({ email, turnstileToken }),
       })
-      setChangeEmailSentTo(r.email)
-      setChangeEmailOpen(false)
+      if (resend) {
+        dispatchEmailChange({ type: 'resent', announce: `We sent the link to ${r.email} again.` })
+      } else {
+        dispatchEmailChange({
+          type: 'sent',
+          to: r.email,
+          announce: `We sent a confirmation link to ${r.email}. Your email stays ${user?.email} until you open that link and confirm. It expires in 24 hours.`,
+        })
+      }
+      focusEmail('resend')
     } catch (err) {
-      setChangeEmailError(err instanceof ApiError ? err.message : 'Failed to send the confirmation. Please try again.')
+      const message = err instanceof ApiError ? err.message : 'Failed to send the confirmation. Please try again.'
+      if (resend) {
+        dispatchEmailChange({ type: 'resendFailed', message })
+        focusEmail('resend')
+      } else {
+        dispatchEmailChange({ type: 'refused', message })
+        focusEmail('input')
+      }
     } finally {
-      setChangeEmailSending(false)
       // Turnstile tokens are single use: remount the widget for the next try.
       setTurnstileToken(null)
       setTurnstileKey((k) => k + 1)
     }
+  }
+
+  function handleChangeEmail(e: React.FormEvent) {
+    e.preventDefault()
+    if (!changeEmailReady || emailChange.kind !== 'editing') return
+    void requestEmailChange(emailChange.value, false)
   }
 
   // Account: login activity, deactivation, deletion
@@ -452,13 +503,14 @@ export function Profile() {
               }}
             />
           </div>
-          <div>
+          <div data-testid="email-row">
             <span style={FORM_LABEL}>Email</span>
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 10 }}>
               <span style={{ fontSize: fontSize.base, color: color.textPrimary, overflowWrap: 'anywhere' }}>{user?.email ?? '—'}</span>
-              {!changeEmailOpen && (
+              {(emailChange.kind === 'idle' || emailChange.kind === 'confirmed') && (
                 <button
                   type="button"
+                  ref={changeEmailButtonRef}
                   onClick={openChangeEmail}
                   disabled={demoLocked}
                   style={{
@@ -471,67 +523,80 @@ export function Profile() {
                 </button>
               )}
             </div>
-          </div>
-        </div>
 
-        {changeEmailOpen && (
-          <form onSubmit={handleChangeEmail} style={{ marginBottom: 20, maxWidth: 400 }}>
-            <label style={FORM_LABEL} htmlFor="new-email-input">New email</label>
-            <input
-              id="new-email-input"
-              type="email"
-              autoComplete="email"
-              value={newEmail}
-              onChange={(e) => setNewEmail(e.target.value)}
-              style={{
-                display: 'block', width: '100%', fontSize: fontSize.base, padding: '8px 12px',
-                border: `1px solid ${color.borderStrong}`, borderRadius: radius.md, outline: 'none',
-                color: color.textPrimary, boxSizing: 'border-box',
-              }}
+            {emailChange.kind === 'editing' && (
+              <form
+                onSubmit={handleChangeEmail}
+                style={{ marginTop: 6 }}
+              >
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+                  <input
+                    ref={emailInputRef}
+                    type="email"
+                    autoComplete="email"
+                    aria-label="New email"
+                    value={emailChange.value}
+                    onChange={(e) => dispatchEmailChange({ type: 'edit', value: e.target.value })}
+                    onKeyDown={escapeCancelsEdit}
+                    aria-invalid={emailChange.error ? 'true' : undefined}
+                    aria-describedby={emailChange.error ? emailErrorId : undefined}
+                    style={{
+                      flex: '1 1 160px', minWidth: 0, fontSize: fontSize.base, padding: '6px 10px',
+                      border: `1px solid ${emailChange.error ? color.textErrorRed : color.borderStrong}`,
+                      borderRadius: radius.md, outline: 'none', color: color.textPrimary, boxSizing: 'border-box',
+                    }}
+                  />
+                  <button
+                    type="submit"
+                    disabled={!changeEmailReady}
+                    style={{
+                      ...primaryButtonColors(!changeEmailReady), border: 'none', borderRadius: radius.md,
+                      padding: '6px 14px', fontSize: fontSize.sm, fontWeight: fontWeight.medium,
+                      cursor: changeEmailReady ? 'pointer' : 'not-allowed',
+                    }}
+                  >
+                    {emailChange.sending ? 'Sending…' : 'Send confirmation'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelChangeEmail}
+                    onKeyDown={escapeCancelsEdit}
+                    disabled={emailChange.sending}
+                    style={{
+                      background: 'none', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md,
+                      padding: '6px 12px', fontSize: fontSize.sm, color: color.textSecondary,
+                      cursor: emailChange.sending ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+                {emailChange.error && (
+                  <div id={emailErrorId} role="alert" style={{ fontSize: fontSize.sm, color: color.textErrorRed, marginTop: 6 }}>{emailChange.error}</div>
+                )}
+                {turnstileSiteKey && (
+                  <div style={{ marginTop: 8 }}>
+                    <Turnstile key={turnstileKey} sitekey={turnstileSiteKey} onToken={setTurnstileToken} />
+                  </div>
+                )}
+              </form>
+            )}
+
+            <EmailChangePill
+              state={emailChange}
+              onResend={() => { if (emailChange.kind === 'pending' && resendReady) void requestEmailChange(emailChange.to, true) }}
+              onCancel={cancelChangeEmail}
+              resendDisabled={!resendReady}
+              resendRef={resendButtonRef}
+              confirmedAnnounce={user?.email ? `Your email is now ${user.email}.` : undefined}
             />
-            <div style={{ ...HELPER_TEXT, marginTop: 4 }}>
-              We&apos;ll email a link to the new address. Your email changes only when you open it and confirm.
-            </div>
-            {turnstileSiteKey && (
-              <div style={{ marginTop: 12 }}>
+            {emailChange.kind === 'pending' && turnstileSiteKey && (
+              <div style={{ marginTop: 8 }}>
                 <Turnstile key={turnstileKey} sitekey={turnstileSiteKey} onToken={setTurnstileToken} />
               </div>
             )}
-            {changeEmailError && (
-              <div role="alert" style={{ fontSize: fontSize.sm, color: color.textErrorRed, marginTop: 8 }}>{changeEmailError}</div>
-            )}
-            <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
-              <button
-                type="submit"
-                disabled={!changeEmailReady}
-                style={{
-                  ...primaryButtonColors(!changeEmailReady), border: 'none', borderRadius: radius.md,
-                  padding: '8px 20px', fontSize: fontSize.base, fontWeight: fontWeight.medium,
-                  cursor: changeEmailReady ? 'pointer' : 'not-allowed',
-                }}
-              >
-                {changeEmailSending ? 'Sending…' : 'Send confirmation'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setChangeEmailOpen(false)}
-                style={{
-                  background: 'none', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md,
-                  padding: '8px 16px', fontSize: fontSize.base, color: color.textSecondary, cursor: 'pointer',
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        )}
-
-        {changeEmailSentTo && !changeEmailOpen && (
-          <div role="status" style={{ marginBottom: 20, padding: '10px 12px', background: color.bgInfo, borderRadius: radius.md, fontSize: fontSize.sm, color: color.textPrimary }}>
-            We sent a confirmation link to <strong>{changeEmailSentTo}</strong>. Your email stays {user?.email} until you
-            open that link and confirm. It expires in 24 hours.
           </div>
-        )}
+        </div>
 
         <div style={{ marginBottom: 20 }}>
           <label style={FORM_LABEL} htmlFor="title-input">Title</label>

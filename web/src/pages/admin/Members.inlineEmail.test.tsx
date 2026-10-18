@@ -156,7 +156,7 @@ describe('Members row: email change states', () => {
       expect(await within(row).findByText('✓ Changed today')).toBeInTheDocument()
       expect(within(row).getByText('jane@example.com')).toBeInTheDocument()
       expect(within(row).queryByRole('button', { name: 'Resend' })).not.toBeInTheDocument()
-      expect(within(row).getByRole('status')).toHaveTextContent('New invite sent to jane@example.com.')
+      expect(within(row).getByRole('status')).toHaveTextContent('Invite address changed to jane@example.com, and a new invite was sent.')
       await waitFor(() => expect(within(row).getByRole('button', { name: '···' })).toHaveFocus())
     })
   })

@@ -21,6 +21,8 @@ import { MissingRequiredReason, useRequiredSubmit } from '../../components/Requi
 import { inlineEditCancelStyle, inlineEditSaveStyle } from '../../lib/inlineEditStyles'
 import { ChangeEmailDialog } from '../../components/ChangeEmailDialog'
 import { emailChangedLabel, memberEmailChangeLabel, type EmailChangeStepFields } from '../../lib/emailChangedLabel'
+import { emailChangeReducer, IDLE as EMAIL_CHANGE_IDLE, type EmailChangeAction, type EmailChangeState } from '../../lib/emailChangeState'
+import { EmailChangePill } from '../../components/EmailChangePill'
 
 type Role = { id: string; name: string }
 
@@ -261,6 +263,13 @@ export function Members() {
 
   // "Change email…" dialog: the pending invite being edited, if any.
   const [changeEmailMember, setChangeEmailMember] = useState<Member | null>(null)
+  // Where each member's email change stands, shown as a pill in their row
+  // (lib/emailChangeState). The editing step itself is the dialog above.
+  const [emailChanges, setEmailChanges] = useState<Record<string, EmailChangeState>>({})
+  const resendButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+  function dispatchEmailChange(id: string, action: EmailChangeAction) {
+    setEmailChanges(prev => ({ ...prev, [id]: emailChangeReducer(prev[id] ?? EMAIL_CHANGE_IDLE, action) }))
+  }
 
   // Owner-only account-deletion policy toggle
   const [accountDeletionEnabled, setAccountDeletionEnabled] = useState(false)
@@ -549,6 +558,7 @@ export function Members() {
     setChangeEmailMember(null)
     if (pending) {
       // An active member's address changes only when they confirm it from the new one.
+      dispatchEmailChange(member.id, { type: 'sent', to: email, announce: `Link sent to ${email}. The address changes once they confirm it.` })
       setToast(`Confirmation sent to ${email}. The change takes effect once it is confirmed.`)
       setTimeout(() => setToast(null), 4000)
       actionsTriggerRefs.current[member.id]?.focus()
@@ -557,10 +567,41 @@ export function Members() {
     // The new invite is now the latest email, with no outcome yet, so the
     // row is a plain pending invite again (as the next members fetch says).
     setMembers(prev => prev.map(m => (m.id === member.id ? { ...m, email, emailBounce: null } : m)))
+    dispatchEmailChange(member.id, { type: 'confirmed', email })
     setToast(`New invite sent to ${email}.`)
     setTimeout(() => setToast(null), 4000)
     actionsTriggerRefs.current[member.id]?.focus()
   }
+
+  async function handleResendEmailChange(member: Member, to: string) {
+    dispatchEmailChange(member.id, { type: 'resend' })
+    try {
+      await apiFetch(`/admin/members/${member.id}/change-email`, { method: 'POST', body: JSON.stringify({ email: to }) })
+      dispatchEmailChange(member.id, { type: 'resent', announce: `Link sent again to ${to}.` })
+    } catch (err) {
+      dispatchEmailChange(member.id, {
+        type: 'resendFailed',
+        message: err instanceof ApiError ? err.message : "Couldn't send the link again. Try again.",
+      })
+    }
+    // The button was disabled while sending, which drops focus.
+    requestAnimationFrame(() => resendButtonRefs.current[member.id]?.focus())
+  }
+
+  function handleCancelEmailChange(member: Member) {
+    dispatchEmailChange(member.id, { type: 'cancel' })
+    actionsTriggerRefs.current[member.id]?.focus()
+  }
+
+  // A members fetch that already shows the new address means they confirmed it.
+  useEffect(() => {
+    for (const m of members) {
+      const state = emailChanges[m.id]
+      if (state?.kind === 'pending' && state.to.toLowerCase() === m.email.toLowerCase()) {
+        dispatchEmailChange(m.id, { type: 'confirmed', email: m.email })
+      }
+    }
+  }, [members, emailChanges])
 
   async function handleSetMemberRoles(memberId: string, roleIds: string[]) {
     try {
@@ -1059,6 +1100,16 @@ export function Members() {
                         email={member.email}
                         title={member.title}
                         isSelf={isSelf}
+                      />
+                      <EmailChangePill
+                        state={emailChanges[member.id] ?? EMAIL_CHANGE_IDLE}
+                        onResend={() => {
+                          const state = emailChanges[member.id]
+                          if (state?.kind === 'pending') void handleResendEmailChange(member, state.to)
+                        }}
+                        onCancel={() => handleCancelEmailChange(member)}
+                        resendRef={(el) => { resendButtonRefs.current[member.id] = el }}
+                        confirmedAnnounce={`Invite address changed to ${member.email}, and a new invite was sent.`}
                       />
                     </td>
                     <td data-label="Role" style={{ padding: '10px 12px', color: color.textSlate500 }}>
