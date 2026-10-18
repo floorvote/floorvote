@@ -179,4 +179,58 @@ describe('Config: the dropdown options editor sends renames', () => {
     expect(body.options).toEqual(['Beginning', 'Late'])
     expect(body.renames).toEqual([{ from: 'Early', to: 'Beginning' }])
   })
+
+  describe('focus after removing a row', () => {
+    const remove = (n: number) => {
+      const button = screen.getByRole('button', { name: `Remove option ${n}` })
+      button.focus()
+      fireEvent.click(button)
+    }
+
+    it('moves to the next row\'s input', async () => {
+      await openEditor()
+      remove(1)
+      expect(document.activeElement).toBe(screen.getByLabelText('Option 1'))
+      expect((document.activeElement as HTMLInputElement).value).toBe('Mid')
+    })
+
+    it('moves to the previous row\'s input when the last row is removed', async () => {
+      await openEditor()
+      remove(3)
+      expect(document.activeElement).toBe(screen.getByLabelText('Option 2'))
+      expect((document.activeElement as HTMLInputElement).value).toBe('Mid')
+    })
+
+    it('moves to the Add option button when no rows are left', async () => {
+      await openEditor()
+      remove(1)
+      remove(1)
+      remove(1)
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Add option' }))
+    })
+
+    it('keeps focus in a row while its text is edited', async () => {
+      await openEditor()
+      const input = screen.getByLabelText('Option 2')
+      input.focus()
+      fireEvent.change(input, { target: { value: 'Middle' } })
+      expect(document.activeElement).toBe(screen.getByLabelText('Option 2'))
+    })
+
+    it('keeps each row\'s original text with the row after a removal above it', async () => {
+      await openEditor()
+      remove(1)
+      type('Option 1', 'Center')
+      const body = await save()
+      expect(body.options).toEqual(['Center', 'Late'])
+      expect(body.renames).toEqual([{ from: 'Mid', to: 'Center' }])
+    })
+  })
+
+  it('sends no renames when the editor is saved untouched', async () => {
+    await openEditor()
+    const body = await save()
+    expect(body.options).toEqual(['Early', 'Mid', 'Late'])
+    expect('renames' in body).toBe(false)
+  })
 })
