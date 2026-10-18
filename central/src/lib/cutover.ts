@@ -182,6 +182,8 @@ async function planContext(provider: Provider, env: Env, db: Db) {
       return out
     },
     people: () => (held ??= base.people()),
+    // A plan is a dry run: what a provider would alert on is logged, and no one is emailed.
+    alert: async ({ subject }) => { console.warn(`[cutover] plan for ${provider.id}: alert not sent: ${subject}`) },
   }
   return { ctx, provisional }
 }

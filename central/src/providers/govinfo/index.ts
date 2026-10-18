@@ -270,7 +270,7 @@ async function readInFull(
   const dated = types.every(t => built.get(t))
   const since = types.map(t => built.get(t)!).reduce((a, b) => laterOf(a, b), newest ?? built.get(types[0])!)
   const etag = dated ? writeMark({ congress, since, full: ctx.today, types, meetings }) : null
-  await alertVanished(congress, missing, sessionId, ctx)
+  await alertVanished(congress, types, missing, sessionId, ctx)
   return { records, etag }
 }
 
@@ -281,13 +281,20 @@ async function readInFull(
  * has no bills yet. Only a full read says so: a pass between full reads
  * legitimately returns no records for most types.
  */
-async function alertVanished(congress: number, missing: GovInfoType[], sessionId: number, ctx: ProviderContext): Promise<void> {
+async function alertVanished(congress: number, answered: GovInfoType[], missing: GovInfoType[], sessionId: number, ctx: ProviderContext): Promise<void> {
+  // One alert per outage: the cache holds a key for each type already alerted on, and drops it once the type's zip answers.
+  const alerted = await ctx.cache.list(`alerted/${congress}/`)
+  const keyOf = (type: GovInfoType) => `alerted/${congress}/${type}`
+  const answeredAgain = answered.map(keyOf).filter(k => alerted.has(k))
+  if (answeredAgain.length > 0) await ctx.cache.drop(answeredAgain)
   for (const type of missing) {
+    if (alerted.has(keyOf(type))) continue
     if (!await ctx.hasStored(sessionId, `${congress}/${type.toUpperCase()}[0-9]*`)) continue
     await ctx.alert({
       subject: `the ${type} Bill Status zip for Congress ${congress} is gone`,
-      text: `The ${type} Bill Status zip for Congress ${congress} answered 404, though central has stored ${type} bills for it. Those bills have stopped updating, and the other types kept syncing. Check GovInfo's bulk data for BILLSTATUS/${congress}/${type}.`,
+      text: `The ${type} Bill Status zip for Congress ${congress} answered 404, though central has stored ${type} bills for it. Those bills have stopped updating, and the other types kept syncing. Check GovInfo's bulk data for BILLSTATUS/${congress}/${type}. This is sent once for the outage, and again if the zip answers and then vanishes again.`,
     })
+    await ctx.cache.put({ [keyOf(type)]: new Date().toISOString() })
   }
 }
 
