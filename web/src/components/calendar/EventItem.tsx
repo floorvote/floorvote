@@ -4,6 +4,7 @@ import type { CalendarEvent } from '../../lib/calendarGrid'
 import type { BillOption } from '../BillPicker'
 import { EventFormFields, type EventFormValues } from './EventFormFields'
 import { EventLines } from './EventLines'
+import { CommitteeTag } from './CommitteeTag'
 import { EventSourceIcon } from './EventSourceIcon'
 import { HoverTooltip } from '../HoverTooltip'
 import { EVENT_CARD_BASE, eventSourceIcon } from '../../../../shared/eventLineModel'
@@ -80,6 +81,7 @@ export function EventItem({ event, isPast, isAdmin, editing, flashing, billOptio
           </HoverTooltip>
           <div style={{ flex: 1, minWidth: 0 }}>
             <EventLines event={event} linkChips clampDetails />
+            <CommitteeTag event={event} />
           </div>
           {canManage && isAdmin && (
             <div style={{ display: 'flex', gap: 2, flexShrink: 0, alignSelf: 'center' }}>

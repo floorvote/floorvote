@@ -74,54 +74,61 @@ const puts = (spy: ReturnType<typeof mockApi>) =>
 const getsOf = (spy: ReturnType<typeof mockApi>) =>
   spy.mock.calls.filter(([p, init]) => p === '/admin/event-rules' && !init?.method)
 
-const button = () => screen.findByRole('button', { name: /^Council events:/ })
+const button = () => screen.findByRole('button', { name: 'Committee events settings' })
+/** The section summary ("All events", "2 of 3 committees"), opening the menu first when it is closed. */
+async function summary() {
+  if (!screen.queryByRole('dialog')) await userEvent.setup().click(await button())
+  return (await screen.findByTestId('state-summary-DC')).textContent
+}
 async function openMenu() {
   const user = userEvent.setup()
   await user.click(await button())
-  return { user, menu: await screen.findByRole('dialog', { name: /council events/i }) }
+  return { user, menu: await screen.findByRole('dialog', { name: 'Committee events' }) }
 }
 
 beforeEach(() => { vi.restoreAllMocks(); demo.locked = false })
 
 describe('the Calendar page\'s committee events control', () => {
-  it('reads "Council events: All" by default, with no rules saved', async () => {
+  it('reads "All events" in the section summary by default, with no rules saved', async () => {
     mockApi(null)
     renderControl()
-    expect(await button()).toHaveAccessibleName('Council events: All')
-    expect(screen.getByRole('button', { name: 'Council events: All' })).toHaveAttribute('aria-haspopup', 'dialog')
+    expect(await button()).toHaveAttribute('aria-haspopup', 'dialog')
+    expect(await summary()).toBe('All events')
   })
 
   it('takes the body\'s name from the provider, and falls back to the legislature\'s when it names none', async () => {
     mockApi(null)
     const { unmount } = renderControl({ capabilities: caps('Assembly') })
-    expect(await screen.findByRole('button', { name: 'Assembly events: All' })).toBeInTheDocument()
+    await userEvent.setup().click(await button())
+    expect(await screen.findByRole('group', { name: 'DC Assembly' })).toBeInTheDocument()
     unmount()
     renderControl({ capabilities: caps() })
-    expect(await screen.findByRole('button', { name: 'Legislature events: All' })).toBeInTheDocument()
+    await userEvent.setup().click(await button())
+    expect(await screen.findByRole('group', { name: 'DC Legislature' })).toBeInTheDocument()
   })
 
   it('offers no control, and asks for nothing, where no covered state publishes its own calendar', async () => {
     const spy = mockApi(null)
     renderControl({ capabilities: { MD: { bodyEvents: false, deadlines: true } } })
     await act(async () => { await Promise.resolve() })
-    expect(screen.queryByRole('button', { name: /events:/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Committee events settings' })).not.toBeInTheDocument()
     expect(spy).not.toHaveBeenCalled()
   })
 
-  it('names a committee choice in the button', async () => {
+  it('names a committee choice in the section summary', async () => {
     mockApi({ committees: [ID(HOUSING), ID(YOUTH)], kinds: [], topics: [], trackedBills: false })
     renderControl()
-    expect(await screen.findByRole('button', { name: 'Council events: 2 committees' })).toBeInTheDocument()
+    expect(await summary()).toBe('2 of 3 committees')
   })
 
-  it('says one committee, not "1 committees", and "No committees" for an empty choice', async () => {
+  it('counts one committee, and none for an empty choice', async () => {
     mockApi({ committees: [ID(HOUSING)], kinds: [], topics: [], trackedBills: false })
     const { unmount } = renderControl()
-    expect(await screen.findByRole('button', { name: 'Council events: 1 committee' })).toBeInTheDocument()
+    expect(await summary()).toBe('1 of 3 committees')
     unmount()
     mockApi(NO_RULES)
     renderControl()
-    expect(await screen.findByRole('button', { name: 'Council events: No committees' })).toBeInTheDocument()
+    expect(await summary()).toBe('0 of 3 committees')
   })
 
   it('opens a menu of two choices and the one note, and shows no committee list while All is chosen', async () => {
@@ -138,14 +145,14 @@ describe('the Calendar page\'s committee events control', () => {
     expect(within(menu).queryByRole('button', { name: /^Save/ })).not.toBeInTheDocument()
   })
 
-  it('shows no preview, counts, kinds, event types, topics, or tracked-bill option', async () => {
+  it('shows no preview of events, kinds, event types, topics, or tracked-bill option, and counts only in the summary and the "Showing" line (#695)', async () => {
     mockApi({ committees: [ID(HOUSING)], kinds: [], topics: [], trackedBills: false }, {
       events: [{ id: 'e1', date: '2026-10-12', time: null, description: 'Housing roundtable', url: null, facets: {}, trackedOnAgenda: false, prioritizedOnAgenda: false }],
     })
     renderControl()
     const { menu } = await openMenu()
     expect(within(menu).queryByText(/Housing roundtable/)).not.toBeInTheDocument()
-    expect(within(menu).queryByText(/\d+ of \d+/)).not.toBeInTheDocument()
+    expect(within(menu).getAllByText(/\d+ of \d+/)).toHaveLength(2)
     expect(within(menu).queryByText(/Kinds|Event types|Topics|bill we track/i)).not.toBeInTheDocument()
     expect(within(menu).queryByRole('combobox')).not.toBeInTheDocument()
     expect(within(menu).queryByRole('textbox')).not.toBeInTheDocument()
@@ -159,7 +166,7 @@ describe('the Calendar page\'s committee events control', () => {
     await waitFor(() => expect(puts(spy)).toEqual([{ rules: NO_RULES }]))
     expect(within(menu).getByRole('radio', { name: 'Only these committees' })).toBeChecked()
     for (const c of [COW, HOUSING, YOUTH]) expect(within(menu).getByRole('checkbox', { name: c.name })).not.toBeChecked()
-    expect(screen.getByRole('button', { name: 'Council events: No committees' })).toBeInTheDocument()
+    expect(await summary()).toBe('0 of 3 committees')
   })
 
   it('saves each committee as it is checked, and drops it as it is unchecked', async () => {
@@ -175,7 +182,7 @@ describe('the Calendar page\'s committee events control', () => {
     await user.click(within(menu).getByRole('checkbox', { name: 'Committee on Housing' }))
     await waitFor(() => expect(puts(spy)).toHaveLength(3))
     expect(puts(spy)[2]).toEqual({ rules: { committees: [ID(COW)], kinds: [], topics: [], trackedBills: false } })
-    expect(screen.getByRole('button', { name: 'Council events: 1 committee' })).toBeInTheDocument()
+    expect(await summary()).toBe('1 of 3 committees')
   })
 
   it('clears the rules by choosing "All events", so every event shows again', async () => {
@@ -187,7 +194,7 @@ describe('the Calendar page\'s committee events control', () => {
     await user.click(within(menu).getByRole('radio', { name: 'All events' }))
     await waitFor(() => expect(puts(spy)).toEqual([{ rules: null }]))
     expect(within(menu).queryByRole('checkbox')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Council events: All' })).toBeInTheDocument()
+    expect(await summary()).toBe('All events')
   })
 
   it('tells the calendar after each save, so it shows what the rule now selects', async () => {
@@ -223,7 +230,7 @@ describe('the Calendar page\'s committee events control', () => {
     expect(await within(menu).findByRole('alert')).toHaveTextContent(/could not save/i)
     expect(within(menu).getByRole('checkbox', { name: 'Committee of the Whole' })).not.toBeChecked()
     expect(within(menu).getByRole('checkbox', { name: 'Committee on Housing' })).toBeChecked()
-    expect(screen.getByRole('button', { name: 'Council events: 1 committee' })).toBeInTheDocument()
+    expect(await summary()).toBe('1 of 3 committees')
   })
 
   it('says when the committee list may be incomplete', async () => {
@@ -246,8 +253,8 @@ describe('the Calendar page\'s committee events control', () => {
   it('says it could not load, instead of a button naming the wrong choice, when the rules do not load', async () => {
     vi.spyOn(api, 'apiFetch').mockRejectedValue(new Error('boom'))
     renderControl()
-    expect(await screen.findByRole('button', { name: /Council events/ })).toBeDisabled()
-    expect(screen.queryByRole('button', { name: 'Council events: All' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Committee events settings' })).toBeDisabled()
+    expect(screen.queryByTestId('state-summary-DC')).not.toBeInTheDocument()
   })
 
   it('reads the same rules again on a fresh render: the control keeps nothing of its own', async () => {
@@ -259,7 +266,7 @@ describe('the Calendar page\'s committee events control', () => {
     await waitFor(() => expect(puts(spy)).toHaveLength(2))
     first.unmount()
     renderControl()
-    expect(await screen.findByRole('button', { name: 'Council events: 1 committee' })).toBeInTheDocument()
+    expect(await summary()).toBe('1 of 3 committees')
     const again = await openMenu()
     expect(within(again.menu).getByRole('checkbox', { name: 'Committee on Youth Affairs' })).toBeChecked()
     expect(getsOf(spy).length).toBeGreaterThanOrEqual(2)
@@ -382,7 +389,7 @@ describe('the Calendar page\'s committee events control', () => {
       expect(putCount).toBe(1)
       expect(within(menu).getByRole('checkbox', { name: 'Committee on Housing' })).not.toBeChecked()
       expect(within(menu).getByRole('checkbox', { name: 'Committee of the Whole' })).not.toBeChecked()
-      expect(screen.getByRole('button', { name: 'Council events: No committees' })).toBeInTheDocument()
+      expect(await summary()).toBe('0 of 3 committees')
       expect(within(menu).getByRole('status')).not.toHaveTextContent(/saved/i)
     })
 
@@ -400,7 +407,7 @@ describe('the Calendar page\'s committee events control', () => {
       expect(saved).toEqual(NO_RULES)
       expect(putCount).toBe(1)
       expect(within(menu).getByRole('radio', { name: 'Only these committees' })).toBeChecked()
-      expect(screen.getByRole('button', { name: 'Council events: No committees' })).toBeInTheDocument()
+      expect(await summary()).toBe('0 of 3 committees')
     })
 
     it('saves a choice made after the failure, on what the server holds', async () => {
@@ -414,7 +421,7 @@ describe('the Calendar page\'s committee events control', () => {
       await waitFor(() => expect(saved).toEqual({ committees: [ID(YOUTH), ID(COW)], kinds: [], topics: [], trackedBills: false }))
       await waitFor(() => expect(within(menu).queryByRole('alert')).not.toBeInTheDocument())
       expect(within(menu).getByRole('checkbox', { name: 'Committee on Housing' })).not.toBeChecked()
-      expect(screen.getByRole('button', { name: 'Council events: 2 committees' })).toBeInTheDocument()
+      expect(await summary()).toBe('2 of 3 committees')
     })
   })
 
@@ -484,13 +491,13 @@ describe('the Calendar page\'s committee events control', () => {
       expect(btn).toHaveAttribute('aria-expanded', 'false')
       btn.focus()
       await user.keyboard('{Enter}')
-      expect(await screen.findByRole('dialog', { name: /council events/i })).toBeInTheDocument()
+      expect(await screen.findByRole('dialog', { name: 'Committee events' })).toBeInTheDocument()
       expect(btn).toHaveAttribute('aria-expanded', 'true')
       await user.keyboard('{Escape}')
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
       expect(btn).toHaveAttribute('aria-expanded', 'false')
       await user.keyboard(' ')
-      expect(await screen.findByRole('dialog', { name: /council events/i })).toBeInTheDocument()
+      expect(await screen.findByRole('dialog', { name: 'Committee events' })).toBeInTheDocument()
     })
 
     it('puts the focus in the menu, and gives it back to the button on Escape', async () => {
@@ -523,7 +530,7 @@ describe('the Calendar page\'s committee events control', () => {
       mockApi(NO_RULES)
       renderControl()
       const { menu } = await openMenu()
-      expect(within(menu).getByRole('radiogroup', { name: /which council events/i })).toBeInTheDocument()
+      expect(within(menu).getByRole('radiogroup', { name: /which DC Council events/i })).toBeInTheDocument()
       expect(within(menu).getByRole('group', { name: 'Committees' })).toBeInTheDocument()
     })
 
