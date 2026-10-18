@@ -31,7 +31,7 @@ vi.stubGlobal('fetch', fetchMock)
 
 import { govinfo } from '../../src/providers/govinfo'
 import { clearRollCallCaches } from '../../src/providers/govinfo/client'
-import { clearMeetingCaches, DETAILS_PER_PASS, LIST_PAGE_SIZE } from '../../src/providers/govinfo/meetings'
+import { clearMeetingCaches, DETAILS_PER_PASS, LIST_PAGE_SIZE, QUARANTINE_AFTER } from '../../src/providers/govinfo/meetings'
 import { runBodyEventSync } from '../../src/cron/body-events'
 import { toHandle } from '../../src/lib/billHandle'
 import { providerContext } from '../../src/lib/providerContext'
@@ -64,7 +64,10 @@ let served: Map<string, () => Response>
 /** Every address asked for, in order. */
 let calls: string[]
 
-const seam = mainSeam(govinfo, { tenantId: 'usteam', env: { CONGRESS_API_KEY: CONGRESS_KEY } })
+/** The email binding ops alerts go out through, so a test sees each alert sent. The address is made up. */
+const mail = { send: vi.fn(async (_message: any) => ({})) }
+const ALERTS_TO = 'ops@example.org'
+const seam = mainSeam(govinfo, { tenantId: 'usteam', env: { CONGRESS_API_KEY: CONGRESS_KEY, EMAIL_PROVIDER: 'cloudflare', EMAIL: mail, ALERT_EMAILS: ALERTS_TO } })
 const keyless = mainSeam(govinfo, { tenantId: 'usteam' })
 const { makeRun, sentToTenant, getJson, queuedIds } = seam
 const db = () => drizzle(env.DB, { schema })
@@ -82,6 +85,7 @@ beforeEach(async () => {
   await resetCentral('2026-10-17T13:00:00Z')
   clearRollCallCaches()
   clearMeetingCaches()
+  mail.send.mockClear()
   net.paced.length = 0
   files = new Map([...fixtureFiles, ...rollCallBillFiles])
   served = rollCallNetwork()
@@ -932,7 +936,8 @@ describe('when the API fails', () => {
     const before = await established()
     feed.add('900002', HEARING, m => { m.date = '2026-11-18T15:00:00Z' })
     feed.edit('900002', m => { delete m.date })
-    for (let i = 0; i < 3; i++) {
+    // Short of the passes that quarantine it (below).
+    for (let i = 0; i < QUARANTINE_AFTER - 1; i++) {
       await syncCalendar()
       await seam.syncAndIngest(makeRun())
       await unchanged(before)
@@ -1001,6 +1006,203 @@ describe('when the API fails', () => {
     const run = makeRun()
     await runBodyEventSync(govinfo, run.env as any, db())
     expect(feed.listRequests).toHaveLength(1)
+  })
+})
+
+describe('a meeting that can\'t be read, pass after pass', () => {
+  /** The meetings the cache counts failing passes for: struck once or more, quarantined or not. */
+  const failing = async () => (await env.DB.prepare(`SELECT key FROM provider_cache WHERE provider = 'govinfo' AND key LIKE 'failing/119/%' ORDER BY key`).all<{ key: string }>()).results.map(r => r.key.slice('failing/119/'.length))
+  const isWarm = async () => !!(await env.DB.prepare(`SELECT key FROM provider_cache WHERE provider = 'govinfo' AND key = 'warm/119'`).first())
+  /** Every alert sent, as its recipients, subject, and text. */
+  const alerts = () => mail.send.mock.calls.map(([m]: any[]) => ({ to: [m.to].flat(), subject: String(m.subject), text: String(m.text) }))
+  /** The alerts that name a meeting. */
+  const alertsNaming = (id: string) => alerts().filter(a => `${a.subject}\n${a.text}`.includes(id))
+
+  /** A calendar with its first pass done, and what it shows of the meeting that will break, and of the bills it takes up. */
+  async function established() {
+    linkBills()
+    await pass()
+    const before = { upcoming: await eventOf(UPCOMING), markup: await eventOf(MARKUP), hb43: await billEntries('HB43'), hb131: await billEntries('HB131') }
+    expect(before.hb43).toHaveLength(2)
+    expect(before.hb131).toHaveLength(1)
+    return before
+  }
+  /** UPCOMING's answer stops parsing (no date), and the list says it changed, so every pass reads it again. */
+  let upcomingDate: string
+  function breakUpcoming() {
+    upcomingDate = feed.meetings.get(UPCOMING).date
+    feed.edit(UPCOMING, m => { delete m.date })
+  }
+  /** Another meeting changes meanwhile, so a pass that finishes shows something new. */
+  function retitleMarkup() {
+    feed.edit(MARKUP, m => { m.title = 'A retitled markup' })
+  }
+  const passes = async (n: number) => {
+    const out = []
+    for (let i = 0; i < n; i++) out.push(await pass())
+    return out
+  }
+  /** UPCOMING broken for QUARANTINE_AFTER passes, after checking the last of them finished with it quarantined. */
+  async function quarantineUpcoming() {
+    breakUpcoming()
+    const last = (await passes(QUARANTINE_AFTER)).at(-1)!
+    expect(last.reports[0]).toMatchObject({ failed: 0 })
+    expect(await failing()).toEqual([UPCOMING])
+  }
+
+  it('still fails the pass closed, and alerts no one, on each pass short of QUARANTINE_AFTER', async () => {
+    const before = await established()
+    breakUpcoming()
+    retitleMarkup()
+    for (let i = 0; i < QUARANTINE_AFTER - 1; i++) {
+      const { reports } = await pass()
+      expect(reports[0]).toMatchObject({ months: 0, failed: 5 })
+      expect(await eventOf(MARKUP)).toEqual(before.markup)
+      expect(await billEntries('HB43')).toEqual(before.hb43)
+    }
+    expect(alerts()).toEqual([])
+  })
+
+  it('quarantines it on the QUARANTINE_AFTER-th failing pass: the rest of the calendar updates, and its own event and bill entries stay as they were', async () => {
+    const before = await established()
+    breakUpcoming()
+    retitleMarkup()
+    const reports = (await passes(QUARANTINE_AFTER)).map(p => p.reports[0])
+    expect(reports.at(-1)).toMatchObject({ months: 5, failed: 0 })
+    // The rest updates: the markup's new title, on the body calendar and on the bill it takes up.
+    expect((await eventOf(MARKUP)).agenda[0].topic).toBe('A retitled markup')
+    expect((await billEntries('HB43')).find((c: any) => c.date === '2026-09-15').description).toMatch(/A retitled markup/)
+    // The quarantined meeting is as it was, everywhere.
+    expect(await eventOf(UPCOMING)).toEqual(before.upcoming)
+    expect(await billEntries('HB131')).toEqual(before.hb131)
+    expect((await billEntries('HB43')).find((c: any) => c.date === '2026-10-23')).toEqual(before.hb43.find((c: any) => c.date === '2026-10-23'))
+    expect(await failing()).toEqual([UPCOMING])
+  })
+
+  it('alerts once, naming the event id, and not again on the passes after', async () => {
+    await established()
+    breakUpcoming()
+    await passes(QUARANTINE_AFTER)
+    expect(alerts()).toHaveLength(1)
+    expect(alerts()[0].to).toEqual([ALERTS_TO])
+    expect(alerts()[0].subject).toContain(UPCOMING)
+    expect(alerts()[0].text).toContain(UPCOMING)
+    await passes(2)
+    expect(alerts()).toHaveLength(1)
+  })
+
+  it('asks for a quarantined meeting again on every pass', async () => {
+    await established()
+    await quarantineUpcoming()
+    const asked = feed.detailIds.length
+    await pass()
+    expect(feed.detailIds.slice(asked)).toContain(UPCOMING)
+  })
+
+  it('releases a quarantined meeting once it parses, and updates it normally', async () => {
+    await established()
+    await quarantineUpcoming()
+    feed.edit(UPCOMING, m => { m.date = upcomingDate; m.title = 'Back again' })
+    const { reports } = await pass()
+    expect(reports[0]).toMatchObject({ failed: 0 })
+    expect((await eventOf(UPCOMING)).agenda[0].topic).toBe('Back again')
+    expect((await billEntries('HB131')).map((c: any) => c.description)).toEqual([expect.stringMatching(/Back again/)])
+    expect(await failing()).toEqual([])
+  })
+
+  it('counts from the start again for a released meeting that breaks again: one failure fails the pass closed', async () => {
+    await established()
+    await quarantineUpcoming()
+    feed.edit(UPCOMING, m => { m.date = upcomingDate })
+    await pass()
+    feed.edit(UPCOMING, m => { delete m.date })
+    retitleMarkup()
+    const { reports } = await pass()
+    expect(reports[0]).toMatchObject({ months: 0, failed: 5 })
+  })
+
+  it('counts a meeting\'s failing passes, and remembers its alert, in what it keeps, so a restart loses neither', async () => {
+    await established()
+    breakUpcoming()
+    await passes(QUARANTINE_AFTER - 1)
+    // Each pass is a new isolate (clearMeetingCaches): what it knows of the failures is in the cache.
+    expect(await failing()).toEqual([UPCOMING])
+    retitleMarkup()
+    expect((await pass()).reports[0]).toMatchObject({ failed: 0 })
+    expect(alerts()).toHaveLength(1)
+    clearMeetingCaches()
+    await passes(2)
+    expect(alerts()).toHaveLength(1)
+  })
+
+  it('quarantines two meetings on the same passes, alerting once for each', async () => {
+    const before = await established()
+    breakUpcoming()
+    feed.edit(HEARING, m => { m.committees = 'not a list' })
+    retitleMarkup()
+    const reports = (await passes(QUARANTINE_AFTER)).map(p => p.reports[0])
+    expect(reports.at(-1)).toMatchObject({ months: 5, failed: 0 })
+    expect((await eventOf(MARKUP)).agenda[0].topic).toBe('A retitled markup')
+    expect(await eventOf(UPCOMING)).toEqual(before.upcoming)
+    expect(await failing()).toEqual([HEARING, UPCOMING].sort())
+    expect(alertsNaming(UPCOMING)).toHaveLength(1)
+    expect(alertsNaming(HEARING)).toHaveLength(1)
+    await pass()
+    expect(alertsNaming(UPCOMING)).toHaveLength(1)
+    expect(alertsNaming(HEARING)).toHaveLength(1)
+  })
+
+  it('quarantines nothing for an answer that isn\'t 200, which is the API failing and not the meeting: every pass fails closed', async () => {
+    const before = await established()
+    feed.edit(UPCOMING, m => { m.title = 'Changed' })
+    retitleMarkup()
+    feed.override.detail = id => (id === UPCOMING ? new Response('boom', { status: 500 }) : null)
+    for (const { reports } of await passes(QUARANTINE_AFTER + 1)) expect(reports[0]).toMatchObject({ months: 0, failed: 5 })
+    expect(await eventOf(MARKUP)).toEqual(before.markup)
+    expect(await failing()).toEqual([])
+    expect(alerts()).toEqual([])
+  })
+
+  it('forgets a quarantined meeting the list no longer names', async () => {
+    await established()
+    await quarantineUpcoming()
+    feed.remove(UPCOMING)
+    await pass()
+    expect(await failing()).toEqual([])
+  })
+
+  describe('during the first fill, with a meeting never read', () => {
+    /** More meetings than a pass reads, so the first passes leave the cache cold, and a broken one with the highest id, read first. */
+    function coldWithABrokenMeeting() {
+      for (let i = 0; i < 80; i++) feed.add(String(100000 + i), HEARING, m => { m.date = '2025-03-01T15:00:00Z' })
+      feed.add('900020', HEARING, m => { m.date = '2026-11-18T15:00:00Z' })
+      feed.edit('900020', m => { delete m.date })
+    }
+
+    it('shows nothing until it is quarantined, then fills the rest and goes warm without it', async () => {
+      coldWithABrokenMeeting()
+      linkBills()
+      await passes(QUARANTINE_AFTER - 1)
+      expect((await events()).events).toEqual([])
+      expect(await isWarm()).toBe(false)
+      // A failing pass still reads its share and stages it, so the pass that quarantines it finishes the first fill.
+      await pass()
+      expect((await events()).byUid.has(uid('900020'))).toBe(false)
+      expect((await events()).events).toHaveLength(IN_WINDOW)
+      expect(await isWarm()).toBe(true)
+      // Warm: a bill's calendar has its meetings.
+      expect((await billEntries('HB43')).map((c: any) => c.date)).toEqual(['2026-09-15', '2026-10-23'])
+    })
+
+    it('stays warm on the passes after, while the quarantined meeting still can\'t be read', async () => {
+      coldWithABrokenMeeting()
+      await passes(QUARANTINE_AFTER + 1)
+      expect(await isWarm()).toBe(true)
+      await passes(2)
+      expect(await isWarm()).toBe(true)
+      expect(await failing()).toEqual(['900020'])
+      expect(alertsNaming('900020')).toHaveLength(1)
+    })
   })
 })
 

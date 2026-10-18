@@ -452,6 +452,17 @@ export interface ProviderContext<K extends ProviderEnvKey = ProviderEnvKey> {
    * last one listed is the person instances already know.
    */
   people(): Promise<{ peopleId: number; name: string; role: string | null }[]>
+  /**
+   * Email the operators an ops alert (the `ALERT_EMAILS` recipients), for
+   * something a person has to look at that would otherwise go unnoticed,
+   * such as a record the provider has set aside because it can't read it.
+   * Core sends it, with the provider's id in the subject, and it never
+   * throws. With no recipients set it only logs. A throw doesn't always
+   * alert on its own (a failed body-events month is only logged), so call
+   * this for anything a person must see. The provider keeps whatever
+   * stops it alerting twice for one thing (`cache`).
+   */
+  alert(message: { subject: string; text: string }): Promise<void>
 }
 
 /** A session as central stores it, handed to the list methods. */

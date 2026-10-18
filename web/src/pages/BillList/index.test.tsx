@@ -43,7 +43,7 @@ const facetsState = vi.hoisted(() => ({
 // later tick than the mount commit) and control what it eventually resolves
 // with. Defaults to an immediate empty list, matching every test that doesn't
 // care about saved views.
-const viewsState: { deferred: boolean; response: { views: Array<{ id: string; name: string; query: string; slug?: string; previousSlug?: string | null }> } } =
+const viewsState: { deferred: boolean; response: { views: Array<{ id: string; name: string; query: string; slug?: string; previousSlug?: string | null; subscribed?: boolean }> } } =
   { deferred: false, response: { views: [] } }
 let resolveViews: ((v: unknown) => void) | null = null
 
@@ -122,7 +122,11 @@ const FACETS = {
 // What the instance covers, as GET /config reports it, handed to BillList
 // through ConfigContext. Null = config not loaded, which is what every test
 // that doesn't care about covered states gets.
-const configState: { value: { states: string[] } | null } = { value: null }
+const configState: { value: { states: string[]; modules?: Record<string, unknown> } | null } = { value: null }
+
+// #449: the member's own digest switch as GET /auth/me reports it, and what the envelope on a view row sent.
+const digestState = { memberOn: false }
+const digestCalls: Array<{ method: string; path: string; body: unknown }> = []
 
 vi.mock('../../lib/api', () => {
   class ApiError extends Error {
@@ -146,9 +150,13 @@ vi.mock('../../lib/api', () => {
       saveViewCalls.push({ name: body.name, query: body.query })
       return {} as T
     }
+    if (init?.method && (/^\/views\/[^/]+\/subscription$/.test(path) || path === '/users/me')) {
+      digestCalls.push({ method: init.method, path, body: JSON.parse(init.body as string) })
+      return {} as T
+    }
     if (path === '/auth/me') {
       return { id: 'demo-user', email: 'demo@example.com', name: 'Demo', role: 'owner',
-        title: null, canVote: true, emailDigestEnabled: false, lastSeenFeed: null } as T
+        title: null, canVote: true, emailDigestEnabled: digestState.memberOn, lastSeenFeed: null } as T
     }
     if (path === '/config') return CONFIG as T
     if (path === '/users/me/bills') return [] as T
@@ -219,7 +227,7 @@ import { MAX_SUBJECT_FILTERS } from '../../../../shared/limits'
 function Wrapper({ children }: { children: ReactNode }) {
   return (
     <MemoryRouter initialEntries={['/bills']}>
-      <ConfigContext value={{ config: configState.value, multiState: (configState.value?.states.length ?? 0) > 1, loading: false }}>
+      <ConfigContext value={{ config: configState.value as never, multiState: (configState.value?.states.length ?? 0) > 1, loading: false }}>
         <AuthProvider>
           <SidebarRefreshProvider>{children}</SidebarRefreshProvider>
           <LocationProbe />
@@ -258,6 +266,8 @@ beforeEach(() => {
   customFieldsState.response = []
   resolveCustomFields = null
   configState.value = null
+  digestState.memberOn = false
+  digestCalls.length = 0
   FACETS.subject = { 'UT:Counties': 1 }
   FACETS.subjectStates = ['UT']
   FACETS.billStates = ['UT']
@@ -697,6 +707,74 @@ describe('BillList mobile filter sheet — reset', () => {
       expect(url.get('status')).toBeNull()
     })
     expect((screen.getByPlaceholderText('Search…') as HTMLInputElement).value).toBe('')
+  })
+})
+
+// #449: the envelope on a view row includes the view in the member's own digest. It is
+// offered only where the instance's digest is on, and asks first when the member's is off.
+describe('BillList saved views — include in the digest', () => {
+  const VIEW = { id: 'v1', name: 'Passed bills', query: 'status=4', slug: 'passed-bills', subscribed: false }
+  const digestOn = { states: ['RI'], modules: { 'email-digest': { enabled: true } } }
+
+  async function openMenu() {
+    render(<BillList />, { wrapper: Wrapper })
+    await screen.findByText('Early Voting Centers')
+    fireEvent.click(await screen.findByRole('button', { name: /^views$/i }))
+    await screen.findByText('Passed bills')
+  }
+
+  it('offers no envelope when the admin has turned the digest off for the instance', async () => {
+    viewsState.response = { views: [VIEW] }
+    configState.value = { states: ['RI'], modules: { 'email-digest': { enabled: false } } }
+    await openMenu()
+    expect(screen.queryByRole('button', { name: /in your daily digest/i })).toBeNull()
+  })
+
+  it('offers an envelope when the instance digest is on, and the cadence follows its setting', async () => {
+    viewsState.response = { views: [VIEW] }
+    configState.value = { states: ['RI'], modules: { 'email-digest': { enabled: true, settings: { frequency: 'weekly' } } } }
+    await openMenu()
+    expect(screen.getByRole('button', { name: 'Include "Passed bills" in your weekly digest' })).toBeInTheDocument()
+  })
+
+  it('includes the view for a member whose digest is on: saves it and fills the envelope', async () => {
+    digestState.memberOn = true
+    viewsState.response = { views: [VIEW] }
+    configState.value = digestOn
+    await openMenu()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Include "Passed bills" in your daily digest' }))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Remove "Passed bills" from your daily digest' })).toHaveAttribute('aria-pressed', 'true'))
+    expect(digestCalls).toEqual([{ method: 'PUT', path: '/views/v1/subscription', body: { subscribed: true } }])
+  })
+
+  it('removes an included view the same way', async () => {
+    digestState.memberOn = true
+    viewsState.response = { views: [{ ...VIEW, subscribed: true }] }
+    configState.value = digestOn
+    await openMenu()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove "Passed bills" from your daily digest' }))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Include "Passed bills" in your daily digest' })).toHaveAttribute('aria-pressed', 'false'))
+    expect(digestCalls).toEqual([{ method: 'PUT', path: '/views/v1/subscription', body: { subscribed: false } }])
+  })
+
+  it('offers to turn the digest on for a member whose digest is off, then turns it on and includes the view', async () => {
+    viewsState.response = { views: [VIEW] }
+    configState.value = digestOn
+    await openMenu()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Include "Passed bills" in your daily digest' }))
+    expect(digestCalls).toEqual([])
+    fireEvent.click(screen.getByRole('button', { name: 'Turn on digest' }))
+
+    await waitFor(() => expect(digestCalls).toHaveLength(2))
+    expect(digestCalls).toEqual([
+      { method: 'PATCH', path: '/users/me', body: { emailDigestEnabled: true } },
+      { method: 'PUT', path: '/views/v1/subscription', body: { subscribed: true } },
+    ])
   })
 })
 
