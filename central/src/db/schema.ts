@@ -160,7 +160,7 @@ export const billSasts = sqliteTable('bill_sasts', {
   type:           text('type').notNull(),
   sastBillNumber: text('sast_bill_number').notNull(),
   sastBillId:     integer('sast_bill_id').notNull(),
-}, (t) => [index('idx_bill_sasts_bill').on(t.billId)])
+}, (t) => [index('idx_bill_sasts_bill').on(t.billId), index('idx_bill_sasts_sast_bill_id').on(t.sastBillId)])
 
 export const billSubjects = sqliteTable('bill_subjects', {
   id:          text('id').primaryKey(),
