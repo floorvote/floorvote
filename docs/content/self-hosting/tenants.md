@@ -186,6 +186,17 @@ namespace_id = "<unique-integer>"
   limit = 10
   period = 60
 
+# One-click mute link in reply emails — 120 requests per 60s per IP. Mail
+# providers send many members' unsubscribes from a few IPs, so it gets a higher
+# limit than login. Optional: without it the mute link uses LOGIN_RATE_LIMITER.
+# Needs its own unique namespace_id, different from the login limiter's.
+[[env.[slug].ratelimits]]
+name = "MUTE_LINK_RATE_LIMITER"
+namespace_id = "<another-unique-integer>"
+  [env.[slug].ratelimits.simple]
+  limit = 120
+  period = 60
+
 # Object-level authorization. Central reads `props.tenantId` — a per-binding value
 # Cloudflare sets at deploy time and guarantees is authentic — and rejects any
 # tenant-scoped call targeting a DIFFERENT tenant. Omit it and central falls back
