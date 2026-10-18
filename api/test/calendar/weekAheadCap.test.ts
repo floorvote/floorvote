@@ -162,4 +162,22 @@ describe('the week-ahead email, capped at 30 body events (#675)', () => {
     expect(html).not.toMatch(OVERFLOW)
     expect(html).toContain('Manage email settings')
   })
+
+  it('cuts the same events on every send when many share one time, whatever order they were stored in', async () => {
+    const db = getDb(env.DB)
+    const seed = async (ids: number[]) => {
+      await resetDb()
+      await applyMigrations()
+      await seedSession(await seedUser({ email: 'member@b.com' }))
+      await db.insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'week-ahead': { enabled: true, settings: { weeklyDay: String(new Date().getUTCDay()) } } }) })
+      for (const i of ids) {
+        await db.insert(calendarEvents).values({ id: `tie-${String(i).padStart(2, '0')}`, uid: `tie-${i}@test`, billId: null, source: 'body', sequence: 0, date: isoDay(2), time: '10:00:00', description: label(i), status: 'confirmed', ruleMatch: null })
+      }
+      return listed(await emailed(), 0, 35)
+    }
+    const forward = await seed(Array.from({ length: 35 }, (_, i) => i))
+    const backward = await seed(Array.from({ length: 35 }, (_, i) => 34 - i))
+    expect(forward).toHaveLength(CAP)
+    expect(backward).toEqual(forward)
+  })
 })
