@@ -81,6 +81,7 @@ describe('GET /api/calendar/events, for date custom fields', () => {
       date: isoDay(5), time: null, location: null,
       description: 'Comment deadline: HB 12', details: null, url: null,
       status: 'confirmed', fieldName: 'Comment deadline',
+      committee: null, committeeId: null, jointWith: null, bodyState: null, shownByPriority: false,
       bills: [{ id: bill, billNumber: 'HB 12', billTitle: 'Test Bill', state: 'DC', priority: 'high', isDraft: false }],
     }])
   })
