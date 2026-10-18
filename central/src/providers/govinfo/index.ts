@@ -93,9 +93,9 @@ export const govinfo: Provider<'CONGRESS_API_KEY'> = {
       const listings = await readListings(congress, ctx)
       const changed = await readChanged(congress, mark, byBill, listings, ctx)
       if (changed) return changed
-      return readInFull(congress, mark, byBill, ctx, listings)
+      return readInFull(session.sessionId, congress, mark, byBill, ctx, listings)
     }
-    return readInFull(congress, mark, byBill, ctx)
+    return readInFull(session.sessionId, congress, mark, byBill, ctx)
   },
 
   /**
@@ -229,11 +229,12 @@ async function readListings(congress: number, ctx: ProviderContext) {
  * full too.
  */
 async function readInFull(
-  congress: number, previous: Mark | null, byBill: Map<string, MeasureCalendarEntry[]> | null, ctx: ProviderContext, listings?: Listings,
+  sessionId: number, congress: number, previous: Mark | null, byBill: Map<string, MeasureCalendarEntry[]> | null, ctx: ProviderContext, listings?: Listings,
 ): Promise<ProviderSnapshot> {
   const { listed, zipModified, newest } = listings ?? await readListings(congress, ctx)
   const found = new Map<string, Found>()
   const types: GovInfoType[] = []
+  const missing: GovInfoType[] = []
   const built = new Map<GovInfoType, string | null>()
   // One zip at a time, each read to its end before the next is asked for. A failure in any
   // of the eight throws before an id is minted, so a bad pass writes nothing.
@@ -245,7 +246,11 @@ async function readInFull(
       if (found.has(key)) throw new Error(`${name} repeats ${key}`)
       found.set(key, { key, record, hash })
     }, () => ctx.logCall('govinfo:BillStatusZip', { congress, type }))
-    if (!zip.found) continue
+    if (!zip.found) {
+      console.warn(`[sync-govinfo] Congress ${congress}: the ${type} Bill Status zip answered 404, so this read has no ${type} bills`)
+      missing.push(type)
+      continue
+    }
     types.push(type)
     built.set(type, zip.modified ?? zipModified.get(type) ?? null)
   }
@@ -265,7 +270,25 @@ async function readInFull(
   const dated = types.every(t => built.get(t))
   const since = types.map(t => built.get(t)!).reduce((a, b) => laterOf(a, b), newest ?? built.get(types[0])!)
   const etag = dated ? writeMark({ congress, since, full: ctx.today, types, meetings }) : null
+  await alertVanished(congress, missing, sessionId, ctx)
   return { records, etag }
+}
+
+/**
+ * A type whose zip was missing from a full read but has stored records for the
+ * Congress was there before and has vanished, so its bills have stopped updating:
+ * alert, and carry on, since the other types are fine. A type with none stored
+ * has no bills yet. Only a full read says so: a pass between full reads
+ * legitimately returns no records for most types.
+ */
+async function alertVanished(congress: number, missing: GovInfoType[], sessionId: number, ctx: ProviderContext): Promise<void> {
+  for (const type of missing) {
+    if (!await ctx.hasStored(sessionId, `${congress}/${type.toUpperCase()}[0-9]*`)) continue
+    await ctx.alert({
+      subject: `GovInfo: the ${type} Bill Status zip for Congress ${congress} is gone`,
+      text: `The ${type} Bill Status zip for Congress ${congress} answered 404, though central has stored ${type} bills for it. Those bills have stopped updating, and the other types kept syncing. Check GovInfo's bulk data for BILLSTATUS/${congress}/${type}.`,
+    })
+  }
 }
 
 /**

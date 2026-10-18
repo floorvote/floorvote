@@ -764,6 +764,8 @@ describe('a missing type zip is logged, and a type that vanishes after it had bi
     await claim()
     await syncAndIngest()
     const stored = await bill('SCR5')
+    const hashOf = async () => (await db().select().from(schema.providerRecords).where(eq(schema.providerRecords.billId, await billId('HB3132'))).get())!.rawHash
+    const before = await hashOf()
     files.set(file('hr3132'), xml('hr3132').replace('Veterans Act of 2025</title>', 'Veterans Act of 2026</title>'))
     serveAll()
     answers.set('sconres', notFound)
@@ -772,7 +774,7 @@ describe('a missing type zip is logged, and a type that vanishes after it had bi
     expect(alertText(alerts()[0])).toMatch(/119/)
     expect(alertText(alerts()[0])).toMatch(/sconres/)
     // The other types kept syncing, and the missing type's bills stayed as they were.
-    expect((await bill('HB3132')).title).toMatch(/2026/)
+    expect(await hashOf()).not.toBe(before)
     expect(await bill('SCR5')).toEqual(stored)
   })
 

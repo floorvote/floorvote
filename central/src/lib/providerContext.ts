@@ -1,5 +1,6 @@
-import { asc, eq, sql } from 'drizzle-orm'
-import { apiCallLog, people } from '../db/schema'
+import { and, asc, eq, sql } from 'drizzle-orm'
+import { apiCallLog, people, providerRecords } from '../db/schema'
+import { escHtml, sendOpsAlert } from './jobAlert'
 import { nowDb } from './dbTime'
 import { knownProviderIds, providerIdsFor } from './providerIds'
 import { providerCacheDrop, providerCacheList, providerCachePut } from './providerCache'
@@ -33,6 +34,10 @@ export function providerContext(
       put: entries => providerCachePut(db, provider.id, entries),
       drop: keys => providerCacheDrop(db, provider.id, keys),
     },
+    hasStored: async (sessionId, glob) => !!await db.select({ billId: providerRecords.billId }).from(providerRecords)
+      .where(and(eq(providerRecords.provider, provider.id), eq(providerRecords.sessionId, sessionId), sql`${providerRecords.nativeKey} GLOB ${glob}`))
+      .limit(1).get(),
+    alert: ({ subject, text }) => sendOpsAlert(env, { subject, text, html: `<p>${escHtml(text)}</p>` }),
     // People a cutover carried over (lib/carriedIds.ts) come last, so a
     // provider that indexes them by name, latest first (LIMS), keeps giving a
     // legislator the id instances already have, even once the provider lists

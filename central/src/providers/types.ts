@@ -452,6 +452,17 @@ export interface ProviderContext<K extends ProviderEnvKey = ProviderEnvKey> {
    * last one listed is the person instances already know.
    */
   people(): Promise<{ peopleId: number; name: string; role: string | null }[]>
+  /**
+   * Whether core has stored a record of this provider's for the session whose
+   * native key matches `glob` (SQLite GLOB). For a provider that must tell a
+   * feed that has nothing yet from one that lost what it had.
+   */
+  hasStored(sessionId: number, glob: string): Promise<boolean>
+  /**
+   * Email an ops alert to central's operators (`ALERT_EMAILS`), for a problem
+   * that needn't fail the pass. Best-effort: never throws.
+   */
+  alert(msg: { subject: string; text: string }): Promise<void>
 }
 
 /** A session as central stores it, handed to the list methods. */
