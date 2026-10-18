@@ -371,3 +371,129 @@ describe('the week-ahead email, for date custom fields', () => {
     expect(html.indexOf('Comment deadline: HB 12')).toBeLessThan(html.indexOf('Hearing on HB 12'))
   })
 })
+
+// A companion group has one value per custom field and one priority (#374, #376,
+// #381): the date projects once per group, from the member holding the group's
+// current value, whenever any member carries a priority (#639).
+describe('date custom fields on companion groups', () => {
+  const db = () => getDb(env.DB)
+  const stamp = (n: number) => `2026-01-0${n} 00:00:00`
+
+  async function group(key: string, members: Record<string, 'high' | 'medium' | 'low' | null>) {
+    const ids: Record<string, string> = {}
+    for (const [number, priority] of Object.entries(members)) {
+      ids[number] = await seedBill({ billNumber: number, state: 'DC', priority, externalId: `legiscan:${number}` })
+      await db().update(bills).set({ groupKey: key, ...(priority ? { prioritySetAt: stamp(1) } : {}) }).where(eq(bills.id, ids[number]))
+    }
+    return ids
+  }
+
+  it('projects a date set on a member with no priority while the priority sits on another member', async () => {
+    const m = await group('g1', { 'HB 1': null, 'SB 1': 'high' })
+    await addField('f1', 'Comment deadline')
+    await setValue(m['HB 1'], 'f1', isoDay(5), stamp(2))
+
+    const rows = await fieldEvents()
+    expect(rows.map(e => e.description)).toEqual(['Comment deadline: HB 1'])
+    expect(rows[0].id).toBe(`cf-f1-${m['HB 1']}`)
+    expect(rows[0].bills.map(b => b.id)).toEqual([m['HB 1']])
+  })
+
+  it('projects only the current value when a stale date is left on another member and both carry a priority', async () => {
+    const m = await group('g1', { 'HB 1': 'high', 'SB 1': 'low' })
+    await addField('f1', 'Comment deadline')
+    await setValue(m['SB 1'], 'f1', isoDay(3), stamp(2))
+    await setValue(m['HB 1'], 'f1', isoDay(6), stamp(3))
+
+    const rows = await fieldEvents()
+    expect(rows.map(e => [e.description, e.date])).toEqual([['Comment deadline: HB 1', isoDay(6)]])
+  })
+
+  it('projects at most one event per date field per group, and one per field', async () => {
+    const m = await group('g1', { 'HB 1': 'high', 'SB 1': 'high', 'HB 2': 'high' })
+    await addField('f1', 'Comment deadline')
+    await addField('f2', 'Board vote')
+    await setValue(m['HB 1'], 'f1', isoDay(3), stamp(2))
+    await setValue(m['SB 1'], 'f1', isoDay(4), stamp(3))
+    await setValue(m['HB 2'], 'f1', isoDay(5), stamp(4))
+    await setValue(m['HB 1'], 'f2', isoDay(6), stamp(2))
+    await setValue(m['SB 1'], 'f2', isoDay(7), stamp(1))
+
+    const rows = await fieldEvents()
+    expect(rows.map(e => [e.description, e.date]).sort()).toEqual([
+      ['Board vote: HB 1', isoDay(6)],
+      ['Comment deadline: HB 2', isoDay(5)],
+    ])
+  })
+
+  it('leaves out a group with no priority on any member, whichever member holds the date', async () => {
+    const m = await group('g1', { 'HB 1': null, 'SB 1': null })
+    await addField('f1', 'Comment deadline')
+    await setValue(m['HB 1'], 'f1', isoDay(5))
+    expect(await fieldEvents()).toEqual([])
+  })
+
+  it('breaks a tie in the value\'s timestamp toward the larger bill id, as the group\'s value does', async () => {
+    const m = await group('g1', { 'HB 1': 'high', 'SB 1': 'high' })
+    await addField('f1', 'Comment deadline')
+    await setValue(m['HB 1'], 'f1', isoDay(3), stamp(2))
+    await setValue(m['SB 1'], 'f1', isoDay(4), stamp(2))
+    const winner = [m['HB 1'], m['SB 1']].sort().at(-1)!
+    expect((await fieldEvents()).map(e => e.billId)).toEqual([winner])
+  })
+
+  it('replaces an older value with a later one set on another member', async () => {
+    const m = await group('g1', { 'HB 1': 'high', 'SB 1': 'high' })
+    await addField('f1', 'Comment deadline')
+    await setValue(m['HB 1'], 'f1', isoDay(3), '2020-01-01 00:00:00')
+    await setValue(m['SB 1'], 'f1', isoDay(4), stamp(2))
+    expect((await fieldEvents()).map(e => e.date)).toEqual([isoDay(4)])
+  })
+
+  it('projects no event when the group\'s current value is not a real date, even if a stale member holds one', async () => {
+    const m = await group('g1', { 'HB 1': 'high', 'SB 1': 'high' })
+    await addField('f1', 'Comment deadline')
+    await setValue(m['HB 1'], 'f1', isoDay(3), stamp(2))
+    await setValue(m['SB 1'], 'f1', 'soon', stamp(3))
+    expect(await fieldEvents()).toEqual([])
+  })
+
+  it('falls back to the older member\'s date once the current value is cleared', async () => {
+    const m = await group('g1', { 'HB 1': 'high', 'SB 1': 'high' })
+    await addField('f1', 'Comment deadline')
+    await setValue(m['HB 1'], 'f1', isoDay(3), stamp(2))
+    await setValue(m['SB 1'], 'f1', isoDay(4), stamp(3))
+    await db().delete(billCustomFieldValues).where(and(eq(billCustomFieldValues.billId, m['SB 1']), eq(billCustomFieldValues.fieldId, 'f1')))
+    expect((await fieldEvents()).map(e => [e.billId, e.date])).toEqual([[m['HB 1'], isoDay(3)]])
+  })
+
+  it('keeps groups separate: two groups each project their own value, and an ungrouped bill projects as before', async () => {
+    const a = await group('ga', { 'HB 1': 'high', 'SB 1': null })
+    const b = await group('gb', { 'HB 2': null, 'SB 2': 'low' })
+    const solo = await seedBill({ billNumber: 'HB 9', state: 'DC', priority: 'medium', externalId: 'legiscan:9' })
+    await addField('f1', 'Comment deadline')
+    await setValue(a['SB 1'], 'f1', isoDay(3), stamp(2))
+    await setValue(b['HB 2'], 'f1', isoDay(4), stamp(2))
+    await setValue(solo, 'f1', isoDay(5), stamp(2))
+    expect((await fieldEvents()).map(e => e.description).sort()).toEqual(['Comment deadline: HB 2', 'Comment deadline: HB 9', 'Comment deadline: SB 1'])
+  })
+
+  it('shows the group\'s priority on the event\'s bill, not the holder\'s own', async () => {
+    const m = await group('g1', { 'HB 1': null, 'SB 1': 'high' })
+    await addField('f1', 'Comment deadline')
+    await setValue(m['HB 1'], 'f1', isoDay(5), stamp(2))
+    expect((await fieldEvents())[0].bills[0].priority).toBe('high')
+  })
+
+  it('projects the same one event in the feed, the dashboard count, and the week-ahead email', async () => {
+    const m = await group('g1', { 'HB 1': null, 'SB 1': 'high' })
+    await addField('f1', 'Comment deadline')
+    await setValue(m['HB 1'], 'f1', isoDay(2), stamp(2))
+    await setValue(m['SB 1'], 'f1', isoDay(1), stamp(1))
+
+    expect(await upcomingCount()).toBe(1)
+    const ics = await feed()
+    expect(ics).toContain(`UID:cf-f1-${m['HB 1']}`)
+    expect(ics).not.toContain(`UID:cf-f1-${m['SB 1']}`)
+  })
+})
