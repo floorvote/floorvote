@@ -18,13 +18,13 @@ const DIMENSIONS: Array<{ key: string; param: string; value: string; promised?: 
   { key: 'status',    param: 'status',    value: 'Passed',        promised: f => f.status?.Passed },
   { key: 'stage',     param: 'stage',     value: 'passed',        promised: f => f.stage?.passed },
   { key: 'year',      param: 'year',      value: '2026',          promised: f => f.year?.['2026'] },
-  { key: 'session',   param: 'session',   value: '2026',          promised: f => f.session?.['2026'] },
+  { key: 'session',   param: 'sessionName', value: '2026',          promised: f => f.sessionName?.['2026'] },
   { key: 'state',     param: 'state',     value: 'NJ',            promised: f => f.state?.NJ },
   { key: 'priority',  param: 'priority',  value: 'high',          promised: f => f.priority?.high },
-  { key: 'tags',      param: 'tag',       value: 'Clerk',         promised: f => f.tags?.Clerk },
-  { key: 'subjects',  param: 'subject',   value: 'UT:Elections',  promised: f => f.subjects?.['UT:Elections'] },
+  { key: 'tags',      param: 'tag',       value: 'Clerk',         promised: f => f.tag?.Clerk },
+  { key: 'subjects',  param: 'subject',   value: 'UT:Elections',  promised: f => f.subject?.['UT:Elections'] },
   { key: 'position',  param: 'position',  value: 'Support',       promised: f => f.position?.Support },
-  { key: 'field',     param: 'cf_area',   value: 'North',         promised: f => f.customFields?.['cf-area']?.North },
+  { key: 'field',     param: 'field.area',   value: 'North',         promised: f => f.field?.['cf-area']?.North },
   { key: 'relevance', param: 'minRelevance', value: '5' },
 ]
 

@@ -443,7 +443,7 @@ describe('BulkActionBar unknown current values', () => {
 // (the filter in the request body) and the read that pre-populates the bulk-edit form (GET /bills/bulk-values)
 // carry the same string, so the form never shows the values of one set of bills before a write to another.
 describe('BulkActionBar sends the serialized bill filter', () => {
-  const QS = 'status=Passed&stage=enacted&year=2026&state=UT&position=none&priority=high&tag=Water&subject=UT%3AElections&minRelevance=4&q=water&myBills=1&unvoted=1&newMatches=1&drafts=1&match=any&cf_f1=Alpha&cf_f1=__any__'
+  const QS = 'status=Passed&stage=enacted&year=2026&state=UT&position=none&priority=high&tag=Water&subject=UT%3AElections&minRelevance=4&search=water&myBills=1&unvoted=1&newMatches=1&drafts=1&match=any&field.f1=Alpha&field.f1=__any__'
 
   function renderFilterMode(filter: ReturnType<typeof parseBillFilter>, total = 5) {
     vi.mocked(apiFetch).mockClear()

@@ -37,17 +37,17 @@ function generate(seed: number): BillFilter {
   const cf: Record<string, string[]> = {}
   for (const key of some(slugs, 3)) cf[key] = Array.from({ length: 1 + int(3) }, () => pick([...AWKWARD, FILTER_ANY]))
   return {
-    status: multi(), stage: multi(), year: some(['2024', '2025', '2026']), session: multi(), state: some(['NJ', 'TX', 'UT']),
+    status: multi(), stage: multi(), year: some(['2024', '2025', '2026']), sessionName: multi(), state: some(['NJ', 'TX', 'UT']),
     position: multi([FILTER_ANY, FILTER_NONE]), priority: multi([FILTER_ANY, FILTER_NONE]), tag: multi([FILTER_ANY]),
     subject: some([
       { state: 'UT', name: 'Elections' }, { state: 'NJ', name: 'Resolutions: Congratulatory' }, { state: '*', name: 'a&b=c' },
       { state: 'TX', name: ' spaced ' }, { state: 'UT', name: '日本' },
     ]),
     minRelevance: r() < 0.5 ? null : int(106) - 5,
-    q: pick(['', '', 'election', '"voter id", mail', 'a&b', 'café +plus', ' padded ', 'tab\there', '  ']),
+    search: pick(['', '', 'election', '"voter id", mail', 'a&b', 'café +plus', ' padded ', 'tab\there', '  ']),
     myBills: r() < 0.5, unvoted: r() < 0.5, newMatches: r() < 0.5, drafts: r() < 0.5,
     match: r() < 0.5 ? 'any' : 'all',
-    cf,
+    field: cf,
   }
 }
 
@@ -58,10 +58,10 @@ describe('bill filter property tests', () => {
     // A guard against a vacuous property: the generated values are not all empty.
     const generated = SEEDS.map(generate)
     expect(generated.some(f => f.subject.length > 0)).toBe(true)
-    expect(generated.some(f => Object.keys(f.cf).length > 0)).toBe(true)
+    expect(generated.some(f => Object.keys(f.field).length > 0)).toBe(true)
     expect(generated.some(f => f.minRelevance !== null)).toBe(true)
     expect(generated.some(f => f.match === 'any')).toBe(true)
-    expect(generated.some(f => f.q !== '')).toBe(true)
+    expect(generated.some(f => f.search !== '')).toBe(true)
     for (const seed of SEEDS) {
       const f = generate(seed)
       expect(roundTrip(f), `seed ${seed}: ${serializeBillFilter(f)}`).toEqual(f)
@@ -78,7 +78,7 @@ describe('bill filter property tests', () => {
   it('two equal filters serialize to the same string, whatever order their custom fields were built in', () => {
     for (const seed of SEEDS) {
       const f = generate(seed)
-      const reversed: BillFilter = { ...f, cf: Object.fromEntries(Object.entries(f.cf).reverse()) }
+      const reversed: BillFilter = { ...f, field: Object.fromEntries(Object.entries(f.field).reverse()) }
       expect(serializeBillFilter(reversed), `seed ${seed}`).toBe(serializeBillFilter(f))
     }
   })
@@ -116,7 +116,7 @@ describe('every filter round-trips', () => {
     ['status', { status: ['Passed', 'In committee'] }],
     ['stage', { stage: ['introduced', 'enacted'] }],
     ['year', { year: ['2025', '2026'] }],
-    ['session', { session: ['2026 Regular Session'] }],
+    ['session name', { sessionName: ['2026 Regular Session'] }],
     ['state', { state: ['NJ', 'TX'] }],
     ['position', { position: ['Support', 'Oppose'] }],
     ['position sentinels', { position: [FILTER_ANY, FILTER_NONE] }],
@@ -127,19 +127,19 @@ describe('every filter round-trips', () => {
     ['subject', { subject: [{ state: 'UT', name: 'Elections' }, { state: 'NJ', name: 'Resolutions: Congratulatory' }] }],
     ['min relevance', { minRelevance: 5 }],
     ['min relevance of zero', { minRelevance: 0 }],
-    ['search', { q: '"voter id", mail & more' }],
+    ['search', { search: '"voter id", mail & more' }],
     ['my bills', { myBills: true }],
     ['unvoted', { unvoted: true }],
     ['new matches', { newMatches: true }],
     ['drafts', { drafts: true }],
     ['match any', { match: 'any' }],
-    ['a custom field by slug', { cf: { team_lead: ['Ada'] } }],
-    ['a custom field by id', { cf: { '3f2a9c1e-7b4d-4a8e-9c55-0d1e2f3a4b5c': ['x', 'y'] } }],
-    ['a custom field with the any sentinel', { cf: { committee: [FILTER_ANY], areas: ['x', FILTER_ANY] } }],
+    ['a custom field by slug', { field: { team_lead: ['Ada'] } }],
+    ['a custom field by id', { field: { '3f2a9c1e-7b4d-4a8e-9c55-0d1e2f3a4b5c': ['x', 'y'] } }],
+    ['a custom field with the any sentinel', { field: { committee: [FILTER_ANY], areas: ['x', FILTER_ANY] } }],
     ['every filter at once', {
-      status: ['Passed'], stage: ['enacted'], year: ['2026'], session: ['2026 Regular Session'], state: ['UT'], position: [FILTER_NONE],
-      priority: [FILTER_ANY], tag: [FILTER_ANY, 'Energy'], subject: [{ state: 'UT', name: 'Elections' }], minRelevance: 3, q: 'election',
-      myBills: true, unvoted: true, newMatches: true, drafts: true, match: 'any', cf: { committee: ['Labor'], areas: ['x'] },
+      status: ['Passed'], stage: ['enacted'], year: ['2026'], sessionName: ['2026 Regular Session'], state: ['UT'], position: [FILTER_NONE],
+      priority: [FILTER_ANY], tag: [FILTER_ANY, 'Energy'], subject: [{ state: 'UT', name: 'Elections' }], minRelevance: 3, search: 'election',
+      myBills: true, unvoted: true, newMatches: true, drafts: true, match: 'any', field: { committee: ['Labor'], areas: ['x'] },
     }],
   ])('%s', (_name, overrides) => {
     const f = filterOf(overrides)
@@ -147,13 +147,13 @@ describe('every filter round-trips', () => {
   })
 
   it('writes each filter under its own key, as the URL and the API read it today', () => {
-    expect(serializeBillFilter(filterOf({ status: ['Passed'], stage: ['enacted'], year: ['2026'], session: ['S'], state: ['UT'] })))
-      .toBe('status=Passed&stage=enacted&year=2026&session=S&state=UT')
+    expect(serializeBillFilter(filterOf({ status: ['Passed'], stage: ['enacted'], year: ['2026'], sessionName: ['S'], state: ['UT'] })))
+      .toBe('status=Passed&stage=enacted&year=2026&sessionName=S&state=UT')
     expect(serializeBillFilter(filterOf({ position: ['Support'], priority: ['high'], tag: ['Energy'], subject: [{ state: 'UT', name: 'Elections' }] })))
       .toBe('position=Support&priority=high&tag=Energy&subject=UT%3AElections')
-    expect(serializeBillFilter(filterOf({ minRelevance: 4, q: 'x', myBills: true, unvoted: true, newMatches: true, drafts: true, match: 'any' })))
-      .toBe('minRelevance=4&q=x&myBills=1&unvoted=1&newMatches=1&drafts=1&match=any')
-    expect(serializeBillFilter(filterOf({ cf: { b: ['2'], a: ['1', '3'] } }))).toBe('cf_a=1&cf_a=3&cf_b=2')
+    expect(serializeBillFilter(filterOf({ minRelevance: 4, search: 'x', myBills: true, unvoted: true, newMatches: true, drafts: true, match: 'any' })))
+      .toBe('minRelevance=4&search=x&myBills=1&unvoted=1&newMatches=1&drafts=1&match=any')
+    expect(serializeBillFilter(filterOf({ field: { b: ['2'], a: ['1', '3'] } }))).toBe('field.a=1&field.a=3&field.b=2')
   })
 
   it('writes nothing for an empty filter and reads nothing from an empty query', () => {
@@ -170,14 +170,14 @@ describe('every filter round-trips', () => {
 
 describe('parseBillFilter', () => {
   it('reads a query string, a leading question mark, and URLSearchParams the same way', () => {
-    const qs = 'status=Passed&cf_team=Ada&unvoted=1'
+    const qs = 'status=Passed&field.team=Ada&unvoted=1'
     expect(parseBillFilter(`?${qs}`)).toEqual(parseBillFilter(qs))
     expect(parseBillFilter(new URLSearchParams(qs))).toEqual(parseBillFilter(qs))
   })
 
   it('decodes percent escapes and plus signs as a URL does', () => {
-    expect(parseBillFilter('status=In%20committee&q=a+b&tag=a%26b').status).toEqual(['In committee'])
-    expect(parseBillFilter('q=a+b&tag=a%26b').q).toBe('a b')
+    expect(parseBillFilter('status=In%20committee&search=a+b&tag=a%26b').status).toEqual(['In committee'])
+    expect(parseBillFilter('search=a+b&tag=a%26b').search).toBe('a b')
     expect(parseBillFilter('tag=a%26b').tag).toEqual(['a&b'])
   })
 
@@ -203,25 +203,25 @@ describe('parseBillFilter', () => {
       expect(parseBillFilter('status=a&status=b&status=a').status).toEqual(['a', 'b', 'a'])
     })
     it('takes the first value of a single-valued filter', () => {
-      const f = parseBillFilter('q=first&q=second&minRelevance=3&minRelevance=9&match=any&match=all&unvoted=0&unvoted=1&myBills=1&myBills=0')
-      expect(f.q).toBe('first')
+      const f = parseBillFilter('search=first&search=second&minRelevance=3&minRelevance=9&match=any&match=all&unvoted=0&unvoted=1&myBills=1&myBills=0')
+      expect(f.search).toBe('first')
       expect(f.minRelevance).toBe(3)
       expect(f.match).toBe('any')
       expect(f.unvoted).toBe(false)
       expect(f.myBills).toBe(true)
     })
     it('collects every value of a repeated custom field key', () => {
-      expect(parseBillFilter('cf_team=a&cf_team=b').cf).toEqual({ team: ['a', 'b'] })
+      expect(parseBillFilter('field.team=a&field.team=b').field).toEqual({ team: ['a', 'b'] })
     })
   })
 
   describe('unknown keys and values', () => {
     it('ignores unknown keys, and the keys that are not filters (sort, dir, view, page)', () => {
-      expect(parseBillFilter('bogus=1&sort=priority&dir=desc&view=abc&page=2&pageSize=10&cf=1&field.x=1&search=x&sessionName=x')).toEqual(EMPTY_BILL_FILTER)
+      expect(parseBillFilter('bogus=1&sort=priority&dir=desc&view=abc&page=2&pageSize=10&field=1&fieldx=1')).toEqual(EMPTY_BILL_FILTER)
     })
     it('ignores a key whose name only starts like a filter', () => {
-      expect(parseBillFilter('statuses=a&Status=b&xcf_a=1').status).toEqual([])
-      expect(parseBillFilter('statuses=a&Status=b&xcf_a=1').cf).toEqual({})
+      expect(parseBillFilter('statuses=a&Status=b&xfield.a=1').status).toEqual([])
+      expect(parseBillFilter('statuses=a&Status=b&xfield.a=1').field).toEqual({})
     })
     it('drops a subject that is not state:name, and keeps the others', () => {
       expect(parseBillFilter('subject=NoColon&subject=UT%3AElections&subject=%3ANoState&subject=UT%3A').subject)
@@ -248,9 +248,32 @@ describe('parseBillFilter', () => {
     })
   })
 
+  // One name per filter: `q`, `cf_<slug>`, and `session` were renamed to `search`, `field.<slug>`, and `sessionName`,
+  // with no aliases, so the old keys are ignored like any other unknown key.
+  describe('the old keys', () => {
+    it.each([
+      ['q', 'q=election'],
+      ['cf_<slug>', 'cf_committee=Labor'],
+      ['cf_<id>', 'cf_3f2a9c1e-7b4d-4a8e-9c55-0d1e2f3a4b5c=1'],
+      ['session', 'session=2026%20Regular%20Session'],
+    ])('ignores %s', (_name, qs) => {
+      expect(parseBillFilter(qs)).toEqual(EMPTY_BILL_FILTER)
+    })
+    it('reads the new keys beside the old ones, and only the new ones', () => {
+      const f = parseBillFilter('q=old&search=new&cf_team=Old&field.team=New&session=Old&sessionName=New')
+      expect(f.search).toBe('new')
+      expect(f.field).toEqual({ team: ['New'] })
+      expect(f.sessionName).toEqual(['New'])
+    })
+    it('writes the new keys, never the old ones', () => {
+      const s = serializeBillFilter(filterOf({ search: 'x', field: { team: ['Ada'] }, sessionName: ['S'] }))
+      expect(s).toBe('sessionName=S&search=x&field.team=Ada')
+    })
+  })
+
   describe('empty values', () => {
     it('reads an empty search, min relevance, and match as no filter', () => {
-      expect(parseBillFilter('q=&minRelevance=&match=')).toEqual(EMPTY_BILL_FILTER)
+      expect(parseBillFilter('search=&minRelevance=&match=')).toEqual(EMPTY_BILL_FILTER)
     })
     it('keeps an empty value of a multi-select filter, as the API has always matched it', () => {
       expect(parseBillFilter('status=').status).toEqual([''])
@@ -259,46 +282,46 @@ describe('parseBillFilter', () => {
   })
 
   describe('custom fields', () => {
-    it('reads cf_<key> as a custom field named by that key, a slug or an id', () => {
-      expect(parseBillFilter('cf_committee=Labor&cf_3f2a9c1e-7b4d-4a8e-9c55-0d1e2f3a4b5c=1').cf)
+    it('reads field.<key> as a custom field named by that key, a slug or an id', () => {
+      expect(parseBillFilter('field.committee=Labor&field.3f2a9c1e-7b4d-4a8e-9c55-0d1e2f3a4b5c=1').field)
         .toEqual({ committee: ['Labor'], '3f2a9c1e-7b4d-4a8e-9c55-0d1e2f3a4b5c': ['1'] })
     })
-    it('reads cf_ with no key as a field with an empty key, which matches no field', () => {
-      expect(parseBillFilter('cf_=x').cf).toEqual({ '': ['x'] })
+    it('reads field. with no key as a field with an empty key, which matches no field', () => {
+      expect(parseBillFilter('field.=x').field).toEqual({ '': ['x'] })
     })
     it('survives a key that names an Object.prototype member, without touching the prototype', () => {
-      const f = parseBillFilter('cf___proto__=x&cf_constructor=y&cf_toString=z')
-      expect(Object.keys(f.cf).sort()).toEqual(['__proto__', 'constructor', 'toString'])
-      expect(Object.getPrototypeOf(f.cf)).toBe(Object.prototype)
+      const f = parseBillFilter('field.__proto__=x&field.constructor=y&field.toString=z')
+      expect(Object.keys(f.field).sort()).toEqual(['__proto__', 'constructor', 'toString'])
+      expect(Object.getPrototypeOf(f.field)).toBe(Object.prototype)
       expect(({} as Record<string, unknown>).push).toBeUndefined()
       expect(roundTrip(f)).toEqual(f)
     })
     it('keeps the any sentinel as a value', () => {
-      expect(parseBillFilter('cf_committee=__any__').cf).toEqual({ committee: [FILTER_ANY] })
+      expect(parseBillFilter('field.committee=__any__').field).toEqual({ committee: [FILTER_ANY] })
     })
   })
 
   describe('the value is immutable', () => {
-    const parsed = () => parseBillFilter('status=a&subject=UT%3AElections&cf_team=Ada')
+    const parsed = () => parseBillFilter('status=a&subject=UT%3AElections&field.team=Ada')
     it('freezes the filter, its lists, its subjects, and its custom fields', () => {
       const f = parsed()
       expect(Object.isFrozen(f)).toBe(true)
       expect(Object.isFrozen(f.status)).toBe(true)
       expect(Object.isFrozen(f.subject)).toBe(true)
       expect(Object.isFrozen(f.subject[0])).toBe(true)
-      expect(Object.isFrozen(f.cf)).toBe(true)
-      expect(Object.isFrozen(f.cf.team)).toBe(true)
+      expect(Object.isFrozen(f.field)).toBe(true)
+      expect(Object.isFrozen(f.field.team)).toBe(true)
     })
     it('throws on a write, in strict mode', () => {
       const f = parsed()
-      expect(() => { (f as { q: string }).q = 'x' }).toThrow()
+      expect(() => { (f as { search: string }).search = 'x' }).toThrow()
       expect(() => { (f.status as string[]).push('b') }).toThrow()
-      expect(() => { (f.cf.team as string[]).push('b') }).toThrow()
+      expect(() => { (f.field.team as string[]).push('b') }).toThrow()
     })
     it('freezes the empty filter, which every empty parse can share', () => {
       expect(Object.isFrozen(EMPTY_BILL_FILTER)).toBe(true)
       expect(Object.isFrozen(EMPTY_BILL_FILTER.status)).toBe(true)
-      expect(Object.isFrozen(EMPTY_BILL_FILTER.cf)).toBe(true)
+      expect(Object.isFrozen(EMPTY_BILL_FILTER.field)).toBe(true)
     })
     it('does not change the input it was given', () => {
       const params = new URLSearchParams('status=a&status=b')
@@ -331,11 +354,11 @@ describe('the definitions', () => {
 
   it('give a name that is both a key of the value and the key the query string uses today', () => {
     const keys = serializeBillFilter(filterOf({
-      status: ['a'], stage: ['a'], year: ['a'], session: ['a'], state: ['a'], position: ['a'], priority: ['a'], tag: ['a'],
-      subject: [{ state: 'a', name: 'b' }], minRelevance: 1, q: 'a', myBills: true, unvoted: true, newMatches: true, drafts: true, match: 'any',
+      status: ['a'], stage: ['a'], year: ['a'], sessionName: ['a'], state: ['a'], position: ['a'], priority: ['a'], tag: ['a'],
+      subject: [{ state: 'a', name: 'b' }], minRelevance: 1, search: 'a', myBills: true, unvoted: true, newMatches: true, drafts: true, match: 'any',
     })).split('&').map(p => p.slice(0, p.indexOf('=')))
-    // A custom field's key is `cf_<its slug or id>`, so it is the one name not written as itself.
-    expect(keys.sort()).toEqual(BILL_FILTER_DEFS.map(d => d.name).filter(n => n !== 'cf').sort())
+    // A custom field's key is `field.<its slug or id>`, so it is the one name not written as itself.
+    expect(keys.sort()).toEqual(BILL_FILTER_DEFS.map(d => d.name).filter(n => n !== 'field').sort())
   })
 })
 

@@ -9,7 +9,7 @@ const query = (qs: string, defs: Parameters<typeof billsQueryFromSearch>[1] = []
 
 describe('billsQueryFromSearch', () => {
   it('reads the filter with the shared parse, so the Bills page and the API read the same string alike', () => {
-    const qs = 'status=2&stage=enacted&year=2026&state=UT&position=none&priority=high&tag=a&subject=UT%3AElections&minRelevance=4&myBills=1&unvoted=1&newMatches=1&drafts=1&match=any&q=water'
+    const qs = 'status=2&stage=enacted&year=2026&state=UT&position=none&priority=high&tag=a&subject=UT%3AElections&minRelevance=4&myBills=1&unvoted=1&newMatches=1&drafts=1&match=any&search=water'
     expect(query(qs).filter).toEqual(parseBillFilter(qs))
   })
 
@@ -21,14 +21,14 @@ describe('billsQueryFromSearch', () => {
 
   it('holds a custom field by its id when the defs know it, and by the key as given when they do not', () => {
     const defs = [{ id: 'cf-uuid-1', slug: 'tracked_by_team' }]
-    expect(query('cf_tracked_by_team=yes', defs).filter.cf).toEqual({ 'cf-uuid-1': ['yes'] })
-    expect(query('cf_cf-uuid-1=yes', defs).filter.cf).toEqual({ 'cf-uuid-1': ['yes'] })
-    expect(query('cf_tracked_by_team=yes').filter.cf).toEqual({ tracked_by_team: ['yes'] })
+    expect(query('field.tracked_by_team=yes', defs).filter.field).toEqual({ 'cf-uuid-1': ['yes'] })
+    expect(query('field.cf-uuid-1=yes', defs).filter.field).toEqual({ 'cf-uuid-1': ['yes'] })
+    expect(query('field.tracked_by_team=yes').filter.field).toEqual({ tracked_by_team: ['yes'] })
   })
 
   it('merges a field named by its slug and by its id, each value once', () => {
     const defs = [{ id: 'cf-uuid-1', slug: 'tracked_by_team' }]
-    expect(query('cf_tracked_by_team=a&cf_cf-uuid-1=a&cf_cf-uuid-1=b', defs).filter.cf).toEqual({ 'cf-uuid-1': ['a', 'b'] })
+    expect(query('field.tracked_by_team=a&field.cf-uuid-1=a&field.cf-uuid-1=b', defs).filter.field).toEqual({ 'cf-uuid-1': ['a', 'b'] })
   })
 
   it('drops a year that is not a number, and reads a minimum relevance of zero as none', () => {
@@ -38,17 +38,17 @@ describe('billsQueryFromSearch', () => {
   })
 
   it('ignores session: the page has no control, chip, or count for it, so it must not narrow a list', () => {
-    expect(query('session=S1&status=2').filter).toEqual(query('status=2').filter)
-    expect(billsApiParams(query('session=S1&status=2'), 1, 100)).toBe('page=1&pageSize=100&status=2')
-    expect(billsFacetParams(query('session=S1&status=2').filter)).toBe('status=2')
-    expect(billsChipSelection('/bills', '?session=S1')).toEqual({ allBills: true, newMatches: false })
+    expect(query('sessionName=S1&status=2').filter).toEqual(query('status=2').filter)
+    expect(billsApiParams(query('sessionName=S1&status=2'), 1, 100)).toBe('page=1&pageSize=100&status=2')
+    expect(billsFacetParams(query('sessionName=S1&status=2').filter)).toBe('status=2')
+    expect(billsChipSelection('/bills', '?sessionName=S1')).toEqual({ allBills: true, newMatches: false })
   })
 
   it('returns an immutable value', () => {
-    const f = query('status=2&cf_x=1').filter
+    const f = query('status=2&field.x=1').filter
     expect(Object.isFrozen(f)).toBe(true)
     expect(Object.isFrozen(f.status)).toBe(true)
-    expect(Object.isFrozen(f.cf)).toBe(true)
+    expect(Object.isFrozen(f.field)).toBe(true)
   })
 })
 
@@ -93,12 +93,12 @@ describe('billsApiParams', () => {
 
   it('writes a custom field by its id, so two URLs for one field key one cache entry', () => {
     const defs = [{ id: 'cf-uuid-1', slug: 'tracked_by_team' }]
-    expect(billsApiParams(query('cf_tracked_by_team=yes', defs), 1, 100)).toBe('page=1&pageSize=100&cf_cf-uuid-1=yes')
-    expect(billsApiParams(query('cf_cf-uuid-1=yes', defs), 1, 100)).toBe(billsApiParams(query('cf_tracked_by_team=yes', defs), 1, 100))
+    expect(billsApiParams(query('field.tracked_by_team=yes', defs), 1, 100)).toBe('page=1&pageSize=100&field.cf-uuid-1=yes')
+    expect(billsApiParams(query('field.cf-uuid-1=yes', defs), 1, 100)).toBe(billsApiParams(query('field.tracked_by_team=yes', defs), 1, 100))
   })
 
   it('writes every filter the page holds: nothing the URL carried is dropped, but session', () => {
-    const qs = 'status=2&stage=enacted&year=2026&state=UT&position=none&priority=high&tag=a&subject=UT%3AElections&minRelevance=4&q=water&myBills=1&unvoted=1&newMatches=1&drafts=1&match=any&cf_x=1'
+    const qs = 'status=2&stage=enacted&year=2026&state=UT&position=none&priority=high&tag=a&subject=UT%3AElections&minRelevance=4&search=water&myBills=1&unvoted=1&newMatches=1&drafts=1&match=any&field.x=1'
     const sent = new URLSearchParams(billsApiParams(query(qs), 2, 100))
     expect(parseBillFilter(sent)).toEqual(parseBillFilter(qs))
     expect(sent.get('page')).toBe('2')
@@ -107,9 +107,9 @@ describe('billsApiParams', () => {
 
 describe('billsFacetParams', () => {
   it('is the shared serialize of the filter, search included', () => {
-    const f = query('status=2&tag=a&match=any&cf_x=1&q=water').filter
+    const f = query('status=2&tag=a&match=any&field.x=1&search=water').filter
     expect(billsFacetParams(f)).toBe(serializeBillFilter(f))
-    expect(billsFacetParams(f)).toContain('q=water')
+    expect(billsFacetParams(f)).toContain('search=water')
   })
 
   it('is empty for the filter with nothing set', () => {
@@ -128,29 +128,29 @@ describe('withCustomFieldKeys', () => {
   const defs = [{ id: 'cf-uuid-1', slug: 'tracked_by_team' }, { id: 'cf-uuid-2', slug: null }]
 
   it('names each field by its id', () => {
-    const filter = parseBillFilter('cf_tracked_by_team=a&cf_cf-uuid-2=b&cf_unknown=c')
-    expect(withCustomFieldKeys(filter, defs, 'id').cf).toEqual({ 'cf-uuid-1': ['a'], 'cf-uuid-2': ['b'], unknown: ['c'] })
+    const filter = parseBillFilter('field.tracked_by_team=a&field.cf-uuid-2=b&field.unknown=c')
+    expect(withCustomFieldKeys(filter, defs, 'id').field).toEqual({ 'cf-uuid-1': ['a'], 'cf-uuid-2': ['b'], unknown: ['c'] })
   })
 
   it('names each field by its slug, or its id when it has none', () => {
-    const filter = parseBillFilter('cf_cf-uuid-1=a&cf_cf-uuid-2=b&cf_unknown=c')
-    expect(withCustomFieldKeys(filter, defs, 'slug').cf).toEqual({ tracked_by_team: ['a'], 'cf-uuid-2': ['b'], unknown: ['c'] })
+    const filter = parseBillFilter('field.cf-uuid-1=a&field.cf-uuid-2=b&field.unknown=c')
+    expect(withCustomFieldKeys(filter, defs, 'slug').field).toEqual({ tracked_by_team: ['a'], 'cf-uuid-2': ['b'], unknown: ['c'] })
   })
 
   it('returns a new frozen value and leaves the filter it was given alone', () => {
-    const filter = parseBillFilter('cf_tracked_by_team=a')
+    const filter = parseBillFilter('field.tracked_by_team=a')
     const out = withCustomFieldKeys(filter, defs, 'id')
     expect(out).not.toBe(filter)
     expect(Object.isFrozen(out)).toBe(true)
-    expect(filter.cf).toEqual({ tracked_by_team: ['a'] })
+    expect(filter.field).toEqual({ tracked_by_team: ['a'] })
   })
 })
 
 describe('billFilterForUrl', () => {
   it('names a custom field by its slug and leaves the search box out, which never reaches the URL', () => {
     const defs = [{ id: 'cf-uuid-1', slug: 'tracked_by_team' }]
-    const f = query('status=2&cf_cf-uuid-1=yes&q=water', defs).filter
-    expect(serializeBillFilter(billFilterForUrl(f, defs))).toBe('status=2&cf_tracked_by_team=yes')
+    const f = query('status=2&field.cf-uuid-1=yes&search=water', defs).filter
+    expect(serializeBillFilter(billFilterForUrl(f, defs))).toBe('status=2&field.tracked_by_team=yes')
   })
 })
 
@@ -169,7 +169,7 @@ describe('billsChipSelection', () => {
     expect(billsChipSelection('/bills', '?priority=high')).toEqual({ allBills: false, newMatches: false })
     expect(billsChipSelection('/bills', '?tag=elections')).toEqual({ allBills: false, newMatches: false })
     expect(billsChipSelection('/bills', '?minRelevance=5')).toEqual({ allBills: false, newMatches: false })
-    expect(billsChipSelection('/bills', '?cf_42=foo')).toEqual({ allBills: false, newMatches: false })
+    expect(billsChipSelection('/bills', '?field.42=foo')).toEqual({ allBills: false, newMatches: false })
   })
 
   it('deselects the new-matches chip when another filter joins newMatches', () => {
@@ -215,7 +215,7 @@ describe('prioritizedChipSelection', () => {
     expect(prioritizedChipSelection('/bills', `${PRIORITY_QS}&newMatches=1`)).toEqual({ priority: false, unvoted: false })
     expect(prioritizedChipSelection('/bills', `${PRIORITY_QS}&tag=elections`)).toEqual({ priority: false, unvoted: false })
     expect(prioritizedChipSelection('/bills', `${PRIORITY_QS}&minRelevance=5`)).toEqual({ priority: false, unvoted: false })
-    expect(prioritizedChipSelection('/bills', `${PRIORITY_QS}&cf_42=foo`)).toEqual({ priority: false, unvoted: false })
+    expect(prioritizedChipSelection('/bills', `${PRIORITY_QS}&field.42=foo`)).toEqual({ priority: false, unvoted: false })
     expect(prioritizedChipSelection('/bills', `${PRIORITY_QS}&unvoted=1&status=2`)).toEqual({ priority: false, unvoted: false })
   })
 
@@ -247,16 +247,16 @@ describe('billsApiParamsFromSearch', () => {
     expect(billsApiParamsFromSearch(search, 3)).toContain('page=3&pageSize=100')
   })
   it('resolves a custom-field slug to its id when given the defs', () => {
-    const search = new URLSearchParams('cf_tracked_by_team=yes')
+    const search = new URLSearchParams('field.tracked_by_team=yes')
     const defs = [{ id: 'cf-uuid-1', slug: 'tracked_by_team' }]
-    expect(billsApiParamsFromSearch(search, 1, defs)).toBe('page=1&pageSize=100&cf_cf-uuid-1=yes')
-    expect(billsApiParamsFromSearch(search, 1)).toBe('page=1&pageSize=100&cf_tracked_by_team=yes')
+    expect(billsApiParamsFromSearch(search, 1, defs)).toBe('page=1&pageSize=100&field.cf-uuid-1=yes')
+    expect(billsApiParamsFromSearch(search, 1)).toBe('page=1&pageSize=100&field.tracked_by_team=yes')
   })
 })
 
 describe('a search term in the list URL', () => {
   it('is read from q, so the list and its summary agree on it', () => {
-    expect(billsQueryFromSearch(new URLSearchParams('q=water')).filter.q).toBe('water')
-    expect(billsApiParamsFromSearch(new URLSearchParams('q=water'), 1)).toBe('page=1&pageSize=100&q=water')
+    expect(billsQueryFromSearch(new URLSearchParams('search=water')).filter.search).toBe('water')
+    expect(billsApiParamsFromSearch(new URLSearchParams('search=water'), 1)).toBe('page=1&pageSize=100&search=water')
   })
 })

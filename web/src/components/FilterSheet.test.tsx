@@ -10,24 +10,24 @@ function makeDefaults(): ComponentProps<typeof FilterSheet> {
   return {
     isOpen: true,
     onClose: vi.fn(),
-    statuses: [],
-    stages: [],
-    priorities: [],
-    positions: [],
-    tags: [],
-    subjects: [],
-    sessions: [],
-    states: [],
+    status: [],
+    stage: [],
+    priority: [],
+    position: [],
+    tag: [],
+    subject: [],
+    year: [],
+    state: [],
     minRelevance: 0,
     myBills: false,
     isAdmin: false,
     newMatches: false,
     newMatchesCount: 0,
-    unvotedOnly: false,
+    unvoted: false,
     drafts: false,
     draftCount: 0,
-    matchAny: false,
-    onMatchAnyChange: vi.fn(),
+    match: 'all',
+    onMatchChange: vi.fn(),
     uniqueStates: ['UT'],
     isMultiState: false,
     statusOptions: [{ value: 'active', label: 'Active' }, { value: 'dead', label: 'Dead' }],
@@ -36,24 +36,24 @@ function makeDefaults(): ComponentProps<typeof FilterSheet> {
     positionOptions: [{ value: 'support', label: 'Support' }],
     tagOptions: ['Education', 'Health Care'],
     subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
-    sessionOptions: [{ value: '2026', label: '2026 Session' }],
-    totalSessionCount: 1,
+    yearOptions: [{ value: '2026', label: '2026 Session' }],
+    totalYearCount: 1,
     stateOptions: [{ value: 'UT', label: 'UT' }],
     customFieldDefs: [],
-    cfFilters: {},
-    onCfFilterChange: vi.fn(),
+    field: {},
+    onFieldChange: vi.fn(),
     onStatusChange: vi.fn(),
     onStageChange: vi.fn(),
     onPriorityChange: vi.fn(),
     onPositionChange: vi.fn(),
     onTagChange: vi.fn(),
     onSubjectChange: vi.fn(),
-    onSessionChange: vi.fn(),
+    onYearChange: vi.fn(),
     onStateChange: vi.fn(),
     onMinRelevanceChange: vi.fn(),
     onMyBillsChange: vi.fn(),
     onNewMatchesChange: vi.fn(),
-    onUnvotedOnlyChange: vi.fn(),
+    onUnvotedChange: vi.fn(),
     onDraftsChange: vi.fn(),
     onClearAll: vi.fn(),
   }
@@ -141,7 +141,7 @@ describe('FilterSheet — dimension list (level 1)', () => {
   })
 
   it('a dimension row shows the count of currently-selected options within it', () => {
-    renderSheet({ statuses: ['active', 'dead'], priorities: [] })
+    renderSheet({ status: ['active', 'dead'], priority: [] })
     const statusRow = screen.getByRole('button', { name: /status/i })
     expect(within(statusRow).getByText('2')).toBeInTheDocument()
     const priorityRow = screen.getByRole('button', { name: /priority/i })
@@ -182,32 +182,32 @@ describe('FilterSheet — dimension list (level 1)', () => {
     // "Not yet voted" control at all, so a state that IS reachable on
     // mobile (Sidebar's "N unvoted" chip, saved views) had no visible
     // indicator and no way to clear it from the sheet.
-    const onUnvotedOnlyChange = vi.fn()
-    const { rerender } = renderSheet({ unvotedOnly: false, onUnvotedOnlyChange })
+    const onUnvotedChange = vi.fn()
+    const { rerender } = renderSheet({ unvoted: false, onUnvotedChange })
     fireEvent.click(screen.getByRole('button', { name: /not yet voted/i }))
-    expect(onUnvotedOnlyChange).toHaveBeenCalledWith(true)
+    expect(onUnvotedChange).toHaveBeenCalledWith(true)
 
     // Once active, the same control clears it back off ...
-    rerender(<FilterSheet {...makeDefaults()} unvotedOnly onUnvotedOnlyChange={onUnvotedOnlyChange} />)
+    rerender(<FilterSheet {...makeDefaults()} unvoted onUnvotedChange={onUnvotedChange} />)
     fireEvent.click(screen.getByRole('button', { name: /not yet voted/i }))
-    expect(onUnvotedOnlyChange).toHaveBeenCalledWith(false)
+    expect(onUnvotedChange).toHaveBeenCalledWith(false)
 
     // ... and Reset filters clears it too, same as every other active filter.
     const onClearAll = vi.fn()
-    rerender(<FilterSheet {...makeDefaults()} unvotedOnly onClearAll={onClearAll} />)
+    rerender(<FilterSheet {...makeDefaults()} unvoted onClearAll={onClearAll} />)
     fireEvent.click(screen.getByRole('button', { name: 'Reset filters' }))
     expect(onClearAll).toHaveBeenCalledTimes(1)
   })
 
   it('counts an active Not yet voted toward the sheet\'s own "Reset filters" gate, matching the mobile filter button badge (Critical 1)', () => {
     // Before the fix, the mobile filter button's badge (f.totalActiveFilters,
-    // which counts unvotedOnly) disagreed with this sheet's own totalActive
+    // which counts unvoted) disagreed with this sheet's own totalActive
     // (which didn't) — the badge could read "1" over a sheet showing no
     // active filters and no "Reset filters" button.
-    const { rerender } = renderSheet({ unvotedOnly: false })
+    const { rerender } = renderSheet({ unvoted: false })
     expect(screen.queryByRole('button', { name: 'Reset filters' })).not.toBeInTheDocument()
 
-    rerender(<FilterSheet {...makeDefaults()} unvotedOnly />)
+    rerender(<FilterSheet {...makeDefaults()} unvoted />)
     expect(screen.getByRole('button', { name: 'Reset filters' })).toBeInTheDocument()
   })
 
@@ -221,14 +221,14 @@ describe('FilterSheet — dimension list (level 1)', () => {
     const onClearAll = vi.fn()
     renderSheet({
       ...makeDefaults(),
-      unvotedOnly: true, tags: ['Clerk'], matchAny: true, onClearAll,
+      unvoted: true, tag: ['Clerk'], match: 'any', onClearAll,
     })
     fireEvent.click(screen.getByRole('button', { name: /reset filters/i }))
     expect(onClearAll).toHaveBeenCalledTimes(1)
   })
 
   it('labels the control the same as desktop', () => {
-    renderSheet({ ...makeDefaults(), statuses: ['Introduced'] })
+    renderSheet({ ...makeDefaults(), status: ['Introduced'] })
     expect(screen.getByRole('button', { name: /reset filters/i })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^clear all$/i })).not.toBeInTheDocument()
   })
@@ -264,7 +264,7 @@ describe('FilterSheet — drilling into a dimension', () => {
 
   it('drills into Stage and toggles a stage through its change callback, with counts', () => {
     const onStageChange = vi.fn()
-    renderSheet({ onStageChange, counts: { status: {}, stage: { enacted: 4 }, priority: {}, position: {}, session: {}, tags: {} } })
+    renderSheet({ onStageChange, counts: { status: {}, stage: { enacted: 4 }, priority: {}, position: {}, year: {}, tag: {} } })
     fireEvent.click(screen.getByRole('button', { name: /^stage$/i }))
     const enacted = screen.getByRole('button', { name: /enacted/i })
     expect(within(enacted).getByText('4')).toBeInTheDocument()
@@ -285,7 +285,7 @@ describe('FilterSheet — drilling into a dimension', () => {
 
   it('clear all keeps working while drilled into a dimension', () => {
     const onClearAll = vi.fn()
-    renderSheet({ statuses: ['active'], onClearAll })
+    renderSheet({ status: ['active'], onClearAll })
     fireEvent.click(screen.getByRole('button', { name: /status/i }))
     fireEvent.click(screen.getByText('Reset filters'))
     expect(onClearAll).toHaveBeenCalled()
@@ -346,7 +346,7 @@ describe('FilterSheet — Subjects', () => {
   // longer renders for any combination of selected subjects and states.
   it('never renders a subject-exclusion notice, regardless of selected subjects', () => {
     const { rerender } = renderSheet({
-      subjects: [],
+      subject: [],
       subjectGroups: [
         { state: 'NJ', options: [{ value: 'NJ:Education', label: 'Education', count: 4 }] },
         { state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] },
@@ -355,10 +355,10 @@ describe('FilterSheet — Subjects', () => {
     fireEvent.click(screen.getByRole('button', { name: /subject/i }))
     expect(screen.queryByText(/do not publish subjects/)).not.toBeInTheDocument()
 
-    rerender(<FilterSheet {...makeDefaults()} subjects={['UT:Counties']} />)
+    rerender(<FilterSheet {...makeDefaults()} subject={['UT:Counties']} />)
     expect(screen.queryByText(/do not publish subjects/)).not.toBeInTheDocument()
 
-    rerender(<FilterSheet {...makeDefaults()} subjects={['UT:Counties', 'NJ:Education']} />)
+    rerender(<FilterSheet {...makeDefaults()} subject={['UT:Counties', 'NJ:Education']} />)
     expect(screen.queryByText(/do not publish subjects/)).not.toBeInTheDocument()
   })
 })
@@ -464,28 +464,28 @@ describe('FilterSheet — long dimensions (virtualized + search)', () => {
 // options list) are filterable at all; 'text' and 'date' are not.
 describe('FilterSheet — custom field filters', () => {
   it('renders a binary custom field as a direct, togglable control on the dimension list', () => {
-    const onCfFilterChange = vi.fn()
-    renderSheet({ customFieldDefs: [BINARY_CF], cfFilters: {}, onCfFilterChange })
+    const onFieldChange = vi.fn()
+    renderSheet({ customFieldDefs: [BINARY_CF], field: {}, onFieldChange })
     const toggle = screen.getByRole('button', { name: /sponsor support/i })
     expect(toggle).toBeInTheDocument()
     // Direct control, not a drill-down row — no chevron.
     expect(toggle.querySelector('svg')).not.toBeInTheDocument()
 
     fireEvent.click(toggle)
-    expect(onCfFilterChange).toHaveBeenCalledWith('cf-sponsor', ['1'])
+    expect(onFieldChange).toHaveBeenCalledWith('cf-sponsor', ['1'])
   })
 
   it('reflects an already-active binary custom field and clears it on a second click', () => {
-    const onCfFilterChange = vi.fn()
-    renderSheet({ customFieldDefs: [BINARY_CF], cfFilters: { 'cf-sponsor': ['1'] }, onCfFilterChange })
+    const onFieldChange = vi.fn()
+    renderSheet({ customFieldDefs: [BINARY_CF], field: { 'cf-sponsor': ['1'] }, onFieldChange })
     const toggle = screen.getByRole('button', { name: /sponsor support/i })
     fireEvent.click(toggle)
-    expect(onCfFilterChange).toHaveBeenCalledWith('cf-sponsor', [])
+    expect(onFieldChange).toHaveBeenCalledWith('cf-sponsor', [])
   })
 
   it('renders a dropdown custom field as a drill-down row whose level 2 lists its options', () => {
-    const onCfFilterChange = vi.fn()
-    renderSheet({ customFieldDefs: [DROPDOWN_CF], cfFilters: {}, onCfFilterChange })
+    const onFieldChange = vi.fn()
+    renderSheet({ customFieldDefs: [DROPDOWN_CF], field: {}, onFieldChange })
     const row = screen.getByRole('button', { name: /^region$/i })
     expect(row).toBeInTheDocument()
     // Options aren't rendered until the row is drilled into.
@@ -496,11 +496,11 @@ describe('FilterSheet — custom field filters', () => {
     expect(screen.getByText('South')).toBeInTheDocument()
 
     fireEvent.click(screen.getByText('North'))
-    expect(onCfFilterChange).toHaveBeenCalledWith('cf-region', ['North'])
+    expect(onFieldChange).toHaveBeenCalledWith('cf-region', ['North'])
   })
 
   it('shows the count of currently-selected options on a dropdown custom field row', () => {
-    renderSheet({ customFieldDefs: [DROPDOWN_CF], cfFilters: { 'cf-region': ['North', 'South'] } })
+    renderSheet({ customFieldDefs: [DROPDOWN_CF], field: { 'cf-region': ['North', 'South'] } })
     const row = screen.getByRole('button', { name: /region/i })
     expect(within(row).getByText('2')).toBeInTheDocument()
   })
@@ -568,38 +568,38 @@ describe('FilterSheet scope and operator parity', () => {
   })
 
   it('offers the operator when two groups are active', () => {
-    renderSheet({ tags: ['Education'], statuses: ['active'] })
+    renderSheet({ tag: ['Education'], status: ['active'] })
     expect(screen.getByRole('button', { name: /and/i })).toBeInTheDocument()
   })
 
-  it('reflects matchAny from props', () => {
+  it('reflects match from props', () => {
     // GroupOperator's aria-label is a full sentence mentioning both "AND" and
     // "OR" regardless of state (see GroupOperator.tsx) — the visible button
     // text ("AND"/"OR") is what actually flips, so assert on that directly
     // rather than the accessible name.
-    renderSheet({ tags: ['Education'], statuses: ['active'], matchAny: true })
+    renderSheet({ tag: ['Education'], status: ['active'], match: 'any' })
     const summary = screen.getByTestId('sheet-active-filter-chips')
     expect(within(summary).getByText('OR')).toBeInTheDocument()
     expect(within(summary).queryByText('AND')).not.toBeInTheDocument()
   })
 
   it('does not offer the operator with one active group', () => {
-    renderSheet({ tags: ['Education'] })
+    renderSheet({ tag: ['Education'] })
     expect(screen.queryByRole('button', { name: /^and$/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^or$/i })).not.toBeInTheDocument()
   })
 
   it('does not offer the operator when only viewer-scope filters (My bills / Not yet voted) are active', () => {
-    renderSheet({ myBills: true, unvotedOnly: true })
+    renderSheet({ myBills: true, unvoted: true })
     expect(screen.queryByRole('button', { name: /^and$/i })).not.toBeInTheDocument()
   })
 
   it('propagates a toggle to the parent', () => {
-    const onMatchAnyChange = vi.fn()
-    renderSheet({ tags: ['Education'], statuses: ['active'], onMatchAnyChange })
+    const onMatchChange = vi.fn()
+    renderSheet({ tag: ['Education'], status: ['active'], onMatchChange })
     const summary = screen.getByTestId('sheet-active-filter-chips')
     fireEvent.click(within(summary).getByText('AND'))
-    expect(onMatchAnyChange).toHaveBeenCalledWith(true)
+    expect(onMatchChange).toHaveBeenCalledWith('any')
   })
 })
 
@@ -610,12 +610,12 @@ describe('FilterSheet — SheetChip accessibility (aria-pressed)', () => {
   })
 
   it('exposes unpressed state on the Not yet voted toggle', () => {
-    renderSheet({ unvotedOnly: false })
+    renderSheet({ unvoted: false })
     expect(screen.getByRole('button', { name: /not yet voted/i })).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('exposes pressed state on an option chip once drilled into (e.g. Status)', () => {
-    renderSheet({ statuses: ['active'] })
+    renderSheet({ status: ['active'] })
     fireEvent.click(screen.getByRole('button', { name: /status/i }))
     expect(screen.getByRole('button', { name: /^active/i })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: /^dead/i })).toHaveAttribute('aria-pressed', 'false')
@@ -634,10 +634,10 @@ describe('FilterSheet — Subjects stop at the subject limit', () => {
   const checked = () => rows().filter(box => box.checked)
 
   function openSubjects(subjects: string[], onSubjectChange = vi.fn(), subjectGroups = makeSubjectGroups({ UT: 80 })) {
-    const props = { ...makeDefaults(), subjects, onSubjectChange, subjectGroups }
+    const props = { ...makeDefaults(), subject: subjects, onSubjectChange, subjectGroups }
     const utils = render(<FilterSheet {...props} />)
     fireEvent.click(screen.getByRole('button', { name: /subject/i }))
-    const rerenderWith = (next: string[]) => utils.rerender(<FilterSheet {...props} subjects={next} />)
+    const rerenderWith = (next: string[]) => utils.rerender(<FilterSheet {...props} subject={next} />)
     return { ...utils, rerenderWith, onSubjectChange }
   }
 
@@ -705,7 +705,7 @@ describe('FilterSheet — Subjects stop at the subject limit', () => {
   it('does not cap Tags, which the API does not limit', () => {
     const tags = makeTagOptions(4 * MAX_SUBJECT_FILTERS)
     const selected = tags.filter((_, i) => i % 2 === 0) // 2 x the cap, interleaved so the visible rows hold both kinds
-    render(<FilterSheet {...makeDefaults()} tagOptions={tags} tags={selected} />)
+    render(<FilterSheet {...makeDefaults()} tagOptions={tags} tag={selected} />)
     fireEvent.click(screen.getByRole('button', { name: /tags/i }))
     expect(unchecked().length).toBeGreaterThan(0)
     expect(unchecked().every(box => !box.disabled)).toBe(true)

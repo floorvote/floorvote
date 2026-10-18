@@ -55,10 +55,10 @@ describe('"Any" (has-value) filter — position + custom fields', () => {
     expect(any.bills.map(b => b.billNumber).sort()).toEqual(['T1', 'T2'])
 
     const facets = await (await SELF.fetch('http://localhost/api/bills/facets', { headers: { Cookie: `session=${token}` } })).json() as { tags: Record<string, number> }
-    expect(facets.tags['__any__']).toBe(2) // distinct bills with a tag
+    expect(facets.tag['__any__']).toBe(2) // distinct bills with a tag
   })
 
-  it('cf_<field>=__any__ returns bills with any value; facet count is distinct bills', async () => {
+  it('field.<field>=__any__ returns bills with any value; facet count is distinct bills', async () => {
     const res = await SELF.fetch('http://localhost/api/admin/custom-fields', {
       method: 'POST', headers: { Cookie: `session=${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'Tags', type: 'dropdown', options: ['a', 'b'], multiple: true }),
@@ -74,6 +74,6 @@ describe('"Any" (has-value) filter — position + custom fields', () => {
     expect(list.bills.map(b => b.billNumber).sort()).toEqual(['C1', 'C2'])
 
     const facets = await (await SELF.fetch('http://localhost/api/bills/facets', { headers: { Cookie: `session=${token}` } })).json() as { customFields: Record<string, Record<string, number>> }
-    expect(facets.customFields[fieldId]['__any__']).toBe(2) // distinct bills, not 3 (C1 has two values)
+    expect(facets.field[fieldId]['__any__']).toBe(2) // distinct bills, not 3 (C1 has two values)
   })
 })

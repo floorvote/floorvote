@@ -6,9 +6,9 @@ import { FILTER_ANY } from '../../../../shared/billFilter'
 
 const noop = vi.fn()
 const base = {
-  filterStates: [], filterStatuses: [], filterStages: [], filterPositions: [], filterPriorities: [],
-  filterYears: [], selectedTags: [], selectedSubjects: [], cfFilters: {},
-  filterMinRelevance: 0,
+  state: [], status: [], stage: [], position: [], priority: [],
+  year: [], tag: [], subject: [], field: {},
+  minRelevance: 0,
   positionOptions: [], customFieldDefs: [], isMultiState: false,
   onRemoveState: noop, onRemoveStatus: noop, onRemoveStage: noop, onRemovePosition: noop,
   onRemovePriority: noop, onRemoveYear: noop, onRemoveTag: noop,
@@ -21,9 +21,9 @@ describe('buildActiveFilterGroups', () => {
   })
 
   it('returns one group per active dimension, not one per chip', () => {
-    const groups = buildActiveFilterGroups({ ...base, selectedTags: ['a', 'b'] })
+    const groups = buildActiveFilterGroups({ ...base, tag: ['a', 'b'] })
     expect(groups).toHaveLength(1)
-    expect(groups[0].key).toBe('tags')
+    expect(groups[0].key).toBe('tag')
     expect(groups[0].chips).toHaveLength(2)
   })
 
@@ -31,21 +31,21 @@ describe('buildActiveFilterGroups', () => {
   // key mismatch noted in Task 1 (session vs year, and custom fields absent).
   it('keeps a stable order across dimensions', () => {
     const groups = buildActiveFilterGroups({
-      ...base, selectedTags: ['a'], filterStatuses: ['Introduced'], filterStates: ['UT'],
+      ...base, tag: ['a'], status: ['Introduced'], state: ['UT'],
     })
-    expect(groups.map(g => g.key)).toEqual(['state', 'status', 'tags'])
+    expect(groups.map(g => g.key)).toEqual(['state', 'status', 'tag'])
   })
 
   it('omits viewer-scope dimensions entirely, even if present on the input object', () => {
     // unvoted and newMatches move to the scope cluster in Task 7; they must
     // never appear between operators. ActiveFilterGroupArgs carries no
-    // unvotedOnly/newMatches fields at all, but a careless future change could
+    // unvoted/newMatches fields at all, but a careless future change could
     // still read them off the object (JS doesn't strip extra properties) — seed
     // them via a cast so this test can actually fail if that happens, unlike a
     // call with the untouched `base` fixture (which can only ever prove the
     // module returns `[]` for empty input, already covered above).
     const withScope = {
-      ...base, filterStates: ['UT'], unvotedOnly: true, newMatches: true,
+      ...base, state: ['UT'], unvoted: true, newMatches: true,
     } as unknown as ActiveFilterGroupArgs
     const groups = buildActiveFilterGroups(withScope)
     expect(groups.map(g => g.key)).not.toContain('unvoted')
@@ -54,14 +54,14 @@ describe('buildActiveFilterGroups', () => {
 
   it('labels a stage chip with the stage\'s name, after status', () => {
     const onRemoveStage = vi.fn()
-    const groups = buildActiveFilterGroups({ ...base, filterStatuses: ['Introduced'], filterStages: ['passed'], onRemoveStage })
+    const groups = buildActiveFilterGroups({ ...base, status: ['Introduced'], stage: ['passed'], onRemoveStage })
     expect(groups.map(g => g.key)).toEqual(['status', 'stage'])
     render(<>{groups[1].chips}</>)
     expect(screen.getByText('Passed legislature')).toBeInTheDocument()
   })
 
   it('renders relevance as a single-chip group above zero', () => {
-    const groups = buildActiveFilterGroups({ ...base, filterMinRelevance: 3 })
+    const groups = buildActiveFilterGroups({ ...base, minRelevance: 3 })
     expect(groups).toHaveLength(1)
     expect(groups[0].key).toBe('minRelevance')
     expect(groups[0].chips).toHaveLength(1)
@@ -72,7 +72,7 @@ describe('buildActiveFilterGroups', () => {
     // this file already covers regardless of how minRelevance is handled. Add
     // an unrelated active dimension so the assertion is specifically about
     // 'minRelevance' being absent, and can fail if the >0 guard is ever dropped.
-    const groups = buildActiveFilterGroups({ ...base, filterMinRelevance: 0, filterStates: ['UT'] })
+    const groups = buildActiveFilterGroups({ ...base, minRelevance: 0, state: ['UT'] })
     expect(groups.map(g => g.key)).not.toContain('minRelevance')
   })
 
@@ -82,7 +82,7 @@ describe('buildActiveFilterGroups', () => {
   })
 
   it('renders a subject chip with its state prefix in a multi-state tenant', () => {
-    const groups = buildActiveFilterGroups({ ...base, isMultiState: true, selectedSubjects: ['UT:Elections'] })
+    const groups = buildActiveFilterGroups({ ...base, isMultiState: true, subject: ['UT:Elections'] })
     render(<>{groups[0].chips}</>)
     expect(screen.getByText('UT: Elections')).toBeInTheDocument()
   })
@@ -92,7 +92,7 @@ describe('buildActiveFilterGroups', () => {
   // either way — only the label drops it, so removal still matches.
   it('drops the state prefix from subject chips in a single-state tenant', () => {
     const onRemoveSubject = vi.fn()
-    const groups = buildActiveFilterGroups({ ...base, selectedSubjects: ['NJ:State and Local Government'], onRemoveSubject })
+    const groups = buildActiveFilterGroups({ ...base, subject: ['NJ:State and Local Government'], onRemoveSubject })
     render(<>{groups[0].chips}</>)
     expect(screen.getByText('State and Local Government')).toBeInTheDocument()
     expect(screen.queryByText('NJ: State and Local Government')).not.toBeInTheDocument()
@@ -102,7 +102,7 @@ describe('buildActiveFilterGroups', () => {
 
   it('leaves an unprefixed subject alone in either tenant shape', () => {
     for (const isMultiState of [false, true]) {
-      const groups = buildActiveFilterGroups({ ...base, isMultiState, selectedSubjects: ['Elections'] })
+      const groups = buildActiveFilterGroups({ ...base, isMultiState, subject: ['Elections'] })
       const { unmount } = render(<>{groups[0].chips}</>)
       expect(screen.getByText('Elections')).toBeInTheDocument()
       unmount()
@@ -111,7 +111,7 @@ describe('buildActiveFilterGroups', () => {
 
   it('labels the FILTER_ANY / "none" special cases for position and priority', () => {
     const groups = buildActiveFilterGroups({
-      ...base, filterPositions: [FILTER_ANY], filterPriorities: [FILTER_ANY, 'none'],
+      ...base, position: [FILTER_ANY], priority: [FILTER_ANY, 'none'],
     })
     render(<>{groups.flatMap(g => g.chips)}</>)
     expect(screen.getByText('Any position')).toBeInTheDocument()
@@ -120,7 +120,7 @@ describe('buildActiveFilterGroups', () => {
   })
 
   it('labels the FILTER_ANY special case for tags', () => {
-    const groups = buildActiveFilterGroups({ ...base, selectedTags: [FILTER_ANY] })
+    const groups = buildActiveFilterGroups({ ...base, tag: [FILTER_ANY] })
     render(<>{groups[0].chips}</>)
     expect(screen.getByText('Any tag')).toBeInTheDocument()
   })
@@ -133,7 +133,7 @@ describe('buildActiveFilterGroups', () => {
   // in this file, since ActiveChip renders the same <span><button>×</button>
   // structure. Pin the one real visual distinction each carries instead.
   it('renders a real position value using the position colour map, not an ActiveChip palette', () => {
-    const groups = buildActiveFilterGroups({ ...base, filterPositions: ['Support'] })
+    const groups = buildActiveFilterGroups({ ...base, position: ['Support'] })
     const { container } = render(<>{groups[0].chips}</>)
     const span = container.querySelector('span')
     // Inline values compared as written: the colors are CSS variables, which
@@ -146,7 +146,7 @@ describe('buildActiveFilterGroups', () => {
     // Every ActiveChip variant paints a 1px solid border; the priority span's
     // style object omits `border` entirely (see activeFilterGroups.tsx), which
     // is exactly the flattening a careless refactor would erase.
-    const groups = buildActiveFilterGroups({ ...base, filterPriorities: ['high'] })
+    const groups = buildActiveFilterGroups({ ...base, priority: ['high'] })
     const { container } = render(<>{groups[0].chips}</>)
     const span = container.querySelector('span')
     expect(span).toHaveStyle({ background: PRIORITY_COLORS.high.fill, color: PRIORITY_COLORS.high.text })

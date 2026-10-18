@@ -33,8 +33,8 @@ vi.mock('../../lib/api', () => {
     if (path === '/config/custom-fields') return CF_DEFS as T
     if (path === '/views') return { views: [] } as T
     if (path.startsWith('/bills/facets')) {
-      return { status: {}, priority: {}, session: {}, year: {}, state: {}, position: {}, tags: {}, subjects: {},
-        customFields: {}, myBillsCount: 0, newMatchesCount: 0 } as T
+      return { status: {}, priority: {}, sessionName: {}, year: {}, state: {}, position: {}, tag: {}, subject: {},
+        field: {}, myBillsCount: 0, newMatchesCount: 0 } as T
     }
     if (path.startsWith('/bills?')) {
       if (holdBills.value) return new Promise<T>(() => {})
@@ -76,10 +76,10 @@ afterEach(() => { vi.unstubAllGlobals() })
 // filters in any order the URL happened to have, still finds the warmed page.
 describe('bill list prefetch with a custom-field filter', () => {
   it.each([
-    ['a custom field by its slug', '/bills?cf_acet_is_tracking=1'],
-    ['a custom field by its id', '/bills?cf_cf-acet-uuid=1'],
-    ['a custom field beside other filters, in an order that is not the canonical one', '/bills?priority=high&cf_acet_is_tracking=1&status=2&year=2025&match=any'],
-    ['a custom field named twice, by its slug and its id', '/bills?cf_acet_is_tracking=1&cf_cf-acet-uuid=1&sort=bill&dir=desc'],
+    ['a custom field by its slug', '/bills?field.acet_is_tracking=1'],
+    ['a custom field by its id', '/bills?field.cf-acet-uuid=1'],
+    ['a custom field beside other filters, in an order that is not the canonical one', '/bills?priority=high&field.acet_is_tracking=1&status=2&year=2025&match=any'],
+    ['a custom field named twice, by its slug and its id', '/bills?field.acet_is_tracking=1&field.cf-acet-uuid=1&sort=bill&dir=desc'],
   ])('paints the prefetched first page without waiting on its own bills request: %s', async (_name, url) => {
     // A visit earlier in the session leaves the custom-field defs cached, so the
     // next mount resolves slugs to ids on its very first render.

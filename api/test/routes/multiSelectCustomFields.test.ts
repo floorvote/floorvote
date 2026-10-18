@@ -150,7 +150,7 @@ describe('multi-select custom fields', () => {
     })
 
     // Filter for 'a' → A only
-    let res = await SELF.fetch(`http://localhost/api/bills?cf_${fieldId}=a&pageSize=50`, {
+    let res = await SELF.fetch(`http://localhost/api/bills?field.${fieldId}=a&pageSize=50`, {
       headers: { Cookie: `session=${token}` },
     })
     expect(res.status).toBe(200)
@@ -158,14 +158,14 @@ describe('multi-select custom fields', () => {
     expect(body.bills.map(b => b.id).sort()).toEqual([billA].sort())
 
     // Filter for 'b' → A, B
-    res = await SELF.fetch(`http://localhost/api/bills?cf_${fieldId}=b&pageSize=50`, {
+    res = await SELF.fetch(`http://localhost/api/bills?field.${fieldId}=b&pageSize=50`, {
       headers: { Cookie: `session=${token}` },
     })
     body = await res.json() as { bills: { id: string }[] }
     expect(body.bills.map(b => b.id).sort()).toEqual([billA, billB].sort())
 
     // Filter for both 'a' and 'c' (Match ANY) → A, C
-    res = await SELF.fetch(`http://localhost/api/bills?cf_${fieldId}=a&cf_${fieldId}=c&pageSize=50`, {
+    res = await SELF.fetch(`http://localhost/api/bills?field.${fieldId}=a&field.${fieldId}=c&pageSize=50`, {
       headers: { Cookie: `session=${token}` },
     })
     body = await res.json() as { bills: { id: string }[] }
@@ -196,12 +196,12 @@ describe('multi-select custom fields', () => {
 
     // No active filter → aggregate facet. Each option counted individually.
     const res = await SELF.fetch('http://localhost/api/bills/facets', { headers: { Cookie: `session=${token}` } })
-    const body = await res.json() as { customFields: Record<string, Record<string, number>> }
-    expect(body.customFields[fieldId]).toEqual({ a: 1, b: 2, c: 1, __any__: 3 })
+    const body = await res.json() as { field: Record<string, Record<string, number>> }
+    expect(body.field[fieldId]).toEqual({ a: 1, b: 2, c: 1, __any__: 3 })
 
     // With 'b' active, disjunctive count for the field omits its own filter → unchanged.
     const res2 = await SELF.fetch(`http://localhost/api/bills/facets?cf_${fieldId}=b`, { headers: { Cookie: `session=${token}` } })
-    const body2 = await res2.json() as { customFields: Record<string, Record<string, number>> }
+    const body2 = await res2.json() as { field: Record<string, Record<string, number>> }
     expect(body2.customFields[fieldId]).toEqual({ a: 1, b: 2, c: 1, __any__: 3 })
   })
 
@@ -270,7 +270,7 @@ describe('multi-select custom fields', () => {
     expect(res.status).toBe(200)
     const body = await res.json() as {
       count: number
-      customFields: Record<string, Record<string, number>>
+      field: Record<string, Record<string, number>>
       multiCustomFields: Record<string, Record<string, number>>
     }
 
@@ -279,7 +279,7 @@ describe('multi-select custom fields', () => {
     expect(body.multiCustomFields[fieldId]).toEqual({ a: 2, b: 1 })
     // Multi fields must not leak combination strings into the single-select map,
     // whose counts are expected to partition the selection.
-    expect(body.customFields[fieldId]).toBeUndefined()
+    expect(body.field[fieldId]).toBeUndefined()
   })
 
   // The capability the greyed-out ribbon pill used to block: applying multi-select

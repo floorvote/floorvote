@@ -86,7 +86,7 @@ describe('listCache helper (direct put/get)', () => {
 
   it('gives two equal bill filters the same key, however their query strings were written', () => {
     expect(keyOf('priority=high&status=Passed&match=any')).toBe(keyOf('match=any&status=Passed&priority=high'))
-    expect(keyOf('cf_area=b&cf_area=a&cf_zone=x')).toBe(keyOf('cf_zone=x&cf_area=a&cf_area=b'))
+    expect(keyOf('field.area=b&field.area=a&field.zone=x')).toBe(keyOf('field.zone=x&field.area=a&field.area=b'))
     expect(keyOf('subject=NJ:Taxes&subject=UT:Elections')).toBe(keyOf('subject=UT:Elections&subject=NJ:Taxes'))
     expect(keyOf('status=Passed&match=all')).toBe(keyOf('status=Passed'))
   })
@@ -94,10 +94,10 @@ describe('listCache helper (direct put/get)', () => {
   it('leaves no filter out of the key: every filter the shared module names changes it when it is set', () => {
     // One value per filter, taken from the module's own definitions so a filter added to it must be added here too.
     const SET: Record<string, string> = {
-      status: 'status=Passed', stage: 'stage=passed', year: 'year=2026', session: 'session=2026', state: 'state=NJ',
+      status: 'status=Passed', stage: 'stage=passed', year: 'year=2026', sessionName: 'sessionName=2026', state: 'state=NJ',
       position: 'position=Support', priority: 'priority=high', tag: 'tag=Clerk', subject: 'subject=UT:Elections',
-      minRelevance: 'minRelevance=5', q: 'q=election', myBills: 'myBills=1', unvoted: 'unvoted=1', newMatches: 'newMatches=1',
-      drafts: 'drafts=1', match: 'match=any', cf: 'cf_area=North',
+      minRelevance: 'minRelevance=5', search: 'search=election', myBills: 'myBills=1', unvoted: 'unvoted=1', newMatches: 'newMatches=1',
+      drafts: 'drafts=1', match: 'match=any', field: 'field.area=North',
     }
     expect(Object.keys(SET).sort()).toEqual(BILL_FILTER_DEFS.map(d => d.name).sort())
     const unfiltered = keyOf('')
@@ -267,12 +267,12 @@ describe('GET /bills default-list caching', () => {
       ['status=Vetoed', () => seedBill({ ...anchor, status: 'Vetoed' })],
       ['stage=vetoed', () => seedBill({ ...anchor, statusStage: 'vetoed' })],
       ['year=2031', () => seedBill({ ...anchor, yearStart: 2031 })],
-      ['session=2031', () => seedBill({ ...anchor, session: '2031' })],
+      ['sessionName=2031', () => seedBill({ ...anchor, session: '2031' })],
       ['state=ZZ', () => seedBill({ ...anchor, state: 'ZZ' })],
       ['priority=medium', () => seedBill({ ...anchor, priority: 'medium' })],
       ['tag=Clerk', () => seedBill({ ...anchor, tags: ['Clerk'] })],
       ['minRelevance=9', () => seedBill({ ...anchor, relevanceScore: 9 })],
-      ['q=zebra', () => seedBill(anchor)],
+      ['search=zebra', () => seedBill(anchor)],
       ['drafts=1', () => seedBill({ ...anchor, isDraft: true })],
       ['position=Oppose', async () => {
         const id = await seedBill(anchor)
@@ -282,7 +282,7 @@ describe('GET /bills default-list caching', () => {
         const id = await seedBill(anchor)
         await getDb(env.DB).insert(billSubjects).values({ billId: id, subjectName: 'Parks', state: 'ZZ' })
       }],
-      ['cf_area=North', async () => {
+      ['field.area=North', async () => {
         const db = getDb(env.DB)
         await db.insert(customFieldDefinitions).values({ id: 'cf-area', name: 'Area', slug: 'area', type: 'dropdown', options: JSON.stringify(['North']), multiple: false })
         const id = await seedBill(anchor)

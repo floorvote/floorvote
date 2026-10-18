@@ -60,7 +60,7 @@ const COUNT = 34
 // [the anchor's query, the dimensions it filters, whose own counts it narrows under AND]
 const AND_ANCHORS: Array<[string, string[]]> = [
   ['', []], ['status=Passed', ['status']], ['priority=high', ['priority']], ['tag=Energy', ['tag']], ['position=Support', ['position']],
-  ['cf_cf2=x', ['cf_cf2']], ['subject=NJ:Elections', ['subject']], ['minRelevance=4', []],
+  ['field.cf2=x', ['field.cf2']], ['subject=NJ:Elections', ['subject']], ['minRelevance=4', []],
   ['unvoted=1', []], ['newMatches=1', []], ['myBills=1', []],
   ['priority=none', ['priority']], ['position=none', ['position']], ['priority=__any__&status=Introduced', ['priority', 'status']],
 ]
@@ -69,17 +69,17 @@ const AND_ANCHORS: Array<[string, string[]]> = [
 // which narrows every count. They run in files of their own (groupFacetsRandom4, 5): a file slows with the number of
 // requests it has made, and these anchors would carry the others' past their time limit on a busy machine.
 const PROVIDER_AND_ANCHORS: Array<[string, string[]]> = [
-  ['state=NJ', ['state']], ['stage=passed', ['stage']], ['year=2026', ['year']], ['session=2025', ['session']], ['drafts=1', []],
-  ['year=2026&session=2025', ['year', 'session']], ['state=TX&stage=introduced', ['state', 'stage']], ['drafts=1&status=Passed', ['status']],
+  ['state=NJ', ['state']], ['stage=passed', ['stage']], ['year=2026', ['year']], ['sessionName=2025', ['session']], ['drafts=1', []],
+  ['year=2026&sessionName=2025', ['year', 'session']], ['state=TX&stage=introduced', ['state', 'stage']], ['drafts=1&status=Passed', ['status']],
 ]
 const PROVIDER_OR_ANCHORS = [
-  'state=NJ', 'stage=passed', 'year=2026', 'session=2025', 'drafts=1', 'year=2025&session=2026', 'state=TX&stage=introduced&year=2026',
-  'drafts=1&priority=high', 'session=2025&status=Passed',
+  'state=NJ', 'stage=passed', 'year=2026', 'sessionName=2025', 'drafts=1', 'year=2025&sessionName=2026', 'state=TX&stage=introduced&year=2026',
+  'drafts=1&priority=high', 'sessionName=2025&status=Passed',
 ]
 const OR_ANCHORS = [
-  'status=Passed', 'priority=high', 'tag=Energy', 'position=Support', 'cf_cf1=Labor', 'subject=NJ:Elections',
+  'status=Passed', 'priority=high', 'tag=Energy', 'position=Support', 'field.cf1=Labor', 'subject=NJ:Elections',
   'status=Passed&priority=high', 'status=Introduced&tag=Labor&position=Oppose', 'priority=none&state=TX',
-  'status=Passed&unvoted=1', 'priority=high&newMatches=1', 'tag=Energy&myBills=1', 'position=none&cf_cf1=__any__',
+  'status=Passed&unvoted=1', 'priority=high&newMatches=1', 'tag=Energy&myBills=1', 'position=none&field.cf1=__any__',
 ]
 
 /**
@@ -135,13 +135,13 @@ export function randomFixtureSuite(seed: number, modes: Array<'AND' | 'OR'> = ['
       if (!skip.includes('status')) add('status', f.status)
       if (!skip.includes('stage')) add('stage', f.stage)
       if (!skip.includes('year')) add('year', f.year)
-      if (!skip.includes('session')) add('session', f.session)
+      if (!skip.includes('session')) add('session', f.sessionName)
       if (!skip.includes('state')) add('state', f.state)
       if (!skip.includes('priority')) add('priority', f.priority)
       if (!skip.includes('position')) add('position', f.position)
-      if (!skip.includes('tag')) add('tag', f.tags)
-      if (!skip.includes('subject')) add('subject', f.subjects)
-      for (const [fieldId, counts] of Object.entries(f.customFields)) if (!skip.includes(`cf_${fieldId}`)) add(`cf_${fieldId}`, counts)
+      if (!skip.includes('tag')) add('tag', f.tag)
+      if (!skip.includes('subject')) add('subject', f.subject)
+      for (const [fieldId, counts] of Object.entries(f.field)) if (!skip.includes(`field.${fieldId}`)) add(`field.${fieldId}`, counts)
       return out
     }
 

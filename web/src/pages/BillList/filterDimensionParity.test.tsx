@@ -80,8 +80,8 @@ vi.mock('../../lib/api', () => {
     if (path.startsWith('/bills/facets')) {
       const stateCounts = Object.fromEntries(facetState.states.map(s => [s, 1]))
       return {
-        status: { '2': 1 }, priority: {}, session: {}, year: { '2026': 1 }, state: stateCounts, position: {},
-        tags: { Education: 1 }, subjects: { 'RI:Roads': 1 }, customFields: {}, myBillsCount: 0, newMatchesCount: 3,
+        status: { '2': 1 }, priority: {}, sessionName: {}, year: { '2026': 1 }, state: stateCounts, position: {},
+        tag: { Education: 1 }, subject: { 'RI:Roads': 1 }, field: {}, myBillsCount: 0, newMatchesCount: 3,
         draftCount: draftState.draftCount,
         hasDrafts: draftState.hasDrafts,
       } as T
@@ -168,17 +168,17 @@ function renderMobile(
     <FilterSheet
       isOpen
       onClose={() => {}}
-      statuses={[]} stages={[]} priorities={[]} positions={[]} tags={[]} subjects={[]} sessions={[]} states={[]}
+      status={[]} stage={[]} priority={[]} position={[]} tag={[]} subject={[]} year={[]} state={[]}
       minRelevance={0} myBills={false}
       isAdmin={ctx.isAdmin}
       newMatches={ctx.newMatches ?? false}
       newMatchesCount={ctx.newMatchesCount ?? 3}
-      unvotedOnly={false}
+      unvoted={false}
       drafts={ctx.drafts ?? false}
       draftCount={ctx.draftCount ?? 3}
       hasDrafts={ctx.hasDrafts ?? true}
-      matchAny={false}
-      onMatchAnyChange={() => {}}
+      match="all"
+      onMatchChange={() => {}}
       uniqueStates={ctx.uniqueStates}
       isMultiState={ctx.isMultiState}
       statusOptions={[{ value: 'active', label: 'Active' }]}
@@ -187,16 +187,16 @@ function renderMobile(
       positionOptions={[{ value: 'support', label: 'Support' }]}
       tagOptions={['Education']}
       subjectGroups={subjectGroups}
-      sessionOptions={[{ value: '2026', label: '2026' }]}
-      totalSessionCount={1}
+      yearOptions={[{ value: '2026', label: '2026' }]}
+      totalYearCount={1}
       stateOptions={ctx.uniqueStates.map(s => ({ value: s, label: s }))}
       customFieldDefs={ctx.customFieldDefs ?? []}
-      cfFilters={{}}
-      onCfFilterChange={() => {}}
+      field={{}}
+      onFieldChange={() => {}}
       onStatusChange={() => {}} onStageChange={() => {}} onPriorityChange={() => {}} onPositionChange={() => {}}
-      onTagChange={() => {}} onSubjectChange={() => {}} onSessionChange={() => {}} onStateChange={() => {}}
+      onTagChange={() => {}} onSubjectChange={() => {}} onYearChange={() => {}} onStateChange={() => {}}
       onMinRelevanceChange={() => {}} onMyBillsChange={() => {}} onNewMatchesChange={() => {}}
-      onUnvotedOnlyChange={() => {}}
+      onUnvotedChange={() => {}}
       onDraftsChange={() => {}}
       onClearAll={() => {}}
     />,
@@ -564,7 +564,7 @@ describe('dimension scope classification', () => {
 
   it('treats every value dimension as a bill fact', () => {
     const bill = FILTER_DIMENSIONS.filter(d => d.scope === 'bill').map(d => d.key).sort()
-    expect(bill).toEqual(['position', 'priority', 'session', 'stage', 'state', 'status', 'subjects', 'tags'])
+    expect(bill).toEqual(['position', 'priority', 'stage', 'state', 'status', 'subject', 'tag', 'year'])
   })
 
   it('registers unvoted so the bills page can set it, not only clear it', () => {
@@ -610,18 +610,18 @@ describe('Stage dimension — hidden when every covered state is on LegiScan', (
   const renderConfiguredMobile = (providers: string[] | undefined, stages: string[] = []) => render(withConfig(providers,
     <FilterSheet
       isOpen onClose={() => {}}
-      statuses={[]} stages={stages} priorities={[]} positions={[]} tags={[]} subjects={[]} sessions={[]} states={[]}
-      minRelevance={0} myBills={false} isAdmin={false} newMatches={false} newMatchesCount={0} unvotedOnly={false}
-      drafts={false} draftCount={0} hasDrafts={false} matchAny={false} onMatchAnyChange={() => {}}
+      status={[]} stage={stages} priority={[]} position={[]} tag={[]} subject={[]} year={[]} state={[]}
+      minRelevance={0} myBills={false} isAdmin={false} newMatches={false} newMatchesCount={0} unvoted={false}
+      drafts={false} draftCount={0} hasDrafts={false} match="all" onMatchChange={() => {}}
       uniqueStates={['RI']} isMultiState={false}
       statusOptions={[{ value: 'active', label: 'Active' }]}
       stageOptions={[{ value: 'enacted', label: 'Enacted' }]}
-      priorityOptions={[]} positionOptions={[]} tagOptions={[]} subjectGroups={[]} sessionOptions={[]} totalSessionCount={0}
-      stateOptions={[{ value: 'RI', label: 'RI' }]} customFieldDefs={[]} cfFilters={{}} onCfFilterChange={() => {}}
+      priorityOptions={[]} positionOptions={[]} tagOptions={[]} subjectGroups={[]} yearOptions={[]} totalYearCount={0}
+      stateOptions={[{ value: 'RI', label: 'RI' }]} customFieldDefs={[]} field={{}} onFieldChange={() => {}}
       onStatusChange={() => {}} onStageChange={() => {}} onPriorityChange={() => {}} onPositionChange={() => {}}
-      onTagChange={() => {}} onSubjectChange={() => {}} onSessionChange={() => {}} onStateChange={() => {}}
+      onTagChange={() => {}} onSubjectChange={() => {}} onYearChange={() => {}} onStateChange={() => {}}
       onMinRelevanceChange={() => {}} onMyBillsChange={() => {}} onNewMatchesChange={() => {}}
-      onUnvotedOnlyChange={() => {}} onDraftsChange={() => {}} onClearAll={() => {}}
+      onUnvotedChange={() => {}} onDraftsChange={() => {}} onClearAll={() => {}}
     />))
 
   it('hides Stage on both surfaces when LegiScan owns every state', async () => {
@@ -697,7 +697,7 @@ describe('filter UI parity — both surfaces serialize the same bill filter', ()
   // Picks chosen so their natural order (priority first, then year) is not the shared serialize's (year first).
   const PICKS: Pick[] = [
     { dimension: 'priority', desktop: 'High Priority', phone: 'High' },
-    { dimension: 'session', desktop: '2026', phone: '2026' },
+    { dimension: 'year', desktop: '2026', phone: '2026' },
   ]
 
   it('writes the same URL from the same picks on desktop and on the phone sheet', async () => {

@@ -47,7 +47,6 @@ function renderRow(isAdmin: boolean, opts: { onVote?: (billId: string, pos: 'sup
       <BillRow
         bill={makeBill(opts.bill)}
         index={0}
-        selectedTags={[]}
         onTagClick={vi.fn()}
         isAdmin={isAdmin}
         positionVocabulary={['Support', 'Oppose']}
@@ -58,11 +57,7 @@ function renderRow(isAdmin: boolean, opts: { onVote?: (billId: string, pos: 'sup
         onPriorityChange={vi.fn()}
         onPositionChange={vi.fn()}
         onVote={opts.onVote}
-        filterStatuses={[]}
-        filterPriorities={[]}
-        filterPositions={[]}
-        filterYears={[]}
-        filterMinRelevance={0}
+        filter={{ status: [], priority: [], position: [], year: [], minRelevance: 0, tag: [] }}
         sortedPaths={[]}
         isMultiState={false}
         isSelectionMode={false}

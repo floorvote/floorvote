@@ -89,8 +89,8 @@ describe('what the web serializes is what the API reads', () => {
     })
   })
 
-  it('sends no session from a /bills?session= URL to the list, the facets, or bulk', async () => {
-    const sent = web('session=S26')
+  it('sends no session from a /bills?sessionName= URL to the list, the facets, or bulk', async () => {
+    const sent = web('sessionName=S26')
     expect(sent.list).not.toContain('session')
     expect(sent.facets).not.toContain('session')
     expect(sent.bulkFilter).toBe('')
@@ -99,9 +99,9 @@ describe('what the web serializes is what the API reads', () => {
   })
 
   it('keeps a custom field in the request by its id, so a list and the prefetch of it share a cache entry', () => {
-    expect(web(`cf_${FIELD_SLUG}=Labor`).list).toContain(`cf_${FIELD_ID}=Labor`)
-    expect(web(`cf_${FIELD_SLUG}=Labor`).facets).toContain(`cf_${FIELD_ID}=Labor`)
-    expect(web(`cf_${FIELD_SLUG}=Labor`).bulkFilter).toBe(`cf_${FIELD_ID}=Labor`)
-    expect(web(`cf_${FIELD_ID}=Labor`).list).toBe(web(`cf_${FIELD_SLUG}=Labor`).list)
+    expect(web(`field.${FIELD_SLUG}=Labor`).list).toContain(`field.${FIELD_ID}=Labor`)
+    expect(web(`field.${FIELD_SLUG}=Labor`).facets).toContain(`field.${FIELD_ID}=Labor`)
+    expect(web(`field.${FIELD_SLUG}=Labor`).bulkFilter).toBe(`field.${FIELD_ID}=Labor`)
+    expect(web(`field.${FIELD_ID}=Labor`).list).toBe(web(`field.${FIELD_SLUG}=Labor`).list)
   })
 })

@@ -8,7 +8,7 @@ import { FILTER_ANY, encodeSubjectFilter, withBillFilter } from '../../../../sha
 // A list URL as the query the pane summarizes. A search term never rides in the URL the app builds, so a test sets it beside.
 const values = (qs: string, over: { search?: string } = {}): BillsQuery => {
   const q = billsQueryFromSearch(new URLSearchParams(qs))
-  return over.search === undefined ? q : { ...q, filter: withBillFilter({ q: over.search }, q.filter) }
+  return over.search === undefined ? q : { ...q, filter: withBillFilter({ search: over.search }, q.filter) }
 }
 const summarize = (qs: string, over: { search?: string } = {}, extra: Parameters<typeof buildListSummary>[0] extends infer I ? Partial<I> : never = {}) =>
   buildListSummary({ values: values(qs, over), ...extra })
@@ -47,7 +47,7 @@ describe('buildListSummary: the headline', () => {
   })
 
   it('counts a value repeated in the URL once', () => {
-    const s = summarize('status=2&status=2&year=2026&year=2026&cf_team=yes&cf_team=yes')
+    const s = summarize('status=2&status=2&year=2026&year=2026&field.team=yes&field.team=yes')
     expect(s.filterCount).toBe(3)
   })
 
@@ -130,22 +130,22 @@ describe('buildListSummary: the saved view', () => {
 
 describe('buildListSummary: the filter list reads like the chips', () => {
   it('lists search first, then each dimension in the chip row’s order', () => {
-    const s = summarize('state=RI&status=3&year=2026&minRelevance=5&tag=Water&cf_team=Alpha', { search: 'storm' }, {
+    const s = summarize('state=RI&status=3&year=2026&minRelevance=5&tag=Water&field.team=Alpha', { search: 'storm' }, {
       customFieldDefs: [{ id: 'f1', slug: 'team', name: 'Team', type: 'dropdown' }],
     })
     expect(s.filters).toEqual(['Search: “storm”', 'RI', expect.any(String), 'Year: 2026', 'Relevance 5+', 'Water', 'Team: Alpha'])
   })
 
   it('names the any/none sentinels as the chips do', () => {
-    const s = summarize(`position=${FILTER_ANY}&position=none&priority=${FILTER_ANY}&priority=none&tag=${FILTER_ANY}&cf_team=${FILTER_ANY}`)
+    const s = summarize(`position=${FILTER_ANY}&position=none&priority=${FILTER_ANY}&priority=none&tag=${FILTER_ANY}&field.team=${FILTER_ANY}`)
     expect(s.filters).toEqual(['Any position', 'Not set', 'Any priority', 'No priority', 'Any tag', 'team: Any'])
   })
 
   it('names a binary custom field by its name alone, and a missing def by its key', () => {
     const defs: SummaryFieldDef[] = [{ id: 'f9', slug: 'tracked', name: 'Tracked by team', type: 'binary' }]
-    expect(summarize('cf_tracked=yes', {}, { customFieldDefs: defs }).filters).toEqual(['Tracked by team'])
-    expect(summarize('cf_f9=yes', {}, { customFieldDefs: defs }).filters).toEqual(['Tracked by team'])
-    expect(summarize('cf_mystery=yes').filters).toEqual(['mystery: yes'])
+    expect(summarize('field.tracked=yes', {}, { customFieldDefs: defs }).filters).toEqual(['Tracked by team'])
+    expect(summarize('field.f9=yes', {}, { customFieldDefs: defs }).filters).toEqual(['Tracked by team'])
+    expect(summarize('field.mystery=yes').filters).toEqual(['mystery: yes'])
   })
 
   it('drops the state prefix from a subject in a single-state tenant only', () => {
@@ -161,15 +161,15 @@ describe('buildListSummary: the filter list reads like the chips', () => {
     const defs = [{ id: 'f1', slug: 'team', name: 'Team', type: 'dropdown' as const, options: null, displayOrder: 0 },
                   { id: 'f2', slug: 'tracked', name: 'Tracked by team', type: 'binary' as const, options: null, displayOrder: 1 }]
     const qs = 'state=RI&status=3&stage=passed&position=Support&position=none&position=__any__&priority=high&priority=none&priority=__any__' +
-      '&year=2025&year=2026&minRelevance=10&tag=Water&tag=__any__&subject=NJ:Elections&cf_team=Alpha&cf_tracked=yes&cf_team=__any__'
+      '&year=2025&year=2026&minRelevance=10&tag=Water&tag=__any__&subject=NJ:Elections&field.team=Alpha&field.tracked=yes&field.team=__any__'
     const v = values(qs)
     for (const isMultiState of [false, true]) {
       const noop = vi.fn()
       const args: ActiveFilterGroupArgs = {
-        filterStates: [...v.filter.state], filterStatuses: [...v.filter.status], filterStages: [...v.filter.stage], filterPositions: [...v.filter.position],
-        filterPriorities: [...v.filter.priority], filterYears: v.filter.year.map(Number), selectedTags: [...v.filter.tag],
-        selectedSubjects: v.filter.subject.map(x => encodeSubjectFilter(x.state, x.name)),
-        cfFilters: { f1: ['Alpha', FILTER_ANY], f2: ['yes'] }, filterMinRelevance: v.filter.minRelevance ?? 0,
+        state: [...v.filter.state], status: [...v.filter.status], stage: [...v.filter.stage], position: [...v.filter.position],
+        priority: [...v.filter.priority], year: v.filter.year.map(Number), tag: [...v.filter.tag],
+        subject: v.filter.subject.map(x => encodeSubjectFilter(x.state, x.name)),
+        field: { f1: ['Alpha', FILTER_ANY], f2: ['yes'] }, minRelevance: v.filter.minRelevance ?? 0,
         positionOptions: [{ value: 'Support' }, { value: 'none', label: 'Not set' }], customFieldDefs: defs, isMultiState,
         onRemoveState: noop, onRemoveStatus: noop, onRemoveStage: noop, onRemovePosition: noop, onRemovePriority: noop,
         onRemoveYear: noop, onRemoveTag: noop, onRemoveSubject: noop, onRemoveCf: noop, onRemoveMinRelevance: noop,

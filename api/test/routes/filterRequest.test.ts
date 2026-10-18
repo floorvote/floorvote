@@ -7,9 +7,9 @@ import { parseBulkFilter, subjectCapError } from '../../src/routes/billsApi/filt
 // read it with the same `parseBillFilter`. A body's own shape and key names are gone.
 
 const everyFilterQuery =
-  'status=Passed&status=In%20committee&stage=enacted&priority=high&priority=__any__&position=none&session=2026%20Regular&year=2026&year=2025&state=UT'
-  + '&tag=__any__&tag=Energy&subject=UT:Elections&subject=NJ:Resolutions:%20Congratulatory&q=%22voter%20id%22,%20mail&minRelevance=4'
-  + '&myBills=1&unvoted=true&newMatches=true&drafts=1&match=any&cf_committee=Labor&cf_3f2a9c1e-7b4d-4a8e-9c55=x&cf_3f2a9c1e-7b4d-4a8e-9c55=__any__'
+  'status=Passed&status=In%20committee&stage=enacted&priority=high&priority=__any__&position=none&sessionName=2026%20Regular&year=2026&year=2025&state=UT'
+  + '&tag=__any__&tag=Energy&subject=UT:Elections&subject=NJ:Resolutions:%20Congratulatory&search=%22voter%20id%22,%20mail&minRelevance=4'
+  + '&myBills=1&unvoted=true&newMatches=true&drafts=1&match=any&field.committee=Labor&field.3f2a9c1e-7b4d-4a8e-9c55=x&field.3f2a9c1e-7b4d-4a8e-9c55=__any__'
 
 describe('parseBulkFilter', () => {
   it('reads a string as the bill filter the list reads from the same query string', () => {
@@ -22,16 +22,16 @@ describe('parseBulkFilter', () => {
     expect(f.stage).toEqual(['enacted'])
     expect(f.priority).toEqual(['high', '__any__'])
     expect(f.position).toEqual(['none'])
-    expect(f.session).toEqual(['2026 Regular'])
+    expect(f.sessionName).toEqual(['2026 Regular'])
     expect(f.year).toEqual(['2026', '2025'])
     expect(f.state).toEqual(['UT'])
     expect(f.tag).toEqual(['__any__', 'Energy'])
     expect(f.subject).toEqual([{ state: 'UT', name: 'Elections' }, { state: 'NJ', name: 'Resolutions: Congratulatory' }])
-    expect(f.q).toBe('"voter id", mail')
+    expect(f.search).toBe('"voter id", mail')
     expect(f.minRelevance).toBe(4)
     expect([f.myBills, f.unvoted, f.newMatches, f.drafts]).toEqual([true, true, true, true])
     expect(f.match).toBe('any')
-    expect(f.cf).toEqual({ committee: ['Labor'], '3f2a9c1e-7b4d-4a8e-9c55': ['x', '__any__'] })
+    expect(f.field).toEqual({ committee: ['Labor'], '3f2a9c1e-7b4d-4a8e-9c55': ['x', '__any__'] })
   })
 
   it('reads what serializeBillFilter writes as the same filter', () => {
@@ -55,8 +55,8 @@ describe('parseBulkFilter', () => {
   )
 
   it('reads a field named as an Object.prototype member without touching the prototype', () => {
-    const f = parseBulkFilter('cf___proto__=x&cf_constructor=y')!
-    expect(Object.keys(f.cf).sort()).toEqual(['__proto__', 'constructor'])
+    const f = parseBulkFilter('field.__proto__=x&field.constructor=y')!
+    expect(Object.keys(f.field).sort()).toEqual(['__proto__', 'constructor'])
     expect(({} as Record<string, unknown>).push).toBeUndefined()
   })
 
@@ -64,7 +64,7 @@ describe('parseBulkFilter', () => {
     const f = parseBulkFilter(everyFilterQuery)!
     expect(Object.isFrozen(f)).toBe(true)
     expect(Object.isFrozen(f.status)).toBe(true)
-    expect(Object.isFrozen(f.cf)).toBe(true)
+    expect(Object.isFrozen(f.field)).toBe(true)
   })
 })
 

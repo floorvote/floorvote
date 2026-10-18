@@ -31,7 +31,7 @@ describe('the table of filters', () => {
   it('gives the filters with no facet count no place in the response', () => {
     // A minimum relevance, search, and the group operator are filters nobody picks a value of from a count.
     const names = BILL_FILTER_DEFS.filter(d => (FILTER_TABLE as Record<string, { facet: unknown }>)[d.name].facet === null).map(d => d.name).sort()
-    expect(names).toEqual(['match', 'minRelevance', 'q'])
+    expect(names).toEqual(['match', 'minRelevance', 'search'])
   })
 })
 
@@ -60,9 +60,9 @@ describe('the facets response built for a list with nothing in it', () => {
   it('counts nothing, and keeps the tenant-wide values it is given', () => {
     const empty = JSON.parse(JSON.stringify(emptyFacets({ subjectStates: ['NJ'], billStates: ['NJ', 'TX'], hasDrafts: true })))
     expect(empty).toEqual({
-      status: {}, stage: {}, priority: { none: 0, __any__: 0 }, year: {}, session: {}, state: {},
-      position: { none: 0, __any__: 0 }, tags: { __any__: 0 }, subjects: {}, subjectStates: ['NJ'], billStates: ['NJ', 'TX'],
-      customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0, hasDrafts: true,
+      status: {}, stage: {}, priority: { none: 0, __any__: 0 }, year: {}, sessionName: {}, state: {},
+      position: { none: 0, __any__: 0 }, tag: { __any__: 0 }, subject: {}, subjectStates: ['NJ'], billStates: ['NJ', 'TX'],
+      field: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0, hasDrafts: true,
     })
   })
 })

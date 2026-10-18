@@ -83,11 +83,11 @@ describe('every route reads one bill filter the same way', () => {
   describe('the same request on every route', () => {
     it('reads a repeated single-valued key as the first, on the list and on bulk-values', async () => {
       for (const prefix of ['/bills?pageSize=200&', '/bills/bulk-values?']) {
-        const res = await get(`${prefix}minRelevance=6&minRelevance=1&q=ballot&q=zoning&unvoted=1&unvoted=0`)
+        const res = await get(`${prefix}minRelevance=6&minRelevance=1&search=ballot&search=zoning&unvoted=1&unvoted=0`)
         expect(res.status).toBe(200)
       }
-      expect((await onList('minRelevance=6&minRelevance=1&q=ballot&q=zoning&unvoted=1&unvoted=0')).numbers).toEqual(['HB 3'])
-      const values = await (await get('/bills/bulk-values?minRelevance=6&minRelevance=1&q=ballot&q=zoning&unvoted=1&unvoted=0')).json() as { count: number }
+      expect((await onList('minRelevance=6&minRelevance=1&search=ballot&search=zoning&unvoted=1&unvoted=0')).numbers).toEqual(['HB 3'])
+      const values = await (await get('/bills/bulk-values?minRelevance=6&minRelevance=1&search=ballot&search=zoning&unvoted=1&unvoted=0')).json() as { count: number }
       expect(values.count).toBe(1)
     })
 
@@ -101,7 +101,7 @@ describe('every route reads one bill filter the same way', () => {
     })
 
     it('reads an empty value of a search, min relevance, and toggle as no filter, on every route', async () => {
-      const qs = 'q=&minRelevance=&unvoted=&myBills=&drafts=&newMatches=&match='
+      const qs = 'search=&minRelevance=&unvoted=&myBills=&drafts=&newMatches=&match='
       expect((await onList(qs)).numbers).toEqual(ALL)
       expect(((await (await get(`/bills/bulk-values?${qs}`)).json()) as { count: number }).count).toBe(6)
       expect(await onBulk(qs)).toEqual(ALL)

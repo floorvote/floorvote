@@ -52,10 +52,10 @@ describe('tag taxonomy filtering — facets', () => {
     await seedBill({ billNumber: 'F3', tags: ['Elections', 'Land Records'] })
 
     const res = await SELF.fetch('http://localhost/api/bills/facets', { headers: { Cookie: `session=${token}` } })
-    const body = await res.json() as { tags: Record<string, number> }
-    expect(body.tags['Elections']).toBe(2)          // F1 + F3
-    expect(body.tags['Land Records']).toBeUndefined() // removed tag never surfaces
-    expect(body.tags['__any__']).toBe(2)            // F1, F3 have a valid tag; F2 does not
+    const body = await res.json() as { tag: Record<string, number> }
+    expect(body.tag['Elections']).toBe(2)          // F1 + F3
+    expect(body.tag['Land Records']).toBeUndefined() // removed tag never surfaces
+    expect(body.tag['__any__']).toBe(2)            // F1, F3 have a valid tag; F2 does not
   })
 })
 
@@ -68,7 +68,7 @@ describe('tag taxonomy filtering — "Any tag" list filter', () => {
   }
   const anyFacet = async (qs = '') => {
     const res = await SELF.fetch(`http://localhost/api/bills/facets${qs}`, { headers: { Cookie: `session=${token}` } })
-    return ((await res.json()) as { tags: Record<string, number> }).tags['__any__']
+    return ((await res.json()) as { tag: Record<string, number> }).tag['__any__']
   }
 
   beforeEach(async () => {

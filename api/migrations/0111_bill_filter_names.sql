@@ -1,0 +1,1 @@
+-- Stub for the red tests of #699: the rewrite lands in the next commit.

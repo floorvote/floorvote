@@ -96,9 +96,9 @@ describe('facet counts count a companion group once', () => {
       await seedBill({ id: 'b1713', billNumber: 'S1713', tags: ['Labor'], aiProcessedAt: '2026-02-01 00:00:00' })
       await group('a190', 'b1713')
       const f = await facets()
-      expect(f.tags.Labor).toBe(1)
-      expect(f.tags.Energy ?? 0).toBe(0)
-      expect(f.tags.__any__).toBe(1)
+      expect(f.tag.Labor).toBe(1)
+      expect(f.tag.Energy ?? 0).toBe(0)
+      expect(f.tag.__any__).toBe(1)
     })
 
     it('counts a custom field option the group currently holds, once, though both bills set it', async () => {
@@ -113,9 +113,9 @@ describe('facet counts count a companion group once', () => {
         { billId: 'c1', fieldId: 'cf1', value: 'Labor', setBy: ada, updatedAt: '2026-02-01 00:00:00' },
       ])
       const f = await facets()
-      expect(f.customFields.cf1.Labor).toBe(2)
-      expect(f.customFields.cf1.Energy ?? 0).toBe(0)
-      expect(f.customFields.cf1.__any__).toBe(2)
+      expect(f.field.cf1.Labor).toBe(2)
+      expect(f.field.cf1.Energy ?? 0).toBe(0)
+      expect(f.field.cf1.__any__).toBe(2)
     })
   })
 
@@ -357,7 +357,7 @@ describe('subject coverage beside the facets, under grouping', () => {
     ])
     await suppress('NJ')
     const f = await facets()
-    expect(f.subjects).toEqual({ 'UT:Elections': 1 })
+    expect(f.subject).toEqual({ 'UT:Elections': 1 })
     expect(f.subjectStates).toEqual(['UT'])
     // Suppression hides subjects, not bills: NJ still has one.
     expect(f.billStates).toEqual(['NJ', 'UT'])
@@ -391,39 +391,39 @@ describe('the session facet leaves out its own filter', () => {
   })
 
   it('counts every session when one is picked', async () => {
-    const f = await facets('session=2025')
-    expect(f.session).toEqual({ '2025': 2, '2026': 2 })
-    expect(await total('session=2025&session=2026')).toBe(4)
+    const f = await facets('sessionName=2025')
+    expect(f.sessionName).toEqual({ '2025': 2, '2026': 2 })
+    expect(await total('sessionName=2025&sessionName=2026')).toBe(4)
   })
 
   it('counts the sessions of the bills a year filter keeps', async () => {
     const f = await facets('year=2026')
-    expect(f.session).toEqual({ '2025': 1, '2026': 2 })
-    expect(await total('year=2026&session=2025')).toBe(1)
-    expect(await total('year=2026&session=2026')).toBe(2)
+    expect(f.sessionName).toEqual({ '2025': 1, '2026': 2 })
+    expect(await total('year=2026&sessionName=2025')).toBe(1)
+    expect(await total('year=2026&sessionName=2026')).toBe(2)
   })
 
   it('counts the sessions of the bills every other filter keeps, with its own picked', async () => {
-    const f = await facets('session=2025&status=Passed')
-    expect(f.session).toEqual({ '2025': 2, '2026': 1 })
-    const g = await facets('session=2025&year=2026')
-    expect(g.session).toEqual({ '2025': 1, '2026': 2 })
+    const f = await facets('sessionName=2025&status=Passed')
+    expect(f.sessionName).toEqual({ '2025': 2, '2026': 1 })
+    const g = await facets('sessionName=2025&year=2026')
+    expect(g.sessionName).toEqual({ '2025': 1, '2026': 2 })
   })
 
   it('leaves the year facet as it was, with a session or a year picked', async () => {
-    expect((await facets('session=2025')).year).toEqual({ '2025': 1, '2026': 1 })
-    expect((await facets('session=2025&year=2026')).year).toEqual({ '2025': 1, '2026': 1 })
+    expect((await facets('sessionName=2025')).year).toEqual({ '2025': 1, '2026': 1 })
+    expect((await facets('sessionName=2025&year=2026')).year).toEqual({ '2025': 1, '2026': 1 })
     expect((await facets('year=2026')).year).toEqual({ '2025': 1, '2026': 3 })
   })
 
   it('leaves the session facet as it was under match=any, which counts the resulting total', async () => {
     // Under OR a facet counts each value's resulting total, with no bill fact left in the filter, so which filter
     // the facet leaves out cannot change it.
-    const f = await facets('session=2025&status=Passed&match=any')
-    for (const [session, n] of Object.entries(f.session)) {
-      expect([session, n]).toEqual([session, await total(`session=2025&session=${session}&status=Passed&match=any`)])
+    const f = await facets('sessionName=2025&status=Passed&match=any')
+    for (const [session, n] of Object.entries(f.sessionName)) {
+      expect([session, n]).toEqual([session, await total(`sessionName=2025&sessionName=${session}&status=Passed&match=any`)])
     }
-    expect(f.session).toEqual({ '2025': 3, '2026': 4 })
+    expect(f.sessionName).toEqual({ '2025': 3, '2026': 4 })
   })
 })
 
@@ -447,7 +447,7 @@ describe('the facets of a my bills list with no bills', () => {
     expect(empty.myBillsCount).toBe(0)
     expect(Object.keys(empty).sort()).toEqual(Object.keys(full).sort())
     expect(Object.keys(empty.position).sort()).toEqual(['__any__', 'none'])
-    expect(Object.keys(empty.tags)).toEqual(['__any__'])
+    expect(Object.keys(empty.tag)).toEqual(['__any__'])
   })
 
   it('has the keys of the response for the list of everyone', async () => {
@@ -460,7 +460,7 @@ describe('the facets of a my bills list with no bills', () => {
     const f = await facets('myBills=1')
     expect(f.priority).toEqual({ none: 0, __any__: 0 })
     expect(f.position).toEqual({ none: 0, __any__: 0 })
-    expect(f.tags).toEqual({ __any__: 0 })
+    expect(f.tag).toEqual({ __any__: 0 })
   })
 
   it('counts nothing in the counts beside the facets, and no value in any other facet', async () => {
@@ -469,10 +469,10 @@ describe('the facets of a my bills list with no bills', () => {
     expect(f.status).toEqual({})
     expect(f.stage).toEqual({})
     expect(f.year).toEqual({})
-    expect(f.session).toEqual({})
+    expect(f.sessionName).toEqual({})
     expect(f.state).toEqual({})
-    expect(f.subjects).toEqual({})
-    expect(f.customFields).toEqual({})
+    expect(f.subject).toEqual({})
+    expect(f.field).toEqual({})
   })
 
   it('still carries the tenant-wide hasDrafts, subjectStates, and billStates', async () => {
@@ -487,7 +487,7 @@ describe('the facets of a my bills list with no bills', () => {
   it('has the same shape whatever else the request filters by', async () => {
     const shape = (f: Record<string, unknown>) => JSON.stringify(Object.keys(f).sort())
     const base = shape(await facets('myBills=1'))
-    for (const qs of ['myBills=1&status=Passed', 'myBills=1&match=any&priority=high', 'myBills=1&unvoted=1', 'myBills=1&q=nothing', 'myBills=1&tag=__any__']) {
+    for (const qs of ['myBills=1&status=Passed', 'myBills=1&match=any&priority=high', 'myBills=1&unvoted=1', 'myBills=1&search=nothing', 'myBills=1&tag=__any__']) {
       expect([qs, shape(await facets(qs))]).toEqual([qs, base])
     }
   })

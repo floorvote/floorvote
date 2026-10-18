@@ -47,7 +47,7 @@ const viewsState: { deferred: boolean; response: { views: Array<{ id: string; na
   { deferred: false, response: { views: [] } }
 let resolveViews: ((v: unknown) => void) | null = null
 
-// Lets a test hold the `/config/custom-fields` fetch open, so a `cf_` filter
+// Lets a test hold the `/config/custom-fields` fetch open, so a `field.` filter
 // or view can be active in the URL before customFieldDefs resolves — the
 // scenario the chip-label and useBillFilters re-resolution fixes are for.
 // Defaults to an immediate empty list, matching every test that doesn't care.
@@ -104,17 +104,17 @@ const BILLS = [
 const FACETS = {
   status: { '1': 1, '2': 1, '4': 1 },
   priority: {},
-  session: {},
+  sessionName: {},
   year: {},
   state: { RI: 3 },
   position: {},
-  tags: {},
-  subjects: { 'UT:Counties': 1 } as Record<string, number>,
+  tag: {},
+  subject: { 'UT:Counties': 1 } as Record<string, number>,
   // Unfiltered, unlike `subjects`: every state that has subjects at all.
   subjectStates: ['UT'] as string[] | undefined,
   // Unfiltered too: every state the instance has bills in, which is what * coverage means.
   billStates: ['UT'] as string[] | undefined,
-  customFields: {},
+  field: {},
   myBillsCount: 0,
   newMatchesCount: 0,
 }
@@ -643,8 +643,8 @@ describe('BillList saved views — search interaction', () => {
 
 // Task 2: the mobile filter sheet's "Reset filters" button used to call a
 // hand-duplicated copy of useBillFilters' handleResetFilters that had
-// drifted — it missed setSearch, setUnvotedOnly, setSelectedTags,
-// setMatchAny, and setCfFilters, then raced its own setters with a trailing
+// drifted — it missed setSearch, setUnvoted, setTag,
+// setMatch, and setCfFilters, then raced its own setters with a trailing
 // setSearchParams({}). This is the test that actually proves the fix: it
 // drives the real sheet (not a mock) and asserts every URL param the old
 // copy left behind is gone, plus the search box the old copy never touched.
@@ -846,14 +846,14 @@ describe('BillList search-term hint', () => {
   })
 })
 
-// Regression: a view whose query contains a cf_ (custom field) filter used to be
-// dropped on apply. cf_ params live in the URL rather than in hook state, so
+// Regression: a view whose query contains a field. (custom field) filter used to be
+// dropped on apply. field. params live in the URL rather than in hook state, so
 // applyView wrote them through a second setSearchParams call that raced the sync
-// effect — the view's cf_ constraint never reached the bills query, and the
+// effect — the view's field. constraint never reached the bills query, and the
 // self-comparison then failed, so the view was judged "diverged" instantly.
 describe('BillList saved views — applying a view from the switcher', () => {
-  it('applies a cf_ filter from the view, collapses the URL, and labels the switcher', async () => {
-    viewsState.response = { views: [{ id: 'v1', name: 'Passed bills', query: 'cf_acet_is_tracking=1&state=NJ&subject=NJ%3AState+Government%2C+Wagering%2C+Tourism+%26+Historic+Preservation' }] }
+  it('applies a field. filter from the view, collapses the URL, and labels the switcher', async () => {
+    viewsState.response = { views: [{ id: 'v1', name: 'Passed bills', query: 'field.acet_is_tracking=1&state=NJ&subject=NJ%3AState+Government%2C+Wagering%2C+Tourism+%26+Historic+Preservation' }] }
 
     render(
       <MemoryRouter initialEntries={['/bills']}>
@@ -878,12 +878,12 @@ describe('BillList saved views — applying a view from the switcher', () => {
     })
     expect(screen.getByRole('button', { name: /passed bills/i })).toBeTruthy()
 
-    // The point of the fix isn't just a tidy URL — the view's cf_ filter must
+    // The point of the fix isn't just a tidy URL — the view's field. filter must
     // actually reach the bills query. Assert on the recorded /bills? request
     // (same style as the status=4 assertion above) rather than the URL, since
     // the URL legitimately collapses to the short ?view=v1 form.
     await waitFor(() => {
-      expect(apiCalls.some(c => c.startsWith('/bills?') && c.includes('cf_acet_is_tracking=1'))).toBe(true)
+      expect(apiCalls.some(c => c.startsWith('/bills?') && c.includes('field.acet_is_tracking=1'))).toBe(true)
     })
   })
 
@@ -1054,18 +1054,18 @@ describe('BillList saved views — legacy UUID bookmark', () => {
   })
 })
 
-// Regression: the active-filter chip for a cf_ filter resolved its custom field
-// def by id only, so a cf_ key that was still the raw slug (the URL/view form —
-// see useBillFilters' cf_ resolution) rendered as a raw chip like
+// Regression: the active-filter chip for a field. filter resolved its custom field
+// def by id only, so a field. key that was still the raw slug (the URL/view form —
+// see useBillFilters' field. resolution) rendered as a raw chip like
 // "acet_is_tracking: 1" instead of the field's display name. This covers both
 // the immediate case and customFieldDefs resolving after the chip has already
 // rendered once.
 describe('BillList active filter chips — custom fields', () => {
-  it('labels a cf_ chip with the field display name, including when defs arrive late', async () => {
+  it('labels a field. chip with the field display name, including when defs arrive late', async () => {
     customFieldsState.deferred = true
 
     render(
-      <MemoryRouter initialEntries={['/bills?cf_acet_is_tracking=1']}>
+      <MemoryRouter initialEntries={['/bills?field.acet_is_tracking=1']}>
         <AuthProvider>
           <SidebarRefreshProvider><BillList /></SidebarRefreshProvider>
           <LocationProbe />
@@ -1090,7 +1090,7 @@ describe('BillList active filter chips — custom fields', () => {
 })
 
 // Regression for #241: every filter change clears the bulk selection so a bulk
-// action never reaches bills that are no longer shown. cf_ filters were the
+// action never reaches bills that are no longer shown. field. filters were the
 // exception because the reset keys were a hand-written list that omitted them.
 describe('BillList bulk selection — custom-field filters', () => {
   async function renderWithSelection(initial: string) {
@@ -1112,22 +1112,22 @@ describe('BillList bulk selection — custom-field filters', () => {
   }
   const selectionGone = () => waitFor(() => expect(screen.queryByText('1 bill selected')).toBeNull())
 
-  it('adding a cf_ filter clears the selection', async () => {
+  it('adding a field. filter clears the selection', async () => {
     await renderWithSelection('/bills')
     fireEvent.click((await screen.findAllByRole('button', { name: /Phase/ }))[0])
     fireEvent.click(await screen.findByText('Early'))
     await selectionGone()
   })
 
-  it('changing a cf_ filter clears the selection', async () => {
-    await renderWithSelection('/bills?cf_phase=Early')
+  it('changing a field. filter clears the selection', async () => {
+    await renderWithSelection('/bills?field.phase=Early')
     fireEvent.click((await screen.findAllByRole('button', { name: /Phase/ }))[0])
     fireEvent.click(await screen.findByText('Late'))
     await selectionGone()
   })
 
-  it('removing a cf_ filter clears the selection', async () => {
-    await renderWithSelection('/bills?cf_phase=Early')
+  it('removing a field. filter clears the selection', async () => {
+    await renderWithSelection('/bills?field.phase=Early')
     fireEvent.click((await screen.findAllByRole('button', { name: /Phase/ }))[0])
     fireEvent.click(await screen.findByText('Early'))
     await selectionGone()
@@ -1236,7 +1236,7 @@ describe('BillList active filter chips — relevance threshold alone', () => {
   it('renders the relevance chip when minRelevance is the only active filter', async () => {
     // Regression test: the chip-row render gate (index.tsx) is a separate
     // condition from buildActiveFilterGroups, and previously had no
-    // `filterMinRelevance > 0` term — so with no other filter active, the
+    // `minRelevance > 0` term — so with no other filter active, the
     // whole row (and this chip) failed to render at all, even though
     // buildActiveFilterGroups correctly produced a minRelevance group.
     render(
@@ -1324,11 +1324,11 @@ describe('BillList new-match dismiss — counts and sidebar chip', () => {
     const search = screen.getByPlaceholderText('Search…')
 
     fireEvent.change(search, { target: { value: 'foo' } })
-    await waitFor(() => expect(apiCalls.some(c => c.startsWith('/bills/facets') && c.includes('q=foo'))).toBe(true))
+    await waitFor(() => expect(apiCalls.some(c => c.startsWith('/bills/facets') && c.includes('search=foo'))).toBe(true))
     // The search is cleared while the reply for "foo" is still in flight.
     const callsBeforeClear = apiCalls.length
     fireEvent.change(search, { target: { value: '' } })
-    await waitFor(() => expect(apiCalls.slice(callsBeforeClear).some(c => c.startsWith('/bills/facets') && !c.includes('q='))).toBe(true))
+    await waitFor(() => expect(apiCalls.slice(callsBeforeClear).some(c => c.startsWith('/bills/facets') && !c.includes('search='))).toBe(true))
 
     // Now the slow reply for the old search lands: 1 new match under "foo".
     resolveSearchReply!({ ...FACETS, newMatchesCount: 1 })
@@ -1348,7 +1348,7 @@ describe('BillList new-match dismiss — counts and sidebar chip', () => {
     await screen.findByText('Early Voting Centers')
 
     fireEvent.change(screen.getByPlaceholderText('Search…'), { target: { value: 'foo' } })
-    await waitFor(() => expect(apiCalls.some(c => c.startsWith('/bills/facets') && c.includes('q=foo'))).toBe(true))
+    await waitFor(() => expect(apiCalls.some(c => c.startsWith('/bills/facets') && c.includes('search=foo'))).toBe(true))
 
     // The reply for "foo" is still in flight, so 61 describes the old filters,
     // but the dismiss request would carry q=foo.

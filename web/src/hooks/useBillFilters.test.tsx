@@ -6,7 +6,7 @@ import { useBillFilters } from './useBillFilters'
 import type { CustomFieldDef, FacetCounts } from '../pages/BillList/types'
 import { EMPTY_BILL_FILTER, parseBillFilter, serializeBillFilter } from '../../../shared/billFilter'
 
-const emptyFacets: FacetCounts = { status: {}, stage: {}, priority: {}, session: {}, year: {}, state: {}, position: {}, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0, hasDrafts: false }
+const emptyFacets: FacetCounts = { status: {}, stage: {}, priority: {}, sessionName: {}, year: {}, state: {}, position: {}, tag: {}, subject: {}, field: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0, hasDrafts: false }
 
 function draftsWrapper({ children }: { children: ReactNode }) {
   return <MemoryRouter initialEntries={['/bills?drafts=1']}>{children}</MemoryRouter>
@@ -36,9 +36,9 @@ describe('useBillFilters', () => {
   it('handleStatusClick toggles a status on then off', () => {
     const { result } = renderHook(useHarness, { wrapper })
     act(() => result.current.handleStatusClick('Introduced'))
-    expect(result.current.filterStatuses).toContain('Introduced')
+    expect(result.current.status).toContain('Introduced')
     act(() => result.current.handleStatusClick('Introduced'))
-    expect(result.current.filterStatuses).not.toContain('Introduced')
+    expect(result.current.status).not.toContain('Introduced')
   })
 
   it('hasActiveFilters reflects an applied filter', () => {
@@ -49,28 +49,28 @@ describe('useBillFilters', () => {
   })
 
   it('allTags excludes the FILTER_ANY sentinel that the facets API returns', () => {
-    const facets: FacetCounts = { ...emptyFacets, tags: { elections: 3, voting: 2, __any__: 4 } }
+    const facets: FacetCounts = { ...emptyFacets, tag: { elections: 3, voting: 2, __any__: 4 } }
     const { result } = renderHook(() => useHarness(facets), { wrapper })
     expect(result.current.allTags).toEqual(['elections', 'voting'])
     expect(result.current.allTags).not.toContain('__any__')
   })
 
   it('allTags excludes tags not in the taxonomy', () => {
-    const facets: FacetCounts = { ...emptyFacets, tags: { Elections: 3, 'Land Records': 1, __any__: 4 } }
+    const facets: FacetCounts = { ...emptyFacets, tag: { Elections: 3, 'Land Records': 1, __any__: 4 } }
     const { result } = renderHook(() => useHarness(facets, ['Elections']), { wrapper })
     expect(result.current.allTags).toEqual(['Elections'])
     expect(result.current.allTags).not.toContain('Land Records')
   })
 
   it('allTags fails open when the taxonomy is empty (not yet loaded)', () => {
-    const facets: FacetCounts = { ...emptyFacets, tags: { Elections: 3, 'Land Records': 1 } }
+    const facets: FacetCounts = { ...emptyFacets, tag: { Elections: 3, 'Land Records': 1 } }
     const { result } = renderHook(() => useHarness(facets, []), { wrapper })
     expect(result.current.allTags).toEqual(['Elections', 'Land Records'])
   })
 
   it('reads subject filters from the URL and writes them back', () => {
     const { result } = renderHook(useHarness, { wrapper: subjectWrapper })
-    expect(result.current.selectedSubjects).toEqual(['UT:Election Law'])
+    expect(result.current.subject).toEqual(['UT:Election Law'])
 
     act(() => result.current.handleSubjectsChange(['UT:Referenda', 'UT:Initiatives']))
 
@@ -81,7 +81,7 @@ describe('useBillFilters', () => {
   it('groups subject options by state, sorted by count within each state', () => {
     const facets: FacetCounts = {
       ...emptyFacets,
-      subjects: { 'UT:Counties': 2, 'UT:Election Law': 9, 'NJ:Education': 4 },
+      subject: { 'UT:Counties': 2, 'UT:Election Law': 9, 'NJ:Education': 4 },
     }
     const { result } = renderHook(() => useHarness(facets), { wrapper })
     expect(result.current.subjectGroups).toEqual([
@@ -100,83 +100,83 @@ describe('useBillFilters', () => {
     }
 
     function cfWrapper({ children }: { children: ReactNode }) {
-      return <MemoryRouter initialEntries={['/bills?cf_review-stage=In+review&status=Introduced']}>{children}</MemoryRouter>
+      return <MemoryRouter initialEntries={['/bills?field.review-stage=In+review&status=Introduced']}>{children}</MemoryRouter>
     }
 
     it('clears custom field filters, not just the built-in ones', () => {
       const { result } = renderHook(() => useHarness(emptyFacets, [], [stage]), { wrapper: cfWrapper })
-      expect(result.current.cfFilters['cf-stage']).toEqual(['In review'])
-      expect(result.current.filterStatuses).toEqual(['Introduced'])
+      expect(result.current.field['cf-stage']).toEqual(['In review'])
+      expect(result.current.status).toEqual(['Introduced'])
 
       act(() => result.current.handleResetFilters())
 
-      expect(result.current.filterStatuses).toEqual([])
-      expect(result.current.cfFilters).toEqual({})
-      expect(result.current.urlSearch).not.toContain('cf_')
+      expect(result.current.status).toEqual([])
+      expect(result.current.field).toEqual({})
+      expect(result.current.urlSearch).not.toContain('field.')
       expect(result.current.hasActiveFilters).toBe(false)
     })
 
     it('clears selected subjects too', () => {
       const { result } = renderHook(useHarness, { wrapper: subjectWrapper })
-      expect(result.current.selectedSubjects).toEqual(['UT:Election Law'])
+      expect(result.current.subject).toEqual(['UT:Election Law'])
 
       act(() => result.current.handleResetFilters())
 
-      expect(result.current.selectedSubjects).toEqual([])
+      expect(result.current.subject).toEqual([])
       expect(result.current.hasActiveFilters).toBe(false)
     })
   })
 
-  describe('matchAny (group operator)', () => {
-    function matchAnyWrapper({ children }: { children: ReactNode }) {
+  describe('match (group operator)', () => {
+    function matchWrapper({ children }: { children: ReactNode }) {
       return <MemoryRouter initialEntries={['/bills?match=any&status=Introduced']}>{children}</MemoryRouter>
     }
 
-    it('hydrates matchAny from ?match=any on mount', () => {
-      const { result } = renderHook(useHarness, { wrapper: matchAnyWrapper })
-      expect(result.current.matchAny).toBe(true)
+    it('hydrates match from ?match=any on mount', () => {
+      const { result } = renderHook(useHarness, { wrapper: matchWrapper })
+      expect(result.current.match).toBe('any')
     })
 
-    it('does not hydrate matchAny when the param is absent', () => {
+    it('does not hydrate match when the param is absent', () => {
       const { result } = renderHook(useHarness, { wrapper })
-      expect(result.current.matchAny).toBe(false)
+      expect(result.current.match).toBe('all')
     })
 
     it('writes match=any to the URL when set, and drops it when cleared', () => {
       const { result } = renderHook(useHarness, { wrapper })
       expect(result.current.urlSearch).not.toContain('match=')
 
-      act(() => result.current.setMatchAny(true))
+      act(() => result.current.setMatch('any'))
       expect(new URLSearchParams(result.current.urlSearch).get('match')).toBe('any')
 
-      act(() => result.current.setMatchAny(false))
+      act(() => result.current.setMatch('all'))
       expect(new URLSearchParams(result.current.urlSearch).get('match')).toBeNull()
     })
 
-    it('handleResetFilters clears matchAny', () => {
-      const { result } = renderHook(useHarness, { wrapper: matchAnyWrapper })
-      expect(result.current.matchAny).toBe(true)
+    it('handleResetFilters clears match', () => {
+      const { result } = renderHook(useHarness, { wrapper: matchWrapper })
+      expect(result.current.match).toBe('any')
 
       act(() => result.current.handleResetFilters())
 
-      expect(result.current.matchAny).toBe(false)
+      expect(result.current.match).toBe('all')
       expect(result.current.urlSearch).not.toContain('match=')
     })
 
-    // Explicit product decision (Task 6 brief): matchAny is inert with a
+    // Explicit product decision (Task 6 brief): match is inert with a
     // single active filter group, but it must persist rather than get
     // cleared, so removing and re-adding a group restores the same state.
-    // Nothing in useBillFilters ties matchAny to any other filter's count —
+    // Nothing in useBillFilters ties match to any other filter's count —
     // this pins that absence so a later refactor can't silently add it.
     it('is not cleared when another filter dimension is cleared, leaving one (or zero) groups', () => {
-      const { result } = renderHook(useHarness, { wrapper: matchAnyWrapper })
-      expect(result.current.matchAny).toBe(true)
-      expect(result.current.filterStatuses).toEqual(['Introduced'])
+      const { result } = renderHook(useHarness, { wrapper: matchWrapper })
+      expect(result.current.match).toBe('any')
+      expect(result.current.status).toEqual(['Introduced'])
 
       act(() => result.current.handleStatusClick('Introduced'))
 
-      expect(result.current.filterStatuses).toEqual([])
-      expect(result.current.matchAny).toBe(true)
+      expect(result.current.status).toEqual([])
+      expect(result.current.match).toBe('any')
       expect(new URLSearchParams(result.current.urlSearch).get('match')).toBe('any')
     })
   })
@@ -188,18 +188,18 @@ describe('useBillFilters', () => {
 
     it('reads the stage filter from the URL and writes it back', () => {
       const { result } = renderHook(useHarness, { wrapper: stageWrapper })
-      expect(result.current.filterStages).toEqual(['enacted'])
+      expect(result.current.stage).toEqual(['enacted'])
       expect(result.current.hasActiveFilters).toBe(true)
       expect(result.current.totalActiveFilters).toBe(1)
 
-      act(() => result.current.setFilterStages(['enacted', 'vetoed']))
+      act(() => result.current.setStage(['enacted', 'vetoed']))
       expect(new URLSearchParams(result.current.urlSearch).getAll('stage')).toEqual(['enacted', 'vetoed'])
     })
 
     it('handleResetFilters clears it', () => {
       const { result } = renderHook(useHarness, { wrapper: stageWrapper })
       act(() => result.current.handleResetFilters())
-      expect(result.current.filterStages).toEqual([])
+      expect(result.current.stage).toEqual([])
       expect(result.current.urlSearch).not.toContain('stage=')
     })
 
@@ -239,12 +239,12 @@ describe('useBillFilters', () => {
     })
   })
 
-  // Regression: cfFilters is lifted state, parsed once against customFieldDefs
-  // at the moment a `cf_` key is first read. customFieldDefs loads async, so a
+  // Regression: field is lifted state, parsed once against customFieldDefs
+  // at the moment a `field.` key is first read. customFieldDefs loads async, so a
   // mount that beats that fetch used to freeze the key under the raw slug
-  // forever (it used to self-heal because cfFilters was re-derived from
+  // forever (it used to self-heal because field was re-derived from
   // searchParams every render — lifting it into state, for good reason
-  // (see the "applies a cf_ filter from the view" regression), removed that).
+  // (see the "applies a field. filter from the view" regression), removed that).
   // customFieldDefs arriving later must still correct it in place.
   describe('deferred customFieldDefs resolution', () => {
     const acet: CustomFieldDef = {
@@ -253,7 +253,7 @@ describe('useBillFilters', () => {
     }
 
     function cfViewWrapper({ children }: { children: ReactNode }) {
-      return <MemoryRouter initialEntries={['/bills?cf_acet_is_tracking=1']}>{children}</MemoryRouter>
+      return <MemoryRouter initialEntries={['/bills?field.acet_is_tracking=1']}>{children}</MemoryRouter>
     }
 
     it('mounting before customFieldDefs resolves ends with the correct field id in state', () => {
@@ -264,15 +264,15 @@ describe('useBillFilters', () => {
 
       // Before defs load: the key is the raw slug (the same fallback the URL
       // sync effect writes back out under, so nothing is lost yet).
-      expect(result.current.cfFilters).toEqual({ acet_is_tracking: ['1'] })
+      expect(result.current.field).toEqual({ acet_is_tracking: ['1'] })
 
       // customFieldDefs resolves.
       rerender([acet])
 
       // The freeze is gone — the state re-keys itself to the real field id
       // without needing another location.search change.
-      expect(result.current.cfFilters).toEqual({ 'cf-acet-uuid': ['1'] })
-      expect(result.current.cfFilters['acet_is_tracking']).toBeUndefined()
+      expect(result.current.field).toEqual({ 'cf-acet-uuid': ['1'] })
+      expect(result.current.field['acet_is_tracking']).toBeUndefined()
     })
   })
 })
@@ -299,11 +299,11 @@ describe('useBillFilters holds one bill filter value', () => {
   })
 
   it('is immutable: the value and its lists are frozen', () => {
-    const { result } = renderHook(useHarness, { wrapper: at('/bills?status=Introduced&cf_team=Alpha') })
+    const { result } = renderHook(useHarness, { wrapper: at('/bills?status=Introduced&field.team=Alpha') })
     const f = result.current.filter
     expect(Object.isFrozen(f)).toBe(true)
     expect(Object.isFrozen(f.status)).toBe(true)
-    expect(Object.isFrozen(f.cf)).toBe(true)
+    expect(Object.isFrozen(f.field)).toBe(true)
   })
 
   it('makes a new value for a change, and leaves the old one as it was', () => {
@@ -326,28 +326,28 @@ describe('useBillFilters holds one bill filter value', () => {
   it('keeps the same value when a control sets what is already set', () => {
     const { result } = renderHook(useHarness, { wrapper: at('/bills?status=Introduced&myBills=1') })
     const before = result.current.filter
-    act(() => result.current.setFilterStatuses(['Introduced']))
+    act(() => result.current.setStatus(['Introduced']))
     act(() => result.current.setMyBills(true))
     expect(result.current.filter).toBe(before)
   })
 
   it.each([
-    ['status', (r: ReturnType<typeof useHarness>) => r.setFilterStatuses(['a', 'b']), { status: ['a', 'b'] }],
-    ['stage', (r: ReturnType<typeof useHarness>) => r.setFilterStages(['enacted']), { stage: ['enacted'] }],
-    ['priority', (r: ReturnType<typeof useHarness>) => r.setFilterPriorities(['high']), { priority: ['high'] }],
-    ['position', (r: ReturnType<typeof useHarness>) => r.setFilterPositions(['none']), { position: ['none'] }],
-    ['year', (r: ReturnType<typeof useHarness>) => r.setFilterYears([2026, 2025]), { year: ['2026', '2025'] }],
-    ['state', (r: ReturnType<typeof useHarness>) => r.setFilterStates(['UT']), { state: ['UT'] }],
-    ['min relevance', (r: ReturnType<typeof useHarness>) => r.setFilterMinRelevance(5), { minRelevance: 5 }],
+    ['status', (r: ReturnType<typeof useHarness>) => r.setStatus(['a', 'b']), { status: ['a', 'b'] }],
+    ['stage', (r: ReturnType<typeof useHarness>) => r.setStage(['enacted']), { stage: ['enacted'] }],
+    ['priority', (r: ReturnType<typeof useHarness>) => r.setPriority(['high']), { priority: ['high'] }],
+    ['position', (r: ReturnType<typeof useHarness>) => r.setPosition(['none']), { position: ['none'] }],
+    ['year', (r: ReturnType<typeof useHarness>) => r.setYear([2026, 2025]), { year: ['2026', '2025'] }],
+    ['state', (r: ReturnType<typeof useHarness>) => r.setState(['UT']), { state: ['UT'] }],
+    ['min relevance', (r: ReturnType<typeof useHarness>) => r.setMinRelevance(5), { minRelevance: 5 }],
     ['my bills', (r: ReturnType<typeof useHarness>) => r.setMyBills(true), { myBills: true }],
-    ['unvoted', (r: ReturnType<typeof useHarness>) => r.setUnvotedOnly(true), { unvoted: true }],
+    ['unvoted', (r: ReturnType<typeof useHarness>) => r.setUnvoted(true), { unvoted: true }],
     ['new matches', (r: ReturnType<typeof useHarness>) => r.setNewMatches(true), { newMatches: true }],
     ['drafts', (r: ReturnType<typeof useHarness>) => r.setDrafts(true), { drafts: true }],
-    ['match', (r: ReturnType<typeof useHarness>) => r.setMatchAny(true), { match: 'any' }],
+    ['match', (r: ReturnType<typeof useHarness>) => r.setMatch('any'), { match: 'any' }],
     ['tags', (r: ReturnType<typeof useHarness>) => r.handleTagsChange(['Water']), { tag: ['Water'] }],
     ['subjects', (r: ReturnType<typeof useHarness>) => r.handleSubjectsChange(['UT:Elections']), { subject: [{ state: 'UT', name: 'Elections' }] }],
-    ['search', (r: ReturnType<typeof useHarness>) => r.setSearch('water'), { q: 'water' }],
-    ['a custom field', (r: ReturnType<typeof useHarness>) => r.setCfFilter('cf-team', ['Alpha']), { cf: { 'cf-team': ['Alpha'] } }],
+    ['search', (r: ReturnType<typeof useHarness>) => r.setSearch('water'), { search: 'water' }],
+    ['a custom field', (r: ReturnType<typeof useHarness>) => r.setField('cf-team', ['Alpha']), { field: { 'cf-team': ['Alpha'] } }],
   ])('%s: the control writes its part of the one value', (_name, change, expected) => {
     const { result } = renderHook(() => useHarness(emptyFacets, [], [CF]), { wrapper })
     act(() => change(result.current))
@@ -356,7 +356,7 @@ describe('useBillFilters holds one bill filter value', () => {
 
   it('reads min relevance of zero as none', () => {
     const { result } = renderHook(useHarness, { wrapper: at('/bills?minRelevance=5') })
-    act(() => result.current.setFilterMinRelevance(0))
+    act(() => result.current.setMinRelevance(0))
     expect(result.current.filter.minRelevance).toBeNull()
     expect(result.current.urlSearch).not.toContain('minRelevance')
   })
@@ -364,38 +364,38 @@ describe('useBillFilters holds one bill filter value', () => {
   describe('the URL', () => {
     it('is written from the value with the shared serialize, in its one key order', () => {
       const { result } = renderHook(useHarness, { wrapper })
-      act(() => result.current.setFilterPriorities(['high']))
-      act(() => result.current.setFilterYears([2026]))
-      act(() => result.current.setFilterStatuses(['Introduced']))
+      act(() => result.current.setPriority(['high']))
+      act(() => result.current.setYear([2026]))
+      act(() => result.current.setStatus(['Introduced']))
       expect(result.current.urlSearch).toBe(`?${serializeBillFilter(result.current.filter)}`)
       expect(result.current.urlSearch).toBe('?status=Introduced&year=2026&priority=high')
     })
 
     it('names a custom field by its slug, though the value holds it by its id', () => {
       const { result } = renderHook(() => useHarness(emptyFacets, [], [CF]), { wrapper })
-      act(() => result.current.setCfFilter('cf-team', ['Alpha', 'Beta']))
-      expect(result.current.filter.cf).toEqual({ 'cf-team': ['Alpha', 'Beta'] })
-      expect(result.current.urlSearch).toBe('?cf_team=Alpha&cf_team=Beta')
+      act(() => result.current.setField('cf-team', ['Alpha', 'Beta']))
+      expect(result.current.filter.field).toEqual({ 'cf-team': ['Alpha', 'Beta'] })
+      expect(result.current.urlSearch).toBe('?field.team=Alpha&field.team=Beta')
     })
 
     it('never carries the search box', () => {
       const { result } = renderHook(useHarness, { wrapper })
       act(() => result.current.setSearch('water'))
-      expect(result.current.filter.q).toBe('water')
+      expect(result.current.filter.search).toBe('water')
       expect(result.current.urlSearch).not.toContain('water')
-      expect(result.current.urlSearch).not.toContain('q=')
+      expect(result.current.urlSearch).not.toContain('search=')
     })
 
     it('an edit to it replaces the filters, through the same parse, and leaves the search box alone', () => {
       const { result } = renderHook(() => useHarness(emptyFacets, [], [CF]), { wrapper: at('/bills?status=Introduced') })
       act(() => result.current.setSearch('water'))
-      act(() => result.current.navigate('/bills?stage=enacted&priority=high&cf_team=Beta&match=any'))
+      act(() => result.current.navigate('/bills?stage=enacted&priority=high&field.team=Beta&match=any'))
       expect(result.current.filter).toEqual({
         ...parseBillFilter('stage=enacted&priority=high&match=any'),
-        cf: { 'cf-team': ['Beta'] },
-        q: 'water',
+        field: { 'cf-team': ['Beta'] },
+        search: 'water',
       })
-      expect(result.current.filterStatuses).toEqual([])
+      expect(result.current.status).toEqual([])
     })
 
     it('an edit to it that is the filter as it stands changes nothing', () => {
@@ -406,12 +406,12 @@ describe('useBillFilters holds one bill filter value', () => {
     })
 
     it('ignores session, which the page has no control for, so nothing narrows the list unseen', () => {
-      const { result } = renderHook(useHarness, { wrapper: at('/bills?session=S1&status=Introduced') })
-      expect(result.current.filter.session).toEqual([])
-      act(() => result.current.setFilterStatuses([]))
+      const { result } = renderHook(useHarness, { wrapper: at('/bills?sessionName=S1&status=Introduced') })
+      expect(result.current.filter.sessionName).toEqual([])
+      act(() => result.current.setStatus([]))
       expect(result.current.urlSearch).toBe('')
-      act(() => result.current.navigate('/bills?session=S2'))
-      expect(result.current.filter.session).toEqual([])
+      act(() => result.current.navigate('/bills?sessionName=S2'))
+      expect(result.current.filter.sessionName).toEqual([])
     })
   })
 
@@ -419,17 +419,17 @@ describe('useBillFilters holds one bill filter value', () => {
     it('is applied by parsing its query into the value, the search box cleared', () => {
       const { result } = renderHook(() => useHarness(emptyFacets, [], [CF]), { wrapper })
       act(() => result.current.setSearch('water'))
-      act(() => result.current.applyView({ id: 'v1', slug: 'inbox', query: 'status=Introduced&priority=high&cf_team=Alpha&match=any' }))
+      act(() => result.current.applyView({ id: 'v1', slug: 'inbox', query: 'status=Introduced&priority=high&field.team=Alpha&match=any' }))
       expect(result.current.filter).toEqual({
         ...parseBillFilter('status=Introduced&priority=high&match=any'),
-        cf: { 'cf-team': ['Alpha'] },
+        field: { 'cf-team': ['Alpha'] },
       })
     })
 
     it('holds a custom field named by its id in the view as the same field', () => {
       const { result } = renderHook(() => useHarness(emptyFacets, [], [CF]), { wrapper })
-      act(() => result.current.applyView({ id: 'v1', slug: 'inbox', query: 'cf_cf-team=Alpha&cf_team=Beta' }))
-      expect(result.current.filter.cf).toEqual({ 'cf-team': ['Alpha', 'Beta'] })
+      act(() => result.current.applyView({ id: 'v1', slug: 'inbox', query: 'field.cf-team=Alpha&field.team=Beta' }))
+      expect(result.current.filter.field).toEqual({ 'cf-team': ['Alpha', 'Beta'] })
     })
 
     it('replaces every filter the view does not name', () => {
@@ -440,7 +440,7 @@ describe('useBillFilters holds one bill filter value', () => {
 
     it('ignores a session in the view, as it does in the URL', () => {
       const { result } = renderHook(useHarness, { wrapper })
-      act(() => result.current.applyView({ id: 'v1', slug: 'inbox', query: 'status=Introduced&session=S1' }))
+      act(() => result.current.applyView({ id: 'v1', slug: 'inbox', query: 'status=Introduced&sessionName=S1' }))
       expect(result.current.filter).toEqual({ ...EMPTY_BILL_FILTER, status: ['Introduced'] })
     })
 
@@ -453,7 +453,7 @@ describe('useBillFilters holds one bill filter value', () => {
 
   describe('Reset', () => {
     it('sets the empty bill filter, every filter at once, search and custom fields included', () => {
-      const qs = 'status=Introduced&stage=enacted&year=2026&state=UT&position=none&priority=high&tag=Water&subject=UT%3AElections&minRelevance=4&myBills=1&unvoted=1&newMatches=1&drafts=1&match=any&cf_team=Alpha'
+      const qs = 'status=Introduced&stage=enacted&year=2026&state=UT&position=none&priority=high&tag=Water&subject=UT%3AElections&minRelevance=4&myBills=1&unvoted=1&newMatches=1&drafts=1&match=any&field.team=Alpha'
       const { result } = renderHook(() => useHarness(emptyFacets, [], [CF]), { wrapper: at(`/bills?${qs}`) })
       act(() => result.current.setSearch('water'))
       expect(result.current.filter).not.toEqual(EMPTY_BILL_FILTER)
@@ -476,14 +476,14 @@ describe('useBillFilters holds one bill filter value', () => {
     it('re-key the value from the slug to the id, as a new value', () => {
       const { result, rerender } = renderHook(
         (defs: CustomFieldDef[]) => useHarness(emptyFacets, [], defs),
-        { wrapper: at('/bills?cf_team=Alpha'), initialProps: [] as CustomFieldDef[] },
+        { wrapper: at('/bills?field.team=Alpha'), initialProps: [] as CustomFieldDef[] },
       )
       const before = result.current.filter
-      expect(before.cf).toEqual({ team: ['Alpha'] })
+      expect(before.field).toEqual({ team: ['Alpha'] })
       rerender([CF])
-      expect(result.current.filter.cf).toEqual({ 'cf-team': ['Alpha'] })
-      expect(before.cf).toEqual({ team: ['Alpha'] })
-      expect(result.current.urlSearch).toBe('?cf_team=Alpha')
+      expect(result.current.filter.field).toEqual({ 'cf-team': ['Alpha'] })
+      expect(before.field).toEqual({ team: ['Alpha'] })
+      expect(result.current.urlSearch).toBe('?field.team=Alpha')
     })
 
     it('leave the value as it is when no field needs a new key', () => {
@@ -494,6 +494,35 @@ describe('useBillFilters holds one bill filter value', () => {
       const before = result.current.filter
       rerender([CF])
       expect(result.current.filter).toBe(before)
+    })
+  })
+
+  // One name per filter (#699): the URL keys `q`, `cf_<slug>`, and `session` became `search`, `field.<slug>`, and
+  // `sessionName`, with no aliases, so a link or view written with an old key applies nothing for it.
+  describe('the old URL keys', () => {
+    it('ignores cf_<slug> in the URL', () => {
+      const { result } = renderHook(() => useHarness(emptyFacets, [], [CF]), { wrapper: at('/bills?cf_team=Alpha&status=Introduced') })
+      expect(result.current.field).toEqual({})
+      expect(result.current.status).toEqual(['Introduced'])
+      expect(result.current.urlSearch).toBe('?status=Introduced')
+    })
+
+    it('ignores cf_<slug> in a saved view', () => {
+      const { result } = renderHook(() => useHarness(emptyFacets, [], [CF]), { wrapper: at('/bills') })
+      act(() => result.current.applyView({ id: 'v1', slug: 'old', query: 'cf_team=Alpha&priority=high' }))
+      expect(result.current.field).toEqual({})
+      expect(result.current.priority).toEqual(['high'])
+    })
+
+    it('reads field.<slug> in a saved view', () => {
+      const { result } = renderHook(() => useHarness(emptyFacets, [], [CF]), { wrapper: at('/bills') })
+      act(() => result.current.applyView({ id: 'v1', slug: 'new', query: 'field.team=Alpha&priority=high' }))
+      expect(result.current.field).toEqual({ 'cf-team': ['Alpha'] })
+    })
+
+    it('reads search, not q, from a list URL the pane summarizes', () => {
+      expect(parseBillFilter('q=water').search).toBe('')
+      expect(parseBillFilter('search=water').search).toBe('water')
     })
   })
 })
