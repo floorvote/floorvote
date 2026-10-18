@@ -93,7 +93,7 @@ Admins can select bills and edit them together—set a priority, record the team
 
 ### Triage new matches
 
-When a bill newly matches your keywords, it needs a quick decision: assign it a priority, or dismiss it if it's not actually relevant. Admins get a New matches filter that shows which bills are still waiting on that decision, and can set a minimum relevance score under Settings → Config to keep low-relevance matches out of it.
+When a bill newly matches your keywords, it needs a quick decision: assign it a priority, or dismiss it if it's not actually relevant. Until then its priority dropdown reads "New · Set priority" in amber, with Dismiss as the last choice in the menu, and members see a matching "New match" label. Admins get a New matches filter that shows which bills are still waiting on that decision, and can set a minimum relevance score under Settings → Config to keep low-relevance matches out of it.
 
 Everyone else sees them too. Bills that newly match as the legislature files them (not ones brought in by seeding a session or re-running keywords) appear in everyone's feed as one row a day, such as "5 new bills matched your keywords," that opens to the bills. The admin's minimum relevance for new matches applies, and a bill that already has a priority keeps its usual card.
 

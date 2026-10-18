@@ -232,14 +232,18 @@ const NEW_MATCH_CHIP = { label: 'New match', bg: color.bgAmberPriority, text: co
 // A new match as the same card an updated bill gets, minus activity rows: badge,
 // title and summary preview (none when the bill has no summary yet), with a
 // "New match" chip where the priority chip goes.
-function renderNewMatchCard(it: NewMatchDigestItem, appUrl: string): string {
+function renderNewMatchCard(it: NewMatchDigestItem, appUrl: string, forMember: boolean): string {
   const model = buildBillCardModel({
     key: it.billId, billId: it.billId, billNumber: it.billNumber, billTitle: it.billTitle,
     billSessionSlug: null, billState: it.billState, billSummary: it.summary ?? null,
     billPriority: null, billMatchType: null, date: '', billIsDraft: false, events: [],
   })
   const billHref = `${appUrl}${billUrl({ id: it.billId, state: it.billState, session: it.billSession, sessionSlug: it.billSessionSlug, billNumber: it.billNumber })}`
-  return `${renderBillCardOpen({ model, billHref, appUrl, chip: NEW_MATCH_CHIP })}${BILL_CARD_CLOSE}`
+  // The bill page is where the amber "New · Set priority" dropdown is. A member
+  // can't set a priority, so their cards carry no link.
+  const setPriority = forMember ? '' : `
+    <tr style="background:${color.white};"><td colspan="3" style="padding:8px 14px 10px 14px;border-top:1px solid ${CARD_STYLE.rowBorder};font-size:${fontSize.sm}px;"><a href="${escHtml(billHref)}" style="color:${color.accentBlue};font-weight:${fontWeight.semibold};text-decoration:none;">Set priority</a></td></tr>`
+  return `${renderBillCardOpen({ model, billHref, appUrl, chip: NEW_MATCH_CHIP })}${setPriority}${BILL_CARD_CLOSE}`
 }
 
 // New-match section (admins always, members who haven't opted out). Not
@@ -264,7 +268,7 @@ function renderNewMatchSection(items: NewMatchDigestItem[], appUrl: string, forM
     title: countOf(items.length, 'new match', 'new matches'),
     subtitle: forMember ? undefined : 'Set a priority or dismiss each from the bill list.',
   })}
-${top.map(it => renderNewMatchCard(it, appUrl)).join('\n')}${seeAll}`
+${top.map(it => renderNewMatchCard(it, appUrl, forMember)).join('\n')}${seeAll}`
 }
 
 export function renderDigestEmail(input: { events: DigestEvent[]; assocName: string; appUrl: string; periodStart?: string; periodEnd?: string; newMatches?: NewMatchDigestItem[]; forMember?: boolean }): string {

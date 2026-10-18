@@ -10,7 +10,8 @@ vi.mock('../lib/api', () => ({ apiFetch: (...args: unknown[]) => apiFetchMock(..
 const optionLabels = () => within(screen.getByRole('combobox')).getAllByRole('option').map(o => o.textContent)
 
 describe('CompactPrioritySelect', () => {
-  beforeEach(() => apiFetchMock.mockReset())
+  // Braces matter: a function returned from beforeEach is run as a cleanup, and mockReset returns the mock.
+  beforeEach(() => { apiFetchMock.mockReset() })
 
   it('passes the PATCH response (promoted) as the second onChange arg', async () => {
     apiFetchMock.mockResolvedValue({ priority: 'high', promoted: true })
@@ -162,7 +163,7 @@ describe('CompactPrioritySelect', () => {
       const parentClick = vi.fn()
       const parentMouseDown = vi.fn()
       render(
-        <div onClick={parentClick} onMouseDown={parentMouseDown}>
+        <div role="presentation" onClick={parentClick} onMouseDown={parentMouseDown}>
           <CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} newMatch onDismiss={vi.fn()} />
         </div>,
       )

@@ -397,6 +397,7 @@ describe('BillDetail: a new match as a state of the priority dropdown', () => {
     const spy = makeMockApiFetch(NEW)
     render(<MemoryRouter><BillDetail /></MemoryRouter>)
     const select = await screen.findByRole('combobox', { name: /priority/i })
+    spy.mockClear() // the spy is shared across tests and keeps earlier calls
     fireEvent.change(select, { target: { value: 'dismiss' } })
     await waitFor(() => expect(screen.getByRole('combobox', { name: /priority/i })).toHaveDisplayValue('Set priority'))
     expect(spy).toHaveBeenCalledWith('/bills/42/triage-dismiss', { method: 'PATCH' })

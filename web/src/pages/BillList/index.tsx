@@ -532,9 +532,9 @@ export function BillList() {
     setAllBills(prev => prev.map(b => b.id === billId ? { ...b, position } : b))
   }, [])
 
-  // Triage dismiss already hit the API in NewMatchTriageControl. Mark the bill
-  // dismissed locally so the row's triage control reverts to a plain priority
-  // select, and refresh facets and the sidebar so both "new" counts drop.
+  // Triage dismiss already hit the API in the priority dropdown. Mark the bill
+  // dismissed locally so the row's amber new-match dropdown reverts to a plain
+  // "Set priority", and refresh facets and the sidebar so both "new" counts drop.
   const handleTriageDismiss = useCallback((billId: string) => {
     setAllBills(prev => prev.map(b => b.id === billId ? { ...b, triagedAt: new Date().toISOString() } : b))
     fetchFacets()

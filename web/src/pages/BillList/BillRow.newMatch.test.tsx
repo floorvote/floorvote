@@ -143,7 +143,6 @@ describe('BillRow: a bill that is not a new match', () => {
       expect(s).toHaveDisplayValue('Set priority')
       expect(optionLabels(s)).toEqual(['Set priority', 'High Priority', 'Medium Priority', 'Low Priority'])
     }
-    expect(screen.queryByText('Not set', { selector: 'option' })).toBeNull()
   })
 
   it('shows a set priority for an admin unchanged', () => {
