@@ -214,16 +214,18 @@ DB_NAME="${RESOURCE_PREFIX}-${SLUG}"
 QUEUE_NAME="${RESOURCE_PREFIX}-${SLUG}-queue"
 SLUG_UPPER="$(echo "$SLUG" | tr '[:lower:]' '[:upper:]' | tr '-' '_')"
 CENTRALAPI_BINDING="TENANT_${SLUG_UPPER}"
-# Each tenant needs a unique ratelimits namespace_id. Find the max existing id
-# (excluding dev=2099) and increment.
+# Each tenant needs two unique ratelimits namespace_ids, one for the login limiter
+# and one for the mute-link limiter. Find the max existing id (excluding the dev
+# env's 2099 and 2098) and take the next two.
 # `|| true` matters: under `set -o pipefail` a grep that matches nothing makes
 # this assignment fail, and `set -e` then exits the script silently, before the
 # ERR trap is installed -- no message, no log file, exit 1. That happens on any
 # fresh clone, where api/wrangler.toml has no namespace_id lines yet (or does
 # not exist at all).
 RATELIMIT_NS_ID=$(grep 'namespace_id' "$API_DIR/wrangler.toml" 2>/dev/null \
-  | grep -o '"[0-9]*"' | tr -d '"' | grep -v '^2099$' | sort -n | tail -1 || true)
+  | grep -o '"[0-9]*"' | tr -d '"' | grep -v -e '^2099$' -e '^2098$' | sort -n | tail -1 || true)
 RATELIMIT_NS_ID=$(( ${RATELIMIT_NS_ID:-2000} + 1 ))
+MUTE_RATELIMIT_NS_ID=$(( RATELIMIT_NS_ID + 1 ))
 
 # ── Setup log file ─────────────────────────────────────────────────────────────
 LOG_DIR="$REPO_ROOT/logs"
@@ -372,6 +374,11 @@ preflight() {
     pf_bad "ratelimit namespace_id $RATELIMIT_NS_ID is already used -- tenants would share a login budget"
   else
     pf_ok "ratelimit namespace_id $RATELIMIT_NS_ID is free"
+  fi
+  if grep -q "namespace_id = \"${MUTE_RATELIMIT_NS_ID}\"" "$API_DIR/wrangler.toml" 2>/dev/null; then
+    pf_bad "ratelimit namespace_id $MUTE_RATELIMIT_NS_ID is already used -- tenants would share a mute-link budget"
+  else
+    pf_ok "ratelimit namespace_id $MUTE_RATELIMIT_NS_ID is free"
   fi
 
   # 6. Central reachable, and the admin secret actually works. force-register
@@ -560,6 +567,15 @@ name = "LOGIN_RATE_LIMITER"
 namespace_id = "${RATELIMIT_NS_ID}"
   [env.${SLUG}.ratelimits.simple]
   limit = 10
+  period = 60
+
+# One-click mute link: 120 requests per 60s per IP (mail providers send many
+# members' unsubscribes from a few IPs).
+[[env.${SLUG}.ratelimits]]
+name = "MUTE_LINK_RATE_LIMITER"
+namespace_id = "${MUTE_RATELIMIT_NS_ID}"
+  [env.${SLUG}.ratelimits.simple]
+  limit = 120
   period = 60
 
 [[env.${SLUG}.services]]

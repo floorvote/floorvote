@@ -7,7 +7,8 @@ import { isBillMuted, muteLinkTokens } from '../../src/lib/billMutes'
 
 // Rate limit on POST /api/mute-link (#531). The route is unauthenticated and
 // checks an HMAC before it does anything else, so it can be hammered to burn
-// Worker CPU. It shares the LOGIN_RATE_LIMITER binding with the auth routes,
+// Worker CPU. It has its own MUTE_LINK_RATE_LIMITER binding (#685) and falls
+// back to LOGIN_RATE_LIMITER, shared with the auth routes, when that is unbound,
 // under its own `mute-link:<ip>` key, and a refused request is a 429 before the
 // token is read.
 //
