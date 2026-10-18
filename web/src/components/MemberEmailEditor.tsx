@@ -3,7 +3,7 @@ import { apiFetch, ApiError } from '../lib/api'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 import { MissingRequiredReason, useRequiredSubmit } from './RequiredField'
 import { isValidEmail, trimEmailPunctuation } from '../../../shared/email'
-import type { EmailChangeAction, EmailChangeState } from '../lib/emailChangeState'
+import { LINK_OUT_NOTE, type EmailChangeAction, type EmailChangeState } from '../lib/emailChangeState'
 
 // Messages the server also sends, so a refusal reads the same whichever side
 // catches it.
@@ -129,6 +129,9 @@ export function MemberEmailEditor({ member, pendingInvite, state, dispatch, onCa
         <p id={errorId} role="alert" style={{ fontSize: fontSize.sm, color: color.textErrorRed, margin: '6px 0 0' }}>
           {state.error}
         </p>
+      )}
+      {state.linkOut && (
+        <p style={{ fontSize: fontSize.sm, color: color.textSecondary, margin: '6px 0 0' }}>{LINK_OUT_NOTE}</p>
       )}
       {/* Below the button row, never in it: revealing it must not move the button. */}
       <MissingRequiredReason {...gate.reasonProps} />

@@ -1116,7 +1116,9 @@ export function Members() {
                         }}
                         onCancel={() => handleCancelEmailChange(member)}
                         resendRef={(el) => { resendButtonRefs.current[member.id] = el }}
-                        confirmedAnnounce={`Invite address changed to ${member.email}, and a new invite was sent.`}
+                        confirmedAnnounce={isPendingInvite(member)
+                          ? `Invite address changed to ${member.email}, and a new invite was sent.`
+                          : `Address changed to ${member.email}.`}
                       />
                     </td>
                     <td data-label="Role" style={{ padding: '10px 12px', color: color.textSlate500 }}>

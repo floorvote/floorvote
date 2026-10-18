@@ -168,7 +168,7 @@ describe('Members "Change email…" action', () => {
   })
 
   describe('the inline editor', () => {
-    it('is pre-filled with the current address, focused, and explains what saving does', async () => {
+    it('is pre-filled with the current address, and focused', async () => {
       mockApi()
       renderMembers()
       const dialog = await openDialog()
@@ -357,7 +357,7 @@ describe('Members "Change email…" action', () => {
       return (await screen.findByText('Sam Signed In')).closest('tr')!
     }
 
-    it('explains that nothing changes until the new address confirms, and offers Send confirmation', async () => {
+    it('opens pre-filled with the current address and offers Send link', async () => {
       mockApi([OWNER, ACTIVE])
       renderMembers()
       const dialog = await openActiveDialog()

@@ -14,7 +14,8 @@
 
 export type EmailChangeState =
   | { kind: 'idle'; note?: string }
-  | { kind: 'editing'; value: string; error: string | null; sending: boolean }
+  // linkOut: reopened over a pending change, so a link is still out if this is cancelled.
+  | { kind: 'editing'; value: string; error: string | null; sending: boolean; linkOut?: boolean }
   | { kind: 'pending'; to: string; busy: boolean; error: string | null; announce: string }
   | { kind: 'confirmed'; email: string }
 
@@ -32,13 +33,15 @@ export type EmailChangeAction =
 
 export const IDLE: EmailChangeState = { kind: 'idle' }
 
+export const LINK_OUT_NOTE = 'A link already sent still works until it expires.'
+
 export const CANCEL_NOTE = 'Cancelled here. A link already sent still works until it expires.'
 
 export function emailChangeReducer(state: EmailChangeState, action: EmailChangeAction): EmailChangeState {
   switch (action.type) {
     case 'open':
       if (state.kind === 'editing' && state.sending) return state
-      return { kind: 'editing', value: action.value ?? '', error: null, sending: false }
+      return { kind: 'editing', value: action.value ?? '', error: null, sending: false, ...(state.kind === 'pending' ? { linkOut: true } : {}) }
     case 'edit':
       if (state.kind !== 'editing') return state
       return { ...state, value: action.value, error: null }
@@ -60,7 +63,7 @@ export function emailChangeReducer(state: EmailChangeState, action: EmailChangeA
       if (state.kind !== 'pending') return state
       return { ...state, busy: false, error: action.message }
     case 'cancel':
-      return state.kind === 'pending' ? { kind: 'idle', note: CANCEL_NOTE } : IDLE
+      return state.kind === 'pending' || (state.kind === 'editing' && state.linkOut) ? { kind: 'idle', note: CANCEL_NOTE } : IDLE
     case 'confirmed':
       return { kind: 'confirmed', email: action.email }
   }
