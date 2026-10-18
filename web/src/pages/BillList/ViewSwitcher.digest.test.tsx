@@ -148,6 +148,12 @@ describe('ViewSwitcher: include a view in the digest', () => {
     expect(screen.getAllByText('1,320')[1]).toHaveAttribute('title', '1,320 bills match this view')
   })
 
+  it('leaves the "All bills" count chip without the view hover, since it is not a view', async () => {
+    renderSwitcher({})
+    await waitFor(() => expect(screen.getByText('100')).toBeInTheDocument())
+    expect(screen.getByText('100')).not.toHaveAttribute('title')
+  })
+
   it('gives the count chip no hover until the count has loaded, rather than saying 0', async () => {
     vi.spyOn(api, 'apiFetch').mockImplementation(() => new Promise(() => {}))
     renderSwitcher({})

@@ -50,3 +50,32 @@ export function groupStatusOptions(input: {
     ...group(null, OTHER_STAGE_LABEL, null),
   ]
 }
+
+/** How a stage heading's checkbox reads: on, off, or mixed (some of its statuses chosen). */
+export type StageCheck = 'on' | 'off' | 'mixed'
+
+/**
+ * A stage heading's checkbox. On when its stage is chosen or every status under it is; mixed when only some of its
+ * statuses are; off otherwise. A group with no stage (Other) has no heading checkbox, so it is always off.
+ */
+export function stageCheckState(group: StatusStageGroup, status: readonly string[], stage: readonly string[]): StageCheck {
+  if (group.stage === null) return 'off'
+  if (stage.includes(group.stage)) return 'on'
+  const chosen = group.options.filter(o => status.includes(o.value)).length
+  if (chosen === 0) return 'off'
+  return chosen === group.options.length ? 'on' : 'mixed'
+}
+
+/**
+ * What toggling a stage heading leaves chosen. A heading that reads on clears its stage and every status under it
+ * (so a stage chosen status by status clears too). One that reads off or mixed chooses the whole stage, as the
+ * heading always has (it writes `stage=<key>`), and leaves the statuses already chosen where they are.
+ */
+export function toggleStageSelection(group: StatusStageGroup, status: readonly string[], stage: readonly string[]): { status: string[]; stage: string[] } {
+  if (group.stage === null) return { status: [...status], stage: [...stage] }
+  if (stageCheckState(group, status, stage) === 'on') {
+    const under = new Set(group.options.map(o => o.value))
+    return { status: status.filter(v => !under.has(v)), stage: stage.filter(s => s !== group.stage) }
+  }
+  return { status: [...status], stage: [...stage, group.stage] }
+}

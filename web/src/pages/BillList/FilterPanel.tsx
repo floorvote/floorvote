@@ -9,14 +9,15 @@ import { useMenuAlign } from '../../hooks/useMenuAlign'
 import { isSubjectCapReached, subjectCapHint } from '../../lib/subjectCap'
 import type { SortColumn, SortDir } from './types'
 import { FILTER_ANY } from '../../../../shared/billFilter'
-import type { StatusStageGroup } from '../../lib/statusGroups'
+import { stageCheckState, toggleStageSelection, type StatusStageGroup } from '../../lib/statusGroups'
+import { TriStateCheckbox } from '../../components/TriStateCheckbox'
 
 /** What a heading of the grouped Status control says on hover: it selects the whole stage. */
 export const STAGE_HEADING_HINT = 'All statuses in this stage.'
 
-/** A control the menu's arrow keys visit: an option's input, or a stage heading's button. */
-const MENU_ITEM = 'input[type="radio"], input[type="checkbox"], button[data-menu-item]'
-const isChosen = (el: HTMLElement) => (el as HTMLInputElement).checked === true || el.getAttribute('aria-pressed') === 'true'
+/** A control the menu's arrow keys visit: an option's input, which a stage heading has too. */
+const MENU_ITEM = 'input[type="radio"], input[type="checkbox"]'
+const isChosen = (el: HTMLElement) => (el as HTMLInputElement).checked === true
 
 export function sortDescription(col: SortColumn, posLabel: string, relLabel: string): ReactNode {
   // Hierarchy slots in display order, matching SORT_HIERARCHY in the API
@@ -226,8 +227,12 @@ export function FilterDropdown({
       onChange(base.includes(value) ? [] : [value])
     }
   }
-  function toggleGroup(stage: string) {
-    onGroupsChange?.(selectedGroups.includes(stage) ? selectedGroups.filter(s => s !== stage) : [...selectedGroups, stage])
+  // A heading's checkbox toggles its whole stage. It writes the stage, and also the statuses when unchecking has to
+  // clear ones chosen one by one, so each callback runs only for the part that changed.
+  function toggleGroup(group: StatusStageGroup) {
+    const next = toggleStageSelection(group, selected, selectedGroups)
+    if (next.stage.length !== selectedGroups.length) onGroupsChange?.(next.stage)
+    if (next.status.length !== selected.length) onChange(next.status)
   }
 
   return (
@@ -282,26 +287,24 @@ export function FilterDropdown({
             </label>
           )}
           {groups ? groups.map(group => {
-            const pressed = group.stage !== null && selectedGroups.includes(group.stage)
+            const check = stageCheckState(group, selected, selectedGroups)
+            const lit = check !== 'off'
             return (
               <div key={group.stage ?? 'other'}>
                 {group.stage !== null ? (
-                  <button
-                    type="button"
-                    data-menu-item
-                    aria-pressed={pressed}
+                  <label
                     title={STAGE_HEADING_HINT}
-                    onClick={() => toggleGroup(group.stage as string)}
                     style={{
-                      display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 12px', border: 'none',
+                      display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 12px', boxSizing: 'border-box',
                       cursor: 'pointer', textAlign: 'left', fontSize: fontSize.sm, fontWeight: fontWeight.semibold,
-                      color: pressed ? color.linkBlue : color.textPrimary,
-                      background: pressed ? color.bgInfo : color.surfaceMuted,
+                      color: lit ? color.linkBlue : color.textPrimary,
+                      background: check === 'on' ? color.bgInfo : color.surfaceMuted,
                     }}
                   >
+                    <TriStateCheckbox state={check} onToggle={() => toggleGroup(group)} />
                     {group.label}
                     {group.count !== null && <CountBadge count={group.count} />}
-                  </button>
+                  </label>
                 ) : (
                   <div style={{ padding: '7px 12px', fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: color.textMuted, background: color.surfaceMuted }}>
                     {group.label}

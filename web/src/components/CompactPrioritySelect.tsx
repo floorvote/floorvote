@@ -6,6 +6,7 @@ const NO_PRIORITY = { fill: color.white, text: color.textMuted, dot: color.borde
 // An untriaged new match: the same control in amber.
 const NEW_MATCH = { fill: color.bgAmberPriority, text: color.textAmberDark }
 const DISMISS = 'dismiss'
+const PRIORITY_LABELS = { high: 'High Priority', medium: 'Medium Priority', low: 'Low Priority' } as const
 
 function ChevronDown({ size = 10, color }: { size?: number; color: string }) {
   const h = Math.round(size * 0.6)
@@ -42,9 +43,23 @@ export function CompactPrioritySelect({ billId, current, onChange, isFiltered, m
   const pad = mini ? '2px 18px 2px 6px' : '3px 22px 3px 10px'
   const borderRad = mini ? radiusTokens.sm : radiusTokens.sm
   const arrowRight = mini ? 5 : 7
+  const selectedLabel = current ? PRIORITY_LABELS[current] : amber ? 'New · Set priority' : placeholder
 
+  // A native <select> is as wide as its widest option, so "Dismiss (reviewed, no priority)" would stretch the closed
+  // chip past the bill table's priority column. A hidden copy of the selected label sets the width instead, and the
+  // select (width 0, min-width 100%) fills it. The open menu is the browser's and stays as wide as its options.
   return (
-    <div style={{ position: 'relative', display: 'inline-flex' }}>
+    <div style={{ position: 'relative', display: 'inline-grid' }}>
+      <span
+        data-testid="priority-select-sizer"
+        aria-hidden="true"
+        style={{
+          gridArea: '1 / 1', visibility: 'hidden', pointerEvents: 'none', whiteSpace: 'nowrap',
+          fontSize: fs, fontWeight: fontWeight.semibold, padding: pad, border: '1px solid transparent',
+        }}
+      >
+        {selectedLabel}
+      </span>
       <select
         aria-label={amber ? 'Priority (new match: set a priority or dismiss)' : 'Priority'}
         value={current ?? ''}
@@ -64,6 +79,7 @@ export function CompactPrioritySelect({ billId, current, onChange, isFiltered, m
         }}
         style={{
           WebkitAppearance: 'none', appearance: 'none',
+          gridArea: '1 / 1', width: 0, minWidth: '100%',
           fontSize: fs, fontWeight: fontWeight.semibold,
           padding: pad, borderRadius: borderRad,
           border: `1px solid ${borderColor}`, background: c.fill, color: c.text,
@@ -73,9 +89,9 @@ export function CompactPrioritySelect({ billId, current, onChange, isFiltered, m
         }}
       >
         <option value="">{amber ? 'New · Set priority' : placeholder}</option>
-        <option value="high">High Priority</option>
-        <option value="medium">Medium Priority</option>
-        <option value="low">Low Priority</option>
+        <option value="high">{PRIORITY_LABELS.high}</option>
+        <option value="medium">{PRIORITY_LABELS.medium}</option>
+        <option value="low">{PRIORITY_LABELS.low}</option>
         {amber && <option value={DISMISS}>Dismiss (reviewed, no priority)</option>}
       </select>
       <span style={{
