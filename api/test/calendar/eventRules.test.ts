@@ -14,7 +14,7 @@ import { COUNCIL_CALENDAR_TOPIC } from '../../../shared/eventRules'
 // instance's calendar, ICS feed, and week-ahead email out.
 
 const sendBatch = vi.hoisted(() => vi.fn(async () => ({ sent: 1, failed: 0 })))
-vi.mock('../../src/lib/email', async (importOriginal) => ({ ...await importOriginal<typeof import('../../src/lib/email')>(), sendBatch }))
+vi.mock('../../src/lib/email', async (importOriginal) => ({ ...await importOriginal<typeof import('../../src/lib/email')>(), senderFor: (e: unknown) => ({ sendBatch: (messages: unknown[]) => (sendBatch as (...a: unknown[]) => unknown)(e, messages) }) }))
 
 const isoDay = (offsetDays: number) => new Date(Date.now() + offsetDays * 86400_000).toISOString().slice(0, 10)
 const HANDLE = 'legiscan:1012600769'
