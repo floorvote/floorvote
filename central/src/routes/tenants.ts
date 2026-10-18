@@ -491,10 +491,11 @@ tenantsRoutes.post('/promote-bills/:tenantId', guardCallerTenantParam(), async (
   const tenantId = c.req.param('tenantId')
   const body = await c.req.json<{ billIds?: unknown }>().catch(() => ({} as { billIds?: unknown }))
   if (body.billIds !== undefined && !Array.isArray(body.billIds)) return c.json({ error: 'billIds must be a list' }, 400)
-  const billIds = (body.billIds ?? []).filter((n: unknown): n is number => Number.isInteger(n) && (n as number) > 0)
-  if (billIds.length > REPROCESS_LIMIT) {
+  const requested = (body.billIds ?? []).filter((n: unknown): n is number => Number.isInteger(n) && (n as number) > 0)
+  if (requested.length > REPROCESS_LIMIT) {
     return c.json({ error: `too many billIds (max ${REPROCESS_LIMIT})` }, 400)
   }
+  const billIds = [...new Set(requested)]
   if (billIds.length === 0) return c.json({ ok: true, tenantId, promoted: 0 })
 
   // D1 binds at most 100 parameters per statement and each row binds 3, so one statement
