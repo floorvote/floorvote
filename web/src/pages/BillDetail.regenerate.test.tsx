@@ -587,6 +587,81 @@ describe('a run that is still going when the admin moves to another bill', () =>
   })
 })
 
+describe("a run that lands after the admin moved to the analyzed bill's page", () => {
+  const TRACKED = { id: 'a190', externalId: 'legiscan:190', billNumber: 'A190', matchType: 'keyword' as const, analysisBillId: 'a190', analysisBillExternalId: 'legiscan:190', analysisBillNumber: 'A190', tenantSummary: "A190's old summary." }
+  const LANDED = { ...COMPANION, analysisAiProcessedAt: '2026-10-15 12:00:00' }
+  const refetchedPath = (path: string) => vi.mocked(api.apiFetch).mock.calls.filter(c => c[0] === path).length
+
+  it("refreshes the summary on that page without a reload", async () => {
+    const { goTo } = setup(COMPANION, [LANDED])
+    await regenerate(user)
+    await screen.findByText(/Regenerating/)
+    act(() => goTo('a190', TRACKED))
+    await screen.findByText("A190's old summary.")
+    // The server now has the new analysis on A190's page.
+    routerMock.loaderData = { ...BILL, ...TRACKED, tenantSummary: "A190's new summary." }
+    await tick()
+    expect(await screen.findByText("A190's new summary.")).toBeInTheDocument()
+    expect(refetchedPath('/bills/a190')).toBeGreaterThan(0)
+    // The page the run was started on is not touched again.
+    expect(refetchedPath('/bills/42')).toBe(0)
+  })
+
+  it("puts no outcome notice or chip on that page while refreshing it", async () => {
+    const { goTo } = setup(COMPANION, [LANDED])
+    await regenerate(user)
+    await screen.findByText(/Regenerating/)
+    act(() => goTo('a190', TRACKED))
+    routerMock.loaderData = { ...BILL, ...TRACKED, tenantSummary: "A190's new summary." }
+    await tick()
+    await screen.findByText("A190's new summary.")
+    expect(screen.queryByText(/Re-analyzed A190/)).not.toBeInTheDocument()
+    expect(chip()).not.toBeInTheDocument()
+  })
+
+  it("refreshes another companion's page that shows the same analysis", async () => {
+    const { goTo } = setup(COMPANION, [LANDED])
+    await regenerate(user)
+    await screen.findByText(/Regenerating/)
+    const sibling = { id: 'c1714', externalId: 'legiscan:1714', billNumber: 'S1714', matchType: null, analysisBillId: 'a190', analysisBillExternalId: 'legiscan:190', analysisBillNumber: 'A190', tenantSummary: "A190's old summary." }
+    act(() => goTo('c1714', sibling))
+    await screen.findByText("A190's old summary.")
+    routerMock.loaderData = { ...BILL, ...sibling, tenantSummary: "A190's new summary." }
+    await tick()
+    expect(await screen.findByText("A190's new summary.")).toBeInTheDocument()
+  })
+
+  it("leaves a page that does not show the analyzed bill's analysis alone", async () => {
+    const { goTo } = setup(COMPANION, [LANDED])
+    await regenerate(user)
+    await screen.findByText(/Regenerating/)
+    const other = { id: 'z9', externalId: 'legiscan:9', billNumber: 'Z9', analysisBillId: 'z9', analysisBillExternalId: 'legiscan:9', analysisBillNumber: 'Z9', tenantSummary: "Z9's summary." }
+    act(() => goTo('z9', other))
+    await screen.findByText("Z9's summary.")
+    await tick()
+    await tick()
+    expect(refetchedPath('/bills/z9')).toBe(0)
+    expect(refetchedPath('/bills/42')).toBe(0)
+  })
+
+  it("does not refresh the page it moved to when the run timed out", async () => {
+    const { goTo } = setup(COMPANION, [COMPANION])
+    await regenerate(user)
+    await screen.findByText(/Regenerating/)
+    act(() => goTo('a190', TRACKED))
+    await screen.findByText("A190's old summary.")
+    await tick(4 * 60 * 1000)
+    expect(refetchedPath('/bills/a190')).toBe(0)
+  })
+
+  it("still refreshes the page the run started on when the admin stays", async () => {
+    const { refetched } = setup(COMPANION, [LANDED])
+    await regenerate(user)
+    await tick()
+    await waitFor(() => expect(refetched()).toBeGreaterThan(0))
+  })
+})
+
 describe('a group change that leaves the page with no analysis', () => {
   it("still says the group changed, where the analysis box would have been", async () => {
     // After the split the page is an unanalyzed stub: nothing to put the notice beside.
