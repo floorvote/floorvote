@@ -44,7 +44,7 @@ describe('parseBulkFilter', () => {
   })
 
   it('ignores a key that is not a filter', () => {
-    expect(parseBulkFilter('bogus=x&page=2&ids=a&sort=priority&search=x&field.a=b')).toEqual(EMPTY_BILL_FILTER)
+    expect(parseBulkFilter('bogus=x&page=2&ids=a&sort=priority&q=x&cf_a=b&session=s')).toEqual(EMPTY_BILL_FILTER)
   })
 
   it.each([[undefined], [null], [0], [5], [true], [false], [[]], [['status=Passed']], [{}], [{ status: ['Passed'] }]])(

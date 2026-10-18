@@ -34,7 +34,7 @@ export function useBillFilters(opts: {
   // The one bill filter value. Every control, the URL, a saved view, and Reset write it through `commit`, which
   // keeps the value it has when the new one is the same filter, so nothing that depends on it runs for no change.
   const [filter, setFilterState] = useState<BillFilter>(() =>
-    withBillFilter({ q: '' }, billFilterFromSearch(searchParams, customFieldDefs)),
+    withBillFilter({ search: '' }, billFilterFromSearch(searchParams, customFieldDefs)),
   )
   const commit = useCallback((next: BillFilter | ((prev: BillFilter) => BillFilter)) => {
     setFilterState(prev => {
@@ -62,33 +62,34 @@ export function useBillFilters(opts: {
     // An edit to the URL replaces the filters, through the same parse as a saved view. The search box is state, not
     // part of the URL, so it keeps what it holds.
     const query = billsQueryFromSearch(new URLSearchParams(location.search), customFieldDefs)
-    commit(prev => withBillFilter({ q: prev.q }, query.filter))
+    commit(prev => withBillFilter({ search: prev.search }, query.filter))
     setSortCol(query.sortCol)
     setSortDir(query.sortDir)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.search])
 
-  // The value as the legacy per-filter names read it, for the controls that take one list or flag each. These are
-  // copies, rebuilt only when their part of the value is a new one, so an effect that depends on one runs when that
-  // filter changes. Writing goes through the setters below, which write the one value.
-  const search = filter.q
-  const filterStatuses = useMemo(() => [...filter.status], [filter.status])
-  const filterStages = useMemo(() => [...filter.stage], [filter.stage])
-  const filterPriorities = useMemo(() => [...filter.priority], [filter.priority])
-  const filterPositions = useMemo(() => [...filter.position], [filter.position])
-  const filterYears = useMemo(() => filter.year.map(Number).filter(n => !isNaN(n)), [filter.year])
-  const filterStates = useMemo(() => [...filter.state], [filter.state])
-  const filterMinRelevance = filter.minRelevance ?? 0
+  // Each filter by its one name, for the controls that take one list or flag each. These are copies, rebuilt only
+  // when their part of the value is a new one, so an effect that depends on one runs when that filter changes. A year
+  // is a number and a subject its `STATE:name` text, as the controls take them. Writing goes through the setters
+  // below, which write the one value.
+  const search = filter.search
+  const status = useMemo(() => [...filter.status], [filter.status])
+  const stage = useMemo(() => [...filter.stage], [filter.stage])
+  const priority = useMemo(() => [...filter.priority], [filter.priority])
+  const position = useMemo(() => [...filter.position], [filter.position])
+  const year = useMemo(() => filter.year.map(Number).filter(n => !isNaN(n)), [filter.year])
+  const state = useMemo(() => [...filter.state], [filter.state])
+  const minRelevance = filter.minRelevance ?? 0
   const myBills = filter.myBills
-  const unvotedOnly = filter.unvoted
+  const unvoted = filter.unvoted
   const newMatches = filter.newMatches
   const drafts = filter.drafts
-  const matchAny = filter.match === 'any'
-  const selectedTags = useMemo(() => [...filter.tag], [filter.tag])
-  const selectedSubjects = useMemo(() => filter.subject.map(s => encodeSubjectFilter(s.state, s.name)), [filter.subject])
-  const cfFilters = useMemo(
-    () => Object.fromEntries(Object.entries(filter.cf).map(([id, values]) => [id, [...values]])) as Record<string, string[]>,
-    [filter.cf],
+  const match = filter.match
+  const tag = useMemo(() => [...filter.tag], [filter.tag])
+  const subject = useMemo(() => filter.subject.map(s => encodeSubjectFilter(s.state, s.name)), [filter.subject])
+  const field = useMemo(
+    () => Object.fromEntries(Object.entries(filter.field).map(([id, values]) => [id, [...values]])) as Record<string, string[]>,
+    [filter.field],
   )
 
   // A setter takes the new value of its part of the filter, or a function from the part as it stands.
@@ -96,27 +97,27 @@ export function useBillFilters(opts: {
     (next: T | ((prev: T) => T)) =>
       commit(prev => withBillFilter(write(typeof next === 'function' ? (next as (p: T) => T)(read(prev)) : next), prev)),
   [commit])
-  const setSearch = useMemo(() => part<string>(f => f.q, q => ({ q })), [part])
-  const setFilterStatuses = useMemo(() => part<string[]>(f => [...f.status], status => ({ status })), [part])
-  const setFilterStages = useMemo(() => part<string[]>(f => [...f.stage], stage => ({ stage })), [part])
-  const setFilterPriorities = useMemo(() => part<string[]>(f => [...f.priority], priority => ({ priority })), [part])
-  const setFilterPositions = useMemo(() => part<string[]>(f => [...f.position], position => ({ position })), [part])
-  const setFilterYears = useMemo(
+  const setSearch = useMemo(() => part<string>(f => f.search, search => ({ search })), [part])
+  const setStatus = useMemo(() => part<string[]>(f => [...f.status], status => ({ status })), [part])
+  const setStage = useMemo(() => part<string[]>(f => [...f.stage], stage => ({ stage })), [part])
+  const setPriority = useMemo(() => part<string[]>(f => [...f.priority], priority => ({ priority })), [part])
+  const setPosition = useMemo(() => part<string[]>(f => [...f.position], position => ({ position })), [part])
+  const setYear = useMemo(
     () => part<number[]>(f => f.year.map(Number).filter(n => !isNaN(n)), years => ({ year: years.map(String) })), [part])
-  const setFilterStates = useMemo(() => part<string[]>(f => [...f.state], state => ({ state })), [part])
-  const setFilterMinRelevance = useMemo(
+  const setState = useMemo(() => part<string[]>(f => [...f.state], state => ({ state })), [part])
+  const setMinRelevance = useMemo(
     () => part<number>(f => f.minRelevance ?? 0, n => ({ minRelevance: n > 0 ? n : null })), [part])
   const setMyBills = useMemo(() => part<boolean>(f => f.myBills, myBills => ({ myBills })), [part])
-  const setUnvotedOnly = useMemo(() => part<boolean>(f => f.unvoted, unvoted => ({ unvoted })), [part])
+  const setUnvoted = useMemo(() => part<boolean>(f => f.unvoted, unvoted => ({ unvoted })), [part])
   const setNewMatches = useMemo(() => part<boolean>(f => f.newMatches, newMatches => ({ newMatches })), [part])
   const setDrafts = useMemo(() => part<boolean>(f => f.drafts, drafts => ({ drafts })), [part])
-  const setMatchAny = useMemo(() => part<boolean>(f => f.match === 'any', any => ({ match: any ? 'any' : 'all' })), [part])
-  const setSelectedTags = useMemo(() => part<string[]>(f => [...f.tag], tag => ({ tag })), [part])
+  const setMatch = useMemo(() => part<BillFilter['match']>(f => f.match, match => ({ match })), [part])
+  const setTag = useMemo(() => part<string[]>(f => [...f.tag], tag => ({ tag })), [part])
 
-  const setCfFilter = useCallback((fieldId: string, values: string[]) => {
+  const setField = useCallback((fieldId: string, values: string[]) => {
     commit(prev => {
-      const cf = Object.fromEntries(Object.entries(prev.cf).filter(([id]) => id !== fieldId))
-      return withBillFilter({ cf: Object.freeze(values.length > 0 ? { ...cf, [fieldId]: Object.freeze([...values]) } : cf) }, prev)
+      const rest = Object.fromEntries(Object.entries(prev.field).filter(([id]) => id !== fieldId))
+      return withBillFilter({ field: Object.freeze(values.length > 0 ? { ...rest, [fieldId]: Object.freeze([...values]) } : rest) }, prev)
     })
   }, [commit])
 
@@ -155,7 +156,7 @@ export function useBillFilters(opts: {
       if (existingView) next.set('view', existingView)
     } else if (pendingViewId.current !== null) {
       // A view is being tracked: the bookmark stays the short `?view=<id>`
-      // form for as long as the filters applied now — cf_ included, from
+      // form for as long as the filters applied now — custom fields included, from
       // the `next` params this effect is itself about to write — still
       // match it.
       const nextNormalized = normalizeViewQuery('?' + next.toString())
@@ -233,18 +234,18 @@ export function useBillFilters(opts: {
     pendingViewId.current = view.slug ?? view.id
     pendingViewQuery.current = normalizeViewQuery(view.query)
     const query = billsQueryFromSearch(new URLSearchParams(view.query), customFieldDefs)
-    commit(withBillFilter({ q: '' }, query.filter))
+    commit(withBillFilter({ search: '' }, query.filter))
     setSortCol(query.sortCol)
     setSortDir(query.sortDir)
   }, [customFieldDefs, handleResetFilters, commit, setSortCol, setSortDir])
 
   const hasActiveFilters = !!(
-    search || filterStatuses.length > 0 || filterStages.length > 0 || filterPriorities.length > 0 || filterPositions.length > 0 ||
-    filterYears.length > 0 || filterStates.length > 0 || filterMinRelevance > 0 || selectedTags.length > 0 || selectedSubjects.length > 0 || myBills || unvotedOnly || newMatches || drafts ||
-    Object.keys(cfFilters).some(k => (cfFilters[k]?.length ?? 0) > 0)
+    search || status.length > 0 || stage.length > 0 || priority.length > 0 || position.length > 0 ||
+    year.length > 0 || state.length > 0 || minRelevance > 0 || tag.length > 0 || subject.length > 0 || myBills || unvoted || newMatches || drafts ||
+    Object.keys(field).some(k => (field[k]?.length ?? 0) > 0)
   )
 
-  const totalActiveFilters = filterStatuses.length + filterStages.length + filterPriorities.length + filterPositions.length + selectedTags.length + selectedSubjects.length + filterYears.length + filterStates.length + (filterMinRelevance > 0 ? 1 : 0) + (myBills ? 1 : 0) + (unvotedOnly ? 1 : 0) + (newMatches ? 1 : 0) + (drafts ? 1 : 0) + Object.values(cfFilters).reduce((sum, v) => sum + v.length, 0)
+  const totalActiveFilters = status.length + stage.length + priority.length + position.length + tag.length + subject.length + year.length + state.length + (minRelevance > 0 ? 1 : 0) + (myBills ? 1 : 0) + (unvoted ? 1 : 0) + (newMatches ? 1 : 0) + (drafts ? 1 : 0) + Object.values(field).reduce((sum, v) => sum + v.length, 0)
 
   const yearFacetKeys = useMemo(() => {
     return Object.keys(facetCounts.year)
@@ -273,10 +274,10 @@ export function useBillFilters(opts: {
   // while the taxonomy is still loading, so options never briefly vanish.
   const allTags = useMemo(() => {
     const taxonomySet = new Set(tagTaxonomy)
-    return [...new Set([...knownTagsCache, ...Object.keys(facetCounts.tags)])]
+    return [...new Set([...knownTagsCache, ...Object.keys(facetCounts.tag)])]
       .filter(t => t !== FILTER_ANY && (taxonomySet.size === 0 || taxonomySet.has(t)))
       .sort()
-  }, [facetCounts.tags, tagTaxonomy])
+  }, [facetCounts.tag, tagTaxonomy])
   const positionOptions = useMemo(
     () => [...positionVocabulary.map(p => ({ value: p })), { value: 'none', label: 'Not set' }],
     [positionVocabulary]
@@ -289,7 +290,7 @@ export function useBillFilters(opts: {
    */
   const subjectGroups = useMemo(() => {
     const byState = new Map<string, Array<{ value: string; label: string; count: number }>>()
-    for (const [value, count] of Object.entries(facetCounts.subjects ?? {})) {
+    for (const [value, count] of Object.entries(facetCounts.subject ?? {})) {
       const idx = value.indexOf(':')
       if (idx <= 0) continue
       const state = value.slice(0, idx)
@@ -303,7 +304,7 @@ export function useBillFilters(opts: {
         state,
         options: options.sort((x, y) => y.count - x.count || x.label.localeCompare(y.label)),
       }))
-  }, [facetCounts.subjects])
+  }, [facetCounts.subject])
 
   const uniqueStates = [...new Set([...knownStates, ...Object.keys(facetCounts.state)])].sort((a, b) => {
     if (a === 'US') return -1
@@ -314,22 +315,22 @@ export function useBillFilters(opts: {
 
   return {
     search, setSearch,
-    filterStatuses, setFilterStatuses,
-    filterStages, setFilterStages,
-    filterPriorities, setFilterPriorities,
-    filterPositions, setFilterPositions,
-    filterYears, setFilterYears,
-    filterStates, setFilterStates,
-    filterMinRelevance, setFilterMinRelevance,
+    status, setStatus,
+    stage, setStage,
+    priority, setPriority,
+    position, setPosition,
+    year, setYear,
+    state, setState,
+    minRelevance, setMinRelevance,
     filterSheetOpen, setFilterSheetOpen,
     myBills, setMyBills,
-    unvotedOnly, setUnvotedOnly,
+    unvoted, setUnvoted,
     newMatches, setNewMatches,
     drafts, setDrafts,
-    matchAny, setMatchAny,
-    selectedTags, setSelectedTags,
-    selectedSubjects, subjectGroups,
-    cfFilters, setCfFilter,
+    match, setMatch,
+    tag, setTag,
+    subject, subjectGroups,
+    field, setField,
     filter,
     handleTagClick, handleTagsChange, handleSubjectsChange, handleStatusClick, handlePriorityClick,
     handlePositionClick, handleYearClick, handleRelevanceClick, handleResetFilters,

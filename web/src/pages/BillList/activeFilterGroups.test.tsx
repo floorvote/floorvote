@@ -12,7 +12,7 @@ const base = {
   positionOptions: [], customFieldDefs: [], isMultiState: false,
   onRemoveState: noop, onRemoveStatus: noop, onRemoveStage: noop, onRemovePosition: noop,
   onRemovePriority: noop, onRemoveYear: noop, onRemoveTag: noop,
-  onRemoveSubject: noop, onRemoveCf: noop, onRemoveMinRelevance: noop,
+  onRemoveSubject: noop, onRemoveField: noop, onRemoveMinRelevance: noop,
 }
 
 describe('buildActiveFilterGroups', () => {

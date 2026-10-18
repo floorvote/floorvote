@@ -24,7 +24,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const capError = subjectCapError(bf)
     if (capError) return c.json(capError, 400)
     const { sort, dir: dirParam, page: pageParam, pageSize: pageSizeParam } = c.req.query()
-    const q = bf.q || undefined
+    const search = bf.search || undefined
     const sortDir = dirParam === 'asc' ? 'asc' : 'desc' as const
 
     const page = Math.max(1, parseInt(pageParam ?? '1', 10) || 1)
@@ -71,8 +71,8 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       // exact match to the top — but the optimize fast path scans only tracked
       // bills, so it would silently drop that match and cause drop/duplicate
       // at the fast/normal pagination seam. Search is a leading-wildcard full scan
-      // regardless, so the fast path buys little here; bypass it whenever q is set.
-      const optimize = canOptimize(sortCol, sortDir) && !q
+      // regardless, so the fast path buys little here; bypass it whenever search is set.
+      const optimize = canOptimize(sortCol, sortDir) && !search
 
       // ── Pagination fast path via matchType ────────────────────────────────
       // A group counts as tracked if any bill in it is. total counts every group
@@ -90,7 +90,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       // Phase 2: the page of groups — fast path or normal path. The tracked-first
       // page is only good when it fills: tracked groups that reach this far make a
       // full page of the list's first groups, and a short page means they don't.
-      const sortArgs: Omit<PageOptions, 'tracked'> = { filter: hasFilter ? filter : undefined, twice, cheapFilter, col: sortCol, dir: sortDir, q, limit: pageSize, offset }
+      const sortArgs: Omit<PageOptions, 'tracked'> = { filter: hasFilter ? filter : undefined, twice, cheapFilter, col: sortCol, dir: sortDir, search, limit: pageSize, offset }
       const tryFastPath = optimize && trackedCount > 0 && offset + pageSize <= trackedCount
       const fast = tryFastPath ? await pageOfGroups(db, { ...sortArgs, tracked: true }) : null
       groupKeys = fast !== null && fast.length === pageSize ? fast : await pageOfGroups(db, { ...sortArgs, tracked: false })
@@ -135,7 +135,6 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const bf = parseBillFilter(new URL(c.req.url).searchParams)
     const capError = subjectCapError(bf)
     if (capError) return c.json(capError, 400)
-    const matchAny = bf.match === 'any'
     const isAdmin = currentUser.role === 'admin' || currentUser.role === 'owner'
     // Threshold is only needed for the admin count or when the worklist filter is active.
     // The member's bills are read once for the request: the my bills scope (when it is on) and the count beside the

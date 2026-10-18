@@ -14,9 +14,9 @@ import {
 
 export type Counts = Record<string, number>
 export type Facets = {
-  status: Counts; stage: Counts; session: Counts; year: Counts; state: Counts
-  priority: Counts; position: Counts; tags: Counts; subjects: Counts
-  customFields: Record<string, Counts>
+  status: Counts; stage: Counts; sessionName: Counts; year: Counts; state: Counts
+  priority: Counts; position: Counts; tag: Counts; subject: Counts
+  field: Record<string, Counts>
   myBillsCount: number; newMatchesCount: number; unvotedCount: number; draftCount: number
   // Unfiltered, per bill (#528): the states with subjects, and on * coverage the states with bills.
   subjectStates: string[]; billStates?: string[]
@@ -69,8 +69,8 @@ const AND_ANCHORS: Array<[string, string[]]> = [
 // which narrows every count. They run in files of their own (groupFacetsRandom4, 5): a file slows with the number of
 // requests it has made, and these anchors would carry the others' past their time limit on a busy machine.
 const PROVIDER_AND_ANCHORS: Array<[string, string[]]> = [
-  ['state=NJ', ['state']], ['stage=passed', ['stage']], ['year=2026', ['year']], ['sessionName=2025', ['session']], ['drafts=1', []],
-  ['year=2026&sessionName=2025', ['year', 'session']], ['state=TX&stage=introduced', ['state', 'stage']], ['drafts=1&status=Passed', ['status']],
+  ['state=NJ', ['state']], ['stage=passed', ['stage']], ['year=2026', ['year']], ['sessionName=2025', ['sessionName']], ['drafts=1', []],
+  ['year=2026&sessionName=2025', ['year', 'sessionName']], ['state=TX&stage=introduced', ['state', 'stage']], ['drafts=1&status=Passed', ['status']],
 ]
 const PROVIDER_OR_ANCHORS = [
   'state=NJ', 'stage=passed', 'year=2026', 'sessionName=2025', 'drafts=1', 'year=2025&sessionName=2026', 'state=TX&stage=introduced&year=2026',
@@ -135,7 +135,7 @@ export function randomFixtureSuite(seed: number, modes: Array<'AND' | 'OR'> = ['
       if (!skip.includes('status')) add('status', f.status)
       if (!skip.includes('stage')) add('stage', f.stage)
       if (!skip.includes('year')) add('year', f.year)
-      if (!skip.includes('session')) add('session', f.sessionName)
+      if (!skip.includes('sessionName')) add('sessionName', f.sessionName)
       if (!skip.includes('state')) add('state', f.state)
       if (!skip.includes('priority')) add('priority', f.priority)
       if (!skip.includes('position')) add('position', f.position)

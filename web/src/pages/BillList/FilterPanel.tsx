@@ -450,7 +450,7 @@ export function SubjectFilterDropdown({
   }
 
   const hasSelection = selectedSubjects.length > 0
-  const subjectLabel = filterDimensionLabel('subjects')
+  const subjectLabel = filterDimensionLabel('subject')
   const buttonLabel = hasSelection ? `${subjectLabel} (${selectedSubjects.length})` : subjectLabel
 
   return (

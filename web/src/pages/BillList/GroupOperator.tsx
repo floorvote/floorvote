@@ -16,11 +16,12 @@ import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 // a screen-reader user. The `aria-label` below is what actually carries the
 // state-and-effect semantics to assistive tech; the tooltip is a visual
 // enhancement layered on top of it, not the accessibility mechanism.
-export function GroupOperator({ matchAny, onToggle }: { matchAny: boolean; onToggle: () => void }) {
-  const tooltipText = matchAny
+export function GroupOperator({ match, onToggle }: { match: 'all' | 'any'; onToggle: () => void }) {
+  const any = match === 'any'
+  const tooltipText = any
     ? 'Bills must match any of these groups. Click to require all of them instead. Search, My bills, New matches, and Not yet voted always narrow.'
     : 'Bills must match all of these groups. Click to match any of them instead. Search, My bills, New matches, and Not yet voted always narrow.'
-  const ariaLabel = matchAny
+  const ariaLabel = any
     ? 'Currently matching any of these filter groups (OR). Activate to switch to matching all of them (AND) instead. This does not affect search, my bills, new matches, or not yet voted, which always narrow the results.'
     : 'Currently matching all of these filter groups (AND). Activate to switch to matching any of them (OR) instead. This does not affect search, my bills, new matches, or not yet voted, which always narrow the results.'
   return (
@@ -29,7 +30,7 @@ export function GroupOperator({ matchAny, onToggle }: { matchAny: boolean; onTog
         type="button"
         onClick={onToggle}
         aria-label={ariaLabel}
-        aria-pressed={matchAny}
+        aria-pressed={any}
         style={{
           fontSize: fontSize.xs, fontWeight: fontWeight.semibold, letterSpacing: '0.05em',
           padding: '1px 6px', margin: '0 2px', cursor: 'pointer',
@@ -37,7 +38,7 @@ export function GroupOperator({ matchAny, onToggle }: { matchAny: boolean; onTog
           background: color.white, color: color.textMuted,
         }}
       >
-        {matchAny ? 'OR' : 'AND'}
+        {any ? 'OR' : 'AND'}
       </button>
     </HoverTooltip>
   )

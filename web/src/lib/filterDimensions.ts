@@ -133,11 +133,11 @@ export const FILTER_DIMENSIONS: readonly FilterDimensionDef[] = [
   // compares bills across states whose status names differ. Hidden when every
   // covered state is on LegiScan, which almost never reports in-committee.
   { key: 'stage',      label: 'Stage',         kind: 'options', scope: 'bill',   isVisible: ctx => ctx.stageUseful !== false || !!ctx.stageActive },
-  { key: 'session',    label: 'Session year',  kind: 'options', scope: 'bill',   isVisible: () => true },
+  { key: 'year',       label: 'Session year',  kind: 'options', scope: 'bill',   isVisible: () => true },
   { key: 'position',   label: 'Position',      kind: 'options', scope: 'bill',   isVisible: () => true },
   { key: 'priority',   label: 'Priority',      kind: 'options', scope: 'bill',   isVisible: () => true },
-  { key: 'tags',       label: 'Tags',          kind: 'options', scope: 'bill',   isVisible: () => true },
-  { key: 'subjects',   label: 'Subject',       kind: 'options', scope: 'bill',   isVisible: () => true },
+  { key: 'tag',        label: 'Tags',          kind: 'options', scope: 'bill',   isVisible: () => true },
+  { key: 'subject',    label: 'Subject',       kind: 'options', scope: 'bill',   isVisible: () => true },
 ] as const
 
 export type FilterDimensionKey = (typeof FILTER_DIMENSIONS)[number]['key']

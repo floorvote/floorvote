@@ -57,24 +57,24 @@ const SCOPE_PILLS: { key: FilterDimensionKey; on: (f: BillFilter) => boolean }[]
  */
 export function buildListSummary({ values, view, customFieldDefs = [], isMultiState = false }: ListSummaryInput): ListSummary {
   const { filter } = values
-  const cfFilters = Object.fromEntries(Object.entries(filter.cf).map(([k, v]) => [k, unique([...v])]))
+  const field = Object.fromEntries(Object.entries(filter.field).map(([k, v]) => [k, unique([...v])]))
   const chipLabels = activeFilterLabelGroups({
-    filterStates: unique([...filter.state]),
-    filterStatuses: unique([...filter.status]),
-    filterStages: unique([...filter.stage]),
-    filterPositions: unique([...filter.position]),
-    filterPriorities: unique([...filter.priority]),
-    filterYears: unique(filter.year.map(Number)),
-    selectedTags: unique([...filter.tag]),
-    selectedSubjects: unique(filter.subject.map(s => encodeSubjectFilter(s.state, s.name))),
-    cfFilters,
-    filterMinRelevance: filter.minRelevance ?? 0,
+    state: unique([...filter.state]),
+    status: unique([...filter.status]),
+    stage: unique([...filter.stage]),
+    position: unique([...filter.position]),
+    priority: unique([...filter.priority]),
+    year: unique(filter.year.map(Number)),
+    tag: unique([...filter.tag]),
+    subject: unique(filter.subject.map(s => encodeSubjectFilter(s.state, s.name))),
+    field,
+    minRelevance: filter.minRelevance ?? 0,
     positionOptions: [{ value: 'none', label: 'Not set' }],
     customFieldDefs,
     isMultiState,
   }).flatMap(g => g.labels)
 
-  const term = filter.q.trim()
+  const term = filter.search.trim()
   const pillLabels = SCOPE_PILLS.filter(p => p.on(filter)).map(p => filterDimensionLabel(p.key))
   const filters = [...(term ? [`Search: “${term}”`] : []), ...pillLabels, ...chipLabels]
   const sortName = values.sortCol === 'default' ? DEFAULT_SORT_NAME : SORT_NAMES[values.sortCol] ?? DEFAULT_SORT_NAME

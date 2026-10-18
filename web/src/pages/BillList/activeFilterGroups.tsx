@@ -10,16 +10,16 @@ import type { CustomFieldDef } from './types'
 export type ActiveFilterGroup = { key: string; chips: ReactNode[] }
 
 export type ActiveFilterGroupArgs = {
-  filterStates: string[]
-  filterStatuses: string[]
-  filterStages: string[]
-  filterPositions: string[]
-  filterPriorities: string[]
-  filterYears: number[]
-  selectedTags: string[]
-  selectedSubjects: string[]
-  cfFilters: Record<string, string[]>
-  filterMinRelevance: number
+  state: string[]
+  status: string[]
+  stage: string[]
+  position: string[]
+  priority: string[]
+  year: number[]
+  tag: string[]
+  subject: string[]
+  field: Record<string, string[]>
+  minRelevance: number
   positionOptions: { value: string; label?: string }[]
   customFieldDefs: CustomFieldDef[]
   /** Subject values are stored state-prefixed ("NJ:Elections") in every tenant.
@@ -35,7 +35,7 @@ export type ActiveFilterGroupArgs = {
   onRemoveYear: (y: number) => void
   onRemoveTag: (tag: string) => void
   onRemoveSubject: (subject: string) => void
-  onRemoveCf: (fieldId: string, value: string) => void
+  onRemoveField: (fieldId: string, value: string) => void
   onRemoveMinRelevance: () => void
 }
 
@@ -82,8 +82,8 @@ export function customFieldChipLabel(fieldId: string, v: string, defs: ReadonlyA
 }
 
 export type ActiveFilterLabelArgs = Pick<ActiveFilterGroupArgs,
-  'filterStates' | 'filterStatuses' | 'filterStages' | 'filterPositions' | 'filterPriorities' | 'filterYears' |
-  'selectedTags' | 'selectedSubjects' | 'cfFilters' | 'filterMinRelevance' | 'positionOptions' | 'isMultiState'
+  'state' | 'status' | 'stage' | 'position' | 'priority' | 'year' |
+  'tag' | 'subject' | 'field' | 'minRelevance' | 'positionOptions' | 'isMultiState'
 > & { customFieldDefs: ReadonlyArray<ChipFieldDef> }
 
 // Every chip's label, one group per active dimension, in the order the chips
@@ -91,17 +91,17 @@ export type ActiveFilterLabelArgs = Pick<ActiveFilterGroupArgs,
 export function activeFilterLabelGroups(a: ActiveFilterLabelArgs): { key: string; labels: string[] }[] {
   const groups: { key: string; labels: string[] }[] = []
   const push = (key: string, labels: string[]) => { if (labels.length > 0) groups.push({ key, labels }) }
-  push('state', a.filterStates)
-  push('status', a.filterStatuses.map(s => decodeStatus(s) ?? s))
-  push('stage', a.filterStages.map(s => stageLabel(s) ?? s))
-  push('position', a.filterPositions.map(p => positionChipLabel(p, a.positionOptions)))
-  push('priority', a.filterPriorities.map(priorityChipLabel))
-  push('year', a.filterYears.map(y => `Year: ${y}`))
-  if (a.filterMinRelevance > 0) push('minRelevance', [relevanceChipLabel(a.filterMinRelevance)])
-  push('tags', a.selectedTags.map(tag => tag === FILTER_ANY ? 'Any tag' : tag))
-  push('subjects', a.selectedSubjects.map(subject => subjectChipLabel(subject, a.isMultiState)))
-  for (const [fieldId, values] of Object.entries(a.cfFilters)) {
-    push(`cf_${fieldId}`, values.map(v => customFieldChipLabel(fieldId, v, a.customFieldDefs)))
+  push('state', a.state)
+  push('status', a.status.map(s => decodeStatus(s) ?? s))
+  push('stage', a.stage.map(s => stageLabel(s) ?? s))
+  push('position', a.position.map(p => positionChipLabel(p, a.positionOptions)))
+  push('priority', a.priority.map(priorityChipLabel))
+  push('year', a.year.map(y => `Year: ${y}`))
+  if (a.minRelevance > 0) push('minRelevance', [relevanceChipLabel(a.minRelevance)])
+  push('tag', a.tag.map(tag => tag === FILTER_ANY ? 'Any tag' : tag))
+  push('subject', a.subject.map(subject => subjectChipLabel(subject, a.isMultiState)))
+  for (const [fieldId, values] of Object.entries(a.field)) {
+    push(`field.${fieldId}`, values.map(v => customFieldChipLabel(fieldId, v, a.customFieldDefs)))
   }
   return groups
 }
@@ -115,16 +115,16 @@ export function buildActiveFilterGroups(a: ActiveFilterGroupArgs): ActiveFilterG
   const groups: ActiveFilterGroup[] = []
   const push = (key: string, chips: ReactNode[]) => { if (chips.length > 0) groups.push({ key, chips }) }
 
-  push('state', a.filterStates.map(s => (
+  push('state', a.state.map(s => (
     <ActiveChip key={`state-${s}`} label={s} color="gray" onRemove={() => a.onRemoveState(s)} />
   )))
-  push('status', a.filterStatuses.map(s => (
+  push('status', a.status.map(s => (
     <ActiveChip key={`status-${s}`} label={decodeStatus(s) ?? s} color="gray" onRemove={() => a.onRemoveStatus(s)} />
   )))
-  push('stage', a.filterStages.map(s => (
+  push('stage', a.stage.map(s => (
     <ActiveChip key={`stage-${s}`} label={stageLabel(s) ?? s} color="gray" onRemove={() => a.onRemoveStage(s)} />
   )))
-  push('position', a.filterPositions.map(p => {
+  push('position', a.position.map(p => {
     const posLabel = positionChipLabel(p, a.positionOptions)
     const posColor = POSITION_COLORS[p] ?? POSITION_FALLBACK
     return (
@@ -141,7 +141,7 @@ export function buildActiveFilterGroups(a: ActiveFilterGroupArgs): ActiveFilterG
       </span>
     )
   }))
-  push('priority', a.filterPriorities.map(p => {
+  push('priority', a.priority.map(p => {
     if (p === FILTER_ANY || p === 'none') {
       return <ActiveChip key={`pri-${p}`} label={priorityChipLabel(p)} color="gray" onRemove={() => a.onRemovePriority(p)} />
     }
@@ -160,18 +160,18 @@ export function buildActiveFilterGroups(a: ActiveFilterGroupArgs): ActiveFilterG
       </span>
     )
   }))
-  push('year', a.filterYears.map(y => (
+  push('year', a.year.map(y => (
     <ActiveChip key={`year-${y}`} label={`Year: ${y}`} color="gray" onRemove={() => a.onRemoveYear(y)} />
   )))
-  if (a.filterMinRelevance > 0) {
+  if (a.minRelevance > 0) {
     push('minRelevance', [
-      <ActiveChip key="minRelevance" label={relevanceChipLabel(a.filterMinRelevance)} color="gray" onRemove={a.onRemoveMinRelevance} />,
+      <ActiveChip key="minRelevance" label={relevanceChipLabel(a.minRelevance)} color="gray" onRemove={a.onRemoveMinRelevance} />,
     ])
   }
-  push('tags', a.selectedTags.map(tag => (
+  push('tag', a.tag.map(tag => (
     <ActiveChip key={`tag-${tag}`} label={tag === FILTER_ANY ? 'Any tag' : tag} color="blue" onRemove={() => a.onRemoveTag(tag)} />
   )))
-  push('subjects', a.selectedSubjects.map(subject => {
+  push('subject', a.subject.map(subject => {
     return (
       <ActiveChip
         key={`subject-${subject}`}
@@ -181,14 +181,14 @@ export function buildActiveFilterGroups(a: ActiveFilterGroupArgs): ActiveFilterG
       />
     )
   }))
-  for (const [fieldId, values] of Object.entries(a.cfFilters)) {
-    push(`cf_${fieldId}`, values.map(v => {
+  for (const [fieldId, values] of Object.entries(a.field)) {
+    push(`field.${fieldId}`, values.map(v => {
       return (
         <ActiveChip
           key={`cf-${fieldId}-${v}`}
           label={customFieldChipLabel(fieldId, v, a.customFieldDefs)}
           color="blue"
-          onRemove={() => a.onRemoveCf(fieldId, v)}
+          onRemove={() => a.onRemoveField(fieldId, v)}
         />
       )
     }))

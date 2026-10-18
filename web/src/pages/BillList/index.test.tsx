@@ -257,7 +257,7 @@ beforeEach(() => {
   customFieldsState.response = []
   resolveCustomFields = null
   configState.value = null
-  FACETS.subjects = { 'UT:Counties': 1 }
+  FACETS.subject = { 'UT:Counties': 1 }
   FACETS.subjectStates = ['UT']
   FACETS.billStates = ['UT']
   document.body.classList.remove('nav-pending')
@@ -353,7 +353,7 @@ describe('BillList page', () => {
 
     it('is just the short text when every covered state has subjects', async () => {
       configState.value = { states: ['NJ', 'UT'] }
-      FACETS.subjects = { 'UT:Counties': 1, 'NJ:Elections': 2 }
+      FACETS.subject = { 'UT:Counties': 1, 'NJ:Elections': 2 }
       FACETS.subjectStates = ['NJ', 'UT']
       await hoverSubjectFilter()
       expect(await screen.findByText(SHORT)).toBeInTheDocument()
@@ -364,7 +364,7 @@ describe('BillList page', () => {
     // has subjects. The tooltip must go by subjectStates, not by the facet.
     it('is just the short text when a filter hides a state that does have subjects', async () => {
       configState.value = { states: ['NJ', 'UT'] }
-      FACETS.subjects = { 'UT:Counties': 1 }
+      FACETS.subject = { 'UT:Counties': 1 }
       FACETS.subjectStates = ['NJ', 'UT']
       await hoverSubjectFilter()
       expect(await screen.findByText(SHORT)).toBeInTheDocument()
@@ -421,7 +421,7 @@ describe('BillList page', () => {
     // a suppressed state lacks subjects as far as the tooltip can tell.
     it('adds the caveat when a covered state is suppressed (absent from subjectStates)', async () => {
       configState.value = { states: ['NJ', 'UT'] }
-      FACETS.subjects = { 'UT:Counties': 1 }
+      FACETS.subject = { 'UT:Counties': 1 }
       FACETS.subjectStates = ['UT']
       await hoverSubjectFilter()
       expect(await screen.findByText(CAVEAT)).toBeInTheDocument()
@@ -529,7 +529,7 @@ describe('BillList with a link already over the subject limit', () => {
   const filler = (n: number) => Array.from({ length: n }, (_, i) => `UT:Filler ${i + 1}`)
 
   it('keeps the error banner, then stops offering subjects until enough are removed', async () => {
-    FACETS.subjects = { 'UT:Counties': 1, 'UT:Elections': 2 }
+    FACETS.subject = { 'UT:Counties': 1, 'UT:Elections': 2 }
     billsListError.value = `Too many subject filters. The maximum is ${MAX_SUBJECT_FILTERS}.`
     const subjects = ['UT:Counties', ...filler(MAX_SUBJECT_FILTERS)] // one over
     const search = subjects.map(s => `subject=${encodeURIComponent(s)}`).join('&')
@@ -1315,7 +1315,7 @@ describe('BillList new-match dismiss — counts and sidebar chip', () => {
 
   it('keeps the newest request\'s count when a slower reply to an older request arrives last', async () => {
     let resolveSearchReply: ((v: unknown) => void) | null = null
-    facetsState.respond = (path) => new URLSearchParams(path.split('?')[1]).get('q') === 'foo'
+    facetsState.respond = (path) => new URLSearchParams(path.split('?')[1]).get('search') === 'foo'
       ? new Promise(res => { resolveSearchReply = res })
       : { ...FACETS, newMatchesCount: 61 }
 
@@ -1340,7 +1340,7 @@ describe('BillList new-match dismiss — counts and sidebar chip', () => {
 
   it('offers no dismiss count for new filters until the facet reply for them lands', async () => {
     let resolveSearchReply: ((v: unknown) => void) | null = null
-    facetsState.respond = (path) => new URLSearchParams(path.split('?')[1]).get('q') === 'foo'
+    facetsState.respond = (path) => new URLSearchParams(path.split('?')[1]).get('search') === 'foo'
       ? new Promise(res => { resolveSearchReply = res })
       : { ...FACETS, newMatchesCount: 61 }
 
@@ -1351,7 +1351,7 @@ describe('BillList new-match dismiss — counts and sidebar chip', () => {
     await waitFor(() => expect(apiCalls.some(c => c.startsWith('/bills/facets') && c.includes('search=foo'))).toBe(true))
 
     // The reply for "foo" is still in flight, so 61 describes the old filters,
-    // but the dismiss request would carry q=foo.
+    // but the dismiss request would carry search=foo.
     fireEvent.click(await screen.findByTitle('Select all matching filters'))
     expect(screen.queryByRole('button', { name: /Dismiss new matches/ })).toBeNull()
 

@@ -20,7 +20,7 @@ export function withCustomFieldKeys(
 ): BillFilter {
   const fields = new Map<string, string[]>()
   let changed = false
-  for (const [key, values] of Object.entries(filter.cf)) {
+  for (const [key, values] of Object.entries(filter.field)) {
     const def = defs.find(d => d.slug === key || d.id === key)
     const named = def ? (as === 'id' ? def.id : def.slug ?? def.id) : key
     if (named !== key) changed = true
@@ -35,14 +35,14 @@ export function withCustomFieldKeys(
   }
   if (!changed) return filter
   // A key may be any text, so the fields are built into an object by defining each key as an own property.
-  const cf = Object.freeze(Object.fromEntries([...fields].map(([key, values]) => [key, Object.freeze(values)])))
-  return withBillFilter({ cf }, filter)
+  const field = Object.freeze(Object.fromEntries([...fields].map(([key, values]) => [key, Object.freeze(values)])))
+  return withBillFilter({ field }, filter)
 }
 
 /**
  * A URL's search read as the Bills page holds it: the shared parse, then the things this page holds differently.
  * A custom field is held by its id (the URL carries slugs), a year is a number, a minimum relevance of zero is no
- * minimum, and session is dropped. Every place that reads a filter from a URL, a saved view, or the sidebar's links reads it here, so the page
+ * minimum, and a session's name is dropped. Every place that reads a filter from a URL, a saved view, or the sidebar's links reads it here, so the page
  * and the loader's prefetch hold the same value.
  */
 export function billFilterFromSearch(
@@ -51,11 +51,11 @@ export function billFilterFromSearch(
   const parsed = withCustomFieldKeys(parseBillFilter(search), defs, 'id')
   const year = parsed.year.filter(y => y !== '' && !Number.isNaN(Number(y)))
   const minRelevance = parsed.minRelevance !== null && parsed.minRelevance > 0 ? parsed.minRelevance : null
-  // The page has no control, chip, or count for session, so a session in a URL or view must not narrow the list
+  // The page has no control, chip, or count for a session's name, so one in a URL or view must not narrow the list
   // unseen. The API still accepts it from other callers.
-  const session = Object.freeze([]) as readonly string[]
-  if (year.length === parsed.year.length && minRelevance === parsed.minRelevance && parsed.session.length === 0) return parsed
-  return withBillFilter({ year: Object.freeze(year), minRelevance, session }, parsed)
+  const sessionName = Object.freeze([]) as readonly string[]
+  if (year.length === parsed.year.length && minRelevance === parsed.minRelevance && parsed.sessionName.length === 0) return parsed
+  return withBillFilter({ year: Object.freeze(year), minRelevance, sessionName }, parsed)
 }
 
 const SORT_COLS: SortColumn[] = ['priority', 'status', 'relevance', 'position', 'year', 'session', 'lastAction', 'bill']
@@ -96,7 +96,7 @@ export function billsFacetParams(filter: BillFilter): string {
  */
 export function billFilterForUrl(filter: BillFilter, defs: ReadonlyArray<CustomFieldNames> = []): BillFilter {
   const named = withCustomFieldKeys(filter, defs, 'slug')
-  return named.q === '' ? named : withBillFilter({ q: '' }, named)
+  return named.search === '' ? named : withBillFilter({ search: '' }, named)
 }
 
 /** The query string of a list URL ("/bills?status=2"), as search params. */
@@ -138,7 +138,7 @@ function anyFilterBut(filter: BillFilter, ignored: ReadonlyArray<keyof BillFilte
 export function billsChipSelection(pathname: string, search: string): { allBills: boolean; newMatches: boolean } {
   if (pathname !== '/bills') return { allBills: false, newMatches: false }
   const f = billFilterFromSearch(new URLSearchParams(search))
-  if (anyFilterBut(f, ['newMatches', 'q', 'match'])) return { allBills: false, newMatches: false }
+  if (anyFilterBut(f, ['newMatches', 'search', 'match'])) return { allBills: false, newMatches: false }
   if (f.newMatches) return { allBills: false, newMatches: true }
   return { allBills: true, newMatches: false }
 }
@@ -164,7 +164,7 @@ export function prioritizedChipSelection(pathname: string, search: string): { pr
   if (pathname !== '/bills') return { priority: false, unvoted: false }
   const f = billFilterFromSearch(new URLSearchParams(search))
   if (!isExactlyPriorityTiers(f.priority)) return { priority: false, unvoted: false }
-  if (anyFilterBut(f, ['priority', 'unvoted', 'q', 'match'])) return { priority: false, unvoted: false }
+  if (anyFilterBut(f, ['priority', 'unvoted', 'search', 'match'])) return { priority: false, unvoted: false }
   if (f.unvoted) return { priority: false, unvoted: true }
   return { priority: true, unvoted: false }
 }

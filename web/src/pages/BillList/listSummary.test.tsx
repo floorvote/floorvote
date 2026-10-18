@@ -172,7 +172,7 @@ describe('buildListSummary: the filter list reads like the chips', () => {
         field: { f1: ['Alpha', FILTER_ANY], f2: ['yes'] }, minRelevance: v.filter.minRelevance ?? 0,
         positionOptions: [{ value: 'Support' }, { value: 'none', label: 'Not set' }], customFieldDefs: defs, isMultiState,
         onRemoveState: noop, onRemoveStatus: noop, onRemoveStage: noop, onRemovePosition: noop, onRemovePriority: noop,
-        onRemoveYear: noop, onRemoveTag: noop, onRemoveSubject: noop, onRemoveCf: noop, onRemoveMinRelevance: noop,
+        onRemoveYear: noop, onRemoveTag: noop, onRemoveSubject: noop, onRemoveField: noop, onRemoveMinRelevance: noop,
       }
       const chipTexts = buildActiveFilterGroups(args).flatMap(g => g.chips).map(chip => {
         const { container, unmount } = render(<div>{chip}</div>)

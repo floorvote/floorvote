@@ -1457,7 +1457,7 @@ export function BillDetail() {
                 if (bill.yearStart) {
                   navigate(billsListPath({ year: [String(bill.yearStart)], ...(bill.state ? { state: [bill.state] } : {}) }))
                 } else {
-                  navigate(billsListPath({ session: [bill.session] }))
+                  navigate(billsListPath({ sessionName: [bill.session] }))
                 }
               }}
             />

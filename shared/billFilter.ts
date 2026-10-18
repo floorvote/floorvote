@@ -2,8 +2,10 @@
 // web and the API alike. A bill filter is one immutable value that travels as a query string (the URL, a
 // saved view, a list request, a facet request), so what one side writes is what the other reads.
 //
-// The names are today's query keys: nothing here renames a filter. Each filter has a kind, and a kind says
-// how its part of the string reads and writes. The definitions below list every filter in the order
+// Each filter has one name, in the value, the query string, a saved view, the API, and the facets response: the
+// search is `search`, a custom field is `field.<slug or id>`, and a session's name is `sessionName`. There are no
+// aliases, so a key these filters had before (#699) is ignored like any other unknown key. Each filter has a kind,
+// and a kind says how its part of the string reads and writes. The definitions below list every filter in the order
 // `serializeBillFilter` writes them, so equal filters give equal strings.
 
 /** The sentinel filter value for "has any value in this filter" (position, priority, tags, a custom field's options). */
@@ -11,8 +13,8 @@ export const FILTER_ANY = '__any__'
 /** The sentinel filter value for "has no value in this filter" (position and priority). */
 export const FILTER_NONE = 'none'
 
-/** The prefix of a custom field's query key: `cf_<slug or id>`. */
-export const CUSTOM_FIELD_KEY_PREFIX = 'cf_'
+/** The prefix of a custom field's query key: `field.<slug or id>`. */
+export const CUSTOM_FIELD_KEY_PREFIX = 'field.'
 
 /** A subject filter value: the subject's name within one state's vocabulary. It travels as `STATE:name`. */
 export type SubjectValue = Readonly<{ state: string; name: string }>
@@ -40,7 +42,8 @@ export type BillFilter = Readonly<{
   status: readonly string[]
   stage: readonly string[]
   year: readonly string[]
-  session: readonly string[]
+  /** A session's name, as the API stores it. The web has no control for it and drops it. */
+  sessionName: readonly string[]
   state: readonly string[]
   position: readonly string[]
   priority: readonly string[]
@@ -49,7 +52,7 @@ export type BillFilter = Readonly<{
   /** The least relevance a bill may have (a whole number), or null for no minimum. Zero is a minimum. */
   minRelevance: number | null
   /** The search query, or an empty string for none. */
-  q: string
+  search: string
   myBills: boolean
   unvoted: boolean
   newMatches: boolean
@@ -57,7 +60,7 @@ export type BillFilter = Readonly<{
   /** How the bill facts combine: all of them (the default) or any one. */
   match: 'all' | 'any'
   /** The values picked in each custom field, by the field's slug or its id as the query named it. A field with no values is not here. */
-  cf: Readonly<Record<string, readonly string[]>>
+  field: Readonly<Record<string, readonly string[]>>
 }>
 
 export type BillFilterKind = 'multi-select' | 'toggle' | 'range' | 'text' | 'custom-field'
@@ -101,7 +104,7 @@ const PARTS: { [K in keyof BillFilter]: Part<BillFilter[K]> } = {
   status: multiSelect('status'),
   stage: multiSelect('stage'),
   year: multiSelect('year'),
-  session: multiSelect('session'),
+  sessionName: multiSelect('sessionName'),
   state: multiSelect('state'),
   position: multiSelect('position', FILTER_ANY, FILTER_NONE),
   priority: multiSelect('priority', FILTER_ANY, FILTER_NONE),
@@ -123,11 +126,11 @@ const PARTS: { [K in keyof BillFilter]: Part<BillFilter[K]> } = {
     },
     write: (n, out) => { if (n !== null) out.append('minRelevance', String(n)) },
   },
-  q: {
+  search: {
     kind: 'text',
     sentinels: [],
-    read: params => params.get('q') ?? '',
-    write: (q, out) => { if (q !== '') out.append('q', q) },
+    read: params => params.get('search') ?? '',
+    write: (search, out) => { if (search !== '') out.append('search', search) },
   },
   myBills: toggle('myBills'),
   unvoted: toggle('unvoted'),
@@ -139,7 +142,7 @@ const PARTS: { [K in keyof BillFilter]: Part<BillFilter[K]> } = {
     read: params => params.get('match') === 'any' ? 'any' : 'all',
     write: (match, out) => { if (match === 'any') out.append('match', 'any') },
   },
-  cf: {
+  field: {
     kind: 'custom-field',
     sentinels: [FILTER_ANY],
     // A key read from a URL may be any text, including one that names a member of Object.prototype, so the
@@ -156,8 +159,8 @@ const PARTS: { [K in keyof BillFilter]: Part<BillFilter[K]> } = {
       return Object.freeze(Object.fromEntries([...fields].map(([name, values]) => [name, frozen(values)])))
     },
     // By key, so a filter built in any order writes the same string.
-    write: (cf, out) => {
-      for (const name of Object.keys(cf).sort()) for (const v of cf[name]) out.append(CUSTOM_FIELD_KEY_PREFIX + name, v)
+    write: (field, out) => {
+      for (const name of Object.keys(field).sort()) for (const v of field[name]) out.append(CUSTOM_FIELD_KEY_PREFIX + name, v)
     },
   },
 }
@@ -166,7 +169,7 @@ const NAMES = Object.keys(PARTS) as Array<keyof BillFilter>
 const part = (name: keyof BillFilter) => PARTS[name] as Part<unknown>
 
 export type BillFilterDef = Readonly<{
-  /** The filter's key in the value and, but for a custom field's `cf_<key>`, in the query string. */
+  /** The filter's key in the value and, but for a custom field's `field.<key>`, in the query string. */
   name: keyof BillFilter
   kind: BillFilterKind
   /** The values the filter takes besides its real ones. */

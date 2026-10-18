@@ -92,7 +92,7 @@ describe('every route reads one bill filter the same way', () => {
     })
 
     it('ignores a key that is not a filter, on every route', async () => {
-      const extra = 'bogus=1&view=abc&field.x=1&search=zoning&sessionName=S25&cf=1&stat=Passed'
+      const extra = 'bogus=1&view=abc&cf_x=1&q=zoning&session=S25&cf=1&field=1&stat=Passed'
       expect((await onList(`state=UT&${extra}`)).numbers).toEqual(['HB 5', 'HB 6'])
       const values = await (await get(`/bills/bulk-values?state=UT&${extra}`)).json() as { count: number }
       expect(values.count).toBe(2)

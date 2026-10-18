@@ -38,7 +38,7 @@ describe('facet counts count a companion group once', () => {
         { billId: 'b1713', subjectName: 'Elections', state: 'NJ' },
         { billId: 'b1713', subjectName: 'Taxes', state: 'NJ' },
       ])
-      expect((await facets()).subjects).toEqual({ 'NJ:Elections': 1, 'NJ:Taxes': 1 })
+      expect((await facets()).subject).toEqual({ 'NJ:Elections': 1, 'NJ:Taxes': 1 })
     })
 
     it('counts a group through the one bill that meets every filter', async () => {

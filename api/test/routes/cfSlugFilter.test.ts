@@ -41,8 +41,8 @@ describe('GET /bills — field. filter accepts slug or id', () => {
       body: JSON.stringify({ [fieldId]: '1' }),
     })
 
-    const bySlug = await (await SELF.fetch(`http://localhost/api/bills?cf_${slug}=1`, { headers: { Cookie: `session=${token}` } })).json() as { bills: { billNumber: string }[] }
-    const byId = await (await SELF.fetch(`http://localhost/api/bills?cf_${fieldId}=1`, { headers: { Cookie: `session=${token}` } })).json() as { bills: { billNumber: string }[] }
+    const bySlug = await (await SELF.fetch(`http://localhost/api/bills?field.${slug}=1`, { headers: { Cookie: `session=${token}` } })).json() as { bills: { billNumber: string }[] }
+    const byId = await (await SELF.fetch(`http://localhost/api/bills?field.${fieldId}=1`, { headers: { Cookie: `session=${token}` } })).json() as { bills: { billNumber: string }[] }
 
     expect(bySlug.bills.map(b => b.billNumber)).toEqual(['T1'])
     expect(byId.bills.map(b => b.billNumber)).toEqual(bySlug.bills.map(b => b.billNumber))
@@ -55,7 +55,7 @@ describe('GET /bills — field. filter accepts slug or id', () => {
     await seedBill({ billNumber: 'U1' })
     await seedBill({ billNumber: 'U2' })
 
-    const res = await (await SELF.fetch('http://localhost/api/bills?cf_does-not-exist=1', { headers: { Cookie: `session=${token}` } })).json() as { bills: unknown[] }
+    const res = await (await SELF.fetch('http://localhost/api/bills?field.does-not-exist=1', { headers: { Cookie: `session=${token}` } })).json() as { bills: unknown[] }
     expect(res.bills).toEqual([])
   })
 

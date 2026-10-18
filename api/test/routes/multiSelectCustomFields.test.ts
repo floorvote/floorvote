@@ -200,9 +200,9 @@ describe('multi-select custom fields', () => {
     expect(body.field[fieldId]).toEqual({ a: 1, b: 2, c: 1, __any__: 3 })
 
     // With 'b' active, disjunctive count for the field omits its own filter → unchanged.
-    const res2 = await SELF.fetch(`http://localhost/api/bills/facets?cf_${fieldId}=b`, { headers: { Cookie: `session=${token}` } })
+    const res2 = await SELF.fetch(`http://localhost/api/bills/facets?field.${fieldId}=b`, { headers: { Cookie: `session=${token}` } })
     const body2 = await res2.json() as { field: Record<string, Record<string, number>> }
-    expect(body2.customFields[fieldId]).toEqual({ a: 1, b: 2, c: 1, __any__: 3 })
+    expect(body2.field[fieldId]).toEqual({ a: 1, b: 2, c: 1, __any__: 3 })
   })
 
   it('bulk: additions and removals applied per bill', async () => {
@@ -270,7 +270,7 @@ describe('multi-select custom fields', () => {
     expect(res.status).toBe(200)
     const body = await res.json() as {
       count: number
-      field: Record<string, Record<string, number>>
+      customFields: Record<string, Record<string, number>>
       multiCustomFields: Record<string, Record<string, number>>
     }
 
@@ -279,7 +279,7 @@ describe('multi-select custom fields', () => {
     expect(body.multiCustomFields[fieldId]).toEqual({ a: 2, b: 1 })
     // Multi fields must not leak combination strings into the single-select map,
     // whose counts are expected to partition the selection.
-    expect(body.field[fieldId]).toBeUndefined()
+    expect(body.customFields[fieldId]).toBeUndefined()
   })
 
   // The capability the greyed-out ribbon pill used to block: applying multi-select

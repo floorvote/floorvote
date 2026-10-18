@@ -334,7 +334,7 @@ describe('GET /bills — long search terms (D1 LIKE 50-byte limit)', () => {
     await seedBill({ billNumber: 'SB 2', title: 'Unrelated transportation act' })
   })
   const get = (q: string) =>
-    appFetch(`http://localhost/api/bills?q=${encodeURIComponent(q)}`, { headers: { Cookie: `session=${token}` } })
+    appFetch(`http://localhost/api/bills?search=${encodeURIComponent(q)}`, { headers: { Cookie: `session=${token}` } })
 
   it('does not 500 on a single over-long token', async () => {
     expect((await get('a'.repeat(60))).status).toBe(200)

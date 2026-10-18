@@ -87,6 +87,10 @@ describe('0111_bill_filter_names', () => {
       expect((await migrate({ v: 'status=1&q&session&cf_team' })).v).toBe('status=1&search&sessionName&field.team')
     })
 
+    it('two keys with no value in a row', async () => {
+      expect((await migrate({ v: 'q&q&session&session' })).v).toBe('search&search&sessionName&sessionName')
+    })
+
     it('a query stored with a leading question mark, keeping it', async () => {
       expect((await migrate({ v: '?q=x&cf_team=Ada' })).v).toBe('?search=x&field.team=Ada')
     })
@@ -155,6 +159,8 @@ describe('0111_bill_filter_names', () => {
     const seed = {
       all: 'cf_committee=Labor&match=any&q=water&session=S&status=Passed',
       bare: 'status=1&q&session&q&session',
+      // Two bare keys in a row share the ampersand between them, which one replace does not see twice.
+      adjacent: 'q&q&session&session',
       leading: '?q=x',
       none: 'priority=high',
       empty: '',

@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm'
 import { buildSearchCondition, buildBillNumberBoost } from '../../src/routes/billsApi/query'
 import { FILTER_ANY } from '../../../shared/billFilter'
 import { MAX_SEARCH_TOKENS } from '../../../shared/searchLimits'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { resetDb, applyMigrations, seedUser, seedSession, seedBill, appFetch } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { app } from '../../src/index'
 import { bills, billSubjects, memberVotes, associationConfig, customFieldDefinitions, billCustomFieldValues } from '../../src/db/schema'
@@ -324,7 +324,7 @@ describe('facet counts under match=any are the resulting total', () => {
   // option carried only by bills outside the result produced no row at all.
   it('a custom-field option under match=any equals the list size after selecting it', async () => {
     const q = { subject: 'UT:Elections', tag: 'Clerk', match: 'any' }
-    const promised = (await getFacets(q)).customFields[trackFieldId]['A']
+    const promised = (await getFacets(q)).field[trackFieldId]['A']
     const actual = (await listBills({ ...q, [`field.${trackFieldId}`]: 'A' })).bills.length
     expect(actual).toBe(promised)
     // HB0003 carries A and is outside the current result, so this is a real
@@ -583,11 +583,11 @@ describe('one name per filter', () => {
   const facetTotal = async (qs: string) => Object.values((await facets(qs)).status).reduce((a, b) => a + b, 0)
   const bulkValuesCount = async (qs: string) => ((await (await get('/bulk-values', qs)).json()) as { count: number }).count
   const bulkPriority = async (filter: string) => {
-    const res = await app.request('/api/bills/bulk', {
+    const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ filter, priority: 'high' }),
-    }, env)
+    })
     expect(res.status).toBe(200)
     return ((await res.json()) as { updated: number }).updated
   }

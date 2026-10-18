@@ -305,7 +305,7 @@ export function tagCondition(tagFilters: readonly string[], taxonomyTags: Readon
 }
 
 /**
- * One condition per custom field named by `cf_` params, keyed by the field's id.
+ * One condition per custom field named by `field.<slug or id>` params, keyed by the field's id.
  * Shared by the list filter (buildBillsFilter) and the /bills/facets WHERE so the
  * two match stored values the same way and can't drift: a multi-select field
  * stores a JSON array and matches on its elements, every other field matches the
@@ -413,6 +413,6 @@ export const unvotedCondition = (voted: readonly string[]): BillsCondition =>
  */
 export function isCheapFilter(f: BillFilter): boolean {
   return f.priority.length === 0 && f.position.length === 0 && f.tag.length === 0 && f.subject.length === 0
-    && !f.q && Object.keys(f.cf).length === 0
+    && !f.search && Object.keys(f.field).length === 0
     && !f.myBills && !f.newMatches && !f.drafts
 }

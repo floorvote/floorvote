@@ -62,7 +62,7 @@ function inValueOrder(filter: BillFilter): BillFilter {
   for (const def of BILL_FILTER_DEFS) {
     if (def.kind === 'multi-select') out[def.name] = [...(filter[def.name] as readonly (string | SubjectValue)[])].sort(byText)
     if (def.kind === 'custom-field') {
-      out[def.name] = Object.fromEntries(Object.entries(filter.cf).map(([field, values]) => [field, [...values].sort()]))
+      out[def.name] = Object.fromEntries(Object.entries(filter.field).map(([key, values]) => [key, [...values].sort()]))
     }
   }
   return out as BillFilter
