@@ -707,7 +707,8 @@ export interface MeasurePerson {
   opensecrets_id?: string
   knowwho_pid?: number
   ballotpedia?: string
-  bioguide_id?: string
+  /** The member's Bioguide id. Absent leaves a stored one alone on ingest, and null clears it. */
+  bioguide_id?: string | null
   bio?: {
     social?: {
       biography?: string
@@ -759,7 +760,7 @@ interface MeasureVote {
    * Per-member votes. getBill never returns these (LegiScan needs a getRollCall
    * per vote); providers that include them inline, such as DC LIMS, set this and
    * the ingestor writes roll_call_votes. vote_id follows LegiScan: 1 Yea, 2 Nay,
-   * 3 NV, 4 Absent.
+   * 3 NV, 4 Absent. Virginia's Abstain, which LegiScan has no id for, is 5.
    */
   member_votes?: { people_id: number | null; vote_id: number; vote_text: string }[]
 }
