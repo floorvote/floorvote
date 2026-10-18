@@ -148,6 +148,9 @@ const READ_CHUNK = 5_000
  * hold, which only the cutover mints. `knownIds` answers the same way, so a
  * key the plan handed a placeholder is known from then on, as it would be once minted.
  */
+/** The cache keys a provider keeps so an alert isn't sent twice, which a plan never writes. */
+const ALERT_KEYS = 'alerted/'
+
 async function planContext(provider: Provider, env: Env, db: Db) {
   const base = providerContext(provider, env, db, { reason: 'cutover' })
   const known = new Map<string, number>()
@@ -182,6 +185,15 @@ async function planContext(provider: Provider, env: Env, db: Db) {
       return out
     },
     people: () => (held ??= base.people()),
+    // A plan reads the provider's cache, and its writes stand: the calendar preview keeps the meetings it reads
+    // (govinfo) so the same plan's snapshot can use them, and the API budget isn't spent twice. But the entries
+    // a provider keeps to stop an alert repeating (`alerted/...`) are real state about real alerts: a plan
+    // must neither set one, which would silence the next real alert, nor clear one.
+    cache: {
+      list: prefix => base.cache.list(prefix),
+      put: entries => base.cache.put(Object.fromEntries(Object.entries(entries).filter(([k]) => !k.startsWith(ALERT_KEYS)))),
+      drop: keys => base.cache.drop(keys.filter(k => !k.startsWith(ALERT_KEYS))),
+    },
     // A plan is a dry run: what a provider would alert on is logged, and no one is emailed.
     alert: async ({ subject }) => { console.warn(`[cutover] plan for ${provider.id}: alert not sent: ${subject}`) },
   }
