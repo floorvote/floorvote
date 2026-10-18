@@ -92,34 +92,74 @@ describe('ViewSwitcher: include a view in the digest', () => {
     expect(widths[0]).toBe(widths[1])
   })
 
-  it('says on hover what the click does and how many bills the view holds now', async () => {
+  it('says on hover that the envelope monitors the view through the digest, whether or not it is included', async () => {
     renderSwitcher({})
     await waitFor(() => expect(screen.getByText('42')).toBeInTheDocument())
     await userEvent.hover(envelope('Clerk bills'))
-    expect(await screen.findByText('Include this view in your daily digest · 42 bills now')).toBeInTheDocument()
-  })
-
-  it('says "1 bill now" for a view of one, and removal for a view already included', async () => {
-    renderSwitcher({})
-    await waitFor(() => expect(screen.getByText('42')).toBeInTheDocument())
+    expect(await screen.findByText('Monitor bills in this view via your daily email digest')).toBeInTheDocument()
+    await userEvent.unhover(envelope('Clerk bills'))
     await userEvent.hover(envelope('Auditor bills'))
-    expect(await screen.findByText('Remove this view from your daily digest · 1 bill now')).toBeInTheDocument()
+    expect(await screen.findByText('Monitor bills in this view via your daily email digest')).toBeInTheDocument()
   })
 
-  it('follows the instance cadence in the hover and the name', async () => {
+  it('follows the instance cadence in the envelope hover and the name', async () => {
     renderSwitcher({ cadence: 'weekly' })
     await waitFor(() => expect(screen.getByText('42')).toBeInTheDocument())
     expect(envelope('Clerk bills')).toHaveAccessibleName('Include "Clerk bills" in your weekly digest')
     await userEvent.hover(envelope('Clerk bills'))
-    expect(await screen.findByText('Include this view in your weekly digest · 42 bills now')).toBeInTheDocument()
+    expect(await screen.findByText('Monitor bills in this view via your weekly email digest')).toBeInTheDocument()
   })
 
-  it('leaves the count off the hover until it has loaded, rather than saying 0', async () => {
-    vi.spyOn(api, 'apiFetch').mockImplementation(() => new Promise(() => {}))
+  it('ends the envelope hover with no period, like the app\'s other tooltips', async () => {
     renderSwitcher({})
     await userEvent.hover(envelope('Clerk bills'))
-    expect(await screen.findByText('Include this view in your daily digest')).toBeInTheDocument()
+    expect((await screen.findByText(/^Monitor bills in this view/)).textContent).not.toMatch(/[.]$/)
+  })
+
+  it('no longer puts the bill count on the envelope hover', async () => {
+    renderSwitcher({})
+    await waitFor(() => expect(screen.getByText('42')).toBeInTheDocument())
+    await userEvent.hover(envelope('Clerk bills'))
+    await screen.findByText(/^Monitor bills in this view/)
     expect(screen.queryByText(/bills now/)).not.toBeInTheDocument()
+    expect(envelope('Clerk bills')).not.toHaveAttribute('title', expect.stringMatching(/bills? now/))
+  })
+
+  it('says on hover of the count chip how many bills match the view, with the real count', async () => {
+    renderSwitcher({})
+    await waitFor(() => expect(screen.getByText('42')).toBeInTheDocument())
+    const chip = screen.getByText('42')
+    expect(chip).toHaveAttribute('title', '42 bills match this view')
+    expect(chip).toHaveAccessibleDescription('42 bills match this view')
+  })
+
+  it('says "1 bill matches this view" for a view of one', async () => {
+    renderSwitcher({})
+    await waitFor(() => expect(screen.getByText('1')).toBeInTheDocument())
+    const chip = screen.getByText('1')
+    expect(chip).toHaveAttribute('title', '1 bill matches this view')
+    expect(chip).toHaveAccessibleDescription('1 bill matches this view')
+  })
+
+  it('formats a large count with separators in the chip hover', async () => {
+    vi.spyOn(api, 'apiFetch').mockImplementation(async () => ({ pagination: { total: 1320 } }) as never)
+    renderSwitcher({})
+    await waitFor(() => expect(screen.getAllByText('1,320').length).toBeGreaterThan(0))
+    expect(screen.getAllByText('1,320')[1]).toHaveAttribute('title', '1,320 bills match this view')
+  })
+
+  it('gives the count chip no hover until the count has loaded, rather than saying 0', async () => {
+    vi.spyOn(api, 'apiFetch').mockImplementation(() => new Promise(() => {}))
+    renderSwitcher({})
+    const chips = screen.getAllByText('…')
+    expect(chips.length).toBeGreaterThan(0)
+    for (const chip of chips) expect(chip).not.toHaveAttribute('title')
+  })
+
+  it('keeps the count chip hover on a row with no digest control', async () => {
+    renderSwitcher(undefined)
+    await waitFor(() => expect(screen.getByText('42')).toBeInTheDocument())
+    expect(screen.getByText('42')).toHaveAttribute('title', '42 bills match this view')
   })
 
   it('includes the view on a click, with the digest on, and does not apply the view or close the menu', () => {
