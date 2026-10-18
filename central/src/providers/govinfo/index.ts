@@ -5,8 +5,9 @@ import {
   buildGovInfoMeasure, congressName, congressOn, govinfoNativeKey, GOVINFO_STATE, parseBillFile, toGovInfoEntry, US_STATE_ID,
   type CongressBillType, type GovInfoRecord,
 } from './map'
+import { entriesByBill, holdingCommittees, isWarm, keptMeetings, meetingBodyEvent, readMeetings } from './meetings'
 import { vocabulary } from './vocabulary'
-import type { Provider, ProviderRecord, SyncSession } from '../sdk'
+import { sha256Hex, type Provider, type ProviderRecord, type SyncSession } from '../sdk'
 
 /**
  * Congress from GovInfo's Bill Status bulk data (client.ts, map.ts): one zip of
@@ -23,10 +24,16 @@ import type { Provider, ProviderRecord, SyncSession } from '../sdk'
  * tracked bill's ingest downloads its own file again for the rest: history,
  * sponsors, texts, committees, subjects, related bills, and extras (detail.ts),
  * and then the roll calls its actions link, from the House Clerk's and the
- * Senate's own files, with every member's vote (votes.ts). Changed-only
- * passes and committee meetings come in later tickets under #612.
+ * Senate's own files, with every member's vote (votes.ts).
+ *
+ * With an optional Congress.gov key (`CONGRESS_API_KEY`), the committee
+ * meetings of the Congress too (meetings.ts): `listBodyEvents` serves them as
+ * body events, and each bill's record carries the calendar entry of every
+ * meeting that takes it up, so the bill's calendar needs no request to the API
+ * when it is ingested. Without the key none of it runs, and the calendars are
+ * empty. Changed-only passes come in a later ticket under #612.
  */
-export const govinfo: Provider = {
+export const govinfo: Provider<'CONGRESS_API_KEY'> = {
   id: 'govinfo',
   displayName: 'GovInfo Bill Status',
   // Public domain data asks for no credit, so this names the sources as the
@@ -37,7 +44,7 @@ export const govinfo: Provider = {
     url: 'https://www.govinfo.gov/bulkdata/BILLSTATUS',
   },
   coverage: { maintainers: ['wtadler'] },
-  envKeys: [],
+  envKeys: ['CONGRESS_API_KEY'],
   states: [GOVINFO_STATE],
   // A bill's measure carries every roll call its actions link, so one its file no longer links is dropped with its member votes.
   replacesRollCalls: true,
@@ -85,9 +92,44 @@ export const govinfo: Provider = {
     }
     // A type with no zip yet has no bills yet. All eight missing can't be told from a changed address.
     if (published === 0) throw new Error(`GovInfo ${congress}: none of the eight Bill Status zips exists (404)`)
+    // With a key, a bill's record carries the calendar entries of the meetings that take it up, as the last
+    // pass that finished left them (meetings.ts), so a bill whose meetings change is a bill whose record changed.
+    // Only once every meeting has been read once (meetings.ts, isWarm): before that a bill with no meetings
+    // may have one not read yet, so its record says nothing, and neither does its calendar. After it, a bill
+    // with none has an empty list, which is a calendar with nothing on it.
+    if (ctx.env.CONGRESS_API_KEY && await isWarm(ctx, congress)) {
+      const byBill = await entriesByBill(await keptMeetings(ctx, congress))
+      for (const f of found) {
+        const entries = byBill.get(f.key) ?? []
+        f.record.meetings = entries
+        f.hash = await sha256Hex(`${f.hash}\n${JSON.stringify(entries)}`)
+      }
+    }
     const ids = await ctx.ids('bill', found.map(f => f.key))
     const records = found.map((f): ProviderRecord => ({ billId: ids.get(f.key)!, nativeKey: f.key, raw: f.record, hash: f.hash }))
     return { records }
+  },
+
+  /**
+   * The Congress's committee meetings in a month, from the Congress.gov API,
+   * when a key is set (meetings.ts): each a body event under the API's own
+   * event id, with its committee under the id a bill's own committee system
+   * code gives it. Without a key the calendar is empty, and nothing is asked.
+   * A failing API fails the month, and core leaves the calendar as it was.
+   */
+  async listBodyEvents(_state, range, ctx) {
+    const key = ctx.env.CONGRESS_API_KEY
+    if (!key) return []
+    const { congress, yearStart } = congressOn(ctx.today)
+    const inRange = (m: { date: string }) => range.from <= m.date && m.date <= range.to
+    const meetings = (await readMeetings(ctx, key, congress)).filter(inRange)
+    // The earlier Congress ends on January 3 and core still asks for last month, so a range that starts before the
+    // new Congress does also holds the earlier one's meetings, as last kept. A meeting that was held is never cancelled
+    // for the list that named it having changed. Nothing is asked of the API, and nothing of theirs is pruned.
+    if (range.from < `${yearStart}-01-03`) meetings.push(...(await keptMeetings(ctx, congress - 1)).filter(inRange))
+    const codes = holdingCommittees(meetings)
+    const ids = codes.length > 0 ? await ctx.ids('committee', codes) : new Map<string, number>()
+    return Promise.all(meetings.map(m => meetingBodyEvent(m, code => ids.get(code))))
   },
 
   async toEntry(record) {
@@ -100,8 +142,9 @@ export const govinfo: Provider = {
    * The file is read and checked whole before any id is minted, so a file that
    * can't be read writes nothing and the ingest is retried. So does a roll
    * call it links that can't be read, and any Senate member the files can't
-   * name (votes.ts). Committee meetings come in a later ticket under #612, from
-   * the Congress.gov API.
+   * name (votes.ts). With a Congress.gov key, the calendar is the record's
+   * meetings, which the bill sync filled in from the meetings it had kept
+   * (meetings.ts), so the ingest asks the API for nothing.
    */
   async fetchMeasure({ billId, sessionId, nativeKey, record, session }, ctx) {
     if (!record || !nativeKey || sessionId === null) throw new Error(`bill ${billId} has no stored GovInfo record; the GovInfo sync has not seen it`)
@@ -126,12 +169,16 @@ export const govinfo: Provider = {
       bill: await ctx.ids('bill', keys.bill),
       rollcall: await ctx.ids('rollcall', voted.rollcall),
     }
-    return buildGovInfoMeasure(r, billId, record.hash, {
+    const measure = buildGovInfoMeasure(r, billId, record.hash, {
       session_id: sessionId,
       session_name: session?.sessionName ?? congressName(r.congress),
       year_start: session?.yearStart ?? 2 * r.congress + 1787,
       year_end: session?.yearEnd ?? 2 * r.congress + 1788,
     }, { ...(await resolveDetail(detail, ids)), ...resolveVotes(nativeKey, rolls, ids) })
+    // With a key, the calendar is the record's meetings, and none is a calendar with nothing on it. Without
+    // one the measure has no calendar at all, which is no word on the entries a bill already has.
+    if (ctx.env.CONGRESS_API_KEY && r.meetings !== undefined) measure.calendar = r.meetings
+    return measure
   },
 
   vocabulary,

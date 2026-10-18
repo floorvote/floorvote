@@ -14,6 +14,7 @@ import { HoverTooltip } from '../../components/HoverTooltip'
 import { useSidebarRefresh } from '../../context/SidebarRefreshContext'
 import { useDemo } from '../../context/DemoContext'
 import { useConfig } from '../../context/ConfigContext'
+import { isModuleEnabled, digestFrequency } from '../../lib/modules'
 import { CARD } from '../../lib/cardStyle'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { billUrl } from '../../lib/sessionSlug'
@@ -189,7 +190,7 @@ export function BillList() {
   const hasFetchedOnce = useRef(false)
   const [customFieldDefs, setCustomFieldDefs] = useState<CustomFieldDef[]>(cachedCustomFieldDefs ?? [])
 
-  const { user } = useAuth()
+  const { user, setEmailDigestEnabled } = useAuth()
   const isAdmin = user?.role === 'admin' || user?.role === 'owner'
   const refreshSidebar = useSidebarRefresh()
   const { demoMode, settled } = useDemo()
@@ -388,6 +389,31 @@ export function BillList() {
 
   useEffect(() => { void reloadViews() }, [reloadViews])
 
+  // Include a view in the member's own digest (#449), or take it out. Optimistic: the envelope fills at once and
+  // goes back if the save fails, which also says so, as the admin view actions do.
+  const toggleViewDigest = useCallback(async (id: string, subscribed: boolean) => {
+    const mark = (to: boolean) => setSavedViews(vs => vs.map(v => v.id === id ? { ...v, subscribed: to } : v))
+    mark(subscribed)
+    try {
+      await apiFetch(`/views/${id}/subscription`, { method: 'PUT', body: JSON.stringify({ subscribed }) })
+    } catch {
+      mark(!subscribed)
+      setError('Failed to update your digest.')
+    }
+  }, [])
+
+  // The envelope's "Turn on digest": the member's own switch, as Profile saves it. A failure is thrown so the
+  // prompt stays open and the view is not included.
+  const turnOnDigest = useCallback(async () => {
+    try {
+      await apiFetch('/users/me', { method: 'PATCH', body: JSON.stringify({ emailDigestEnabled: true }) })
+      setEmailDigestEnabled(true)
+    } catch {
+      setError('Failed to turn on your digest.')
+      throw new Error('Failed to turn on your digest.')
+    }
+  }, [setEmailDigestEnabled])
+
   // Apply a view: sets filter state from its stored query and lets the sync
   // effect in useBillFilters serialize it, writing the short `?view=<id>`
   // bookmark rather than the view's expanded params — that bookmark then
@@ -521,9 +547,9 @@ export function BillList() {
     setAllBills(prev => prev.map(b => b.id === billId ? { ...b, position } : b))
   }, [])
 
-  // Triage dismiss already hit the API in NewMatchTriageControl. Mark the bill
-  // dismissed locally so the row's triage control reverts to a plain priority
-  // select, and refresh facets and the sidebar so both "new" counts drop.
+  // Triage dismiss already hit the API in the priority dropdown. Mark the bill
+  // dismissed locally so the row's amber new-match dropdown reverts to a plain
+  // "Set priority", and refresh facets and the sidebar so both "new" counts drop.
   const handleTriageDismiss = useCallback((billId: string) => {
     setAllBills(prev => prev.map(b => b.id === billId ? { ...b, triagedAt: new Date().toISOString() } : b))
     fetchFacets()
@@ -671,6 +697,12 @@ export function BillList() {
           currentSearch={location.search}
           isAdmin={isAdmin}
           onApply={applyView}
+          digest={isModuleEnabled(config?.modules, 'email-digest') ? {
+            cadence: digestFrequency(config?.modules),
+            memberOn: user?.emailDigestEnabled ?? true,
+            onToggle: toggleViewDigest,
+            onTurnOn: turnOnDigest,
+          } : undefined}
           onRename={async (id, name) => {
             try {
               await apiFetch(`/admin/views/${id}`, {

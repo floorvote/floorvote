@@ -13,7 +13,8 @@ import { SessionChip } from '../../components/SessionChip'
 import { LastActionChip } from '../../components/LastActionChip'
 import { CompactPositionSelect } from '../../components/CompactPositionSelect'
 import { CompactPrioritySelect } from '../../components/CompactPrioritySelect'
-import { NewMatchTriageControl } from '../../components/NewMatchTriageControl'
+import { isUntriagedNewMatch } from '../../lib/newMatch'
+import { NewMatchChip } from '../../components/NewMatchChip'
 import { HoverTooltip } from '../../components/HoverTooltip'
 import { TAG_CHIP, TAG_CHIP_HOVERED, TAG_CHIP_ACTIVE } from '../../lib/tagChipStyle'
 import { TOOLTIP_STYLE, chipOutline } from '../../lib/chipStyles'
@@ -159,27 +160,21 @@ export const BillRow = memo(function BillRow({
   const { support, oppose, neutral } = bill.voteCounts
   const totalVotes = support + oppose + neutral
 
-  // Un-triaged keyword match → show the segmented set-priority/dismiss control in
-  // place of the plain priority select. Once resolved (priority set or dismissed),
-  // this predicate flips false and the row reverts to CompactPrioritySelect.
-  const isNewMatch = isAdmin && bill.matchType === 'keyword' && !!bill.newMatchAt && !bill.priority && !bill.triagedAt
-  const renderPriorityControl = () => isNewMatch
-    ? (
-      <NewMatchTriageControl
-        billId={bill.id}
-        current={bill.priority}
-        onChange={(p) => onPriorityChange(bill.id, p)}
-        onDismiss={() => onTriageDismiss?.(bill.id)}
-      />
-    )
-    : (
-      <CompactPrioritySelect
-        billId={bill.id}
-        current={bill.priority}
-        onChange={(p) => onPriorityChange(bill.id, p)}
-        isFiltered={bill.priority != null && filter.priority.includes(bill.priority)}
-      />
-    )
+  // An un-triaged keyword match is an amber state of the priority dropdown: an
+  // admin picks a priority or Dismiss from it, a member sees the same state
+  // read-only. Once resolved (priority set or dismissed), this predicate flips
+  // false and the row shows the plain priority control.
+  const isNewMatch = isUntriagedNewMatch(bill)
+  const renderPriorityControl = () => (
+    <CompactPrioritySelect
+      billId={bill.id}
+      current={bill.priority}
+      onChange={(p) => onPriorityChange(bill.id, p)}
+      newMatch={isNewMatch}
+      onDismiss={() => onTriageDismiss?.(bill.id)}
+      isFiltered={bill.priority != null && filter.priority.includes(bill.priority)}
+    />
+  )
   const billPath = billUrl({ id: bill.id, state: bill.state, sessionSlug: bill.sessionSlug, billNumber: bill.billNumber })
   const org = useConfig().config?.orgNoun ?? DEFAULT_ORG_NOUN
   const positionTooltip = `Your ${org}'s official position on this bill`
@@ -357,7 +352,7 @@ export const BillRow = memo(function BillRow({
                   <PriorityBadge priority={bill.priority} />
                 </button>
               )
-              : null
+              : isNewMatch ? <NewMatchChip /> : null
           }
         </div>
         <div style={{ fontSize: fontSize.base, fontWeight: fontWeight.bold, color: color.textPrimary, marginBottom: 3, lineHeight: 1.35, fontFamily: "'Source Serif 4', serif", display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}>
@@ -528,7 +523,9 @@ export const BillRow = memo(function BillRow({
                 </button>
               </HoverTooltip>
             )
-            : <span style={{ fontSize: fontSize.sm, color: color.borderStrong }}>—</span>
+            : isNewMatch
+              ? <NewMatchChip />
+              : <span style={{ fontSize: fontSize.sm, color: color.borderStrong }}>—</span>
         }
       </div>
     </div>

@@ -372,8 +372,10 @@ describe('renderDigestEmail: new-matches subtitle, admin and member', () => {
     expect(html).not.toMatch(/dismiss/i)
     expect(html).toMatch(/>\s*3 new matches\s*</)
   })
-  it('the admin and member digests differ only by that subtitle', () => {
-    const strip = (h: string) => h.replace(/<tr><td[^>]*>Set a priority or dismiss each from the bill list\.<\/td><\/tr>/, '')
+  it('the admin and member digests differ only by that subtitle and the cards\' "Set priority" links', () => {
+    const strip = (h: string) => h
+      .replace(/<tr><td[^>]*>Set a priority or dismiss each from the bill list\.<\/td><\/tr>/, '')
+      .replace(/<tr[^>]*><td[^>]*><a [^>]*>Set priority<\/a><\/td><\/tr>/g, '')
     const admin = render({ newMatches: matches(3) })
     const member = render({ newMatches: matches(3), forMember: true })
     expect(admin).not.toEqual(member)

@@ -1,0 +1,42 @@
+{
+  "committeeMeeting": {
+    "chamber": "NoChamber",
+    "committees": [
+      {
+        "name": "Commission on Security and Cooperation in Europe (U.S. Helsinki Commission)",
+        "systemCode": "jcse00",
+        "url": "https://api.congress.gov/v3/committee/joint/jcse00?format=json"
+      }
+    ],
+    "congress": 119,
+    "date": "2025-06-26T15:00:00Z",
+    "eventId": "337125",
+    "hearingTranscript": [
+      {
+        "jacketNumber": 61127,
+        "url": "https://api.congress.gov/v3/hearing/119/joint/61127?format=json"
+      }
+    ],
+    "location": {
+      "building": "Russell Senate Office Building",
+      "room": "222"
+    },
+    "meetingStatus": "Scheduled",
+    "title": "Hearings to examine the cost of a bad deal in Ukraine.",
+    "type": "Meeting",
+    "updateDate": "2025-06-25T23:23:20Z",
+    "videos": [
+      {
+        "name": "Hearings to examine the cost of a bad deal in Ukraine",
+        "url": "https://www.congress.gov/event/119th-Congress/joint-event/337125"
+      }
+    ]
+  },
+  "request": {
+    "chamber": "nochamber",
+    "congress": "119",
+    "contentType": "application/json",
+    "eventId": "337125",
+    "format": "json"
+  }
+}

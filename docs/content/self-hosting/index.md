@@ -206,7 +206,7 @@ This loads the bills into central only. Linking them to a team and running AI su
 
 ## Optional: use a legislature's own data
 
-Every state starts on LegiScan, and **you don't need to do anything to stay on it**. For a few states (see [State coverage](/contributing/state-coverage)), FloorVote can read the legislature's own data instead. An admin switches a state over with a claim, `POST /api/admin/state-providers/:state` with the provider's name and the `x-admin-secret` header, which central refuses while instances track bills in that state from the current provider (and DC's claim is refused until `LIMS_API_KEY` is set). The [provider guide](/contributing/providers) describes the claim, and `docs/internal/sync-pipeline.md` in the repository covers moving a state that teams already track.
+Every state starts on LegiScan, and **you don't need to do anything to stay on it**. For a few states (see [State coverage](/contributing/state-coverage)), FloorVote can read the legislature's own data instead. An admin switches a state over with a claim, `POST /api/admin/state-providers/:state` with the provider's name and the `x-admin-secret` header, which central refuses while instances track bills in that state from the current provider (and DC's claim is refused until `LIMS_API_KEY` is set). Congress's committee hearings and markups come from the Congress.gov API, and only when you set the optional `CONGRESS_API_KEY` secret (a free api.data.gov key): without it Congress's bills and votes still sync, with an empty calendar. The [provider guide](/contributing/providers) describes the claim, and `docs/internal/sync-pipeline.md` in the repository covers moving a state that teams already track.
 
 ## Next steps
 

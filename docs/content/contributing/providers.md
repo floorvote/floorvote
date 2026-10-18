@@ -13,7 +13,7 @@ The [State coverage](/contributing/state-coverage) page lists the providers that
 A provider knows one API and how to map what it returns into FloorVote's shapes. Central, the shared data service, does everything else: deciding what to sync and when, writing to the database, matching keywords, and notifying instances. Two things hold that line:
 
 - ESLint lets provider code import only its own directory and [`providers/sdk.ts`](https://github.com/floorvote/floorvote/blob/main/central/src/providers/sdk.ts), and lets the rest of central reach a provider only through the registry (`providers/index.ts`). `npm run lint` in `central/` enforces both.
-- A provider's `env` holds only the keys it declares in `envKeys`, such as its API key. It never holds central's database, buckets, or queues.
+- A provider's `env` holds only the keys it declares in `envKeys`, such as its API key. It never holds central's database, buckets, or queues. What a provider keeps between runs goes through `ctx.cache`, small text entries of its own that central stores for it.
 
 Instances never call a legislative API. They read central, so a new provider changes nothing for them.
 
