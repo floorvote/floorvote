@@ -482,6 +482,19 @@ describe('where every other producer queues a bill', () => {
     })
   })
 
+  // Seed and the keyword re-run read the bill's row to find it, so only the rest can be handed a bill with none.
+  describe.each(PRODUCERS.filter(p => !['a tenant seed', 'a keyword re-run'].includes(p.name)))('$name, for a bill with no row', (producer) => {
+    it('sends it to the shared queue and does not drop it', async () => {
+      const tenantId = await seedWorld()
+      const rowless: Fixture = { label: 'rowless', provider: 'legiscan', billId: 987001, sessionId: 104, state: 'RI', own: 'shared' }
+      await producer.prepare(tenantId, [rowless])
+      const { env: e, q } = makeEnv(ALL)
+      const res = await producer.run(e, tenantId, [rowless])
+      expect(res.status).toBe(200)
+      expect(landed(q, rowless.billId)).toEqual({ shared: 1 })
+    })
+  })
+
   describe.each(PRODUCERS.filter(p => p.batch))('$name, with bills of every provider in one request', (producer) => {
     it('splits the batch so each bill lands once, on its own provider\'s queue', async () => {
       const tenantId = await seedWorld()

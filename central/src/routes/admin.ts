@@ -13,7 +13,7 @@ import { SUPERADMIN_TOKEN_TTL_SEC } from '../lib/superadminJwt'
 import { runSync } from '../cron/sync'
 import { importProviderMeasures, isSnapshotProvider, runSnapshotSync } from '../cron/sync-snapshots'
 import { runBodyEventSync } from '../cron/body-events'
-import { groupByIngestQueue, ingestQueueFor, ingestQueueForBill, providerConfigured } from '../lib/providerRouting'
+import { groupByIngestQueue, ingestQueueForBill, ingestQueueForId, providerConfigured } from '../lib/providerRouting'
 import { claimState, listStateOwnership, loadStateOwners, ownerOf } from '../lib/stateProviders'
 import { applyCutover, applyUndo, CutoverError, cutoverReport, planCutover, planUndo, undoReport } from '../lib/cutover'
 import { runAnomalyWatch } from '../lib/anomalyWatch'
@@ -913,7 +913,7 @@ adminRoutes.post('/reingest-tenant/:tenantId', async (c) => {
     })
   }
 
-  const queue = provider ? ingestQueueFor(provider, c.env) : c.env.INGESTOR_QUEUE
+  const queue = ingestQueueForId(providerId, c.env)
   let queued = 0
   const BATCH = 100
   for (let i = 0; i < rows.length; i += BATCH) {
