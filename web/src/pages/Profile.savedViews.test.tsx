@@ -101,7 +101,7 @@ describe('Profile: saved views in the digest', () => {
     render(<MemoryRouter><Profile /></MemoryRouter>)
     await screen.findByText(WITH_VIEWS)
     const list = chips() as HTMLElement
-    expect(within(list).getAllByRole('listitem').map(li => li.textContent)).toEqual(['Transportation', 'Courts'])
+    expect(within(list).getAllByRole('listitem').map(li => li.textContent?.replace('×', ''))).toEqual(['Transportation', 'Courts'])
     expect(digestRow()).toContainElement(list)
   })
 
@@ -129,7 +129,7 @@ describe('Profile: saved views in the digest', () => {
     render(<MemoryRouter><Profile /></MemoryRouter>)
     await screen.findByText(WITH_VIEWS)
     await userEvent.click(screen.getByRole('button', { name: 'Remove Transportation from your digest' }))
-    await waitFor(() => expect(within(chips() as HTMLElement).getAllByRole('listitem').map(li => li.textContent)).toEqual(['Courts']))
+    await waitFor(() => expect(within(chips() as HTMLElement).getAllByRole('listitem').map(li => li.textContent?.replace('×', ''))).toEqual(['Courts']))
     expect(screen.getByText(WITH_VIEWS)).toBeInTheDocument()
   })
 
@@ -154,7 +154,7 @@ describe('Profile: saved views in the digest', () => {
     mock({ modules: { 'email-digest': { enabled: false } } })
     render(<MemoryRouter><Profile /></MemoryRouter>)
     await waitFor(() => expect(api.apiFetch).toHaveBeenCalledWith('/views'))
-    expect(await screen.findByText(/turned off by your coalition/i)).toBeInTheDocument()
+    expect(await within(digestRow()).findByText(/turned off by your coalition/i)).toBeInTheDocument()
     expect(chips()).not.toBeInTheDocument()
   })
 })

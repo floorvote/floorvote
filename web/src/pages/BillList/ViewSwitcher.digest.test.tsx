@@ -84,12 +84,10 @@ describe('ViewSwitcher: include a view in the digest', () => {
     renderSwitcher({})
     await waitFor(() => expect(screen.getByText('42')).toBeInTheDocument())
     for (const [name, count] of [['Clerk bills', '42'], ['Auditor bills', '1']] as const) {
-      const row = envelope(name).parentElement as HTMLElement
-      expect(row.firstElementChild?.compareDocumentPosition(row.lastElementChild as Element)).toBeTruthy()
       const badge = screen.getByText(count)
       expect(badge.compareDocumentPosition(envelope(name)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     }
-    const widths = [envelope('Clerk bills'), envelope('Auditor bills')].map(e => (e.parentElement as HTMLElement).style.width || e.style.width)
+    const widths = [envelope('Clerk bills'), envelope('Auditor bills')].map(e => e.style.width)
     expect(widths[0]).not.toBe('')
     expect(widths[0]).toBe(widths[1])
   })

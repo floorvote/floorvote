@@ -124,6 +124,27 @@ export function Profile() {
     apiFetch<{ modules?: ModulesConfig }>('/config').then((c) => setModules(c.modules)).catch(() => {})
   }, [])
 
+  // The saved views the member has included in their digest (#449), for the description and the chips.
+  // A failed or empty read is no views: the description then says what it always did.
+  const [includedViews, setIncludedViews] = useState<Array<{ id: string; name: string }>>([])
+  useEffect(() => {
+    apiFetch<{ views?: Array<{ id: string; name: string; subscribed?: boolean }> }>('/views')
+      .then((d) => setIncludedViews((d.views ?? []).filter((v) => v.subscribed).map(({ id, name }) => ({ id, name }))))
+      .catch(() => {})
+  }, [])
+
+  async function removeIncludedView(id: string) {
+    if (demoLocked) return
+    const before = includedViews
+    setIncludedViews(before.filter((v) => v.id !== id))
+    try {
+      await apiFetch(`/views/${id}/subscription`, { method: 'PUT', body: JSON.stringify({ subscribed: false }) })
+    } catch {
+      // revert on failure
+      setIncludedViews(before)
+    }
+  }
+
   // Admin master switch per feature. While modules is still loading (undefined),
   // assume on so we don't flash a "turned off" state before /config resolves.
   const digestAdminOff = modules !== undefined && !isModuleEnabled(modules, 'email-digest')
@@ -670,7 +691,7 @@ export function Profile() {
             <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, cursor: demoLocked || digestAdminOff ? 'not-allowed' : 'pointer' }}>
               <div style={{ fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5 }}>
                 <div style={{ fontWeight: fontWeight.bold, color: color.textPrimary }}>Email digest of recent bill activity</div>
-                <div>{digestCadenceDescription(modules)}</div>
+                <div>{digestCadenceDescription(modules, includedViews.length > 0)}</div>
                 {digestAdminOff && (
                   <div style={{ marginTop: 2, color: color.textMuted, fontWeight: fontWeight.medium }}>{adminOffNote}</div>
                 )}
@@ -718,6 +739,35 @@ export function Profile() {
                 />
               </span>
             </label>
+            {/* Outside the label above, so a click on a chip never toggles the digest switch. */}
+            {!digestAdminOff && includedViews.length > 0 && (
+              <ul aria-label="Saved views in your digest" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '8px 0 0', padding: 0, listStyle: 'none' }}>
+                {includedViews.map((v) => (
+                  <li
+                    key={v.id}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 4px 2px 10px',
+                      border: `1px solid ${color.borderDefault}`, borderRadius: radius.pill,
+                      fontSize: fontSize.sm, color: color.textSlate, background: color.white,
+                    }}
+                  >
+                    {v.name}
+                    <button
+                      type="button"
+                      aria-label={`Remove ${v.name} from your digest`}
+                      disabled={demoLocked}
+                      onClick={() => { void removeIncludedView(v.id) }}
+                      style={{
+                        fontFamily: 'inherit', fontSize: fontSize.base, lineHeight: 1, background: 'none', border: 'none',
+                        color: color.textSecondary, cursor: demoLocked ? 'not-allowed' : 'pointer', minWidth: 24, minHeight: 24, borderRadius: radius.pill,
+                      }}
+                    >
+                      ×
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
             {isMember && (
               <label
                 style={{

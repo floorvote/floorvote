@@ -112,8 +112,9 @@ export function visibleModuleSettings(m: ModuleDef, modules: ModulesConfig | und
 }
 
 /** Human description of the recent-bill-activity digest cadence for the Account page. */
-export function digestCadenceDescription(modules: ModulesConfig | undefined): string {
-  const subject = 'recent activity on priority bills'
+export function digestCadenceDescription(modules: ModulesConfig | undefined, includesSavedViews = false): string {
+  // The saved views are the member's own (#449), so the sentence names them only once one is included.
+  const subject = `recent activity on priority bills${includesSavedViews ? ' and bills in saved views' : ''}`
   // When the admin has the digest turned off, do not assert a cadence — the
   // Account row shows a "Turned off by your {org noun}." note instead.
   if (!isModuleEnabled(modules, 'email-digest')) return `A summary of ${subject}.`
@@ -150,7 +151,7 @@ export function moduleKindLabel(type: ModuleType): string {
   return type === 'widget' ? 'Widget' : 'Page'
 }
 
-/** The digest's cadence as the Views menu words it: weekly only for a weekly digest, daily otherwise. */
-export function digestFrequency(_modules: ModulesConfig | undefined): 'daily' | 'weekly' {
-  return 'daily'
+/** The digest's cadence as the Views menu words it: weekly only for a weekly digest, daily otherwise (as digestCadenceDescription reads it). */
+export function digestFrequency(modules: ModulesConfig | undefined): 'daily' | 'weekly' {
+  return getModuleSetting<string>(modules, 'email-digest', 'frequency', 'daily') === 'weekly' ? 'weekly' : 'daily'
 }
