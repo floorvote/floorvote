@@ -26,9 +26,10 @@ vi.mock('../../context/DemoContext', () => ({
 }))
 
 type Handler = (init?: RequestInit) => unknown
+let activeEmail = 'sam@oldjob.org'
 function mockApi(handlers: Record<string, Handler> = {}) {
   return vi.spyOn(api, 'apiFetch').mockImplementation(async (path: string, init?: RequestInit) => {
-    if (path === '/admin/members') return [OWNER, PENDING, ACTIVE, OTHER] as never
+    if (path === '/admin/members') return [OWNER, PENDING, { ...ACTIVE, email: activeEmail }, OTHER] as never
     if (path === '/admin/roles') return [] as never
     if (path === '/admin/config') return {} as never
     const handler = handlers[path]
@@ -56,7 +57,7 @@ async function sendFor(name: string, address: string, button: string) {
 const ACTIVE_OK = { '/admin/members/in-1/change-email': () => ({ ok: true, email: 'sam@newjob.org', pending: true }) }
 
 describe('Members row: email change states', () => {
-  beforeEach(() => { vi.restoreAllMocks() })
+  beforeEach(() => { vi.restoreAllMocks(); activeEmail = 'sam@oldjob.org' })
 
   describe('editing inline', () => {
     it.each([['Sam Signed In', 'sam@oldjob.org'], ['Jane Pending', 'jane@exmaple.com']])('opens in the member row for %s, pre-filled and focused, with no dialog', async (name, email) => {
@@ -179,6 +180,42 @@ describe('Members row: email change states', () => {
       const row = await rowOf('Sam Signed In')
       fireEvent.keyDown(await within(row).findByRole('button', { name: 'Resend' }), { key: 'Escape' })
       expect(within(row).queryByText(/Link sent/)).not.toBeInTheDocument()
+    })
+  })
+
+  describe('active member confirms from the new address', () => {
+    it('shows "✓ Changed today" on a later members refresh and announces an address change, not an invite', async () => {
+      mockApi({
+        ...ACTIVE_OK,
+        '/admin/members/bulk-invite': () => ({ summary: { invited: 1, skipped: 0, failed: 0 }, results: [] }),
+      })
+      render(<MemoryRouter><Members /></MemoryRouter>)
+      await sendFor('Sam Signed In', 'sam@newjob.org', 'Send link')
+      const row = await rowOf('Sam Signed In')
+      await within(row).findByText('→ sam@newjob.org · Link sent')
+      // They confirmed from the new address. The next members fetch (here, after a bulk invite) shows it.
+      activeEmail = 'sam@newjob.org'
+      fireEvent.change(screen.getByLabelText('Invitees'), { target: { value: 'new@example.com' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Send invites' }))
+      expect(await within(await rowOf('Sam Signed In')).findByText('✓ Changed today')).toBeInTheDocument()
+      const after = await rowOf('Sam Signed In')
+      expect(within(after).getByRole('status')).toHaveTextContent('Address changed to sam@newjob.org.')
+      expect(within(after).getByRole('status')).not.toHaveTextContent(/invite/i)
+      expect(within(after).queryByRole('button', { name: 'Resend' })).not.toBeInTheDocument()
+    })
+  })
+
+  describe('reopening the editor over a pending link', () => {
+    it('keeps saying a sent link still works, and Cancel leaves the note', async () => {
+      const spy = mockApi(ACTIVE_OK)
+      render(<MemoryRouter><Members /></MemoryRouter>)
+      await sendFor('Sam Signed In', 'sam@newjob.org', 'Send link')
+      await screen.findByText('→ sam@newjob.org · Link sent')
+      const row = await openDialogFor('Sam Signed In')
+      expect(within(row).getByText('A link already sent still works until it expires.')).toBeInTheDocument()
+      fireEvent.click(within(row).getByRole('button', { name: 'Cancel' }))
+      expect(await within(row).findByText('Cancelled here. A link already sent still works until it expires.')).toBeInTheDocument()
+      expect(calls(spy, 'in-1')).toHaveLength(1)
     })
   })
 

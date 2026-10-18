@@ -44,6 +44,13 @@ describe('emailChangeReducer', () => {
     expect(CANCEL_NOTE).toBe('Cancelled here. A link already sent still works until it expires.')
   })
 
+  it('opening over a pending change keeps track of the link still out, and cancelling then leaves the note', () => {
+    const reopened = emailChangeReducer(pending({ to: 'new@example.org' }), { type: 'open', value: 'a@example.org' })
+    expect(reopened).toEqual(editing({ value: 'a@example.org', linkOut: true }))
+    expect(emailChangeReducer(reopened, { type: 'edit', value: 'b@example.org' })).toEqual(editing({ value: 'b@example.org', linkOut: true }))
+    expect(emailChangeReducer(reopened, { type: 'cancel' })).toEqual({ kind: 'idle', note: CANCEL_NOTE })
+  })
+
   it('opening clears the note', () => {
     expect(emailChangeReducer({ kind: 'idle', note: CANCEL_NOTE }, { type: 'open' })).toEqual(editing())
   })
