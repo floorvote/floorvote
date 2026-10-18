@@ -23,6 +23,7 @@ import { processIngestorQueue, validateTextPayload, ingestMeasure, isVersionAddr
 import { getProvider } from '../../src/providers'
 import { limsBillId, limsDocId, limsSessionId } from '../../src/providers/lims/ids'
 import * as legiscan from '../../src/providers/legiscan/client'
+import { app } from '../../src/index-legiscan'
 import { setupLsDb } from '../helpers/setupLsDb'
 import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
 import ilTooLargeRaw from '../fixtures/il/too-large-to-display.html?raw'
@@ -959,5 +960,77 @@ describe('match provenance fan-out', () => {
 
     expect(a.send.mock.calls[0][0].matchProvenance).toBe('bulk')
     expect(b.send.mock.calls[0][0].matchProvenance).toBe('routine')
+  })
+})
+
+
+// A document whose provider hash changed under the same doc id (#603). The
+// hash is what instances compare a claim source's pin with, and an instance
+// refetches a bill only when its `updated_at` moved, so a hash change alone
+// must move it, with no change record, since nothing user-facing changed.
+describe('processBill: a text whose hash changed under the same doc id', () => {
+  const STALE = '2026-01-01 00:00:00'
+  const text = (docId: number, hash: string) => ({
+    ...buildFixtureBill().texts[0], doc_id: docId, text_hash: hash,
+    state_link: `https://docs.legis.wi.gov/ab99-${docId}.html`,
+  })
+  const ctx = () => ({ waitUntil: () => {}, passThroughOnException: () => {} }) as unknown as ExecutionContext
+  const db = () => drizzle(env.DB, { schema })
+
+  async function ingest(texts: unknown[]) {
+    vi.mocked(legiscan.getBill).mockResolvedValue(buildFixtureBill({ texts }))
+    await processIngestorQueue(makeBatch(9001), makeEnv(), db())
+  }
+  // Back-dates the bill, so a later ingest that moves it shows.
+  const backdate = () => env.DB.prepare('UPDATE bills SET updated_at = ? WHERE bill_id = 9001').bind(STALE).run()
+  const updatedAt = async () => (await env.DB.prepare('SELECT updated_at FROM bills WHERE bill_id = 9001').first<{ updated_at: string }>())!.updated_at
+  const changeLog = async () => (await env.DB.prepare('SELECT change_type FROM bill_change_log WHERE bill_id = 9001').all()).results.map(r => r.change_type)
+  async function sentHashes() {
+    const res = await app.request('/api/bills/9001', { headers: { 'x-admin-secret': 'test-secret' } }, env, ctx())
+    const body = await res.json() as { texts: { docId: string; textHash: string | null }[] }
+    return Object.fromEntries(body.texts.map(t => [t.docId, t.textHash]))
+  }
+
+  beforeEach(async () => {
+    await db().insert(schema.sessions).values({
+      sessionId: 2154, state: 'WI', stateId: 50, yearStart: 2025, yearEnd: 2026,
+      sessionName: '2025-2026 Regular', sessionTitle: '2025-2026 Regular', sessionTag: '',
+      prefile: 0, sineDie: 0, prior: 0, special: 0,
+    })
+    await ingest([text(1000, 'v1-a'), text(1001, 'v1-b')])
+    await backdate()
+  })
+
+  it('moves updated_at and sends the new hash when only one document\'s hash changed', async () => {
+    await ingest([text(1000, 'v1-a'), text(1001, 'v2-b')])
+    expect(await updatedAt()).not.toBe(STALE)
+    expect(await sentHashes()).toEqual({ '1000': 'v1-a', '1001': 'v2-b' })
+  })
+
+  it('writes no change record for it', async () => {
+    const before = await changeLog()
+    await ingest([text(1000, 'v1-a'), text(1001, 'v2-b')])
+    expect(await changeLog()).toEqual(before)
+  })
+
+  it('leaves updated_at alone when no hash changed', async () => {
+    await ingest([text(1000, 'v1-a'), text(1001, 'v1-b')])
+    expect(await updatedAt()).toBe(STALE)
+  })
+
+  it.each([['empty', ''], ['missing', undefined as unknown as string]])('leaves updated_at alone when the new hash is %s, which is no signal', async (_l, hash) => {
+    await ingest([text(1000, 'v1-a'), text(1001, hash)])
+    expect(await updatedAt()).toBe(STALE)
+  })
+
+  it('leaves updated_at alone when the stored hash was empty and one arrives', async () => {
+    await env.DB.prepare('UPDATE bill_texts SET text_hash = NULL WHERE doc_id = 1001').run()
+    await ingest([text(1000, 'v1-a'), text(1001, 'v2-b')])
+    expect(await updatedAt()).toBe(STALE)
+  })
+
+  it('still moves updated_at for a new doc id, as before', async () => {
+    await ingest([text(1000, 'v1-a'), text(1001, 'v1-b'), text(1002, 'v1-c')])
+    expect(await updatedAt()).not.toBe(STALE)
   })
 })
