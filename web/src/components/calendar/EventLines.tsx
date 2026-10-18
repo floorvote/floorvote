@@ -152,7 +152,7 @@ export function EventLines({ event, compact = false, linkChips = false, suppress
             href={event.url}
             target="_blank"
             rel="noopener noreferrer"
-            style={{ fontSize: fontSize.xs, color: color.accentBlue, textDecoration: 'underline', overflowWrap: 'anywhere' }}
+            style={{ fontSize: fontSize.xs, color: color.linkBlue, textDecoration: 'underline', overflowWrap: 'anywhere' }}
           >
             {formatEventUrl(event.url)}
           </a>
@@ -166,7 +166,7 @@ export function EventLines({ event, compact = false, linkChips = false, suppress
             <button
               type="button"
               onClick={() => setShowAll(v => !v)}
-              style={{ marginTop: 2, padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontSize: fontSize.xs, color: color.accentBlue }}
+              style={{ marginTop: 2, padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontSize: fontSize.xs, color: color.linkBlue }}
             >
               {showAll ? 'Show less' : 'Show more'}
             </button>

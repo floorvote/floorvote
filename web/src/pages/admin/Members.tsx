@@ -939,7 +939,7 @@ export function Members() {
             onClick={() => { setUnknownOpen(true); loadUnknownAttempts() }}
             style={{
               fontSize: fontSize.sm,
-              color: color.accentBlue,
+              color: color.linkBlue,
               background: 'none',
               border: 'none',
               cursor: 'pointer',
@@ -1000,7 +1000,7 @@ export function Members() {
                 alignItems: 'center',
                 gap: 4,
                 fontSize: fontSize.sm,
-                color: copyableEmails.length === 0 ? color.textMuted : color.accentBlue,
+                color: copyableEmails.length === 0 ? color.textMuted : color.linkBlue,
                 background: 'none',
                 border: 'none',
                 cursor: copyableEmails.length === 0 ? 'not-allowed' : 'pointer',
