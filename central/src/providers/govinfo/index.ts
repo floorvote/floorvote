@@ -297,7 +297,7 @@ async function alertVanished(congress: number, answered: GovInfoType[], missing:
         text: `The ${type} Bill Status zip for Congress ${congress} answered 404, though central has stored ${type} bills for it. Those bills have stopped updating, and the other types kept syncing. Check GovInfo's bulk data for BILLSTATUS/${congress}/${type}. This is sent once for the outage, and again if the zip answers and then vanishes again.`,
       })
       // If this fails the alert was sent, and the next full read sends it again, which is the safe way to be wrong.
-      await ctx.cache.put({ [keyOf(type)]: new Date().toISOString() })
+      await ctx.cache.put({ [keyOf(type)]: new Date().toISOString() }) // ts-write-ok: a marker value in provider_cache, never read as a time
     }
   } catch (err) {
     console.error(`[sync-govinfo] Congress ${congress}: the vanished-type check failed, and the pass carries on:`, err)
