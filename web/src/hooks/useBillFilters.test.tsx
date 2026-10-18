@@ -405,12 +405,13 @@ describe('useBillFilters holds one bill filter value', () => {
       expect(result.current.filter).toBe(before)
     })
 
-    it('carries a key the page has no control for, such as session, through unchanged', () => {
+    it('ignores session, which the page has no control for, so nothing narrows the list unseen', () => {
       const { result } = renderHook(useHarness, { wrapper: at('/bills?session=S1&status=Introduced') })
-      expect(result.current.filter.session).toEqual(['S1'])
+      expect(result.current.filter.session).toEqual([])
       act(() => result.current.setFilterStatuses([]))
-      expect(result.current.filter.session).toEqual(['S1'])
-      expect(result.current.urlSearch).toBe('?session=S1')
+      expect(result.current.urlSearch).toBe('')
+      act(() => result.current.navigate('/bills?session=S2'))
+      expect(result.current.filter.session).toEqual([])
     })
   })
 
@@ -437,6 +438,12 @@ describe('useBillFilters holds one bill filter value', () => {
       expect(result.current.filter).toEqual({ ...EMPTY_BILL_FILTER, status: ['Introduced'] })
     })
 
+    it('ignores a session in the view, as it does in the URL', () => {
+      const { result } = renderHook(useHarness, { wrapper })
+      act(() => result.current.applyView({ id: 'v1', slug: 'inbox', query: 'status=Introduced&session=S1' }))
+      expect(result.current.filter).toEqual({ ...EMPTY_BILL_FILTER, status: ['Introduced'] })
+    })
+
     it('the null view is the empty filter', () => {
       const { result } = renderHook(useHarness, { wrapper: at('/bills?stage=enacted&myBills=1') })
       act(() => result.current.applyView(null))
@@ -456,12 +463,6 @@ describe('useBillFilters holds one bill filter value', () => {
       expect(result.current.filter).toEqual(EMPTY_BILL_FILTER)
       expect(result.current.urlSearch).toBe('')
       expect(result.current.hasActiveFilters).toBe(false)
-    })
-
-    it('clears a key the page has no control for, such as session', () => {
-      const { result } = renderHook(useHarness, { wrapper: at('/bills?session=S1') })
-      act(() => result.current.handleResetFilters())
-      expect(result.current.filter).toEqual(EMPTY_BILL_FILTER)
     })
 
     it('clears the group operator too', () => {

@@ -37,6 +37,13 @@ describe('billsQueryFromSearch', () => {
     expect(query('minRelevance=5').filter.minRelevance).toBe(5)
   })
 
+  it('ignores session: the page has no control, chip, or count for it, so it must not narrow a list', () => {
+    expect(query('session=S1&status=2').filter).toEqual(query('status=2').filter)
+    expect(billsApiParams(query('session=S1&status=2'), 1, 100)).toBe('page=1&pageSize=100&status=2')
+    expect(billsFacetParams(query('session=S1&status=2').filter)).toBe('status=2')
+    expect(billsChipSelection('/bills', '?session=S1')).toEqual({ allBills: true, newMatches: false })
+  })
+
   it('returns an immutable value', () => {
     const f = query('status=2&cf_x=1').filter
     expect(Object.isFrozen(f)).toBe(true)

@@ -6,7 +6,7 @@ import { getDb } from '../../src/db/client'
 import { billCustomFieldValues } from '../../src/db/schema'
 import { serializeBillFilter } from '../../../shared/billFilter'
 import { billsQueryFromSearch, billsApiParams, billsFacetParams } from '../../../web/src/pages/BillList/billsQuery'
-import { AREAS_ID, AREAS_SLUG, CASES, FIELD_ID, FIELD_SLUG, seedFilterFixture } from './billFilterFixture'
+import { ALL, AREAS_ID, AREAS_SLUG, CASES, FIELD_ID, FIELD_SLUG, seedFilterFixture } from './billFilterFixture'
 
 // The boundary between the web and the API. For each filter in the fixture's cases, the web reads the filter from
 // the Bills page URL and writes what it sends: the list request, the facets request, and the bulk request's
@@ -86,6 +86,15 @@ describe('what the web serializes is what the API reads', () => {
         expect(Object.values(counted.status).reduce((a, b) => a + b, 0)).toBe(expected.length)
       }
     })
+  })
+
+  it('sends no session from a /bills?session= URL to the list, the facets, or bulk', async () => {
+    const sent = web('session=S26')
+    expect(sent.list).not.toContain('session')
+    expect(sent.facets).not.toContain('session')
+    expect(sent.bulkFilter).toBe('')
+    expect((await listed(sent.list)).numbers).toEqual(ALL)
+    expect(await marked(sent.bulkFilter)).toEqual(ALL)
   })
 
   it('keeps a custom field in the request by its id, so a list and the prefetch of it share a cache entry', () => {
