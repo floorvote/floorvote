@@ -41,7 +41,7 @@ export function emailChangeReducer(state: EmailChangeState, action: EmailChangeA
   switch (action.type) {
     case 'open':
       if (state.kind === 'editing' && state.sending) return state
-      return { kind: 'editing', value: action.value ?? '', error: null, sending: false, ...(state.kind === 'pending' ? { linkOut: true } : {}) }
+      return { kind: 'editing', value: action.value ?? '', error: null, sending: false, ...(state.kind === 'pending' || (state.kind === 'editing' && state.linkOut) ? { linkOut: true } : {}) }
     case 'edit':
       if (state.kind !== 'editing') return state
       return { ...state, value: action.value, error: null }

@@ -130,6 +130,9 @@ export function MemberEmailEditor({ member, pendingInvite, state, dispatch, onCa
           {state.error}
         </p>
       )}
+      {!pendingInvite && (
+        <p style={{ fontSize: fontSize.sm, color: color.textSecondary, margin: '6px 0 0' }}>When they confirm, they&apos;re signed out everywhere.</p>
+      )}
       {state.linkOut && (
         <p style={{ fontSize: fontSize.sm, color: color.textSecondary, margin: '6px 0 0' }}>{LINK_OUT_NOTE}</p>
       )}

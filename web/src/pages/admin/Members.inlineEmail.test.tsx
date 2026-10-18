@@ -205,6 +205,19 @@ describe('Members row: email change states', () => {
     })
   })
 
+  describe('the sign-out hint', () => {
+    it('shows for an active member and not for a pending invite', async () => {
+      mockApi()
+      render(<MemoryRouter><Members /></MemoryRouter>)
+      const active = await openDialogFor('Sam Signed In')
+      expect(within(active).getByText("When they confirm, they're signed out everywhere.")).toBeInTheDocument()
+      fireEvent.click(within(active).getByRole('button', { name: 'Cancel' }))
+      const invite = await openDialogFor('Jane Pending')
+      expect(within(invite).getByLabelText('Email address')).toBeInTheDocument()
+      expect(within(invite).queryByText(/signed out everywhere/)).not.toBeInTheDocument()
+    })
+  })
+
   describe('reopening the editor over a pending link', () => {
     it('keeps saying a sent link still works, and Cancel leaves the note', async () => {
       const spy = mockApi(ACTIVE_OK)

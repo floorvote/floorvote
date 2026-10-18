@@ -51,6 +51,12 @@ describe('emailChangeReducer', () => {
     expect(emailChangeReducer(reopened, { type: 'cancel' })).toEqual({ kind: 'idle', note: CANCEL_NOTE })
   })
 
+  it('opening again while the editor is already open over a pending change keeps linkOut', () => {
+    const reopened = emailChangeReducer(emailChangeReducer(pending(), { type: 'open' }), { type: 'open', value: 'z@example.org' })
+    expect(reopened).toEqual(editing({ value: 'z@example.org', linkOut: true }))
+    expect(emailChangeReducer(reopened, { type: 'cancel' })).toEqual({ kind: 'idle', note: CANCEL_NOTE })
+  })
+
   it('opening clears the note', () => {
     expect(emailChangeReducer({ kind: 'idle', note: CANCEL_NOTE }, { type: 'open' })).toEqual(editing())
   })
