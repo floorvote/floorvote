@@ -2506,7 +2506,7 @@ describe('GET /bills/:id legislator votes', () => {
     const body = await res.json() as { voteSummary: { desc: string; legislatorVotes: unknown[] }[] }
     expect(body.voteSummary.map(v => [v.desc, v.legislatorVotes])).toEqual([
       // No link from central, so none on the page.
-      ['Third Reading', legislatorVotes.map(v => ({ ...v, url: null }))],
+      ['Third Reading', legislatorVotes.map(v => ({ ...v, url: null, party: null }))],
       ['Concurrence', []],
     ])
   })
@@ -2543,6 +2543,48 @@ describe('GET /bills/:id legislator votes', () => {
       const body = await billFor([sponsor('Ann Able', { href: 'https://x.example' }, true), sponsor('Bo Baker', 123)])
       expect(body.sponsorUrl).toBeNull()
       expect(body.coSponsors.find(s => s.name === 'Bo Baker')?.url).toBeNull()
+    })
+  })
+
+  describe("a voter's party", () => {
+    const counts = [{ option: 'yes', value: 4 }, { option: 'no', value: 0 }, { option: 'not voting', value: 0 }, { option: 'absent', value: 0 }]
+    async function votersFor(legislatorVotes: unknown[]) {
+      const token = await seedSession(await seedUser({ role: 'member' }))
+      const billId = await seedBill({ externalId: 'legiscan:102' })
+      const central = {
+        fetch: vi.fn(async (req: Request) => new URL(req.url).pathname === '/api/bills/legiscan:102'
+          ? Response.json({ votes: [{ id: '31', motionText: 'Third Reading', date: '2026-03-01', result: 'pass', chamber: 'H', counts, legislatorVotes }] })
+          : Response.json({}, { status: 404 })),
+      }
+      const res = await app.request(`/api/bills/${billId}`, { headers: { Cookie: `session=${token}` } }, { ...env, CENTRAL: central })
+      expect(res.status).toBe(200)
+      return (await res.json() as { voteSummary: { legislatorVotes: { name: string; party?: string | null }[] }[] }).voteSummary[0].legislatorVotes
+    }
+
+    it("passes central's party through for each voter", async () => {
+      const voters = await votersFor([
+        { personId: '1', name: 'Ann Able', vote: 'Yea', party: 'D' },
+        { personId: '2', name: 'Bo Baker', vote: 'Yea', party: 'R' },
+        { personId: '3', name: 'Cy Cole', vote: 'Yea', party: 'Green' },
+      ])
+      expect(voters.map(v => [v.name, v.party])).toEqual([['Ann Able', 'D'], ['Bo Baker', 'R'], ['Cy Cole', 'Green']])
+    })
+
+    it('sends null for a voter central sends no party for, whether null, missing, or blank (an older central sends no field)', async () => {
+      const voters = await votersFor([
+        { personId: '1', name: 'Ann Able', vote: 'Yea', party: null },
+        { personId: '2', name: 'Bo Baker', vote: 'Yea' },
+        { personId: '3', name: 'Cy Cole', vote: 'Yea', party: '  ' },
+      ])
+      expect(voters.map(v => v.party)).toEqual([null, null, null])
+    })
+
+    it('keeps the voter list intact when a party is not a string', async () => {
+      const voters = await votersFor([
+        { personId: '1', name: 'Ann Able', vote: 'Yea', party: 7 },
+        { personId: '2', name: 'Bo Baker', vote: 'Yea', party: { code: 'D' } },
+      ])
+      expect(voters.map(v => [v.name, v.party])).toEqual([['Ann Able', null], ['Bo Baker', null]])
     })
   })
 
@@ -2586,7 +2628,7 @@ describe('GET /bills/:id legislator votes', () => {
 
     it('keeps the voter list intact when a url is not a string', async () => {
       const voters = await voteSummaryFor([{ personId: '1', name: 'Ann Able', vote: 'Yea', url: { href: 'https://x.example' } }])
-      expect(voters).toEqual([{ personId: '1', name: 'Ann Able', vote: 'Yea', url: null }])
+      expect(voters).toEqual([{ personId: '1', name: 'Ann Able', vote: 'Yea', url: null, party: null }])
     })
   })
 })
