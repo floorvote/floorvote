@@ -171,15 +171,28 @@ describe('MarkdownSummary: the quote preview', () => {
     expect(linkNamed(ONE).textContent).toBe(ONE)
   })
 
-  it('keeps the quote in the document beside each link, hidden from sight and never shown inline', () => {
+  it('keeps the quote in the document beside each link, but not displayed, so it is neither read inline nor copied', () => {
     const { container } = renderSummary()
     const tip = linkNamed(ONE).closest('.claim-ref')!.querySelector('.claim-quote') as HTMLElement
     expect(tip.textContent).toBe(HTML_QUOTE)
     const css = [...container.parentElement!.querySelectorAll('style')].map(s => s.textContent ?? '').join('\n')
     const rule = css.match(/\.markdown-summary \.claim-quote \{([^}]*)\}/)?.[1] ?? ''
-    expect(rule).toMatch(/clip(-path)?:/)
+    expect(rule).toMatch(/display:\s*none/)
     expect(css).not.toMatch(/:hover\s*>\s*\.claim-quote/)
     expect(css).not.toMatch(/:focus-within\s*>\s*\.claim-quote/)
+  })
+
+  it('leaves the quotes out of the summary\'s accessibility tree, so browse mode reads each claim once', () => {
+    renderSummary()
+    for (const tip of document.querySelectorAll('.claim-quote')) expect(tip).not.toBeVisible()
+    expect(screen.queryAllByRole('tooltip')).toHaveLength(0)
+    expect(screen.queryByText(HTML_QUOTE)).toBeNull()
+  })
+
+  it('still describes each link by its quote, though the quote span is not displayed', () => {
+    renderSummary()
+    expect(linkNamed(ONE)).toHaveAccessibleDescription(HTML_QUOTE)
+    expect(linkNamed(TWO)).toHaveAccessibleDescription(PDF_QUOTE)
   })
 
   it('is reachable by Tab as before: one stop for each link, none for a quote or a preview', async () => {
