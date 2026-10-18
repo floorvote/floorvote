@@ -51,7 +51,8 @@ describe('status stage and rank in the bill list', () => {
     expect(await list('status=7')).toEqual(['HB 5'])
     expect(await list('status=Override')).toEqual(['HB 5'])
     const res = await SELF.fetch('http://localhost/api/bills/facets?status=7', { headers: { Cookie: cookie } })
-    expect((await res.json() as { stage: Record<string, number> }).stage).toEqual({ enacted: 1 })
+    // The code narrows the other facets like the word does: the one bill is in RI.
+    expect((await res.json() as { state: Record<string, number> }).state).toEqual({ RI: 1 })
   })
 
   it('counts each stage, leaving the stage filter out of its own counts', async () => {

@@ -9,6 +9,7 @@ import {
 import { countBy, countHolders, freshOf, type Counting, type CountRow } from './facetCounts'
 import { countGroups } from './groupList'
 import { FILTER_ANY, FILTER_NONE, type BillFilter } from '../../../../shared/billFilter'
+import { stagePosition, type StatusStage } from '../../../../shared/statusStages'
 import { loadSuppressedSubjectStates, isSubjectsSuppressedForState, encodeSubjectFilter } from '../../lib/billSubjects'
 import { loadTaxonomyTagNameSet } from '../../lib/taxonomy'
 import { newMatchWhere } from '../../lib/newMatch'
@@ -44,13 +45,15 @@ type Built = BillsCondition | undefined
 
 /**
  * How an entry's condition joins the others:
- * - `fact`: a fact about the bill, which the group operator joins
+ * - `fact`: a fact about the bill, which the group operator joins. A fact that names `joins` is not a fact of
+ *   its own: its condition is ORed into the named filter's, so the two are one fact (the stage joins the status,
+ *   #677) with one key, which every facet leaves out whole
  * - `custom-field`: one fact for each custom field with a value, keyed by the field's id
  * - `scope`: viewer-relative or search, which always narrows
  * - `operator`: no condition of its own: it says how the facts join
  */
 type Condition<V> =
-  | { kind: 'fact'; condition: (value: V, ctx: ConditionContext) => Built | Promise<Built> }
+  | { kind: 'fact'; joins?: keyof BillFilter; condition: (value: V, ctx: ConditionContext) => Built | Promise<Built> }
   | { kind: 'custom-field'; condition: (value: V, ctx: ConditionContext) => Promise<Record<string, BillsCondition>> }
   | { kind: 'scope'; condition: (value: V, ctx: ConditionContext) => Built | typeof NO_MATCH | Promise<Built | typeof NO_MATCH> }
   | { kind: 'operator'; condition: (value: V) => 'all' | 'any' }
@@ -96,18 +99,23 @@ export type FacetContext = {
  * - `count`: the groups of the current result with a bill of the kind the filter names, one number
  * A facet of values has the filter's own name as its key in the facets response, as in the URL (`tag`, `subject`,
  * `sessionName`, `field`). A count names its own key (`unvotedCount`), since it counts bills, not a filter's values.
- * `empty` is the value it has when nothing matches. `count` is called with the entry's own name.
+ * `empty` is the value it has when nothing matches. `count` is called with the key of the entry's own fact
+ * (its name, or the filter it joins), which is what it leaves out.
+ * A `derived` facet is read from a filter's own rows and has a key of its own (`statusGroups`), not a count of the
+ * filter's values.
  */
 type Facet<R> = {
   empty: () => R
   count: (fc: FacetContext, own: string) => Promise<R>
-} & ({ kind: 'values' | 'custom-fields' } | { kind: 'count'; response: string })
+} & ({ kind: 'values' | 'custom-fields' } | { kind: 'count' | 'derived'; response: string })
 
 // ── The table ───────────────────────────────────────────────────────────
 
 type Entry<V> = Condition<V> & {
   /** The filter's facet count, or null for a filter with none (nothing offers its values as options). */
   facet: Facet<unknown> | null
+  /** Further facets read from the filter's rows, each with a key of its own in the facets response. */
+  alsoFacets?: Array<Facet<unknown> & { kind: 'derived' }>
 }
 
 export type FilterTable = { [K in keyof BillFilter]: Entry<BillFilter[K]> }
@@ -127,6 +135,37 @@ const billColumn = (column: SQL, keep?: (value: unknown) => boolean): Facet<Coun
   count: async (fc, own) => fc.shift(countsOf(await countBy(fc.db, fc.counting(own), { values: [column], from: sql`bills m` }), keep)),
 })
 
+/**
+ * Each status label with bills, with the stage its bills sit in and the rank they sort by (`statusGroups`). It is read
+ * from the rows the status counts are, the facets' filter with the whole status fact left out, so the page can list a
+ * label under its stage's heading. A label whose bills sit in more than one stage (rows written before provider
+ * vocabularies) takes the stage with the most bills and, in a tie, the later stage. Bills with no stage count for a
+ * stage only when none of the label's bills has one. Its rank is the highest among the label's bills.
+ *
+ * It tallies bills where the counts beside it tally groups, since which stage holds most of a label's bills is a
+ * question about bills, and it is no count of what a pick would total. It reads each bill's rank, which no index
+ * carries, so it runs as one statement of its own, never as a column of the status count that the group key
+ * index answers alone.
+ */
+const statusGroups: Facet<Record<string, { stage: string | null; rank: number }>> & { kind: 'derived' } = {
+  kind: 'derived',
+  response: 'statusGroups',
+  empty: () => ({}),
+  count: async (fc, own) => {
+    const where = fc.counting(own).where(m)
+    const rows = await fc.db.all(sql`SELECT ${m.status} AS label, ${m.statusStage} AS stage, MAX(${m.statusRank}) AS rank, SUM(1) AS bills
+      FROM bills m${where ? sql` WHERE ${where}` : sql``} GROUP BY ${m.status}, ${m.statusStage}`) as Array<{ label: string; stage: string | null; rank: number; bills: number }>
+    const byLabel = new Map<string, typeof rows>()
+    for (const r of rows) if (r.label) byLabel.set(r.label, [...(byLabel.get(r.label) ?? []), r])
+    return Object.fromEntries([...byLabel].map(([label, group]) => {
+      const staged = group.filter(r => r.stage)
+      const best = [...(staged.length > 0 ? staged : group)].sort((a, b) =>
+        Number(b.bills) - Number(a.bills) || stagePosition(b.stage as StatusStage) - stagePosition(a.stage as StatusStage))[0]
+      return [label, { stage: best.stage ?? null, rank: Math.max(...group.map(r => Number(r.rank))) }]
+    }))
+  },
+}
+
 /** A count of the groups of the current result with a bill of one kind. */
 const currentCount = (response: string, count: (fc: FacetContext) => Promise<number>): Facet<number> => ({
   kind: 'count', response, empty: () => 0, count: fc => count(fc),
@@ -140,9 +179,13 @@ export const FILTER_TABLE: FilterTable = {
       return statuses.length > 0 ? t => multiFilter(t.status, statuses)! : undefined
     },
     facet: billColumn(sql`${m.status}`),
+    alsoFacets: [statusGroups],
   },
+  // The stage is a way of choosing statuses (a heading selects the whole stage), so its condition is part of the
+  // status fact (#677): a bill meets it when its status is chosen or its stage is. Both facets leave the whole fact out.
   stage: {
     kind: 'fact',
+    joins: 'status',
     condition: values => values.length > 0 ? t => multiFilter(t.statusStage, values)! : undefined,
     facet: billColumn(sql`${m.statusStage}`),
   },
@@ -412,6 +455,20 @@ export type FilterParts = {
 
 const NAMES = Object.keys(FILTER_TABLE) as Array<keyof BillFilter>
 
+/** The key of the fact a filter's condition belongs to: its own name, or the filter it joins. */
+export const factKeyOf = (name: keyof BillFilter): string => {
+  const entry = FILTER_TABLE[name] as Entry<unknown>
+  return entry.kind === 'fact' && entry.joins ? entry.joins : name
+}
+
+/** A fact's condition, ORed into the fact of the same key when a filter that joins it has already added one. */
+function addFact(parts: FilterParts, key: string, condition: BillsCondition) {
+  const existing = parts.facts.find(f => f.key === key)
+  if (!existing) { parts.facts.push({ key, condition }); return }
+  const joined = existing.condition
+  existing.condition = t => or(joined(t), condition(t))!
+}
+
 /**
  * The list's filters as parts, each a condition on the bill it tests. Filter
  * predicates stay per bill: the bill list asks of each bill in a companion
@@ -434,7 +491,7 @@ export async function buildFilterParts(db: AppDb, f: BillFilter, ctx: BillFilter
     switch (entry.kind) {
       case 'fact': {
         const condition = await entry.condition(value, context)
-        if (condition) parts.facts.push({ key: name, condition })
+        if (condition) addFact(parts, entry.joins ?? name, condition)
         break
       }
       case 'custom-field':
@@ -554,8 +611,12 @@ export function makeFacetContext(req: FacetRequest): FacetContext {
 
 /** The filters that have a facet count, each with the name that is its own-filter exclusion. */
 const FACETS = NAMES.flatMap(name => {
-  const facet = FILTER_TABLE[name].facet
-  return facet ? [{ name, key: facet.kind === 'count' ? facet.response : name, facet }] : []
+  const entry = FILTER_TABLE[name]
+  // The fact a facet leaves out is the filter's own, or the one it joins: the status and the stage leave out the same one.
+  const own = factKeyOf(name)
+  return [...(entry.facet ? [entry.facet] : []), ...(entry.alsoFacets ?? [])].map(facet => (
+    { name: own, key: facet.kind === 'count' || facet.kind === 'derived' ? facet.response : name, facet }
+  ))
 })
 
 /** Every facet's count, in parallel, by the key each has in the facets response. */
