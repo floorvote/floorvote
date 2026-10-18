@@ -349,7 +349,7 @@ export async function ingestMeasure(
         .set({ fetchError: `hash-refetch ${t.text_hash} attempt ${attempt}: ${row?.fetchError ?? 'no state_link'}` })
         .where(eq(billTexts.docId, t.doc_id))
       if (attempt >= HASH_REFETCH_ATTEMPTS) {
-        console.warn(`[processor-ls] giving up refetching doc ${t.doc_id} of bill ${bill.bill_id} for its new text hash after ${attempt} attempts; a forced text refetch retries it`)
+        console.warn(`[processor-ls] giving up refetching doc ${t.doc_id} of bill ${bill.bill_id} for its new text hash after ${attempt} attempts; a newer hash or a manually queued forced ingest lifts the cap`)
       } else {
         holdBackChangeHash = true
       }
@@ -563,7 +563,7 @@ export async function ingestMeasure(
     // Download text if not already in R2
     const stored = await db.select({ r2Key: billTexts.r2Key })
       .from(billTexts).where(eq(billTexts.docId, t.doc_id)).get()
-    if ((forceTextRefetch || !stored?.r2Key) && t.state_link && !refetchedDocs.has(t.doc_id)) {
+    if ((forceTextRefetch || !stored?.r2Key) && t.state_link && !refetchedDocs.has(t.doc_id) && !keptHashes.has(t.doc_id)) {
       await downloadTextToR2(bill.bill_id, t.doc_id, t.state_link, t.mime, provider, env, db, t.text_size ?? null, t.text_hash ?? null)
     }
   }

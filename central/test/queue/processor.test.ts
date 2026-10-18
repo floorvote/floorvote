@@ -1106,6 +1106,28 @@ describe('processBill: a text whose hash changed under the same doc id', () => {
       expect(await obj!.text()).toBe('<html>new bytes</html>')
     })
 
+    it('deletes the old copy once the new one is stored', async () => {
+      const oldKey = (await row(1001) && (await env.DB.prepare('SELECT r2_key FROM bill_texts WHERE doc_id = 1001').first<{ r2_key: string }>())!.r2_key)
+      expect(await env.BILLS_BUCKET.get(oldKey as string)).not.toBeNull()
+      fetchMock.mockImplementation(async () => html('new bytes'))
+      await ingest([text(1000, 'v1-a'), text(1001, 'v2-b')])
+      const newKey = (await env.DB.prepare('SELECT r2_key FROM bill_texts WHERE doc_id = 1001').first<{ r2_key: string }>())!.r2_key
+      expect(newKey).not.toBe(oldKey)
+      expect(await env.BILLS_BUCKET.get(oldKey as string)).toBeNull()
+      expect(await env.BILLS_BUCKET.get(newKey)).not.toBeNull()
+    })
+
+    it('under forceTextRefetch, does not try a failed refetch again in the text loop, which would store new bytes under the old hash', async () => {
+      // The changed document's first fetch fails, and any later one would succeed.
+      let calls = 0
+      fetchMock.mockImplementation(async (url: string) => (url === link(1001) && calls++ === 0) ? new Response('nope', { status: 500 }) : html('new bytes'))
+      vi.mocked(legiscan.getBillText).mockRejectedValue(new Error('quota'))
+      vi.mocked(legiscan.getBill).mockResolvedValue(buildFixtureBill({ texts: [text(1000, 'v1-a'), text(1001, 'v2-b')] }))
+      await processIngestorQueue(makeBatch(9001, { forceTextRefetch: true }), makeEnv(), db())
+      expect(fetchMock.mock.calls.filter(c => c[0] === link(1001))).toHaveLength(1)
+      expect(await served()).toMatchObject({ textHash: 'v1-b', content: '<html>old bytes</html>' })
+    })
+
     describe('a refetch that keeps failing', () => {
       const changeHash = async () => (await env.DB.prepare('SELECT change_hash, detail_hash FROM bills WHERE bill_id = 9001').first<{ change_hash: string; detail_hash: string }>())!
       const failing = () => {
