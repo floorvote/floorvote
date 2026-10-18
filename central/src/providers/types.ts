@@ -674,7 +674,8 @@ export interface MeasurePerson {
   opensecrets_id?: string
   knowwho_pid?: number
   ballotpedia?: string
-  bioguide_id?: string
+  /** The member's Bioguide id. Absent leaves a stored one alone on ingest, and null clears it. */
+  bioguide_id?: string | null
   bio?: {
     social?: {
       biography?: string

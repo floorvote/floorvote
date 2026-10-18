@@ -15,6 +15,7 @@ import { clearProviderData } from '../lib/cutover'
 import { calendarCoverage } from '../lib/bodyEvents'
 import type { Env, Db, IngestorMessage, BillMessage, MatchProvenance, NotificationMessage, CalendarBlock } from '../types'
 import { insertMissingPeople, personRow } from '../lib/people'
+import { startsWithPdfMagic } from '../lib/storedPdf'
 import { deleteOtherRollCalls, knownRollCallIds } from '../lib/billRollCalls'
 import { writeMemberVotes, type RollCallMemberVotes } from '../lib/rollCallVotes'
 import { loadVoteDataset, VOTE_DATASET_DEFER_SECONDS, VOTE_DATASET_RETRY_SECONDS } from '../cron/vote-datasets'
@@ -715,8 +716,7 @@ export function validateTextPayload(
   const bytes = new Uint8Array(body)
   if (bytes.byteLength === 0) return 'empty response body'
 
-  const head = new TextDecoder('latin1').decode(bytes.slice(0, 5))
-  if (mime.includes('pdf') && head !== '%PDF-') {
+  if (mime.includes('pdf') && !startsWithPdfMagic(bytes)) {
     const peek = new TextDecoder('latin1').decode(bytes.slice(0, 60)).replace(/\s+/g, ' ')
     return `expected a PDF, got ${JSON.stringify(peek)}`
   }
