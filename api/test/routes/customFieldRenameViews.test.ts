@@ -2,9 +2,9 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
 import { getDb } from '../../src/db/client'
-import { customFieldDefinitions } from '../../src/db/schema'
+import { customFieldDefinitions, billCustomFieldValues } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
+import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
 
 // Saved views follow a custom field's rename and a dropdown option's rename (#703): the field row and every
 // view that filters on it change in one request, or none do.
@@ -442,5 +442,265 @@ describe('the options rename is explicit', () => {
     const fieldId = await seedField({ name: 'Note', slug: 'note' })
     const res = await putField(fieldId, { options: ['a'], renames: [{ from: 'a', to: 'a' }] })
     expect(res.status).toBe(400)
+  })
+})
+
+describe('a rename keeps the rest of the view', () => {
+  it('keeps sort, dir, and an unknown key after a field rename', async () => {
+    const fieldId = await seedField({ name: 'Region', slug: 'region' })
+    await seedView('v', 'dir=asc&field.region=North&sort=title&status=introduced&keep=1&keep=2')
+
+    await putField(fieldId, { name: 'Zone' })
+
+    const params = new URLSearchParams(await viewQuery('v'))
+    expect(params.getAll('field.zone')).toEqual(['North'])
+    expect(params.getAll('status')).toEqual(['introduced'])
+    expect(params.get('sort')).toBe('title')
+    expect(params.get('dir')).toBe('asc')
+    expect(params.getAll('keep')).toEqual(['1', '2'])
+  })
+
+  it('keeps sort and dir after an option rename', async () => {
+    const fieldId = await seedField({ name: 'Level', slug: 'level', options: ['a', 'b'] })
+    await seedView('v', 'sort=title&dir=desc&field.level=a')
+
+    await putField(fieldId, { options: ['x', 'b'], renames: [{ from: 'a', to: 'x' }] })
+
+    const params = new URLSearchParams(await viewQuery('v'))
+    expect(params.getAll('field.level')).toEqual(['x'])
+    expect(params.get('sort')).toBe('title')
+    expect(params.get('dir')).toBe('desc')
+  })
+})
+
+describe('an option rename keeps the bills a view selects', () => {
+  async function seedValue(billId: string, fieldId: string, value: string) {
+    await getDb(env.DB).insert(billCustomFieldValues).values({ billId, fieldId, value, setBy: adminId })
+  }
+  async function storedValue(billId: string, fieldId: string): Promise<string | undefined> {
+    return (await getDb(env.DB).select().from(billCustomFieldValues).where(eq(billCustomFieldValues.billId, billId)).all())
+      .find(r => r.fieldId === fieldId)?.value
+  }
+  async function billsFor(query: string): Promise<string[]> {
+    const res = await app.request(`/api/bills?${query}&pageSize=50`, { headers: { Cookie: adminCookie } }, env)
+    const body = (await res.json()) as { bills: { id: string }[] }
+    return body.bills.map(b => b.id).sort()
+  }
+
+  it('selects the same bills after a single-select option is renamed', async () => {
+    const fieldId = await seedField({ name: 'Stage', slug: 'stage', options: ['Early', 'Late'] })
+    const b1 = await seedBill({ billNumber: 'B1' })
+    const b2 = await seedBill({ billNumber: 'B2' })
+    const b3 = await seedBill({ billNumber: 'B3' })
+    await seedValue(b1, fieldId, 'Early')
+    await seedValue(b2, fieldId, 'Late')
+    await seedValue(b3, fieldId, 'Early')
+    await seedView('v', 'field.stage=Early')
+    const before = await billsFor(await viewQuery('v'))
+    expect(before).toEqual([b1, b3].sort())
+
+    await putField(fieldId, { options: ['Beginning', 'Late'], renames: [{ from: 'Early', to: 'Beginning' }] })
+
+    expect(await viewQuery('v')).toBe('field.stage=Beginning')
+    expect(await billsFor(await viewQuery('v'))).toEqual(before)
+    expect(await storedValue(b2, fieldId)).toBe('Late')
+  })
+
+  it('selects the same bills after a multi-select option is renamed, keeping the bill\'s other values and order', async () => {
+    const fieldId = await seedField({ name: 'Areas', slug: 'areas', options: ['a', 'b', 'c'], multiple: true })
+    const b1 = await seedBill({ billNumber: 'B1' })
+    const b2 = await seedBill({ billNumber: 'B2' })
+    const b3 = await seedBill({ billNumber: 'B3' })
+    await seedValue(b1, fieldId, JSON.stringify(['c', 'a', 'b']))
+    await seedValue(b2, fieldId, JSON.stringify(['b']))
+    await seedValue(b3, fieldId, 'a')
+    await seedView('v', 'field.areas=a')
+    const before = await billsFor(await viewQuery('v'))
+    expect(before).toEqual([b1, b3].sort())
+
+    await putField(fieldId, { options: ['x', 'b', 'c'], renames: [{ from: 'a', to: 'x' }] })
+
+    expect(await billsFor(await viewQuery('v'))).toEqual(before)
+    expect(await storedValue(b1, fieldId)).toBe(JSON.stringify(['c', 'x', 'b']))
+    expect(await storedValue(b2, fieldId)).toBe(JSON.stringify(['b']))
+  })
+
+  it('selects the same bills after two options are swapped', async () => {
+    const fieldId = await seedField({ name: 'Areas', slug: 'areas', options: ['A', 'B'], multiple: true })
+    const b1 = await seedBill({ billNumber: 'B1' })
+    const b2 = await seedBill({ billNumber: 'B2' })
+    await seedValue(b1, fieldId, JSON.stringify(['A']))
+    await seedValue(b2, fieldId, JSON.stringify(['B']))
+    await seedView('va', 'field.areas=A')
+    const before = await billsFor('field.areas=A')
+
+    await putField(fieldId, { options: ['B', 'A'], renames: [{ from: 'A', to: 'B' }, { from: 'B', to: 'A' }] })
+
+    expect(await viewQuery('va')).toBe('field.areas=B')
+    expect(await billsFor(await viewQuery('va'))).toEqual(before)
+    expect(await storedValue(b1, fieldId)).toBe(JSON.stringify(['B']))
+    expect(await storedValue(b2, fieldId)).toBe(JSON.stringify(['A']))
+  })
+
+  it('selects the same bills when a rename is saved with an added option', async () => {
+    const fieldId = await seedField({ name: 'Stage', slug: 'stage', options: ['Early', 'Late'] })
+    const b1 = await seedBill({ billNumber: 'B1' })
+    await seedValue(b1, fieldId, 'Early')
+    await seedView('v', 'field.stage=Early')
+
+    await putField(fieldId, { options: ['Beginning', 'Late', 'Never'], renames: [{ from: 'Early', to: 'Beginning' }] })
+
+    expect(await billsFor(await viewQuery('v'))).toEqual([b1])
+  })
+
+  it('leaves a bill that holds the same text in another field, and a bill holding no value, alone', async () => {
+    const fieldId = await seedField({ name: 'Size', slug: 'size', options: ['Big', 'Small'] })
+    const otherId = await seedField({ name: 'Weight', slug: 'weight', options: ['Big', 'Small'] })
+    const b1 = await seedBill({ billNumber: 'B1' })
+    const b2 = await seedBill({ billNumber: 'B2' })
+    await seedValue(b1, otherId, 'Big')
+    await seedValue(b2, fieldId, 'Big')
+
+    await putField(fieldId, { options: ['Large', 'Small'], renames: [{ from: 'Big', to: 'Large' }] })
+
+    expect(await storedValue(b1, otherId)).toBe('Big')
+    expect(await storedValue(b2, fieldId)).toBe('Large')
+  })
+
+  it('merges a bill\'s values when an option is renamed into another it already holds', async () => {
+    const fieldId = await seedField({ name: 'Areas', slug: 'areas', options: ['a', 'b'], multiple: true })
+    const b1 = await seedBill({ billNumber: 'B1' })
+    await seedValue(b1, fieldId, JSON.stringify(['a', 'b']))
+
+    await putField(fieldId, { options: ['b', 'b2'], renames: [{ from: 'a', to: 'b' }] })
+
+    expect(await storedValue(b1, fieldId)).toBe(JSON.stringify(['b']))
+  })
+
+  it('does not rewrite bill values when the options only change by add, delete, or reorder', async () => {
+    const fieldId = await seedField({ name: 'Stage', slug: 'stage', options: ['Early', 'Late'] })
+    const b1 = await seedBill({ billNumber: 'B1' })
+    await seedValue(b1, fieldId, 'Early')
+
+    await putField(fieldId, { options: ['Late', 'Early', 'Never'] })
+
+    expect(await storedValue(b1, fieldId)).toBe('Early')
+  })
+
+  it('leaves bill values as they were when a view write fails', async () => {
+    const fieldId = await seedField({ name: 'Stage', slug: 'stage', options: ['Early', 'Late'] })
+    const b1 = await seedBill({ billNumber: 'B1' })
+    await seedValue(b1, fieldId, 'Early')
+    await seedView('v', 'field.stage=Early')
+    await env.DB.exec(`CREATE TRIGGER fail_view BEFORE UPDATE ON saved_views BEGIN SELECT RAISE(ABORT, 'view write failed'); END;`)
+
+    const res = await putField(fieldId, { options: ['Beginning', 'Late'], renames: [{ from: 'Early', to: 'Beginning' }] })
+    expect(res.status).toBeGreaterThanOrEqual(500)
+
+    expect(await storedValue(b1, fieldId)).toBe('Early')
+  })
+})
+
+describe('a rename does not overwrite a concurrent change', () => {
+  /** Runs `during` after the handler has read its views and before it writes them. */
+  function withInterloper(during: () => Promise<void>) {
+    const db = new Proxy(env.DB, {
+      get(target, prop) {
+        if (prop === 'batch') {
+          return async (statements: D1PreparedStatement[]) => {
+            await during()
+            return target.batch(statements)
+          }
+        }
+        const value = (target as unknown as Record<string | symbol, unknown>)[prop]
+        return typeof value === 'function' ? value.bind(target) : value
+      },
+    })
+    return { ...env, DB: db } as typeof env
+  }
+
+  async function putWith(bindings: typeof env, fieldId: string, body: object): Promise<Response> {
+    return app.request(`/api/admin/custom-fields/${fieldId}`, {
+      method: 'PUT',
+      headers: { Cookie: adminCookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }, bindings)
+  }
+
+  it('answers 409 and writes nothing when a view is edited between the read and the write', async () => {
+    const fieldId = await seedField({ name: 'Region', slug: 'region' })
+    await seedView('a', 'field.region=North', 0)
+    await seedView('b', 'field.region=South', 1)
+    const edited = 'priority=high&field.region=East'
+    const bindings = withInterloper(async () => {
+      await env.DB.prepare(`UPDATE saved_views SET query = ? WHERE id = 'a'`).bind(edited).run()
+    })
+
+    const res = await putWith(bindings, fieldId, { name: 'Zone' })
+    expect(res.status).toBe(409)
+
+    expect(await viewQuery('a')).toBe(edited)
+    expect(await viewQuery('b')).toBe('field.region=South')
+    const row = await fieldRow(fieldId)
+    expect(row?.name).toBe('Region')
+    expect(row?.slug).toBe('region')
+  })
+
+  it('answers 409 and writes nothing when the field was renamed between the read and the write', async () => {
+    const fieldId = await seedField({ name: 'Region', slug: 'region' })
+    await seedView('a', 'field.region=North')
+    const bindings = withInterloper(async () => {
+      await env.DB.prepare(`UPDATE custom_field_definitions SET name = 'Area', slug = 'area' WHERE id = ?`).bind(fieldId).run()
+    })
+
+    const res = await putWith(bindings, fieldId, { name: 'Zone' })
+    expect(res.status).toBe(409)
+
+    expect((await fieldRow(fieldId))?.slug).toBe('area')
+    expect(await viewQuery('a')).toBe('field.region=North')
+  })
+
+  it('answers 409 and writes nothing when the options changed between the read and the write', async () => {
+    const fieldId = await seedField({ name: 'Level', slug: 'level', options: ['a', 'b'] })
+    const b1 = await seedBill({ billNumber: 'B1' })
+    await getDb(env.DB).insert(billCustomFieldValues).values({ billId: b1, fieldId, value: 'a', setBy: adminId })
+    await seedView('v', 'field.level=a')
+    const bindings = withInterloper(async () => {
+      await env.DB.prepare(`UPDATE custom_field_definitions SET options = ? WHERE id = ?`).bind(JSON.stringify(['a', 'b', 'c']), fieldId).run()
+    })
+
+    const res = await putWith(bindings, fieldId, { options: ['x', 'b'], renames: [{ from: 'a', to: 'x' }] })
+    expect(res.status).toBe(409)
+
+    expect((await fieldRow(fieldId))?.options).toBe(JSON.stringify(['a', 'b', 'c']))
+    expect(await viewQuery('v')).toBe('field.level=a')
+    const stored = await env.DB.prepare(`SELECT value FROM bill_custom_field_values WHERE bill_id = ?`).bind(b1).first<{ value: string }>()
+    expect(stored?.value).toBe('a')
+  })
+
+  it('does not strand a view on a dead slug when two fields it uses are renamed at once', async () => {
+    const aId = await seedField({ name: 'Alpha', slug: 'alpha' })
+    const bId = await seedField({ name: 'Beta', slug: 'beta' })
+    await seedView('v', 'field.alpha=1&field.beta=2')
+
+    const results = await Promise.all([putField(aId, { name: 'Apple' }), putField(bId, { name: 'Berry' })])
+    for (const res of results) expect([200, 409]).toContain(res.status)
+    // A refused rename is retried, as the client reloads and tries again.
+    if (results[0].status === 409) expect((await putField(aId, { name: 'Apple' })).status).toBe(200)
+    if (results[1].status === 409) expect((await putField(bId, { name: 'Berry' })).status).toBe(200)
+
+    expect(await viewQuery('v')).toBe('field.apple=1&field.berry=2')
+  })
+
+  it('lets only one of two renames of the same field win, and the views follow the winner', async () => {
+    const id = await seedField({ name: 'Alpha', slug: 'alpha' })
+    await seedView('v', 'field.alpha=1')
+
+    const results = await Promise.all([putField(id, { name: 'First' }), putField(id, { name: 'Second' })])
+    for (const res of results) expect([200, 409]).toContain(res.status)
+
+    const slug = (await fieldRow(id))?.slug as string
+    expect(['first', 'second']).toContain(slug)
+    expect(await viewQuery('v')).toBe(`field.${slug}=1`)
   })
 })
