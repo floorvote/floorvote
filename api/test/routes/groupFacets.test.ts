@@ -376,3 +376,127 @@ describe('subject coverage beside the facets, under grouping', () => {
     expect(await total('subject=NJ:Local%20Government')).toBe(2)
   })
 })
+
+// The session facet leaves out the session filter, not the year filter (#689): a facet counts what the list
+// would total if you picked a value, so the filter the facet is for can't narrow it, and the others must.
+describe('the session facet leaves out its own filter', () => {
+  beforeEach(async () => {
+    await reset()
+    // Sessions 2025 and 2026, and a bill of session 2025 that began in 2026, so a year filter and a session
+    // filter disagree about it.
+    await seedBill({ id: 'a1', billNumber: 'A1', session: '2025', yearStart: 2025, status: 'Passed', statusStage: 'passed' })
+    await seedBill({ id: 'b2', billNumber: 'B2', session: '2026', yearStart: 2026, status: 'Introduced', statusStage: 'introduced' })
+    await seedBill({ id: 'c3', billNumber: 'C3', session: '2025', yearStart: 2026, status: 'Passed', statusStage: 'passed' })
+    await seedBill({ id: 'd4', billNumber: 'D4', session: '2026', yearStart: 2026, status: 'Passed', statusStage: 'passed' })
+  })
+
+  it('counts every session when one is picked', async () => {
+    const f = await facets('session=2025')
+    expect(f.session).toEqual({ '2025': 2, '2026': 2 })
+    expect(await total('session=2025&session=2026')).toBe(4)
+  })
+
+  it('counts the sessions of the bills a year filter keeps', async () => {
+    const f = await facets('year=2026')
+    expect(f.session).toEqual({ '2025': 1, '2026': 2 })
+    expect(await total('year=2026&session=2025')).toBe(1)
+    expect(await total('year=2026&session=2026')).toBe(2)
+  })
+
+  it('counts the sessions of the bills every other filter keeps, with its own picked', async () => {
+    const f = await facets('session=2025&status=Passed')
+    expect(f.session).toEqual({ '2025': 2, '2026': 1 })
+    const g = await facets('session=2025&year=2026')
+    expect(g.session).toEqual({ '2025': 1, '2026': 2 })
+  })
+
+  it('leaves the year facet as it was, with a session or a year picked', async () => {
+    expect((await facets('session=2025')).year).toEqual({ '2025': 1, '2026': 1 })
+    expect((await facets('session=2025&year=2026')).year).toEqual({ '2025': 1, '2026': 1 })
+    expect((await facets('year=2026')).year).toEqual({ '2025': 1, '2026': 3 })
+  })
+
+  it('leaves the session facet as it was under match=any, which counts the resulting total', async () => {
+    // Under OR a facet counts each value's resulting total, with no bill fact left in the filter, so which filter
+    // the facet leaves out cannot change it.
+    const f = await facets('session=2025&status=Passed&match=any')
+    for (const [session, n] of Object.entries(f.session)) {
+      expect([session, n]).toEqual([session, await total(`session=2025&session=${session}&status=Passed&match=any`)])
+    }
+    expect(f.session).toEqual({ '2025': 3, '2026': 4 })
+  })
+})
+
+// The empty "my bills" response has every key the real one has (#693), with every count at zero: the response is
+// built from the same table of filters either way, so a filter added to the table can't be missing from one.
+describe('the facets of a my bills list with no bills', () => {
+  beforeEach(async () => {
+    await reset()
+    await seedBill({ id: 'a1', billNumber: 'A1', priority: 'high', status: 'Passed', statusStage: 'passed', yearStart: 2026 })
+    await seedBill({ id: 'b2', billNumber: 'B2', isDraft: true })
+    await db().insert(officialPositions).values({ id: 'p1', billId: 'a1', position: 'Support', setBy: ada })
+    await db().insert(billSubjects).values({ billId: 'a1', subjectName: 'Elections', state: 'RI' })
+  })
+
+  it('has the keys of the response for a member who has bills', async () => {
+    await db().insert(notes).values({ id: 'n1', billId: 'a1', userId: ada, content: 'note' })
+    const full = await facets('myBills=1')
+    expect(full.myBillsCount).toBe(1)
+    await db().delete(notes)
+    const empty = await facets('myBills=1')
+    expect(empty.myBillsCount).toBe(0)
+    expect(Object.keys(empty).sort()).toEqual(Object.keys(full).sort())
+    expect(Object.keys(empty.position).sort()).toEqual(['__any__', 'none'])
+    expect(Object.keys(empty.tags)).toEqual(['__any__'])
+  })
+
+  it('has the keys of the response for the list of everyone', async () => {
+    const everyone = await facets('')
+    const empty = await facets('myBills=1')
+    expect(Object.keys(empty).sort()).toEqual(Object.keys(everyone).sort())
+  })
+
+  it('counts nothing in priority, position, and tags, under the sentinels the full response always has', async () => {
+    const f = await facets('myBills=1')
+    expect(f.priority).toEqual({ none: 0, __any__: 0 })
+    expect(f.position).toEqual({ none: 0, __any__: 0 })
+    expect(f.tags).toEqual({ __any__: 0 })
+  })
+
+  it('counts nothing in the counts beside the facets, and no value in any other facet', async () => {
+    const f = await facets('myBills=1')
+    expect([f.myBillsCount, f.newMatchesCount, f.unvotedCount, f.draftCount]).toEqual([0, 0, 0, 0])
+    expect(f.status).toEqual({})
+    expect(f.stage).toEqual({})
+    expect(f.year).toEqual({})
+    expect(f.session).toEqual({})
+    expect(f.state).toEqual({})
+    expect(f.subjects).toEqual({})
+    expect(f.customFields).toEqual({})
+  })
+
+  it('still carries the tenant-wide hasDrafts, subjectStates, and billStates', async () => {
+    const empty = await facets('myBills=1')
+    const everyone = await facets('')
+    expect(empty.hasDrafts).toBe(true)
+    expect(empty.subjectStates).toEqual(['RI'])
+    expect(empty.subjectStates).toEqual(everyone.subjectStates)
+    expect(empty.billStates).toEqual(everyone.billStates)
+  })
+
+  it('has the same shape whatever else the request filters by', async () => {
+    const shape = (f: Record<string, unknown>) => JSON.stringify(Object.keys(f).sort())
+    const base = shape(await facets('myBills=1'))
+    for (const qs of ['myBills=1&status=Passed', 'myBills=1&match=any&priority=high', 'myBills=1&unvoted=1', 'myBills=1&q=nothing', 'myBills=1&tag=__any__']) {
+      expect([qs, shape(await facets(qs))]).toEqual([qs, base])
+    }
+  })
+
+  it('leaves the response of a member with bills unchanged', async () => {
+    await db().insert(notes).values({ id: 'n1', billId: 'a1', userId: ada, content: 'note' })
+    const f = await facets('myBills=1')
+    expect(f.priority).toEqual({ high: 1, none: 0, __any__: 1 })
+    expect(f.position).toEqual({ Support: 1, none: 0, __any__: 1 })
+    expect(f.status).toEqual({ Passed: 1 })
+  })
+})

@@ -20,6 +20,8 @@ export type Facets = {
   myBillsCount: number; newMatchesCount: number; unvotedCount: number; draftCount: number
   // Unfiltered, per bill (#528): the states with subjects, and on * coverage the states with bills.
   subjectStates: string[]; billStates?: string[]
+  // Whether the tenant has any draft, unfiltered.
+  hasDrafts: boolean
 }
 
 let cookie: string
@@ -61,11 +63,17 @@ const AND_ANCHORS: Array<[string, string[]]> = [
   ['cf_cf2=x', ['cf_cf2']], ['subject=NJ:Elections', ['subject']], ['minRelevance=4', []],
   ['unvoted=1', []], ['newMatches=1', []], ['myBills=1', []],
   ['priority=none', ['priority']], ['position=none', ['position']], ['priority=__any__&status=Introduced', ['priority', 'status']],
+  // The provider facts that were never the active filter: each is a dimension with a facet of its own, so each must
+  // leave itself out of its own count and no other's. Drafts is a scope, which narrows every count.
+  ['state=NJ', ['state']], ['stage=passed', ['stage']], ['year=2026', ['year']], ['session=2025', ['session']], ['drafts=1', []],
+  ['year=2026&session=2025', ['year', 'session']], ['state=TX&stage=introduced', ['state', 'stage']], ['drafts=1&status=Passed', ['status']],
 ]
 const OR_ANCHORS = [
   'status=Passed', 'priority=high', 'tag=Energy', 'position=Support', 'cf_cf1=Labor', 'subject=NJ:Elections',
   'status=Passed&priority=high', 'status=Introduced&tag=Labor&position=Oppose', 'priority=none&state=TX',
   'status=Passed&unvoted=1', 'priority=high&newMatches=1', 'tag=Energy&myBills=1', 'position=none&cf_cf1=__any__',
+  'state=NJ', 'stage=passed', 'year=2026', 'session=2025', 'drafts=1', 'year=2025&session=2026', 'state=TX&stage=introduced&year=2026',
+  'drafts=1&priority=high', 'session=2025&status=Passed',
 ]
 
 /**
@@ -119,7 +127,7 @@ export function randomFixtureSuite(seed: number, modes: Array<'AND' | 'OR'> = ['
       if (!skip.includes('status')) add('status', f.status)
       if (!skip.includes('stage')) add('stage', f.stage)
       if (!skip.includes('year')) add('year', f.year)
-      add('session', f.session)
+      if (!skip.includes('session')) add('session', f.session)
       if (!skip.includes('state')) add('state', f.state)
       if (!skip.includes('priority')) add('priority', f.priority)
       if (!skip.includes('position')) add('position', f.position)

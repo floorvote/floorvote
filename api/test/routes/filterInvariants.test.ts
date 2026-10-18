@@ -4,24 +4,36 @@ import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../he
 import { getDb } from '../../src/db/client'
 import { app } from '../../src/index'
 import { inArray } from 'drizzle-orm'
-import { billSubjects, officialPositions, associationConfig, bills } from '../../src/db/schema'
+import {
+  billSubjects, officialPositions, associationConfig, bills, customFieldDefinitions, billCustomFieldValues, memberVotes, notes,
+} from '../../src/db/schema'
 
-// The six selectable, operator-participating dimensions. myBills/newMatches/unvoted
-// are viewer-scope filters that ALWAYS narrow (they AND on top unconditionally — see
-// buildBillsFilter in query.ts) and are deliberately excluded: asserting the OR/AND
-// laws for them would assert something that is intentionally false. minRelevance is
-// a bill fact and does participate in the operator, but it's a threshold rather than
-// a discrete value set, which doesn't fit the pairwise union/intersection sweep below
-// as cleanly as the other six — its OR/AND behavior is already covered directly in
-// searchParams.test.ts ("ANDs minRelevance by default" / "ORs minRelevance like any
-// other bill fact"), so it's left out of this sweep rather than forced in.
-const DIMENSIONS: Array<{ key: string; param: string; value: string }> = [
-  { key: 'status',   param: 'status',   value: 'Passed' },
-  { key: 'priority', param: 'priority', value: 'high' },
-  { key: 'session',  param: 'session',  value: '2026' },
-  { key: 'tags',     param: 'tag',      value: 'Clerk' },
-  { key: 'subjects', param: 'subject',  value: 'UT:Elections' },
-  { key: 'position', param: 'position', value: 'Support' },
+// Every filter that is a bill fact, the ones the group operator joins: status, stage, year, session, state, position,
+// priority, tag, subject, a custom field, and a minimum relevance. Search, my bills, unvoted, new matches, and drafts are
+// scopes (see composeFilter in query.ts): they ALWAYS narrow, so the OR/AND laws would be false for them on purpose.
+// Their facet counts, the four counts beside the facets, are checked against the list below ("the toggles").
+// A minimum relevance has no facet, so the facet law skips it. Its OR/AND behavior is checked by the pairwise sweep.
+type Facets = Record<string, any> // eslint-disable-line @typescript-eslint/no-explicit-any
+const DIMENSIONS: Array<{ key: string; param: string; value: string; promised?: (f: Facets) => number | undefined }> = [
+  { key: 'status',    param: 'status',    value: 'Passed',        promised: f => f.status?.Passed },
+  { key: 'stage',     param: 'stage',     value: 'passed',        promised: f => f.stage?.passed },
+  { key: 'year',      param: 'year',      value: '2026',          promised: f => f.year?.['2026'] },
+  { key: 'session',   param: 'session',   value: '2026',          promised: f => f.session?.['2026'] },
+  { key: 'state',     param: 'state',     value: 'NJ',            promised: f => f.state?.NJ },
+  { key: 'priority',  param: 'priority',  value: 'high',          promised: f => f.priority?.high },
+  { key: 'tags',      param: 'tag',       value: 'Clerk',         promised: f => f.tags?.Clerk },
+  { key: 'subjects',  param: 'subject',   value: 'UT:Elections',  promised: f => f.subjects?.['UT:Elections'] },
+  { key: 'position',  param: 'position',  value: 'Support',       promised: f => f.position?.Support },
+  { key: 'field',     param: 'cf_area',   value: 'North',         promised: f => f.customFields?.['cf-area']?.North },
+  { key: 'relevance', param: 'minRelevance', value: '5' },
+]
+
+// The four counts beside the facets: each is the list's total with the scope added.
+const TOGGLES: Array<{ key: string; param: string; count: string }> = [
+  { key: 'myBills',    param: 'myBills',    count: 'myBillsCount' },
+  { key: 'unvoted',    param: 'unvoted',    count: 'unvotedCount' },
+  { key: 'newMatches', param: 'newMatches', count: 'newMatchesCount' },
+  { key: 'drafts',     param: 'drafts',     count: 'draftCount' },
 ]
 
 type DimKey = typeof DIMENSIONS[number]['key']
@@ -37,7 +49,7 @@ for (const grouped of [false, true]) describe(`filter algebra${grouped ? ' on co
   let token: string
 
   // Seed a fixture with deliberate cross-dimension overlap, then assert the laws
-  // hold for EVERY pair of the six dimensions above.
+  // hold for EVERY pair of the dimensions above.
   //
   // Requirement this fixture MUST satisfy: for every unordered pair (A, B) of
   // dimensions, there is at least one bill in A-not-B, one in B-not-A, and one in
@@ -48,7 +60,7 @@ for (const grouped of [false, true]) describe(`filter algebra${grouped ? ' on co
   // Construction: for each dimension we seed one "singleton" bill carrying ONLY
   // that dimension's anchor value, and for each unordered PAIR of dimensions we
   // seed one "pairwise" bill carrying BOTH anchor values and no others. That's
-  // 6 + 15 = 21 bills. For any pair (A, B): the A-singleton bill is in A-not-B
+  // 11 + 55 = 66 bills. For any pair (A, B): the A-singleton bill is in A-not-B
   // (it carries nothing else), the B-singleton bill is in B-not-A, and the (A,B)
   // pairwise bill is in A-and-B. Every pair is covered by construction, and the
   // singleton/pairwise bills for OTHER dimensions add real background noise (a
@@ -57,17 +69,33 @@ for (const grouped of [false, true]) describe(`filter algebra${grouped ? ' on co
   //
   // Data is seeded once for the whole suite (beforeAll, not beforeEach): every
   // test below only reads (list/facets), so there's nothing to isolate between
-  // them, and reseeding 21 bills per test would multiply run time for no benefit.
+  // them, and reseeding 66 bills per test would multiply run time for no benefit.
+  let seeded = 0
   async function seedDimBill(billNumber: string, on: Set<DimKey>, userId: string): Promise<string> {
+    const n = seeded++
+    // The toggles' fixture: each is on for a share of the bills, spread so that the counts beside the facets are not
+    // zero under the anchor the presentational law uses.
+    const provider = {
+      status: on.has('status') ? 'Passed' : 'Introduced',
+      statusStage: on.has('stage') ? 'passed' : 'introduced',
+      state: on.has('state') ? 'NJ' : 'TX',
+      session: on.has('session') ? '2026' : '2025',
+      yearStart: on.has('year') ? 2026 : 2025,
+      relevanceScore: on.has('relevance') ? 8 : 1,
+    }
     const id = await seedBill({
       billNumber,
       title: `Fixture bill ${billNumber}`,
-      status: on.has('status') ? 'Passed' : 'Introduced',
+      ...provider,
       priority: on.has('priority') ? 'high' : 'low',
-      session: on.has('session') ? '2026' : '2025',
       tags: on.has('tags') ? ['Clerk'] : [],
+      isDraft: n % 4 === 1,
+      newMatchAt: n % 5 === 0 ? null : '2026-01-01 00:00:00',
     })
     const db = getDb(env.DB)
+    await db.insert(billCustomFieldValues).values({ billId: id, fieldId: 'cf-area', value: on.has('field') ? 'North' : 'South', setBy: userId })
+    if (n % 3 === 0) await db.insert(memberVotes).values({ id: `v${n}`, userId, billId: id, position: 'support' })
+    if (n % 7 === 0) await db.insert(notes).values({ id: `n${n}`, billId: id, userId, content: 'note' })
     if (on.has('subjects')) {
       await db.insert(billSubjects).values({ billId: id, subjectName: 'Elections', state: 'UT' })
     }
@@ -83,8 +111,7 @@ for (const grouped of [false, true]) describe(`filter algebra${grouped ? ' on co
       const twin = await seedBill({
         billNumber: `${billNumber}-twin`,
         title: `Fixture companion ${billNumber}`,
-        status: on.has('status') ? 'Passed' : 'Introduced',
-        session: on.has('session') ? '2026' : '2025',
+        ...provider,
       })
       if (on.has('subjects')) await db.insert(billSubjects).values({ billId: twin, subjectName: 'Elections', state: 'UT' })
       await db.update(bills).set({ groupKey: [id, twin].sort()[0] }).where(inArray(bills.id, [id, twin]))
@@ -95,10 +122,13 @@ for (const grouped of [false, true]) describe(`filter algebra${grouped ? ' on co
   beforeAll(async () => {
     await resetDb()
     await applyMigrations()
-    const userId = await seedUser()
+    const userId = await seedUser({ role: 'admin' })
     token = await seedSession(userId)
 
     const db = getDb(env.DB)
+    await db.insert(customFieldDefinitions).values({
+      id: 'cf-area', name: 'Area', slug: 'area', type: 'dropdown', options: JSON.stringify(['North', 'South']), multiple: false,
+    })
     // The tags facet only reports taxonomy members (see loadTaxonomyTagNameSet),
     // so "Clerk" must be registered for the tag dimension to be visible at all.
     await db.insert(associationConfig).values({
@@ -117,15 +147,15 @@ for (const grouped of [false, true]) describe(`filter algebra${grouped ? ' on co
   })
 
   async function listBills(query: Record<string, string>) {
-    const qs = new URLSearchParams(query).toString()
+    const qs = new URLSearchParams({ pageSize: '200', ...query }).toString()
     const res = await app.request(`/api/bills?${qs}`, { headers: { Cookie: `session=${token}` } }, env)
-    return res.json() as Promise<{ bills: Array<{ id: string; billNumber: string }> }>
+    return res.json() as Promise<{ bills: Array<{ id: string; billNumber: string }>; pagination: { total: number } }>
   }
 
   async function getFacets(query: Record<string, string>) {
     const qs = new URLSearchParams(query).toString()
     const res = await app.request(`/api/bills/facets?${qs}`, { headers: { Cookie: `session=${token}` } }, env)
-    return res.json() as Promise<Record<string, Record<string, number>>>
+    return res.json() as Promise<Facets>
   }
 
   // Guards the fixture's own load-bearing shape: if a future edit collapses any
@@ -171,9 +201,10 @@ for (const grouped of [false, true]) describe(`filter algebra${grouped ? ' on co
   // The presentational law — this is what a user actually checks by clicking.
   for (const mode of [{}, { match: 'any' }] as const) {
     for (const d of DIMENSIONS) {
+      if (!d.promised) continue
       it(`a ${d.key} facet count equals the total after picking it (${'match' in mode ? 'OR' : 'AND'})`, async () => {
         const anchor = { status: 'Passed', ...mode }
-        const promised = (await getFacets(anchor))[d.key]?.[d.value]
+        const promised = d.promised!(await getFacets(anchor))
         // Must be present: the fixture guarantees every dimension's anchor
         // value overlaps with `status=Passed` (see the fixture-overlap test
         // above), so this facet key existing is not optional. Swallowing an
@@ -182,7 +213,30 @@ for (const grouped of [false, true]) describe(`filter algebra${grouped ? ' on co
         // own dimension's filter makes the *other* values disappear from the
         // map, which shows up as this key going missing.
         expect(promised, `expected a facet count for ${d.key}=${d.value}`).toBeDefined()
-        const actual = (await listBills({ ...anchor, [d.param]: d.value })).bills.length
+        const actual = (await listBills({ ...anchor, [d.param]: d.value })).pagination.total
+        expect(actual).toBe(promised)
+      })
+
+      // The same law with another dimension as the active filter, so each facet is counted beside every other filter.
+      for (const other of DIMENSIONS) {
+        if (other.key === d.key) continue
+        it(`a ${d.key} facet count equals the total after picking it, beside ${other.key} (${'match' in mode ? 'OR' : 'AND'})`, async () => {
+          const anchor = { [other.param]: other.value, ...mode }
+          const promised = d.promised!(await getFacets(anchor))
+          expect(promised, `expected a facet count for ${d.key}=${d.value}`).toBeDefined()
+          const actual = (await listBills({ ...anchor, [d.param]: d.value })).pagination.total
+          expect(actual).toBe(promised)
+        })
+      }
+    }
+
+    // The toggles' counts are of the current result, within the filter the list shows, not of a value picked.
+    for (const t of TOGGLES) {
+      it(`the ${t.key} count equals the total with it on (${'match' in mode ? 'OR' : 'AND'})`, async () => {
+        const anchor = { status: 'Passed', ...mode }
+        const promised = (await getFacets(anchor))[t.count]
+        expect(promised, `expected a ${t.count}`).toBeGreaterThan(0)
+        const actual = (await listBills({ ...anchor, [t.param]: '1' })).pagination.total
         expect(actual).toBe(promised)
       })
     }
