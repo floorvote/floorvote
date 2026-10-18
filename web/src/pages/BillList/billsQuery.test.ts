@@ -97,8 +97,8 @@ describe('billsApiParams', () => {
     expect(billsApiParams(query('cf_cf-uuid-1=yes', defs), 1, 100)).toBe(billsApiParams(query('cf_tracked_by_team=yes', defs), 1, 100))
   })
 
-  it('writes every filter the shared module names: nothing the URL carried is dropped', () => {
-    const qs = 'status=2&stage=enacted&year=2026&session=S1&state=UT&position=none&priority=high&tag=a&subject=UT%3AElections&minRelevance=4&q=water&myBills=1&unvoted=1&newMatches=1&drafts=1&match=any&cf_x=1'
+  it('writes every filter the page holds: nothing the URL carried is dropped, but session', () => {
+    const qs = 'status=2&stage=enacted&year=2026&state=UT&position=none&priority=high&tag=a&subject=UT%3AElections&minRelevance=4&q=water&myBills=1&unvoted=1&newMatches=1&drafts=1&match=any&cf_x=1'
     const sent = new URLSearchParams(billsApiParams(query(qs), 2, 100))
     expect(parseBillFilter(sent)).toEqual(parseBillFilter(qs))
     expect(sent.get('page')).toBe('2')

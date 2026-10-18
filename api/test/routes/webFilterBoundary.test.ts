@@ -66,7 +66,8 @@ describe('what the web serializes is what the API reads', () => {
     for (const [id, number] of seeded.numberOf) numberOf.set(id, number)
   })
 
-  describe.each(CASES)('$name', ({ qs, expected }) => {
+  // The web drops session (it has no control for it), so the API-only session case is not one the web sends.
+  describe.each(CASES.filter(c => c.name !== 'session'))('$name', ({ qs, expected }) => {
     it('selects the same bills on GET /bills and POST /bills/bulk as the case names', async () => {
       const sent = web(qs)
       const list = await listed(sent.list)

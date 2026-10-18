@@ -40,9 +40,9 @@ export function withCustomFieldKeys(
 }
 
 /**
- * A URL's search read as the Bills page holds it: the shared parse, then the three things this page holds differently.
- * A custom field is held by its id (the URL carries slugs), a year is a number, and a minimum relevance of zero is no
- * minimum. Every place that reads a filter from a URL, a saved view, or the sidebar's links reads it here, so the page
+ * A URL's search read as the Bills page holds it: the shared parse, then the things this page holds differently.
+ * A custom field is held by its id (the URL carries slugs), a year is a number, a minimum relevance of zero is no
+ * minimum, and session is dropped. Every place that reads a filter from a URL, a saved view, or the sidebar's links reads it here, so the page
  * and the loader's prefetch hold the same value.
  */
 export function billFilterFromSearch(
@@ -51,8 +51,11 @@ export function billFilterFromSearch(
   const parsed = withCustomFieldKeys(parseBillFilter(search), defs, 'id')
   const year = parsed.year.filter(y => y !== '' && !Number.isNaN(Number(y)))
   const minRelevance = parsed.minRelevance !== null && parsed.minRelevance > 0 ? parsed.minRelevance : null
-  if (year.length === parsed.year.length && minRelevance === parsed.minRelevance) return parsed
-  return withBillFilter({ year: Object.freeze(year), minRelevance }, parsed)
+  // The page has no control, chip, or count for session, so a session in a URL or view must not narrow the list
+  // unseen. The API still accepts it from other callers.
+  const session = Object.freeze([]) as readonly string[]
+  if (year.length === parsed.year.length && minRelevance === parsed.minRelevance && parsed.session.length === 0) return parsed
+  return withBillFilter({ year: Object.freeze(year), minRelevance, session }, parsed)
 }
 
 const SORT_COLS: SortColumn[] = ['priority', 'status', 'relevance', 'position', 'year', 'session', 'lastAction', 'bill']
