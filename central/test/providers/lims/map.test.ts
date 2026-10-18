@@ -54,6 +54,13 @@ describe('the LIMS field inventories', () => {
     // The resolution number comes only from the bulk record's actResNumber,
     // which is listed as mapped, since it also sets an earlier period's status.
     expect(unfedExtras(vocabulary, bulkRecordInventory, detailsInventory)).toEqual(['resolutionNumber'])
+    // The ten dates that repeat the timeline are in the inventory as ignored, with a reason.
+    for (const path of ['mayoralReview.transmittedDate', 'mayoralReview.responseDueDate', 'mayoralReview.signedDate', 'mayoralReview.enactedDate',
+      'mayoralReview.vetoDate', 'mayoralReview.expirationDate', 'congressionalReview.transmittedDate', 'congressionalReview.lawProjectedDate',
+      'congressionalReview.expirationDate', 'withdrawnDate']) {
+      expect(detailsInventory[path], path).toEqual({ ignored: expect.stringMatching(/\S/) })
+    }
+    expect(bulkRecordInventory.projectedLawDate).toEqual({ ignored: expect.stringMatching(/\S/) })
     const b = await build('B26-0400', d0400)
     expect(Object.keys(b.extras!).sort()).toEqual(Object.keys(vocabulary.extras!).sort())
   })
@@ -75,32 +82,30 @@ describe('every recorded category', () => {
 })
 
 describe('extras', () => {
-  it('carry the law and act numbers and the review dates, as YYYY-MM-DD', async () => {
+  it('carry the law and act numbers and the law\'s effective date, as YYYY-MM-DD', async () => {
     const b = await build('B26-0400', d0400)
     expect(Object.fromEntries(Object.entries(b.extras!).filter(([, v]) => v !== null))).toEqual({
       lawNumber: 'L26-0129',
       actNumber: 'A26-0309',
-      sentToMayor: '2026-04-13',
-      mayorDeadline: '2026-04-28',
-      signedByMayor: '2026-04-24',
-      enacted: '2026-04-24',
-      sentToCongress: '2026-04-29',
       lawEffective: '2026-06-11',
     })
   })
 
-  it('carry a withdrawal, a veto, expirations, and a projected law date', async () => {
-    const b = await build('B26-0400', {
+  const REMOVED = ['sentToMayor', 'mayorDeadline', 'signedByMayor', 'vetoedByMayor', 'enacted', 'actExpires', 'sentToCongress', 'projectedLawDate', 'lawExpires', 'withdrawnOn']
+
+  it('no longer carry the ten dates that repeat the timeline, even with every review date set', async () => {
+    const full = {
       ...d0400,
       withdrawnBy: 'Councilmember Parker ',
       withdrawnDate: '2026-02-01T00:00:00',
       mayoralReview: { ...d0400.mayoralReview!, vetoDate: '2026-04-20T00:00:00', expirationDate: '2026-07-23T00:00:00' },
       congressionalReview: { ...d0400.congressionalReview!, lawProjectedDate: '2026-06-10T00:00:00', expirationDate: '2027-01-21T00:00:00' },
-    })
-    expect(b.extras).toMatchObject({
-      withdrawnBy: 'Councilmember Parker', withdrawnOn: '2026-02-01', vetoedByMayor: '2026-04-20',
-      actExpires: '2026-07-23', projectedLawDate: '2026-06-10', lawExpires: '2027-01-21',
-    })
+    }
+    const b = await build('B26-0400', full)
+    for (const key of REMOVED) expect(Object.keys(b.extras!), key).not.toContain(key)
+    expect(b.extras).toMatchObject({ withdrawnBy: 'Councilmember Parker', lawEffective: '2026-06-11', lawNumber: 'L26-0129' })
+    // The calendar's deadline rows are what they were.
+    expect(b.calendar.filter(c => c.type_id === 10).map(c => c.event_id).sort()).toEqual(limsDeadlines(bulk['B26-0400']).map(d => `deadline:${d.key}`).sort())
   })
 
   it('fall back to the bulk record\'s numbers, and tell an act number from a resolution number', async () => {
@@ -118,7 +123,7 @@ describe('extras', () => {
   it('leave out values that aren\'t text', async () => {
     const odd = { ...d0400, withdrawnBy: 42, mayoralReview: { ...d0400.mayoralReview!, actNumber: { id: 1 }, signedDate: 'soon' } } as unknown as LimsLegislationDetails
     const b = await build('B26-0400', odd)
-    expect(b.extras).toMatchObject({ withdrawnBy: null, actNumber: 'A26-0309', signedByMayor: null })
+    expect(b.extras).toMatchObject({ withdrawnBy: null, actNumber: 'A26-0309', lawEffective: '2026-06-11' })
   })
 })
 

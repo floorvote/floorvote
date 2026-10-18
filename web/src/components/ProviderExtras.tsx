@@ -61,3 +61,19 @@ function isHttpUrl(value: string): boolean {
     return false
   }
 }
+
+/** A bill's extras sorted by where the page shows them (`placeExtras`). */
+export interface PlacedExtras {
+  meta: BillExtraField[]
+  detail: BillExtraField[]
+  flags: BillExtraField[]
+  panel: BillExtraField[]
+}
+
+/** Stub: filled in by the implementation commit. */
+export function placeExtras(_fields: BillExtraField[]): PlacedExtras {
+  return { meta: [], detail: [], flags: [], panel: [] }
+}
+export function ExtraMetaItem(_p: { field: BillExtraField }) { return null }
+export function ExtraDetailList(_p: { fields: BillExtraField[] }) { return null }
+export function ExtraFlagChips(_p: { fields: BillExtraField[] }) { return null }

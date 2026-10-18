@@ -2511,6 +2511,38 @@ describe('GET /bills/:id legislator votes', () => {
     ])
   })
 
+  describe('provider extras', () => {
+    async function extrasFor(extras: unknown) {
+      const token = await seedSession(await seedUser({ role: 'member' }))
+      const billId = await seedBill({ externalId: 'legiscan:102' })
+      const central = {
+        fetch: vi.fn(async (req: Request) => new URL(req.url).pathname === '/api/bills/legiscan:102'
+          ? Response.json({ extras })
+          : Response.json({}, { status: 404 })),
+      }
+      const res = await app.request(`/api/bills/${billId}`, { headers: { Cookie: `session=${token}` } }, { ...env, CENTRAL: central })
+      expect(res.status).toBe(200)
+      return await res.json() as { extras: unknown }
+    }
+    const field = (key: string, placement?: string) => ({ key, label: key, explainer: null, display: 'text', ...(placement ? { placement } : {}), value: 'v' })
+
+    it('passes each field\'s placement through unchanged, in central\'s order', async () => {
+      const extras = { providerName: 'Example Legislature', fields: [field('a', 'meta'), field('b', 'detail'), field('c', 'flag'), field('d', 'panel')] }
+      expect((await extrasFor(extras)).extras).toEqual(extras)
+    })
+
+    it('passes through a central payload with no placement, without error', async () => {
+      const extras = { providerName: 'Example Legislature', fields: [field('a'), field('b')] }
+      const body = await extrasFor(extras)
+      expect(body.extras).toEqual(extras)
+      expect((body.extras as { fields: object[] }).fields.every(f => !('placement' in f))).toBe(true)
+    })
+
+    it('has no extras when central sends none', async () => {
+      expect((await extrasFor(null)).extras).toBeNull()
+    })
+  })
+
   describe("a sponsor's profile link", () => {
     async function billFor(sponsors: unknown[]) {
       const token = await seedSession(await seedUser({ role: 'member' }))

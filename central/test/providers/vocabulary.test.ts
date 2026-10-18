@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { PROVIDERS, getProvider } from '../../src/providers'
 import { stagePosition } from '../../../shared/statusStages'
-import { EXTRA_DISPLAYS } from '../../../shared/providerExtras'
+import { EXTRA_DISPLAYS, EXTRA_PLACEMENTS } from '../../../shared/providerExtras'
 import { CALENDAR_KINDS } from '../../../shared/calendarKinds'
 import { RELATIONSHIP_KINDS } from '../../../shared/relationshipKinds'
 import { limsStatusCode } from '../../src/providers/lims/map'
@@ -50,6 +50,19 @@ describe.each([...PROVIDERS, example].map(p => [p.id, p] as const))('%s vocabula
     for (const e of extras) {
       expect(e.label.trim()).not.toBe('')
       expect(EXTRA_DISPLAYS, e.label).toContain(e.display)
+    }
+  })
+
+  it('gives each extra a placement the bill page knows, or none, which means the panel', () => {
+    for (const e of Object.values(provider.vocabulary.extras ?? {})) {
+      if (e.placement !== undefined) expect(EXTRA_PLACEMENTS, e.label).toContain(e.placement)
+    }
+  })
+
+  it('shows an extra flag as a chip only when its value could be "Yes"', () => {
+    // A flag's value is "Yes" (anything else falls back to a meta item), so its label names the thing that is true.
+    for (const e of Object.values(provider.vocabulary.extras ?? {})) {
+      if (e.placement === 'flag') expect(e.label.trim(), e.label).not.toMatch(/[:?]$/)
     }
   })
 
@@ -184,5 +197,44 @@ describe('the instances\' legacy status table', () => {
       if (s.stage === null || legiscanLabels.has(s.label)) continue
       expect(LEGACY_STATUS_ORDER[s.label], s.label).toEqual({ stage: s.stage, rank: s.rank })
     }
+  })
+})
+
+describe('where each provider\'s extras go on the bill page', () => {
+  const placements = (id: string) => {
+    const by: Record<string, string[]> = { meta: [], detail: [], flag: [], panel: [] }
+    for (const [key, e] of Object.entries(getProvider(id).vocabulary.extras ?? {})) by[e.placement ?? 'panel'].push(key)
+    return by
+  }
+
+  it('declares Maryland\'s chapter and between-chambers step as meta, statutes as detail, and both flags as chips', () => {
+    expect(placements('mga')).toEqual({
+      meta: ['chapter', 'chamberInteraction'], detail: ['statutes'], flag: ['emergency', 'constitutionalAmendment'], panel: [],
+    })
+  })
+
+  it('declares Virginia\'s chapter as meta, the emergency flag as a chip, and the summaries in the panel, latest stage first', () => {
+    expect(placements('lis')).toEqual({
+      meta: ['chapter'], detail: [], flag: ['emergency'],
+      panel: ['summaryPassed', 'summaryPassedSenate', 'summaryPassedHouse', 'summaryIntroduced'],
+    })
+  })
+
+  it('declares DC\'s numbers, requester, withdrawal, and effective date as meta, and its comment committees as detail', () => {
+    expect(placements('lims')).toEqual({
+      meta: ['lawNumber', 'actNumber', 'resolutionNumber', 'requestedBy', 'lawEffective', 'withdrawnBy'],
+      detail: ['commentCommittees'], flag: [], panel: [],
+    })
+  })
+
+  it('no longer declares the ten DC dates that repeat the timeline', () => {
+    const keys = Object.keys(getProvider('lims').vocabulary.extras ?? {})
+    for (const gone of ['sentToMayor', 'mayorDeadline', 'signedByMayor', 'vetoedByMayor', 'enacted', 'actExpires', 'sentToCongress', 'projectedLawDate', 'lawExpires', 'withdrawnOn']) {
+      expect(keys, gone).not.toContain(gone)
+    }
+  })
+
+  it('offers exactly the four placements the ticket defines', () => {
+    expect(EXTRA_PLACEMENTS).toEqual(['meta', 'detail', 'flag', 'panel'])
   })
 })

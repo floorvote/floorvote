@@ -21,6 +21,10 @@ export const EXTRA_DISPLAYS = ['text', 'date', 'link', 'identifier'] as const
  */
 export type ExtraDisplay = typeof EXTRA_DISPLAYS[number]
 
+/** Stub: filled in by the implementation commit. */
+export const EXTRA_PLACEMENTS = [] as const
+export type ExtraPlacement = 'meta' | 'detail' | 'flag' | 'panel'
+
 /** One extra on a bill, as central's bill detail sends it. */
 export interface BillExtraField {
   key: string
