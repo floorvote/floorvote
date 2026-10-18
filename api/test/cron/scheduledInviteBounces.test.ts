@@ -79,7 +79,7 @@ describe('hourly run: emailing the inviter about bounced invites', () => {
     await resetDb(); await applyMigrations()
     ownerId = await seedUser({ role: 'owner', email: 'owner@example.test', name: 'Olive Owner' })
   })
-  afterEach(() => { vi.restoreAllMocks() })
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
   it('sends the inviting Admin one email naming the address and the reason', async () => {
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.test' })
@@ -306,13 +306,17 @@ describe('hourly run: emailing the inviter about bounced invites', () => {
     await seedPendingInvite('y@example.test', b, 'm-2')
     const { e, send } = stubs({ 'm-1': bounced('rx'), 'm-2': bounced('ry') })
     send.mockImplementationOnce(async () => { throw Object.assign(new Error('provider down'), { code: 'E_INTERNAL' }) })
+    // Operator mail falls back (#709), so both providers are down: the binding failed above, and Resend answers 500.
+    const resend = vi.fn(async () => new Response('down', { status: 500 }))
+    vi.stubGlobal('fetch', resend)
 
     await runHourly(e)
 
     const recorded = await getDb(env.DB).select().from(authEvents).where(eq(authEvents.event, 'email_bounced')).all()
     expect(recorded.map(r => r.email).sort()).toEqual(['x@example.test', 'y@example.test'])
-    // The other recipient's email still went out.
+    // The other recipient's email still went out, and the failed one was tried on the second provider.
     expect(send).toHaveBeenCalledTimes(2)
+    expect(resend).toHaveBeenCalledOnce()
     expect(error.mock.calls.map(c => c.join(' ')).join('\n')).toContain('[invite-bounces]')
 
     await runHourly(e, NOW + 3600_000)

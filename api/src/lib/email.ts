@@ -23,11 +23,12 @@ import { PermanentSendError } from './emailErrors'
 
 // The shared purpose-level sender (shared/emailSender.ts) is replacing this
 // module's send functions, one kind of email at a time (#705). Sign-in links
-// go through it via sendMagicLink below, and the account and notification
-// emails (email change, mentions, replies) and the bulk ones (digest,
-// week-ahead) through `senderFor`. sendEmail and sendFeedback remain for the
-// emails not yet moved, and sendBatch for no caller (#711 deletes it); they use
-// the same provider adapters (shared/emailProviders.ts).
+// go through it via sendMagicLink below, and every other email through
+// `senderFor`: account and notification (email change, mentions, replies),
+// bulk (digest, week-ahead), and operator (feedback, invite-bounce notices, job
+// alerts, samples) plus the outage alert. sendEmail and sendBatch have no
+// caller left (#711 deletes them); they use the same provider adapters
+// (shared/emailProviders.ts).
 
 /**
  * The shared sender for the API. With a `db`, every attempt of a purpose that
@@ -367,7 +368,7 @@ export async function sendFeedback(
   from: { email: string },
   message: string,
   pageUrl: string | undefined,
-  env: Pick<Env, 'RESEND_API_KEY' | 'EMAIL_PROVIDER' | 'EMAIL' | 'DEMO_MODE' | 'OPERATOR_CONTACT_EMAILS' | 'ASSOCIATION_NAME' | 'APP_URL'>,
+  env: Pick<Env, 'RESEND_API_KEY' | 'EMAIL_PROVIDER' | 'EMAIL' | 'DEMO_MODE' | 'OPERATOR_CONTACT_EMAILS' | 'ASSOCIATION_NAME' | 'APP_URL' | 'EMAIL_FROM' | 'EMAIL_REPLY_TO'>,
   db?: AppDb,
 ): Promise<void> {
   const html = renderEmailShell({
@@ -384,10 +385,12 @@ export async function sendFeedback(
   if (recipients.length === 0) {
     throw new Error('Feedback not configured — OPERATOR_CONTACT_EMAILS is empty')
   }
-  const r = await sendEmail(env, { to: recipients, subject: `Feedback from ${from.email}`, html }, db)
+  // The operator purpose never counts toward email health, so the db is only
+  // for the association name above.
+  const r = await senderFor(env).send({ purpose: 'operator', to: recipients, subject: `Feedback from ${from.email}`, html })
   if (!r.ok) {
     // A suppressed recipient stays suppressed; only a provider failure is worth retrying.
-    const msg = `Email send failed (${r.provider}): ${r.error}`
-    throw isRecipientError(r) ? new PermanentSendError(msg) : new Error(msg)
+    const msg = `Email send failed (${r.provider ?? 'no provider'}): ${r.error}`
+    throw r.permanent ? new PermanentSendError(msg) : new Error(msg)
   }
 }
