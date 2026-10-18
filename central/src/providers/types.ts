@@ -292,6 +292,20 @@ export interface ProviderVocabulary {
    * more than a link.
    */
   readonly relationships?: VocabularyRelationships
+  /**
+   * The states where instances suggest companions from matching titles (#521),
+   * and the bill types that can be suggested. Omitted when the provider opts in
+   * no state.
+   */
+  readonly titleCompanions?: VocabularyTitleCompanions
+}
+
+/** Title-matched companion suggestions (`ProviderVocabulary.titleCompanions`). */
+export interface VocabularyTitleCompanions {
+  /** The states opted in, by two-letter abbreviation. */
+  readonly states: readonly string[]
+  /** The bill types that can be suggested, by the value the provider writes to `bills.bill_type`. Never a resolution. */
+  readonly billTypes: readonly string[]
 }
 
 /**
@@ -317,6 +331,10 @@ export interface VocabularyRelationships {
    * labels it lists, and the rest fall through to `default`.
    */
   readonly states?: Readonly<Record<string, Readonly<Record<string, RelationshipKind>>>>
+  /**
+   * The states whose feeds carry a label this vocabulary maps to `identical`.
+   */
+  readonly identicalStates?: readonly string[]
 }
 
 /**

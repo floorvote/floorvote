@@ -80,3 +80,16 @@ function lookupKind(map: Readonly<Record<string, RelationshipKind>> | undefined,
   for (const [label, kind] of Object.entries(map)) if (labelKey(label) === key) return kind
   return undefined
 }
+
+// Stubs for the red tests. Replaced in the next commit.
+export function titleCompanionConflicts(_provider: Provider): string[] {
+  return []
+}
+
+export function titleCompanionsOn(_provider: Provider, _state: string): boolean {
+  return false
+}
+
+export function titleCompanionKey(_provider: Provider, _bill: { state: string; billType: string | null; body: string | null; title: string }): string | null {
+  return null
+}
