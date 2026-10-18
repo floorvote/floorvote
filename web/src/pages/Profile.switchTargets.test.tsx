@@ -146,8 +146,8 @@ describe('Profile: clickable switch sentences', () => {
   it('does not toggle a digest switch from its sentence when the admin turned it off', async () => {
     mockConfig({ 'email-digest': { enabled: false }, 'week-ahead': { enabled: false } })
     render(<MemoryRouter><Profile /></MemoryRouter>)
-    const digest = await screen.findByRole('switch', { name: SWITCHES[1].name })
-    const week = screen.getByRole('switch', { name: SWITCHES[3].name })
+    const digest = await screen.findByRole<HTMLInputElement>('switch', { name: SWITCHES[1].name })
+    const week = screen.getByRole<HTMLInputElement>('switch', { name: SWITCHES[3].name })
     expect(digest).toBeDisabled()
     expect(week).toBeDisabled()
     const before = [digest.checked, week.checked]
