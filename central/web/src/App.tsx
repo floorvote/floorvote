@@ -4,6 +4,7 @@ import Login from './pages/Login'
 import Layout from './components/Layout'
 import Overview from './pages/Overview'
 import Sync from './pages/Sync'
+import States from './pages/States'
 import Tenants from './pages/Tenants'
 import TenantDetail from './pages/TenantDetail'
 import Adoption from './pages/Adoption'
@@ -23,6 +24,7 @@ function Gate() {
       <Route element={<Layout />}>
         <Route path="/" element={<Overview />} />
         <Route path="/sync" element={<Sync />} />
+        <Route path="/states" element={<States />} />
         <Route path="/adoption" element={<Adoption />} />
         <Route path="/tenants" element={<Tenants />} />
         <Route path="/tenants/:id" element={<TenantDetail />} />
