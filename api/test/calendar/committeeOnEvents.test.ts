@@ -79,7 +79,7 @@ async function events() {
   expect(res.status).toBe(200)
   return (await res.json()) as any[]
 }
-const byTitle = (list: any[], title: string) => list.find(e => e.description === title || e.title === title)
+const byTitle = (list: any[], title: string) => list.find(e => e.description === title || e.description?.startsWith(`${title}:`))
 
 describe('GET /calendar/events carries the committee (#695)', () => {
   it('names a body event\'s committee, its id, and its state', async () => {
@@ -150,14 +150,14 @@ describe('rules per state (#695)', () => {
     const res = await saveRules({ committees: [HOUSING], kinds: [], topics: [], trackedBills: false, allStates: ['MD'] })
     expect(res.status).toBe(200)
     const titles = (await events()).filter(e => e.source === 'body').map(e => e.description).sort()
-    expect(titles).toEqual(['Finance hearing', 'Housing roundtable', 'Joint hearing', 'Whole hearing'].sort())
+    expect(titles).toEqual(['Finance hearing', 'Housing roundtable', 'Joint hearing', 'Whole hearing: Stadium Act'].sort())
   })
 
   it('hide a state\'s events when it is neither in allStates nor has a chosen committee', async () => {
     await sync()
     await saveRules({ committees: [FINANCE], kinds: [], topics: [], trackedBills: false })
     const titles = (await events()).filter(e => e.source === 'body').map(e => e.description).sort()
-    expect(titles).toEqual(['Finance hearing', 'Whole hearing'].sort())
+    expect(titles).toEqual(['Finance hearing', 'Whole hearing: Stadium Act'].sort())
   })
 
   it('refuse allStates that is not a list', async () => {

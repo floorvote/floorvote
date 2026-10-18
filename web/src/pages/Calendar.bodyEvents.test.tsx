@@ -74,19 +74,19 @@ describe('Calendar page and the committee events control', () => {
   it('shows no control, and asks for no rules, without body-event coverage', async () => {
     renderCalendar(UNCOVERED)
     expect(await screen.findByText('Housing roundtable')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /events:/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Committee events settings' })).not.toBeInTheDocument()
     expect(state.calls).not.toContain('GET /admin/event-rules')
   })
 
   it('shows no control while the instance has not heard its capabilities yet', async () => {
     renderCalendar(undefined)
     expect(await screen.findByText('Housing roundtable')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /events:/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Committee events settings' })).not.toBeInTheDocument()
   })
 
-  it('shows "Council events: All" in the toolbar with coverage, beside Subscribe and Import events', async () => {
+  it('shows the committee events gear in the toolbar with coverage, beside Subscribe and Import events', async () => {
     renderCalendar(COVERED)
-    const control = await screen.findByRole('button', { name: 'Council events: All' })
+    const control = await screen.findByRole('button', { name: 'Committee events settings' })
     const toolbar = control.parentElement!
     expect(within(toolbar).getByRole('button', { name: 'Subscribe' })).toBeInTheDocument()
     expect(within(toolbar).getByRole('button', { name: 'Import events' })).toBeInTheDocument()
@@ -96,21 +96,21 @@ describe('Calendar page and the committee events control', () => {
     state.role = 'member'
     renderCalendar(COVERED)
     expect(await screen.findByText('Housing roundtable')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /events:/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Committee events settings' })).not.toBeInTheDocument()
     expect(state.calls).not.toContain('GET /admin/event-rules')
   })
 
   it('treats an owner as an admin', async () => {
     state.role = 'owner' as never
     renderCalendar(COVERED)
-    expect(await screen.findByRole('button', { name: 'Council events: All' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Committee events settings' })).toBeInTheDocument()
   })
 
   it('shows only the chosen committees\' events once they are chosen', async () => {
     renderCalendar(COVERED)
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: 'Council events: All' }))
-    const menu = await screen.findByRole('dialog', { name: /council events/i })
+    await user.click(await screen.findByRole('button', { name: 'Committee events settings' }))
+    const menu = await screen.findByRole('dialog', { name: 'Committee events' })
     await user.click(within(menu).getByRole('radio', { name: 'Only these committees' }))
     await user.click(await within(menu).findByRole('checkbox', { name: 'Committee on Housing' }))
     await waitFor(() => expect(screen.queryByText('Whole hearing')).not.toBeInTheDocument())
@@ -125,13 +125,13 @@ describe('Calendar page and the committee events control', () => {
     state.saved = { committees: [{ committeeId: HOUSING.committeeId, name: HOUSING.name }], kinds: [], topics: [], trackedBills: false }
     renderCalendar(COVERED)
     const user = userEvent.setup()
-    expect(await screen.findByRole('button', { name: 'Council events: 1 committee' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Committee events settings' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Month' }))
-    expect(screen.getAllByRole('button', { name: /^Council events:/ })).toHaveLength(1)
-    expect(screen.getByRole('button', { name: 'Council events: 1 committee' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Committee events settings' })).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Committee events settings' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Agenda' }))
-    expect(screen.getAllByRole('button', { name: /^Council events:/ })).toHaveLength(1)
-    expect(screen.getByRole('button', { name: 'Council events: 1 committee' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Committee events settings' })).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Committee events settings' })).toBeInTheDocument()
     // Editing in one view is what the other reads: one fetch of the rules in all.
     expect(state.calls.filter(c => c === 'GET /admin/event-rules')).toHaveLength(1)
   })
@@ -140,8 +140,8 @@ describe('Calendar page and the committee events control', () => {
     state.saved = { committees: [{ committeeId: HOUSING.committeeId, name: HOUSING.name }], kinds: ['meeting'], topics: [], trackedBills: true }
     renderCalendar(COVERED)
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: 'Council events: 1 committee' }))
-    const menu = await screen.findByRole('dialog', { name: /council events/i })
+    await user.click(await screen.findByRole('button', { name: 'Committee events settings' }))
+    const menu = await screen.findByRole('dialog', { name: 'Committee events' })
     expect(within(menu).getByText(/^Kept from an earlier setting:/)).toBeInTheDocument()
     await user.click(within(menu).getByRole('button', { name: /^Remove/ }))
     await waitFor(() => expect(state.saved).toEqual({ committees: [{ committeeId: HOUSING.committeeId, name: HOUSING.name }], kinds: [], topics: [], trackedBills: false }))

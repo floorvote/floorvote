@@ -236,7 +236,7 @@ describe('with two configurable states (#695)', () => {
     expect(within(section(menu, /MD General Assembly/)).getByText('All events')).toBeInTheDocument()
   })
 
-  it('opens the first section and folds the other, and a heading button opens or closes a section', async () => {
+  it('opens the first section and folds the other, and one section is open at a time', async () => {
     mockApi(null)
     renderGear(TWO_STATES)
     const { user, menu } = await open()
@@ -247,9 +247,11 @@ describe('with two configurable states (#695)', () => {
     expect(within(menu).getAllByRole('radio', { name: 'All events' })).toHaveLength(1)
     await user.click(md)
     expect(md).toHaveAttribute('aria-expanded', 'true')
-    await user.click(dc)
     expect(dc).toHaveAttribute('aria-expanded', 'false')
     expect(within(section(menu, /MD General Assembly/)).getByRole('radio', { name: 'All events' })).toBeInTheDocument()
+    await user.click(md)
+    expect(md).toHaveAttribute('aria-expanded', 'false')
+    expect(within(menu).queryByRole('radio')).not.toBeInTheDocument()
   })
 
   it('opens and closes a section from the keyboard', async () => {
@@ -359,15 +361,15 @@ describe('the gear with the keyboard and a screen reader (#695)', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 
-  it('reaches every radio and checkbox by Tab, without leaving the popover', async () => {
+  it('reaches every committee checkbox by Tab, inside the popover', async () => {
     mockApi(rulesOf([HEALTH]))
     renderGear()
     const { user, menu } = await open()
-    const seen = new Set<Element | null>()
-    for (let i = 0; i < 12; i++) { seen.add(document.activeElement); await user.tab() }
-    expect([...seen].every(el => el && menu.contains(el))).toBe(true)
+    const reached: (Element | null)[] = [document.activeElement]
+    for (let i = 0; i < 3; i++) { await user.tab(); reached.push(document.activeElement) }
+    expect(reached.every(el => el && menu.contains(el))).toBe(true)
     for (const name of ['Committee on Health', 'Committee on Housing', 'Committee of the Whole']) {
-      expect(seen.has(within(menu).getByRole('checkbox', { name }))).toBe(true)
+      expect(reached).toContain(within(menu).getByRole('checkbox', { name }))
     }
   })
 

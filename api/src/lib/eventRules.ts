@@ -41,6 +41,7 @@ export function bodyEventFacets(e: CentralBodyEvent): EventFacets {
     committeeId: e.committee?.committeeId ?? null,
     committee: e.committee?.name ?? null,
     jointWith: e.jointWith,
+    state: e.state,
     kind: e.kind,
     type: e.type,
     title: e.title,
@@ -48,7 +49,7 @@ export function bodyEventFacets(e: CentralBodyEvent): EventFacets {
   }
 }
 
-function parseFacets(json: string | null): EventFacets | null {
+export function parseFacets(json: string | null): EventFacets | null {
   if (!json) return null
   try {
     const f = JSON.parse(json) as EventFacets

@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { buildMonthMatrix, bucketEventsByDate, isPastDate, todayIso, type CalendarEvent } from '../../lib/calendarGrid'
 import { EventLines } from './EventLines'
+import { CommitteeTag, COMMITTEE_LINE_H, hasCommitteeTag } from './CommitteeTag'
 import { useIsBreakpoint } from '../../hooks/use-is-breakpoint'
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -11,7 +12,8 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 // Up to two cards per cell, each ~half the cell height; the rest fold into "+N more".
 // ROW_H is near the floor that still fits two CARD_H cards plus the "+N more" row.
 const CELL_CAP = 2
-const ROW_H = 138
+// A body event's committee line adds COMMITTEE_LINE_H to its card, and a row makes room for two such cards.
+const ROW_H = 138 + 2 * COMMITTEE_LINE_H
 const CARD_H = 46
 
 export function MonthGrid({ events, initialYear, initialMonth, onSelect, onSelectDay, onAddEvent, suppressHover, activeDateIso }: {
@@ -154,11 +156,12 @@ function EventCard({ ev, past, fixedHeight, suppressHover, alignRight, onSelect 
     background: color.white, color: color.textSlate,
     opacity: past ? 0.55 : 1, overflow: 'hidden',
     display: 'flex', flexDirection: 'column', gap: 2,
-    ...(fixedHeight ? { height: CARD_H, flexShrink: 0 } : {}),
+    ...(fixedHeight ? { height: CARD_H + (hasCommitteeTag(ev) ? COMMITTEE_LINE_H : 0), flexShrink: 0 } : {}),
   }
 
   return (
     <button type="button" onClick={e => { e.stopPropagation(); onSelect(ev, e.currentTarget, alignRight) }} style={cardStyle}>
+      <CommitteeTag event={ev} compact />
       <EventLines event={ev} compact suppressHover={suppressHover} />
     </button>
   )
