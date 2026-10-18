@@ -1,0 +1,64 @@
+{
+  "committeeMeeting": {
+    "chamber": "Senate",
+    "committees": [
+      {
+        "name": "Senate Judiciary",
+        "systemCode": "ssju00",
+        "url": "https://api.congress.gov/v3/committee/senate/ssju00?format=json"
+      }
+    ],
+    "congress": 119,
+    "date": "2025-02-12T15:15:00Z",
+    "eventId": "336604",
+    "hearingTranscript": [
+      {
+        "jacketNumber": 1,
+        "url": "https://api.congress.gov/v3/hearing/119/senate/1?format=json"
+      }
+    ],
+    "location": {
+      "building": "Dirksen Senate Office Building",
+      "room": "226"
+    },
+    "meetingDocuments": [
+      {
+        "description": "Abigail Slater, of the District of Columbia, to be an Assistant Attorney General, vice Jonathan Kanter, resigned.",
+        "documentType": "Generic Document"
+      }
+    ],
+    "meetingStatus": "Scheduled",
+    "relatedItems": {
+      "nominations": [
+        {
+          "congress": 119,
+          "number": 12,
+          "part": "05",
+          "url": "https://api.congress.gov/v3/nomination/119/12?format=json"
+        },
+        {
+          "congress": 119,
+          "number": 12,
+          "part": "41",
+          "url": "https://api.congress.gov/v3/nomination/119/12?format=json"
+        }
+      ]
+    },
+    "title": "Hearings to examine the nominations of Todd Blanche, of Florida, to be Deputy Attorney General, and Abigail Slater, of the District of Columbia, to be an Assistant Attorney General, both of the Department of Justice.",
+    "type": "Meeting",
+    "updateDate": "2025-02-12T03:08:16Z",
+    "videos": [
+      {
+        "name": "Hearings to examine the nominations of Todd Blanche, of Florida, to be Deputy Attorney General, and Abigail Slater, of the District of Columbia, to be an Assistant Attorney General, both of the Department of Justice.",
+        "url": "https://www.congress.gov/event/119th-Congress/senate-event/336604"
+      }
+    ]
+  },
+  "request": {
+    "chamber": "senate",
+    "congress": "119",
+    "contentType": "application/json",
+    "eventId": "336604",
+    "format": "json"
+  }
+}

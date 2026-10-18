@@ -39,7 +39,7 @@ savedViewsRouter.use('*', requireAuth)
 
 // Mirrors customFieldsApi's toSlug/uniqueSlug, but hyphenated rather than
 // underscored — this slug is URL-facing (?view=clerk-bills), where
-// customFieldsApi's feeds into a cf_<slug> query key instead.
+// customFieldsApi's feeds into a field.<slug> query key instead.
 function toSlug(name: string): string {
   return name
     .toLowerCase()

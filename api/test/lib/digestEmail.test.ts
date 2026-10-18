@@ -6,6 +6,7 @@ import { buildBillCardModel } from '../../../web/src/lib/billCardModel'
 import { COMMENT_PREVIEW_MAX } from '../../../web/src/lib/feedUtils'
 import type { GroupedBillEvents, FeedEvent } from '../../../web/src/lib/feedUtils'
 import { SAMPLE_DIGEST_EVENTS, SAMPLE_NEW_MATCHES, SAMPLE_ASSOC_NAME } from '../../src/lib/sampleEmails'
+import { billsListPath, parseBillFilter, withBillFilter } from '../../../shared/billFilter'
 
 const ev = (over: any = {}) => ({
   type: 'bill_updated',
@@ -226,6 +227,21 @@ describe('sample digest emails render the wording for their cadence', () => {
     expect(html).toContain('See all 14 new matches')
     expect((html.match(/box-shadow:/g) || []).length).toBe(10)
     expect(html).toContain('href="https://x/bills?newMatches=1"')
+  })
+})
+
+// The digest's links to the Bills list are the shared module's, so the list they open applies exactly the filter the
+// digest names (the new matches) and the page reads it back as that filter and no other.
+describe('the digest\'s links to the Bills list', () => {
+  const links = (html: string) => [...html.matchAll(/href="(https:\/\/x\/bills\?[^"]*)"/g)].map(m => m[1].replace(/&amp;/g, '&'))
+
+  it('the new-matches-only sample links to the list filtered to new matches, built with billsListPath', () => {
+    const found = links(renderSampleEmail('digest-new-only', 'https://x').html)
+    expect(found.length).toBeGreaterThan(0)
+    for (const link of found) {
+      expect(link).toBe(`https://x${billsListPath({ newMatches: true })}`)
+      expect(parseBillFilter(new URL(link).searchParams)).toEqual(withBillFilter({ newMatches: true }))
+    }
   })
 })
 

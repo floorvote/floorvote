@@ -5,7 +5,7 @@ import { appFetch, resetDb, applyMigrations, seedUser, seedSession, seedBill, se
 import { getDb } from '../../src/db/client'
 import { associationConfig, bills, feedEvents } from '../../src/db/schema'
 import { runDigest } from '../../src/lib/digest'
-import * as filterQuery from '../../src/routes/billsApi/query'
+import * as filterTable from '../../src/routes/billsApi/filterTable'
 import { renderDigestEmail, digestSubject, type DigestEvent, type NewMatchDigestItem, type ViewDigestSection } from '../../src/lib/digestEmail'
 
 // #449: a member includes a saved view in their digest. Each included view gets
@@ -472,10 +472,10 @@ describe('runDigest: saved views', () => {
     await seedBill({ billNumber: 'H 101', state: 'RI', session: '2026' })
     await seedBill({ billNumber: 'H 202', state: 'UT', session: '2026' })
     await subscribe(ada.cookie, 'v-ri'); await subscribe(ada.cookie, 'v-ut')
-    const real = filterQuery.parseBillFilterParams
-    vi.spyOn(filterQuery, 'parseBillFilterParams').mockImplementation(async (d, search, u) => {
-      if (search.get('state') === 'UT') throw new Error('D1 unavailable')
-      return real(d, search, u)
+    const real = filterTable.buildBillsFilter
+    vi.spyOn(filterTable, 'buildBillsFilter').mockImplementation(async (d, bf, ctx) => {
+      if (bf.state.includes('UT')) throw new Error('D1 unavailable')
+      return real(d, bf, ctx)
     })
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
 
