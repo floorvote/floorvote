@@ -438,26 +438,26 @@ describe('BillListPane: filter and sort summary', () => {
     expect(tip).not.toHaveTextContent('s29')
   })
 
-  it('links Edit to the same Bills URL as the "Bills" heading', async () => {
+  it('links Edit filters to the same Bills URL as the "Bills" heading', async () => {
     listAt('/bills?status=2&sort=bill&dir=asc')
     const pane = await paneReady()
-    const edit = within(pane).getByRole('link', { name: 'Edit' })
+    const edit = within(pane).getByRole('link', { name: 'Edit filters' })
     expect(edit).toHaveAttribute('href', '/bills?status=2&sort=bill&dir=asc')
     expect(edit).toHaveAttribute('href', within(pane).getByRole('link', { name: 'Bills' }).getAttribute('href')!)
   })
 
-  it('links Edit to /bills when the Bills page was never visited', async () => {
+  it('links Edit filters to /bills when the Bills page was never visited', async () => {
     const pane = await paneReady()
-    expect(within(pane).getByRole('link', { name: 'Edit' })).toHaveAttribute('href', '/bills')
+    expect(within(pane).getByRole('link', { name: 'Edit filters' })).toHaveAttribute('href', '/bills')
   })
 
   it('has no control that changes or removes a filter', async () => {
     listAt('/bills?status=2&status=3&q=water')
     const pane = await paneReady()
     const header = within(pane).getByRole('link', { name: 'Bills' }).parentElement!.parentElement!
-    // The one button is the summary's own hover trigger; the only links are "Bills" and "Edit".
+    // The one button is the summary's own hover trigger; the only links are "Bills" and "Edit filters".
     expect(within(header).getAllByRole('button')).toHaveLength(1)
-    expect(within(header).getAllByRole('link').map(l => l.textContent)).toEqual(['Bills', 'Edit'])
+    expect(within(header).getAllByRole('link').map(l => l.textContent)).toEqual(['Bills', 'Edit filters'])
     expect(within(header).queryByText('×')).toBeNull()
     expect(within(header).queryByRole('button', { name: /clear|remove|reset/i })).toBeNull()
     // Nothing in the pane changes the list's URL or filters on click.
@@ -493,10 +493,10 @@ describe('BillListPane: filter and sort summary', () => {
       expect(within(pane).getByText(/Sorted by Bill$/)).toBeInTheDocument()
     })
 
-    it('still links Edit to the short view URL', async () => {
+    it('still links Edit filters to the short view URL', async () => {
       listAt('/bills?view=watch-list')
       const pane = await paneReady()
-      expect(within(pane).getByRole('link', { name: 'Edit' })).toHaveAttribute('href', '/bills?view=watch-list')
+      expect(within(pane).getByRole('link', { name: 'Edit filters' })).toHaveAttribute('href', '/bills?view=watch-list')
     })
 
     it('falls back to the filter count when the slug is stale', async () => {
@@ -520,7 +520,7 @@ describe('BillListPane: filter and sort summary', () => {
       expect(hoisted.calls).not.toContain('/views')
     })
 
-    it('uses a long view name without pushing Edit out of the pane', async () => {
+    it('uses a long view name without pushing Edit filters out of the pane', async () => {
       const name = 'A very long saved view name that goes on and on and on and on'.repeat(3)
       sessionStorage.setItem('lastBillsUrl', '/bills?view=watch-list')
       hoisted.respond = (path) => path === '/views' ? { views: [{ ...VIEW, name }] } : path.startsWith('/bills?') ? page([PLAIN]) : {}
@@ -534,7 +534,7 @@ describe('BillListPane: filter and sort summary', () => {
       expect(row.getAttribute('style')).not.toMatch(/white-space: nowrap/)
       expect(line.closest('button')!.parentElement!.getAttribute('style')).toMatch(/min-width: 0/)
       expect(line.style.overflowWrap).toBe('anywhere')
-      const edit = within(pane).getByRole('link', { name: 'Edit' })
+      const edit = within(pane).getByRole('link', { name: 'Edit filters' })
       expect(edit.style.flexShrink).toBe('0')
       expect(edit.style.whiteSpace).toBe('nowrap')
     })
@@ -546,7 +546,7 @@ describe('BillListPane: filter and sort summary', () => {
       renderPane('/RI/2026/HB%201')
       await screen.findByText('Loading bills…')
       expect(screen.queryByText(/Sorted by/)).toBeNull()
-      expect(screen.queryByRole('link', { name: 'Edit' })).toBeNull()
+      expect(screen.queryByRole('link', { name: 'Edit filters' })).toBeNull()
     })
 
     it('is not drawn after an error', async () => {
@@ -554,7 +554,7 @@ describe('BillListPane: filter and sort summary', () => {
       renderPane('/RI/2026/HB%201')
       await screen.findByText('Couldn’t load bills.')
       expect(screen.queryByText(/Sorted by/)).toBeNull()
-      expect(screen.queryByRole('link', { name: 'Edit' })).toBeNull()
+      expect(screen.queryByRole('link', { name: 'Edit filters' })).toBeNull()
     })
 
     it('is drawn when the filters leave no bills, so the reader can see why', async () => {

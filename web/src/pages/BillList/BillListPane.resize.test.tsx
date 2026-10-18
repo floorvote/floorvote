@@ -145,16 +145,68 @@ describe('resize handle', () => {
     expect(separator()).toBeInTheDocument()
   })
 
-  it('shows a Honey line on focus, and not at rest', async () => {
-    renderPane()
-    await ready()
-    const sep = separator()
-    const line = () => sep.querySelector('[data-resize-line]') as HTMLElement
-    expect(line().style.background).not.toBe(color.accentAmber)
-    fireEvent.focus(sep)
-    expect(line().style.background).toBe(color.accentAmber)
-    fireEvent.blur(sep)
-    expect(line().style.background).not.toBe(color.accentAmber)
+  describe('colors (#683)', () => {
+    const line = () => separator().querySelector('[data-resize-line]') as HTMLElement
+    const everyStyle = () => [separator(), line()].map(e => e.getAttribute('style') ?? '').join(' ').toLowerCase()
+    const HONEY = [color.accentAmber, '#e8a33d', '#f59e0b', 'amber', 'honey'].map(v => v.toLowerCase())
+    const noHoney = () => { for (const v of HONEY) expect(everyStyle()).not.toContain(v) }
+
+    it('uses no Honey or amber at rest', async () => {
+      renderPane()
+      await ready()
+      noHoney()
+    })
+
+    it('uses no Honey or amber on hover, on focus, or while dragging', async () => {
+      renderPane()
+      await ready()
+      fireEvent.mouseEnter(separator())
+      noHoney()
+      fireEvent.mouseLeave(separator())
+      fireEvent.focus(separator())
+      noHoney()
+      fireEvent.blur(separator())
+      drag(300, 320)
+      noHoney()
+      drop(320)
+    })
+
+    it('shows a neutral line on hover and drops it when the pointer leaves', async () => {
+      renderPane()
+      await ready()
+      expect(line().style.background).not.toBe(color.borderStrong)
+      fireEvent.mouseEnter(separator())
+      expect(line().style.background).toBe(color.borderStrong)
+      fireEvent.mouseLeave(separator())
+      expect(line().style.background).not.toBe(color.borderStrong)
+    })
+
+    it('shows the neutral line while dragging', async () => {
+      renderPane()
+      await ready()
+      drag(300, 320)
+      expect(line().style.background).toBe(color.borderStrong)
+      drop(320)
+    })
+
+    it('keeps a visible focus ring in the focus-ring token on focus, and none at rest', async () => {
+      renderPane()
+      await ready()
+      expect(separator().style.outline).toBe('')
+      fireEvent.focus(separator())
+      expect(separator().style.outline).toContain('2px solid')
+      expect(separator().style.outline).toContain(color.focusRing)
+      fireEvent.blur(separator())
+      expect(separator().style.outline).toBe('')
+    })
+
+    it('keeps the focus ring after a key press moves the handle', async () => {
+      renderPane()
+      await ready()
+      fireEvent.focus(separator())
+      fireEvent.keyDown(separator(), { key: 'ArrowRight' })
+      expect(separator().style.outline).toContain(color.focusRing)
+    })
   })
 
   it('never uses the legacy amber', async () => {
@@ -462,9 +514,9 @@ describe('a window too narrow to resize in', () => {
 
 describe('columns at width thresholds', () => {
   const widths: [number, string[]][] = [
-    [300, []], [399, []], [400, ['status']], [479, ['status']], [480, ['status', 'year']],
-    [559, ['status', 'year']], [560, ['status', 'year', 'lastAction']], [639, ['status', 'year', 'lastAction']],
-    [640, ['status', 'year', 'lastAction', 'relevance']],
+    [300, []], [339, []], [340, ['status', 'year']], [479, ['status', 'year']],
+    [480, ['status', 'year', 'lastAction']], [569, ['status', 'year', 'lastAction']],
+    [570, ['status', 'year', 'lastAction', 'relevance']], [670, ['status', 'year', 'lastAction', 'relevance']],
   ]
   it.each(widths)('at %ipx the headers are %j, in that order', async (w, cols) => {
     setWindow(1800)
@@ -496,20 +548,28 @@ describe('columns at width thresholds', () => {
     renderPane()
     const pane = await ready()
     expect(colHeaders(pane)).toEqual([])
-    drag(300, 400)
-    expect(colHeaders(pane)).toEqual(['status'])
-    fireEvent.pointerMove(document, { clientX: 480, pointerId: 1 })
+    drag(300, 340)
     expect(colHeaders(pane)).toEqual(['status', 'year'])
-    fireEvent.pointerMove(document, { clientX: 399, pointerId: 1 })
+    fireEvent.pointerMove(document, { clientX: 480, pointerId: 1 })
+    expect(colHeaders(pane)).toEqual(['status', 'year', 'lastAction'])
+    fireEvent.pointerMove(document, { clientX: 570, pointerId: 1 })
+    expect(colHeaders(pane)).toEqual(['status', 'year', 'lastAction', 'relevance'])
+    fireEvent.pointerMove(document, { clientX: 339, pointerId: 1 })
     expect(colHeaders(pane)).toEqual([])
-    drop(399)
+    drop(339)
   })
 
   it('shows the columns by keyboard too', async () => {
     renderPane()
     const pane = await ready()
-    for (let i = 0; i < 7; i++) fireEvent.keyDown(separator(), { key: 'ArrowRight' }) // 300 + 112 = 412
-    expect(colHeaders(pane)).toEqual(['status'])
+    for (let i = 0; i < 2; i++) fireEvent.keyDown(separator(), { key: 'ArrowRight' }) // 300 + 32 = 332
+    expect(colHeaders(pane)).toEqual([])
+    fireEvent.keyDown(separator(), { key: 'ArrowRight' }) // 348
+    expect(colHeaders(pane)).toEqual(['status', 'year'])
+    for (let i = 0; i < 9; i++) fireEvent.keyDown(separator(), { key: 'ArrowRight' }) // 348 + 144 = 492
+    expect(colHeaders(pane)).toEqual(['status', 'year', 'lastAction'])
+    for (let i = 0; i < 5; i++) fireEvent.keyDown(separator(), { key: 'ArrowRight' }) // 572
+    expect(colHeaders(pane)).toEqual(['status', 'year', 'lastAction', 'relevance'])
   })
 
   it('puts the headers in a sticky block at the top of the scrolling list', async () => {
@@ -539,6 +599,69 @@ describe('columns at width thresholds', () => {
   })
 })
 
+describe('columns appear sooner (#683)', () => {
+  const headersAt = async (w: number) => {
+    setWindow(1800)
+    localStorage.setItem(STORAGE_KEY, String(w))
+    document.body.innerHTML = ''
+    renderPane()
+    return colHeaders(await ready())
+  }
+
+  it('shows Year at the first breakpoint above the narrowest pane, with the status', async () => {
+    expect(await headersAt(340)).toEqual(['status', 'year'])
+  })
+
+  it('shows no step with the same columns as the one before, and one more column from the second step on', async () => {
+    const steps: string[][] = []
+    for (const w of [300, 340, 480, 570]) steps.push(await headersAt(w))
+    expect(steps.map(s => s.length)).toEqual([0, 2, 3, 4])
+    for (let i = 1; i < steps.length; i++) expect(steps[i]).not.toEqual(steps[i - 1])
+    expect(steps[2][2]).toBe('lastAction')
+    expect(steps[3][3]).toBe('relevance')
+  })
+
+  it('is reachable: a 1440px window (510px max) shows Year and Last action', async () => {
+    setWindow(1440)
+    localStorage.setItem(STORAGE_KEY, '2000')
+    renderPane()
+    expect(colHeaders(await ready())).toEqual(['status', 'year', 'lastAction'])
+  })
+
+  it('lets a pane at the 1600px window maximum (670px) show all four', async () => {
+    setWindow(1600)
+    localStorage.setItem(STORAGE_KEY, '2000')
+    renderPane()
+    expect(colHeaders(await ready())).toEqual(['status', 'year', 'lastAction', 'relevance'])
+  })
+
+  it('draws each cell of the new year column in its row at the first breakpoint', async () => {
+    localStorage.setItem(STORAGE_KEY, '340')
+    renderPane()
+    const row = rowOf(await ready(), /Title of HB 1/)
+    expect(cell(row, 'status')).toHaveTextContent('Passed')
+    expect(cell(row, 'year')).toHaveTextContent('2025')
+    expect(cell(row, 'lastAction')).toBeNull()
+    expect(cell(row, 'relevance')).toBeNull()
+  })
+
+  it('squeezes nothing at the breakpoint: the fixed tracks, gaps, and row padding fit the pane, even with the wider multi-state bill track', async () => {
+    hoisted.multi = true
+    for (const w of [340, 480, 570]) {
+      localStorage.setItem(STORAGE_KEY, String(w))
+      document.body.innerHTML = ''
+      renderPane()
+      const pane = await ready()
+      const header = pane.querySelector('[data-pane-columns]') as HTMLElement
+      const tracks = (header.querySelector('[data-pane-grid]') as HTMLElement).style.gridTemplateColumns.split(' ')
+      const px = tracks.filter(t => t.endsWith('px')).reduce((n, t) => n + parseInt(t, 10), 0)
+      const autoTracks = tracks.filter(t => t === 'auto').length
+      const need = 15 + 12 + px + (tracks.length - 1) * 8 + autoTracks * 80 // auto track: the "Relevance" header's width
+      expect(need).toBeLessThanOrEqual(w)
+    }
+  })
+})
+
 describe('the row at a wide pane', () => {
   beforeEach(() => { localStorage.setItem(STORAGE_KEY, '660') })
 
@@ -550,8 +673,8 @@ describe('the row at a wide pane', () => {
     expect(within(row).getAllByText('Passed')).toHaveLength(1)
   })
 
-  it('under 400px still puts the status chip at the top right, as today, with no columns', async () => {
-    localStorage.setItem(STORAGE_KEY, '399')
+  it('under 340px still puts the status chip at the top right, as today, with no columns', async () => {
+    localStorage.setItem(STORAGE_KEY, '339')
     renderPane()
     const pane = await ready()
     const row = rowOf(pane, /Title of HB 1/)
@@ -725,13 +848,13 @@ describe('no layout shift when the summary row appears', () => {
     expect(pane.querySelector('[data-pane-summary]')!.closest('ul')).toBeNull()
   })
 
-  it('keeps the summary and its Edit link clear of the handle', async () => {
+  it('keeps the summary and its Edit filters link clear of the handle', async () => {
     localStorage.setItem(STORAGE_KEY, '520')
     renderPane()
     const pane = await ready()
     const summary = pane.querySelector('[data-pane-summary]') as HTMLElement
     expect(summary.style.padding).toBe('0px 12px 10px 15px')
-    expect(within(summary).getByRole('link', { name: 'Edit' })).toBeInTheDocument()
+    expect(within(summary).getByRole('link', { name: 'Edit filters' })).toBeInTheDocument()
   })
 
   it('draws the same width whether the list loaded, failed, or came back empty', async () => {

@@ -16,7 +16,7 @@ describe('pane constants', () => {
 
   it('lists the columns in the order they appear, with their widths', () => {
     expect(PANE_COLUMNS.map(c => [c.key, c.at])).toEqual([
-      ['status', 400], ['year', 480], ['lastAction', 560], ['relevance', 640],
+      ['status', 340], ['year', 340], ['lastAction', 480], ['relevance', 570],
     ])
     expect(PANE_COLUMNS.map(c => c.label)).toEqual(['Status', 'Year', 'Last action', 'Relevance'])
   })
@@ -74,25 +74,40 @@ describe('clampPaneWidth', () => {
 
 describe('visiblePaneColumns', () => {
   const keys = (w: number) => visiblePaneColumns(w).map(c => c.key)
-  it('shows none under 400px', () => {
+  it('shows none under 340px', () => {
     expect(keys(300)).toEqual([])
-    expect(keys(399)).toEqual([])
+    expect(keys(339)).toEqual([])
   })
-  it('adds status at 400px', () => {
-    expect(keys(400)).toEqual(['status'])
-    expect(keys(479)).toEqual(['status'])
+  it('adds status and year together at 340px, so the first step shows something new', () => {
+    expect(keys(340)).toEqual(['status', 'year'])
+    expect(keys(479)).toEqual(['status', 'year'])
   })
-  it('adds year at 480px', () => {
-    expect(keys(480)).toEqual(['status', 'year'])
-    expect(keys(559)).toEqual(['status', 'year'])
+  it('adds last action at 480px', () => {
+    expect(keys(480)).toEqual(['status', 'year', 'lastAction'])
+    expect(keys(569)).toEqual(['status', 'year', 'lastAction'])
   })
-  it('adds last action at 560px', () => {
-    expect(keys(560)).toEqual(['status', 'year', 'lastAction'])
-    expect(keys(639)).toEqual(['status', 'year', 'lastAction'])
-  })
-  it('adds relevance at 640px and keeps all four after', () => {
-    expect(keys(640)).toEqual(['status', 'year', 'lastAction', 'relevance'])
+  it('adds relevance at 570px and keeps all four after', () => {
+    expect(keys(570)).toEqual(['status', 'year', 'lastAction', 'relevance'])
     expect(keys(1600)).toEqual(['status', 'year', 'lastAction', 'relevance'])
+  })
+  it('never repeats a step: each width where the set changes adds columns', () => {
+    const sets: string[] = []
+    for (let w = 300; w <= 700; w++) {
+      const k = keys(w).join(',')
+      if (sets[sets.length - 1] !== k) sets.push(k)
+    }
+    expect(sets).toEqual(['', 'status,year', 'status,year,lastAction', 'status,year,lastAction,relevance'])
+  })
+  it('puts every breakpoint inside the range a pane can be dragged to at a 1600px window', () => {
+    for (const c of PANE_COLUMNS) expect(c.at).toBeLessThanOrEqual(paneMaxWidth(1600))
+  })
+  it('keeps every breakpoint wide enough for the tracks it shows (multi-state bill track, 8px gaps, 27px padding, 80px for relevance)', () => {
+    for (const w of [340, 480, 570]) {
+      const tracks = paneGridTemplate(visiblePaneColumns(w), true).split(' ')
+      const px = tracks.filter(t => t.endsWith('px')).reduce((n, t) => n + parseInt(t, 10), 0)
+      const need = 27 + px + (tracks.length - 1) * 8 + tracks.filter(t => t === 'auto').length * 80
+      expect(need).toBeLessThanOrEqual(w)
+    }
   })
 })
 
