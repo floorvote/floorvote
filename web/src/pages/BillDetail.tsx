@@ -740,7 +740,14 @@ export function BillDetail() {
   const billIdForPassage = bill?.id
   // Another bill's document to open, for the "based on text" link on a companion's page (#601).
   const [docRequest, setDocRequest] = useState<DocumentRequest | null>(null)
+  // The bill a request was made on. The panel mounts for the next bill before the
+  // layout effect below clears these, and a request it sees on that first render
+  // would open the previous bill's document there (#734), so a request counts
+  // only on the bill it was made on.
+  const [requestBillId, setRequestBillId] = useState<string | undefined>(undefined)
   useLayoutEffect(() => { setPassage(null); setDocRequest(null) }, [billIdForPassage])
+  const shownPassage = requestBillId === billIdForPassage ? passage : null
+  const shownDocRequest = requestBillId === billIdForPassage ? docRequest : null
   const [showHearings, setShowHearings] = useState(false)
   const [changeLog, setChangeLog] = useState<ChangeRecord[]>([])
   const [subjectsOpen, setSubjectsOpen] = useState(false)
@@ -1415,6 +1422,7 @@ export function BillDetail() {
     const link = claimLinks.find(c => c.index === index)
     if (!link || !claimSources) return
     setShowBillText(true)
+    setRequestBillId(bill.id)
     const base = {
       key: ++passageKeyRef.current,
       billId: claimSources.billId,
@@ -1429,7 +1437,7 @@ export function BillDetail() {
 
   // Separators between collapsible sections — no border above the first one.
   // A claim's passage opens the bill text even where this bill has none of its own.
-  const hasBillText = (bill.texts.length > 0 && !!bill.textR2Key) || passage !== null || docRequest !== null
+  const hasBillText = (bill.texts.length > 0 && !!bill.textR2Key) || shownPassage !== null || shownDocRequest !== null
   const hasAmendments = (bill.amendments ?? []).filter(a => a.url || a.stateLink).length > 0
   const hasActions = !!bill.lastAction
   const hasHearings = (bill.calendar ?? []).length > 0
@@ -2576,6 +2584,7 @@ export function BillDetail() {
                                   setRequestedDocId(analysisText.docId)
                                   setTimeout(() => setRequestedDocId(null), 100)
                                 } else {
+                                  setRequestBillId(bill.id)
                                   setDocRequest({
                                     key: ++passageKeyRef.current,
                                     billId: bill.analysisBillId!,
@@ -2777,7 +2786,7 @@ export function BillDetail() {
             open={showBillText}
             onToggle={() => setShowBillText(v => !v)}
           >
-            <BillTextPanel key={bill.id} billId={bill.id} texts={bill.texts ?? []} externalOpen={showBillText} requestedDocId={requestedDocId} requestedDocument={docRequest} passage={passage} />
+            <BillTextPanel key={bill.id} billId={bill.id} texts={bill.texts ?? []} externalOpen={showBillText} requestedDocId={requestedDocId} requestedDocument={shownDocRequest} passage={shownPassage} />
           </CollapsibleSection>
         )}
 
