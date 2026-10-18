@@ -826,7 +826,6 @@ describe('ceilings', () => {
     // The budget is what bounds it: past it, a quote is left unsearched.
     expect(out.unsearched).toBeGreaterThan(0)
     expect(work).toBeLessThanOrEqual(WORK_BUDGET)
-    expect(work).toBeLessThanOrEqual(WORK_BUDGET)
   }, 120_000)
 })
 
@@ -909,7 +908,6 @@ describe('the work budget', () => {
     const { out, work } = measured(() => resolveClaimSources(items, summary, doc))
     expect(out.items.every(i => i.status === 'anchored' || i.status === 'ungrounded')).toBe(true)
     expect(work).toBeLessThanOrEqual(WORK_BUDGET)
-    expect(work).toBeLessThanOrEqual(WORK_BUDGET)
   }, 120_000)
 
   it('bounds a hundred long quotes whose ends are found and whose middles are not, by what makeDiff is handed too', () => {
@@ -927,7 +925,6 @@ describe('the work budget', () => {
     expect(items.every(i => i.quote.length < 2000 && i.quote.length > 1850)).toBe(true)
     const { out, work } = measured(() => resolveClaimSources(items, summary, doc))
     expect(out.items.every(i => i.status === 'anchored' || i.status === 'ungrounded')).toBe(true)
-    expect(work).toBeLessThanOrEqual(WORK_BUDGET)
     expect(work).toBeLessThanOrEqual(WORK_BUDGET)
   }, 120_000)
 
