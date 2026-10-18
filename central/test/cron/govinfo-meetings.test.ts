@@ -31,8 +31,9 @@ vi.stubGlobal('fetch', fetchMock)
 
 import { govinfo } from '../../src/providers/govinfo'
 import { clearRollCallCaches } from '../../src/providers/govinfo/client'
-import { clearMeetingCaches, DETAILS_PER_PASS, LIST_PAGE_SIZE, QUARANTINE_AFTER } from '../../src/providers/govinfo/meetings'
+import { clearMeetingCaches, DETAILS_PER_PASS, earlierCongressStillNeeded, LIST_PAGE_SIZE, QUARANTINE_AFTER } from '../../src/providers/govinfo/meetings'
 import { runBodyEventSync } from '../../src/cron/body-events'
+import { bodyEventMonths } from '../../src/lib/bodyEvents'
 import { toHandle } from '../../src/lib/billHandle'
 import { providerContext } from '../../src/lib/providerContext'
 import { mainSeam, resetCentral, type Run } from '../helpers/mainSeam'
@@ -1456,6 +1457,171 @@ describe('across the change of Congress', () => {
     clearMeetingCaches()
     const jan = await govinfo.listBodyEvents!('US', { from: '2027-01-01', to: '2027-01-31' }, ctx)
     expect(jan.map(e => e.event_id)).toEqual(['900101'])
+  })
+})
+
+describe('pruning an earlier Congress\'s cached meetings', () => {
+  const KEPT = 'meeting/119/'
+  /** Every provider_cache key and value, so a test sees exactly what a pass left, and what it didn't touch. */
+  async function cache(like = '%'): Promise<Record<string, string>> {
+    const rows = await env.DB.prepare(`SELECT key, value FROM provider_cache WHERE provider = 'govinfo' AND key LIKE ? ORDER BY key`).bind(like).all<{ key: string; value: string }>()
+    return Object.fromEntries(rows.results.map(r => [r.key, r.value]))
+  }
+  const keys = async (like: string) => Object.keys(await cache(like))
+  /** The rows of one Congress, of all four kinds. */
+  const rowsOf = async (congress: number) => [
+    ...(await keys(`meeting/${congress}/%`)), ...(await keys(`staged/${congress}/%`)), ...(await keys(`failing/${congress}/%`)), ...(await keys(`warm/${congress}`)),
+  ]
+  const put = (key: string, value: string) => env.DB.prepare(`INSERT OR REPLACE INTO provider_cache (provider, key, value) VALUES ('govinfo', ?, ?)`).bind(key, value).run()
+  const at = (day: string) => vi.setSystemTime(new Date(`${day}T13:00:00Z`))
+
+  /** The 119th Congress read in full on December 20, with an unfinished read and a failing meeting left behind, as a pass can leave them. */
+  async function filled119() {
+    at('2026-12-20')
+    feed.add('900100', HEARING, m => { m.date = '2026-12-09T15:00:00Z' })
+    await syncCalendar()
+    await put('staged/119/880001', JSON.stringify({ stale: true }))
+    await put('failing/119/880002', JSON.stringify({ strikes: QUARANTINE_AFTER, alerted: true, error: 'no date' }))
+    const rows = await rowsOf(119)
+    expect(rows).toEqual(expect.arrayContaining(['warm/119', 'staged/119/880001', 'failing/119/880002']))
+    expect(rows.filter(k => k.startsWith(KEPT)).length).toBe(feed.meetings.size)
+    return rows
+  }
+  /** A meeting of the 120th Congress, which the API lists from January 3. */
+  const add120 = () => feed.add('990001', HEARING, m => { m.congress = 120; m.date = '2027-02-10T15:00:00Z' })
+
+  it('drops the meeting, staged, failing, and warm rows of the earlier Congress once the window starts on or after January 3', async () => {
+    await filled119()
+    add120()
+    at('2027-03-01')
+    await syncCalendar()
+    expect(await rowsOf(119)).toEqual([])
+    // The current Congress was read and kept, as for any other pass.
+    expect(await keys('meeting/120/%')).toEqual(['meeting/120/990001'])
+    expect(await keys('warm/120')).toEqual(['warm/120'])
+  })
+
+  it('keeps the earlier Congress\'s rows on the last day before the window starts after January 3, serving them still', async () => {
+    const before = await filled119()
+    add120()
+    // February 28 is the last day whose window (last month on) starts January 1.
+    at('2027-02-28')
+    await syncCalendar()
+    expect(await rowsOf(119)).toEqual(before)
+    const ctx = providerContext(govinfo, makeRun().env as any, db())
+    clearMeetingCaches()
+    const december = await govinfo.listBodyEvents!('US', { from: '2026-12-01', to: '2026-12-31' }, ctx)
+    expect(december.length).toBeGreaterThan(0)
+    // The next day the window starts February 1, and they go.
+    at('2027-03-01')
+    await syncCalendar()
+    expect(await rowsOf(119)).toEqual([])
+  })
+
+  it('keeps them on January 3 and the days after, when the 120th has begun and the window still reaches December', async () => {
+    const before = await filled119()
+    add120()
+    for (const day of ['2027-01-03', '2027-01-04', '2027-01-31']) {
+      at(day)
+      await syncCalendar()
+      expect(await rowsOf(119), day).toEqual(before)
+    }
+  })
+
+  it('drops the 118th on January 2, while the 119th is still current and so is not touched', async () => {
+    await filled119()
+    // The Congress before it, as an earlier release might have left it.
+    await put('meeting/118/700001', JSON.stringify({ stale: true }))
+    await put('staged/118/700002', JSON.stringify({ stale: true }))
+    await put('failing/118/700003', JSON.stringify({ strikes: 3, alerted: true, error: 'x' }))
+    await put('warm/118', '2025-01-01T00:00:00Z')
+    at('2027-01-02')
+    const before119 = (await rowsOf(119)).filter(k => k.startsWith(KEPT) || k === 'warm/119')
+    await syncCalendar()
+    // January 2 is still the 119th Congress (it ends on the 3rd), and its window starts December 1.
+    // Nothing the 120th would need exists yet, so what is dropped is the 118th, which no window reaches.
+    expect((await rowsOf(119)).filter(k => k.startsWith(KEPT) || k === 'warm/119')).toEqual(before119)
+    expect(await rowsOf(118)).toEqual([])
+  })
+
+  it('never touches the current Congress\'s rows, and leaves its quarantined meetings and their alert flags as they were', async () => {
+    await filled119()
+    add120()
+    feed.add('990002', MARKUP, m => { m.congress = 120; m.date = '2027-02-12T15:00:00Z' })
+    at('2027-02-20')
+    await syncCalendar()
+    feed.edit('990002', m => { delete m.date })
+    for (let i = 0; i < QUARANTINE_AFTER; i++) await syncCalendar()
+    const quarantined = await cache('failing/120/%')
+    expect(Object.keys(quarantined)).toEqual(['failing/120/990002'])
+    expect(JSON.parse(quarantined['failing/120/990002'])).toMatchObject({ strikes: QUARANTINE_AFTER, alerted: true })
+    const alertsBefore = mail.send.mock.calls.length
+    const current = async () => ({ ...(await cache('meeting/120/%')), ...(await cache('warm/120')) })
+    const before = await current()
+    expect(Object.keys(before).length).toBeGreaterThan(1)
+
+    // The window moves past January 3, and the earlier Congress, with its own failing row, goes.
+    at('2027-03-01')
+    await syncCalendar()
+    expect(await rowsOf(119)).toEqual([])
+    expect(await current()).toEqual(before)
+    expect(JSON.parse((await cache('failing/120/%'))['failing/120/990002'])).toMatchObject({ alerted: true })
+    // No new alert for the meeting still quarantined, nor for the old one pruned.
+    expect(mail.send.mock.calls.length).toBe(alertsBefore)
+  })
+
+  it('is a no-op the next time: the same rows and the same values', async () => {
+    await filled119()
+    add120()
+    at('2027-03-01')
+    await syncCalendar()
+    const after = await cache()
+    expect(await rowsOf(119)).toEqual([])
+    for (let i = 0; i < 2; i++) {
+      await syncCalendar()
+      expect(await cache()).toEqual(after)
+    }
+  })
+
+  it('has nothing to prune when no earlier Congress was ever kept: the 119th is the first, and its rows stay', async () => {
+    at('2025-03-10')
+    feed.add('880010', HEARING, m => { m.date = '2025-03-12T15:00:00Z' })
+    await syncCalendar()
+    const rows = await rowsOf(119)
+    expect(rows).toContain('warm/119')
+    at('2025-06-10')
+    await syncCalendar()
+    expect(await rowsOf(119)).toEqual(rows)
+  })
+
+  it('prunes on a pass that reads nothing new, and not on one that fails closed', async () => {
+    await filled119()
+    add120()
+    at('2027-03-01')
+    // The list itself failing is a failed pass, which shows nothing new and changes nothing it keeps.
+    fetchMock.mockImplementationOnce(async () => new Response('down', { status: 503 }))
+    clearMeetingCaches()
+    await runBodyEventSync(govinfo, makeRun().env as any, db())
+    expect((await rowsOf(119)).length).toBeGreaterThan(0)
+    await syncCalendar()
+    expect(await rowsOf(119)).toEqual([])
+  })
+
+  it('agrees with the window core reads: the earlier Congress is needed exactly while the first month starts before January 3', () => {
+    const days: string[] = []
+    for (const [year, last] of [[2027, 365], [2029, 365]] as const) {
+      for (let d = 0; d < last; d++) days.push(new Date(Date.UTC(year, 0, 1 + d)).toISOString().slice(0, 10))
+    }
+    for (const day of days) {
+      const congressStart = `${Number(day.slice(0, 4)) % 2 === 1 && day.slice(5) >= '01-03' ? day.slice(0, 4) : String(Number(day.slice(0, 4)) - (Number(day.slice(0, 4)) % 2 === 1 ? 2 : 1))}-01-03`
+      expect(earlierCongressStillNeeded(day), day).toBe(bodyEventMonths(day)[0].from < congressStart)
+    }
+    expect(earlierCongressStillNeeded('2027-02-28')).toBe(true)
+    expect(earlierCongressStillNeeded('2027-03-01')).toBe(false)
+    // January 2 is the 119th's still, and its window starts December 1: the 118th is long done with.
+    expect(earlierCongressStillNeeded('2027-01-02')).toBe(false)
+    expect(earlierCongressStillNeeded('2027-01-03')).toBe(true)
+    expect(earlierCongressStillNeeded('2028-06-15')).toBe(false)
   })
 })
 
