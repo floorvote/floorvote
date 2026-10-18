@@ -96,4 +96,4 @@
 
 **Subject**: a term a legislature assigns to a bill, shown on the bill page and filterable on the Bills page, grouped by state because each legislature's vocabulary is its own. An operator can hide a state's subjects with the `subjects_suppressed_states` config row. Avoid: "tag," which is the instance's own taxonomy applied by AI.
 
-**Saved view**: a named set of Bills page filters and a sort order that an admin saves and every member sees in the view switcher. Applying one puts its slug in the address as `?view=`. Avoid: "preset"; "saved filter."
+**Saved view**: a named set of Bills page filters and a sort order that an admin saves and every member sees in the view switcher. Applying one puts its slug in the address as `?view=`. A member can include a view in their own email digest, which adds a section for it (the digest follows the view's current filters). Avoid: "preset"; "saved filter."

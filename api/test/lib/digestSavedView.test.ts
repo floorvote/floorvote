@@ -107,7 +107,7 @@ describe('renderDigestEmail: saved view sections', () => {
   it('names the view safely in the header', () => {
     const html = render([section('<b>Roads</b> & "Bridges"', { newBills: [newBill('b1', 'H 101')] })])
     expect(html).not.toContain('<b>Roads</b>')
-    expect(text(html)).toContain('In your <b>Roads</b> & "Bridges" view')
+    expect(html).toContain('In your &lt;b&gt;Roads&lt;/b&gt; &amp; &quot;Bridges&quot; view')
   })
 
   it('states a view-only digest in the headline, counting each bill once across views', () => {
@@ -260,7 +260,8 @@ describe('runDigest: saved views', () => {
 
     await runDigest(env as never, db())
 
-    const html = emails[0].html
+    const mine = to('ada@example.com')[0]
+    const html = mine.html
     const t = text(html)
     expect(t).toContain('1 priority bill was updated')
     expect(t).toContain('In your Transportation view')
@@ -271,7 +272,7 @@ describe('runDigest: saved views', () => {
     const viewPart = t.slice(t.indexOf('In your Transportation view'))
     expect(viewPart).toContain('H 202')
     expect(viewPart).not.toContain('H 101')
-    expect(emails[0].subject).toBe('Your daily digest: 1 updated bill, 1 bill in your saved views')
+    expect(mine.subject).toBe('Your daily digest: 1 updated bill, 1 bill in your saved views')
   })
 
   it('drops the view section when its only news is a priority bill', async () => {
@@ -281,8 +282,8 @@ describe('runDigest: saved views', () => {
 
     await runDigest(env as never, db())
 
-    expect(text(emails[0].html)).not.toContain('In your Transportation view')
-    expect(emails[0].subject).toBe('Your daily digest: 1 updated bill')
+    expect(text(to('ada@example.com')[0].html)).not.toContain('In your Transportation view')
+    expect(to('ada@example.com')[0].subject).toBe('Your daily digest: 1 updated bill')
   })
 
   it('caps the section at five and counts every bill in the subject', async () => {

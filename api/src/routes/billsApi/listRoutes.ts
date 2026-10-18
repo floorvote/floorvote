@@ -4,7 +4,7 @@ import { eq, and, sql, SQL } from 'drizzle-orm'
 import { getDb } from '../../db/client'
 import { bills, billSubjects, customFieldDefinitions } from '../../db/schema'
 import type { AppEnv } from '../../types'
-import { billsAs, buildBillsFilter, buildFilterParts, composeFilter, isCheapFilter, loadMyBillsInGroups, myBillsCondition, unvotedCondition, FILTER_ANY, canOptimize, tagMembership, hasGroupTags, type BillsFilter } from './query'
+import { billsAs, buildBillsFilter, buildFilterParts, parseBillFilterParams, composeFilter, isCheapFilter, loadMyBillsInGroups, myBillsCondition, unvotedCondition, FILTER_ANY, canOptimize, tagMembership, hasGroupTags, type BillsFilter } from './query'
 import { billStatesForWildcard } from '../../lib/billStates'
 import { getNewMatchMinRelevance, newMatchWhere } from '../../lib/newMatch'
 import { cacheKeyFor, getCachedPage, putCachedPage, listCacheTtl, isPerUserListRequest } from '../../lib/listCache'
@@ -20,27 +20,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
   // GET /bills — the list, one row per companion group, with optional filters and server-side pagination
   router.get('/', async (c) => {
     const db = getDb(c.env.DB)
-    const {
-      sort, dir: dirParam, minRelevance,
-      myBills: myBillsParam, unvoted, newMatches: newMatchesParam,
-      drafts: draftsParam,
-      page: pageParam, pageSize: pageSizeParam,
-    } = c.req.query()
-    const statuses = c.req.queries('status') ?? []
-    const stages = c.req.queries('stage') ?? []
-    const priorities = c.req.queries('priority') ?? []
-    const positionValues = c.req.queries('position') ?? []
-    const sessions = c.req.queries('session') ?? []
-    const years = c.req.queries('year') ?? []
-    const states = c.req.queries('state') ?? []
-    const tagFilters = c.req.queries('tag') ?? []
-    const subjectDecoded = decodeSubjectFiltersChecked(c.req.queries('subject') ?? [])
-    if (subjectDecoded.overflow) {
-      return c.json({ error: `Too many subject filters. The maximum is ${MAX_SUBJECT_FILTERS}.` }, 400)
-    }
-    const subjectFilters = subjectDecoded.filters
-    const q = c.req.query('q')
-    const matchAny = c.req.query('match') === 'any'
+    const { sort, dir: dirParam, page: pageParam, pageSize: pageSizeParam } = c.req.query()
     const sortDir = dirParam === 'asc' ? 'asc' : 'desc' as const
 
     const page = Math.max(1, parseInt(pageParam ?? '1', 10) || 1)
@@ -48,41 +28,17 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const offset = (page - 1) * pageSize
     const currentUser = c.get('user')
 
-    const cfParamMap: Record<string, string[]> = {}
-    for (const [key, value] of new URL(c.req.url).searchParams) {
-      if (key.startsWith('cf_')) {
-        const fieldId = key.slice(3)
-        ;(cfParamMap[fieldId] ??= []).push(value)
-      }
-    }
-
-    const newMatchesActive = newMatchesParam === '1' || newMatchesParam === 'true'
-    const newMatchMinRelevance = newMatchesActive ? await getNewMatchMinRelevance(db) : 0
-    const draftsActive = draftsParam === '1' || draftsParam === 'true'
-
-    // A group matches when any bill in it does, so the filter stays a condition
-    // on one bill, applied to whichever bill a query is testing (groupList.ts).
-    const filterParams = {
-      statuses,
-      stages,
-      priorities,
-      positionValues,
-      sessions,
-      years,
-      states,
-      tagFilters,
-      subjectFilters,
-      q,
-      minRelevance,
-      myBillsParam: myBillsParam === '1' || myBillsParam === 'true' ? '1' : undefined,
-      unvoted,
-      newMatches: newMatchesActive ? '1' : undefined,
-      newMatchMinRelevance,
-      drafts: draftsActive ? '1' : undefined,
-      cfParamMap,
-      userId: currentUser.id,
-      matchAny,
-    }
+    // The list's filters, read from the query string by the one function that does (query.ts), which the
+    // digest also uses to read a saved view's stored query. A group matches when any bill in it does, so the
+    // filter stays a condition on one bill, applied to whichever bill a query is testing (groupList.ts).
+    const parsed = await parseBillFilterParams(db, new URL(c.req.url).searchParams, currentUser.id)
+    if ('error' in parsed) return c.json({ error: parsed.error }, 400)
+    const filterParams = parsed.params
+    const {
+      statuses, stages, priorities, positionValues, sessions, years, states, tagFilters, subjectFilters, q, minRelevance, cfParamMap,
+    } = filterParams
+    const newMatchesActive = filterParams.newMatches === '1'
+    const draftsActive = filterParams.drafts === '1'
     const filter = await buildBillsFilter(db, filterParams)
     const filtered = filter(billsAs('m'))
     const hasFilter = filtered !== undefined
@@ -99,7 +55,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     // cache entirely and always run fresh.
     // newMatches is org-shared but admin-only and low-volume; skip the shared page
     // cache rather than widen the cache key for it.
-    const cacheable = !isPerUserListRequest({ myBills: myBillsParam, unvoted }) && !newMatchesActive
+    const cacheable = !isPerUserListRequest({ myBills: filterParams.myBillsParam, unvoted: filterParams.unvoted }) && !newMatchesActive
     const ttl = listCacheTtl(c.env)
     const cacheKey = cacheable
       ? cacheKeyFor(c.env, {

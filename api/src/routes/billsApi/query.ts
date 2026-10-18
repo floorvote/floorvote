@@ -8,8 +8,8 @@ import {
 import {
   MAX_SEARCH_TERM_BYTES, MAX_SEARCH_TOKENS, byteLength, truncateToBytes, splitSegments, tokenizeSegment,
 } from '../../../../shared/searchLimits'
-import { loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../../lib/billSubjects'
-import { newMatchWhere } from '../../lib/newMatch'
+import { loadSuppressedSubjectStates, isSubjectsSuppressedForState, decodeSubjectFiltersChecked, MAX_SUBJECT_FILTERS } from '../../lib/billSubjects'
+import { newMatchWhere, getNewMatchMinRelevance } from '../../lib/newMatch'
 import { LEGISCAN_CODE_WORDS } from '../../../../shared/legacyStatusOrder'
 import {
   groupHasNoPosition, groupHasNoPriority, heldCustomFieldOf, heldPositionOf,
@@ -242,6 +242,57 @@ export type BillFilterParams = {
   cfParamMap: Record<string, string[]>
   userId: string
   matchAny: boolean
+}
+
+/**
+ * The bill list's filters as the bill list's own query string carries them: the
+ * one reader of that string. `GET /bills` reads the request's through it, and
+ * the digest reads a saved view's stored query through it, so a URL key that is
+ * renamed is renamed here and nowhere else. `userId` is whose "my bills" and
+ * "unvoted" it means. An over-cap subject filter is an error, not a truncation,
+ * since a truncated filter would return more bills than asked for.
+ */
+export async function parseBillFilterParams(
+  db: ReturnType<typeof getDb>,
+  search: URLSearchParams,
+  userId: string,
+): Promise<{ params: BillFilterParams } | { error: string }> {
+  const subjectDecoded = decodeSubjectFiltersChecked(search.getAll('subject'))
+  if (subjectDecoded.overflow) return { error: `Too many subject filters. The maximum is ${MAX_SUBJECT_FILTERS}.` }
+  const on = (v: string | null) => v === '1' || v === 'true'
+
+  const cfParamMap: Record<string, string[]> = {}
+  for (const [key, value] of search) {
+    if (key.startsWith('cf_')) {
+      const fieldId = key.slice(3)
+      ;(cfParamMap[fieldId] ??= []).push(value)
+    }
+  }
+
+  const newMatchesActive = on(search.get('newMatches'))
+  return {
+    params: {
+      statuses: search.getAll('status'),
+      stages: search.getAll('stage'),
+      priorities: search.getAll('priority'),
+      positionValues: search.getAll('position'),
+      sessions: search.getAll('session'),
+      years: search.getAll('year'),
+      states: search.getAll('state'),
+      tagFilters: search.getAll('tag'),
+      subjectFilters: subjectDecoded.filters,
+      q: search.get('q') ?? undefined,
+      minRelevance: search.get('minRelevance') ?? undefined,
+      myBillsParam: on(search.get('myBills')) ? '1' : undefined,
+      unvoted: search.get('unvoted') ?? undefined,
+      newMatches: newMatchesActive ? '1' : undefined,
+      newMatchMinRelevance: newMatchesActive ? await getNewMatchMinRelevance(db) : 0,
+      drafts: on(search.get('drafts')) ? '1' : undefined,
+      cfParamMap,
+      userId,
+      matchAny: search.get('match') === 'any',
+    },
+  }
 }
 
 /** A condition on one reference to `bills`: the table itself, or an alias of it. */
