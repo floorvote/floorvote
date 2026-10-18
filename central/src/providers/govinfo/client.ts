@@ -106,8 +106,8 @@ export function listingTime(value: unknown): string | null {
  * One type's bulk listing (`/bulkdata/json/BILLSTATUS/119/hr`, asked for as
  * JSON): every Bill Status file of the type, with the time GovInfo last
  * changed it, which only the listing gives (every file in a zip carries the
- * zip's build time). The zip and anything else that isn't an XML file is left
- * out.
+ * zip's build time), and the time the listing gives the type's zip (null when
+ * it lists none). Anything else that isn't an XML file is left out.
  *
  * Fails closed, with an error that names the listing: an answer that isn't
  * 200 (a 404 too, since a pass can't tell a type it can't list from a type
@@ -119,7 +119,7 @@ export async function readBillStatusListing(
   congress: number,
   type: GovInfoType,
   onRequest?: () => void,
-): Promise<ListedBillFile[]> {
+): Promise<{ files: ListedBillFile[]; zipModified: string | null }> {
   const url = billStatusListingUrl(congress, type)
   try {
     const res = await rateLimitedFetch(url, { headers: { Accept: 'application/json' } },
@@ -139,9 +139,12 @@ export async function readBillStatusListing(
     const name = new RegExp(`^BILLSTATUS-${congress}${type}([1-9]\\d*)\\.xml$`)
     const out: ListedBillFile[] = []
     const seen = new Set<string>()
+    const zipName = `BILLSTATUS-${congress}-${type}.zip`
+    let zipModified: string | null = null
     for (const f of files as unknown[]) {
       const entry = f as { name?: unknown; formattedLastModifiedTime?: unknown; folder?: unknown } | null
       if (typeof entry !== 'object' || entry === null || typeof entry.name !== 'string') throw new Error('it lists a file with no name')
+      if (entry.name === zipName) zipModified = listingTime(entry.formattedLastModifiedTime)
       if (entry.folder === true || !entry.name.toLowerCase().endsWith('.xml')) continue
       const m = name.exec(entry.name)
       if (!m) throw new Error(`it lists ${entry.name}, which isn't a ${type} Bill Status file of Congress ${congress}`)
@@ -151,7 +154,7 @@ export async function readBillStatusListing(
       if (!modified) throw new Error(`it gives ${entry.name} no time it changed`)
       out.push({ name: entry.name, number: m[1], modified })
     }
-    return out
+    return { files: out, zipModified }
   } catch (err) {
     throw new Error(`GovInfo ${congress}/${type} listing: ${err instanceof Error ? err.message : String(err)}`)
   }

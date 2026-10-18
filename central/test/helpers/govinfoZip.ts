@@ -201,3 +201,25 @@ export function buildListing(
   if (zipModified) out.push(entry(`BILLSTATUS-${congress}-${type}.zip`, 'zip', zipModified, 200000))
   return JSON.stringify({ files: out })
 }
+
+/** A type's bulk listing address: `https://www.govinfo.gov/bulkdata/json/BILLSTATUS/119/hr`. */
+export const LISTING_URL = /^https:\/\/www\.govinfo\.gov\/bulkdata\/json\/BILLSTATUS\/(\d+)\/([a-z]+)$/
+
+/**
+ * What the stubbed GovInfo answers for a listing of these files, or null when
+ * the address isn't a listing. Each file is listed as changed at
+ * `modified(name, data)`, and the zip at `zipModified`.
+ */
+export function listingResponse(
+  url: string,
+  files: ReadonlyMap<string, string>,
+  modified: (name: string, data: string) => string,
+  zipModified: string | null = '2026-10-17T00:19:30Z',
+): Response | null {
+  const m = LISTING_URL.exec(url)
+  if (!m || !(BILL_TYPES as readonly string[]).includes(m[2])) return null
+  const congress = Number(m[1])
+  const of = [...files].filter(([name]) => name.startsWith(`BILLSTATUS-${congress}`) && fileType(name) === m[2])
+  return new Response(buildListing(congress, m[2], of.map(([name, data]): [string, string] => [name, modified(name, data)]), zipModified),
+    { headers: { 'content-type': 'application/json' } })
+}

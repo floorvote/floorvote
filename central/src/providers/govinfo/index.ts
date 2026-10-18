@@ -1,5 +1,5 @@
 import { fetchBillStatusFile, GOVINFO_TYPES, readBillStatusListing, readBillStatusZip, type GovInfoType, type ListedBillFile } from './client'
-import { digestOf, keepDigest, laterOf, loadDigest, markHolds, OVERLAP_MS, readMark, writeMark, type Digest, type Mark } from './changes'
+import { digestOf, keepDigest, laterOf, loadDigest, markHolds, mergeDigest, OVERLAP_MS, readMark, writeMark, type Digest, type Mark } from './changes'
 import { loadRollCalls, resolveVotes, voteKeys } from './votes'
 import { detailKeys, readBillDetail, resolveDetail } from './detail'
 import {
@@ -90,8 +90,10 @@ export const govinfo: Provider<'CONGRESS_API_KEY'> = {
       : null
     const mark = readMark(session.etag, congress)
     if (mark && markHolds(mark, ctx.today, Date.now(), byBill !== null)) {
-      const changed = await readChanged(congress, mark, byBill, ctx)
+      const listings = await readListings(congress, ctx)
+      const changed = await readChanged(congress, mark, byBill, listings, ctx)
       if (changed) return changed
+      return readInFull(congress, mark, byBill, ctx, listings)
     }
     return readInFull(congress, mark, byBill, ctx)
   },
@@ -187,18 +189,52 @@ async function toRecords(found: Found[], ctx: ProviderContext): Promise<Provider
   return found.map((f): ProviderRecord => ({ billId: ids.get(f.key)!, nativeKey: f.key, raw: f.record, hash: f.hash }))
 }
 
+/** One bill's own file, downloaded and checked to be the bill its listing says. */
+async function readListedFile(congress: number, key: string, type: GovInfoType, file: ListedBillFile, ctx: ProviderContext): Promise<Found> {
+  const xml = await fetchBillStatusFile(congress, type, file.number, () => ctx.logCall('govinfo:BillStatusFile', { congress, type, number: file.number }))
+  const { record, hash } = await parseBillFile(file.name, xml, { congress, type: type.toUpperCase() as CongressBillType }, file.modified)
+  const holds = govinfoNativeKey(congress, record.type, record.number)
+  if (holds !== key) throw new Error(`GovInfo ${file.name}: it holds ${holds}, not ${key}`)
+  return { key, record, hash }
+}
+
+type Listings = Awaited<ReturnType<typeof readListings>>
+
+/** The eight listings, every one read before anything else is, by bill key, with the newest time they give. */
+async function readListings(congress: number, ctx: ProviderContext) {
+  const listed = new Map<string, { type: GovInfoType; file: ListedBillFile }>()
+  const zipModified = new Map<GovInfoType, string | null>()
+  let newest: string | null = null
+  for (const type of GOVINFO_TYPES) {
+    const listing = await readBillStatusListing(congress, type, () => ctx.logCall('govinfo:BillStatusListing', { congress, type }))
+    zipModified.set(type, listing.zipModified)
+    for (const file of listing.files) {
+      listed.set(govinfoNativeKey(congress, type.toUpperCase(), file.number), { type, file })
+      newest = newest === null ? file.modified : laterOf(newest, file.modified)
+    }
+  }
+  return { listed, zipModified, newest }
+}
+
 /**
- * A full read: every file of the eight zips. Its watermark is the build time
- * of the oldest zip it read, since a zip holds each file as it was when the zip
- * was built, and a zip that gives no build time leaves no watermark, so the
- * next pass reads in full too.
+ * A full read: the eight listings, then every file of the eight zips, then the
+ * file of each bill listed as changed since its type's zip was built (less the
+ * overlap). A zip holds each file as it was when the zip was built, and GovInfo
+ * can go days without rebuilding one, so without that a full read would put back
+ * what a pass between full reads had already moved past, and the next pass would
+ * move it forward again. A listed bill not yet in its zip is read the same way.
+ * The watermark is the newest time the read saw, of a listed file or a zip. A
+ * type whose zip has no build time, from its Last-Modified or its listing, can't
+ * be told from its files, so the read leaves no ETag and the next pass reads in
+ * full too.
  */
-async function readInFull(congress: number, previous: Mark | null, byBill: Map<string, MeasureCalendarEntry[]> | null, ctx: ProviderContext): Promise<ProviderSnapshot> {
-  const found: Found[] = []
-  const keys = new Set<string>()
+async function readInFull(
+  congress: number, previous: Mark | null, byBill: Map<string, MeasureCalendarEntry[]> | null, ctx: ProviderContext, listings?: Listings,
+): Promise<ProviderSnapshot> {
+  const { listed, zipModified, newest } = listings ?? await readListings(congress, ctx)
+  const found = new Map<string, Found>()
   const types: GovInfoType[] = []
-  let since: string | null = null
-  let undated = false
+  const built = new Map<GovInfoType, string | null>()
   // One zip at a time, each read to its end before the next is asked for. A failure in any
   // of the eight throws before an id is minted, so a bad pass writes nothing.
   for (const type of GOVINFO_TYPES) {
@@ -206,21 +242,29 @@ async function readInFull(congress: number, previous: Mark | null, byBill: Map<s
     const zip = await readBillStatusZip(congress, type, async (name, xml, modified) => {
       const { record, hash } = await parseBillFile(name, xml, expected, modified)
       const key = govinfoNativeKey(congress, record.type, record.number)
-      if (keys.has(key)) throw new Error(`${name} repeats ${key}`)
-      keys.add(key)
-      found.push({ key, record, hash })
+      if (found.has(key)) throw new Error(`${name} repeats ${key}`)
+      found.set(key, { key, record, hash })
     }, () => ctx.logCall('govinfo:BillStatusZip', { congress, type }))
     if (!zip.found) continue
     types.push(type)
-    if (zip.modified === null) undated = true
-    else since = since === null || Date.parse(zip.modified) < Date.parse(since) ? zip.modified : since
+    built.set(type, zip.modified ?? zipModified.get(type) ?? null)
   }
   // A type with no zip yet has no bills yet. All eight missing can't be told from a changed address.
   if (types.length === 0) throw new Error(`GovInfo ${congress}: none of the eight Bill Status zips exists (404)`)
-  await withMeetings(found, byBill)
-  const records = await toRecords(found, ctx)
+  for (const [key, { type, file }] of listed) {
+    const at = built.get(type)
+    if (!at) continue
+    if (Date.parse(file.modified) >= Date.parse(at) - OVERLAP_MS) found.set(key, await readListedFile(congress, key, type, file, ctx))
+  }
+  const all = [...found.values()]
+  await withMeetings(all, byBill)
+  const records = await toRecords(all, ctx)
   const meetings = await keepDigest(ctx, congress, byBill ? await digestOf(byBill) : null, previous)
-  const etag = undated || since === null ? null : writeMark({ congress, since, full: ctx.today, types, meetings })
+  // Every bill is now as of the listings: from its zip when its zip is newer than its file, and from its own
+  // file when not. So the watermark is the newest time the read saw, of a file or a zip.
+  const dated = types.every(t => built.get(t))
+  const since = types.map(t => built.get(t)!).reduce((a, b) => laterOf(a, b), newest ?? built.get(types[0])!)
+  const etag = dated ? writeMark({ congress, since, full: ctx.today, types, meetings }) : null
   return { records, etag }
 }
 
@@ -233,18 +277,11 @@ async function readInFull(congress: number, previous: Mark | null, byBill: Map<s
  * pass can't stand in for a full read after all: a type the last full read had
  * no zip for now lists files, or the digest of what is on records is gone.
  */
-async function readChanged(congress: number, mark: Mark, byBill: Map<string, MeasureCalendarEntry[]> | null, ctx: ProviderContext): Promise<ProviderSnapshot | null> {
-  const listed = new Map<string, { type: GovInfoType; file: ListedBillFile }>()
-  let since = mark.since
-  let unread = false
-  for (const type of GOVINFO_TYPES) {
-    const files = await readBillStatusListing(congress, type, () => ctx.logCall('govinfo:BillStatusListing', { congress, type }))
-    if (files.length > 0 && !mark.types.includes(type)) unread = true
-    for (const file of files) {
-      listed.set(govinfoNativeKey(congress, type.toUpperCase(), file.number), { type, file })
-      since = laterOf(since, file.modified)
-    }
-  }
+async function readChanged(
+  congress: number, mark: Mark, byBill: Map<string, MeasureCalendarEntry[]> | null, { listed, newest }: Listings, ctx: ProviderContext,
+): Promise<ProviderSnapshot | null> {
+  const since = newest ? laterOf(mark.since, newest) : mark.since
+  const unread = [...listed.values()].some(({ type }) => !mark.types.includes(type))
   if (unread) return null
 
   const from = Date.parse(mark.since) - OVERLAP_MS
@@ -253,24 +290,13 @@ async function readChanged(congress: number, mark: Mark, byBill: Map<string, Mea
   if (byBill) {
     const before = await loadDigest(ctx, congress, mark.meetings!)
     if (!before) return null
-    const now = await digestOf(byBill)
-    digest = new Map()
-    for (const key of new Set([...before.keys(), ...now.keys()])) {
-      if (before.get(key) !== now.get(key) && listed.has(key)) want.set(key, listed.get(key)!)
-      // A bill GovInfo doesn't list has no record to change, and keeps what the digest said of it.
-      const kept = before.get(key) === now.get(key) || want.has(key) ? now.get(key) : before.get(key)
-      if (kept !== undefined) digest.set(key, kept)
-    }
+    const merged = mergeDigest(before, await digestOf(byBill), key => listed.has(key))
+    for (const key of merged.changed) want.set(key, listed.get(key)!)
+    digest = merged.digest
   }
 
   const found: Found[] = []
-  for (const [key, { type, file }] of want) {
-    const xml = await fetchBillStatusFile(congress, type, file.number, () => ctx.logCall('govinfo:BillStatusFile', { congress, type, number: file.number }))
-    const { record, hash } = await parseBillFile(file.name, xml, { congress, type: type.toUpperCase() as CongressBillType }, file.modified)
-    const holds = govinfoNativeKey(congress, record.type, record.number)
-    if (holds !== key) throw new Error(`GovInfo ${file.name}: it holds ${holds}, not ${key}`)
-    found.push({ key, record, hash })
-  }
+  for (const [key, { type, file }] of want) found.push(await readListedFile(congress, key, type, file, ctx))
   await withMeetings(found, byBill)
   const records = await toRecords(found, ctx)
   const meetings = await keepDigest(ctx, congress, digest, mark)

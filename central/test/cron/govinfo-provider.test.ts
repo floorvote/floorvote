@@ -36,6 +36,9 @@ const LISTING_URL = /^https:\/\/www\.govinfo\.gov\/bulkdata\/json\/BILLSTATUS\/(
 const listingUrl = (type: string, congress = 119) => `https://www.govinfo.gov/bulkdata/json/BILLSTATUS/${congress}/${type}`
 /** When the recorded files last changed, as the listing gives it: months before the zips were built. */
 const RECORDED = '2026-07-18T23:27:00Z'
+/** What a full read asks for: the eight listings, then the eight zips (#616). */
+const FULL_READ = [...BILL_TYPES.map(t => listingUrl(t)), ...BILL_TYPES.map(t => zipUrl(t))]
+const HR3132_FILE = 'https://www.govinfo.gov/bulkdata/BILLSTATUS/119/hr/BILLSTATUS-119hr3132.xml'
 
 type Type = typeof BILL_TYPES[number]
 type Served = () => Response
@@ -170,11 +173,12 @@ describe('Congress from GovInfo Bill Status', () => {
   it('serves every bill in the zips once US is claimed, under LegiScan\'s numbers, with no key and no LegiScan call', async () => {
     expect((await claim()).status).toBe(200)
     await syncAndIngest()
-    // One download of each type's zip, and nothing else.
+    // One download of each type's zip, and its listing (#616), and nothing else.
     expect(calls.filter(c => ZIP_URL.test(c.url)).map(c => [c.method, c.url])).toEqual(BILL_TYPES.map(t => ['GET', zipUrl(t)]))
+    expect(calls.filter(c => LISTING_URL.test(c.url)).map(c => [c.method, c.url])).toEqual(BILL_TYPES.map(t => ['GET', listingUrl(t)]))
     // The one bill the instance's keyword matches is then read from its own file (#617), and nothing else is asked of GovInfo.
-    expect(calls.filter(c => !ZIP_URL.test(c.url) && !PDF_URL.test(c.url)).map(c => c.url))
-      .toEqual(['https://www.govinfo.gov/bulkdata/BILLSTATUS/119/hr/BILLSTATUS-119hr3132.xml'])
+    expect(calls.filter(c => !ZIP_URL.test(c.url) && !LISTING_URL.test(c.url) && !PDF_URL.test(c.url)).map(c => c.url))
+      .toEqual([HR3132_FILE])
     for (const [name, number, , billType] of BILLS) {
       const b = await bill(number)
       expect(b, name).toMatchObject({ number, state: 'US', billType })
@@ -633,7 +637,7 @@ describe('failing closed', () => {
       expect(reports).toEqual([expect.objectContaining({ records: others.length })])
       for (const [, number] of others) expect(await bill(number)).toMatchObject({ number })
       // All eight were asked for.
-      expect(calls.map(c => c.url)).toEqual(BILL_TYPES.map(t => zipUrl(t)))
+      expect(calls.map(c => c.url)).toEqual(FULL_READ)
     })
 
     it('is no bills of the types GovInfo has no zips for yet, the start of a Congress', async () => {
@@ -730,7 +734,7 @@ describe('reading the zips as a stream', () => {
     }
     await sync()
     expect(order).toEqual(BILL_TYPES.map(t => `open ${t}`))
-    expect(calls.map(c => c.url)).toEqual(BILL_TYPES.map(t => zipUrl(t)))
+    expect(calls.map(c => c.url)).toEqual(FULL_READ)
   })
 
   it('logs each download as a GovInfo call outside the LegiScan budget', async () => {
@@ -739,7 +743,9 @@ describe('reading the zips as a stream', () => {
     // The log is written as the calls go out, without waiting.
     await vi.waitFor(async () => {
       const logged = await db().select().from(schema.apiCallLog).all()
-      expect(logged.filter(r => r.callType.startsWith('govinfo:'))).toHaveLength(BILL_TYPES.length)
+      expect(logged.filter(r => r.callType === 'govinfo:BillStatusZip')).toHaveLength(BILL_TYPES.length)
+      expect(logged.filter(r => r.callType === 'govinfo:BillStatusListing')).toHaveLength(BILL_TYPES.length)
+      expect(logged.filter(r => r.callType.startsWith('govinfo:'))).toHaveLength(2 * BILL_TYPES.length)
       expect(logged.filter(r => !r.callType.includes(':'))).toEqual([])
     })
   })
@@ -780,7 +786,7 @@ describe('between full reads (#616)', () => {
   it('stores a watermark as its ETag from the first read of the zips', async () => {
     expect(await claim()).toMatchObject({ status: 200 })
     await sync()
-    expect(calls.filter(c => !isZip(c))).toEqual([])
+    expect(calls.map(c => c.url)).toEqual(FULL_READ)
     expect(await storedEtag()).not.toBeNull()
   })
 
@@ -881,7 +887,8 @@ describe('between full reads (#616)', () => {
     expect(await storedEtag()).not.toBeNull()
     change('hr3132', reported)
     await forcedSync()
-    expect(calls.map(c => c.url)).toEqual(BILL_TYPES.map(t => zipUrl(t)))
+    // The zip still holds the file as it was, and the listing says it changed since, so it is read on its own too.
+    expect(calls.map(c => c.url)).toEqual([...FULL_READ, HR3132_FILE])
     expect(await bill('HB3132')).toMatchObject({ lastAction: 'Reported by the Committee on Veterans\' Affairs. H. Rept. 119-1.' })
     expect(await storedEtag()).not.toBeNull()
     // And the pass after it reads only the listings again.
@@ -969,7 +976,7 @@ describe('between full reads (#616)', () => {
         await db().update(schema.sessions).set({ snapshotEtag: bad }).where(eq(schema.sessions.provider, 'govinfo'))
         calls = []
         await sync()
-        expect(calls.map(c => c.url), bad).toEqual(BILL_TYPES.map(t => zipUrl(t)))
+        expect(calls.map(c => c.url), bad).toEqual(FULL_READ)
         expect(await storedEtag()).not.toBe(bad)
         expect(await storedEtag()).not.toBeNull()
         calls = []
@@ -984,7 +991,7 @@ describe('between full reads (#616)', () => {
       await firstRead()
       expect(await storedEtag()).not.toBeNull()
       await sync()
-      expect(calls.map(c => c.url)).toEqual(BILL_TYPES.map(t => zipUrl(t)))
+      expect(calls.map(c => c.url)).toEqual(FULL_READ)
     })
 
     it('reads the zips on the first pass of each day, and only the listings on the passes between', async () => {
@@ -997,7 +1004,7 @@ describe('between full reads (#616)', () => {
       later('2026-10-20T00:30:00Z')
       change('hr3132', reported)
       await sync()
-      expect(calls.map(c => c.url)).toEqual(BILL_TYPES.map(t => zipUrl(t)))
+      expect(calls.map(c => c.url)).toEqual([...FULL_READ, HR3132_FILE])
       expect(await bill('HB3132')).toMatchObject({ lastAction: 'Reported by the Committee on Veterans\' Affairs. H. Rept. 119-1.' })
       calls = []
       later('2026-10-20T01:30:00Z')
@@ -1012,7 +1019,7 @@ describe('between full reads (#616)', () => {
       await firstRead()
       expect(await storedEtag()).toBeNull()
       await sync()
-      expect(calls.map(c => c.url)).toEqual(BILL_TYPES.map(t => zipUrl(t)))
+      expect(calls.map(c => c.url)).toEqual(FULL_READ)
       // Once the zips carry it again, the pass after reads only the listings.
       lastModified = 'Sun, 18 Oct 2026 00:19:30 GMT'
       serveAll()
@@ -1060,11 +1067,16 @@ describe('between full reads (#616)', () => {
           calls.push({ method: 'GET', url: String(input), accept: null })
           return serve(m[2] as Type, of120)()
         }
+        const l = LISTING_URL.exec(String(input))
+        if (l && l[1] === '120') {
+          calls.push({ method: 'GET', url: String(input), accept: 'application/json' })
+          return new Response(buildListing(120, l[2], [...of120].filter(([n]) => fileType(n) === l[2]).map(([n]): [string, string] => [n, RECORDED])), { headers: { 'content-type': 'application/json' } })
+        }
         return inner(input, init)
       })
       const snap = await govinfo.snapshot!({ sessionId: 1, state: 'US', sessionTag: '120', yearStart: 2027, yearEnd: 2028, etag }, ctx)
-      expect(calls.filter(isListing)).toEqual([])
-      expect(calls.map(c => c.url)).toEqual(BILL_TYPES.map(t => zipUrl(t, 120)))
+      // A full read of the 120th: its listings, then its zips, and nothing of the 119th's.
+      expect(calls.map(c => c.url)).toEqual([...BILL_TYPES.map(t => listingUrl(t, 120)), ...BILL_TYPES.map(t => zipUrl(t, 120))])
       expect(snap.partial).toBeFalsy()
       expect(snap.records).toHaveLength(BILLS.length)
       expect(snap.etag).toBeTruthy()
@@ -1106,6 +1118,26 @@ describe('between full reads (#616)', () => {
       files.set('BILLSTATUS-119hr9999.xml', xml('hr2').replace('<number>2</number>', '<number>9999</number>').replaceAll('Reserved for the Speaker.', 'A New Bill Act'))
       await firstRead()
       expect(await bill('HB9999')).toMatchObject({ number: 'HB9999', title: 'A New Bill Act' })
+    })
+
+    it('writes nothing on a full read whose listing fails, as on a pass between', async () => {
+      expect((await claim()).status).toBe(200)
+      listingAnswers.set('sres', () => new Response('nope', { status: 500 }))
+      const run = makeRun()
+      await expect(sync(run)).rejects.toThrow(/GovInfo 119\/sres listing: HTTP 500/)
+      expect(calls.filter(isZip)).toEqual([])
+      expect(await db().select().from(schema.providerRecords).all()).toEqual([])
+      expect(await storedEtag()).toBeNull()
+      expect(run.queue.sendBatch).not.toHaveBeenCalled()
+    })
+
+    it('dates a zip that sends no Last-Modified by the time its listing gives it', async () => {
+      answers = new Map(BILL_TYPES.map(t => [t, () => serveZip(zipOf(t), { headers: { 'last-modified': '' } }).response]))
+      await firstRead()
+      expect(await storedEtag()).not.toBeNull()
+      await sync()
+      expect(calls.filter(isZip)).toEqual([])
+      expect(calls.filter(isListing)).toHaveLength(8)
     })
 
     it('takes its watermark from the newest time the listings give', async () => {

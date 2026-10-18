@@ -1300,7 +1300,7 @@ describe('a bill sync between full reads (#616)', () => {
     await calendarThenBills()
     // The meetings are now on bills' records, so every record changed: a read in full.
     expect(govinfoCalls().filter(ZIPS)).toHaveLength(8)
-    expect(govinfoCalls().filter(LISTINGS)).toEqual([])
+    expect(govinfoCalls().filter(LISTINGS)).toHaveLength(8)
     await calendarThenBills()
     expect(govinfoCalls().filter(ZIPS)).toEqual([])
     expect(govinfoCalls().filter(LISTINGS)).toHaveLength(8)

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { digestOf, keepDigest, loadDigest, readMark, writeMark, type Digest, type Mark } from '../../../src/providers/govinfo/changes'
+import { digestOf, keepDigest, loadDigest, mergeDigest, readMark, writeMark, type Digest, type Mark } from '../../../src/providers/govinfo/changes'
 
 // What a GovInfo bill sync keeps of the meeting entries it put on records, and
 // the mark its ETag carries (#616). The cache is a plain map standing in for
@@ -118,5 +118,25 @@ describe('the mark an ETag carries', () => {
     ['a digest id that isn\'t one', writeMark({ ...mark(null), meetings: 'xyz' })],
   ])('reads %s as no mark, a read in full', (_what, etag) => {
     expect(readMark(etag, 119)).toBeNull()
+  })
+})
+
+describe('merging the digest with the entries now', () => {
+  const d = (o: Record<string, string>): Digest => new Map(Object.entries(o))
+
+  it('names each listed bill whose entries changed, came, or went, and keeps the entries now for it', () => {
+    const before = d({ '119/HR1': 'a', '119/HR2': 'b', '119/HR3': 'c' })
+    const now = d({ '119/HR1': 'a', '119/HR2': 'B', '119/HR4': 'd' })
+    const { changed, digest } = mergeDigest(before, now, () => true)
+    expect(changed.sort()).toEqual(['119/HR2', '119/HR3', '119/HR4'])
+    expect(digest).toEqual(now)
+  })
+
+  it('keeps what the last digest said of a bill GovInfo doesn\'t list, and doesn\'t name it', () => {
+    const before = d({ '119/HR1': 'a', '119/HR9': 'x' })
+    const now = d({ '119/HR1': 'a', '119/HR9': 'y', '119/HR8': 'z' })
+    const { changed, digest } = mergeDigest(before, now, key => key === '119/HR1')
+    expect(changed).toEqual([])
+    expect(digest).toEqual(d({ '119/HR1': 'a', '119/HR9': 'x' }))
   })
 })

@@ -23,7 +23,7 @@ import { GOVINFO_TYPES, type GovInfoType } from './client'
  */
 export interface Mark {
   congress: number
-  /** The watermark: the newest change the pass saw (ISO). A full read's is the build time of its oldest zip. */
+  /** The watermark: the newest change the pass saw (ISO). A full read's is the newest time it saw, of a listed file or a zip. */
   since: string
   /** The UTC day of the last full read. A pass on another day reads in full. */
   full: string
@@ -84,6 +84,25 @@ export async function digestOf(byBill: ReadonlyMap<string, MeasureCalendarEntry[
   const out: Digest = new Map()
   for (const [key, entries] of byBill) out.set(key, (await sha256Hex(JSON.stringify(entries))).slice(0, 16))
   return out
+}
+
+/**
+ * The bills whose entries differ between the digest the last pass kept and the
+ * entries now, among those GovInfo lists (`listed`), whose files the pass reads
+ * again; and the digest to keep for the records after it. A bill GovInfo
+ * doesn't list has no record to change, so it keeps what the last digest said
+ * of it, and the digest goes on saying what is on every stored record.
+ */
+export function mergeDigest(before: Digest, now: Digest, listed: (key: string) => boolean): { changed: string[]; digest: Digest } {
+  const changed: string[] = []
+  const digest: Digest = new Map()
+  for (const key of new Set([...before.keys(), ...now.keys()])) {
+    const same = before.get(key) === now.get(key)
+    if (!same && listed(key)) changed.push(key)
+    const kept = same || listed(key) ? now.get(key) : before.get(key)
+    if (kept !== undefined) digest.set(key, kept)
+  }
+  return { changed, digest }
 }
 
 const PREFIX = 'snapshot/'
