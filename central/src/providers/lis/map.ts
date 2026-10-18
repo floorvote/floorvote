@@ -746,6 +746,8 @@ export async function buildLisBill(
     const yea = count('Y'), nay = count('N')
     votes.push({
       roll_call_id: ids.rollCall(refid), date, desc: action,
+      // The roll_calls row has no abstain column, so this Not Voting number includes abstentions (X plus A),
+      // while the member list below shows Abstain as its own group by vote_text.
       yea, nay, nv: count('X') + count('A'), absent: 0, total: members.length,
       passed: yea > nay ? 1 : 0, chamber, chamber_id: 0, url: '', state_link: lisBillUrl(sessionCode, number),
       member_votes: members.map(([memberId, v]) => ({
