@@ -16,3 +16,10 @@ describe('central Layout', () => {
     expect(screen.getByText('Central Admin')).toBeInTheDocument()
   })
 })
+
+describe('central Layout nav', () => {
+  it('links to the States page', () => {
+    render(<MemoryRouter><Layout /></MemoryRouter>)
+    expect(screen.getByRole('link', { name: 'States' })).toHaveAttribute('href', '/states')
+  })
+})
