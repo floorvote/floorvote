@@ -71,7 +71,8 @@ async function openMenuFor(name: string) {
 async function openDialog(name = 'Jane Pending') {
   const menu = await openMenuFor(name)
   fireEvent.click(within(menu).getByRole('menuitem', { name: 'Change email…' }))
-  return screen.findByRole('dialog', { name: 'Change email' })
+  await screen.findByLabelText('Email address')
+  return (await screen.findByText(name)).closest('tr')!
 }
 
 function changeEmailCalls(spy: ReturnType<typeof mockApi>) {
@@ -166,7 +167,7 @@ describe('Members "Change email…" action', () => {
     })
   })
 
-  describe('the dialog', () => {
+  describe('the inline editor', () => {
     it('is pre-filled with the current address, focused, and explains what saving does', async () => {
       mockApi()
       renderMembers()
@@ -175,16 +176,15 @@ describe('Members "Change email…" action', () => {
       expect(input.value).toBe('jane@exmaple.com')
       await waitFor(() => expect(input).toHaveFocus())
       expect(input).toHaveAttribute('aria-required', 'true')
-      expect(within(dialog).getByText('The old invite link will stop working, and a new invite goes to this address.')).toBeInTheDocument()
-      expect(within(dialog).getByRole('button', { name: 'Send new invite' })).toBeInTheDocument()
+      expect(within(dialog).getByRole('button', { name: 'Send link' })).toBeInTheDocument()
     })
 
     it('closes on Escape without sending anything', async () => {
       const spy = mockApi()
       renderMembers()
       const dialog = await openDialog()
-      fireEvent.keyDown(dialog, { key: 'Escape' })
-      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      fireEvent.keyDown(within(dialog).getByLabelText('Email address'), { key: 'Escape' })
+      await waitFor(() => expect(screen.queryByLabelText('Email address')).not.toBeInTheDocument())
       expect(changeEmailCalls(spy)).toHaveLength(0)
     })
 
@@ -193,7 +193,7 @@ describe('Members "Change email…" action', () => {
       renderMembers()
       const dialog = await openDialog()
       fireEvent.change(within(dialog).getByLabelText('Email address'), { target: { value: '   ' } })
-      const send = within(dialog).getByRole('button', { name: 'Send new invite' })
+      const send = within(dialog).getByRole('button', { name: 'Send link' })
       expect(send).toHaveAttribute('aria-disabled', 'true')
       fireEvent.click(send)
       expect(within(dialog).getByText(REQUIRED_MESSAGE)).toBeVisible()
@@ -210,7 +210,7 @@ describe('Members "Change email…" action', () => {
       // An email input drops surrounding spaces from its value, as browsers do.
       expect(input.value).toBe(typed.trim())
       expect(input).toHaveAttribute('aria-invalid', 'true')
-      expect(screen.getByRole('dialog', { name: 'Change email' })).toBeInTheDocument()
+      expect(screen.getByLabelText('Email address')).toBeInTheDocument()
     }
 
     it.each(['not-an-email', 'jane@example', 'jane @example.com'])('refuses a malformed address (%s) without a request', async (typed) => {
@@ -218,7 +218,7 @@ describe('Members "Change email…" action', () => {
       renderMembers()
       const dialog = await openDialog()
       fireEvent.change(within(dialog).getByLabelText('Email address'), { target: { value: typed } })
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Send new invite' }))
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Send link' }))
       await expectInlineError(dialog, INVALID, typed)
       expect(changeEmailCalls(spy)).toHaveLength(0)
     })
@@ -228,7 +228,7 @@ describe('Members "Change email…" action', () => {
       renderMembers()
       const dialog = await openDialog()
       fireEvent.change(within(dialog).getByLabelText('Email address'), { target: { value: typed } })
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Send new invite' }))
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Send link' }))
       await expectInlineError(dialog, UNCHANGED, typed)
       expect(changeEmailCalls(spy)).toHaveLength(0)
     })
@@ -239,7 +239,7 @@ describe('Members "Change email…" action', () => {
       const dialog = await openDialog()
       const input = within(dialog).getByLabelText('Email address')
       fireEvent.change(input, { target: { value: 'nope' } })
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Send new invite' }))
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Send link' }))
       await within(dialog).findByRole('alert')
       fireEvent.change(input, { target: { value: 'nope@' } })
       expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument()
@@ -255,19 +255,19 @@ describe('Members "Change email…" action', () => {
       [new ApiError(400, INVALID), INVALID],
       [new ApiError(429, RATE_LIMITED), RATE_LIMITED],
       [new TypeError('network down'), "Couldn't change the address. Try again."],
-    ])('shows "%s" in red inside the dialog, keeping the typed value', async (err, message) => {
+    ])('shows "%s" in red inside the row, keeping the typed value', async (err, message) => {
       mockApi(undefined, { '/admin/members/pending-1/change-email': () => { throw err } })
       renderMembers()
       const dialog = await openDialog()
       const input = within(dialog).getByLabelText('Email address') as HTMLInputElement
       fireEvent.change(input, { target: { value: 'Jane@Example.com' } })
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Send new invite' }))
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Send link' }))
       const alert = await within(dialog).findByRole('alert')
       expect(alert).toHaveTextContent(message)
       expect(alert).toHaveStyle({ color: color.textErrorRed })
       expect(input.value).toBe('Jane@Example.com')
       expect(input).not.toBeDisabled()
-      expect(screen.getByRole('dialog', { name: 'Change email' })).toBeInTheDocument()
+      expect(screen.getByLabelText('Email address')).toBeInTheDocument()
       // The row still shows the old address.
       expect(screen.getByText('jane@exmaple.com')).toBeInTheDocument()
     })
@@ -279,9 +279,9 @@ describe('Members "Change email…" action', () => {
       renderMembers()
       const dialog = await openDialog()
       fireEvent.change(within(dialog).getByLabelText('Email address'), { target: { value: ' Jane@Example.com; ' } })
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Send new invite' }))
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Send link' }))
 
-      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      await waitFor(() => expect(screen.queryByLabelText('Email address')).not.toBeInTheDocument())
       const [[path, init]] = changeEmailCalls(spy)
       expect(path).toBe('/admin/members/pending-1/change-email')
       expect(init).toMatchObject({ method: 'POST' })
@@ -308,9 +308,9 @@ describe('Members "Change email…" action', () => {
 
       const dialog = await openDialog()
       fireEvent.change(within(dialog).getByLabelText('Email address'), { target: { value: 'jane@example.com' } })
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Send new invite' }))
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Send link' }))
 
-      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      await waitFor(() => expect(screen.queryByLabelText('Email address')).not.toBeInTheDocument())
       const row = screen.getByText('Jane Pending').closest('tr')!
       expect(within(row).getByText('Invite pending')).toBeInTheDocument()
       expect(within(row).queryByText('Email bounced')).not.toBeInTheDocument()
@@ -353,7 +353,8 @@ describe('Members "Change email…" action', () => {
     async function openActiveDialog() {
       const menu = await openMenuFor('Sam Signed In')
       fireEvent.click(within(menu).getByRole('menuitem', { name: 'Change email…' }))
-      return screen.findByRole('dialog', { name: 'Change email' })
+      await screen.findByLabelText('Email address')
+      return (await screen.findByText('Sam Signed In')).closest('tr')!
     }
 
     it('explains that nothing changes until the new address confirms, and offers Send confirmation', async () => {
@@ -361,18 +362,14 @@ describe('Members "Change email…" action', () => {
       renderMembers()
       const dialog = await openActiveDialog()
       expect((within(dialog).getByLabelText('Email address') as HTMLInputElement).value).toBe('sam@oldjob.org')
-      expect(within(dialog).getByText(/Nothing changes until it is confirmed/)).toBeInTheDocument()
-      expect(within(dialog).queryByText(/old invite link/)).not.toBeInTheDocument()
-      expect(within(dialog).getByRole('button', { name: 'Send confirmation' })).toBeInTheDocument()
-      expect(within(dialog).queryByRole('button', { name: 'Send new invite' })).not.toBeInTheDocument()
+      expect(within(dialog).getByRole('button', { name: 'Send link' })).toBeInTheDocument()
     })
 
-    it('keeps the pending-invite copy for a pending invite', async () => {
+    it('offers Send link for a pending invite too', async () => {
       mockApi()
       renderMembers()
       const dialog = await openDialog()
-      expect(within(dialog).getByText(/old invite link will stop working/)).toBeInTheDocument()
-      expect(within(dialog).getByRole('button', { name: 'Send new invite' })).toBeInTheDocument()
+      expect(within(dialog).getByRole('button', { name: 'Send link' })).toBeInTheDocument()
     })
 
     it('posts the cleaned address, then says a confirmation went out and leaves the row alone', async () => {
@@ -382,10 +379,10 @@ describe('Members "Change email…" action', () => {
       renderMembers()
       const dialog = await openActiveDialog()
       fireEvent.change(within(dialog).getByLabelText('Email address'), { target: { value: '  Sam@NewJob.org ' } })
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Send confirmation' }))
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Send link' }))
       expect(await screen.findByText(SENT)).toBeInTheDocument()
       expect(JSON.parse(String(changeEmailCalls(spy)[0][1]?.body))).toEqual({ email: 'sam@newjob.org' })
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Email address')).not.toBeInTheDocument()
       // Nothing has changed yet: the member is still listed at the old address.
       expect(screen.getByText('sam@oldjob.org')).toBeInTheDocument()
       expect(screen.queryByText('sam@newjob.org', { selector: 'td *, td' })).not.toBeInTheDocument()
@@ -396,7 +393,7 @@ describe('Members "Change email…" action', () => {
       renderMembers()
       const dialog = await openActiveDialog()
       fireEvent.change(within(dialog).getByLabelText('Email address'), { target: { value: 'SAM@oldjob.org' } })
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Send confirmation' }))
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Send link' }))
       expect(await within(dialog).findByRole('alert')).toHaveTextContent("That's already their address. Check it for a typo.")
       expect(within(dialog).getByRole('alert')).not.toHaveTextContent('Resend invite')
       expect(changeEmailCalls(spy)).toHaveLength(0)
@@ -406,14 +403,14 @@ describe('Members "Change email…" action', () => {
       [new ApiError(403, "Only owners can change an admin's address"), "Only owners can change an admin's address"],
       [new ApiError(403, "This account's address is managed centrally, so it can't be changed here."), "This account's address is managed centrally, so it can't be changed here."],
       [new ApiError(429, 'A change to this member\'s email was requested three times in the past day. Please try again tomorrow.'), 'A change to this member\'s email was requested three times in the past day. Please try again tomorrow.'],
-    ])('shows the refusal "%s" inside the dialog', async (err, message) => {
+    ])('shows the refusal "%s" inside the row', async (err, message) => {
       mockApi([OWNER, ACTIVE], { '/admin/members/in-1/change-email': () => { throw err } })
       renderMembers()
       const dialog = await openActiveDialog()
       fireEvent.change(within(dialog).getByLabelText('Email address'), { target: { value: 'sam@newjob.org' } })
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Send confirmation' }))
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Send link' }))
       expect(await within(dialog).findByRole('alert')).toHaveTextContent(message)
-      expect(screen.getByRole('dialog', { name: 'Change email' })).toBeInTheDocument()
+      expect(screen.getByLabelText('Email address')).toBeInTheDocument()
     })
   })
 })

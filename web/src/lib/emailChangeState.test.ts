@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { emailChangeReducer, pillText, isEmailChangeOpen, type EmailChangeState } from './emailChangeState'
+import { emailChangeReducer, CANCEL_NOTE, pillText, isEmailChangeOpen, type EmailChangeState } from './emailChangeState'
 
 const idle: EmailChangeState = { kind: 'idle' }
 const editing = (over: Partial<Extract<EmailChangeState, { kind: 'editing' }>> = {}): EmailChangeState =>
@@ -39,8 +39,13 @@ describe('emailChangeReducer', () => {
     expect(emailChangeReducer(editing({ value: 'a' }), { type: 'cancel' })).toEqual(idle)
   })
 
-  it('cancel from pending returns to idle', () => {
-    expect(emailChangeReducer(pending(), { type: 'cancel' })).toEqual(idle)
+  it('cancel from pending returns to idle with a note that the sent link still works', () => {
+    expect(emailChangeReducer(pending(), { type: 'cancel' })).toEqual({ kind: 'idle', note: CANCEL_NOTE })
+    expect(CANCEL_NOTE).toBe('Cancelled here. A link already sent still works until it expires.')
+  })
+
+  it('opening clears the note', () => {
+    expect(emailChangeReducer({ kind: 'idle', note: CANCEL_NOTE }, { type: 'open' })).toEqual(editing())
   })
 
   it('resend marks the pill busy, and a resend failure keeps it pending with the message', () => {

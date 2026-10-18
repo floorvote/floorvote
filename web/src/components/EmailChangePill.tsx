@@ -32,7 +32,13 @@ export const EmailChangePill = forwardRef<HTMLDivElement, EmailChangePillProps>(
   { state, onResend, onCancel, resendDisabled, confirmedAnnounce, resendRef }, ref,
 ) {
   const text = pillText(state)
-  if (!text) return null
+  if (!text) {
+    // After Cancel on a pending change: say plainly that nothing was revoked.
+    if (state.kind === 'idle' && state.note) {
+      return <div ref={ref} role="status" style={{ marginTop: 6, fontSize: fontSize.sm, color: color.textSecondary }}>{state.note}</div>
+    }
+    return null
+  }
 
   function handleKeyDown(e: KeyboardEvent) {
     if (state.kind === 'pending' && e.key === 'Escape') {

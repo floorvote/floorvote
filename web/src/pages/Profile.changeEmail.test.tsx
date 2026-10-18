@@ -69,11 +69,11 @@ describe('Profile: change your email', () => {
     const spy = mockApi({ '/users/me/email-change': () => ({ ok: true, email: 'jane@newjob.org' }) })
     renderProfile()
     fireEvent.change(await openForm(), { target: { value: 'Jane@NewJob.org' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Send confirmation' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send link' }))
 
     const notice = await screen.findByRole('status')
-    expect(notice).toHaveTextContent('We sent a confirmation link to jane@newjob.org.')
-    expect(notice).toHaveTextContent('Your email stays jane@oldjob.org until you open that link and confirm. It expires in 24 hours.')
+    expect(notice).toHaveTextContent('Link sent to jane@newjob.org.')
+    expect(notice).toHaveTextContent('Your email stays jane@oldjob.org until you confirm it. The link expires in 24 hours.')
     expect(requests(spy)).toEqual([{ email: 'Jane@NewJob.org', turnstileToken: null }])
     expect(screen.queryByLabelText('New email')).not.toBeInTheDocument()
     expect(screen.getByText('jane@oldjob.org')).toBeInTheDocument()
@@ -85,7 +85,7 @@ describe('Profile: change your email', () => {
     })
     renderProfile()
     fireEvent.change(await openForm(), { target: { value: 'bob@shared.org' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Send confirmation' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send link' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('That address is already used by another member.')
     expect(screen.getByLabelText('New email')).toHaveValue('bob@shared.org')
   })
@@ -94,7 +94,7 @@ describe('Profile: change your email', () => {
     const spy = mockApi({ '/users/me/email-change': () => ({ ok: true, email: 'jane@newjob.org' }) }, 'site-key')
     renderProfile()
     fireEvent.change(await openForm(), { target: { value: 'jane@newjob.org' } })
-    const send = screen.getByRole('button', { name: 'Send confirmation' })
+    const send = screen.getByRole('button', { name: 'Send link' })
     await waitFor(() => expect(screen.getByRole('button', { name: 'Solve challenge' })).toBeInTheDocument())
     expect(send).toBeDisabled()
 
@@ -105,7 +105,7 @@ describe('Profile: change your email', () => {
     expect(requests(spy)).toEqual([{ email: 'jane@newjob.org', turnstileToken: 'solved-token' }])
   })
 
-  describe.each<Mode>(['light', 'dark'])('Send confirmation button contrast (%s mode)', (mode) => {
+  describe.each<Mode>(['light', 'dark'])('Send link button contrast (%s mode)', (mode) => {
     const ratioOf = (btn: HTMLElement) =>
       contrast(resolveColor(btn.style.color, mode), resolveColor(btn.style.background, mode))
 
@@ -113,7 +113,7 @@ describe('Profile: change your email', () => {
       mockApi()
       renderProfile()
       fireEvent.change(await openForm(), { target: { value: 'jane@newjob.org' } })
-      const send = screen.getByRole('button', { name: 'Send confirmation' })
+      const send = screen.getByRole('button', { name: 'Send link' })
       expect(send).toBeEnabled()
       expect(ratioOf(send)).toBeGreaterThanOrEqual(4.5)
     })
@@ -122,7 +122,7 @@ describe('Profile: change your email', () => {
       mockApi()
       renderProfile()
       await openForm()
-      const send = screen.getByRole('button', { name: 'Send confirmation' })
+      const send = screen.getByRole('button', { name: 'Send link' })
       expect(send).toBeDisabled()
       expect(ratioOf(send)).toBeGreaterThanOrEqual(3)
       expect(send.style.opacity).toBe('')

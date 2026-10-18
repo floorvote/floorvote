@@ -331,12 +331,12 @@ export function Profile() {
         body: JSON.stringify({ email, turnstileToken }),
       })
       if (resend) {
-        dispatchEmailChange({ type: 'resent', announce: `We sent the link to ${r.email} again.` })
+        dispatchEmailChange({ type: 'resent', announce: `Link sent again to ${r.email}.` })
       } else {
         dispatchEmailChange({
           type: 'sent',
           to: r.email,
-          announce: `We sent a confirmation link to ${r.email}. Your email stays ${user?.email} until you open that link and confirm. It expires in 24 hours.`,
+          announce: `Link sent to ${r.email}. Your email stays ${user?.email} until you confirm it. The link expires in 24 hours.`,
         })
       }
       focusEmail('resend')
@@ -555,7 +555,7 @@ export function Profile() {
                       cursor: changeEmailReady ? 'pointer' : 'not-allowed',
                     }}
                   >
-                    {emailChange.sending ? 'Sending…' : 'Send confirmation'}
+                    {emailChange.sending ? 'Sending…' : 'Send link'}
                   </button>
                   <button
                     type="button"

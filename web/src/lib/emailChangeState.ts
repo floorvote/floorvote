@@ -7,10 +7,13 @@
 //              address stays until the new one confirms.
 //   confirmed  "✓ Changed today"
 //
+// Cancelling a pending change only dismisses it here: there is no way to
+// revoke the link, so the idle state carries a note saying it still works.
+//
 // Pure and free of React so it can be unit-tested on its own.
 
 export type EmailChangeState =
-  | { kind: 'idle' }
+  | { kind: 'idle'; note?: string }
   | { kind: 'editing'; value: string; error: string | null; sending: boolean }
   | { kind: 'pending'; to: string; busy: boolean; error: string | null; announce: string }
   | { kind: 'confirmed'; email: string }
@@ -28,6 +31,8 @@ export type EmailChangeAction =
   | { type: 'confirmed'; email: string }
 
 export const IDLE: EmailChangeState = { kind: 'idle' }
+
+export const CANCEL_NOTE = 'Cancelled here. A link already sent still works until it expires.'
 
 export function emailChangeReducer(state: EmailChangeState, action: EmailChangeAction): EmailChangeState {
   switch (action.type) {
@@ -55,7 +60,7 @@ export function emailChangeReducer(state: EmailChangeState, action: EmailChangeA
       if (state.kind !== 'pending') return state
       return { ...state, busy: false, error: action.message }
     case 'cancel':
-      return IDLE
+      return state.kind === 'pending' ? { kind: 'idle', note: CANCEL_NOTE } : IDLE
     case 'confirmed':
       return { kind: 'confirmed', email: action.email }
   }

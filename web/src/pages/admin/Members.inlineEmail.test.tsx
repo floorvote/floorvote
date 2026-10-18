@@ -44,7 +44,8 @@ async function openDialogFor(name: string) {
   const row = await rowOf(name)
   fireEvent.click(within(row).getByRole('button', { name: '···' }))
   fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Change email…' }))
-  return screen.findByRole('dialog', { name: 'Change email' })
+  await screen.findByLabelText('Email address')
+  return rowOf(name)
 }
 async function sendFor(name: string, address: string, button: string) {
   const dialog = await openDialogFor(name)
@@ -57,11 +58,36 @@ const ACTIVE_OK = { '/admin/members/in-1/change-email': () => ({ ok: true, email
 describe('Members row: email change states', () => {
   beforeEach(() => { vi.restoreAllMocks() })
 
+  describe('editing inline', () => {
+    it.each([['Sam Signed In', 'sam@oldjob.org'], ['Jane Pending', 'jane@exmaple.com']])('opens in the member row for %s, pre-filled and focused, with no dialog', async (name, email) => {
+      mockApi()
+      render(<MemoryRouter><Members /></MemoryRouter>)
+      const row = await openDialogFor(name)
+      const input = within(row).getByLabelText('Email address') as HTMLInputElement
+      expect(input.value).toBe(email)
+      await waitFor(() => expect(input).toHaveFocus())
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(within(row).getByRole('button', { name: 'Send link' })).toBeInTheDocument()
+      expect(within(row).getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+    })
+
+    it('Cancel closes the edit without a request and focuses the row actions button', async () => {
+      const spy = mockApi()
+      render(<MemoryRouter><Members /></MemoryRouter>)
+      const row = await openDialogFor('Sam Signed In')
+      fireEvent.click(within(row).getByRole('button', { name: 'Cancel' }))
+      expect(screen.queryByLabelText('Email address')).not.toBeInTheDocument()
+      await waitFor(() => expect(within(row).getByRole('button', { name: '···' })).toHaveFocus())
+      expect(calls(spy, 'in-1')).toHaveLength(0)
+      expect(within(row).queryByText(/still works/)).not.toBeInTheDocument()
+    })
+  })
+
   describe('active member, sent and pending', () => {
     it('shows the short pill in the member row, with Resend and Cancel, while the old address stays', async () => {
       mockApi(ACTIVE_OK)
       render(<MemoryRouter><Members /></MemoryRouter>)
-      await sendFor('Sam Signed In', 'sam@newjob.org', 'Send confirmation')
+      await sendFor('Sam Signed In', 'sam@newjob.org', 'Send link')
       const row = await rowOf('Sam Signed In')
       expect(await within(row).findByText('→ sam@newjob.org · Link sent')).toBeInTheDocument()
       expect(within(row).getByRole('button', { name: 'Resend' })).toBeInTheDocument()
@@ -72,7 +98,7 @@ describe('Members row: email change states', () => {
     it('announces the result to a screen reader', async () => {
       mockApi(ACTIVE_OK)
       render(<MemoryRouter><Members /></MemoryRouter>)
-      await sendFor('Sam Signed In', 'sam@newjob.org', 'Send confirmation')
+      await sendFor('Sam Signed In', 'sam@newjob.org', 'Send link')
       const row = await rowOf('Sam Signed In')
       const status = await within(row).findByRole('status')
       expect(status).toHaveTextContent('Link sent to sam@newjob.org. The address changes once they confirm it.')
@@ -81,25 +107,25 @@ describe('Members row: email change states', () => {
     it('leaves other members rows without a pill', async () => {
       mockApi(ACTIVE_OK)
       render(<MemoryRouter><Members /></MemoryRouter>)
-      await sendFor('Sam Signed In', 'sam@newjob.org', 'Send confirmation')
+      await sendFor('Sam Signed In', 'sam@newjob.org', 'Send link')
       await screen.findByText('→ sam@newjob.org · Link sent')
       const other = await rowOf('Pat Other')
       expect(within(other).queryByText(/Link sent/)).not.toBeInTheDocument()
       expect(within(other).queryByRole('button', { name: 'Resend' })).not.toBeInTheDocument()
     })
 
-    it('puts focus back on the row actions button after the dialog saves', async () => {
+    it('moves focus to Resend after the link is sent', async () => {
       mockApi(ACTIVE_OK)
       render(<MemoryRouter><Members /></MemoryRouter>)
-      await sendFor('Sam Signed In', 'sam@newjob.org', 'Send confirmation')
+      await sendFor('Sam Signed In', 'sam@newjob.org', 'Send link')
       const row = await rowOf('Sam Signed In')
-      await waitFor(() => expect(within(row).getByRole('button', { name: '···' })).toHaveFocus())
+      await waitFor(() => expect(within(row).getByRole('button', { name: 'Resend' })).toHaveFocus())
     })
 
     it('Resend posts the same address and announces it again', async () => {
       const spy = mockApi(ACTIVE_OK)
       render(<MemoryRouter><Members /></MemoryRouter>)
-      await sendFor('Sam Signed In', 'sam@newjob.org', 'Send confirmation')
+      await sendFor('Sam Signed In', 'sam@newjob.org', 'Send link')
       const row = await rowOf('Sam Signed In')
       fireEvent.click(await within(row).findByRole('button', { name: 'Resend' }))
       await waitFor(() => expect(calls(spy, 'in-1')).toHaveLength(2))
@@ -117,7 +143,7 @@ describe('Members row: email change states', () => {
         },
       })
       render(<MemoryRouter><Members /></MemoryRouter>)
-      await sendFor('Sam Signed In', 'sam@newjob.org', 'Send confirmation')
+      await sendFor('Sam Signed In', 'sam@newjob.org', 'Send link')
       const row = await rowOf('Sam Signed In')
       fireEvent.click(await within(row).findByRole('button', { name: 'Resend' }))
       expect(await within(row).findByRole('alert')).toHaveTextContent('requested three times in the past day')
@@ -128,7 +154,7 @@ describe('Members row: email change states', () => {
     it('Cancel removes the pill, leaves the address, sends nothing, and focuses the row actions button', async () => {
       const spy = mockApi(ACTIVE_OK)
       render(<MemoryRouter><Members /></MemoryRouter>)
-      await sendFor('Sam Signed In', 'sam@newjob.org', 'Send confirmation')
+      await sendFor('Sam Signed In', 'sam@newjob.org', 'Send link')
       const row = await rowOf('Sam Signed In')
       fireEvent.click(await within(row).findByRole('button', { name: 'Cancel' }))
       expect(within(row).queryByText(/Link sent/)).not.toBeInTheDocument()
@@ -137,10 +163,19 @@ describe('Members row: email change states', () => {
       expect(calls(spy, 'in-1')).toHaveLength(1)
     })
 
+    it('after Cancel, says plainly that a link already sent still works until it expires', async () => {
+      mockApi(ACTIVE_OK)
+      render(<MemoryRouter><Members /></MemoryRouter>)
+      await sendFor('Sam Signed In', 'sam@newjob.org', 'Send link')
+      const row = await rowOf('Sam Signed In')
+      fireEvent.click(await within(row).findByRole('button', { name: 'Cancel' }))
+      expect(await within(row).findByText('Cancelled here. A link already sent still works until it expires.')).toBeInTheDocument()
+    })
+
     it('Escape on the pill cancels it', async () => {
       mockApi(ACTIVE_OK)
       render(<MemoryRouter><Members /></MemoryRouter>)
-      await sendFor('Sam Signed In', 'sam@newjob.org', 'Send confirmation')
+      await sendFor('Sam Signed In', 'sam@newjob.org', 'Send link')
       const row = await rowOf('Sam Signed In')
       fireEvent.keyDown(await within(row).findByRole('button', { name: 'Resend' }), { key: 'Escape' })
       expect(within(row).queryByText(/Link sent/)).not.toBeInTheDocument()
@@ -151,7 +186,7 @@ describe('Members row: email change states', () => {
     it('shows "✓ Changed today" in the row, with the new address, and announces it', async () => {
       mockApi({ '/admin/members/pending-1/change-email': () => ({ ok: true, email: 'jane@example.com' }) })
       render(<MemoryRouter><Members /></MemoryRouter>)
-      await sendFor('Jane Pending', 'jane@example.com', 'Send new invite')
+      await sendFor('Jane Pending', 'jane@example.com', 'Send link')
       const row = await rowOf('Jane Pending')
       expect(await within(row).findByText('✓ Changed today')).toBeInTheDocument()
       expect(within(row).getByText('jane@example.com')).toBeInTheDocument()
@@ -161,13 +196,13 @@ describe('Members row: email change states', () => {
     })
   })
 
-  describe('editing and refusals in the dialog', () => {
+  describe('editing and refusals in the row', () => {
     it('Escape cancels the edit, sends nothing, and focus returns to the row actions button', async () => {
       const spy = mockApi()
       render(<MemoryRouter><Members /></MemoryRouter>)
       const dialog = await openDialogFor('Sam Signed In')
-      fireEvent.keyDown(dialog, { key: 'Escape' })
-      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      fireEvent.keyDown(within(dialog).getByLabelText('Email address'), { key: 'Escape' })
+      await waitFor(() => expect(screen.queryByLabelText('Email address')).not.toBeInTheDocument())
       const row = await rowOf('Sam Signed In')
       await waitFor(() => expect(within(row).getByRole('button', { name: '···' })).toHaveFocus())
       expect(calls(spy, 'in-1')).toHaveLength(0)
@@ -177,11 +212,11 @@ describe('Members row: email change states', () => {
     it.each([
       [new ApiError(409, 'Another member already uses that address.'), 'Another member already uses that address.'],
       [new ApiError(400, "This address can't receive email. Check it for a typo."), "This address can't receive email. Check it for a typo."],
-    ])('keeps the refusal "%s" in the dialog, refocuses the input, announces it, and adds no pill', async (err, message) => {
+    ])('keeps the refusal "%s" under the input in the row, refocuses the input, announces it, and adds no pill', async (err, message) => {
       mockApi({ '/admin/members/in-1/change-email': () => { throw err } })
       render(<MemoryRouter><Members /></MemoryRouter>)
-      await sendFor('Sam Signed In', 'sam@newjob.org', 'Send confirmation')
-      const dialog = screen.getByRole('dialog', { name: 'Change email' })
+      await sendFor('Sam Signed In', 'sam@newjob.org', 'Send link')
+      const dialog = await rowOf('Sam Signed In')
       const alert = await within(dialog).findByRole('alert')
       expect(alert).toHaveTextContent(message)
       const input = within(dialog).getByLabelText('Email address')

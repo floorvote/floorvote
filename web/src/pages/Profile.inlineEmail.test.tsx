@@ -60,7 +60,7 @@ async function openEdit() {
 async function sendTo(address: string) {
   const input = await openEdit()
   fireEvent.change(input, { target: { value: address } })
-  fireEvent.click(screen.getByRole('button', { name: 'Send confirmation' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Send link' }))
   return input
 }
 
@@ -81,7 +81,7 @@ describe('Profile email row: inline change', () => {
       const row = screen.getByTestId('email-row')
       expect(within(row).getByLabelText('New email')).toBe(input)
       expect(within(row).getByText('jane@oldjob.org')).toBeInTheDocument()
-      expect(within(row).getByRole('button', { name: 'Send confirmation' })).toBeInTheDocument()
+      expect(within(row).getByRole('button', { name: 'Send link' })).toBeInTheDocument()
       expect(within(row).getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
       expect(within(row).queryByRole('button', { name: 'Change email…' })).not.toBeInTheDocument()
     })
@@ -128,7 +128,7 @@ describe('Profile email row: inline change', () => {
       mockApi()
       render(tree())
       await openEdit()
-      expect(screen.getByRole('button', { name: 'Send confirmation' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'Send link' })).toBeDisabled()
     })
   })
 
@@ -144,8 +144,8 @@ describe('Profile email row: inline change', () => {
       expect(within(row).queryByLabelText('New email')).not.toBeInTheDocument()
       expect(within(row).getByText('jane@oldjob.org')).toBeInTheDocument()
       const status = screen.getByRole('status')
-      expect(status).toHaveTextContent('We sent a confirmation link to jane@newjob.org.')
-      expect(status).toHaveTextContent('Your email stays jane@oldjob.org until you open that link and confirm. It expires in 24 hours.')
+      expect(status).toHaveTextContent('Link sent to jane@newjob.org.')
+      expect(status).toHaveTextContent('Your email stays jane@oldjob.org until you confirm it. The link expires in 24 hours.')
     })
 
     it('moves focus to Resend once the link is sent', async () => {
@@ -162,7 +162,7 @@ describe('Profile email row: inline change', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Resend' }))
       await waitFor(() => expect(requests(spy)).toHaveLength(2))
       expect(requests(spy)[1]).toEqual({ email: 'jane@newjob.org', turnstileToken: null })
-      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('We sent the link to jane@newjob.org again.'))
+      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Link sent again to jane@newjob.org.'))
       expect(screen.getByText('→ jane@newjob.org · Link sent')).toBeInTheDocument()
     })
 
@@ -195,6 +195,17 @@ describe('Profile email row: inline change', () => {
       expect(requests(spy)).toHaveLength(1)
     })
 
+    it('after Cancel, says plainly that a link already sent still works until it expires', async () => {
+      mockApi(OK)
+      render(tree())
+      await sendTo('jane@newjob.org')
+      await screen.findByText('→ jane@newjob.org · Link sent')
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      expect(await screen.findByText('Cancelled here. A link already sent still works until it expires.')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Change email…' }))
+      expect(screen.queryByText(/still works until it expires/)).not.toBeInTheDocument()
+    })
+
     it('Escape on the pill cancels it', async () => {
       mockApi(OK)
       render(tree())
@@ -209,7 +220,7 @@ describe('Profile email row: inline change', () => {
       render(tree())
       fireEvent.change(await openEdit(), { target: { value: 'jane@newjob.org' } })
       fireEvent.click(await screen.findByRole('button', { name: 'Solve challenge' }))
-      fireEvent.click(screen.getByRole('button', { name: 'Send confirmation' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Send link' }))
       const resend = await screen.findByRole('button', { name: 'Resend' })
       await waitFor(() => expect(screen.getByRole('button', { name: 'Solve challenge' })).toBeInTheDocument())
       expect(resend).toBeDisabled()
@@ -283,7 +294,7 @@ describe('Profile email row: inline change', () => {
       const input = await sendTo('bob@shared.org')
       await screen.findByRole('alert')
       fireEvent.change(input, { target: { value: 'bob@other.org' } })
-      fireEvent.click(screen.getByRole('button', { name: 'Send confirmation' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Send link' }))
       expect(await screen.findByText('→ bob@other.org · Link sent')).toBeInTheDocument()
     })
   })
