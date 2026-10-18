@@ -349,11 +349,6 @@ describe('POST /tenants/promote-bills/:tenantId — bulk promote', () => {
   })
 
   it('does NOT reject an under-limit batch (cap fires only above the limit)', async () => {
-    // A batch under REPROCESS_LIMIT must pass the cap and queue normally. (Kept
-    // small — well under D1's per-statement bound-parameter ceiling. The route
-    // upserts all links in a single statement, so it independently breaks for
-    // very large batches; chunking that insert is a separate latent bug, out of
-    // scope for the quota cap added here.)
     const { env2, sent } = ingestorEnv()
     const billIds = Array.from({ length: 30 }, (_, i) => i + 1)
     const res = await app.fetch(
@@ -365,6 +360,70 @@ describe('POST /tenants/promote-bills/:tenantId — bulk promote', () => {
     expect(res.status).toBe(200)
     expect((await res.json() as any).promoted).toBe(30)
     expect(sent).toHaveLength(30)
+  })
+
+  // D1 binds at most 100 parameters per statement and the upsert binds 3 per row, so one
+  // statement breaks above 33 rows. These sizes straddle the chunk boundaries.
+  async function promoteN(n: number) {
+    const { env2, sent } = ingestorEnv()
+    const billIds = Array.from({ length: n }, (_, i) => i + 1)
+    const res = await app.fetch(
+      new Request('http://central/api/tenants/promote-bills/ri', {
+        method: 'POST', headers: AUTH, body: JSON.stringify({ billIds }),
+      }),
+      env2,
+    )
+    return { res, sent, billIds }
+  }
+  async function riRows() {
+    const db = drizzle(env.DB, { schema })
+    return (await db.select().from(schema.billTenants).all()).filter(r => r.tenantId === 'ri')
+  }
+
+  it.each([30, 33, 34, 150, 1000])('promotes %i bills: every row upserted, every bill queued', async (n) => {
+    const { res, sent, billIds } = await promoteN(n)
+    expect(res.status).toBe(200)
+    expect((await res.json() as any).promoted).toBe(n)
+    const rows = await riRows()
+    expect(rows).toHaveLength(n)
+    expect(rows.every(r => r.matchType === 'manual')).toBe(true)
+    expect(rows.map(r => r.billId).sort((a, b) => a - b)).toEqual(billIds)
+    expect(sent).toHaveLength(n)
+    expect(sent.every(m => m.forceAI === true)).toBe(true)
+    expect(sent.map(m => m.billId).sort((a, b) => a - b)).toEqual(billIds)
+  })
+
+  it('upgrades existing keyword links to manual across chunks and leaves other tenants alone', async () => {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.billTenants).values([
+      { billId: 5, tenantId: 'ri', matchType: 'keyword' },
+      { billId: 80, tenantId: 'ri', matchType: 'keyword' },
+      { billId: 5, tenantId: 'nj', matchType: 'keyword' },
+    ])
+    const { res } = await promoteN(100)
+    expect(res.status).toBe(200)
+    const rows = await riRows()
+    expect(rows).toHaveLength(100)
+    expect(rows.every(r => r.matchType === 'manual')).toBe(true)
+    const nj = (await db.select().from(schema.billTenants).all()).filter(r => r.tenantId === 'nj')
+    expect(nj).toEqual([expect.objectContaining({ billId: 5, matchType: 'keyword' })])
+  })
+
+  it('is idempotent: a second identical request leaves the same rows and succeeds', async () => {
+    const first = await promoteN(150)
+    expect(first.res.status).toBe(200)
+    const second = await promoteN(150)
+    expect(second.res.status).toBe(200)
+    expect((await second.res.json() as any).promoted).toBe(150)
+    expect(await riRows()).toHaveLength(150)
+    expect(second.sent).toHaveLength(150)
+  })
+
+  it('still refuses 1001 bills with nothing written', async () => {
+    const { res, sent } = await promoteN(1001)
+    expect(res.status).toBe(400)
+    expect(sent).toHaveLength(0)
+    expect(await riRows()).toHaveLength(0)
   })
 })
 
