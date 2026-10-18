@@ -62,6 +62,8 @@ export interface EventFacets {
   committeeId: string | null
   committee: string | null
   jointWith: string | null
+  /** The state whose legislature holds the event. Absent on an event described before states were kept. */
+  state?: string | null
   kind: string
   type: string | null
   title: string
@@ -269,4 +271,19 @@ export function withCommittee(rules: EventRules | null, committee: { committeeId
     return { ...base, committees: [...base.committees, { committeeId: committee.committeeId, name: committee.name }] }
   }
   return { ...base, committees: base.committees.filter(c => c.committeeId !== committee.committeeId) }
+}
+
+/** How one configurable state's events show: every event, or only the chosen committees. */
+export type StateChoice = { mode: 'all' } | { mode: 'only'; committeeIds: string[] }
+
+export function stateChoice(_rules: EventRules | null, _state: string, _stateCommitteeIds: readonly string[]): StateChoice {
+  return undefined as never
+}
+
+export function withStateAll(_rules: EventRules | null, _state: string, _configured: readonly string[], _stateCommitteeIds: readonly string[]): EventRules | null {
+  return undefined as never
+}
+
+export function withStateOnly(_rules: EventRules | null, _state: string, _configured: readonly string[], _committees: readonly { committeeId: string; name: string }[], _stateCommitteeIds: readonly string[]): EventRules | null {
+  return undefined as never
 }
