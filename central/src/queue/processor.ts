@@ -246,6 +246,9 @@ export async function ingestMeasure(
   // Logged, but not sent to instances (lib/detect-changes.ts).
   let companionChanges: CompanionChange[] = []
   let textHashChanged = false
+  // Documents fetched again for a changed hash, and those whose old hash stays because that failed.
+  const refetchedDocs = new Set<number>()
+  const keptHashes = new Map<number, string>()
   let calendarChanges: CalendarChange[] = []
   let priorCalendar: CalendarRow[] = []
 
@@ -253,7 +256,7 @@ export async function ingestMeasure(
     // Read before-snapshot from child tables
     const [historyRows, textRows, supplementRows, amendmentRows, voteRows, sponsorRows, priorCalRows, priorSasts] = await Promise.all([
       db.select({ seq: billHistory.seq }).from(billHistory).where(eq(billHistory.billId, bill.bill_id)).all(),
-      db.select({ docId: billTexts.docId, textHash: billTexts.textHash }).from(billTexts).where(eq(billTexts.billId, bill.bill_id)).all(),
+      db.select({ docId: billTexts.docId, textHash: billTexts.textHash, r2Key: billTexts.r2Key }).from(billTexts).where(eq(billTexts.billId, bill.bill_id)).all(),
       db.select({ supplementId: billSupplements.supplementId }).from(billSupplements).where(eq(billSupplements.billId, bill.bill_id)).all(),
       db.select({ amendmentId: billAmendments.amendmentId }).from(billAmendments).where(eq(billAmendments.billId, bill.bill_id)).all(),
       db.select({
@@ -299,11 +302,22 @@ export async function ingestMeasure(
     // member reads, so it has no record. But instances compare it with their
     // claim sources' pins (#603) and fetch a bill only when `updated_at` moved,
     // so it moves that. An empty hash on either side is no signal.
-    const storedHashes = new Map(textRows.map(t => [t.docId, t.textHash]))
-    textHashChanged = (bill.texts ?? []).some(t => {
-      const was = storedHashes.get(t.doc_id)
-      return !!was && !!t.text_hash && was !== t.text_hash
-    })
+    //
+    // The hash must describe the bytes served, so a stored copy is fetched again
+    // before anything moves. When that fails the old hash stays with the old
+    // bytes, `updated_at` does not move for it, and the next ingest tries again.
+    const storedByDoc = new Map(textRows.map(t => [t.docId, t]))
+    for (const t of bill.texts ?? []) {
+      const was = storedByDoc.get(t.doc_id)
+      if (!was?.textHash || !t.text_hash || was.textHash === t.text_hash) continue
+      if (!was.r2Key) { textHashChanged = true; continue }  // nothing stored to disagree with: the download below takes the new hash
+      if (t.state_link && await downloadTextToR2(bill.bill_id, t.doc_id, t.state_link, t.mime, provider, env, db, t.text_size ?? null, t.text_hash)) {
+        textHashChanged = true
+        refetchedDocs.add(t.doc_id)
+      } else {
+        keptHashes.set(t.doc_id, was.textHash)
+      }
+    }
     companionChanges = detectCompanionChanges(priorSasts, bill, provider)
   }
 
@@ -494,7 +508,7 @@ export async function ingestMeasure(
       date: t.date, type: t.type, typeId: t.type_id,
       mime: t.mime, mimeId: t.mime_id,
       url: t.url || null, stateLink: t.state_link || null,
-      textSize: t.text_size || null, textHash: t.text_hash || null,
+      textSize: t.text_size || null, textHash: keptHashes.get(t.doc_id) ?? (t.text_hash || null),
       altBillText: t.alt_bill_text ?? 0,
       altMime: t.alt_mime || null, altMimeId: t.alt_mime_id || null,
       altStateLink: t.alt_state_link || null,
@@ -504,7 +518,7 @@ export async function ingestMeasure(
       set: {
         date: t.date, type: t.type,
         mime: t.mime, stateLink: t.state_link || null,
-        textSize: t.text_size || null, textHash: t.text_hash || null,
+        textSize: t.text_size || null, textHash: keptHashes.get(t.doc_id) ?? (t.text_hash || null),
         altBillText: t.alt_bill_text ?? 0,
         altStateLink: t.alt_state_link || null,
       },
@@ -513,7 +527,7 @@ export async function ingestMeasure(
     // Download text if not already in R2
     const stored = await db.select({ r2Key: billTexts.r2Key })
       .from(billTexts).where(eq(billTexts.docId, t.doc_id)).get()
-    if ((forceTextRefetch || !stored?.r2Key) && t.state_link) {
+    if ((forceTextRefetch || !stored?.r2Key) && t.state_link && !refetchedDocs.has(t.doc_id)) {
       await downloadTextToR2(bill.bill_id, t.doc_id, t.state_link, t.mime, provider, env, db, t.text_size ?? null, t.text_hash ?? null)
     }
   }
@@ -785,7 +799,7 @@ async function downloadTextToR2(
   db: Db,
   declaredSize: number | null = null,
   declaredHash: string | null = null,
-): Promise<void> {
+): Promise<boolean> {
   const ext = mime.includes('pdf') ? 'pdf' : 'html'
   const r2Key = `bills/legiscan-${billId}/texts/${docId}.${ext}`
   const attemptedAt = nowDb()
@@ -850,7 +864,7 @@ async function downloadTextToR2(
     await db.update(billTexts)
       .set({ fetchError: failure, fetchAttemptedAt: attemptedAt })
       .where(eq(billTexts.docId, docId))
-    return
+    return false
   }
 
   // Server often omits charset; sniff from HTML meta tag so browsers decode correctly
@@ -865,6 +879,7 @@ async function downloadTextToR2(
   await db.update(billTexts)
     .set({ r2Key, fetchError: null, fetchAttemptedAt: attemptedAt })
     .where(eq(billTexts.docId, docId))
+  return true
 }
 
 /**
