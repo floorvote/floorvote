@@ -107,7 +107,10 @@ export async function buildViewSections(
   // One view's news, or null when it can't be had: a query the list would refuse (an over-cap subject filter), or
   // SQL that fails (a stored query near D1's bound on parameters). One view must not stop everyone's digest.
   const newsFor = async (view: SubscribedView, userId: string) => {
-    const parsed = await parseBillFilterParams(db, new URLSearchParams(view.query), userId).catch(() => null)
+    const parsed = await parseBillFilterParams(db, new URLSearchParams(view.query), userId).catch(err => {
+      console.error(`digest: skipped saved view ${view.id}`, err)
+      return null
+    })
     if (!parsed || 'error' in parsed) return null
     // A filter that depends on the member (my bills, unvoted) is read for each, any other once.
     const perUser = isPerUserListRequest({ myBills: parsed.params.myBillsParam, unvoted: parsed.params.unvoted })

@@ -5,6 +5,7 @@ import { appFetch, resetDb, applyMigrations, seedUser, seedSession, seedBill, se
 import { getDb } from '../../src/db/client'
 import { associationConfig, bills, feedEvents } from '../../src/db/schema'
 import { runDigest } from '../../src/lib/digest'
+import * as filterQuery from '../../src/routes/billsApi/query'
 import { renderDigestEmail, digestSubject, type DigestEvent, type NewMatchDigestItem, type ViewDigestSection } from '../../src/lib/digestEmail'
 
 // #449: a member includes a saved view in their digest. Each included view gets
@@ -464,6 +465,27 @@ describe('runDigest: saved views', () => {
     expect(text(to('ben@example.com')[0].html)).toContain('P 1')
     expect(err.mock.calls.some(c => String(c[0]).includes('v-big'))).toBe(true)
     err.mockRestore()
+  })
+
+  it('logs a view whose query could not be read because the database failed, and skips only that view', async () => {
+    await makeView('v-ut', 'Elections', 'state=UT')
+    await seedBill({ billNumber: 'H 101', state: 'RI', session: '2026' })
+    await seedBill({ billNumber: 'H 202', state: 'UT', session: '2026' })
+    await subscribe(ada.cookie, 'v-ri'); await subscribe(ada.cookie, 'v-ut')
+    const real = filterQuery.parseBillFilterParams
+    vi.spyOn(filterQuery, 'parseBillFilterParams').mockImplementation(async (d, search, u) => {
+      if (search.get('state') === 'UT') throw new Error('D1 unavailable')
+      return real(d, search, u)
+    })
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await runDigest(env as never, db())
+
+    const mine = text(to('ada@example.com')[0].html)
+    expect(mine).toContain('In your Transportation view')
+    expect(mine).not.toContain('In your Elections view')
+    expect(err.mock.calls.some(c => String(c[0]).includes('v-ut'))).toBe(true)
+    vi.restoreAllMocks()
   })
 
   it('stamps the window so the next run does not repeat the same news', async () => {
