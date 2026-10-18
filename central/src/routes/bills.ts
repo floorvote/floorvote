@@ -301,6 +301,10 @@ billsRoutes.get('/:id', async (c) => {
     docId: String(t.docId),
     note: t.type,
     date: t.date,
+    // This document's own hash, the value `GET /:id/text` serves when it is the
+    // one read. Instances compare it with a claim source's pin (#603). Null when
+    // central has none.
+    textHash: t.textHash ?? null,
     links: [
       ...(t.stateLink ? [{ url: t.stateLink, mediaType: t.mime }] : []),
       ...(t.altStateLink ? [{ url: t.altStateLink, mediaType: t.altMime ?? 'application/pdf' }] : []),

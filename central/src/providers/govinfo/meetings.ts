@@ -1,5 +1,5 @@
 import { rateLimitedFetch, sha256Hex, type BodyEvent, type CalendarKind, type MeasureCalendarEntry, type ProviderContext } from '../sdk'
-import { BILL_TYPE, govinfoNativeKey, legiscanNumber, ordinal, type CongressBillType } from './map'
+import { BILL_TYPE, congressOn, govinfoNativeKey, legiscanNumber, ordinal, type CongressBillType } from './map'
 
 /**
  * Committee meetings from the Congress.gov API: the hearings, markups, and
@@ -26,7 +26,9 @@ import { BILL_TYPE, govinfoNativeKey, legiscanNumber, ordinal, type CongressBill
  *
  * Fails closed: an answer that isn't HTTP 200, isn't JSON, or isn't shaped as
  * described below throws, the pass shows nothing new, and the next pass tries
- * again. The key goes only in the `X-Api-Key` header of a request to
+ * again. One exception: a meeting whose detail can't be read on
+ * QUARANTINE_AFTER passes in a row is quarantined (see there), so one bad
+ * answer holds the calendar for a few hours, not until it's fixed. The key goes only in the `X-Api-Key` header of a request to
  * api.congress.gov, whose redirects are never followed, and in no address,
  * log, or stored value.
  */
@@ -45,6 +47,35 @@ export const LIST_PAGE_SIZE = 250
  * cron's time. The next pass reads the rest.
  */
 export const DETAILS_PER_PASS = 60
+
+/**
+ * How many passes in a row a meeting's detail can fail to parse before the
+ * meeting is quarantined: 3, about three hours at a pass an hour. Short of it,
+ * the pass fails closed, as for any answer it can't read, since one bad answer
+ * may be the API caught mid-change and the next pass may read it. From it on,
+ * passes go on without the meeting: what is kept of it (its body event and its
+ * bills' entries) stays as it was, every pass asks for it again, and it's
+ * released the first time it parses. The operators get one alert naming it
+ * (ProviderContext.alert). Only an answer that came back and can't be read
+ * counts. An answer that isn't 200 is the API failing, not the meeting, and
+ * fails the pass closed however long it lasts.
+ */
+export const QUARANTINE_AFTER = 3
+
+/** The first Congress this provider kept meetings of, so none before it has rows to prune. */
+const FIRST_CONGRESS_KEPT = 119
+
+/**
+ * Whether the calendar window still reaches before the current Congress began
+ * (January 3), so the earlier Congress's kept meetings are still served
+ * (`listBodyEvents`). Core reads last month through three months ahead
+ * (BODY_EVENT_MONTHS, `back: 1`), so the window starts on the first of last
+ * month: February 1 is the first start on or after January 3, from March.
+ */
+export function earlierCongressStillNeeded(today: string): boolean {
+  const first = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 2, 1)).toISOString().slice(0, 10)
+  return first < `${congressOn(today).yearStart}-01-03`
+}
 
 /** More pages than the API could ever need, so a list that never ends fails and doesn't loop. */
 const MAX_PAGES = 100
@@ -291,7 +322,7 @@ async function get(url: string, key: string, onRequest: () => void, what: string
   }
 }
 
-type Context = Pick<ProviderContext, 'cache' | 'logCall' | 'today'>
+type Context = Pick<ProviderContext, 'cache' | 'logCall' | 'today' | 'alert'>
 
 /** How far before a read began the second look at the list reaches, so a meeting changed as the read began is in it. */
 const SINCE_MARGIN_MS = 10 * 60 * 1000
@@ -335,8 +366,10 @@ async function readList(ctx: Context, key: string, congress: number): Promise<Li
 
 const COMMITTED = (congress: number) => `meeting/${congress}/`
 const STAGED = (congress: number) => `staged/${congress}/`
-/** Present once a finished pass has found no meeting that was never read: the first full read is done. */
+/** Present once a finished pass has found no meeting that was never read, but a quarantined one: the first full read is done. */
 const WARM = (congress: number) => `warm/${congress}`
+/** For a meeting whose detail has failed to parse: on how many passes in a row, and whether the operators were alerted. */
+const FAILING = (congress: number) => `failing/${congress}/`
 
 /**
  * Whether every meeting of the Congress has been read once. Until it has, a
@@ -379,6 +412,28 @@ async function keptUnder(ctx: Pick<ProviderContext, 'cache'>, prefix: string, co
     else unreadable.push(key)
   }
   return { kept, unreadable }
+}
+
+/** A meeting that fails to parse, as kept: the passes in a row it has failed on, and whether it was alerted on. */
+interface Failing { strikes: number; alerted: boolean }
+
+/** The meetings failing to parse, by event id, and the keys of entries that can't be read (as good as none: they are dropped). */
+async function failingMeetings(ctx: Pick<ProviderContext, 'cache'>, congress: number): Promise<{ failing: Map<string, Failing>; unreadable: string[] }> {
+  const failing = new Map<string, Failing>()
+  const unreadable: string[] = []
+  for (const [key, value] of await ctx.cache.list(FAILING(congress))) {
+    const id = key.slice(FAILING(congress).length)
+    let f: unknown
+    try {
+      f = JSON.parse(value)
+    } catch {
+      f = null
+    }
+    if (/^\d+$/.test(id) && isObject(f) && typeof f.strikes === 'number' && Number.isInteger(f.strikes) && f.strikes > 0 && typeof f.alerted === 'boolean') {
+      failing.set(id, { strikes: f.strikes, alerted: f.alerted })
+    } else unreadable.push(key)
+  }
+  return { failing, unreadable }
 }
 
 /**
@@ -436,7 +491,9 @@ export function readMeetings(ctx: Context, key: string, congress: number): Promi
 
 async function runPass(ctx: Context, key: string, congress: number): Promise<Meeting[]> {
   const listed = await readList(ctx, key, congress)
-  const [committed, staged] = await Promise.all([keptUnder(ctx, COMMITTED(congress), congress), keptUnder(ctx, STAGED(congress), congress)])
+  const [committed, staged, earlier] = await Promise.all([
+    keptUnder(ctx, COMMITTED(congress), congress), keptUnder(ctx, STAGED(congress), congress), failingMeetings(ctx, congress),
+  ])
   const current = new Map(listed.map(l => [l.eventId, l]))
   // A meeting is up to date when what is kept for it was read at the update time the list gives now.
   const upToDate = (l: ListedMeeting) => committed.kept.get(l.eventId)?.seen === l.updateDate || staged.kept.get(l.eventId)?.seen === l.updateDate
@@ -444,6 +501,8 @@ async function runPass(ctx: Context, key: string, congress: number): Promise<Mee
 
   // Read, keeping what is read as it goes, so a failure loses none of it.
   const read = new Map<string, Kept>()
+  // The meetings whose answer came back and can't be read, each with the passes in a row it has failed on now.
+  const failed = new Map<string, { error: string; strikes: number }>()
   let unsaved: Record<string, string> = {}
   const save = async () => {
     if (Object.keys(unsaved).length === 0) return
@@ -451,20 +510,46 @@ async function runPass(ctx: Context, key: string, congress: number): Promise<Mee
     unsaved = {}
     await ctx.cache.put(entries)
   }
+  // Count this pass's failures, and alert once on each meeting they quarantine. Before an answer that
+  // isn't 200 is rethrown too, since the meetings read before it were read.
+  const settle = async () => {
+    await save()
+    if (failed.size === 0) return
+    const quarantining = [...failed].filter(([id, f]) => f.strikes >= QUARANTINE_AFTER && !earlier.failing.get(id)?.alerted)
+    // Alerted before it's kept as alerted: two alerts are better than none.
+    if (quarantining.length > 0) await alertQuarantined(ctx, congress, quarantining)
+    await ctx.cache.put(Object.fromEntries([...failed].map(([id, f]) => [
+      `${FAILING(congress)}${id}`,
+      JSON.stringify({ strikes: f.strikes, alerted: f.strikes >= QUARANTINE_AFTER || (earlier.failing.get(id)?.alerted ?? false) } satisfies Failing),
+    ])))
+  }
   try {
     for (const l of order) {
       const text = await get(detailUrl(congress, l), key,
         () => ctx.logCall('govinfo:CongressMeeting', { congress, chamber: l.chamber, eventId: l.eventId }), `Congress.gov meeting ${l.eventId}`)
-      const kept: Kept = { seen: l.updateDate, meeting: parseMeeting(text, l, congress) }
+      let meeting: Meeting
+      try {
+        meeting = parseMeeting(text, l, congress)
+      } catch (err) {
+        // Counted, and the pass reads on, so every meeting that fails is counted on this pass, and what it reads of the rest is kept.
+        failed.set(l.eventId, { error: err instanceof Error ? err.message : String(err), strikes: (earlier.failing.get(l.eventId)?.strikes ?? 0) + 1 })
+        continue
+      }
+      const kept: Kept = { seen: l.updateDate, meeting }
       read.set(l.eventId, kept)
       unsaved[`${STAGED(congress)}${l.eventId}`] = keep(kept)
       if (Object.keys(unsaved).length >= 10) await save()
     }
   } catch (err) {
-    await save()
+    await settle()
     throw err
   }
-  await save()
+  await settle()
+  // A meeting short of its quarantine fails the pass closed, as before: nothing it read is shown yet.
+  const holding = [...failed.values()].filter(f => f.strikes < QUARANTINE_AFTER)
+  if (holding.length > 0) throw new Error(holding.map(f => f.error).join('; '))
+  // Quarantined: failed on QUARANTINE_AFTER passes in a row, this one or (not read on this one) before.
+  const quarantined = new Set(listed.map(l => l.eventId).filter(id => (failed.get(id)?.strikes ?? earlier.failing.get(id)?.strikes ?? 0) >= QUARANTINE_AFTER))
 
   // The pass finished: what it read, and what an earlier pass read and staged, is what is shown.
   const promote: Record<string, string> = {}
@@ -478,13 +563,18 @@ async function runPass(ctx: Context, key: string, congress: number): Promise<Mee
   await ctx.cache.put(promote)
   // An unreadable kept entry this pass didn't read again is lost; one it did read again was just replaced.
   const lost = committed.unreadable.filter(k => !(k in promote))
-  // The first full read is done once every listed meeting has a kept copy, however old. An empty list proves nothing.
-  const complete = listed.length > 0 && listed.every(l => committed.kept.has(l.eventId))
+  // The first full read is done once every listed meeting has a kept copy, however old, or is quarantined, which the operators
+  // were told of: a meeting that may never be read can't hold every bill's calendar back. An empty list proves nothing.
+  const complete = listed.length > 0 && listed.every(l => committed.kept.has(l.eventId) || quarantined.has(l.eventId))
   if (complete && !(await isWarm(ctx, congress))) await ctx.cache.put({ [WARM(congress)]: new Date().toISOString() }) // ts-write-ok: a marker value in provider_cache, never read as a time
   // A listed meeting whose kept copy was lost has to be read again before a bill's calendar can say it has none.
   const cold = lost.some(k => current.has(k.slice(COMMITTED(congress).length)))
+  // A meeting stops failing once it is read, or up to date some other way, or no longer listed: released, or forgotten.
+  const recovered = [...earlier.failing.keys()].filter(id => !failed.has(id) && (read.has(id) || !current.has(id) || upToDate(current.get(id)!)))
   // Staged entries are done with, kept for a meeting the list no longer names or not; so are kept meetings it no longer names.
   await ctx.cache.drop([
+    ...earlier.unreadable,
+    ...recovered.map(id => `${FAILING(congress)}${id}`),
     ...staged.unreadable,
     ...[...staged.kept.keys()].map(id => `${STAGED(congress)}${id}`),
     ...[...read.keys()].map(id => `${STAGED(congress)}${id}`),
@@ -492,9 +582,45 @@ async function runPass(ctx: Context, key: string, congress: number): Promise<Mee
     ...(cold ? [WARM(congress)] : []),
     ...[...committed.kept.keys()].filter(id => !current.has(id)).map(id => `${COMMITTED(congress)}${id}`),
   ])
+  await pruneEarlierCongresses(ctx, congress)
   return listed.flatMap(l => {
     const k = committed.kept.get(l.eventId)
     return k ? [k.meeting] : []
+  })
+}
+
+/** The one alert for the meetings a pass quarantined: each by its event id, with why it can't be read. */
+/**
+ * Drops every row of the Congresses before this one (kept meetings, staged
+ * reads, failing counts, and the warm mark) once no calendar the window reads
+ * can reach them. While the window still reaches before January 3 they stay:
+ * `listBodyEvents` serves them. Only an earlier Congress's rows go, whatever
+ * state they are in, a quarantined meeting's strikes and alert flag included,
+ * since nothing will ask for that Congress's meetings again. The current
+ * Congress's rows are never listed here. With none dropped, a no-op.
+ */
+async function pruneEarlierCongresses(ctx: Pick<ProviderContext, 'cache' | 'today'>, congress: number): Promise<void> {
+  if (earlierCongressStillNeeded(ctx.today)) return
+  for (let earlier = congress - 1; earlier >= FIRST_CONGRESS_KEPT; earlier--) {
+    const rows = await Promise.all([COMMITTED(earlier), STAGED(earlier), FAILING(earlier), WARM(earlier)].map(prefix => ctx.cache.list(prefix)))
+    const keys = rows.flatMap(r => [...r.keys()])
+    if (keys.length > 0) await ctx.cache.drop(keys)
+  }
+}
+
+async function alertQuarantined(ctx: Pick<ProviderContext, 'alert'>, congress: number, meetings: [id: string, f: { error: string }][]): Promise<void> {
+  const ids = meetings.map(([id]) => id)
+  await ctx.alert({
+    subject: `committee meeting${ids.length > 1 ? 's' : ''} ${ids.join(', ')} quarantined`,
+    text: [
+      `The Congress.gov API's answer for ${ids.length > 1 ? 'these committee meetings' : 'this committee meeting'} of the ${ordinal(congress)} Congress `
+        + `couldn't be read on ${QUARANTINE_AFTER} passes in a row, so the calendar now updates without ${ids.length > 1 ? 'them' : 'it'}:`,
+      '',
+      ...meetings.map(([, f]) => `- ${f.error}`),
+      '',
+      `What central already shows of ${ids.length > 1 ? 'them' : 'it'} (the body event, and each bill's entry) stays as it was. Every pass asks again, `
+        + 'and a meeting is released the first time its answer can be read. No other alert follows for it.',
+    ].join('\n'),
   })
 }
 

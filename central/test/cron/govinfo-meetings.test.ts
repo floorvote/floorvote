@@ -31,8 +31,9 @@ vi.stubGlobal('fetch', fetchMock)
 
 import { govinfo } from '../../src/providers/govinfo'
 import { clearRollCallCaches } from '../../src/providers/govinfo/client'
-import { clearMeetingCaches, DETAILS_PER_PASS, LIST_PAGE_SIZE } from '../../src/providers/govinfo/meetings'
+import { clearMeetingCaches, DETAILS_PER_PASS, earlierCongressStillNeeded, LIST_PAGE_SIZE, QUARANTINE_AFTER } from '../../src/providers/govinfo/meetings'
 import { runBodyEventSync } from '../../src/cron/body-events'
+import { bodyEventMonths } from '../../src/lib/bodyEvents'
 import { toHandle } from '../../src/lib/billHandle'
 import { providerContext } from '../../src/lib/providerContext'
 import { mainSeam, resetCentral, type Run } from '../helpers/mainSeam'
@@ -70,7 +71,10 @@ let served: Map<string, () => Response>
 /** Every address asked for, in order. */
 let calls: string[]
 
-const seam = mainSeam(govinfo, { tenantId: 'usteam', env: { CONGRESS_API_KEY: CONGRESS_KEY } })
+/** The email binding ops alerts go out through, so a test sees each alert sent. The address is made up. */
+const mail = { send: vi.fn(async (_message: any) => ({})) }
+const ALERTS_TO = 'ops@example.org'
+const seam = mainSeam(govinfo, { tenantId: 'usteam', env: { CONGRESS_API_KEY: CONGRESS_KEY, EMAIL_PROVIDER: 'cloudflare', EMAIL: mail, ALERT_EMAILS: ALERTS_TO } })
 const keyless = mainSeam(govinfo, { tenantId: 'usteam' })
 const { makeRun, sentToTenant, getJson, queuedIds } = seam
 const db = () => drizzle(env.DB, { schema })
@@ -88,6 +92,7 @@ beforeEach(async () => {
   await resetCentral('2026-10-17T13:00:00Z')
   clearRollCallCaches()
   clearMeetingCaches()
+  mail.send.mockClear()
   net.paced.length = 0
   files = new Map([...fixtureFiles, ...rollCallBillFiles])
   recorded = new Map(files)
@@ -945,7 +950,8 @@ describe('when the API fails', () => {
     const before = await established()
     feed.add('900002', HEARING, m => { m.date = '2026-11-18T15:00:00Z' })
     feed.edit('900002', m => { delete m.date })
-    for (let i = 0; i < 3; i++) {
+    // Short of the passes that quarantine it (below).
+    for (let i = 0; i < QUARANTINE_AFTER - 1; i++) {
       await syncCalendar()
       await seam.syncAndIngest(makeRun())
       await unchanged(before)
@@ -1014,6 +1020,203 @@ describe('when the API fails', () => {
     const run = makeRun()
     await runBodyEventSync(govinfo, run.env as any, db())
     expect(feed.listRequests).toHaveLength(1)
+  })
+})
+
+describe('a meeting that can\'t be read, pass after pass', () => {
+  /** The meetings the cache counts failing passes for: struck once or more, quarantined or not. */
+  const failing = async () => (await env.DB.prepare(`SELECT key FROM provider_cache WHERE provider = 'govinfo' AND key LIKE 'failing/119/%' ORDER BY key`).all<{ key: string }>()).results.map(r => r.key.slice('failing/119/'.length))
+  const isWarm = async () => !!(await env.DB.prepare(`SELECT key FROM provider_cache WHERE provider = 'govinfo' AND key = 'warm/119'`).first())
+  /** Every alert sent, as its recipients, subject, and text. */
+  const alerts = () => mail.send.mock.calls.map(([m]: any[]) => ({ to: [m.to].flat(), subject: String(m.subject), text: String(m.text) }))
+  /** The alerts that name a meeting. */
+  const alertsNaming = (id: string) => alerts().filter(a => `${a.subject}\n${a.text}`.includes(id))
+
+  /** A calendar with its first pass done, and what it shows of the meeting that will break, and of the bills it takes up. */
+  async function established() {
+    linkBills()
+    await pass()
+    const before = { upcoming: await eventOf(UPCOMING), markup: await eventOf(MARKUP), hb43: await billEntries('HB43'), hb131: await billEntries('HB131') }
+    expect(before.hb43).toHaveLength(2)
+    expect(before.hb131).toHaveLength(1)
+    return before
+  }
+  /** UPCOMING's answer stops parsing (no date), and the list says it changed, so every pass reads it again. */
+  let upcomingDate: string
+  function breakUpcoming() {
+    upcomingDate = feed.meetings.get(UPCOMING).date
+    feed.edit(UPCOMING, m => { delete m.date })
+  }
+  /** Another meeting changes meanwhile, so a pass that finishes shows something new. */
+  function retitleMarkup() {
+    feed.edit(MARKUP, m => { m.title = 'A retitled markup' })
+  }
+  const passes = async (n: number) => {
+    const out = []
+    for (let i = 0; i < n; i++) out.push(await pass())
+    return out
+  }
+  /** UPCOMING broken for QUARANTINE_AFTER passes, after checking the last of them finished with it quarantined. */
+  async function quarantineUpcoming() {
+    breakUpcoming()
+    const last = (await passes(QUARANTINE_AFTER)).at(-1)!
+    expect(last.reports[0]).toMatchObject({ failed: 0 })
+    expect(await failing()).toEqual([UPCOMING])
+  }
+
+  it('still fails the pass closed, and alerts no one, on each pass short of QUARANTINE_AFTER', async () => {
+    const before = await established()
+    breakUpcoming()
+    retitleMarkup()
+    for (let i = 0; i < QUARANTINE_AFTER - 1; i++) {
+      const { reports } = await pass()
+      expect(reports[0]).toMatchObject({ months: 0, failed: 5 })
+      expect(await eventOf(MARKUP)).toEqual(before.markup)
+      expect(await billEntries('HB43')).toEqual(before.hb43)
+    }
+    expect(alerts()).toEqual([])
+  })
+
+  it('quarantines it on the QUARANTINE_AFTER-th failing pass: the rest of the calendar updates, and its own event and bill entries stay as they were', async () => {
+    const before = await established()
+    breakUpcoming()
+    retitleMarkup()
+    const reports = (await passes(QUARANTINE_AFTER)).map(p => p.reports[0])
+    expect(reports.at(-1)).toMatchObject({ months: 5, failed: 0 })
+    // The rest updates: the markup's new title, on the body calendar and on the bill it takes up.
+    expect((await eventOf(MARKUP)).agenda[0].topic).toBe('A retitled markup')
+    expect((await billEntries('HB43')).find((c: any) => c.date === '2026-09-15').description).toMatch(/A retitled markup/)
+    // The quarantined meeting is as it was, everywhere.
+    expect(await eventOf(UPCOMING)).toEqual(before.upcoming)
+    expect(await billEntries('HB131')).toEqual(before.hb131)
+    expect((await billEntries('HB43')).find((c: any) => c.date === '2026-10-23')).toEqual(before.hb43.find((c: any) => c.date === '2026-10-23'))
+    expect(await failing()).toEqual([UPCOMING])
+  })
+
+  it('alerts once, naming the event id, and not again on the passes after', async () => {
+    await established()
+    breakUpcoming()
+    await passes(QUARANTINE_AFTER)
+    expect(alerts()).toHaveLength(1)
+    expect(alerts()[0].to).toEqual([ALERTS_TO])
+    expect(alerts()[0].subject).toContain(UPCOMING)
+    expect(alerts()[0].text).toContain(UPCOMING)
+    await passes(2)
+    expect(alerts()).toHaveLength(1)
+  })
+
+  it('asks for a quarantined meeting again on every pass', async () => {
+    await established()
+    await quarantineUpcoming()
+    const asked = feed.detailIds.length
+    await pass()
+    expect(feed.detailIds.slice(asked)).toContain(UPCOMING)
+  })
+
+  it('releases a quarantined meeting once it parses, and updates it normally', async () => {
+    await established()
+    await quarantineUpcoming()
+    feed.edit(UPCOMING, m => { m.date = upcomingDate; m.title = 'Back again' })
+    const { reports } = await pass()
+    expect(reports[0]).toMatchObject({ failed: 0 })
+    expect((await eventOf(UPCOMING)).agenda[0].topic).toBe('Back again')
+    expect((await billEntries('HB131')).map((c: any) => c.description)).toEqual([expect.stringMatching(/Back again/)])
+    expect(await failing()).toEqual([])
+  })
+
+  it('counts from the start again for a released meeting that breaks again: one failure fails the pass closed', async () => {
+    await established()
+    await quarantineUpcoming()
+    feed.edit(UPCOMING, m => { m.date = upcomingDate })
+    await pass()
+    feed.edit(UPCOMING, m => { delete m.date })
+    retitleMarkup()
+    const { reports } = await pass()
+    expect(reports[0]).toMatchObject({ months: 0, failed: 5 })
+  })
+
+  it('counts a meeting\'s failing passes, and remembers its alert, in what it keeps, so a restart loses neither', async () => {
+    await established()
+    breakUpcoming()
+    await passes(QUARANTINE_AFTER - 1)
+    // Each pass is a new isolate (clearMeetingCaches): what it knows of the failures is in the cache.
+    expect(await failing()).toEqual([UPCOMING])
+    retitleMarkup()
+    expect((await pass()).reports[0]).toMatchObject({ failed: 0 })
+    expect(alerts()).toHaveLength(1)
+    clearMeetingCaches()
+    await passes(2)
+    expect(alerts()).toHaveLength(1)
+  })
+
+  it('quarantines two meetings on the same passes, alerting once for each', async () => {
+    const before = await established()
+    breakUpcoming()
+    feed.edit(HEARING, m => { m.committees = 'not a list' })
+    retitleMarkup()
+    const reports = (await passes(QUARANTINE_AFTER)).map(p => p.reports[0])
+    expect(reports.at(-1)).toMatchObject({ months: 5, failed: 0 })
+    expect((await eventOf(MARKUP)).agenda[0].topic).toBe('A retitled markup')
+    expect(await eventOf(UPCOMING)).toEqual(before.upcoming)
+    expect(await failing()).toEqual([HEARING, UPCOMING].sort())
+    expect(alertsNaming(UPCOMING)).toHaveLength(1)
+    expect(alertsNaming(HEARING)).toHaveLength(1)
+    await pass()
+    expect(alertsNaming(UPCOMING)).toHaveLength(1)
+    expect(alertsNaming(HEARING)).toHaveLength(1)
+  })
+
+  it('quarantines nothing for an answer that isn\'t 200, which is the API failing and not the meeting: every pass fails closed', async () => {
+    const before = await established()
+    feed.edit(UPCOMING, m => { m.title = 'Changed' })
+    retitleMarkup()
+    feed.override.detail = id => (id === UPCOMING ? new Response('boom', { status: 500 }) : null)
+    for (const { reports } of await passes(QUARANTINE_AFTER + 1)) expect(reports[0]).toMatchObject({ months: 0, failed: 5 })
+    expect(await eventOf(MARKUP)).toEqual(before.markup)
+    expect(await failing()).toEqual([])
+    expect(alerts()).toEqual([])
+  })
+
+  it('forgets a quarantined meeting the list no longer names', async () => {
+    await established()
+    await quarantineUpcoming()
+    feed.remove(UPCOMING)
+    await pass()
+    expect(await failing()).toEqual([])
+  })
+
+  describe('during the first fill, with a meeting never read', () => {
+    /** More meetings than a pass reads, so the first passes leave the cache cold, and a broken one with the highest id, read first. */
+    function coldWithABrokenMeeting() {
+      for (let i = 0; i < 80; i++) feed.add(String(100000 + i), HEARING, m => { m.date = '2025-03-01T15:00:00Z' })
+      feed.add('900020', HEARING, m => { m.date = '2026-11-18T15:00:00Z' })
+      feed.edit('900020', m => { delete m.date })
+    }
+
+    it('shows nothing until it is quarantined, then fills the rest and goes warm without it', async () => {
+      coldWithABrokenMeeting()
+      linkBills()
+      await passes(QUARANTINE_AFTER - 1)
+      expect((await events()).events).toEqual([])
+      expect(await isWarm()).toBe(false)
+      // A failing pass still reads its share and stages it, so the pass that quarantines it finishes the first fill.
+      await pass()
+      expect((await events()).byUid.has(uid('900020'))).toBe(false)
+      expect((await events()).events).toHaveLength(IN_WINDOW)
+      expect(await isWarm()).toBe(true)
+      // Warm: a bill's calendar has its meetings.
+      expect((await billEntries('HB43')).map((c: any) => c.date)).toEqual(['2026-09-15', '2026-10-23'])
+    })
+
+    it('stays warm on the passes after, while the quarantined meeting still can\'t be read', async () => {
+      coldWithABrokenMeeting()
+      await passes(QUARANTINE_AFTER + 1)
+      expect(await isWarm()).toBe(true)
+      await passes(2)
+      expect(await isWarm()).toBe(true)
+      expect(await failing()).toEqual(['900020'])
+      expect(alertsNaming('900020')).toHaveLength(1)
+    })
   })
 })
 
@@ -1267,6 +1470,163 @@ describe('across the change of Congress', () => {
     clearMeetingCaches()
     const jan = await govinfo.listBodyEvents!('US', { from: '2027-01-01', to: '2027-01-31' }, ctx)
     expect(jan.map(e => e.event_id)).toEqual(['900101'])
+  })
+})
+
+describe('pruning an earlier Congress\'s cached meetings', () => {
+  const KEPT = 'meeting/119/'
+  /** Every provider_cache key and value, so a test sees exactly what a pass left, and what it didn't touch. */
+  async function cache(like = '%'): Promise<Record<string, string>> {
+    const rows = await env.DB.prepare(`SELECT key, value FROM provider_cache WHERE provider = 'govinfo' AND key LIKE ? ORDER BY key`).bind(like).all<{ key: string; value: string }>()
+    return Object.fromEntries(rows.results.map(r => [r.key, r.value]))
+  }
+  const keys = async (like: string) => Object.keys(await cache(like))
+  /** The rows of one Congress, of all four kinds. */
+  const rowsOf = async (congress: number) => [
+    ...(await keys(`meeting/${congress}/%`)), ...(await keys(`staged/${congress}/%`)), ...(await keys(`failing/${congress}/%`)), ...(await keys(`warm/${congress}`)),
+  ]
+  const put = (key: string, value: string) => env.DB.prepare(`INSERT OR REPLACE INTO provider_cache (provider, key, value) VALUES ('govinfo', ?, ?)`).bind(key, value).run()
+  const at = (day: string) => vi.setSystemTime(new Date(`${day}T13:00:00Z`))
+
+  /** The 119th Congress read in full on December 20, with an unfinished read and a failing meeting left behind, as a pass can leave them. */
+  async function filled119() {
+    at('2026-12-20')
+    feed.add('900100', HEARING, m => { m.date = '2026-12-09T15:00:00Z' })
+    await syncCalendar()
+    await put('staged/119/880001', JSON.stringify({ stale: true }))
+    await put('failing/119/880002', JSON.stringify({ strikes: QUARANTINE_AFTER, alerted: true, error: 'no date' }))
+    const rows = await rowsOf(119)
+    expect(rows).toEqual(expect.arrayContaining(['warm/119', 'staged/119/880001', 'failing/119/880002']))
+    expect(rows.filter(k => k.startsWith(KEPT)).length).toBe(feed.meetings.size)
+    return rows
+  }
+  /** A meeting of the 120th Congress, which the API lists from January 3. */
+  const add120 = () => feed.add('990001', HEARING, m => { m.congress = 120; m.date = '2027-02-10T15:00:00Z' })
+
+  it('drops the meeting, staged, failing, and warm rows of the earlier Congress once the window starts on or after January 3', async () => {
+    await filled119()
+    add120()
+    at('2027-03-01')
+    await syncCalendar()
+    expect(await rowsOf(119)).toEqual([])
+    // The current Congress was read and kept, as for any other pass.
+    expect(await keys('meeting/120/%')).toEqual(['meeting/120/990001'])
+    expect(await keys('warm/120')).toEqual(['warm/120'])
+  })
+
+  it('keeps the earlier Congress\'s rows on the last day before the window starts after January 3, serving them still', async () => {
+    const before = await filled119()
+    add120()
+    // February 28 is the last day whose window (last month on) starts January 1.
+    at('2027-02-28')
+    await syncCalendar()
+    expect(await rowsOf(119)).toEqual(before)
+    const ctx = providerContext(govinfo, makeRun().env as any, db())
+    clearMeetingCaches()
+    const december = await govinfo.listBodyEvents!('US', { from: '2026-12-01', to: '2026-12-31' }, ctx)
+    expect(december.length).toBeGreaterThan(0)
+    // The next day the window starts February 1, and they go.
+    at('2027-03-01')
+    await syncCalendar()
+    expect(await rowsOf(119)).toEqual([])
+  })
+
+  it('keeps them on January 3 and the days after, when the 120th has begun and the window still reaches December', async () => {
+    const before = await filled119()
+    add120()
+    for (const day of ['2027-01-03', '2027-01-04', '2027-01-31']) {
+      at(day)
+      await syncCalendar()
+      expect(await rowsOf(119), day).toEqual(before)
+    }
+  })
+
+  it('keeps the 119th\'s rows on January 2, its own last day, when it is still the current Congress', async () => {
+    await filled119()
+    const kept = (await rowsOf(119)).filter(k => k.startsWith(KEPT) || k === 'warm/119')
+    at('2027-01-02')
+    await syncCalendar()
+    expect((await rowsOf(119)).filter(k => k.startsWith(KEPT) || k === 'warm/119')).toEqual(kept)
+  })
+
+  it('never touches the current Congress\'s rows, and leaves its quarantined meetings and their alert flags as they were', async () => {
+    await filled119()
+    add120()
+    feed.add('990002', MARKUP, m => { m.congress = 120; m.date = '2027-02-12T15:00:00Z' })
+    at('2027-02-20')
+    await syncCalendar()
+    feed.edit('990002', m => { delete m.date })
+    for (let i = 0; i < QUARANTINE_AFTER; i++) await syncCalendar()
+    const quarantined = await cache('failing/120/%')
+    expect(Object.keys(quarantined)).toEqual(['failing/120/990002'])
+    expect(JSON.parse(quarantined['failing/120/990002'])).toMatchObject({ strikes: QUARANTINE_AFTER, alerted: true })
+    const alertsBefore = mail.send.mock.calls.length
+    const current = async () => ({ ...(await cache('meeting/120/%')), ...(await cache('warm/120')) })
+    const before = await current()
+    expect(Object.keys(before).length).toBeGreaterThan(1)
+
+    // The window moves past January 3, and the earlier Congress, with its own failing row, goes.
+    at('2027-03-01')
+    await syncCalendar()
+    expect(await rowsOf(119)).toEqual([])
+    expect(await current()).toEqual(before)
+    expect(JSON.parse((await cache('failing/120/%'))['failing/120/990002'])).toMatchObject({ alerted: true })
+    // No new alert for the meeting still quarantined, nor for the old one pruned.
+    expect(mail.send.mock.calls.length).toBe(alertsBefore)
+  })
+
+  it('is a no-op the next time: the same rows and the same values', async () => {
+    await filled119()
+    add120()
+    at('2027-03-01')
+    await syncCalendar()
+    const after = await cache()
+    expect(await rowsOf(119)).toEqual([])
+    for (let i = 0; i < 2; i++) {
+      await syncCalendar()
+      expect(await cache()).toEqual(after)
+    }
+  })
+
+  it('has nothing to prune when no earlier Congress was ever kept: the 119th is the first, and its rows stay', async () => {
+    at('2025-03-10')
+    feed.add('880010', HEARING, m => { m.date = '2025-03-12T15:00:00Z' })
+    await syncCalendar()
+    const rows = await rowsOf(119)
+    expect(rows).toContain('warm/119')
+    at('2025-06-10')
+    await syncCalendar()
+    expect(await rowsOf(119)).toEqual(rows)
+  })
+
+  it('prunes on a pass that reads nothing new, and not on one that fails closed', async () => {
+    await filled119()
+    add120()
+    at('2027-03-01')
+    // The list itself failing is a failed pass, which shows nothing new and changes nothing it keeps.
+    fetchMock.mockImplementationOnce(async () => new Response('down', { status: 503 }))
+    clearMeetingCaches()
+    await runBodyEventSync(govinfo, makeRun().env as any, db())
+    expect((await rowsOf(119)).length).toBeGreaterThan(0)
+    await syncCalendar()
+    expect(await rowsOf(119)).toEqual([])
+  })
+
+  it('agrees with the window core reads: the earlier Congress is needed exactly while the first month starts before January 3', () => {
+    const days: string[] = []
+    for (const [year, last] of [[2027, 365], [2029, 365]] as const) {
+      for (let d = 0; d < last; d++) days.push(new Date(Date.UTC(year, 0, 1 + d)).toISOString().slice(0, 10))
+    }
+    for (const day of days) {
+      const congressStart = `${Number(day.slice(0, 4)) % 2 === 1 && day.slice(5) >= '01-03' ? day.slice(0, 4) : String(Number(day.slice(0, 4)) - (Number(day.slice(0, 4)) % 2 === 1 ? 2 : 1))}-01-03`
+      expect(earlierCongressStillNeeded(day), day).toBe(bodyEventMonths(day)[0].from < congressStart)
+    }
+    expect(earlierCongressStillNeeded('2027-02-28')).toBe(true)
+    expect(earlierCongressStillNeeded('2027-03-01')).toBe(false)
+    // January 2 is the 119th's still, and its window starts December 1: the 118th is long done with.
+    expect(earlierCongressStillNeeded('2027-01-02')).toBe(false)
+    expect(earlierCongressStillNeeded('2027-01-03')).toBe(true)
+    expect(earlierCongressStillNeeded('2028-06-15')).toBe(false)
   })
 })
 
