@@ -1072,6 +1072,54 @@ describe('between full reads (#616)', () => {
     })
   })
 
+  describe('the daily full read, with zips behind their files (fix round 1)', () => {
+    it('keeps a file newer than its zip, so no change goes back and then forward again', async () => {
+      await firstRead()
+      // GovInfo republishes HR 3132's file, and the hr zip isn't rebuilt for days.
+      const asZipped = new Map(files)
+      answers.set('hr', serve('hr', asZipped))
+      change('hr3132', reported)
+      await syncAndIngest()
+      expect(await bill('HB3132')).toMatchObject({ lastAction: 'Reported by the Committee on Veterans\' Affairs. H. Rept. 119-1.' })
+      // The first pass of the next day reads the zips, whose hr3132 is the old one.
+      later('2026-10-20T00:30:00Z')
+      calls = []
+      const { run } = await syncAndIngest()
+      expect(calls.filter(isZip)).toHaveLength(8)
+      expect(calls.filter(isListing)).toHaveLength(8)
+      expect(calls.filter(isFile).map(fileName).filter(n => n === file('hr3132'))).toHaveLength(1)
+      expect(await bill('HB3132')).toMatchObject({ lastAction: 'Reported by the Committee on Veterans\' Affairs. H. Rept. 119-1.' })
+      const hb3132 = await billId('HB3132')
+      expect(queuedIds(run)).not.toContain(hb3132)
+      expect(sentToTenant(run).filter((m: any) => m.billId === toHandle(hb3132) && !m.stubOnly)).toEqual([])
+      // And the pass after it has nothing to move forward again.
+      later('2026-10-20T01:30:00Z')
+      const next = makeRun()
+      await sync(next)
+      expect(queuedIds(next)).toEqual([])
+      expect(sentToTenant(next)).toEqual([])
+    })
+
+    it('serves a bill whose file is listed but not yet in its zip', async () => {
+      const asZipped = new Map(files)
+      answers.set('hr', serve('hr', asZipped))
+      files.set('BILLSTATUS-119hr9999.xml', xml('hr2').replace('<number>2</number>', '<number>9999</number>').replaceAll('Reserved for the Speaker.', 'A New Bill Act'))
+      await firstRead()
+      expect(await bill('HB9999')).toMatchObject({ number: 'HB9999', title: 'A New Bill Act' })
+    })
+
+    it('takes its watermark from the newest time the listings give', async () => {
+      // A file listed at 08:00 on the 19th, long after the zips were built on the 17th.
+      change('hr3132', reported, '2026-10-19T08:00:00Z')
+      await firstRead()
+      // After the zips but well before 08:00 less the overlap: not read again, once the watermark is the listing's.
+      modifiedAt.set(file('hr7895'), '2026-10-18T12:00:00Z')
+      await sync()
+      expect(calls.filter(isZip)).toEqual([])
+      expect(calls.filter(isFile).map(fileName)).toEqual([file('hr3132')])
+    })
+  })
+
   describe('the watermark', () => {
     it('never moves back: a pass whose listing is older than the watermark leaves it where it was', async () => {
       await firstRead()
