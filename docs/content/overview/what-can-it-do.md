@@ -75,7 +75,7 @@ Every bill in the states you are tracking is accessible on one page.
 
 Search covers bill numbers, titles, abstracts, and the AI summaries. Separate several terms with commas to look up a batch of bills at once—paste in a list of bill numbers and you get that whole batch in one result, with the bill-number matches at the top.
 
-Filters narrow the list by state, session year, status, stage, tag, subject, priority, and your team's official position, plus any custom fields you've defined. Stage compares where bills are in the process across states, and appears once a state you track is read from the legislature's own data rather than LegiScan. Quick toggles show your own bills and the bills you haven't voted on yet.
+Filters narrow the list by state, session year, status, tag, subject, priority, and your team's official position, plus any custom fields you've defined. Stage is a grouping inside Status, not a second filter. Once a state you track is read from the legislature's own data rather than LegiScan, the Status filter lists its options under stage headings, from Enacted down to Introduced, with statuses that belong to no stage under Other, so you can compare where bills are in the process across states whose status names differ. Choosing a heading selects every status in that stage, and choosing a status selects only that one. Each has a count beside it. A stage and a status chosen together match bills in either one: a bill with that status, or in that stage. Before this change, a saved view or link that set both matched only the bills in both, and it now matches the union. A link or saved view that sets a stage always shows the grouped Status filter, so you can remove the stage. Quick toggles show your own bills and the bills you haven't voted on yet.
 
 ### Subjects
 
@@ -93,7 +93,7 @@ Admins can select bills and edit them together—set a priority, record the team
 
 ### Triage new matches
 
-When a bill newly matches your keywords, it needs a quick decision: assign it a priority, or dismiss it if it's not actually relevant. Admins get a New matches filter that shows which bills are still waiting on that decision, and can set a minimum relevance score under Settings → Config to keep low-relevance matches out of it.
+When a bill newly matches your keywords, it needs a quick decision: assign it a priority, or dismiss it if it's not actually relevant. Until then its priority dropdown reads "New · Set priority" in amber, with Dismiss as the last choice in the menu, and members see a matching "New match" label. Admins get a New matches filter that shows which bills are still waiting on that decision, and can set a minimum relevance score under Settings → Config to keep low-relevance matches out of it.
 
 Everyone else sees them too. Bills that newly match as the legislature files them (not ones brought in by seeding a session or re-running keywords) appear in everyone's feed as one row a day, such as "5 new bills matched your keywords," that opens to the bills. The admin's minimum relevance for new matches applies, and a bill that already has a priority keeps its usual card.
 

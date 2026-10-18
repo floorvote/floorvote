@@ -13,7 +13,8 @@ import { SessionChip } from '../../components/SessionChip'
 import { LastActionChip } from '../../components/LastActionChip'
 import { CompactPositionSelect } from '../../components/CompactPositionSelect'
 import { CompactPrioritySelect } from '../../components/CompactPrioritySelect'
-import { NewMatchTriageControl } from '../../components/NewMatchTriageControl'
+import { isUntriagedNewMatch } from '../../lib/newMatch'
+import { NewMatchChip } from '../../components/NewMatchChip'
 import { HoverTooltip } from '../../components/HoverTooltip'
 import { TAG_CHIP, TAG_CHIP_HOVERED, TAG_CHIP_ACTIVE } from '../../lib/tagChipStyle'
 import { TOOLTIP_STYLE, chipOutline } from '../../lib/chipStyles'
@@ -110,16 +111,26 @@ function MiniBar({ count, total, barColor, label, isActive, onVote }: {
   )
 }
 
+/** What a row needs of the list's filter: the values it marks on its own chips. A year is a number, as the row holds it. */
+export type RowFilter = {
+  status: readonly string[]
+  priority: readonly string[]
+  position: readonly string[]
+  year: readonly number[]
+  minRelevance: number
+  tag: readonly string[]
+}
+
 export const BillRow = memo(function BillRow({
-  bill, index, selectedTags, onTagClick,
+  bill, index, onTagClick,
   isAdmin, positionVocabulary,
   onStatusClick, onPriorityClick, onPositionClick, onYearClick, onRelevanceClick,
   onPriorityChange, onPositionChange, onTriageDismiss, onVote,
-  filterStatuses, filterPriorities, filterPositions, filterYears, filterMinRelevance,
+  filter,
   sortedPaths, isMultiState, onNavigate,
   isSelectionMode, isSelected, onToggleSelect,
 }: {
-  bill: Bill; index: number; selectedTags: string[]
+  bill: Bill; index: number
   onTagClick: (tag: string) => void
   isAdmin: boolean
   positionVocabulary: string[]
@@ -132,11 +143,8 @@ export const BillRow = memo(function BillRow({
   onPositionChange: (billId: string, position: string | null) => void
   onTriageDismiss?: (billId: string) => void
   onVote: ((billId: string, pos: 'support' | 'neutral' | 'oppose') => void) | undefined
-  filterStatuses: string[]
-  filterPriorities: string[]
-  filterPositions: string[]
-  filterYears: number[]
-  filterMinRelevance: number
+  /** The list's filter, by each filter's one name, for highlighting the chips that match it. */
+  filter: RowFilter
   sortedPaths: string[]
   isMultiState: boolean
   onNavigate?: (billId: string, path: string, state: { billPaths: string[]; currentIndex: number }) => void
@@ -152,27 +160,21 @@ export const BillRow = memo(function BillRow({
   const { support, oppose, neutral } = bill.voteCounts
   const totalVotes = support + oppose + neutral
 
-  // Un-triaged keyword match → show the segmented set-priority/dismiss control in
-  // place of the plain priority select. Once resolved (priority set or dismissed),
-  // this predicate flips false and the row reverts to CompactPrioritySelect.
-  const isNewMatch = isAdmin && bill.matchType === 'keyword' && !!bill.newMatchAt && !bill.priority && !bill.triagedAt
-  const renderPriorityControl = () => isNewMatch
-    ? (
-      <NewMatchTriageControl
-        billId={bill.id}
-        current={bill.priority}
-        onChange={(p) => onPriorityChange(bill.id, p)}
-        onDismiss={() => onTriageDismiss?.(bill.id)}
-      />
-    )
-    : (
-      <CompactPrioritySelect
-        billId={bill.id}
-        current={bill.priority}
-        onChange={(p) => onPriorityChange(bill.id, p)}
-        isFiltered={bill.priority != null && filterPriorities.includes(bill.priority)}
-      />
-    )
+  // An un-triaged keyword match is an amber state of the priority dropdown: an
+  // admin picks a priority or Dismiss from it, a member sees the same state
+  // read-only. Once resolved (priority set or dismissed), this predicate flips
+  // false and the row shows the plain priority control.
+  const isNewMatch = isUntriagedNewMatch(bill)
+  const renderPriorityControl = () => (
+    <CompactPrioritySelect
+      billId={bill.id}
+      current={bill.priority}
+      onChange={(p) => onPriorityChange(bill.id, p)}
+      newMatch={isNewMatch}
+      onDismiss={() => onTriageDismiss?.(bill.id)}
+      isFiltered={bill.priority != null && filter.priority.includes(bill.priority)}
+    />
+  )
   const billPath = billUrl({ id: bill.id, state: bill.state, sessionSlug: bill.sessionSlug, billNumber: bill.billNumber })
   const org = useConfig().config?.orgNoun ?? DEFAULT_ORG_NOUN
   const positionTooltip = `Your ${org}'s official position on this bill`
@@ -230,7 +232,7 @@ export const BillRow = memo(function BillRow({
             capWidth
             status={decodeStatus(bill.status)}
             onClick={interactive ? () => onStatusClick(bill.status) : undefined}
-            isActive={interactive ? filterStatuses.includes(bill.status) : undefined}
+            isActive={interactive ? filter.status.includes(bill.status) : undefined}
           />)
     : (
       <div style={STACK}>
@@ -240,7 +242,7 @@ export const BillRow = memo(function BillRow({
             key={status}
             status={decodeStatus(status)}
             onClick={interactive ? () => onStatusClick(status) : undefined}
-            isActive={interactive ? filterStatuses.includes(status) : undefined}
+            isActive={interactive ? filter.status.includes(status) : undefined}
           />
         ))}
       </div>
@@ -315,7 +317,7 @@ export const BillRow = memo(function BillRow({
                 <SessionChip
                   session={chip}
                   onClick={onYearClick ? () => onYearClick(bill.yearStart!) : undefined}
-                  isActive={bill.yearStart != null && filterYears.includes(bill.yearStart)}
+                  isActive={bill.yearStart != null && filter.year.includes(bill.yearStart)}
                 />
               )
             })()}
@@ -324,7 +326,7 @@ export const BillRow = memo(function BillRow({
           <RelevanceChip
             score={bill.relevanceScore}
             onClick={bill.relevanceScore != null ? () => onRelevanceClick(bill.relevanceScore!) : undefined}
-            isActive={bill.relevanceScore != null && filterMinRelevance > 0 && bill.relevanceScore >= filterMinRelevance}
+            isActive={bill.relevanceScore != null && filter.minRelevance > 0 && bill.relevanceScore >= filter.minRelevance}
           />
         </div>
         {/* Mobile-only: bill number, status, relevance — priority pinned to right edge */}
@@ -335,7 +337,7 @@ export const BillRow = memo(function BillRow({
             <RelevanceChip
               score={bill.relevanceScore}
               onClick={() => onRelevanceClick(bill.relevanceScore!)}
-              isActive={filterMinRelevance > 0 && bill.relevanceScore >= filterMinRelevance}
+              isActive={filter.minRelevance > 0 && bill.relevanceScore >= filter.minRelevance}
             />
           )}
           <span style={{ flex: 1 }} />
@@ -350,7 +352,7 @@ export const BillRow = memo(function BillRow({
                   <PriorityBadge priority={bill.priority} />
                 </button>
               )
-              : null
+              : isNewMatch ? <NewMatchChip /> : null
           }
         </div>
         <div style={{ fontSize: fontSize.base, fontWeight: fontWeight.bold, color: color.textPrimary, marginBottom: 3, lineHeight: 1.35, fontFamily: "'Source Serif 4', serif", display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}>
@@ -381,7 +383,7 @@ export const BillRow = memo(function BillRow({
                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); onTagClick(tag) }}
                 onMouseEnter={() => setHoveredChip(`tag-${tag}`)}
                 onMouseLeave={() => setHoveredChip(null)}
-                style={selectedTags.includes(tag) ? TAG_CHIP_ACTIVE : hoveredChip === `tag-${tag}` ? TAG_CHIP_HOVERED : TAG_CHIP}
+                style={filter.tag.includes(tag) ? TAG_CHIP_ACTIVE : hoveredChip === `tag-${tag}` ? TAG_CHIP_HOVERED : TAG_CHIP}
               >
                 {tag}
               </button>
@@ -402,7 +404,7 @@ export const BillRow = memo(function BillRow({
                   current={bill.position}
                   options={positionVocabulary}
                   onChange={(p) => onPositionChange(bill.id, p)}
-                  isFiltered={bill.position != null && filterPositions.includes(bill.position)}
+                  isFiltered={bill.position != null && filter.position.includes(bill.position)}
                   size="lg"
                 />
               </HoverTooltip>
@@ -416,7 +418,7 @@ export const BillRow = memo(function BillRow({
                     onMouseLeave={() => setHoveredChip(null)}
                     style={{
                       background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'inline-flex',
-                      outline: filterPositions.includes(bill.position!) ? `2px solid ${color.accentBlue}` : hoveredChip === 'position' ? `2px solid ${color.accentBlueMuted}` : 'none',
+                      outline: filter.position.includes(bill.position!) ? `2px solid ${color.accentBlue}` : hoveredChip === 'position' ? `2px solid ${color.accentBlueMuted}` : 'none',
                       outlineOffset: 3, borderRadius: radius.sm,
                     }}
                   >
@@ -513,7 +515,7 @@ export const BillRow = memo(function BillRow({
                   onMouseLeave={() => setHoveredChip(null)}
                   style={{
                     background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'inline-flex',
-                    outline: filterPriorities.includes(bill.priority!) ? `2px solid ${color.accentBlue}` : hoveredChip === 'priority' ? `2px solid ${color.accentBlueMuted}` : 'none',
+                    outline: filter.priority.includes(bill.priority!) ? `2px solid ${color.accentBlue}` : hoveredChip === 'priority' ? `2px solid ${color.accentBlueMuted}` : 'none',
                     outlineOffset: 2, borderRadius: radius.sm,
                   }}
                 >
@@ -521,7 +523,9 @@ export const BillRow = memo(function BillRow({
                 </button>
               </HoverTooltip>
             )
-            : <span style={{ fontSize: fontSize.sm, color: color.borderStrong }}>—</span>
+            : isNewMatch
+              ? <NewMatchChip />
+              : <span style={{ fontSize: fontSize.sm, color: color.borderStrong }}>—</span>
         }
       </div>
     </div>
