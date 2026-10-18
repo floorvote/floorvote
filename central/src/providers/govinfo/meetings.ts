@@ -480,7 +480,7 @@ async function runPass(ctx: Context, key: string, congress: number): Promise<Mee
   const lost = committed.unreadable.filter(k => !(k in promote))
   // The first full read is done once every listed meeting has a kept copy, however old. An empty list proves nothing.
   const complete = listed.length > 0 && listed.every(l => committed.kept.has(l.eventId))
-  if (complete && !(await isWarm(ctx, congress))) await ctx.cache.put({ [WARM(congress)]: new Date().toISOString() })
+  if (complete && !(await isWarm(ctx, congress))) await ctx.cache.put({ [WARM(congress)]: new Date().toISOString() }) // ts-write-ok: a marker value in provider_cache, never read as a time
   // A listed meeting whose kept copy was lost has to be read again before a bill's calendar can say it has none.
   const cold = lost.some(k => current.has(k.slice(COMMITTED(congress).length)))
   // Staged entries are done with, kept for a meeting the list no longer names or not; so are kept meetings it no longer names.
