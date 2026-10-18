@@ -33,6 +33,18 @@ beforeEach(async () => {
   vi.restoreAllMocks()
 })
 
+// The login route sends its email inside `executionCtx.waitUntil`, as the real Worker
+// runtime allows: a test gives it a context that records what was handed over, and
+// settles it when the test wants the background work done.
+function makeCtx() {
+  const pending: Promise<unknown>[] = []
+  const ctx = {
+    waitUntil: vi.fn((p: Promise<unknown>) => { pending.push(p) }),
+    passThroughOnException: () => {},
+  } as unknown as ExecutionContext & { waitUntil: ReturnType<typeof vi.fn> }
+  return { ctx, settle: () => Promise.all(pending) }
+}
+
 describe('GET /admin/dash/auth/me', () => {
   it('returns 401 with no auth', async () => {
     const res = await app.fetch(new Request('http://central/admin/dash/auth/me'), TEST_ENV)
@@ -101,6 +113,7 @@ describe('GET /admin/dash/auth/me', () => {
 describe('POST /admin/dash/auth/login', () => {
   it('sends a magic link to an allowlisted email and returns 200', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, status: 200, text: () => Promise.resolve('') } as Response)
+    const { ctx, settle } = makeCtx()
     const res = await app.fetch(
       new Request('http://central/admin/dash/auth/login', {
         method: 'POST',
@@ -108,8 +121,10 @@ describe('POST /admin/dash/auth/login', () => {
         body: JSON.stringify({ email: 'admin@example.com' }),
       }),
       TEST_ENV,
+      ctx,
     )
     expect(res.status).toBe(200)
+    await settle()
     expect(fetchSpy).toHaveBeenCalledTimes(1)
     const db = drizzle(env.DB, { schema })
     const links = await db.select().from(schema.magicLinks).all()
@@ -152,6 +167,7 @@ describe('POST /admin/dash/auth/login', () => {
       })
     }
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, status: 200, text: () => Promise.resolve('') } as Response)
+    const { ctx, settle } = makeCtx()
     const res = await app.fetch(
       new Request('http://central/admin/dash/auth/login', {
         method: 'POST',
@@ -159,8 +175,10 @@ describe('POST /admin/dash/auth/login', () => {
         body: JSON.stringify({ email: 'admin@example.com' }),
       }),
       TEST_ENV,
+      ctx,
     )
     expect(res.status).toBe(200)
+    await settle()
     expect(fetchSpy).toHaveBeenCalledTimes(1)
   })
 
@@ -236,15 +254,27 @@ describe('POST /admin/dash/auth/login — sender gate (Cloudflare Email or Resen
   // Env with no sender configured; each test layers on what it needs.
   const BASE_ENV: any = { ...TEST_ENV, RESEND_API_KEY: undefined, EMAIL: undefined, EMAIL_PROVIDER: undefined }
 
-  function login(email: string, envOverride: any, extraHeaders: Record<string, string> = {}) {
-    return app.fetch(
+  // The request, with a context the test can settle. `login` waits for the background
+  // send too, so a test that asserts on what was sent reads it after the work is done.
+  function loginRaw(email: string, envOverride: any, extraHeaders: Record<string, string> = {}) {
+    const { ctx, settle } = makeCtx()
+    const res = app.fetch(
       new Request('http://central/admin/dash/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...extraHeaders },
         body: JSON.stringify({ email }),
       }),
       envOverride,
+      ctx,
     )
+    return { res, ctx, settle }
+  }
+
+  async function login(email: string, envOverride: any, extraHeaders: Record<string, string> = {}) {
+    const { res, settle } = loginRaw(email, envOverride, extraHeaders)
+    const response = await res
+    await settle()
+    return response
   }
 
   function stubResendFetch() {
@@ -463,6 +493,198 @@ describe('POST /admin/dash/auth/login — sender gate (Cloudflare Email or Resen
     expect(res.status).toBe(200)
     expect(sent).toHaveLength(1)
     expect(sent[0].to).toEqual(['admin@example.com'])
+  })
+})
+
+describe('POST /admin/dash/auth/login — the send is off the response path (#674)', () => {
+  type Sent = { to: string | string[]; subject: string; html?: string; text?: string }
+
+  // A binding whose send waits until the test lets it go, so a test can look at the
+  // state while the provider round-trip is still in flight.
+  function gatedBinding(opts: { fail?: boolean; never?: boolean } = {}) {
+    const sent: Sent[] = []
+    let started = false
+    let release: () => void = () => {}
+    const gate = opts.never ? new Promise<void>(() => {}) : new Promise<void>((resolve) => { release = resolve })
+    return {
+      sent,
+      didStart: () => started,
+      release: () => release(),
+      binding: {
+        send: async (m: Sent) => {
+          started = true
+          await gate
+          if (opts.fail) throw Object.assign(new Error('binding exploded: secret-detail-xyz'), { code: 'E_SENDER_NOT_VERIFIED' })
+          sent.push(m)
+          return {}
+        },
+      },
+    }
+  }
+
+  const CF = (binding: unknown): any => ({
+    ...TEST_ENV, RESEND_API_KEY: undefined, EMAIL: binding, EMAIL_PROVIDER: 'cloudflare',
+  })
+
+  function post(email: string, envOverride: any) {
+    const { ctx, settle } = makeCtx()
+    const res = app.fetch(
+      new Request('http://central/admin/dash/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      }),
+      envOverride,
+      ctx,
+    )
+    return { res, ctx, settle }
+  }
+
+  /** Resolves 'response' if the response arrives, 'timeout' if it is still waiting after `ms`. */
+  const arrives = (res: Promise<Response>, ms = 1500) =>
+    Promise.race([res.then(() => 'response' as const), new Promise<'timeout'>((r) => setTimeout(() => r('timeout'), ms))])
+
+  /** The response, failing on an assertion (not a test timeout) when it waits on the send. */
+  async function answered(res: Promise<Response>): Promise<Response> {
+    expect(await arrives(res), 'the response should not wait for the email send').toBe('response')
+    return res
+  }
+
+  it('answers while the provider call is still in flight, and the email goes out once it finishes', async () => {
+    const g = gatedBinding()
+    const { res, settle } = post('admin@example.com', CF(g.binding))
+    expect(await arrives(res)).toBe('response')
+    expect(g.sent).toHaveLength(0)
+    g.release()
+    await settle()
+    expect(g.sent).toHaveLength(1)
+    expect(g.sent[0].to).toEqual(['admin@example.com'])
+  })
+
+  it('answers even when the provider call never finishes', async () => {
+    const g = gatedBinding({ never: true })
+    const { res } = post('admin@example.com', CF(g.binding))
+    expect(await arrives(res)).toBe('response')
+    const response = await answered(res)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ data: { ok: true } })
+  })
+
+  it('hands the send to waitUntil exactly once for a listed address', async () => {
+    const g = gatedBinding()
+    const { res, ctx, settle } = post('admin@example.com', CF(g.binding))
+    await answered(res)
+    expect(ctx.waitUntil).toHaveBeenCalledTimes(1)
+    g.release()
+    await settle()
+    expect(g.sent).toHaveLength(1)
+  })
+
+  it('hands nothing to waitUntil for an unlisted address, a capped one, or an unconfigured sender', async () => {
+    const g = gatedBinding()
+    g.release()
+    const outsider = post('outsider@example.com', CF(g.binding))
+    await outsider.res
+    expect(outsider.ctx.waitUntil).not.toHaveBeenCalled()
+
+    const db = drizzle(env.DB, { schema })
+    for (let i = 0; i < 5; i++) {
+      await db.insert(schema.magicLinks).values({
+        id: crypto.randomUUID(), email: 'admin@example.com', tokenHash: await hashToken(`cap-${i}-${'z'.repeat(60)}`),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      })
+    }
+    const capped = post('admin@example.com', CF(g.binding))
+    await capped.res
+    expect(capped.ctx.waitUntil).not.toHaveBeenCalled()
+
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const bare = post('admin@example.com', { ...TEST_ENV, RESEND_API_KEY: undefined, EMAIL: undefined, EMAIL_PROVIDER: undefined })
+    await bare.res
+    expect(bare.ctx.waitUntil).not.toHaveBeenCalled()
+    expect(g.sent).toHaveLength(0)
+  })
+
+  it('has stored the link before it answers, and the emailed token is that link', async () => {
+    const g = gatedBinding()
+    const { res, settle } = post('admin@example.com', CF(g.binding))
+    await answered(res)
+    const db = drizzle(env.DB, { schema })
+    expect((await db.select().from(schema.magicLinks).all()).length).toBe(1)
+    g.release()
+    await settle()
+    const m = (g.sent[0].text ?? '').match(/auth\/callback\?token=([0-9a-zA-Z%_-]+)/)
+    expect(m).not.toBeNull()
+    const link = await db.select().from(schema.magicLinks).where(eq(schema.magicLinks.tokenHash, await hashToken(decodeURIComponent(m![1])))).get()
+    expect(link?.email).toBe('admin@example.com')
+  })
+
+  it('logs a failed send from the background, returns the plain 200, and never rejects the waitUntil promise', async () => {
+    const g = gatedBinding({ fail: true })
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { res, settle } = post('admin@example.com', CF(g.binding))
+    const response = await answered(res)
+    expect(response.status).toBe(200)
+    const raw = await response.clone().text()
+    expect(raw).not.toContain('secret-detail-xyz')
+    expect(raw).not.toContain('E_SENDER_NOT_VERIFIED')
+    expect(err).not.toHaveBeenCalled() // nothing has failed yet: the send hasn't finished
+    g.release()
+    await expect(settle()).resolves.toBeDefined()
+    expect(err.mock.calls.map((c) => c.map(String).join(' ')).join('\n')).toContain('secret-detail-xyz')
+  })
+
+  it('logs a Resend failure from the background the same way', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false, status: 500, text: () => Promise.resolve('resend-internal-detail') } as Response)
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { res, settle } = post('admin@example.com', { ...TEST_ENV, RESEND_API_KEY: 'rk_test', EMAIL: undefined, EMAIL_PROVIDER: undefined })
+    const response = await res
+    expect(response.status).toBe(200)
+    expect(await response.clone().text()).not.toContain('resend-internal-detail')
+    await expect(settle()).resolves.toBeDefined()
+    expect(err).toHaveBeenCalled()
+  })
+
+  it('logs a send that throws synchronously, instead of rejecting', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const throwing = { send: () => { throw new Error('sync-throw-detail') } }
+    const { res, settle } = post('admin@example.com', CF(throwing))
+    expect((await res).status).toBe(200)
+    await expect(settle()).resolves.toBeDefined()
+    expect(err.mock.calls.map((c) => c.map(String).join(' ')).join('\n')).toContain('sync-throw-detail')
+  })
+
+  it('gives listed and unlisted addresses the same status, body, and headers', async () => {
+    const g = gatedBinding()
+    g.release()
+    const cfg = CF(g.binding)
+    const listed = post('admin@example.com', cfg)
+    const unlisted = post('outsider@example.com', cfg)
+    const [a, b] = [await listed.res, await unlisted.res]
+    await listed.settle()
+    expect(a.status).toBe(b.status)
+    expect(a.status).toBe(200)
+    const bodyOf = async (r: Response) => { const j = await r.json() as { data: unknown; meta: { generatedAt: string } }; return j.data }
+    expect(await bodyOf(a)).toEqual(await bodyOf(b))
+    expect([...a.headers.entries()].sort()).toEqual([...b.headers.entries()].sort())
+  })
+
+  it('gives a listed address the same response whether the send succeeds, fails, or hangs', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const bodies: string[] = []
+    const heads: string[] = []
+    for (const opts of [{}, { fail: true }, { never: true }] as const) {
+      const g = gatedBinding(opts)
+      g.release()
+      const { res } = post('admin@example.com', CF(g.binding))
+      const response = await answered(res)
+      expect(response.status).toBe(200)
+      const text = await response.text()
+      bodies.push(JSON.stringify((JSON.parse(text) as { data: unknown }).data))
+      heads.push(JSON.stringify([...response.headers.entries()].sort()))
+    }
+    expect(new Set(bodies).size).toBe(1)
+    expect(new Set(heads).size).toBe(1)
   })
 })
 
