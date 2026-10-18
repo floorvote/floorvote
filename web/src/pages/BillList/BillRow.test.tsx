@@ -355,23 +355,31 @@ describe('BillRow tooltips escape the row stacking context', () => {
     expect(container.contains(bubble)).toBe(false)
   })
 
-  // Scope to the desktop column rather than taking the first matching combobox:
-  // each control also renders a mobile-meta duplicate, and the two are wrapped
-  // differently, so an index-based lookup silently targets the wrong one.
-  it('renders the position-select tooltip outside the row subtree', () => {
-    const { container } = renderRow(true)
-    // Walk up from the control, not down from the column: the column's first
-    // span is its "Position" label, not the tooltip wrapper.
-    const wrapper = container.querySelector('.bill-col-position select')!.closest('span')!
+  // The position and priority controls are labeled by their column, so a bubble
+  // saying "Your association's official position on this bill" or "This bill's
+  // priority level" only restated the label. They are gone, for both roles.
+  it('shows no hover bubble over the admin position select', () => {
+    renderRow(true)
+    const wrapper = document.querySelector('.bill-col-position select')!.closest('span')!
     fireEvent.pointerEnter(wrapper, { pointerType: 'mouse' })
-    expect(container.contains(screen.getByText(/official position on this bill/i))).toBe(false)
+    expect(screen.queryByText(/official position on this bill/i)).toBeNull()
   })
 
-  it('renders the priority-select tooltip outside the row subtree', () => {
-    const { container } = renderRow(true)
-    const wrapper = container.querySelector('.bill-col-priority span')!
+  it('shows no hover bubble over the admin priority select', () => {
+    renderRow(true)
+    const wrapper = document.querySelector('.bill-col-priority span')!
     fireEvent.pointerEnter(wrapper, { pointerType: 'mouse' })
-    expect(container.contains(screen.getByText(/priority level/i))).toBe(false)
+    expect(screen.queryByText(/priority level/i)).toBeNull()
+  })
+
+  it('shows no hover bubble over a member\'s position or priority chip', () => {
+    renderRow(false, { bill: { position: 'Support', priority: 'high' } })
+    const position = document.querySelector('.bill-col-position button') ?? document.querySelector('.bill-col-position span')!
+    fireEvent.pointerEnter(position, { pointerType: 'mouse' })
+    const priority = document.querySelector('.bill-col-priority button')!
+    fireEvent.pointerEnter(priority, { pointerType: 'mouse' })
+    expect(screen.queryByText(/official position on this bill/i)).toBeNull()
+    expect(screen.queryByText(/priority level/i)).toBeNull()
   })
 })
 

@@ -131,6 +131,21 @@ describe('BillRow: an admin sees a new match as an amber state of the priority d
   })
 })
 
+describe('BillRow: the new-match hover', () => {
+  it('still explains the amber state on hover, since the label alone does not say what to do', () => {
+    renderRow(true, NEW_MATCH)
+    fireEvent.pointerEnter(document.querySelector('.bill-col-priority span')!, { pointerType: 'mouse' })
+    expect(screen.getByText('New keyword match — set a priority or dismiss')).toBeInTheDocument()
+  })
+
+  it('shows no hover over a priority that is already set, which only restated the label', () => {
+    renderRow(true, { ...NEW_MATCH, priority: 'low' })
+    fireEvent.pointerEnter(document.querySelector('.bill-col-priority span')!, { pointerType: 'mouse' })
+    expect(screen.queryByText(/priority level/i)).toBeNull()
+    expect(screen.queryByText(/New keyword match/)).toBeNull()
+  })
+})
+
 describe('BillRow: a bill that is not a new match', () => {
   it('shows an empty priority as a plain "Set priority" dropdown for an admin', () => {
     renderRow(true, { matchType: 'manual' })

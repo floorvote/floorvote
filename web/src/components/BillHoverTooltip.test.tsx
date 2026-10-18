@@ -64,3 +64,48 @@ describe('BillHoverTooltip untitled drafts', () => {
     expect(screen.queryByText('Untitled draft')).toBeNull()
   })
 })
+
+describe('BillHoverTooltip placement', () => {
+  const BILL = { billNumber: 'H 1', title: 'Placement title', summary: null, priority: null }
+  function withSize(w: number, h: number, innerHeight = 800) {
+    const ow = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(w)
+    const oh = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(h)
+    const ih = Object.getOwnPropertyDescriptor(window, 'innerHeight')
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: innerHeight })
+    return () => { ow.mockRestore(); oh.mockRestore(); if (ih) Object.defineProperty(window, 'innerHeight', ih) }
+  }
+  const bubbleEl = () => screen.getByText('Placement title').closest('div[style*="position: fixed"]') as HTMLElement
+
+  it('opens above the pointer, its bottom edge just over the cursor', () => {
+    const restore = withSize(200, 100)
+    try {
+      render(<BillHoverTooltip bill={BILL} cursor={{ x: 300, y: 400 }} />)
+      expect(parseFloat(bubbleEl().style.top)).toBe(400 - 18 - 100)
+      expect(parseFloat(bubbleEl().style.left)).toBe(316)
+    } finally { restore() }
+  })
+
+  it('flips below the pointer only when there is no room above it', () => {
+    const restore = withSize(200, 100)
+    try {
+      render(<BillHoverTooltip bill={BILL} cursor={{ x: 300, y: 50 }} />)
+      expect(parseFloat(bubbleEl().style.top)).toBe(50 + 18)
+    } finally { restore() }
+  })
+
+  it('stays above when it just fits', () => {
+    const restore = withSize(200, 100)
+    try {
+      render(<BillHoverTooltip bill={BILL} cursor={{ x: 300, y: 126 }} />)
+      expect(parseFloat(bubbleEl().style.top)).toBe(8)
+    } finally { restore() }
+  })
+
+  it('keeps a flipped bubble on screen at the bottom edge', () => {
+    const restore = withSize(200, 100, 120)
+    try {
+      render(<BillHoverTooltip bill={BILL} cursor={{ x: 300, y: 60 }} />)
+      expect(parseFloat(bubbleEl().style.top)).toBeLessThanOrEqual(120 - 100 - 8 + 0.01)
+    } finally { restore() }
+  })
+})

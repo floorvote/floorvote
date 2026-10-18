@@ -658,12 +658,12 @@ describe('HoverTooltip describe option', () => {
       expect(s.letterSpacing).toBe('inherit')
     })
 
-    it('opens below with a wrapping bubble by default', () => {
+    it('opens above with a wrapping bubble by default', () => {
       render(<HoverTooltip text={EXPLAINER} describe>Chapter</HoverTooltip>)
       fireEvent.pointerEnter(term(), { pointerType: 'mouse' })
       const b = bubble(EXPLAINER)!
       expect(b.style.maxWidth).toBe('320px')
-      expect(b.style.transform).toBe('translateX(-50%)')
+      expect(b.style.transform).toBe('translateX(-50%) translateY(calc(-100% - 6px))')
     })
   })
 
@@ -810,5 +810,122 @@ describe('HoverTooltip describe option', () => {
     render(<HoverTooltip text="Tip"><span>Chapter</span></HoverTooltip>)
     expect(screen.getByText('Chapter')).not.toHaveAttribute('tabindex')
     expect(screen.queryByText('Tip')).toBeNull()
+  })
+})
+
+// Hover bubbles open above their trigger and flip below only where there is no
+// room above (a trigger at the top of the viewport). jsdom lays nothing out, so
+// the anchor's and the bubble's rectangles are stubbed; the flip arithmetic runs for real.
+describe('opens above, and flips below only without room above', () => {
+  function stubRects(anchor: { top: number; left?: number; width?: number }, bubbleText: string, bubbleHeight: number, bubbleWidth = 100) {
+    const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'getBoundingClientRect')
+    const originalH = Object.getOwnPropertyDescriptor(window, 'innerHeight')
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 })
+    Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
+      configurable: true,
+      value: function (this: HTMLElement) {
+        if ((this.textContent === bubbleText && this.getAttribute('aria-hidden') !== null) || this.getAttribute('role') === 'tooltip') {
+          return rect({ left: 0, right: bubbleWidth, top: 0, bottom: bubbleHeight })
+        }
+        const left = anchor.left ?? 300
+        return rect({ left, right: left + (anchor.width ?? 40), top: anchor.top, bottom: anchor.top + 20 })
+      },
+    })
+    return () => {
+      if (original) Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', original)
+      if (originalH) Object.defineProperty(window, 'innerHeight', originalH)
+    }
+  }
+  const aboveTransform = (el: HTMLElement) => el.style.transform.includes('translateY(calc(-100% - 6px))')
+
+  it('defaults to above when there is room', () => {
+    const restore = stubRects({ top: 300 }, 'Tip', 30)
+    try {
+      render(<HoverTooltip text="Tip"><button>trigger</button></HoverTooltip>)
+      fireEvent.pointerEnter(screen.getByText('trigger'), { pointerType: 'mouse' })
+      const b = screen.getByText('Tip')
+      expect(aboveTransform(b)).toBe(true)
+      expect(b.style.top).toBe('300px')
+    } finally { restore() }
+  })
+
+  it('flips below the trigger when the bubble would not fit above it', () => {
+    const restore = stubRects({ top: 10 }, 'Tip', 30)
+    try {
+      render(<HoverTooltip text="Tip"><button>trigger</button></HoverTooltip>)
+      fireEvent.pointerEnter(screen.getByText('trigger'), { pointerType: 'mouse' })
+      const b = screen.getByText('Tip')
+      expect(aboveTransform(b)).toBe(false)
+      expect(b.style.top).toBe('36px')
+    } finally { restore() }
+  })
+
+  it('stays above when it just fits', () => {
+    const restore = stubRects({ top: 44 }, 'Tip', 30)
+    try {
+      render(<HoverTooltip text="Tip"><button>trigger</button></HoverTooltip>)
+      fireEvent.pointerEnter(screen.getByText('trigger'), { pointerType: 'mouse' })
+      expect(aboveTransform(screen.getByText('Tip'))).toBe(true)
+    } finally { restore() }
+  })
+
+  it.each(['top-start', 'top-end'] as const)('flips %s below too, keeping its horizontal alignment', placement => {
+    const restore = stubRects({ top: 10, left: 400, width: 40 }, 'Tip', 30, 100)
+    try {
+      render(<HoverTooltip text="Tip" placement={placement}><button>trigger</button></HoverTooltip>)
+      fireEvent.pointerEnter(screen.getByText('trigger'), { pointerType: 'mouse' })
+      const b = screen.getByText('Tip')
+      expect(aboveTransform(b)).toBe(false)
+      expect(b.style.top).toBe('36px')
+      expect(b.style.transform).toContain(placement === 'top-start' ? 'translateX(0%)' : 'translateX(-100%)')
+    } finally { restore() }
+  })
+
+  it('opens a term (describe) above, flipping below at the top of the page', () => {
+    const restore = stubRects({ top: 10 }, 'Meaning', 30)
+    try {
+      render(<HoverTooltip text="Meaning" describe>Chapter</HoverTooltip>)
+      fireEvent.pointerEnter(screen.getByText('Chapter'), { pointerType: 'mouse' })
+      const b = document.querySelector<HTMLElement>('[role="tooltip"]')!
+      expect(aboveTransform(b)).toBe(false)
+      expect(b.style.top).toBe('36px')
+    } finally { restore() }
+  })
+
+  it('opens a term (describe) above when there is room', () => {
+    const restore = stubRects({ top: 300 }, 'Meaning', 30)
+    try {
+      render(<HoverTooltip text="Meaning" describe>Chapter</HoverTooltip>)
+      fireEvent.pointerEnter(screen.getByText('Chapter'), { pointerType: 'mouse' })
+      expect(aboveTransform(document.querySelector<HTMLElement>('[role="tooltip"]')!)).toBe(true)
+    } finally { restore() }
+  })
+
+  it('opens a toggletip above by default', () => {
+    const restore = stubRects({ top: 300 }, 'Info', 30)
+    try {
+      render(<HoverTooltip toggletip ariaLabel="More" text="Info">i</HoverTooltip>)
+      fireEvent.pointerEnter(screen.getByRole('button', { name: 'More' }), { pointerType: 'mouse' })
+      expect(aboveTransform(screen.getByRole('tooltip'))).toBe(true)
+    } finally { restore() }
+  })
+
+  it('falls back above, not below, when "right" has no room to the right', () => {
+    const restore = stubRects({ top: 300, left: 700, width: 80 }, 'Wide tip text', 30, 300)
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 })
+    try {
+      render(<HoverTooltip text="Wide tip text" placement="right" maxWidth={300}><button>trigger</button></HoverTooltip>)
+      fireEvent.pointerEnter(screen.getByText('trigger'), { pointerType: 'mouse' })
+      expect(aboveTransform(screen.getByText('Wide tip text'))).toBe(true)
+    } finally { restore() }
+  })
+
+  it('still lets a caller ask for below explicitly', () => {
+    const restore = stubRects({ top: 300 }, 'Tip', 30)
+    try {
+      render(<HoverTooltip text="Tip" placement="bottom"><button>trigger</button></HoverTooltip>)
+      fireEvent.pointerEnter(screen.getByText('trigger'), { pointerType: 'mouse' })
+      expect(aboveTransform(screen.getByText('Tip'))).toBe(false)
+    } finally { restore() }
   })
 })

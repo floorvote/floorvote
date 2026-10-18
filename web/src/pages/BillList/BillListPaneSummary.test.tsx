@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { BillListPaneSummary } from './BillListPaneSummary'
 import type { ListSummary } from './listSummary'
@@ -70,5 +70,15 @@ describe('BillListPaneSummary edit link', () => {
   it('keeps the baseline alignment of the summary and the link', () => {
     renderSummary(ONE_FILTER)
     expect(row().style.alignItems).toBe('baseline')
+  })
+})
+
+describe('BillListPaneSummary hover', () => {
+  it('lists the filters in a bubble above the summary, flipping below only without room above', () => {
+    renderSummary(ONE_FILTER)
+    fireEvent.pointerEnter(screen.getByText('1 filter · Sorted by default order'), { pointerType: 'mouse' })
+    const bubble = Array.from(document.body.querySelectorAll<HTMLElement>('[role="tooltip"]'))[0]
+    expect(bubble).toHaveTextContent('Status: Passed')
+    expect(bubble.style.transform).toContain('translateY(calc(-100% - 6px))')
   })
 })

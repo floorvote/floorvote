@@ -104,6 +104,17 @@ describe('MonthGrid', () => {
     expect(screen.getByText('+3 more')).toBeInTheDocument()
   })
 
+  it('shows no "more" link when every event fits the cell, even with long multi-line details', () => {
+    const fits: CalendarEvent[] = Array.from({ length: 2 }, (_, i) => ({
+      id: String(i), uid: String(i), source: 'custom', billId: null, bills: [],
+      date: '2026-06-15', time: null, location: null, description: `Event ${i}`,
+      details: 'First line of details\nSecond line of details that runs well past the cell width ' + 'x'.repeat(120), url: null, status: 'confirmed',
+    }))
+    render(<MemoryRouter><MonthGrid events={fits} initialYear={2026} initialMonth={5} onSelect={vi.fn()} /></MemoryRouter>)
+    expect(screen.queryByText(/\+\d+ more/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /show (more|less)/i })).not.toBeInTheDocument()
+  })
+
   it('calls onSelectDay with the full day list when "+N more" is clicked', () => {
     const many: CalendarEvent[] = Array.from({ length: 4 }, (_, i) => ({
       id: String(i), uid: String(i), source: 'custom', billId: null, bills: [],

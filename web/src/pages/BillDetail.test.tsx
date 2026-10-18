@@ -210,14 +210,12 @@ describe('BillDetail org noun labels', () => {
     expect(await screen.findByText('Association relevance')).toBeInTheDocument()
   })
 
-  it('renders the position badge tooltip using orgNoun possessive', async () => {
+  it('gives the position badge no hover bubble, which only restated the "position" label', async () => {
     makeMockApiFetch()
     render(<MemoryRouter><BillDetail /></MemoryRouter>)
-    // Wait for bill to load and position section to appear
     await screen.findByText('Association position')
-    // PositionBadge is mocked to expose the tooltip prop as data-tooltip
-    const badge = document.querySelector('[data-tooltip]')
-    expect(badge?.getAttribute('data-tooltip')).toBe("Your association's official position on this bill")
+    // PositionBadge is mocked to expose a tooltip prop as data-tooltip; none is passed.
+    expect(document.querySelector('[data-tooltip]')).toBeNull()
   })
 })
 

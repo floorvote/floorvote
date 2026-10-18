@@ -83,7 +83,7 @@ async function summary() {
 async function openMenu() {
   const user = userEvent.setup()
   await user.click(await button())
-  return { user, menu: await screen.findByRole('dialog', { name: 'Committee events' }) }
+  return { user, menu: await screen.findByRole('dialog', { name: 'Event filters' }) }
 }
 
 beforeEach(() => { vi.restoreAllMocks(); demo.locked = false })
@@ -491,13 +491,13 @@ describe('the Calendar page\'s committee events control', () => {
       expect(btn).toHaveAttribute('aria-expanded', 'false')
       btn.focus()
       await user.keyboard('{Enter}')
-      expect(await screen.findByRole('dialog', { name: 'Committee events' })).toBeInTheDocument()
+      expect(await screen.findByRole('dialog', { name: 'Event filters' })).toBeInTheDocument()
       expect(btn).toHaveAttribute('aria-expanded', 'true')
       await user.keyboard('{Escape}')
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
       expect(btn).toHaveAttribute('aria-expanded', 'false')
       await user.keyboard(' ')
-      expect(await screen.findByRole('dialog', { name: 'Committee events' })).toBeInTheDocument()
+      expect(await screen.findByRole('dialog', { name: 'Event filters' })).toBeInTheDocument()
     })
 
     it('puts the focus in the menu, and gives it back to the button on Escape', async () => {
