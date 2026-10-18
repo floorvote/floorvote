@@ -79,7 +79,7 @@ function QuotePreview({ preview }: { preview: Preview }) {
   const box: React.CSSProperties = place === 'bottom'
     ? { left: 16, right: 16, bottom: 16, top: 'auto', width: 'auto', maxWidth: 'none' }
     : { left: place?.left ?? 0, top: place?.top ?? 0, width: 'max-content', maxWidth: 'min(26rem, calc(100vw - 16px))' }
-  // The quote is the link's accessible description already (the hidden `.claim-quote` beside it), so this copy is for sight only.
+  // The quote is the link's accessible description already (the `display:none` `.claim-quote` beside it), so this copy is for sight only.
   return createPortal(
     <div
       ref={ref}
@@ -232,11 +232,8 @@ export function MarkdownSummary({ children, fontSize, color: textColor = color.t
       {hasQuotes && (
         <style>{`
           .markdown-summary .claim-ref { position: relative; }
-          /* The quote stays in the document, off screen, as the link's description for a screen reader. Sighted readers get the preview card. */
-          .markdown-summary .claim-quote {
-            position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
-            clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0;
-          }
+          /* Not displayed, so a screen reader's browse mode doesn't read it inline and a copy leaves it out. It stays in the document as the link's description (aria-describedby reads display:none text) and as the preview card's source. */
+          .markdown-summary .claim-quote { display: none; }
         `}</style>
       )}
       {preview && <QuotePreview preview={preview} />}

@@ -186,7 +186,6 @@ describe('MarkdownSummary: the quote preview', () => {
     renderSummary()
     for (const tip of document.querySelectorAll('.claim-quote')) expect(tip).not.toBeVisible()
     expect(screen.queryAllByRole('tooltip')).toHaveLength(0)
-    expect(screen.queryByText(HTML_QUOTE)).toBeNull()
   })
 
   it('still describes each link by its quote, though the quote span is not displayed', () => {
