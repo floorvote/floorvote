@@ -791,7 +791,7 @@ describe('FilterSheet — Status grouped by Stage', () => {
     expect(within(screen.getByRole('button', { name: /^Signed/ })).getByText('3')).toBeInTheDocument()
     expect(within(screen.getByRole('button', { name: /^In committee/ })).getByText('2')).toBeInTheDocument()
     // Headings come in stage order, with Other last and without a button.
-    const labels = screen.getAllByRole('heading', { level: 3 }).map(h => h.textContent)
+    const labels = screen.getAllByRole('heading', { level: 3 }).map(h => (h.textContent ?? '').replace(/\d+$/, ''))
     expect(labels).toEqual(['Enacted', 'In committee', 'Other'])
     expect(screen.queryByRole('button', { name: /^Other/ })).toBeNull()
   })

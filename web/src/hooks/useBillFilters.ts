@@ -7,9 +7,10 @@ import {
   EMPTY_BILL_FILTER, FILTER_ANY, activeFilterCount, activeFilters as activeFiltersOf, decodeSubjectFilter, encodeSubjectFilter, serializeBillFilter, withBillFilter, type BillFilter,
 } from '../../../shared/billFilter'
 import { billFilterForUrl, billFilterFromSearch, billsQueryFromSearch, withCustomFieldKeys } from '../pages/BillList/billsQuery'
-import { knownStates, knownStatuses, knownTagsCache } from '../pages/BillList'
+import { knownStates, knownStatuses, knownStatusGroups, knownTagsCache } from '../pages/BillList'
 import { normalizeViewQuery } from '../lib/savedViews'
 import { STATUS_STAGES } from '../../../shared/statusStages'
+import { groupStatusOptions, type StatusGroupInfo } from '../lib/statusGroups'
 
 type SearchParams = ReturnType<typeof useSearchParams>[0]
 type SetSearchParams = ReturnType<typeof useSearchParams>[1]
@@ -261,8 +262,19 @@ export function useBillFilters(opts: {
       return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi)
     })
   }, [facetCounts.status])
+  // The Status control grouped under stage headings (#677), or null for an API that sends no statusGroups, which leaves
+  // the page on its two separate lists. The statuses are the ones listed above (those with bills, and those seen
+  // earlier in the session); each one's stage and rank are the facets' own, or the ones seen earlier for a status that
+  // has no bills now.
+  const statusGroupOptions = useMemo(() => {
+    const current = facetCounts.statusGroups
+    if (!current) return null
+    const groups: Record<string, StatusGroupInfo> = { ...Object.fromEntries(knownStatusGroups), ...current }
+    return groupStatusOptions({ labels: statuses, counts: { stage: facetCounts.stage ?? {} }, statusGroups: groups })
+  }, [statuses, facetCounts.statusGroups, facetCounts.stage])
   // Every stage, most advanced first like the statuses above. The list is
-  // fixed, so a stage with no bills still shows, at 0.
+  // fixed, so a stage with no bills still shows, at 0. These are the options
+  // of the separate Stage control an older API leaves the page with.
   const stageOptions = useMemo(
     () => [...STATUS_STAGES].reverse().map(s => ({ value: s.key as string, label: s.label as string })),
     [],
@@ -332,7 +344,7 @@ export function useBillFilters(opts: {
     filter,
     handleTagClick, handleTagsChange, handleSubjectsChange, handleStatusClick, handlePriorityClick,
     handlePositionClick, handleYearClick, handleRelevanceClick, handleResetFilters,
-    yearFacetKeys, statuses, stageOptions, allTags, positionOptions, uniqueStates, isMultiState,
+    yearFacetKeys, statuses, statusGroupOptions, stageOptions, allTags, positionOptions, uniqueStates, isMultiState,
     activeFilters, hasActiveFilters, totalActiveFilters,
     applyView,
     activeViewSlug: searchParams.get('view'),

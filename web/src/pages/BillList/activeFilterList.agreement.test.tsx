@@ -41,9 +41,11 @@ const SINGLES: { name: string; qs: string; badge: number; chips: number }[] = [
   { name: 'custom dropdown field', qs: 'field.team=Alpha&field.team=Beta', badge: 2, chips: 2 },
   { name: 'custom binary field', qs: 'field.flagged=true', badge: 1, chips: 1 },
 ]
-const EVERYTHING = SINGLES.filter(s => s.name !== 'custom binary field').map(s => s.qs).join('&')
-const EVERYTHING_BADGE = SINGLES.filter(s => s.name !== 'custom binary field').reduce((n, s) => n + s.badge, 0)
-const EVERYTHING_CHIPS = SINGLES.filter(s => s.name !== 'custom binary field').reduce((n, s) => n + s.chips, 0)
+// Every filter once: the combined status and stage row repeats values the status and stage rows already set.
+const IN_EVERYTHING = SINGLES.filter(s => s.name !== 'custom binary field' && s.name !== 'status and stage')
+const EVERYTHING = IN_EVERYTHING.map(s => s.qs).join('&')
+const EVERYTHING_BADGE = IN_EVERYTHING.reduce((n, s) => n + s.badge, 0)
+const EVERYTHING_CHIPS = IN_EVERYTHING.reduce((n, s) => n + s.chips, 0)
 
 function useHarness() {
   const [searchParams, setSearchParams] = useSearchParams()

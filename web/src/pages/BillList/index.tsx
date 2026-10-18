@@ -28,7 +28,7 @@ import { useBulkActions } from '../../hooks/useBulkActions'
 import { billsApiParams, billsApiParamsFromSearch, billsFacetParams, searchFromListUrl } from './billsQuery'
 import { serializeBillFilter } from '../../../../shared/billFilter'
 import { searchWarnings } from '../../../../shared/searchLimits'
-import { filterDimensionLabel, isFilterDimensionVisible } from '../../lib/filterDimensions'
+import { STAGE_FILTER_LABEL, filterDimensionLabel, isFilterDimensionVisible, isStatusGroupedByStage } from '../../lib/filterDimensions'
 import { useStageFilterUseful } from '../../lib/capabilities'
 import { filterableCustomFields } from '../../lib/customFieldFilters'
 import { ViewSwitcher, type SavedView } from './ViewSwitcher'
@@ -47,6 +47,8 @@ let cachedFacetCounts: FacetCounts | null = null
 export const knownStates: Set<string> = new Set()
 export const knownSessions: Set<string> = new Set()
 export const knownStatuses: Set<string> = new Set()
+/** Each status label seen in a facets reply, with the stage and rank it came with, so a status with no bills now still sits under its stage. */
+export const knownStatusGroups: Map<string, { stage: string | null; rank: number }> = new Map()
 export const knownTagsCache: Set<string> = new Set()
 
 /**
@@ -154,6 +156,7 @@ export function updateKnownStates(counts: FacetCounts) {
   Object.keys(counts.state).forEach(s => knownStates.add(s))
   Object.keys(counts.sessionName).forEach(s => knownSessions.add(s))
   Object.keys(counts.status).forEach(s => knownStatuses.add(s))
+  Object.entries(counts.statusGroups ?? {}).forEach(([label, info]) => knownStatusGroups.set(label, info))
   Object.keys(counts.tag).forEach(t => knownTagsCache.add(t))
 }
 
@@ -218,6 +221,12 @@ export function BillList() {
     [f.status, f.priority, f.position, f.year, f.minRelevance, f.tag],
   )
   const filterDimensionCtx = { uniqueStates: f.uniqueStates, isAdmin, isMultiState: f.isMultiState, hasDrafts: facetCounts.hasDrafts, draftsActive: f.drafts, newMatchesActive: f.newMatches, stageUseful, stageActive: f.stage.length > 0 }
+  // Where Stage was offered, Status is one control grouped under stage headings (#677). An API that sends no
+  // statusGroups cannot say which stage a status is in, so the page keeps the two separate controls it had.
+  // Until the first facets reply is applied nothing says which API this is, so it is the grouped control that waits
+  // (empty, like the Status list it replaces), and an older API's reply is what turns it back into two.
+  const stageOffered = isStatusGroupedByStage(filterDimensionCtx)
+  const statusGrouped = stageOffered && (f.statusGroupOptions !== null || facetCountsKey === null)
 
   // Relevance slider: track the thumb locally so it moves instantly while
   // dragging, but only commit the value (which drives the URL + bill query) on
@@ -863,27 +872,48 @@ export function BillList() {
               />
             </HoverTooltip>
           )}
-          <HoverTooltip text="Filter by current legislative status">
-            <FilterDropdown
-              placeholder={filterDimensionLabel('status')}
-              options={f.statuses.map(s => ({ value: s, label: decodeStatus(s) ?? s }))}
-              selected={f.status}
-              onChange={f.setStatus}
-              multi
-              counts={filterCounts.status}
-            />
-          </HoverTooltip>
-          {isFilterDimensionVisible('stage', filterDimensionCtx) && (
-            <HoverTooltip text="Filter by common stage, which compares bills across states whose statuses differ">
+          {statusGrouped ? (
+            // One Status control, its options under stage headings (#677): a heading selects the whole stage, a status
+            // one status, and the counts beside them are the facets' own.
+            <HoverTooltip text="Filter by current legislative status, grouped by common stage, which compares bills across states whose statuses differ">
               <FilterDropdown
-                placeholder={filterDimensionLabel('stage')}
-                options={f.stageOptions}
-                selected={f.stage}
-                onChange={f.setStage}
+                placeholder={filterDimensionLabel('status')}
+                options={[]}
+                selected={f.status}
+                onChange={f.setStatus}
                 multi
-                counts={filterCounts.stage ?? {}}
+                counts={filterCounts.status}
+                groups={f.statusGroupOptions ?? []}
+                selectedGroups={f.stage}
+                onGroupsChange={f.setStage}
               />
             </HoverTooltip>
+          ) : (
+            <>
+              <HoverTooltip text="Filter by current legislative status">
+                <FilterDropdown
+                  placeholder={filterDimensionLabel('status')}
+                  options={f.statuses.map(s => ({ value: s, label: decodeStatus(s) ?? s }))}
+                  selected={f.status}
+                  onChange={f.setStatus}
+                  multi
+                  counts={filterCounts.status}
+                />
+              </HoverTooltip>
+              {/* The separate Stage control stays only for an API that sends no statusGroups to group by. */}
+              {stageOffered && (
+                <HoverTooltip text="Filter by common stage, which compares bills across states whose statuses differ">
+                  <FilterDropdown
+                    placeholder={STAGE_FILTER_LABEL}
+                    options={f.stageOptions}
+                    selected={f.stage}
+                    onChange={f.setStage}
+                    multi
+                    counts={filterCounts.stage ?? {}}
+                  />
+                </HoverTooltip>
+              )}
+            </>
           )}
           {f.yearFacetKeys.length > 0 && (
             <HoverTooltip text="Filter by legislative session year">
@@ -1208,6 +1238,7 @@ export function BillList() {
         isMultiState={f.isMultiState}
         statusOptions={f.statuses.map(s => ({ value: s, label: decodeStatus(s) ?? s }))}
         stageOptions={f.stageOptions}
+        statusGroups={statusGrouped ? (f.statusGroupOptions ?? []) : null}
         priorityOptions={[
           { value: 'high', label: 'High' },
           { value: 'medium', label: 'Medium' },

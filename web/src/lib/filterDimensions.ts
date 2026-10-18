@@ -12,7 +12,7 @@
  *
  * Two "kinds" exist because not every filter dimension is a pick-one-of-N
  * options list:
- *   - 'options': a set of selectable values (State, Status, Stage, Session
+ *   - 'options': a set of selectable values (State, Status, Session
  *     year, Position, Priority, Tags, Subject). Desktop renders these as a
  *     `FilterDropdown`; mobile renders them as a drill-down chip list.
  *   - 'toggle': a single on/off control (My bills, New matches). Desktop
@@ -94,8 +94,8 @@ export interface FilterDimensionContext {
   /** Whether some covered state's provider fills in the in-committee statuses
    *  (`useStageFilterUseful`). Absent counts as true. */
   stageUseful?: boolean
-  /** Whether a Stage filter is applied (from a saved view or URL). Keeps the
-   *  dimension visible so the filter can still be seen and turned off. */
+  /** Whether a stage is chosen (from a saved view or URL). Keeps Status grouped by stage so
+   *  the stage can still be seen and turned off. */
   stageActive?: boolean
 }
 
@@ -137,10 +137,6 @@ export const FILTER_DIMENSIONS: readonly FilterDimensionDef[] = [
   // back off) visible while the Drafts filter is on, regardless of hasDrafts.
   { key: 'drafts',     label: 'Drafts',        kind: 'toggle',  scope: 'workflow', isVisible: ctx => ctx.hasDrafts || ctx.draftsActive, hasOwnPill: true },
   { key: 'status',     label: 'Status',        kind: 'options', scope: 'bill',   isVisible: () => true },
-  // A status's common stage (Introduced, In committee, ..., Enacted), which
-  // compares bills across states whose status names differ. Hidden when every
-  // covered state is on LegiScan, which almost never reports in-committee.
-  { key: 'stage',      label: 'Stage',         kind: 'options', scope: 'bill',   isVisible: ctx => ctx.stageUseful !== false || !!ctx.stageActive },
   { key: 'year',       label: 'Session year',  kind: 'options', scope: 'bill',   isVisible: () => true },
   { key: 'position',   label: 'Position',      kind: 'options', scope: 'bill',   isVisible: () => true },
   { key: 'priority',   label: 'Priority',      kind: 'options', scope: 'bill',   isVisible: () => true },
@@ -159,6 +155,23 @@ function get(key: FilterDimensionKey): FilterDimensionDef {
   if (!d) throw new Error(`Unknown filter dimension: ${key}`)
   return d
 }
+
+/**
+ * The Stage filter is no dimension of its own: a stage (Introduced, In committee, ..., Enacted) is a grouping inside
+ * Status, which compares bills across states whose status names differ (#677). Status is grouped under its stages
+ * where Stage was offered before: some covered state's provider is not LegiScan, which almost never reports
+ * in-committee, or a stage is already chosen, so it can be seen and turned off. Everywhere else Status stays a flat list.
+ * Dropping `stageUseful` later, to group LegiScan-only instances too, is this one condition.
+ */
+export function isStatusGroupedByStage(ctx: FilterDimensionContext): boolean {
+  return ctx.stageUseful !== false || !!ctx.stageActive
+}
+
+/**
+ * The name of the separate Stage control, which only a page talking to an API that predates `statusGroups` still
+ * draws (it falls back to Status and Stage as two controls). The grouped Status control has no such name.
+ */
+export const STAGE_FILTER_LABEL = 'Stage'
 
 /** The one place either surface may read a dimension's display label. */
 export function filterDimensionLabel(key: FilterDimensionKey): string {
@@ -205,9 +218,3 @@ export const CHIP_SELECTION_LEAVES_OUT: Record<'billsNav' | 'prioritized', reado
   billsNav: ['newMatches', 'search'],
   prioritized: ['priority', 'unvoted', 'search'],
 }
-
-// Stubs, to be written in the next commit (#677).
-export function isStatusGroupedByStage(_ctx: FilterDimensionContext): boolean {
-  return undefined as unknown as boolean
-}
-export const STAGE_FILTER_LABEL = ''

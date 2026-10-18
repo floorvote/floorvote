@@ -225,13 +225,16 @@ export function billsListPath(patch: Partial<BillFilter> = {}): string {
   return query === '' ? '/bills' : `/bills?${query}`
 }
 
-/** One filter that has a value: its name, its key (a custom field's is `field.<key>`), and how many values it holds. */
-export type ActiveFilter = Readonly<{ name: Exclude<keyof BillFilter, 'match'>; key: string; count: number }>
+/**
+ * One filter that has a value: its name, its key (a custom field's is `field.<key>`), and how many values it holds.
+ * The stage is never a name here: it is a grouping inside Status, so its values are listed under `status`.
+ */
+export type ActiveFilter = Readonly<{ name: Exclude<keyof BillFilter, 'match' | 'stage'>; key: string; count: number }>
 
 const distinct = (values: readonly string[]): number => new Set(values).size
 
 /** How many values a filter holds, each distinct value once. A toggle, a minimum, and a search hold one when set. */
-function countValues(filter: BillFilter, name: Exclude<keyof BillFilter, 'match' | 'field'>): number {
+function countValues(filter: BillFilter, name: Exclude<keyof BillFilter, 'match' | 'stage' | 'field'>): number {
   const value = filter[name]
   if (Array.isArray(value)) {
     return name === 'subject'
@@ -262,7 +265,10 @@ export function activeFilters(filter: BillFilter, options: { hidden?: readonly s
       }
       continue
     }
-    const count = countValues(filter, name)
+    // The stage is one way of choosing statuses (a heading selects a whole stage), and on the server the two are one fact,
+    // so the list holds one Status entry for both and each value counts once (#677).
+    if (name === 'stage') continue
+    const count = countValues(filter, name) + (name === 'status' ? distinct(filter.stage) : 0)
     if (count > 0) list.push({ name, key: name, count })
   }
   return Object.freeze(list)

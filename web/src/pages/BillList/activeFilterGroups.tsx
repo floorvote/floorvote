@@ -68,6 +68,11 @@ export function priorityChipLabel(p: string): string {
   return (PRIORITY_COLORS[p] ?? PRIORITY_COLORS['medium']).label ?? p
 }
 
+/** A stage chip's label: the stage's name under a "Stage:" prefix, so it reads apart from a status beside it in the one group. */
+export function stageChipLabel(stage: string): string {
+  return `Stage: ${stageLabel(stage) ?? stage}`
+}
+
 export function subjectChipLabel(subject: string, isMultiState: boolean): string {
   const idx = subject.indexOf(':')
   return idx > 0
@@ -103,8 +108,8 @@ export function activeFilterLabelGroups(a: ActiveFilterLabelArgs): { key: string
   const drawn = chipGate(a.active)
   const push = (key: string, labels: string[]) => { if (labels.length > 0 && drawn(key)) groups.push({ key, labels }) }
   push('state', a.state)
-  push('status', a.status.map(s => decodeStatus(s) ?? s))
-  push('stage', a.stage.map(s => stageLabel(s) ?? s))
+  // The stages are a grouping inside Status, so their chips share its group, after the statuses (#677).
+  push('status', [...a.status.map(s => decodeStatus(s) ?? s), ...a.stage.map(stageChipLabel)])
   push('position', a.position.map(p => positionChipLabel(p, a.positionOptions)))
   push('priority', a.priority.map(priorityChipLabel))
   push('year', a.year.map(y => `Year: ${y}`))
@@ -130,12 +135,15 @@ export function buildActiveFilterGroups(a: ActiveFilterGroupArgs): ActiveFilterG
   push('state', a.state.map(s => (
     <ActiveChip key={`state-${s}`} label={s} color="gray" onRemove={() => a.onRemoveState(s)} />
   )))
-  push('status', a.status.map(s => (
-    <ActiveChip key={`status-${s}`} label={decodeStatus(s) ?? s} color="gray" onRemove={() => a.onRemoveStatus(s)} />
-  )))
-  push('stage', a.stage.map(s => (
-    <ActiveChip key={`stage-${s}`} label={stageLabel(s) ?? s} color="gray" onRemove={() => a.onRemoveStage(s)} />
-  )))
+  // One chip group for Status, holding the status chips and then the stage chips (#677): a stage is a grouping inside Status.
+  push('status', [
+    ...a.status.map(s => (
+      <ActiveChip key={`status-${s}`} label={decodeStatus(s) ?? s} color="gray" onRemove={() => a.onRemoveStatus(s)} />
+    )),
+    ...a.stage.map(s => (
+      <ActiveChip key={`stage-${s}`} label={stageChipLabel(s)} color="gray" onRemove={() => a.onRemoveStage(s)} />
+    )),
+  ])
   push('position', a.position.map(p => {
     const posLabel = positionChipLabel(p, a.positionOptions)
     const posColor = POSITION_COLORS[p] ?? POSITION_FALLBACK

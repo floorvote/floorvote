@@ -5,7 +5,9 @@ import type { SubjectGroup } from '../pages/BillList/FilterPanel'
 import type { CustomFieldDef } from '../pages/BillList/types'
 import { FilterSheetVirtualList } from './FilterSheetVirtualList'
 import { useStageFilterUseful } from '../lib/capabilities'
-import { filterDimensionLabel, hiddenFilterDimensions, isFilterDimensionVisible, type FilterDimensionContext } from '../lib/filterDimensions'
+import { STAGE_FILTER_LABEL, filterDimensionLabel, hiddenFilterDimensions, isFilterDimensionVisible, isStatusGroupedByStage, type FilterDimensionContext } from '../lib/filterDimensions'
+import type { StatusStageGroup } from '../lib/statusGroups'
+import { STAGE_HEADING_HINT } from '../pages/BillList/FilterPanel'
 import { activeFilters, decodeSubjectFilter, withBillFilter } from '../../../shared/billFilter'
 import { filterableCustomFields } from '../lib/customFieldFilters'
 import { buildActiveFilterGroups } from '../pages/BillList/activeFilterGroups'
@@ -53,6 +55,12 @@ interface FilterSheetProps {
   isMultiState: boolean
   statusOptions: { value: string; label: string }[]
   stageOptions: { value: string; label: string }[]
+  /**
+   * The statuses under stage headings, in place of the two lists above: the Status row then opens a list with a
+   * heading for each stage, and there is no Stage row (#677). Null for an API that sends no statusGroups, which
+   * leaves a Status row and a Stage row, as before. The sheet still keeps Status flat where Stage was never offered.
+   */
+  statusGroups?: StatusStageGroup[] | null
   priorityOptions: { value: string; label: string }[]
   positionOptions: { value: string; label: string }[]
   tagOptions: string[]
@@ -139,6 +147,10 @@ function SheetChip({ label, active, onClick, count }: { label: string; active: b
         display: 'inline-flex',
         alignItems: 'center',
         gap: 4,
+        // A long label wraps inside the chip rather than widening the list past a phone's width.
+        maxWidth: '100%',
+        textAlign: 'left',
+        overflowWrap: 'anywhere',
       }}
     >
       {label}
@@ -249,7 +261,7 @@ export function FilterSheet({
   status, stage, priority, position, tag, subject, year, state, minRelevance, myBills, search = '',
   isAdmin, newMatches, newMatchesCount, unvoted, unvotedCount, drafts, draftCount, hasDrafts, uniqueStates, isMultiState,
   match, onMatchChange,
-  statusOptions, stageOptions, priorityOptions, positionOptions, tagOptions, subjectGroups, yearOptions, totalYearCount, stateOptions,
+  statusOptions, stageOptions, statusGroups, priorityOptions, positionOptions, tagOptions, subjectGroups, yearOptions, totalYearCount, stateOptions,
   customFieldDefs, field, onFieldChange,
   onStatusChange, onStageChange, onPriorityChange, onPositionChange, onTagChange, onSubjectChange, onYearChange, onStateChange,
   onMinRelevanceChange, onMyBillsChange, onNewMatchesChange, onUnvotedChange, onDraftsChange,
@@ -291,7 +303,9 @@ export function FilterSheet({
   if (!isOpen) return null
 
   const filterDimensionCtx: FilterDimensionContext = { uniqueStates, isAdmin, isMultiState, hasDrafts: hasDrafts ?? false, draftsActive: drafts, newMatchesActive: newMatches, stageUseful, stageActive: stage.length > 0 }
-  const stageVisible = isFilterDimensionVisible('stage', filterDimensionCtx)
+  // Where Stage was offered, Status is grouped under stage headings when the API says which stage each status is in.
+  const stageOffered = isStatusGroupedByStage(filterDimensionCtx)
+  const groupedStatus = stageOffered && statusGroups ? statusGroups : null
   const stateVisible = isFilterDimensionVisible('state', filterDimensionCtx)
   const newMatchesVisible = isFilterDimensionVisible('newMatches', filterDimensionCtx)
   const draftsVisible = isFilterDimensionVisible('drafts', filterDimensionCtx)
@@ -320,7 +334,7 @@ export function FilterSheet({
   const STATIC_DIMENSION_LABELS: Record<StaticDimensionKey, string> = {
     state: filterDimensionLabel('state'),
     status: filterDimensionLabel('status'),
-    stage: filterDimensionLabel('stage'),
+    stage: STAGE_FILTER_LABEL,
     priority: filterDimensionLabel('priority'),
     position: filterDimensionLabel('position'),
     year: filterDimensionLabel('year'),
@@ -595,10 +609,15 @@ export function FilterSheet({
                 {stateVisible && (
                   <DimensionRow label={STATIC_DIMENSION_LABELS.state} selectedCount={state.length} onClick={() => setDimension('state')} buttonRef={rowRef('state')} />
                 )}
-                {statusOptions.length > 0 && (
-                  <DimensionRow label={STATIC_DIMENSION_LABELS.status} selectedCount={status.length} onClick={() => setDimension('status')} buttonRef={rowRef('status')} />
+                {(groupedStatus ? groupedStatus.length > 0 : statusOptions.length > 0) && (
+                  <DimensionRow
+                    label={STATIC_DIMENSION_LABELS.status}
+                    selectedCount={status.length + (groupedStatus ? stage.length : 0)}
+                    onClick={() => setDimension('status')}
+                    buttonRef={rowRef('status')}
+                  />
                 )}
-                {stageVisible && stageOptions.length > 0 && (
+                {stageOffered && !groupedStatus && stageOptions.length > 0 && (
                   <DimensionRow label={STATIC_DIMENSION_LABELS.stage} selectedCount={stage.length} onClick={() => setDimension('stage')} buttonRef={rowRef('stage')} />
                 )}
                 {priorityOptions.length > 0 && (
@@ -648,7 +667,49 @@ export function FilterSheet({
             </div>
           )}
 
-          {dimension === 'status' && (
+          {dimension === 'status' && groupedStatus && (
+            <div>
+              {groupedStatus.map(group => {
+                const pressed = group.stage !== null && stage.includes(group.stage)
+                return (
+                  <div key={group.stage ?? 'other'} style={{ marginBottom: 16 }}>
+                    <h3 style={{ margin: '0 0 8px', fontSize: fontSize.base, fontWeight: fontWeight.semibold, color: color.textPrimary }}>
+                      {group.stage !== null ? (
+                        // A heading selects the whole stage, and says so; Other has no stage to select, so it is plain text.
+                        <button
+                          type="button"
+                          aria-pressed={pressed}
+                          title={STAGE_HEADING_HINT}
+                          onClick={() => toggleItem(stage, group.stage as string, onStageChange)}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 8, maxWidth: '100%', textAlign: 'left', cursor: 'pointer',
+                            padding: '6px 0', background: 'none', border: 'none', borderBottom: `2px solid ${pressed ? color.linkBlue : 'transparent'}`,
+                            font: 'inherit', color: pressed ? color.linkBlue : 'inherit', overflowWrap: 'anywhere',
+                          }}
+                        >
+                          {group.label}
+                          {group.count !== null && <span style={COUNT_BADGE}>{group.count.toLocaleString()}</span>}
+                        </button>
+                      ) : group.label}
+                    </h3>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {group.options.map(opt => (
+                        <SheetChip
+                          key={opt.value}
+                          label={opt.label}
+                          active={status.includes(opt.value)}
+                          onClick={() => toggleItem(status, opt.value, onStatusChange)}
+                          count={counts?.status[opt.value] ?? 0}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {dimension === 'status' && !groupedStatus && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {statusOptions.map(opt => (
                 <SheetChip

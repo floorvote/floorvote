@@ -611,11 +611,13 @@ describe('Status grouped by Stage — where Stage was offered', () => {
   const GROUPS = { '2': { stage: 'enacted', rank: 701 } }
   const stageName = new RegExp(`^${STAGE_FILTER_LABEL}$`)
   // The control, not the column header of the same name: the desktop trigger reads "Status (2)" with picks, the phone row "Status2".
-  const statusName = new RegExp(`^${filterDimensionLabel('status')}( \\(\\d+\\)|\\d*)$`)
-  const renderConfiguredDesktop = async (providers: string[] | undefined, initialUrl?: string, groups: typeof GROUPS | undefined = GROUPS) => {
-    facetState.statusGroups = groups
+  const statusName = new RegExp(`^${filterDimensionLabel('status')}( \\(\\d+\\)| ?\\d*)$`)
+  const renderConfiguredDesktop = async (providers: string[] | undefined, initialUrl?: string, groups: typeof GROUPS | null = GROUPS) => {
+    facetState.statusGroups = groups ?? undefined
     render(withConfig(providers, <BillList />), { wrapper: (props) => <Wrapper {...props} initialUrl={initialUrl} /> })
     await screen.findByText('Default bill')
+    // The facets reply decides between the one grouped control and the two an older API leaves, so wait for it.
+    await new Promise(resolve => setTimeout(resolve, 0))
   }
   const sheetGroups = [{ stage: 'enacted' as const, label: 'Enacted', count: 1, options: [{ value: 'active', label: 'Active' }] }]
   const renderConfiguredMobile = (providers: string[] | undefined, stages: string[] = [], groups: typeof sheetGroups | null = sheetGroups) => render(withConfig(providers,
@@ -683,7 +685,7 @@ describe('Status grouped by Stage — where Stage was offered', () => {
   })
 
   it('stays on the two separate dropdowns, with no error, when the API sends no statusGroups', async () => {
-    await renderConfiguredDesktop(['legiscan', 'mga'], undefined, undefined)
+    await renderConfiguredDesktop(['legiscan', 'mga'], undefined, null)
     expect(screen.getByRole('button', { name: stageName })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: statusName })).toBeInTheDocument()
     cleanup()
@@ -693,7 +695,7 @@ describe('Status grouped by Stage — where Stage was offered', () => {
   })
 
   it('draws the Stage chip of an older API\'s two dropdowns in the one Status chip group', async () => {
-    await renderConfiguredDesktop(['legiscan', 'mga'], '/bills?stage=enacted&status=2', undefined)
+    await renderConfiguredDesktop(['legiscan', 'mga'], '/bills?stage=enacted&status=2', null)
     expect(screen.getByRole('button', { name: /^Stage \(1\)/ })).toBeInTheDocument()
     expect(screen.getByText('Stage: Enacted')).toBeInTheDocument()
   })
