@@ -12,7 +12,7 @@ import { runWeekAhead } from '../../src/lib/weekAhead'
 // rest, linking to the Calendar page.
 
 const sendBatch = vi.hoisted(() => vi.fn(async () => ({ sent: 1, failed: 0 })))
-vi.mock('../../src/lib/email', async (importOriginal) => ({ ...await importOriginal<typeof import('../../src/lib/email')>(), sendBatch }))
+vi.mock('../../src/lib/email', async (importOriginal) => ({ ...await importOriginal<typeof import('../../src/lib/email')>(), senderFor: (e: unknown) => ({ sendBatch: (messages: unknown[]) => (sendBatch as (...a: unknown[]) => unknown)(e, messages) }) }))
 
 const GMAIL_CLIP_BYTES = 102 * 1024
 const CAP = 30
