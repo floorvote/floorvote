@@ -869,14 +869,12 @@ export function BillList() {
               />
             </HoverTooltip>
           )}
-          <HoverTooltip text="Show only bills you haven't voted on yet">
-            <FilterToggle
-              label={filterDimensionLabel('unvoted')}
-              active={f.unvoted}
-              onToggle={() => f.setUnvoted(!f.unvoted)}
-              count={filterCounts.unvotedCount}
-            />
-          </HoverTooltip>
+          <FilterToggle
+            label={filterDimensionLabel('unvoted')}
+            active={f.unvoted}
+            onToggle={() => f.setUnvoted(!f.unvoted)}
+            count={filterCounts.unvotedCount}
+          />
           {isFilterDimensionVisible('drafts', filterDimensionCtx) && (
             <HoverTooltip text="Show only draft bills — pre-filed, not yet introduced">
               <FilterToggle
@@ -893,16 +891,14 @@ export function BillList() {
             style={{ width: 1, alignSelf: 'stretch', margin: '0 4px', background: color.borderDefault }}
           />
           {isFilterDimensionVisible('state', filterDimensionCtx) && (
-            <HoverTooltip text="Filter by state">
-              <FilterDropdown
-                placeholder={filterDimensionLabel('state')}
-                options={f.uniqueStates.map(s => ({ value: s }))}
-                selected={f.state}
-                onChange={f.setState}
-                multi
-                counts={filterCounts.state}
-              />
-            </HoverTooltip>
+            <FilterDropdown
+              placeholder={filterDimensionLabel('state')}
+              options={f.uniqueStates.map(s => ({ value: s }))}
+              selected={f.state}
+              onChange={f.setState}
+              multi
+              counts={filterCounts.state}
+            />
           )}
           {statusGrouped ? (
             // One Status control, its options under stage headings (#677): a heading selects the whole stage, a status
@@ -922,16 +918,14 @@ export function BillList() {
             </HoverTooltip>
           ) : (
             <>
-              <HoverTooltip text="Filter by current legislative status">
-                <FilterDropdown
-                  placeholder={filterDimensionLabel('status')}
-                  options={f.statuses.map(s => ({ value: s, label: decodeStatus(s) ?? s }))}
-                  selected={f.status}
-                  onChange={f.setStatus}
-                  multi
-                  counts={filterCounts.status}
-                />
-              </HoverTooltip>
+              <FilterDropdown
+                placeholder={filterDimensionLabel('status')}
+                options={f.statuses.map(s => ({ value: s, label: decodeStatus(s) ?? s }))}
+                selected={f.status}
+                onChange={f.setStatus}
+                multi
+                counts={filterCounts.status}
+              />
               {/* The separate Stage control stays only for an API that sends no statusGroups to group by. */}
               {stageOffered && (
                 <HoverTooltip text="Filter by common stage, which compares bills across states whose statuses differ">
@@ -948,95 +942,85 @@ export function BillList() {
             </>
           )}
           {f.yearFacetKeys.length > 0 && (
-            <HoverTooltip text="Filter by legislative session year">
-              <FilterDropdown
-                placeholder={filterDimensionLabel('year')}
-                options={f.yearFacetKeys.map(y => ({ value: y }))}
-                selected={f.year.map(String)}
-                onChange={v => f.setYear(v.map(Number).filter(n => !isNaN(n)))}
-                multi
-                counts={facetCounts.year}
-              />
-            </HoverTooltip>
+            <FilterDropdown
+              placeholder={filterDimensionLabel('year')}
+              options={f.yearFacetKeys.map(y => ({ value: y }))}
+              selected={f.year.map(String)}
+              onChange={v => f.setYear(v.map(Number).filter(n => !isNaN(n)))}
+              multi
+              counts={facetCounts.year}
+            />
           )}
-          <HoverTooltip text={`Filter by AI-scored relevance to your ${orgNoun}`}>
-            <>
-              <style>{`
-                input[type=range].relevance-slider { -webkit-appearance: none; appearance: none; background: transparent; height: 14px; margin: 0; }
-                input[type=range].relevance-slider::-webkit-slider-runnable-track {
-                  background: linear-gradient(to right, ${color.accentAmber} 0%, ${color.accentAmber} ${(relevanceDraft / 10) * 100}%, ${color.borderDefault} ${(relevanceDraft / 10) * 100}%, ${color.borderDefault} 100%);
-                  height: 4px; border-radius: 4px;
-                }
-                input[type=range].relevance-slider::-webkit-slider-thumb {
-                  -webkit-appearance: none; width: 14px; height: 14px; background: ${color.accentAmber};
-                  border-radius: 50%; margin-top: -5px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-                }
-                input[type=range].relevance-slider::-moz-range-track { background: ${color.borderDefault}; height: 4px; border-radius: 4px; }
-                input[type=range].relevance-slider::-moz-range-progress { background: ${color.accentAmber}; height: 4px; border-radius: 4px 0 0 4px; }
-                input[type=range].relevance-slider::-moz-range-thumb { background: ${color.accentAmber}; border-radius: 50%; width: 14px; height: 14px; border: none; cursor: pointer; }
-              `}</style>
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                background: relevanceDraft > 0 ? color.bgInfo : color.white,
-                border: `1px solid ${relevanceDraft > 0 ? color.tagBorderBlue : color.borderDefault}`,
-                borderRadius: radius.md, padding: '6px 10px',
-              }}>
-                <label style={{ fontSize: fontSize.sm, whiteSpace: 'nowrap', color: relevanceDraft > 0 ? color.linkBlue : color.textSlate, fontWeight: relevanceDraft > 0 ? fontWeight.medium : fontWeight.normal }}>
-                  Relevance: <span style={{ display: 'inline-block', width: 26, textAlign: 'left' }}>{relevanceDraft === 0 ? 'All' : relevanceDraft < 10 ? `${relevanceDraft}+` : '10'}</span>
-                </label>
-                <input
-                  type="range"
-                  className="relevance-slider"
-                  min={0}
-                  max={10}
-                  value={relevanceDraft}
-                  onChange={(e) => setRelevanceDraft(Number(e.target.value))}
-                  onPointerUp={commitRelevance}
-                  onKeyUp={commitRelevance}
-                  style={{ width: 80 }}
-                />
-              </div>
-            </>
-          </HoverTooltip>
-          <HoverTooltip text={`Filter by your ${orgNoun}'s official position`}>
-            <FilterDropdown
-              placeholder={filterDimensionLabel('position')}
-              options={f.positionOptions}
-              selected={f.position}
-              onChange={f.setPosition}
-              multi
-              counts={filterCounts.position}
-              anyIsFilter
-            />
-          </HoverTooltip>
-          <HoverTooltip text={`Filter by your ${orgNoun}'s priority level`}>
-            <FilterDropdown
-              placeholder={filterDimensionLabel('priority')}
-              options={[
-                { value: 'high', label: 'High Priority' },
-                { value: 'medium', label: 'Medium Priority' },
-                { value: 'low', label: 'Low Priority' },
-                { value: 'none', label: 'Not set' },
-              ]}
-              selected={f.priority}
-              onChange={f.setPriority}
-              multi
-              counts={filterCounts.priority}
-              anyIsFilter
-            />
-          </HoverTooltip>
-          {f.allTags.length > 0 && (
-            <HoverTooltip text="Filter by your team's AI-generated tags">
-              <FilterDropdown
-                placeholder={filterDimensionLabel('tag')}
-                options={f.allTags.map(t => ({ value: t }))}
-                selected={f.tag}
-                onChange={f.handleTagsChange}
-                multi
-                counts={filterCounts.tag}
-                anyIsFilter
+          <>
+            <style>{`
+              input[type=range].relevance-slider { -webkit-appearance: none; appearance: none; background: transparent; height: 14px; margin: 0; }
+              input[type=range].relevance-slider::-webkit-slider-runnable-track {
+                background: linear-gradient(to right, ${color.accentAmber} 0%, ${color.accentAmber} ${(relevanceDraft / 10) * 100}%, ${color.borderDefault} ${(relevanceDraft / 10) * 100}%, ${color.borderDefault} 100%);
+                height: 4px; border-radius: 4px;
+              }
+              input[type=range].relevance-slider::-webkit-slider-thumb {
+                -webkit-appearance: none; width: 14px; height: 14px; background: ${color.accentAmber};
+                border-radius: 50%; margin-top: -5px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+              }
+              input[type=range].relevance-slider::-moz-range-track { background: ${color.borderDefault}; height: 4px; border-radius: 4px; }
+              input[type=range].relevance-slider::-moz-range-progress { background: ${color.accentAmber}; height: 4px; border-radius: 4px 0 0 4px; }
+              input[type=range].relevance-slider::-moz-range-thumb { background: ${color.accentAmber}; border-radius: 50%; width: 14px; height: 14px; border: none; cursor: pointer; }
+            `}</style>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              background: relevanceDraft > 0 ? color.bgInfo : color.white,
+              border: `1px solid ${relevanceDraft > 0 ? color.tagBorderBlue : color.borderDefault}`,
+              borderRadius: radius.md, padding: '6px 10px',
+            }}>
+              <label style={{ fontSize: fontSize.sm, whiteSpace: 'nowrap', color: relevanceDraft > 0 ? color.linkBlue : color.textSlate, fontWeight: relevanceDraft > 0 ? fontWeight.medium : fontWeight.normal }}>
+                Relevance: <span style={{ display: 'inline-block', width: 26, textAlign: 'left' }}>{relevanceDraft === 0 ? 'All' : relevanceDraft < 10 ? `${relevanceDraft}+` : '10'}</span>
+              </label>
+              <input
+                type="range"
+                className="relevance-slider"
+                min={0}
+                max={10}
+                value={relevanceDraft}
+                onChange={(e) => setRelevanceDraft(Number(e.target.value))}
+                onPointerUp={commitRelevance}
+                onKeyUp={commitRelevance}
+                style={{ width: 80 }}
               />
-            </HoverTooltip>
+            </div>
+          </>
+          <FilterDropdown
+            placeholder={filterDimensionLabel('position')}
+            options={f.positionOptions}
+            selected={f.position}
+            onChange={f.setPosition}
+            multi
+            counts={filterCounts.position}
+            anyIsFilter
+          />
+          <FilterDropdown
+            placeholder={filterDimensionLabel('priority')}
+            options={[
+              { value: 'high', label: 'High Priority' },
+              { value: 'medium', label: 'Medium Priority' },
+              { value: 'low', label: 'Low Priority' },
+              { value: 'none', label: 'Not set' },
+            ]}
+            selected={f.priority}
+            onChange={f.setPriority}
+            multi
+            counts={filterCounts.priority}
+            anyIsFilter
+          />
+          {f.allTags.length > 0 && (
+            <FilterDropdown
+              placeholder={filterDimensionLabel('tag')}
+              options={f.allTags.map(t => ({ value: t }))}
+              selected={f.tag}
+              onChange={f.handleTagsChange}
+              multi
+              counts={filterCounts.tag}
+              anyIsFilter
+            />
           )}
           {f.subjectGroups.length > 0 && (
             <HoverTooltip

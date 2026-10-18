@@ -108,7 +108,7 @@ function RollCallTally({ vote }: { vote: Pick<VoteEntry, 'yea' | 'nay' | 'nv' | 
         }}>
           {groups.map(({ group, voters }) => (
             <Fragment key={group.key}>
-              <dt style={{ color: TONE_COLOR[group.tone], fontWeight: fontWeight.bold, minWidth: 0, overflowWrap: 'anywhere' }}>{group.label}</dt>
+              <dt style={{ color: TONE_COLOR[group.tone], fontWeight: fontWeight.medium, minWidth: 0, overflowWrap: 'anywhere' }}>{group.label}</dt>
               <dd style={{ margin: 0, minWidth: 0, overflowWrap: 'anywhere' }}><VoterNames voters={voters} /></dd>
             </Fragment>
           ))}

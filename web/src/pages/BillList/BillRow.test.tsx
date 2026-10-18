@@ -360,15 +360,13 @@ describe('BillRow tooltips escape the row stacking context', () => {
   // priority level" only restated the label. They are gone, for both roles.
   it('shows no hover bubble over the admin position select', () => {
     renderRow(true)
-    const wrapper = document.querySelector('.bill-col-position select')!.closest('span')!
-    fireEvent.pointerEnter(wrapper, { pointerType: 'mouse' })
+    fireEvent.pointerEnter(document.querySelector('.bill-col-position select')!, { pointerType: 'mouse' })
     expect(screen.queryByText(/official position on this bill/i)).toBeNull()
   })
 
   it('shows no hover bubble over the admin priority select', () => {
     renderRow(true)
-    const wrapper = document.querySelector('.bill-col-priority span')!
-    fireEvent.pointerEnter(wrapper, { pointerType: 'mouse' })
+    fireEvent.pointerEnter(document.querySelector('.bill-col-priority select')!, { pointerType: 'mouse' })
     expect(screen.queryByText(/priority level/i)).toBeNull()
   })
 

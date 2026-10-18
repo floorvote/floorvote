@@ -163,7 +163,7 @@ describe('scope cluster', () => {
 })
 
 describe('scope control copy', () => {
-  it('every scope tooltip leads with "Show only"', async () => {
+  it('every scope tooltip leads with "Show only" (Not yet voted has none, which only restated its label)', async () => {
     await renderBillList({ isAdmin: true })
     // My bills
     fireEvent.focus(screen.getByRole('button', { name: /my bills/i }))
@@ -175,7 +175,7 @@ describe('scope control copy', () => {
 
     // Not yet voted
     fireEvent.focus(screen.getByRole('button', { name: /not yet voted/i }))
-    expect(await screen.findByText(/^Show only bills you haven't voted/)).toBeInTheDocument()
+    expect(screen.queryByText(/^Show only bills you haven't voted/)).not.toBeInTheDocument()
   })
 
   it('the search tooltip leads with "Show only" and keeps its syntax help', async () => {

@@ -62,7 +62,9 @@ function stubGeometry({
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: innerWidth })
 
   return () => {
+    // getBoundingClientRect lives on Element.prototype, so there is no own descriptor to put back: remove the stub.
     if (rectDescriptor) Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', rectDescriptor)
+    else delete (HTMLElement.prototype as { getBoundingClientRect?: unknown }).getBoundingClientRect
     if (widthDescriptor) Object.defineProperty(window, 'innerWidth', widthDescriptor)
   }
 }
@@ -833,6 +835,7 @@ describe('opens above, and flips below only without room above', () => {
     })
     return () => {
       if (original) Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', original)
+      else delete (HTMLElement.prototype as { getBoundingClientRect?: unknown }).getBoundingClientRect
       if (originalH) Object.defineProperty(window, 'innerHeight', originalH)
     }
   }

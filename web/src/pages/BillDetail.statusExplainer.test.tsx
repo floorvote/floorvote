@@ -278,8 +278,8 @@ describe('deadlines and explainers on a bill page', () => {
     expect(chip).toHaveTextContent('Congressional review ends')
     // The event type's definition ("a date the law sets...") restated what the label says: no hover, no description, no control.
     expect(within(chip).queryByRole('button')).toBeNull()
-    expect(within(chip).getByText('Congressional review ends')).not.toHaveAttribute('aria-describedby')
-    fireEvent.pointerEnter(within(chip).getByText('Congressional review ends'), { pointerType: 'mouse' })
+    expect(within(chip).getByText(/Congressional review ends/)).not.toHaveAttribute('aria-describedby')
+    fireEvent.pointerEnter(within(chip).getByText(/Congressional review ends/), { pointerType: 'mouse' })
     expect(screen.queryByText(DEADLINE_EXPLAINER)).toBeNull()
     expect(screen.getByText('Hearings and deadlines')).toBeInTheDocument()
   })
@@ -312,7 +312,7 @@ describe('deadlines and explainers on a bill page', () => {
   it('opens nothing when the next deadline or a calendar entry is clicked', async () => {
     renderBillDetail({ state: 'MD', billNumber: 'B26-0405', body: 'C', billType: 'Emergency Bill', status: 'Introduced', calendar })
     const chip = await screen.findByTestId('next-deadline')
-    fireEvent.click(within(chip).getByText('Congressional review ends'))
+    fireEvent.click(within(chip).getByText(/Congressional review ends/))
     fireEvent.click(screen.getByText('Public Hearing'))
     expect(screen.queryByText(DEADLINE_EXPLAINER)).toBeNull()
     expect(screen.queryByText(HEARING_EXPLAINER)).toBeNull()

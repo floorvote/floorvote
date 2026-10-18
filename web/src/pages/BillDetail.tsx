@@ -14,7 +14,7 @@ import { isUntriagedNewMatch } from '../lib/newMatch'
 import { CompactPositionSelect } from '../components/CompactPositionSelect'
 import { StatusChip } from '../components/StatusChip'
 import { decodeStatus } from '../lib/legislativeStatus'
-import { billTypeExplainer, eventTypeExplainer, statusExplainer as explainStatus, useStateLabels } from '../lib/statusExplainers'
+import { billTypeExplainer, statusExplainer as explainStatus, useStateLabels } from '../lib/statusExplainers'
 import { getNoAnalysisMessage } from '../lib/billDetailCopy'
 import { REGENERATE_PRESERVES_DESCRIPTION } from '../lib/billDetailCopy'
 import { OverflowMenu, type OverflowMenuRow } from '../components/ui/OverflowMenu'
@@ -1472,20 +1472,24 @@ export function BillDetail() {
             {isAdmin
               ? (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', position: 'relative' }}>
-                  <HoverTooltip text={isNewMatch ? 'New keyword match — set a priority or dismiss' : "This bill's priority level"}>
-                    <CompactPrioritySelect
-                      billId={bill.id}
-                      current={priority}
-                      onChange={(p, result) => {
-                        setPriority(p)
-                        setPriorityMeta(p ? { setByName: displayName(user!), updatedAt: new Date().toISOString() } : null)
-                        refreshSidebar()
-                        if (result?.promoted) startAnalyzingPoll()
-                      }}
-                      newMatch={isNewMatch}
-                      onDismiss={() => { setTriageDismissed(true); refreshSidebar() }}
-                    />
-                  </HoverTooltip>
+                  {(() => {
+                    const control = (
+                      <CompactPrioritySelect
+                        billId={bill.id}
+                        current={priority}
+                        onChange={(p, result) => {
+                          setPriority(p)
+                          setPriorityMeta(p ? { setByName: displayName(user!), updatedAt: new Date().toISOString() } : null)
+                          refreshSidebar()
+                          if (result?.promoted) startAnalyzingPoll()
+                        }}
+                        newMatch={isNewMatch}
+                        onDismiss={() => { setTriageDismissed(true); refreshSidebar() }}
+                      />
+                    )
+                    // Only a new match's control needs a word: its label alone does not say what to do.
+                    return isNewMatch ? <HoverTooltip text="New keyword match — set a priority or dismiss">{control}</HoverTooltip> : control
+                  })()}
                   {priorityMeta && (
                     <div title={absoluteTime(priorityMeta.updatedAt)} style={{ ...CHROME_TEXT, marginTop: 3, cursor: 'default', position: 'absolute', top: '100%', left: 0, whiteSpace: 'nowrap' }}>
                       Set by {priorityMeta.setByName} · {relativeTime(priorityMeta.updatedAt)}
@@ -1496,9 +1500,7 @@ export function BillDetail() {
               : priority
                 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', position: 'relative' }}>
-                    <HoverTooltip text="This bill's priority level">
-                      <PriorityBadge priority={priority} onClick={() => navigate(billsListPath({ priority: [priority] }))} />
-                    </HoverTooltip>
+                    <PriorityBadge priority={priority} onClick={() => navigate(billsListPath({ priority: [priority] }))} />
                     {priorityMeta && (
                       <div title={absoluteTime(priorityMeta.updatedAt)} style={{ ...CHROME_TEXT, marginTop: 3, cursor: 'default', position: 'absolute', top: '100%', left: 0, whiteSpace: 'nowrap' }}>
                         Set by {priorityMeta.setByName} · {relativeTime(priorityMeta.updatedAt)}
@@ -1792,12 +1794,11 @@ export function BillDetail() {
           const nextDeadline = (bill.calendar ?? []).filter(e => e.kind === 'deadline' && e.date >= todayIso())
             .sort((a, b) => a.date.localeCompare(b.date))[0]
           if (nextDeadline) {
-            const explainer = eventTypeExplainer(stateLabels, nextDeadline.typeId)
             const what = nextDeadline.description || nextDeadline.type
             metaItems.push(
               <span key="deadline" data-testid="next-deadline" style={{ whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 4, color: color.textAmberDark, fontWeight: fontWeight.medium }}>
                 <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: fontSize.base }}>schedule</span>
-                <HoverTooltip text={explainer} describe>{what}</HoverTooltip>: {safeDate(nextDeadline.date) ?? nextDeadline.date}
+                {what}: {safeDate(nextDeadline.date) ?? nextDeadline.date}
               </span>
             )
           }
@@ -2820,7 +2821,6 @@ export function BillDetail() {
                 const chipColor = isDeadline
                   ? { color: color.textAmberDark, background: color.bgAmberPriority }
                   : { color: color.billBadgeNavy, background: color.bgInfo }
-                const explainer = eventTypeExplainer(stateLabels, entry.typeId)
                 return (
                   <TabularRow
                     key={entry.eventHash || `hearing-${i}`}
@@ -2840,7 +2840,7 @@ export function BillDetail() {
                     content={
                       <div style={{ color: color.textSlate }}>
                         <div style={{ fontWeight: fontWeight.medium, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                          <HoverTooltip text={explainer} describe>{entry.description || entry.type}</HoverTooltip>
+                          {entry.description || entry.type}
                         </div>
                         {entry.location && <div style={{ color: color.textSecondary, fontSize: fontSize.xs, marginTop: 1 }}>{entry.location}</div>}
                       </div>
@@ -3208,7 +3208,7 @@ export function BillDetail() {
               : position
                 ? (
                   <div>
-                    <PositionBadge position={position} tooltip={`Your ${config?.orgNoun ?? DEFAULT_ORG_NOUN}'s official position on this bill`} />
+                    <PositionBadge position={position} />
                     {positionMeta && (
                       <div title={absoluteTime(positionMeta.updatedAt)} style={{ ...CHROME_TEXT, marginTop: 4, cursor: 'default' }}>
                         Set by {positionMeta.setByName} · {relativeTime(positionMeta.updatedAt)}

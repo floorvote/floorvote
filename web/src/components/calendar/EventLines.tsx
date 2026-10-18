@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react'
+import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { color, fontSize } from '../../styles/tokens'
 import type { CalendarEvent } from '../../lib/calendarGrid'
 import { BillBadge } from '../BillBadge'
@@ -48,7 +48,23 @@ export function EventLines({ event, compact = false, linkChips = false, suppress
     : null
   const isCompactNoBills = compact && event.bills.length === 0
   const lineFont = compact ? fontSize.xs : fontSize.sm
-  const showToggle = !!event.details && (event.details.includes('\n') || event.details.length > 80)
+  // The toggle shows only where the clamp hides something: the details box is taller than it
+  // is visible. Measured, not guessed from the text, and again when the box resizes. Once
+  // expanded nothing overflows, so "Show less" stays while the details are open.
+  const detailsRef = useRef<HTMLDivElement>(null)
+  const [overflows, setOverflows] = useState(false)
+  const measuring = clampDetails && !!event.details && !showAll
+  useLayoutEffect(() => {
+    const el = detailsRef.current
+    if (!measuring || !el) return
+    const measure = () => setOverflows(el.scrollHeight > el.clientHeight)
+    measure()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    observer?.observe(el)
+    window.addEventListener('resize', measure)
+    return () => { observer?.disconnect(); window.removeEventListener('resize', measure) }
+  }, [measuring, event.details])
+  const showToggle = clampDetails && !!event.details && (showAll || overflows)
   const detailStyle: CSSProperties = {
     ...EVENT_META_STYLE, marginTop: 4, whiteSpace: 'pre-line', lineHeight: 1.5,
     ...(clampDetails && !showAll ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } as CSSProperties : {}),
@@ -165,8 +181,8 @@ export function EventLines({ event, compact = false, linkChips = false, suppress
       {event.bills.length > 0 && billChips(true)}
       {event.details && (
         <>
-          <div style={detailStyle}>{event.details}</div>
-          {clampDetails && showToggle && (
+          <div ref={detailsRef} style={detailStyle}>{event.details}</div>
+          {showToggle && (
             <button
               type="button"
               onClick={() => setShowAll(v => !v)}
