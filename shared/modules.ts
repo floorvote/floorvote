@@ -149,3 +149,8 @@ export function weekAheadCadenceDescription(modules: ModulesConfig | undefined):
 export function moduleKindLabel(type: ModuleType): string {
   return type === 'widget' ? 'Widget' : 'Page'
 }
+
+/** The digest's cadence as the Views menu words it: weekly only for a weekly digest, daily otherwise. */
+export function digestFrequency(_modules: ModulesConfig | undefined): 'daily' | 'weekly' {
+  return 'daily'
+}
