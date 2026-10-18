@@ -13,7 +13,7 @@ import { SUPERADMIN_TOKEN_TTL_SEC } from '../lib/superadminJwt'
 import { runSync } from '../cron/sync'
 import { importProviderMeasures, isSnapshotProvider, runSnapshotSync } from '../cron/sync-snapshots'
 import { runBodyEventSync } from '../cron/body-events'
-import { ingestQueueFor, providerConfigured } from '../lib/providerRouting'
+import { groupByIngestQueue, ingestQueueFor, ingestQueueForBill, providerConfigured } from '../lib/providerRouting'
 import { claimState, listStateOwnership, loadStateOwners, ownerOf } from '../lib/stateProviders'
 import { applyCutover, applyUndo, CutoverError, cutoverReport, planCutover, planUndo, undoReport } from '../lib/cutover'
 import { runAnomalyWatch } from '../lib/anomalyWatch'
@@ -460,11 +460,13 @@ adminRoutes.post('/sync-keywords/:tenantId', guardCallerTenantParam(), async (c)
   // download text, then notify the tenant with forceAI so the tenant runs AI on full text.
   // A keyword re-run's matches are bulk: bills the tenant already had, newly
   // matched by a configuration change, stay out of its feed and digest.
-  for (let i = 0; i < newlyMatched.length; i += 100) {
-    const batch = newlyMatched.slice(i, i + 100).map(billId => ({
-      body: { billId, forceAI: true, matchProvenance: { [tenantId]: 'bulk' } } satisfies BillMessage,
-    }))
-    await c.env.INGESTOR_QUEUE.sendBatch(batch)
+  for (const group of await groupByIngestQueue(newlyMatched, c.env, db)) {
+    for (let i = 0; i < group.billIds.length; i += 100) {
+      const batch = group.billIds.slice(i, i + 100).map(billId => ({
+        body: { billId, forceAI: true, matchProvenance: { [tenantId]: 'bulk' } } satisfies BillMessage,
+      }))
+      await group.queue.sendBatch(batch)
+    }
   }
 
   return c.json({
@@ -507,14 +509,16 @@ adminRoutes.post('/fetch-missing-texts/:tenantId', async (c) => {
     .all()
 
   let queued = 0
-  for (let i = 0; i < rows.length; i += 100) {
-    await c.env.INGESTOR_QUEUE.sendBatch(
-      rows.slice(i, i + 100).map(r => ({
-        body: { billId: r.billId, forceMetadata: true } as IngestorMessage,
-      }))
-    )
-    if (i + 100 < rows.length) await new Promise(res => setTimeout(res, 200))
-    queued += Math.min(100, rows.length - i)
+  for (const { queue, billIds } of await groupByIngestQueue(rows.map(r => r.billId), c.env, db)) {
+    for (let i = 0; i < billIds.length; i += 100) {
+      await queue.sendBatch(
+        billIds.slice(i, i + 100).map(billId => ({
+          body: { billId, forceMetadata: true } as IngestorMessage,
+        }))
+      )
+      queued += Math.min(100, billIds.length - i)
+      if (i + 100 < billIds.length) await new Promise(res => setTimeout(res, 200))
+    }
   }
 
   return c.json({ ok: true, tenantId, queued, total: rows.length })
@@ -546,14 +550,16 @@ adminRoutes.post('/refetch-fragment-texts', async (c) => {
   if (dryRun) return c.json({ ok: true, rows: rows.length, bills: billIds.length, queued: 0, dryRun: true })
 
   let queued = 0
-  for (let i = 0; i < billIds.length; i += 100) {
-    await c.env.INGESTOR_QUEUE.sendBatch(
-      billIds.slice(i, i + 100).map(billId => ({
-        body: { billId, forceTextRefetch: true, skipFetch: true } as IngestorMessage,
-      }))
-    )
-    if (i + 100 < billIds.length) await new Promise(res => setTimeout(res, 200))
-    queued += Math.min(100, billIds.length - i)
+  for (const group of await groupByIngestQueue(billIds, c.env, db)) {
+    for (let i = 0; i < group.billIds.length; i += 100) {
+      await group.queue.sendBatch(
+        group.billIds.slice(i, i + 100).map(billId => ({
+          body: { billId, forceTextRefetch: true, skipFetch: true } as IngestorMessage,
+        }))
+      )
+      queued += Math.min(100, group.billIds.length - i)
+      if (i + 100 < group.billIds.length) await new Promise(res => setTimeout(res, 200))
+    }
   }
 
   return c.json({ ok: true, rows: rows.length, bills: billIds.length, queued, dryRun: false })
@@ -855,7 +861,8 @@ adminRoutes.post('/reingest-bill/:billId', async (c) => {
   const billId = parseInt(c.req.param('billId'), 10)
   if (isNaN(billId)) return c.json({ error: 'invalid billId' }, 400)
 
-  await c.env.INGESTOR_QUEUE.send({ billId } as IngestorMessage)
+  const queue = await ingestQueueForBill(billId, c.env, drizzle(c.env.DB, { schema }))
+  await queue.send({ billId } as IngestorMessage)
   return c.json({ ok: true, billId, queued: true })
 })
 

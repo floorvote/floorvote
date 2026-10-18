@@ -20,6 +20,7 @@ import { writeMemberVotes, type RollCallMemberVotes } from '../lib/rollCallVotes
 import { loadVoteDataset, VOTE_DATASET_DEFER_SECONDS, VOTE_DATASET_RETRY_SECONDS } from '../cron/vote-datasets'
 import { nowDb } from '../lib/dbTime'
 import { providerContext } from '../lib/providerContext'
+import { ingestQueueFor } from '../lib/providerRouting'
 import { deliverToTenant } from '../lib/tenantDelivery'
 import { safeFetch } from '../lib/safeFetch'
 import { toHandle } from '../lib/billHandle'
@@ -32,6 +33,12 @@ import { httpUrl } from '../../../shared/httpUrl'
  * all before its carry-over stops waiting for one (lib/cutover.ts).
  */
 const MAX_CARRY_WAITS = 3
+
+/** The queue a provider's work is re-sent to: its own, and the shared queue for an id central doesn't know. */
+function providerQueueFor(providerId: string, env: Env): Queue {
+  const provider = findProvider(providerId)
+  return provider ? ingestQueueFor(provider, env) : env.INGESTOR_QUEUE
+}
 
 export async function processIngestorQueue(
   batch: MessageBatch<IngestorMessage>,
@@ -48,7 +55,7 @@ export async function processIngestorQueue(
     if (body.kind === 'vote-dataset') {
       try {
         if (datasetLoaded) {
-          await env.INGESTOR_QUEUE.send(body, { delaySeconds: VOTE_DATASET_DEFER_SECONDS })
+          await providerQueueFor(body.providerId, env).send(body, { delaySeconds: VOTE_DATASET_DEFER_SECONDS })
         } else {
           datasetLoaded = true
           await loadVoteDataset(body, env, db)

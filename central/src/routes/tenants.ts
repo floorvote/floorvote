@@ -1,5 +1,6 @@
 import { Hono, type Context } from 'hono'
 import { drizzle } from 'drizzle-orm/d1'
+import { groupByIngestQueue, ingestQueueForBill } from '../lib/providerRouting'
 import { eq, and, isNull, isNotNull, inArray, asc, desc, count, exists, sql } from 'drizzle-orm'
 import { matchesUnion, billMatchText } from '../lib/keywords'
 import * as schema from '../db/schema'
@@ -359,13 +360,16 @@ tenantsRoutes.post('/seed-session/:tenantId', async (c) => {
   // Keyword-matching bills → ingestor with skipFetch (downloads text to R2, then notifies tenant)
   // Sequential sends to avoid queue rate limits. A seed's matches are bulk, so
   // they stay out of the instance's feed and digest (MatchProvenance).
+  const seedGroups = await groupByIngestQueue(keywordMatchIds, c.env, db)
   try {
-    for (let i = 0; i < keywordMatchIds.length; i += 100) {
-      await c.env.INGESTOR_QUEUE.sendBatch(
-        keywordMatchIds.slice(i, i + 100).map(billId => ({
-          body: { billId, skipFetch: true, forceMetadata: true, matchProvenance: { [tenantId]: 'bulk' } } satisfies BillMessage,
-        }))
-      )
+    for (const { queue, billIds } of seedGroups) {
+      for (let i = 0; i < billIds.length; i += 100) {
+        await queue.sendBatch(
+          billIds.slice(i, i + 100).map(billId => ({
+            body: { billId, skipFetch: true, forceMetadata: true, matchProvenance: { [tenantId]: 'bulk' } } satisfies BillMessage,
+          }))
+        )
+      }
     }
   } catch (err: any) {
     console.error('Error queuing to ingestor:', err)
@@ -432,18 +436,20 @@ tenantsRoutes.post('/redownload-texts/:tenantId', async (c) => {
     .all()
 
   let queued = 0
-  for (let i = 0; i < matching.length; i += 100) {
-    if (i > 0) await new Promise(r => setTimeout(r, 500))
-    try {
-      await c.env.INGESTOR_QUEUE.sendBatch(
-        matching.slice(i, i + 100).map(r => ({
-          body: { billId: r.billId, skipFetch: true, forceMetadata: false },
-        }))
-      )
-      queued += Math.min(100, matching.length - i)
-    } catch (err) {
-      console.error(`[redownload-texts] sendBatch failed at offset ${i}:`, err)
-      return c.json({ ok: false, queued, total: matching.length, error: String(err) }, 500)
+  for (const { queue, billIds } of await groupByIngestQueue(matching.map(r => r.billId), c.env, db)) {
+    for (let i = 0; i < billIds.length; i += 100) {
+      if (i > 0) await new Promise(r => setTimeout(r, 500))
+      try {
+        await queue.sendBatch(
+          billIds.slice(i, i + 100).map(billId => ({
+            body: { billId, skipFetch: true, forceMetadata: false },
+          }))
+        )
+        queued += Math.min(100, billIds.length - i)
+      } catch (err) {
+        console.error(`[redownload-texts] sendBatch failed after ${queued} bills:`, err)
+        return c.json({ ok: false, queued, total: matching.length, error: String(err) }, 500)
+      }
     }
   }
 
@@ -472,7 +478,8 @@ tenantsRoutes.post('/promote-bill/:tenantId/:billId', guardCallerTenantParam(), 
       set: { matchType: 'manual' },
     })
 
-  await c.env.INGESTOR_QUEUE.send({ billId, forceAI: true, ...(interactive ? { interactive } : {}) })
+  const queue = await ingestQueueForBill(billId, c.env, db)
+  await queue.send({ billId, forceAI: true, ...(interactive ? { interactive } : {}) })
 
   return c.json({ ok: true, tenantId, billId, matchType: 'manual' })
 })
@@ -502,10 +509,12 @@ tenantsRoutes.post('/promote-bills/:tenantId', guardCallerTenantParam(), async (
       set: { matchType: 'manual' },
     })
 
-  for (let i = 0; i < billIds.length; i += 100) {
-    await c.env.INGESTOR_QUEUE.sendBatch(
-      billIds.slice(i, i + 100).map(billId => ({ body: { billId, forceAI: true } }))
-    )
+  for (const group of await groupByIngestQueue(billIds, c.env, db)) {
+    for (let i = 0; i < group.billIds.length; i += 100) {
+      await group.queue.sendBatch(
+        group.billIds.slice(i, i + 100).map(billId => ({ body: { billId, forceAI: true } }))
+      )
+    }
   }
 
   return c.json({ ok: true, tenantId, promoted: billIds.length })
@@ -565,10 +574,12 @@ tenantsRoutes.post('/fetch-bills/:tenantId', guardCallerTenantParam(), async (c)
 
   // Each batch is stamped only once its send succeeds, so a queue outage blocks no bill from the next ask.
   const now = nowDb()
-  for (let i = 0; i < due.length; i += 90) {
-    const batch = due.slice(i, i + 90)
-    await c.env.INGESTOR_QUEUE.sendBatch(batch.map(billId => ({ body: held.has(billId) ? { billId, skipFetch: true } : { billId } })))
-    await db.update(schema.bills).set({ textsRequestedAt: now }).where(inArray(schema.bills.billId, batch))
+  for (const { queue, billIds } of await groupByIngestQueue(due, c.env, db)) {
+    for (let i = 0; i < billIds.length; i += 90) {
+      const batch = billIds.slice(i, i + 90)
+      await queue.sendBatch(batch.map(billId => ({ body: held.has(billId) ? { billId, skipFetch: true } : { billId } })))
+      await db.update(schema.bills).set({ textsRequestedAt: now }).where(inArray(schema.bills.billId, batch))
+    }
   }
 
   return c.json({ ok: true, tenantId, queued: due.length })

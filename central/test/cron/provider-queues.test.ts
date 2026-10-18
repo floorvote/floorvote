@@ -502,23 +502,18 @@ describe('where every other producer queues a bill', () => {
   describe('a batch of more than one send\'s worth', () => {
     it('keeps every bill of a provider together on its queue, in batches of at most 100', async () => {
       const tenantId = await seedWorld()
-      const d = db()
       const ids = Array.from({ length: 150 }, (_, i) => 50000 + i)
-      for (let i = 0; i < ids.length; i += 10) {
-        await d.insert(schema.bills).values(ids.slice(i, i + 10).map(billId => ({
-          billId, sessionId: 101, state: 'MD', stateId: 0, billNumber: `HB${billId}`, title: 'A sales tax act', changeHash: 'h', status: 1, provider: 'mga',
-        })))
-      }
+      // One statement each, with the ids as one JSON parameter (D1 binds at most 100).
+      const list = JSON.stringify(ids)
+      await env.DB.prepare(`INSERT INTO bills (bill_id, session_id, state, state_id, bill_number, title, change_hash, status, provider)
+        SELECT value, 101, 'MD', 0, 'HB' || value, 'A sales tax act', 'h', 1, 'mga' FROM json_each(?1)`).bind(list).run()
+      await env.DB.prepare(`INSERT INTO bill_tenants (bill_id, tenant_id, match_type) SELECT value, ?2, NULL FROM json_each(?1)`).bind(list, tenantId).run()
       const { env: e, q } = makeEnv(ALL)
-      const res = await request(e, 'POST', `/tenants/promote-bills/${tenantId}`, { billIds: ids })
-      // The route caps one request's bills, so this either queues them all or refuses them all.
-      if (res.status === 200) {
-        expect(billIds(q.mga).sort((a, b) => a - b)).toEqual(ids)
-        expect(bodies(q.shared)).toEqual([])
-        for (const call of q.mga.sendBatch.mock.calls) expect(call[0].length).toBeLessThanOrEqual(100)
-      } else {
-        expect(res.status).toBe(400)
-      }
+      const res = await request(e, 'POST', `/tenants/fetch-bills/${tenantId}`, { billIds: ids })
+      expect(res.status).toBe(200)
+      expect(billIds(q.mga).sort((a, b) => a - b)).toEqual(ids)
+      expect(bodies(q.shared)).toEqual([])
+      expect(q.mga.sendBatch.mock.calls.map(c => c[0].length)).toEqual([90, 60])
     })
   })
 
