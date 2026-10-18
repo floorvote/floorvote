@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  CHIP_SELECTION_LEAVES_OUT, FILTER_DIMENSIONS, chipFilters, hiddenFilterDimensions, type FilterDimensionContext,
+  CHIP_SELECTION_LEAVES_OUT, FILTER_DIMENSIONS, STAGE_FILTER_LABEL, chipFilters, hiddenFilterDimensions, isStatusGroupedByStage, type FilterDimensionContext,
 } from './filterDimensions'
 import { BILL_FILTER_DEFS, EMPTY_BILL_FILTER, activeFilters, withBillFilter } from '../../../shared/billFilter'
 
@@ -30,7 +30,8 @@ describe('registry: which filters have their own pill', () => {
   })
 
   it('gives every filter a chip but the ones declared as having their own pill, and the search box, which is its own control', () => {
-    const everything = BILL_FILTER_DEFS.map(d => d.name).filter(n => n !== 'match')
+    // The stage is listed with the status, as one entry (#677), so it has no chip entry of its own.
+    const everything = BILL_FILTER_DEFS.map(d => d.name).filter(n => n !== 'match' && n !== 'stage')
     const f = withBillFilter({
       status: ['2'], stage: ['introduced'], year: ['2026'], sessionName: ['x'], state: ['UT'], position: ['Support'], priority: ['high'],
       tag: ['Water'], subject: [{ state: 'UT', name: 'Elections' }], minRelevance: 4, search: 'storm',
@@ -85,5 +86,36 @@ describe('registry: filters hidden on an instance', () => {
     const hidden = hiddenFilterDimensions(ctx({ draftsActive: false, hasDrafts: false }))
     expect(activeFilters(f, { hidden }).map(a => a.name)).toEqual(['status'])
     expect(activeFilters(EMPTY_BILL_FILTER, { hidden })).toEqual([])
+  })
+})
+
+// The Stage filter is no dimension of its own (#677): a stage is a grouping inside Status. Where Stage was offered, the
+// Status control is grouped under stage headings, by the rule the Stage dimension had.
+describe('registry: Stage is a grouping inside Status', () => {
+  it('has no Stage dimension', () => {
+    expect(FILTER_DIMENSIONS.map(d => d.key)).not.toContain('stage')
+  })
+
+  it('names the Stage control only for an older API that cannot group, so a page with no statusGroups still has one', () => {
+    expect(STAGE_FILTER_LABEL).toBe('Stage')
+  })
+
+  it('groups Status by stage where some covered state is not on LegiScan, and until central has named the providers', () => {
+    expect(isStatusGroupedByStage(ctx({ stageUseful: true }))).toBe(true)
+    expect(isStatusGroupedByStage(ctx())).toBe(true)
+  })
+
+  it('leaves Status flat where every covered state is on LegiScan', () => {
+    expect(isStatusGroupedByStage(ctx({ stageUseful: false }))).toBe(false)
+  })
+
+  it('groups it anyway while a stage filter is applied, from a link or a saved view, so the stage can still be turned off', () => {
+    expect(isStatusGroupedByStage(ctx({ stageUseful: false, stageActive: true }))).toBe(true)
+  })
+
+  it('never hides the stage as a filter of its own, so an applied stage always counts', () => {
+    expect(hiddenFilterDimensions(ctx({ stageUseful: false }))).not.toContain('stage')
+    const f = withBillFilter({ stage: ['enacted'] })
+    expect(activeFilters(f, { hidden: hiddenFilterDimensions(ctx({ stageUseful: false })) })).toEqual([{ name: 'status', key: 'status', count: 1 }])
   })
 })

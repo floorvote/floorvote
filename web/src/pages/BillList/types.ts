@@ -85,6 +85,11 @@ export type FacetCounts = {
   status:   Record<string, number>
   /** By common stage key (shared/statusStages.ts). */
   stage:    Record<string, number>
+  /**
+   * For each status label with bills, the stage its bills sit in (or null) and the rank they sort by. Absent from an
+   * API that predates grouping Status by stage, which leaves the page on its two separate controls.
+   */
+  statusGroups?: Record<string, { stage: string | null; rank: number }>
   priority: Record<string, number>
   sessionName: Record<string, number>
   year:     Record<string, number>

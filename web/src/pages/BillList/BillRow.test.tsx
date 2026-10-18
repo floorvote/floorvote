@@ -399,3 +399,13 @@ describe('BillRow untitled draft title', () => {
     expect(screen.queryByText('Untitled draft')).toBeNull()
   })
 })
+
+// Grouping Status by Stage changes the filter control only (#677). A row shows the provider's status and no stage text,
+// even when the bill it is given carries a stage (the list reads the stage only to filter and sort).
+describe('BillRow shows Status only, never a stage', () => {
+  it('draws no stage text or stage chip for a bill with a stage', () => {
+    const { container } = renderRow(true, { bill: { status: 'Became Law', ...({ statusStage: 'enacted', statusRank: 705 } as object) } })
+    expect(screen.getAllByText('Became Law').length).toBeGreaterThan(0)
+    expect(container.textContent ?? '').not.toMatch(/\bEnacted\b|\bStage\b/i)
+  })
+})

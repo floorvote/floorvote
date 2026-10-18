@@ -5,6 +5,8 @@ import { FilterSheet } from './FilterSheet'
 import type { SubjectGroup } from '../pages/BillList/FilterPanel'
 import type { CustomFieldDef } from '../pages/BillList/types'
 import { MAX_SUBJECT_FILTERS } from '../../../shared/limits'
+import { ConfigContext, type AppConfig } from '../context/ConfigContext'
+import type { StatusStageGroup } from '../lib/statusGroups'
 
 function makeDefaults(): ComponentProps<typeof FilterSheet> {
   return {
@@ -747,5 +749,141 @@ describe('FilterSheet: Reset reads the one list of active filters', () => {
   it('does not count Drafts for an instance that has no drafts and a filter that is off', () => {
     renderSheet({ drafts: false, hasDrafts: false })
     expect(screen.queryByRole('button', { name: 'Reset filters' })).not.toBeInTheDocument()
+  })
+})
+
+// Status grouped by Stage (#677): the phone sheet has one Status row, which opens a list under the same stage headings
+// the desktop control has. A heading is a button that is pressed when its stage is chosen, and writes the stage.
+describe('FilterSheet — Status grouped by Stage', () => {
+  const GROUPS: StatusStageGroup[] = [
+    { stage: 'enacted', label: 'Enacted', count: 5, options: [{ value: 'Chaptered', label: 'Chaptered' }, { value: 'Signed', label: 'Signed' }] },
+    { stage: 'in_committee', label: 'In committee', count: 2, options: [{ value: 'In Committee', label: 'In Committee' }] },
+    { stage: null, label: 'Other', count: null, options: [{ value: 'Not Applicable', label: 'Not Applicable' }] },
+  ]
+  const COUNTS = { status: { Chaptered: 2, Signed: 3, 'In Committee': 2, 'Not Applicable': 1 }, stage: { enacted: 5, in_committee: 2 }, priority: {}, position: {}, year: {}, tag: {} }
+
+  const credit = (id: string) => ({ id, name: id, url: 'https://example.com', note: 'n' })
+  function renderWithProviders(providers: string[] | undefined, over: Partial<ComponentProps<typeof FilterSheet>> = {}) {
+    return render(
+      <ConfigContext value={{ config: { states: ['RI'], attribution: providers && { providers: providers.map(credit) } } as AppConfig, multiState: false, loading: false }}>
+        <FilterSheet {...makeDefaults()} {...over} />
+      </ConfigContext>,
+    )
+  }
+  const grouped = (over: Partial<ComponentProps<typeof FilterSheet>> = {}) => ({ statusGroups: GROUPS, counts: COUNTS, ...over })
+
+  it('shows one Status row and no Stage row', () => {
+    renderSheet(grouped())
+    expect(screen.getByRole('button', { name: /^status/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^stage/i })).toBeNull()
+  })
+
+  it('counts the stages and the statuses chosen together on the Status row', () => {
+    renderSheet(grouped({ status: ['Signed'], stage: ['enacted', 'in_committee'] }))
+    expect(within(screen.getByRole('button', { name: /^status/i })).getByText('3')).toBeInTheDocument()
+  })
+
+  it('opens a list with a heading button for each stage and the statuses under it, with a count beside each', () => {
+    renderSheet(grouped())
+    fireEvent.click(screen.getByRole('button', { name: /^status/i }))
+    const heading = screen.getByRole('button', { name: /^Enacted/ })
+    expect(within(heading).getByText('5')).toBeInTheDocument()
+    expect(within(screen.getByRole('button', { name: /^Signed/ })).getByText('3')).toBeInTheDocument()
+    expect(within(screen.getByRole('button', { name: /^In committee/ })).getByText('2')).toBeInTheDocument()
+    // Headings come in stage order, with Other last and without a button.
+    const labels = screen.getAllByRole('heading', { level: 3 }).map(h => h.textContent)
+    expect(labels).toEqual(['Enacted', 'In committee', 'Other'])
+    expect(screen.queryByRole('button', { name: /^Other/ })).toBeNull()
+  })
+
+  it('announces a heading as pressed when its stage is chosen', () => {
+    renderSheet(grouped({ stage: ['enacted'] }))
+    fireEvent.click(screen.getByRole('button', { name: /^status/i }))
+    expect(screen.getByRole('button', { name: /^Enacted/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: /^In committee/ })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('writes a stage through the stage callback, and takes it back on a second tap', () => {
+    const onStageChange = vi.fn()
+    const onStatusChange = vi.fn()
+    const { unmount } = renderSheet(grouped({ onStageChange, onStatusChange, stage: ['in_committee'] }))
+    fireEvent.click(screen.getByRole('button', { name: /^status/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^Enacted/ }))
+    expect(onStageChange).toHaveBeenLastCalledWith(['in_committee', 'enacted'])
+    fireEvent.click(screen.getByRole('button', { name: /^In committee/ }))
+    expect(onStageChange).toHaveBeenLastCalledWith([])
+    expect(onStatusChange).not.toHaveBeenCalled()
+    unmount()
+  })
+
+  it('writes a status through the status callback, beside a chosen stage', () => {
+    const onStatusChange = vi.fn()
+    const onStageChange = vi.fn()
+    renderSheet(grouped({ onStatusChange, onStageChange, stage: ['enacted'], status: ['Chaptered'] }))
+    fireEvent.click(screen.getByRole('button', { name: /^status/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^Signed/ }))
+    expect(onStatusChange).toHaveBeenLastCalledWith(['Chaptered', 'Signed'])
+    fireEvent.click(screen.getByRole('button', { name: /^Chaptered/ }))
+    expect(onStatusChange).toHaveBeenLastCalledWith([])
+    expect(onStageChange).not.toHaveBeenCalled()
+  })
+
+  it('says a heading selects every status in its stage', () => {
+    renderSheet(grouped())
+    fireEvent.click(screen.getByRole('button', { name: /^status/i }))
+    expect(screen.getByRole('button', { name: /^Enacted/ })).toHaveAttribute('title', 'All statuses in this stage.')
+  })
+
+  it('shows the stage chip and the status chip in one chip group on the sheet', () => {
+    renderSheet(grouped({ stage: ['enacted'], status: ['Signed'] }))
+    const row = screen.getByTestId('sheet-active-filter-chips')
+    expect(within(row).getByText('Signed')).toBeInTheDocument()
+    expect(within(row).getByText('Stage: Enacted')).toBeInTheDocument()
+    expect(within(row).getAllByRole('button', { name: '×' })).toHaveLength(2)
+    // One group, so no operator between them.
+    expect(within(row).queryByRole('button', { name: /currently matching/i })).toBeNull()
+  })
+
+  it('removes the stage chip through the stage callback', () => {
+    const onStageChange = vi.fn()
+    renderSheet(grouped({ stage: ['enacted', 'in_committee'], onStageChange }))
+    fireEvent.click(within(screen.getByTestId('sheet-active-filter-chips')).getAllByRole('button', { name: '×' })[0])
+    expect(onStageChange).toHaveBeenCalledWith(['in_committee'])
+  })
+
+  it('wraps a long status label on a narrow screen instead of widening the list', () => {
+    const long = 'A very long status label that a provider might use for a bill awaiting action by the other chamber'
+    renderSheet(grouped({ statusGroups: [{ stage: 'enacted', label: 'Enacted', count: 1, options: [{ value: long, label: long }] }] }))
+    fireEvent.click(screen.getByRole('button', { name: /^status/i }))
+    const chip = screen.getByRole('button', { name: new RegExp(long.slice(0, 30)) })
+    expect(chip.style.maxWidth).toBe('100%')
+    expect(chip.style.whiteSpace).not.toBe('nowrap')
+    expect(chip.parentElement!.style.flexWrap).toBe('wrap')
+  })
+
+  it('falls back to the Status and Stage rows when it is given no groups, as for an older API', () => {
+    renderSheet({ statusGroups: null })
+    expect(screen.getByRole('button', { name: /^status/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^stage/i })).toBeInTheDocument()
+  })
+
+  it('keeps the Status list flat where every covered state is on LegiScan and no stage is applied', () => {
+    renderWithProviders(['legiscan'], grouped())
+    expect(screen.queryByRole('button', { name: /^stage/i })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /^status/i }))
+    expect(screen.getByText('Active')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 3 })).toBeNull()
+  })
+
+  it('groups it on LegiScan when a link or a saved view applied a stage, so the stage can be removed', () => {
+    renderWithProviders(['legiscan'], grouped({ stage: ['enacted'] }))
+    fireEvent.click(screen.getByRole('button', { name: /^status/i }))
+    expect(screen.getByRole('button', { name: /^Enacted/ })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('groups it until config names the providers, as Stage was shown before central had answered', () => {
+    renderWithProviders(undefined, grouped())
+    fireEvent.click(screen.getByRole('button', { name: /^status/i }))
+    expect(screen.getByRole('button', { name: /^Enacted/ })).toBeInTheDocument()
   })
 })

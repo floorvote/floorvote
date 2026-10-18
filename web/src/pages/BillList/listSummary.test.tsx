@@ -154,7 +154,13 @@ describe('buildListSummary: the filter list reads like the chips', () => {
   })
 
   it('shows a status or stage it cannot decode as it was given', () => {
-    expect(summarize('status=zzz&stage=zzz').filters).toEqual(['zzz', 'zzz'])
+    expect(summarize('status=zzz&stage=zzz').filters).toEqual(['zzz', 'Stage: zzz'])
+  })
+
+  it('lists a stage as a Stage chip after the statuses, one line for each value and none extra (#677)', () => {
+    const s = summarize('stage=enacted&status=Introduced&stage=passed')
+    expect(s.filters).toEqual(['Introduced', 'Stage: Enacted', 'Stage: Passed legislature'])
+    expect(s.filterCount).toBe(3)
   })
 
   it('matches, label for label, the chips the Bills page draws for the same filters', () => {

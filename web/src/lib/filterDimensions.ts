@@ -205,3 +205,9 @@ export const CHIP_SELECTION_LEAVES_OUT: Record<'billsNav' | 'prioritized', reado
   billsNav: ['newMatches', 'search'],
   prioritized: ['priority', 'unvoted', 'search'],
 }
+
+// Stubs, to be written in the next commit (#677).
+export function isStatusGroupedByStage(_ctx: FilterDimensionContext): boolean {
+  return undefined as unknown as boolean
+}
+export const STAGE_FILTER_LABEL = ''

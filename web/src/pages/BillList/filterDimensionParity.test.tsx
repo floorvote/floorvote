@@ -23,7 +23,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, fireEvent, within, cleanup, waitFor } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
-import { FILTER_DIMENSIONS, filterDimensionLabel, type FilterDimensionContext } from '../../lib/filterDimensions'
+import { FILTER_DIMENSIONS, STAGE_FILTER_LABEL, filterDimensionLabel, type FilterDimensionContext } from '../../lib/filterDimensions'
 import { filterableCustomFields, customFieldFilterKind } from '../../lib/customFieldFilters'
 import { FilterSheet } from '../../components/FilterSheet'
 import { ConfigContext, type AppConfig } from '../../context/ConfigContext'
@@ -35,7 +35,11 @@ import { serializeBillFilter, parseBillFilter } from '../../../../shared/billFil
 // Role and known states are mutable so each test can drive the two
 // conditional dimensions without duplicating the mock setup.
 const authState = vi.hoisted(() => ({ role: 'member' as 'member' | 'admin' }))
-const facetState = vi.hoisted(() => ({ states: ['RI'] as string[] }))
+const facetState = vi.hoisted(() => ({
+  states: ['RI'] as string[],
+  // The facets' statusGroups (#677). Absent is an older API, which leaves the page on its two separate dropdowns.
+  statusGroups: undefined as Record<string, { stage: string | null; rank: number }> | undefined,
+}))
 // draftCount is the filtered badge number; hasDrafts is the unfiltered
 // tenant-wide existence signal that now drives visibility (see
 // lib/filterDimensions.ts) — kept independent so a test can put them at odds
@@ -80,7 +84,7 @@ vi.mock('../../lib/api', () => {
     if (path.startsWith('/bills/facets')) {
       const stateCounts = Object.fromEntries(facetState.states.map(s => [s, 1]))
       return {
-        status: { '2': 1 }, priority: {}, sessionName: {}, year: { '2026': 1 }, state: stateCounts, position: {},
+        status: { '2': 1 }, stage: { enacted: 1 }, ...(facetState.statusGroups ? { statusGroups: facetState.statusGroups } : {}), priority: {}, sessionName: {}, year: { '2026': 1 }, state: stateCounts, position: {},
         tag: { Education: 1 }, subject: { 'RI:Roads': 1 }, field: {}, myBillsCount: 0, newMatchesCount: 3,
         draftCount: draftState.draftCount,
         hasDrafts: draftState.hasDrafts,
@@ -128,6 +132,7 @@ class FakeIntersectionObserver {
 beforeEach(() => {
   authState.role = 'member'
   facetState.states = ['RI']
+  facetState.statusGroups = undefined
   draftState.draftCount = 2
   draftState.hasDrafts = true
   cfDefsState.defs = []
@@ -564,7 +569,8 @@ describe('dimension scope classification', () => {
 
   it('treats every value dimension as a bill fact', () => {
     const bill = FILTER_DIMENSIONS.filter(d => d.scope === 'bill').map(d => d.key).sort()
-    expect(bill).toEqual(['position', 'priority', 'stage', 'state', 'status', 'subject', 'tag', 'year'])
+    // Stage is a grouping inside Status (#677), not a dimension of its own.
+    expect(bill).toEqual(['position', 'priority', 'state', 'status', 'subject', 'tag', 'year'])
   })
 
   it('registers unvoted so the bills page can set it, not only clear it', () => {
@@ -589,10 +595,10 @@ describe('dimension scope classification', () => {
   })
 })
 
-// The Stage filter is hidden when every covered state is on LegiScan, whose
-// status field almost never carries the in-committee codes. Config tells which
-// providers own the covered states (`attribution.providers`).
-describe('Stage dimension — hidden when every covered state is on LegiScan', () => {
+// Status is grouped under stage headings where Stage was offered (#677): some covered state's provider is not LegiScan,
+// or a stage filter is already applied. Config tells which providers own the covered states (`attribution.providers`).
+// Everywhere else the Status list stays flat, as before, and there is no Stage control.
+describe('Status grouped by Stage — where Stage was offered', () => {
   const credit = (id: string) => ({ id, name: id, url: 'https://example.com', note: 'n' })
   const withConfig = (providers: string[] | undefined, ui: ReactNode) => (
     <ConfigContext value={{
@@ -602,12 +608,17 @@ describe('Stage dimension — hidden when every covered state is on LegiScan', (
       {ui}
     </ConfigContext>
   )
-  const stageName = new RegExp(`^${filterDimensionLabel('stage')}$`)
-  const renderConfiguredDesktop = async (providers: string[] | undefined, initialUrl?: string) => {
+  const GROUPS = { '2': { stage: 'enacted', rank: 701 } }
+  const stageName = new RegExp(`^${STAGE_FILTER_LABEL}$`)
+  // The control, not the column header of the same name: the desktop trigger reads "Status (2)" with picks, the phone row "Status2".
+  const statusName = new RegExp(`^${filterDimensionLabel('status')}( \\(\\d+\\)|\\d*)$`)
+  const renderConfiguredDesktop = async (providers: string[] | undefined, initialUrl?: string, groups: typeof GROUPS | undefined = GROUPS) => {
+    facetState.statusGroups = groups
     render(withConfig(providers, <BillList />), { wrapper: (props) => <Wrapper {...props} initialUrl={initialUrl} /> })
     await screen.findByText('Default bill')
   }
-  const renderConfiguredMobile = (providers: string[] | undefined, stages: string[] = []) => render(withConfig(providers,
+  const sheetGroups = [{ stage: 'enacted' as const, label: 'Enacted', count: 1, options: [{ value: 'active', label: 'Active' }] }]
+  const renderConfiguredMobile = (providers: string[] | undefined, stages: string[] = [], groups: typeof sheetGroups | null = sheetGroups) => render(withConfig(providers,
     <FilterSheet
       isOpen onClose={() => {}}
       status={[]} stage={stages} priority={[]} position={[]} tag={[]} subject={[]} year={[]} state={[]}
@@ -616,6 +627,7 @@ describe('Stage dimension — hidden when every covered state is on LegiScan', (
       uniqueStates={['RI']} isMultiState={false}
       statusOptions={[{ value: 'active', label: 'Active' }]}
       stageOptions={[{ value: 'enacted', label: 'Enacted' }]}
+      statusGroups={groups}
       priorityOptions={[]} positionOptions={[]} tagOptions={[]} subjectGroups={[]} yearOptions={[]} totalYearCount={0}
       stateOptions={[{ value: 'RI', label: 'RI' }]} customFieldDefs={[]} field={{}} onFieldChange={() => {}}
       onStatusChange={() => {}} onStageChange={() => {}} onPriorityChange={() => {}} onPositionChange={() => {}}
@@ -624,35 +636,66 @@ describe('Stage dimension — hidden when every covered state is on LegiScan', (
       onUnvotedChange={() => {}} onDraftsChange={() => {}} onClearAll={() => {}}
     />))
 
-  it('hides Stage on both surfaces when LegiScan owns every state', async () => {
+  it('has no Stage control on either surface when LegiScan owns every state, and the Status list stays flat', async () => {
     await renderConfiguredDesktop(['legiscan'])
     expect(screen.queryByRole('button', { name: stageName })).toBeNull()
-    expect(screen.getByRole('button', { name: filterDimensionLabel('status') })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: statusName }))
+    expect(screen.getByRole('checkbox', { name: /^2|Engrossed/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Enacted/ })).toBeNull()
     cleanup()
     renderConfiguredMobile(['legiscan'])
     expect(screen.queryByRole('button', { name: stageName })).toBeNull()
-    expect(screen.getByRole('button', { name: filterDimensionLabel('status') })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: statusName })).toBeInTheDocument()
   })
 
-  it('shows Stage until config names the providers, as before central has answered', () => {
-    renderConfiguredMobile(undefined)
-    expect(screen.getByRole('button', { name: stageName })).toBeInTheDocument()
-  })
-
-  it('shows Stage on both surfaces when any covered state is on another provider', async () => {
+  it('shows one grouped Status control, and no separate Stage control, when any covered state is on another provider', async () => {
     await renderConfiguredDesktop(['legiscan', 'mga'])
-    expect(screen.getByRole('button', { name: stageName })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: stageName })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: statusName }))
+    expect(screen.getByRole('button', { name: /^Enacted/ })).toHaveAttribute('aria-pressed', 'false')
     cleanup()
     renderConfiguredMobile(['legiscan', 'mga'])
-    expect(screen.getByRole('button', { name: stageName })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: stageName })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: statusName }))
+    expect(screen.getByRole('button', { name: /^Enacted/ })).toHaveAttribute('aria-pressed', 'false')
   })
 
-  it('keeps a stage filter from a saved view or URL applied and visible so it can be turned off', async () => {
+  it('groups Status until config names the providers, as Stage was shown before central had answered', async () => {
+    await renderConfiguredDesktop(undefined)
+    expect(screen.queryByRole('button', { name: stageName })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: statusName }))
+    expect(screen.getByRole('button', { name: /^Enacted/ })).toBeInTheDocument()
+  })
+
+  it('shows the grouped control and a Stage chip on LegiScan for a link that carries a stage, and the chip can be removed', async () => {
     await renderConfiguredDesktop(['legiscan'], '/bills?stage=enacted')
-    expect(screen.getByRole('button', { name: new RegExp(filterDimensionLabel('stage')) })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: stageName })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Status (1)' })).toBeInTheDocument()
+    const chip = screen.getByText('Stage: Enacted')
+    fireEvent.click(within(chip.closest('span')!).getByRole('button', { name: '×' }))
+    await waitFor(() => expect(screen.queryByText('Stage: Enacted')).toBeNull())
+    // With the stage gone, LegiScan's Status list is flat again.
+    expect(screen.getByRole('button', { name: statusName })).toBeInTheDocument()
     cleanup()
     renderConfiguredMobile(['legiscan'], ['enacted'])
-    expect(screen.getByRole('button', { name: new RegExp(`^${filterDimensionLabel('stage')}`) })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: statusName }))
+    expect(screen.getByRole('button', { name: /^Enacted/ })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('stays on the two separate dropdowns, with no error, when the API sends no statusGroups', async () => {
+    await renderConfiguredDesktop(['legiscan', 'mga'], undefined, undefined)
+    expect(screen.getByRole('button', { name: stageName })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: statusName })).toBeInTheDocument()
+    cleanup()
+    renderConfiguredMobile(['legiscan', 'mga'], [], null)
+    expect(screen.getByRole('button', { name: stageName })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: statusName })).toBeInTheDocument()
+  })
+
+  it('draws the Stage chip of an older API\'s two dropdowns in the one Status chip group', async () => {
+    await renderConfiguredDesktop(['legiscan', 'mga'], '/bills?stage=enacted&status=2', undefined)
+    expect(screen.getByRole('button', { name: /^Stage \(1\)/ })).toBeInTheDocument()
+    expect(screen.getByText('Stage: Enacted')).toBeInTheDocument()
   })
 })
 

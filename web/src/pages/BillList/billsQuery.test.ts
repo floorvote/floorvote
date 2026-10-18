@@ -84,6 +84,22 @@ describe('billsApiParams', () => {
     expect(billsApiParams(q, 1, 100)).toBe('page=1&pageSize=100&stage=enacted&stage=vetoed')
   })
 
+  // A status and a stage are one bill fact on the server, matched as a union (#677). The page sends both under the
+  // keys it always did, so a link or saved view that holds both reads the same, and a list, a facet request, and a
+  // bulk action all carry the one string.
+  it('sends a status and a stage together under their own keys, one string for the list, the facets, and a bulk action', () => {
+    const q = query('stage=enacted&status=Passed&stage=vetoed')
+    expect(q.filter.status).toEqual(['Passed'])
+    expect(q.filter.stage).toEqual(['enacted', 'vetoed'])
+    expect(billsApiParams(q, 1, 100)).toBe('page=1&pageSize=100&status=Passed&stage=enacted&stage=vetoed')
+    expect(billsFacetParams(q.filter)).toBe('status=Passed&stage=enacted&stage=vetoed')
+    expect(serializeBillFilter(q.filter)).toBe('status=Passed&stage=enacted&stage=vetoed')
+  })
+
+  it('keeps an old saved view that holds only a stage, with the stage key, for the API to read as before', () => {
+    expect(billsApiParams(query('stage=failed'), 1, 100)).toBe('page=1&pageSize=100&stage=failed')
+  })
+
   it('parses a bare /bills URL to an empty (page-1) query', () => {
     expect(billsApiParams(query(''), 1, 100)).toBe('page=1&pageSize=100')
   })

@@ -482,15 +482,36 @@ describe('activeFilters: the one list of filters with a value', () => {
       tag: ['Water'], subject: [{ state: 'UT', name: 'Elections' }], minRelevance: 4, search: 'storm',
       myBills: true, unvoted: true, newMatches: true, drafts: true, match: 'any', field: { team: ['a'] },
     })
-    const expected = BILL_FILTER_DEFS.map(d => d.name).filter(n => n !== 'match')
+    // The stage is a way of choosing statuses, so it is listed with the status: one entry for both (#677).
+    const expected = BILL_FILTER_DEFS.map(d => d.name).filter(n => n !== 'match' && n !== 'stage')
     expect(names(everything)).toEqual(expected)
+  })
+
+  it('lists a status and a stage as one Status entry that counts each value once (#677)', () => {
+    expect(activeFilters(filterOf({ status: ['Passed'], stage: ['enacted', 'vetoed'] }))).toEqual([{ name: 'status', key: 'status', count: 3 }])
+    expect(activeFilterCount(activeFilters(filterOf({ status: ['Passed'], stage: ['enacted', 'vetoed'] })))).toBe(3)
+  })
+
+  it('lists a stage alone as the Status entry, never as an entry of its own (#677)', () => {
+    expect(activeFilters(filterOf({ stage: ['enacted'] }))).toEqual([{ name: 'status', key: 'status', count: 1 }])
+    expect(names(filterOf({ stage: ['enacted'], year: ['2026'] }))).toEqual(['status', 'year'])
+  })
+
+  it('counts a repeated stage and a repeated status once each (#677)', () => {
+    expect(activeFilters(filterOf({ status: ['Passed', 'Passed'], stage: ['enacted', 'enacted'] }))).toEqual([{ name: 'status', key: 'status', count: 2 }])
+  })
+
+  it('keeps a stage in the list when the status entry is not hidden, and drops both together when Status is hidden (#677)', () => {
+    expect(activeFilters(filterOf({ stage: ['enacted'] }), { hidden: ['stage'] })).toEqual([{ name: 'status', key: 'status', count: 1 }])
+    expect(activeFilters(filterOf({ stage: ['enacted'], status: ['Passed'] }), { hidden: ['status'] })).toEqual([])
   })
 
   it('agrees with serialize: a filter has an entry exactly when it writes a query key (but for the match mode)', () => {
     for (const seed of SEEDS) {
       const f = generate(seed)
       const inList = new Set(activeFilters(f).map(a => a.name))
-      const written = new Set([...new URLSearchParams(serializeBillFilter(f)).keys()].map(k => k.startsWith('field.') ? 'field' : k))
+      // The stage is written as its own key and listed with the status (#677).
+      const written = new Set([...new URLSearchParams(serializeBillFilter(f)).keys()].map(k => k.startsWith('field.') ? 'field' : k === 'stage' ? 'status' : k))
       written.delete('match')
       // A blank search is written, but it narrows nothing.
       if (f.search.trim() === '') written.delete('search')

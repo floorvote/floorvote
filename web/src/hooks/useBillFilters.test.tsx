@@ -4,6 +4,7 @@ import { MemoryRouter, useLocation, useNavigate, useSearchParams } from 'react-r
 import type { ReactNode } from 'react'
 import { useBillFilters } from './useBillFilters'
 import type { CustomFieldDef, FacetCounts } from '../pages/BillList/types'
+import { updateKnownStates } from '../pages/BillList'
 import { EMPTY_BILL_FILTER, parseBillFilter, serializeBillFilter } from '../../../shared/billFilter'
 
 const emptyFacets: FacetCounts = { status: {}, stage: {}, priority: {}, sessionName: {}, year: {}, state: {}, position: {}, tag: {}, subject: {}, field: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0, hasDrafts: false }
@@ -208,6 +209,83 @@ describe('useBillFilters', () => {
       expect(result.current.stageOptions.map(o => o.label)).toEqual([
         'Enacted', 'Vetoed', 'Failed', 'Passed legislature', 'Passed one chamber', 'In committee', 'Introduced',
       ])
+    })
+  })
+
+  // Status grouped by Stage (#677): the stage is a grouping inside the Status control. The hook derives the grouped
+  // options from the facets' `statusGroups` and the fixed stage list; the URL keys, the setters, and the saved view
+  // key are all the ones the page had.
+  describe('status grouped by stage', () => {
+    const grouped: FacetCounts = {
+      ...emptyFacets,
+      status: { 'Became Law': 2, 'Passed Both Chambers': 3, 'Not Applicable': 1 },
+      stage: { enacted: 2, passed: 3 },
+      statusGroups: {
+        'Became Law': { stage: 'enacted', rank: 705 },
+        'Passed Both Chambers': { stage: 'passed', rank: 401 },
+        'Not Applicable': { stage: null, rank: 0 },
+      },
+    }
+
+    it('offers no grouped options when the facets carry no statusGroups, as an older API sends them', () => {
+      const { result } = renderHook(() => useHarness({ ...grouped, statusGroups: undefined }), { wrapper })
+      expect(result.current.statusGroupOptions).toBeNull()
+      // The two separate lists are still there for the page to fall back to.
+      expect(result.current.stageOptions.length).toBe(7)
+    })
+
+    it('derives the headings and the statuses under them from statusGroups and the stage counts', () => {
+      const { result } = renderHook(() => useHarness(grouped), { wrapper })
+      expect(result.current.statusGroupOptions?.map(g => [g.label, g.count, g.options.map(o => o.value)])).toEqual([
+        ['Enacted', 2, ['Became Law']],
+        ['Passed legislature', 3, ['Passed Both Chambers']],
+        ['Other', null, ['Not Applicable']],
+      ])
+    })
+
+    it('keeps listing a status seen earlier in the session, under its stage, after a filter leaves it with no bills', () => {
+      const first: FacetCounts = { ...grouped, status: { 'Remembered Law': 1 }, stage: { enacted: 1 }, statusGroups: { 'Remembered Law': { stage: 'enacted', rank: 703 } } }
+      updateKnownStates(first)
+      const later: FacetCounts = { ...grouped, status: {}, stage: {}, statusGroups: {} }
+      const { result } = renderHook(() => useHarness(later), { wrapper })
+      const enacted = result.current.statusGroupOptions?.find(g => g.stage === 'enacted')
+      expect(enacted?.options.map(o => o.value)).toContain('Remembered Law')
+      expect(enacted?.count).toBe(0)
+    })
+
+    it('reads a stage and a status from one link, and counts them as one Status entry of two values', () => {
+      const w = ({ children }: { children: ReactNode }) => <MemoryRouter initialEntries={['/bills?status=Became+Law&stage=passed']}>{children}</MemoryRouter>
+      const { result } = renderHook(() => useHarness(grouped), { wrapper: w })
+      expect(result.current.status).toEqual(['Became Law'])
+      expect(result.current.stage).toEqual(['passed'])
+      expect(result.current.activeFilters).toEqual([{ name: 'status', key: 'status', count: 2 }])
+      expect(result.current.totalActiveFilters).toBe(2)
+    })
+
+    it('chooses a heading as the stage parameter and a status as the status parameter, both in the one URL', () => {
+      const { result } = renderHook(() => useHarness(grouped), { wrapper })
+      act(() => result.current.setStage(['enacted']))
+      act(() => result.current.setStatus(['Passed Both Chambers']))
+      const params = new URLSearchParams(result.current.urlSearch)
+      expect(params.getAll('stage')).toEqual(['enacted'])
+      expect(params.getAll('status')).toEqual(['Passed Both Chambers'])
+      expect(result.current.activeFilters).toEqual([{ name: 'status', key: 'status', count: 2 }])
+    })
+
+    it('keeps a saved view that holds the old Stage key working: the same stage parameter, now with the status as a union', () => {
+      const { result } = renderHook(() => useHarness(grouped), { wrapper })
+      act(() => result.current.applyView({ id: 'v1', slug: 'v1', query: 'stage=enacted&status=Passed+Both+Chambers' }))
+      expect(result.current.stage).toEqual(['enacted'])
+      expect(result.current.status).toEqual(['Passed Both Chambers'])
+      expect(serializeBillFilter(result.current.filter)).toBe('status=Passed+Both+Chambers&stage=enacted')
+    })
+
+    it('resets the stage and the status together', () => {
+      const w = ({ children }: { children: ReactNode }) => <MemoryRouter initialEntries={['/bills?status=Became+Law&stage=passed']}>{children}</MemoryRouter>
+      const { result } = renderHook(() => useHarness(grouped), { wrapper: w })
+      act(() => result.current.handleResetFilters())
+      expect(result.current.activeFilters).toEqual([])
+      expect(result.current.urlSearch).not.toMatch(/status=|stage=/)
     })
   })
 

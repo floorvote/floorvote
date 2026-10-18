@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { buildActiveFilterGroups, relevanceChipLabel, type ActiveFilterGroupArgs } from './activeFilterGroups'
 import { PRIORITY_COLORS, POSITION_COLORS } from '../../lib/chipStyles'
 import { FILTER_ANY, activeFilters, withBillFilter } from '../../../../shared/billFilter'
@@ -52,12 +52,48 @@ describe('buildActiveFilterGroups', () => {
     expect(groups.map(g => g.key)).not.toContain('newMatches')
   })
 
-  it('labels a stage chip with the stage\'s name, after status', () => {
+  it('draws the stage chips and the status chips in one group, the stages after the statuses (#677)', () => {
     const onRemoveStage = vi.fn()
     const groups = buildActiveFilterGroups({ ...base, status: ['Introduced'], stage: ['passed'], onRemoveStage })
-    expect(groups.map(g => g.key)).toEqual(['status', 'stage'])
-    render(<>{groups[1].chips}</>)
-    expect(screen.getByText('Passed legislature')).toBeInTheDocument()
+    expect(groups.map(g => g.key)).toEqual(['status'])
+    expect(groups[0].chips).toHaveLength(2)
+    render(<>{groups[0].chips}</>)
+    expect(screen.getByText('Stage: Passed legislature')).toBeInTheDocument()
+    expect(screen.getByText('Introduced')).toBeInTheDocument()
+  })
+
+  it('draws a stage alone as the Status group, and removes it through the stage callback (#677)', () => {
+    const onRemoveStage = vi.fn()
+    const onRemoveStatus = vi.fn()
+    const groups = buildActiveFilterGroups({ ...base, stage: ['enacted', 'vetoed'], onRemoveStage, onRemoveStatus })
+    expect(groups.map(g => g.key)).toEqual(['status'])
+    render(<>{groups[0].chips}</>)
+    expect(screen.getByText('Stage: Enacted')).toBeInTheDocument()
+    fireEvent.click(screen.getAllByRole('button', { name: '×' })[1])
+    expect(onRemoveStage).toHaveBeenCalledWith('vetoed')
+    expect(onRemoveStatus).not.toHaveBeenCalled()
+  })
+
+  it('removes a status chip through the status callback when stage chips sit beside it (#677)', () => {
+    const onRemoveStage = vi.fn()
+    const onRemoveStatus = vi.fn()
+    const groups = buildActiveFilterGroups({ ...base, status: ['Introduced'], stage: ['enacted'], onRemoveStage, onRemoveStatus })
+    render(<>{groups[0].chips}</>)
+    fireEvent.click(screen.getAllByRole('button', { name: '×' })[0])
+    expect(onRemoveStatus).toHaveBeenCalledWith('Introduced')
+    expect(onRemoveStage).not.toHaveBeenCalled()
+  })
+
+  it('words a stage it does not know as it was given, under the same Stage prefix (#677)', () => {
+    const groups = buildActiveFilterGroups({ ...base, stage: ['mystery'] })
+    render(<>{groups[0].chips}</>)
+    expect(screen.getByText('Stage: mystery')).toBeInTheDocument()
+  })
+
+  it('draws the Status group once the list of active filters holds the status entry, for a stage alone (#677)', () => {
+    const active = activeFilters(withBillFilter({ stage: ['enacted'] }))
+    expect(buildActiveFilterGroups({ ...base, stage: ['enacted'], active }).map(g => g.key)).toEqual(['status'])
+    expect(buildActiveFilterGroups({ ...base, stage: ['enacted'], active: [] })).toEqual([])
   })
 
   it('renders relevance as a single-chip group above zero', () => {

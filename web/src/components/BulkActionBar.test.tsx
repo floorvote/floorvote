@@ -323,6 +323,47 @@ describe('BulkActionBar multi-select custom field (filter mode)', () => {
   })
 })
 
+// A status and a stage are one filter fact on the server, matched as a union (#677), and a bulk action carries the
+// same serialized bill filter the list sends, so "select all matching" acts on the bills the list shows.
+describe('BulkActionBar with a status and a stage in the filter', () => {
+  const filter = parseBillFilter('status=Passed&stage=vetoed')
+
+  function renderWithFilter() {
+    vi.mocked(apiFetch).mockClear()
+    vi.mocked(apiFetch).mockImplementation((path: string) => {
+      if (path.startsWith('/bills/bulk-values')) {
+        return Promise.resolve({ count: 2, priorities: {}, positions: {}, customFields: {}, multiCustomFields: {}, nullMatchCount: 0 })
+      }
+      return Promise.resolve({ updated: 2 })
+    })
+    return render(
+      <BulkActionBar
+        selection={{ mode: 'filter' }} total={2} positionVocabulary={['Support']} customFieldDefs={[]}
+        currentFilters={filter} filterNewMatchCount={0} selectedBills={[]} onClearSelection={vi.fn()} onApplied={vi.fn()}
+      />,
+    )
+  }
+
+  it('asks for the pre-fill values of the same string the list sends', async () => {
+    renderWithFilter()
+    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith('/bills/bulk-values?status=Passed&stage=vetoed'))
+  })
+
+  it('sends the same string as the filter of a bulk edit', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderWithFilter()
+    fireEvent.click(priorityPill())
+    fireEvent.click(screen.getByText('High'))
+    fireEvent.click(screen.getByRole('button', { name: /Apply to 2 bills/i }))
+    await waitFor(() => {
+      const call = vi.mocked(apiFetch).mock.calls.find(c => c[0] === '/bills/bulk')
+      expect(call).toBeDefined()
+      expect(JSON.parse((call![1] as { body: string }).body).filter).toBe(serializeBillFilter(filter))
+      expect(serializeBillFilter(filter)).toBe('status=Passed&stage=vetoed')
+    })
+  })
+})
+
 // Every one of these states used to render as "Not set" — a claim about data
 // that was never fetched. The silent-failure case is the consequential one: it
 // told an admin that no bill in the selection had a value, which is exactly the

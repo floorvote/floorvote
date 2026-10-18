@@ -25,6 +25,8 @@ const DEFS = [TEAM, FLAG]
 const SINGLES: { name: string; qs: string; badge: number; chips: number }[] = [
   { name: 'status', qs: 'status=2&status=3', badge: 2, chips: 2 },
   { name: 'stage', qs: 'stage=introduced', badge: 1, chips: 1 },
+  // A stage is a grouping inside Status: with a status it is one entry of the list, one chip group, and each value counts once (#677).
+  { name: 'status and stage', qs: 'status=2&stage=introduced&stage=enacted', badge: 3, chips: 3 },
   { name: 'year', qs: 'year=2026&year=2025', badge: 2, chips: 2 },
   { name: 'state', qs: 'state=UT', badge: 1, chips: 1 },
   { name: 'position', qs: 'position=Support&position=none', badge: 2, chips: 2 },
@@ -113,6 +115,28 @@ describe('one list of active filters: every surface agrees, filter by filter', (
     expect(chipFilters(f.activeFilters).reduce((n, a) => n + a.count, 0)).toBe(chips)
     sheetFor(f)
     expect(sheetChipCount()).toBe(chips)
+    expect(hasReset()).toBe(true)
+    cleanup()
+  })
+
+  it('status and stage: one entry in the list, one chip group, and one Reset, whichever of them is set (#677)', () => {
+    const { result } = hookAt('status=2&stage=introduced&stage=enacted')
+    const f = result.current
+    expect(f.activeFilters).toEqual([{ name: 'status', key: 'status', count: 3 }])
+    expect(f.totalActiveFilters).toBe(3)
+    expect(chipFilters(f.activeFilters)).toHaveLength(1)
+    const groups = buildActiveFilterGroups({
+      state: f.state, status: f.status, stage: f.stage, position: f.position, priority: f.priority, year: f.year, tag: f.tag, subject: f.subject,
+      field: f.field, minRelevance: f.minRelevance, positionOptions: f.positionOptions, customFieldDefs: DEFS, isMultiState: false,
+      active: f.activeFilters,
+      onRemoveState: vi.fn(), onRemoveStatus: vi.fn(), onRemoveStage: vi.fn(), onRemovePosition: vi.fn(), onRemovePriority: vi.fn(),
+      onRemoveYear: vi.fn(), onRemoveTag: vi.fn(), onRemoveSubject: vi.fn(), onRemoveField: vi.fn(), onRemoveMinRelevance: vi.fn(),
+    })
+    expect(groups.map(g => g.key)).toEqual(['status'])
+    sheetFor(f)
+    expect(screen.getByTestId('sheet-active-filter-chips')).toBeInTheDocument()
+    // The AND/OR operator sits between groups, and there is only the one group.
+    expect(screen.queryByRole('button', { name: /currently matching/i })).toBeNull()
     expect(hasReset()).toBe(true)
     cleanup()
   })
