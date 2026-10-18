@@ -41,13 +41,12 @@ function makeBill(over: Partial<Bill> = {}): Bill {
   }
 }
 
-function renderRow(bill: Partial<Bill>, props: { filterStatuses?: string[]; onStatusClick?: (s: string) => void; onVote?: (id: string, p: 'support' | 'neutral' | 'oppose') => void } = {}) {
+function renderRow(bill: Partial<Bill>, props: { status?: string[]; onStatusClick?: (s: string) => void; onVote?: (id: string, p: 'support' | 'neutral' | 'oppose') => void } = {}) {
   return render(
     <MemoryRouter>
       <BillRow
         bill={makeBill(bill)}
         index={0}
-        selectedTags={[]}
         onTagClick={vi.fn()}
         isAdmin={false}
         positionVocabulary={['Support', 'Oppose']}
@@ -58,11 +57,7 @@ function renderRow(bill: Partial<Bill>, props: { filterStatuses?: string[]; onSt
         onPriorityChange={vi.fn()}
         onPositionChange={vi.fn()}
         onVote={props.onVote}
-        filterStatuses={props.filterStatuses ?? []}
-        filterPriorities={[]}
-        filterPositions={[]}
-        filterYears={[]}
-        filterMinRelevance={0}
+        filter={{ status: props.status ?? [], priority: [], position: [], year: [], minRelevance: 0, tag: [] }}
         sortedPaths={[]}
         isMultiState={false}
         isSelectionMode={false}
@@ -112,7 +107,7 @@ describe('a grouped BillRow', () => {
   })
 
   it('highlights a status the filter names, on the bill that has it', () => {
-    const { container } = renderRow({ group: [S1713, A190] }, { filterStatuses: ['Passed'] })
+    const { container } = renderRow({ group: [S1713, A190] }, { status: ['Passed'] })
     const chips = within(statusCell(container)).getAllByText(/Passed|Introduced/)
     expect(chips).toHaveLength(2)
     const [passed, introduced] = chips
