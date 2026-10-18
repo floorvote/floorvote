@@ -980,3 +980,80 @@ describe('match provenance fan-out', () => {
     expect(b.send.mock.calls[0][0].matchProvenance).toBe('routine')
   })
 })
+
+describe('a sponsor record and the stored Bioguide id', () => {
+  const opts = { forceMetadata: false, forceAI: false, interactive: false }
+  const sponsorOf = (extra: Record<string, unknown>) => buildFixtureBill({
+    sponsors: [{ people_id: 5001, name: 'Sen Alpha', party: 'R', role: 'Senator', role_id: 2, district: '01', sponsor_type_id: 1, sponsor_order: 1, ...extra }],
+  })
+  const personRowOf = async (db: ReturnType<typeof drizzle>) =>
+    db.select().from(schema.people).where(eq(schema.people.peopleId, 5001)).get()
+
+  it('keeps a stored id when the sponsor record carries none', async () => {
+    const db = drizzle(env.DB, { schema })
+    await ingestMeasure(sponsorOf({ bioguide_id: 'T000001' }), getProvider('legiscan'), makeEnv(), db, opts)
+    await ingestMeasure(sponsorOf({}), getProvider('legiscan'), makeEnv(), db, opts)
+    expect((await personRowOf(db))?.bioguideId).toBe('T000001')
+  })
+
+  it('keeps an id a snapshot provider stored when a later sponsor record carries none', async () => {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.people).values({ peopleId: 5001, name: 'Sen Alpha', bioguideId: 'T000002', provider: 'govinfo' })
+    await ingestMeasure(sponsorOf({}), getProvider('legiscan'), makeEnv(), db, opts)
+    const row = await personRowOf(db)
+    expect(row?.bioguideId).toBe('T000002')
+    expect(row?.provider).toBe('govinfo')
+  })
+
+  it('clears a stored id when the sponsor record says null', async () => {
+    const db = drizzle(env.DB, { schema })
+    await ingestMeasure(sponsorOf({ bioguide_id: 'T000001' }), getProvider('legiscan'), makeEnv(), db, opts)
+    await ingestMeasure(sponsorOf({ bioguide_id: null }), getProvider('legiscan'), makeEnv(), db, opts)
+    expect((await personRowOf(db))?.bioguideId).toBeNull()
+  })
+
+  it('replaces a stored id with the new one', async () => {
+    const db = drizzle(env.DB, { schema })
+    await ingestMeasure(sponsorOf({ bioguide_id: 'T000001' }), getProvider('legiscan'), makeEnv(), db, opts)
+    await ingestMeasure(sponsorOf({ bioguide_id: 'T000009' }), getProvider('legiscan'), makeEnv(), db, opts)
+    expect((await personRowOf(db))?.bioguideId).toBe('T000009')
+  })
+
+  it('stores the id of a person it has no row for, and null when there is none', async () => {
+    const db = drizzle(env.DB, { schema })
+    await ingestMeasure(sponsorOf({ bioguide_id: 'T000003' }), getProvider('legiscan'), makeEnv(), db, opts)
+    expect((await personRowOf(db))?.bioguideId).toBe('T000003')
+    await db.delete(schema.people).where(eq(schema.people.peopleId, 5001))
+    await ingestMeasure(sponsorOf({}), getProvider('legiscan'), makeEnv(), db, opts)
+    expect((await personRowOf(db))?.bioguideId).toBeNull()
+  })
+
+  it('inserts people the measure names in one batch whether or not each carries an id, and never writes over a row', async () => {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.people).values({ peopleId: 5003, name: 'Kept', bioguideId: 'T000005' })
+    await ingestMeasure(buildFixtureBill({ people: [
+      { people_id: 5002, name: 'With Id', bioguide_id: 'T000006' },
+      { people_id: 5003, name: 'Rewritten' },
+      { people_id: 5004, name: 'Without Id' },
+    ] }), getProvider('legiscan'), makeEnv(), db, opts)
+    const rows = await db.select().from(schema.people).all()
+    const byId = Object.fromEntries(rows.map(r => [r.peopleId, r]))
+    expect(byId[5002]?.bioguideId).toBe('T000006')
+    expect(byId[5003]).toMatchObject({ name: 'Kept', bioguideId: 'T000005' })
+    expect(byId[5004]?.bioguideId).toBeNull()
+  })
+
+  it('still replaces every other column from the sponsor record, and leaves bio_json alone', async () => {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.people).values({
+      peopleId: 5001, name: 'Old Name', party: 'D', role: 'Representative', district: '09', nickname: 'Al',
+      ballotpedia: 'Old_Page', bioJson: '{"social":{"biography":"https://example.test/bio"}}',
+    })
+    await ingestMeasure(sponsorOf({ name: 'Sen Alpha', party: 'R', role: 'Senator', district: '01' }), getProvider('legiscan'), makeEnv(), db, opts)
+    expect(await personRowOf(db)).toMatchObject({
+      name: 'Sen Alpha', party: 'R', role: 'Senator', district: '01',
+      nickname: null, ballotpedia: null,
+      bioJson: '{"social":{"biography":"https://example.test/bio"}}',
+    })
+  })
+})
