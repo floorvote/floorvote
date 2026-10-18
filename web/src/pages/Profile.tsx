@@ -605,17 +605,17 @@ export function Profile() {
               transition: 'box-shadow 0.6s ease',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, cursor: demoLocked ? 'not-allowed' : 'pointer' }}>
               <div style={{ fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5 }}>
                 <div style={{ fontWeight: fontWeight.bold, color: color.textPrimary }}>Replies on bills you've commented on</div>
                 <div>Email me when someone else comments on a bill I've commented on. Replies still appear in your notifications.</div>
               </div>
-              <label
+              <span
                 style={{
                   position: 'relative',
                   display: 'inline-block',
                   width: 38,
-                  height: 22,
+                  height: 24,
                   flexShrink: 0,
                   cursor: demoLocked ? 'not-allowed' : 'pointer',
                 }}
@@ -642,17 +642,17 @@ export function Profile() {
                   style={{
                     position: 'absolute',
                     top: 2,
-                    left: repliesEnabled ? 18 : 2,
-                    width: 18,
-                    height: 18,
+                    left: repliesEnabled ? 16 : 2,
+                    width: 20,
+                    height: 20,
                     background: color.white,
                     borderRadius: '50%',
                     transition: 'left 0.18s ease',
                     boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
                   }}
                 />
-              </label>
-            </div>
+              </span>
+            </label>
           </div>
 
           <div
@@ -667,7 +667,7 @@ export function Profile() {
               transition: 'box-shadow 0.6s ease',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, cursor: demoLocked || digestAdminOff ? 'not-allowed' : 'pointer' }}>
               <div style={{ fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5 }}>
                 <div style={{ fontWeight: fontWeight.bold, color: color.textPrimary }}>Email digest of recent bill activity</div>
                 <div>{digestCadenceDescription(modules)}</div>
@@ -675,12 +675,12 @@ export function Profile() {
                   <div style={{ marginTop: 2, color: color.textMuted, fontWeight: fontWeight.medium }}>{adminOffNote}</div>
                 )}
               </div>
-              <label
+              <span
                 style={{
                   position: 'relative',
                   display: 'inline-block',
                   width: 38,
-                  height: 22,
+                  height: 24,
                   flexShrink: 0,
                   cursor: demoLocked || digestAdminOff ? 'not-allowed' : 'pointer',
                 }}
@@ -707,21 +707,22 @@ export function Profile() {
                   style={{
                     position: 'absolute',
                     top: 2,
-                    left: digestEnabled ? 18 : 2,
-                    width: 18,
-                    height: 18,
+                    left: digestEnabled ? 16 : 2,
+                    width: 20,
+                    height: 20,
                     background: color.white,
                     borderRadius: '50%',
                     transition: 'left 0.18s ease',
                     boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
                   }}
                 />
-              </label>
-            </div>
+              </span>
+            </label>
             {isMember && (
-              <div
+              <label
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
+                  cursor: demoLocked || digestAdminOff || !digestEnabled ? 'not-allowed' : 'pointer',
                   marginTop: 10, paddingTop: 10, borderTop: `1px solid ${color.borderDefault}`,
                   opacity: digestEnabled ? 1 : 0.55,
                 }}
@@ -729,12 +730,12 @@ export function Profile() {
                 <div style={{ fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5 }}>
                   <div id="digest-matches-label" style={{ fontWeight: fontWeight.medium, color: color.textPrimary }}>{digestMatchesLabel(modules)}</div>
                 </div>
-                <label
+                <span
                   style={{
                     position: 'relative',
                     display: 'inline-block',
                     width: 38,
-                    height: 22,
+                    height: 24,
                     flexShrink: 0,
                     cursor: demoLocked || digestAdminOff || !digestEnabled ? 'not-allowed' : 'pointer',
                   }}
@@ -761,17 +762,17 @@ export function Profile() {
                     style={{
                       position: 'absolute',
                       top: 2,
-                      left: digestMatchesEnabled ? 18 : 2,
-                      width: 18,
-                      height: 18,
+                      left: digestMatchesEnabled ? 16 : 2,
+                      width: 20,
+                      height: 20,
                       background: color.white,
                       borderRadius: '50%',
                       transition: 'left 0.18s ease',
                       boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
                     }}
                   />
-                </label>
-              </div>
+                </span>
+              </label>
             )}
           </div>
 
@@ -787,7 +788,7 @@ export function Profile() {
               transition: 'box-shadow 0.6s ease',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, cursor: demoLocked || weekAheadAdminOff ? 'not-allowed' : 'pointer' }}>
               <div style={{ fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5 }}>
                 <div style={{ fontWeight: fontWeight.bold, color: color.textPrimary }}>Email digest of upcoming hearings and events</div>
                 <div>{weekAheadCadenceDescription(modules)}</div>
@@ -795,12 +796,12 @@ export function Profile() {
                   <div style={{ marginTop: 2, color: color.textMuted, fontWeight: fontWeight.medium }}>{adminOffNote}</div>
                 )}
               </div>
-              <label
+              <span
                 style={{
                   position: 'relative',
                   display: 'inline-block',
                   width: 38,
-                  height: 22,
+                  height: 24,
                   flexShrink: 0,
                   cursor: demoLocked || weekAheadAdminOff ? 'not-allowed' : 'pointer',
                 }}
@@ -827,17 +828,17 @@ export function Profile() {
                   style={{
                     position: 'absolute',
                     top: 2,
-                    left: weekAheadEnabled ? 18 : 2,
-                    width: 18,
-                    height: 18,
+                    left: weekAheadEnabled ? 16 : 2,
+                    width: 20,
+                    height: 20,
                     background: color.white,
                     borderRadius: '50%',
                     transition: 'left 0.18s ease',
                     boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
                   }}
                 />
-              </label>
-            </div>
+              </span>
+            </label>
           </div>
         </div>
       </div>

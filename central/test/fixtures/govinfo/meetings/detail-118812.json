@@ -1,0 +1,56 @@
+{
+  "committeeMeeting": {
+    "chamber": "House",
+    "committees": [
+      {
+        "name": "House Education and Workforce",
+        "systemCode": "hsed00",
+        "url": "https://api.congress.gov/v3/committee/house/hsed00?format=json"
+      }
+    ],
+    "congress": 119,
+    "date": "2026-01-08T15:15:00Z",
+    "eventId": "118812",
+    "meetingDocuments": [
+      {
+        "documentType": "Support Document",
+        "format": "PDF",
+        "name": "Rep. Mary Miller | Submission for the Record | Students for Life Action Statement",
+        "url": "https://www.congress.gov/119/meeting/house/118812/documents/HMKP-119-ED00-20260108-SD003.pdf"
+      }
+    ],
+    "meetingStatus": "Scheduled",
+    "relatedItems": {
+      "bills": [
+        {
+          "congress": 119,
+          "number": "6359",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/6359?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "4307",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/4307?format=json"
+        }
+      ]
+    },
+    "title": "H.R. 6359, the \"Pregnant Students' Rights Act\"; H.R. 4307, the \"Enhancing Detection of Human Trafficking Act\"",
+    "type": "Markup",
+    "updateDate": "2026-02-02T05:03:27Z",
+    "videos": [
+      {
+        "name": "Markup of H.R. 6359 and H.R. 4307",
+        "url": "https://www.congress.gov/event/119th-Congress/house-event/118812"
+      }
+    ]
+  },
+  "request": {
+    "chamber": "house",
+    "congress": "119",
+    "contentType": "application/json",
+    "eventId": "118812",
+    "format": "json"
+  }
+}

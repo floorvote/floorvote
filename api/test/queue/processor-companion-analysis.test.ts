@@ -545,7 +545,7 @@ describe('companions that didn\'t match are analyzed through their group', () =>
     type ListBody = { bills: Page[]; pagination: { total: number } }
     const page = async (id: string) => (await (await SELF.fetch(`http://localhost/api/bills/${id}`, { headers: { Cookie: cookie } })).json()) as Page
     const list = async (qs = '') => (await (await SELF.fetch(`http://localhost/api/bills?${qs}`, { headers: { Cookie: cookie } })).json()) as ListBody
-    const tagCounts = async () => ((await (await SELF.fetch('http://localhost/api/bills/facets', { headers: { Cookie: cookie } })).json()) as { tags: Record<string, number> }).tags
+    const tagCounts = async () => ((await (await SELF.fetch('http://localhost/api/bills/facets', { headers: { Cookie: cookie } })).json()) as { tag: Record<string, number> }).tag
 
     beforeEach(async () => {
       const db = getDb(env.DB)

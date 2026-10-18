@@ -224,3 +224,66 @@ export const senateRollCallInventory: FieldInventory = {
   amendment: { ignored: 'The amendment voted on, when the vote was on one. The question text names it.' },
   tie_breaker: { ignored: 'The Vice President\'s tie-breaking vote, when there was one. The result says how the question came out.' },
 }
+
+/**
+ * Every field of the Congress.gov API's answer for one committee meeting
+ * (`/committee-meeting/119/house/118139`), and what the provider does with it.
+ * The paths are dotted from the answer's root, which holds the meeting under
+ * `committeeMeeting` and an echo of the request under `request`. The mapping
+ * test checks the recorded answers against it, and a second check covers every
+ * field in the 132 meetings read on October 17, 2026
+ * (`test/fixtures/govinfo/meetings/field-paths.json`), so a field the API starts
+ * sending fails both until someone decides what to do with it.
+ *
+ * The meetings are read for their calendar (meetings.ts): when, where, which
+ * committee, what kind, whether it was cancelled, and which bills it takes up.
+ * What a meeting records after it is held (the witnesses and their statements,
+ * the documents, the video, the transcript) is none of that, and is left to
+ * congress.gov, which each event links.
+ */
+export const meetingInventory: FieldInventory = {
+  'committeeMeeting.eventId': 'mapped',
+  'committeeMeeting.congress': 'mapped',
+  'committeeMeeting.chamber': 'mapped',
+  'committeeMeeting.date': 'mapped',
+  'committeeMeeting.type': 'mapped',
+  'committeeMeeting.meetingStatus': 'mapped',
+  'committeeMeeting.title': 'mapped',
+  'committeeMeeting.updateDate': 'mapped',
+  'committeeMeeting.committees[].systemCode': 'mapped',
+  'committeeMeeting.committees[].name': 'mapped',
+  'committeeMeeting.committees[].url': { ignored: 'The committee\'s address in the API. Its system code names it, and ids are minted from that.' },
+  'committeeMeeting.location.building': 'mapped',
+  'committeeMeeting.location.room': 'mapped',
+  'committeeMeeting.location.address': 'mapped',
+  'committeeMeeting.relatedItems.bills[].congress': 'mapped',
+  'committeeMeeting.relatedItems.bills[].type': 'mapped',
+  'committeeMeeting.relatedItems.bills[].number': 'mapped',
+  'committeeMeeting.relatedItems.bills[].url': { ignored: 'The bill\'s address in the API. Its type and number name it.' },
+  'committeeMeeting.relatedItems.nominations': { ignored: 'The nominations a Senate meeting takes up. Nominations aren\'t bills, and central tracks none.' },
+  'committeeMeeting.witnesses': { ignored: 'Who testified, once the hearing has been held. Not part of its calendar entry.' },
+  'committeeMeeting.witnessDocuments': { ignored: 'Witnesses\' statements and biographies. Not part of the calendar entry, and congress.gov links them.' },
+  'committeeMeeting.meetingDocuments': { ignored: 'Documents a meeting\'s notice or record carries (bill text, an agenda, a report). Not part of the calendar entry, and congress.gov links them.' },
+  'committeeMeeting.videos': { ignored: 'Recordings of the meeting, which come after it is held. congress.gov links them from the event\'s page.' },
+  'committeeMeeting.hearingTranscript': { ignored: 'The printed hearing, published months after the meeting. A bill\'s own file links it.' },
+  'committeeMeeting.isManuallyCurated': { ignored: 'Whether the Library of Congress edited the record by hand. A curated meeting is read like any other.' },
+  'request.chamber': { ignored: 'An echo of the request.' },
+  'request.congress': { ignored: 'An echo of the request.' },
+  'request.contentType': { ignored: 'An echo of the request.' },
+  'request.eventId': { ignored: 'An echo of the request.' },
+  'request.format': { ignored: 'An echo of the request.' },
+}
+
+/** The same for the API's list of a Congress's committee meetings (`/committee-meeting/119`), one page of it. */
+export const meetingListInventory: FieldInventory = {
+  'committeeMeetings[].eventId': 'mapped',
+  'committeeMeetings[].chamber': 'mapped',
+  'committeeMeetings[].congress': 'mapped',
+  'committeeMeetings[].updateDate': 'mapped',
+  'committeeMeetings[].url': { ignored: 'The meeting\'s address in the API, which is built from its Congress, chamber, and event id instead, so a list can never point a request with the key anywhere else.' },
+  'pagination.count': 'mapped',
+  'pagination.next': { ignored: 'The address of the next page, which is built from the offset instead, for the same reason as a meeting\'s.' },
+  'request.congress': { ignored: 'An echo of the request.' },
+  'request.contentType': { ignored: 'An echo of the request.' },
+  'request.format': { ignored: 'An echo of the request.' },
+}

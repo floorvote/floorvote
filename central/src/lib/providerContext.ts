@@ -2,6 +2,7 @@ import { asc, eq, sql } from 'drizzle-orm'
 import { apiCallLog, people } from '../db/schema'
 import { nowDb } from './dbTime'
 import { knownProviderIds, providerIdsFor } from './providerIds'
+import { providerCacheDrop, providerCacheList, providerCachePut } from './providerCache'
 import type { Provider, ProviderContext } from '../providers'
 import type { Env, Db } from '../types'
 
@@ -27,6 +28,11 @@ export function providerContext(
     today: nowDb().slice(0, 10),
     ids: (kind, nativeKeys) => providerIdsFor(db, provider.id, kind, nativeKeys),
     knownIds: (kind, nativeKeys) => knownProviderIds(db, provider.id, kind, nativeKeys),
+    cache: {
+      list: prefix => providerCacheList(db, provider.id, prefix),
+      put: entries => providerCachePut(db, provider.id, entries),
+      drop: keys => providerCacheDrop(db, provider.id, keys),
+    },
     // People a cutover carried over (lib/carriedIds.ts) come last, so a
     // provider that indexes them by name, latest first (LIMS), keeps giving a
     // legislator the id instances already have, even once the provider lists

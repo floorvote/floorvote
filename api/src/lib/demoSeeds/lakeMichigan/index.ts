@@ -80,13 +80,13 @@ export const LAKE_MICHIGAN_SEED: DemoSeed = {
       // 8 bills: 6 tagged Drinking Water or Lead Service Lines, plus WI AB131 and IL HB2516 (Contaminants).
       id: 'lm-view-water-supply-or-contaminants', name: 'Drinking water or contaminants', slug: 'drinking-water-or-contaminants',
       query: viewQuery([
-        ['match', 'any'], ['tag', 'Drinking Water'], ['tag', 'Lead Service Lines'], ['cf_working-group', 'Contaminants'],
+        ['match', 'any'], ['tag', 'Drinking Water'], ['tag', 'Lead Service Lines'], ['field.working-group', 'Contaminants'],
       ]),
     },
     {
       // 3 bills: MI HB4768, MI HB5674, and IL HB5268, which the Infrastructure group owns and no one has taken a position on.
       id: 'lm-view-infrastructure-open', name: 'Infrastructure bills with no position', slug: 'infrastructure-bills-with-no-position',
-      query: viewQuery([['cf_working-group', 'Infrastructure'], ['position', 'none']]),
+      query: viewQuery([['field.working-group', 'Infrastructure'], ['position', 'none']]),
     },
     {
       // 5 bills: MI HB4427, HB5308, SB0771, and WI AB131, SB56.

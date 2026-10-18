@@ -48,8 +48,8 @@ vi.mock('../../lib/api', () => {
     if (path === '/config/custom-fields') return [] as T
     if (path.startsWith('/bills/facets')) {
       return {
-        status: { '2': 1 }, priority: {}, session: {}, year: {}, state: { RI: 1 }, position: {},
-        tags: { Clerk: 1 }, subjects: {}, customFields: {}, myBillsCount: 2, newMatchesCount: 3,
+        status: { '2': 1 }, priority: {}, sessionName: {}, year: {}, state: { RI: 1 }, position: {},
+        tag: { Clerk: 1 }, subject: {}, field: {}, myBillsCount: 2, newMatchesCount: 3,
         unvotedCount: 7,
       } as T
     }
