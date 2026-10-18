@@ -706,6 +706,20 @@ describe('runSync → runFullPass: a companion of a tracked bill', () => {
     expect(await run([entry(60, 'new'), entry(61, 'old')])).toEqual([60])
   })
 
+  it('looks up no relations on a pass that changed no unmatched bill, and some on one that did', async () => {
+    await setup({})
+    const lookups = () => prepare.mock.calls.filter(c => String(c[0]).includes('bill_sasts'))
+    const prepare = vi.spyOn(env.DB, 'prepare')
+    // Bill 60 is tracked and changed, bill 61 is unmatched and unchanged: nothing needs a companion check.
+    await run([entry(60, 'new'), entry(61, 'old')])
+    const quiet = lookups().length
+    expect(quiet).toBe(0)
+    // The unmatched bill changes: now it does.
+    await run([entry(60, 'new'), entry(61, 'new')])
+    expect(lookups().length).toBeGreaterThan(0)
+    prepare.mockRestore()
+  })
+
   it('does not queue an unchanged companion', async () => {
     await setup({})
     expect(await run([entry(60, 'old'), entry(61, 'old')])).toEqual([])

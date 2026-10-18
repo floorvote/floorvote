@@ -16,7 +16,6 @@ import { queueCalendarRechecks } from '../lib/billCalendar'
 const BATCH = 80
 const FLUSH_BATCH = 500
 
-
 /**
  * For the listed bills, the instances that track an identical companion of each
  * (a bill the provider names as the same measure, linked to the instance with a
@@ -333,7 +332,13 @@ export async function applyMasterList(
     if (held) seeded.add(tenantId)
   }
 
-  const companionTracked = await trackedCompanionTenants(db, getProvider(session.provider), session.state, billIds)
+  // Only a changed bill some covering instance doesn't track can need a full ingest for its companion's sake. The
+  // reverse lookup has no index on the companion's side, so it is kept to those bills: most passes list none.
+  const companionCandidates = list
+    .filter(e => existing.get(e.bill_id)?.changeHash !== e.change_hash
+      && coveringTenants.some(t => (existingLinks.get(`${e.bill_id}:${t.tenantId}`) ?? null) === null))
+    .map(e => e.bill_id)
+  const companionTracked = await trackedCompanionTenants(db, getProvider(session.provider), session.state, companionCandidates)
 
   const now = nowDb()
   const billStmts: any[] = []
