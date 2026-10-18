@@ -21,7 +21,21 @@ describe('linkableClaims', () => {
 
   it('carries the passage each link opens', () => {
     expect(linkableClaims(cs([{ claim: 'One.', status: 'exact', quoteAt: at(3, 9), matched: 'Each c' }]), true))
-      .toEqual([{ index: 0, claim: 'One.', quoteAt: at(3, 9), matched: 'Each c' }])
+      .toEqual([{ index: 0, claim: 'One.', quoteAt: at(3, 9), matched: 'Each c', popover: '\u201cEach c\u201d' }])
+  })
+
+  // #696: an HTML claim previews its passage on hover and focus, as a PDF claim does its quote.
+  it('previews the passage an HTML claim opens, in curly quotes, with no page line', () => {
+    const [link] = linkableClaims(cs([{ claim: 'One.', status: 'exact', quoteAt: at(3, 9), matched: 'The board shall meet monthly.' }]), true)
+    expect((link as { popover?: string }).popover).toBe('\u201cThe board shall meet monthly.\u201d')
+  })
+
+  it('gives each linked HTML claim its own preview, in the list\'s order', () => {
+    const items = [
+      { claim: 'One.', status: 'exact' as const, quoteAt: at(0, 3), matched: 'First passage.' },
+      { claim: 'Two.', status: 'fuzzy' as const, quoteAt: at(5, 9), matched: 'Second passage.' },
+    ]
+    expect(linkableClaims(cs(items), true).map(c => (c as { popover?: string }).popover)).toEqual(['\u201cFirst passage.\u201d', '\u201cSecond passage.\u201d'])
   })
 
   it('links nothing with the instance setting off', () => {
@@ -211,14 +225,20 @@ describe('markPassage', () => {
       expect(mark).toMatch(/(^|[{;])color:#0f172a !important/)
     })
 
-    it('rings the focused passage in the light focus ring color, in both modes', () => {
+    it('rings the focused passage in the light focus ring color, in both modes, drawn inside the mark so the frame\'s right edge can\'t crop it (#696)', () => {
       for (const dark of [false, true]) {
         document.documentElement.classList.toggle('dark', dark)
         const css = cssOf()
-        expect(css, dark ? 'dark' : 'light').toContain(`#${PASSAGE_ID}:focus{outline:2px solid #1e3a5f !important;outline-offset:2px}`)
-        expect(css).toContain(`:root:has(#${PASSAGE_ID}:focus) mark[data-fv-passage]{outline:2px solid #1e3a5f !important;outline-offset:2px}`)
+        expect(css, dark ? 'dark' : 'light').toContain(`#${PASSAGE_ID}:focus{outline:2px solid #1e3a5f !important;outline-offset:-2px}`)
+        expect(css).toContain(`:root:has(#${PASSAGE_ID}:focus) mark[data-fv-passage]{outline:2px solid #1e3a5f !important;outline-offset:-2px}`)
       }
       document.documentElement.classList.remove('dark')
+    })
+
+    it('never offsets a ring outward, which a bill that runs to the frame\'s edge would crop (#696)', () => {
+      const css = cssOf()
+      expect(css).toContain('outline-offset:-2px')
+      expect(css).not.toMatch(/outline-offset:\s*[0-9]/)
     })
 
     it('has no CSS variable in it, since none is defined in the frame', () => {

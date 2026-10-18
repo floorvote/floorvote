@@ -106,6 +106,58 @@ describe('claim link colors', () => {
   })
 })
 
+// --- Quieter claim links (#696) ----------------------------------------------
+// The thin underline at rest, and the glow on a quote preview and the PDF quote
+// box, are Honey at set strengths. The glow is 20% subtler than the mockup the
+// design was picked from, whose strengths were 14%, 30% (halo), 40% and 60%
+// (the box's arrival flash). Each token has a light and a dark value.
+const alphaOf = (v: string) => {
+  const m = /^rgba\(232, 163, 61, ([0-9.]+)\)$/.exec(v)
+  expect(m, `${v} is Honey with an alpha`).not.toBeNull()
+  return Number(m![1])
+}
+describe('quieter claim link colors', () => {
+  const NEW = ['claimUnderlineRest', 'claimGlowBorder', 'claimGlowHalo', 'claimGlowBlur', 'claimFlashHalo', 'claimFlashBlur'] as const
+
+  it('defines each new token in both modes, as Honey with an alpha', () => {
+    for (const t of NEW) {
+      alphaOf((lightColor as Record<string, string>)[t] ?? 'missing')
+      alphaOf((darkColor as Record<string, string>)[t] ?? 'missing')
+    }
+  })
+
+  it('rests the underline at about 55% Honey in light mode, a touch stronger on the dark card', () => {
+    expect(alphaOf((lightColor as Record<string, string>).claimUnderlineRest ?? 'missing')).toBeCloseTo(0.55, 5)
+    expect(alphaOf((darkColor as Record<string, string>).claimUnderlineRest ?? 'missing')).toBeGreaterThan(0.55)
+  })
+
+  it('keeps the glow 20% subtler than the mockup in opacity, in both modes', () => {
+    for (const set of [lightColor, darkColor] as Record<string, string>[]) {
+      expect(alphaOf(set.claimGlowHalo ?? 'missing')).toBeCloseTo(0.14 * 0.8, 5)
+      expect(alphaOf(set.claimGlowBlur ?? 'missing')).toBeCloseTo(0.30 * 0.8, 5)
+      expect(alphaOf(set.claimFlashHalo ?? 'missing')).toBeCloseTo(0.40 * 0.8, 5)
+      expect(alphaOf(set.claimFlashBlur ?? 'missing')).toBeCloseTo(0.60 * 0.8, 5)
+    }
+  })
+
+  it('leaves the glow border at the mockup\'s 60%', () => {
+    expect(alphaOf((lightColor as Record<string, string>).claimGlowBorder ?? 'missing')).toBeCloseTo(0.6, 5)
+  })
+
+  it('defines each new variable once per mode in the stylesheet, and exposes it as a variable', () => {
+    const [light, dark] = colorVariablesCss().split(':root.dark{')
+    const names: Record<string, string> = {
+      claimUnderlineRest: '--fv-claim-underline-rest', claimGlowBorder: '--fv-claim-glow-border', claimGlowHalo: '--fv-claim-glow-halo',
+      claimGlowBlur: '--fv-claim-glow-blur', claimFlashHalo: '--fv-claim-flash-halo', claimFlashBlur: '--fv-claim-flash-blur',
+    }
+    for (const t of NEW) {
+      expect((color as Record<string, string>)[t]).toBe(`var(${names[t]})`)
+      expect(light.split(`${names[t]}:`).length - 1, `light ${t}`).toBe(1)
+      expect(dark.split(`${names[t]}:`).length - 1, `dark ${t}`).toBe(1)
+    }
+  })
+})
+
 // --- WCAG AA contrast guard -------------------------------------------------
 // Regression guard from the 2026-06-24 contrast audit, run against both color
 // modes. Every gray text tier must clear WCAG 2.2 AA (4.5:1 for normal text) on

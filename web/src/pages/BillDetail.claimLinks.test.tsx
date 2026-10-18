@@ -294,3 +294,31 @@ describe('a summary without claim sources', () => {
     expect(document.querySelectorAll('a[data-claim]')).toHaveLength(0)
   })
 })
+
+// #696: an HTML claim previews its passage on hover and keyboard focus.
+describe('quote previews on an HTML bill\'s claims (#696)', () => {
+  it('shows the passage a claim opens when the pointer is on it, and not for a plain-text claim', async () => {
+    const user = userEvent.setup()
+    setup()
+    await user.hover(await claimLink('Requires a drop box in each county.'))
+    const p = document.body.querySelector('[data-claim-preview]')
+    expect(p).not.toBeNull()
+    expect(p!.textContent).toContain('“Each county shall have a drop box.”')
+    expect(document.querySelector('.markdown-summary')!.contains(p)).toBe(false)
+  })
+
+  it('describes the link by that passage for a screen reader', async () => {
+    setup()
+    expect(await claimLink('Requires a drop box in each county.')).toHaveAccessibleDescription('“Each county shall have a drop box.”')
+  })
+
+  it('shows each claim its own passage as keyboard focus moves between them', async () => {
+    const user = userEvent.setup()
+    setup()
+    const first = await claimLink('Requires a drop box in each county.')
+    first.focus()
+    expect(document.body.querySelector('[data-claim-preview]')!.textContent).toContain('Each county shall have a drop box.')
+    await user.tab()
+    expect(document.body.querySelector('[data-claim-preview]')!.textContent).toContain('Boxes are emptied daily.')
+  })
+})

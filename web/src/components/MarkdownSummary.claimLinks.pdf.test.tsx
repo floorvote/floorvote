@@ -76,58 +76,6 @@ describe('MarkdownSummary: PDF claim links with a quote', () => {
     expect(onClaimActivate).not.toHaveBeenCalled()
   })
 
-  it('reveals the quote on :hover only where the device can hover, so iOS opens a claim on the first tap', () => {
-    const { container } = render(<MarkdownSummary claimLinks={CLAIMS} onClaimActivate={() => {}}>{SUMMARY}</MarkdownSummary>)
-    const css = [...container.querySelectorAll('style')].map(s => s.textContent).join('\n')
-    // The :hover rule sits inside `@media (hover: hover)`, and nowhere else.
-    const block = css.match(/@media \(hover: hover\)\s*\{([^@]*?\})\s*\}/)
-    expect(block).not.toBeNull()
-    expect(block![1]).toMatch(/:hover\s*>\s*\.claim-quote\s*\{[^}]*display:\s*block/)
-    expect(css.replace(block![0], '')).not.toMatch(/:hover\s*>\s*\.claim-quote/)
-    // Keyboard focus still reveals it everywhere.
-    expect(css.replace(block![0], '')).toMatch(/:focus-within\s*>\s*\.claim-quote\s*\{[^}]*display:\s*block/)
-  })
-
-  it('styles the quote as hidden until the link is hovered or has focus', () => {
-    const { container } = render(<MarkdownSummary claimLinks={CLAIMS} onClaimActivate={() => {}}>{SUMMARY}</MarkdownSummary>)
-    const css = [...container.querySelectorAll('style')].map(s => s.textContent).join('\n')
-    expect(css).toMatch(/\.claim-quote\s*\{[^}]*display:\s*none/)
-    expect(css).toMatch(/\.claim-ref:not\(\[data-dismissed\]\):hover\s*>\s*\.claim-quote\s*\{[^}]*display:\s*block/)
-    expect(css).toMatch(/\.claim-ref:not\(\[data-dismissed\]\):focus-within\s*>\s*\.claim-quote\s*\{[^}]*display:\s*block/)
-  })
-
-  it('can be dismissed with Escape while the link has focus, and shows again on the next focus', async () => {
-    const user = userEvent.setup()
-    render(<MarkdownSummary claimLinks={CLAIMS} onClaimActivate={() => {}}>{SUMMARY}</MarkdownSummary>)
-    const link = screen.getByRole('link', { name: 'Requires a drop box in each county.' })
-    await user.tab()
-    expect(link).toHaveFocus()
-    expect(refOf('Requires a drop box in each county.').hasAttribute('data-dismissed')).toBe(false)
-    await user.keyboard('{Escape}')
-    expect(refOf('Requires a drop box in each county.').hasAttribute('data-dismissed')).toBe(true)
-    // The other claim's quote is untouched.
-    expect(refOf('Boxes are emptied daily by two employees.').hasAttribute('data-dismissed')).toBe(false)
-    await user.tab()
-    expect(refOf('Requires a drop box in each county.').hasAttribute('data-dismissed')).toBe(false)
-  })
-
-  it('can be dismissed with Escape while the pointer is over it, and shows again when the pointer returns', async () => {
-    const user = userEvent.setup()
-    render(<MarkdownSummary claimLinks={CLAIMS} onClaimActivate={() => {}}>{SUMMARY}</MarkdownSummary>)
-    const ref = refOf('Requires a drop box in each county.')
-    await user.hover(screen.getByRole('link', { name: 'Requires a drop box in each county.' }))
-    fireEvent.keyDown(ref.querySelector('a')!, { key: 'Escape' })
-    expect(ref.hasAttribute('data-dismissed')).toBe(true)
-    await user.unhover(screen.getByRole('link', { name: 'Requires a drop box in each county.' }))
-    expect(ref.hasAttribute('data-dismissed')).toBe(false)
-  })
-
-  it('ignores Escape pressed elsewhere in the summary', () => {
-    const { container } = render(<MarkdownSummary claimLinks={CLAIMS} onClaimActivate={() => {}}>{SUMMARY}</MarkdownSummary>)
-    fireEvent.keyDown(container.querySelector('.markdown-summary p')!, { key: 'Escape' })
-    expect(container.querySelectorAll('[data-dismissed]')).toHaveLength(0)
-  })
-
   it('gives two summaries on one page different tooltip ids', () => {
     render(
       <>
@@ -158,14 +106,11 @@ describe('MarkdownSummary: PDF claim links with a quote', () => {
   // The restyle in #571 (Honey underline, hover wash, focus ring) is one rule on
   // `a.claim-link`, which a PDF claim's link carries too. The quote beside it
   // keeps its own look: a card with a border, not an underline or a wash.
-  it('gives a PDF claim link the same look as an HTML one, and the quote its own', () => {
+  it('gives a PDF claim link the same look as an HTML one', () => {
     const { container } = render(<MarkdownSummary claimLinks={CLAIMS} onClaimActivate={() => {}}>{SUMMARY}</MarkdownSummary>)
     expect(screen.getByRole('link', { name: 'Requires a drop box in each county.' })).toHaveClass('claim-link')
     const css = [...container.parentElement!.querySelectorAll('style')].map(el => el.textContent ?? '').join('\n')
-    expect(css).toMatch(/\.markdown-summary a\.claim-link \{[^}]*text-decoration-color: var\(--fv-claim-underline\)/)
-    expect(css).toMatch(/\.markdown-summary a\.claim-link:hover \{ background: var\(--fv-claim-hover-bg\)/)
-    const quote = css.match(/\.markdown-summary \.claim-quote \{([^}]*)\}/)?.[1] ?? ''
-    expect(quote).toContain('border: 1px solid var(--fv-border-default)')
-    expect(quote).not.toMatch(/claim-underline|claim-hover-bg|text-decoration/)
+    expect(css).toMatch(/\.markdown-summary a\.claim-link \{[^}]*text-decoration-color: var\(--fv-claim-underline-rest\)/)
+    expect(css).toMatch(/a\.claim-link:hover,\s*\.markdown-summary a\.claim-link:focus-visible \{[^}]*background: var\(--fv-claim-hover-bg\)/)
   })
 })

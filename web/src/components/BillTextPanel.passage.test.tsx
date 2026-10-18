@@ -166,3 +166,23 @@ describe('BillTextPanel: the sandbox', () => {
     expect(revoked).toContain(src.replace(/#.*$/, ''))
   })
 })
+
+// #696: the ring around the highlight was cut off on the right where the bill's
+// text runs to the frame's edge. The ring is drawn inside the mark now.
+describe('BillTextPanel: the highlight ring is not cropped (#696)', () => {
+  it('draws the passage ring inside the mark, in the document the frame loads, with no outward offset', async () => {
+    render(<BillTextPanel billId="a100" texts={[TEXT_A]} externalOpen passage={own()} />)
+    await passageFrame()
+    const doc = await lastBlobDoc()
+    const css = doc.querySelector('style[data-fv-passage]')!.textContent!
+    expect(css).toContain('outline-offset:-2px')
+    expect(css).not.toMatch(/outline-offset:\s*[0-9]/)
+  })
+
+  it('shows no quote box for an HTML passage: the highlight in the text is the quote', async () => {
+    render(<BillTextPanel billId="a100" texts={[TEXT_A]} externalOpen passage={own()} />)
+    await passageFrame()
+    expect(screen.queryByRole('group', { name: /quote behind the claim/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /close quote/i })).toBeNull()
+  })
+})

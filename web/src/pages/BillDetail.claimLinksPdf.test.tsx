@@ -344,3 +344,50 @@ describe('a PDF bill\'s summary without claim sources', () => {
     expect(screen.queryByRole('group', { name: /quote behind the claim/i })).toBeNull()
   })
 })
+
+// #696: the quote box closes, and focus goes back to the claim that opened it.
+describe('the PDF quote box on a PDF bill\'s claims (#696)', () => {
+  it('previews a PDF claim\'s page line and quote on hover, outside the summary box', async () => {
+    const user = userEvent.setup()
+    setup()
+    await user.hover(await claimLink('Requires a drop box in each county.'))
+    const p = document.body.querySelector('[data-claim-preview]')
+    expect(p!.textContent).toContain(`Page 7: “${Q1}”`)
+    expect((await summaryBox()).contains(p)).toBe(false)
+  })
+
+  it('closes the box with its button and puts focus back on the claim that was clicked', async () => {
+    const user = userEvent.setup()
+    setup()
+    const link = await claimLink('Requires a drop box in each county.')
+    await user.click(link)
+    await pdfFrame()
+    await waitFor(() => expect(caption()).toHaveFocus())
+    await user.click(screen.getByRole('button', { name: /close quote/i }))
+    expect(screen.queryByRole('group', { name: /quote behind the claim/i })).toBeNull()
+    expect(screen.getByRole('link', { name: 'Requires a drop box in each county.' })).toHaveFocus()
+  })
+
+  it('closes the box with Escape and returns focus to the second claim when that one opened it', async () => {
+    const user = userEvent.setup()
+    setup()
+    await user.click(await claimLink('Boxes are emptied by two employees.'))
+    await pdfFrame()
+    await waitFor(() => expect(caption()).toHaveFocus())
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('group', { name: /quote behind the claim/i })).toBeNull()
+    expect(screen.getByRole('link', { name: 'Boxes are emptied by two employees.' })).toHaveFocus()
+  })
+
+  it('opens the box again when the same claim is clicked after closing it', async () => {
+    const user = userEvent.setup()
+    setup()
+    await user.click(await claimLink('Requires a drop box in each county.'))
+    await pdfFrame()
+    await waitFor(() => expect(caption()).toHaveFocus())
+    await user.click(screen.getByRole('button', { name: /close quote/i }))
+    await user.click(screen.getByRole('link', { name: 'Requires a drop box in each county.' }))
+    await waitFor(() => expect(caption()).toHaveFocus())
+    expect(caption().querySelector('blockquote')!.textContent).toBe(`“${Q1}”`)
+  })
+})
