@@ -11,10 +11,10 @@ import { StatusChip } from '../../components/StatusChip'
 import { SessionChip } from '../../components/SessionChip'
 import { RelevanceChip } from '../../components/RelevanceChip'
 import { LastActionChip } from '../../components/LastActionChip'
-import { SECTION_LABEL, CHROME_TEXT, SR_ONLY } from '../../lib/textStyles'
+import { SECTION_LABEL, CHROME_TEXT, SR_ONLY, BILL_TITLE_TEXT } from '../../lib/textStyles'
 import { color, fontSize, fontWeight } from '../../styles/tokens'
 import { billDisplayTitle } from '../../../../shared/billTitle'
-import { billsApiParamsFromSearch, billsFilterValuesFromSearch, searchFromListUrl } from './billsQuery'
+import { billsApiParamsFromSearch, billsQueryFromSearch, searchFromListUrl } from './billsQuery'
 import { buildListSummary } from './listSummary'
 import { BillListPaneSummary } from './BillListPaneSummary'
 import { peekBillsListCache, peekCustomFieldDefs } from './index'
@@ -178,6 +178,7 @@ const PaneRow = memo(function PaneRow({ bill, path, isCurrent, billPaths, index,
         </div>
       )}
       <div style={{
+        ...BILL_TITLE_TEXT,
         fontSize: fontSize.sm,
         color: color.textPrimary,
         lineHeight: 1.35,
@@ -273,7 +274,7 @@ export function BillListPane() {
   // The summary is of the list the pane shows: the same resolved query its
   // request is built from, so the line and the rows cannot disagree.
   const summary = useMemo(() => resolved && buildListSummary({
-    values: billsFilterValuesFromSearch(resolved.search),
+    values: billsQueryFromSearch(resolved.search),
     view: resolved.view,
     customFieldDefs: peekCustomFieldDefs(),
     isMultiState: multiState,

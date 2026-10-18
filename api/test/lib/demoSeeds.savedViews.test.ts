@@ -5,6 +5,7 @@ import { resetDb, applyMigrations, seedBill, seedSession } from '../helpers'
 import { runDemoReset } from '../../src/lib/demoReset'
 import { DEMO_SEEDS, type DemoSeed } from '../../src/lib/demoSeeds'
 import { LM_BILLS } from '../../src/lib/demoSeeds/lakeMichigan/bills'
+import { BILL_FILTER_DEFS } from '../../../shared/billFilter'
 
 /**
  * The view switcher renders nothing for an instance with no saved views, so a
@@ -172,15 +173,26 @@ describe.each(CASES)('saved views in the $slug demo seed', ({ slug, fixtures, ex
     expect(got).toEqual(expectedTotals)
   })
 
+  // One name per filter (#699): a view stores a serialized bill filter, so its keys are the filter's names, a custom
+  // field's being `field.<slug>`. An old key (`cf_<slug>`, `q`, `session`) would be ignored, emptying or flooding the view.
+  it('writes every view with the bill filter\'s keys', async () => {
+    const names = new Set<string>(BILL_FILTER_DEFS.map(d => d.name).filter(n => n !== 'field'))
+    for (const v of await listViews()) {
+      for (const key of new URLSearchParams(v.query).keys()) {
+        expect(names.has(key) || key.startsWith('field.'), `${v.name}: ${key}`).toBe(true)
+      }
+    }
+  })
+
   it('restores the views on the next reset, whatever happened to them in between', async () => {
     const before = await listViews()
     expect(before).toHaveLength(3)
 
     // A view deleted, a view rewritten, and a view added by a visitor with admin rights.
     await env.DB.prepare('DELETE FROM saved_views WHERE id = ?').bind(before[0].id).run()
-    await env.DB.prepare(`UPDATE saved_views SET query = 'q=nothing' WHERE id = ?`).bind(before[1].id).run()
+    await env.DB.prepare(`UPDATE saved_views SET query = 'search=nothing' WHERE id = ?`).bind(before[1].id).run()
     await env.DB.prepare(
-      `INSERT INTO saved_views (id, name, query, slug, display_order) VALUES ('stray', 'Stray', 'q=x', 'stray', 99)`,
+      `INSERT INTO saved_views (id, name, query, slug, display_order) VALUES ('stray', 'Stray', 'search=x', 'stray', 99)`,
     ).run()
 
     await runDemoReset(env.DB, seed)

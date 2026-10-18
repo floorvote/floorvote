@@ -160,7 +160,7 @@ export const billSasts = sqliteTable('bill_sasts', {
   type:           text('type').notNull(),
   sastBillNumber: text('sast_bill_number').notNull(),
   sastBillId:     integer('sast_bill_id').notNull(),
-}, (t) => [index('idx_bill_sasts_bill').on(t.billId)])
+}, (t) => [index('idx_bill_sasts_bill').on(t.billId), index('idx_bill_sasts_sast_bill_id').on(t.sastBillId)])
 
 export const billSubjects = sqliteTable('bill_subjects', {
   id:          text('id').primaryKey(),
@@ -501,6 +501,17 @@ export const providerIds = sqliteTable('provider_ids', {
   kind:      text('kind').notNull(),
   nativeKey: text('native_key').notNull(),
 })
+
+/**
+ * What a provider keeps between runs (ProviderContext.cache): text entries under
+ * keys it names. See migrations-legiscan/0042_provider_cache.sql and lib/providerCache.ts.
+ */
+export const providerCache = sqliteTable('provider_cache', {
+  provider:  text('provider').notNull(),
+  key:       text('key').notNull(),
+  value:     text('value').notNull(),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, t => [primaryKey({ columns: [t.provider, t.key] })])
 
 /**
  * Cutovers: a state moved from one provider to another with every matched bill
