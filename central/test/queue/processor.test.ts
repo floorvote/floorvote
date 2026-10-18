@@ -1029,6 +1029,75 @@ describe('processBill: a text whose hash changed under the same doc id', () => {
     expect(await updatedAt()).toBe(STALE)
   })
 
+  describe('refetching the changed document, so the hash describes the bytes served', () => {
+    const html = (body: string) => new Response(`<html>${body}</html>`, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } })
+    const link = (docId: number) => `https://docs.legis.wi.gov/ab99-${docId}.html`
+    const served = async () => {
+      const res = await app.request('/api/bills/9001/text', { headers: { 'x-admin-secret': 'test-secret' } }, env, ctx())
+      return await res.json() as { content: string; docId: string; textHash: string }
+    }
+    const row = (docId: number) => env.DB.prepare('SELECT text_hash, fetch_error FROM bill_texts WHERE doc_id = ?').bind(docId).first<{ text_hash: string; fetch_error: string | null }>()
+
+    beforeEach(async () => {
+      // The first ingest stored v1's bytes for both documents.
+      fetchMock.mockReset()
+      fetchMock.mockImplementation(async () => html('old bytes'))
+      await env.DB.prepare('DELETE FROM bills WHERE bill_id = 9001').run()
+      await env.DB.prepare('DELETE FROM bill_texts').run()
+      await ingest([text(1000, 'v1-a'), text(1001, 'v1-b')])
+      await backdate()
+      fetchMock.mockClear()
+    })
+
+    it('refetches exactly the changed document, and /text serves the new bytes under the new hash', async () => {
+      fetchMock.mockImplementation(async () => html('new bytes'))
+      await ingest([text(1000, 'v1-a'), text(1001, 'v2-b')])
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(fetchMock.mock.calls[0][0]).toBe(link(1001))
+      expect(await served()).toMatchObject({ docId: '1001', textHash: 'v2-b', content: '<html>new bytes</html>' })
+      expect(await updatedAt()).not.toBe(STALE)
+    })
+
+    it('refetches nothing when no hash changed', async () => {
+      await ingest([text(1000, 'v1-a'), text(1001, 'v1-b')])
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(await served()).toMatchObject({ textHash: 'v1-b', content: '<html>old bytes</html>' })
+    })
+
+    it('refetches nothing for an empty new hash', async () => {
+      await ingest([text(1000, 'v1-a'), text(1001, '')])
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+
+    it('keeps the old hash and old bytes together, and does not move updated_at, when the refetch fails', async () => {
+      fetchMock.mockImplementation(async () => new Response('nope', { status: 500 }))
+      vi.mocked(legiscan.getBillText).mockRejectedValue(new Error('quota'))
+      await ingest([text(1000, 'v1-a'), text(1001, 'v2-b')])
+      expect(await served()).toMatchObject({ docId: '1001', textHash: 'v1-b', content: '<html>old bytes</html>' })
+      expect((await row(1001))!.fetch_error).toContain('state_link HTTP 500')
+      expect(await updatedAt()).toBe(STALE)
+      expect(await sentHashes()).toEqual({ '1000': 'v1-a', '1001': 'v1-b' })
+    })
+
+    it('retries on the next ingest, and lands the new pair once it succeeds', async () => {
+      fetchMock.mockImplementation(async () => new Response('nope', { status: 500 }))
+      vi.mocked(legiscan.getBillText).mockRejectedValue(new Error('quota'))
+      await ingest([text(1000, 'v1-a'), text(1001, 'v2-b')])
+      fetchMock.mockImplementation(async () => html('new bytes'))
+      await ingest([text(1000, 'v1-a'), text(1001, 'v2-b')])
+      expect(await served()).toMatchObject({ textHash: 'v2-b', content: '<html>new bytes</html>' })
+      expect(await updatedAt()).not.toBe(STALE)
+    })
+
+    it('does not fetch twice under forceTextRefetch', async () => {
+      fetchMock.mockImplementation(async () => html('new bytes'))
+      vi.mocked(legiscan.getBill).mockResolvedValue(buildFixtureBill({ texts: [text(1000, 'v1-a'), text(1001, 'v2-b')] }))
+      await processIngestorQueue(makeBatch(9001, { forceTextRefetch: true }), makeEnv(), db())
+      const urls = fetchMock.mock.calls.map(c => c[0])
+      expect(urls.filter(u => u === link(1001))).toHaveLength(1)
+    })
+  })
+
   it('still moves updated_at for a new doc id, as before', async () => {
     await ingest([text(1000, 'v1-a'), text(1001, 'v1-b'), text(1002, 'v1-c')])
     expect(await updatedAt()).not.toBe(STALE)
