@@ -815,6 +815,62 @@ describe('a missing type zip is logged, and a type that vanishes after it had bi
     expect(alertText(alerts()[1])).toMatch(/\bhr\b/)
   })
 
+  describe('a cutover dry run against the real provider (fix round 2)', () => {
+    const KEY = 'alerted/119/sconres'
+    const cached = async () => (await db().select().from(schema.providerCache).where(eq(schema.providerCache.provider, 'govinfo')).all()).map(r => r.key)
+    /** Plan a cutover of US to GovInfo while another provider owns it, as an operator's dry run does. */
+    async function dryRun() {
+      const owner = await db().select().from(schema.stateProviders).where(eq(schema.stateProviders.state, 'US')).get()
+      await db().delete(schema.stateProviders).where(eq(schema.stateProviders.state, 'US'))
+      try {
+        const res = await seam.central('POST', '/admin/state-providers/US/cutover', makeRun(), { provider: 'govinfo' })
+        expect(res.status, await res.clone().text()).toBe(200)
+      } finally {
+        if (owner) await db().insert(schema.stateProviders).values(owner)
+      }
+    }
+
+    it('neither sets the alert dedupe nor alerts, so the next real full read still alerts', async () => {
+      await claim()
+      await syncAndIngest()
+      answers.set('sconres', notFound)
+      await dryRun()
+      expect(await cached()).not.toContain(KEY)
+      expect(alerts()).toEqual([])
+      await forcedSync()
+      expect(alerts()).toHaveLength(1)
+      expect(await cached()).toContain(KEY)
+    })
+
+    it('does not clear a real alert dedupe when the zip answers in the plan', async () => {
+      await claim()
+      await syncAndIngest()
+      answers.set('sconres', notFound)
+      await forcedSync()
+      expect(alerts()).toHaveLength(1)
+      answers.set('sconres', serve('sconres'))
+      await dryRun()
+      expect(await cached()).toContain(KEY)
+      answers.set('sconres', notFound)
+      await forcedSync()
+      expect(alerts()).toHaveLength(1)
+    })
+  })
+
+  it('logs a cache that fails and still finishes the pass and sends the alert', async () => {
+    await claim()
+    await syncAndIngest()
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const put = vi.spyOn(await import('../../src/lib/providerCache'), 'providerCachePut').mockRejectedValue(new Error('cache down'))
+    try {
+      answers.set('sconres', notFound)
+      const reports = await forcedSync()
+      expect(reports).toEqual([expect.objectContaining({ records: BILLS.length - BILLS.filter(([n]) => n.startsWith('sconres')).length })])
+      expect(alerts()).toHaveLength(1)
+      expect(err.mock.calls.map(c => c.map(String).join(' ')).some(m => m.includes('[sync-govinfo]') && m.includes('cache down'))).toBe(true)
+    } finally { put.mockRestore(); err.mockRestore() }
+  })
+
   it('alerts once for each vanished type', async () => {
     await claim()
     await syncAndIngest()
