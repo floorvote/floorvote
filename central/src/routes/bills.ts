@@ -228,6 +228,7 @@ billsRoutes.get('/:id', async (c) => {
       peopleId: schema.rollCallVotes.peopleId,
       name: schema.people.name,
       vote: schema.rollCallVotes.voteText,
+      party: schema.people.party,
       bioJson: schema.people.bioJson,
       ballotpedia: schema.people.ballotpedia,
       personProvider: schema.people.provider,
@@ -243,12 +244,12 @@ billsRoutes.get('/:id', async (c) => {
     billReferralDetails(db, numeric),
   ])
   const coverage = await calendarCoverage(db, provider, numeric, calendarEntries)
-  const legislatorVotesByRc = new Map<number, { personId: string; name: string; vote: string; url: string | null }[]>()
+  const legislatorVotesByRc = new Map<number, { personId: string; name: string; vote: string; url: string | null; party: string | null }[]>()
   for (const r of memberVoteRows) {
     if (r.peopleId == null || !r.vote) continue
     const list = legislatorVotesByRc.get(r.rollCallId) ?? []
     // Same fallback as sponsors: a person with no people row still counts. A voter links only to the provider's profile page, never to its last-resort sponsor page.
-    list.push({ personId: String(r.peopleId), name: r.name ?? String(r.peopleId), vote: r.vote, url: profileUrlOf(r) })
+    list.push({ personId: String(r.peopleId), name: r.name ?? String(r.peopleId), vote: r.vote, url: profileUrlOf(r), party: r.party ?? null })
     legislatorVotesByRc.set(r.rollCallId, list)
   }
   for (const list of legislatorVotesByRc.values()) list.sort((a, b) => a.name.localeCompare(b.name))

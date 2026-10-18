@@ -70,6 +70,7 @@ import { ProviderExtrasList } from '../components/ProviderExtras'
 import type { BillExtras } from '../../../shared/providerExtras'
 import { RELATIONSHIP_KINDS, RELATIONSHIP_KIND_LABELS, isRelationshipKind, type RelationshipKind } from '../../../shared/relationshipKinds'
 import type { GroupBill, GroupBillLink, GroupingEvent, GroupNote } from '../../../shared/companionGroups'
+import { PartyBadge } from '../components/PartyBadge'
 import { GroupWithDialog } from '../components/GroupWithDialog'
 import { splitConfirmText } from '../lib/splitConfirm'
 import { placeGroupingLines } from '../lib/groupingLine'
@@ -79,13 +80,6 @@ import { AnalysisBox, AnalysisProgressChip, DIMMED_WHILE_RUNNING } from '../comp
 import { pollForAnalysis, analysisOutcomeMessage, regenerateOutcomeMessage, type AnalysisSnapshot } from '../lib/analysisPoll'
 import { MissingRequiredReason, requiredName, useRequiredSubmit } from '../components/RequiredField'
 import { useCommentsMute, CommentsMuteButton, CommentsMutedNote } from '../components/CommentsMuteToggle'
-
-function PartyBadge({ party }: { party: string }) {
-  const bg = party === 'D' ? color.bgBlueChip : party === 'R' ? color.bgRedPriority : color.surfaceMuted
-  const partyColor = party === 'D' ? color.linkBlue : party === 'R' ? color.textDanger : color.textSlate500
-  // display:inline-block prevents text-decoration from the parent <a> punching through the chip background
-  return <span style={{ marginLeft: 3, fontSize: fontSize.xs, padding: '1px 4px', borderRadius: radius.sm, background: bg, color: partyColor, fontWeight: fontWeight.bold, display: 'inline-block', textDecoration: 'none' }}>{party}</span>
-}
 
 function SponsorLink({ name, url, party, bold }: { name: string; url: string | null; party: string | null; bold?: boolean }) {
   // Only an http(s) URL becomes a link, whatever central or the instance API sent.
@@ -407,7 +401,7 @@ type Comment = {
 }
 
 type CoSponsor = { name: string; party: string | null; role?: string; district?: string; url: string | null; primary?: boolean }
-type VoteSummaryEntry = { date: string; chamber: string; desc: string; yea: number; nay: number; nv: number; absent: number; passed: number; legislatorVotes?: { personId?: string; name: string; vote: string; url?: string | null }[] }
+type VoteSummaryEntry = { date: string; chamber: string; desc: string; yea: number; nay: number; nv: number; absent: number; passed: number; legislatorVotes?: { personId?: string; name: string; vote: string; url?: string | null; party?: string | null }[] }
 // `kind` is what the bill's provider makes of the legislature's label (`type`). A central that predates kinds sends none.
 type RelatedBill = { billId: number; billNumber: string; type: string; kind?: RelationshipKind; route: { id: string; billNumber: string; sessionSlug: string; state: string } | null }
 
