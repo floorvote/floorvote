@@ -70,7 +70,7 @@ Providers sync one of two ways:
 
 Most legislatures publish a file or an API without change filters, so start with a snapshot.
 
-A snapshot provider whose feed can say what changed since its last read can return only those records: set `partial: true` on the snapshot. Central hands the provider the ETag of the last snapshot a pass finished (`SnapshotSession.etag`, which can hold any watermark you choose), replaces the stored records the partial snapshot names, by bill id, and runs the pass on every stored record, so matching and retries work as for a full read. A record you leave out stays as it is, and central never removes one. When `etag` is null (a session's first read, a forced run, or a new claim), read in full: a partial snapshot answering a null ETag fails the pass, and nothing is written.
+A snapshot provider whose feed can say what changed since its last read can return only those records: set `partial: true` on the snapshot. Central hands the provider the ETag of the last snapshot a pass finished (`SnapshotSession.etag`, which can hold any watermark you choose), replaces the stored records the partial snapshot names, by bill id, and runs the pass on every stored record, so matching and retries work as for a full read. A record you leave out stays as it is, and central never removes one. When `etag` is null (a session's first read, a forced run, or a new claim), read in full: a partial snapshot answering a null ETag fails the pass, and nothing is written. Congress's GovInfo provider (`providers/govinfo/changes.ts`) is an example: its ETag holds a watermark, and between daily full reads it downloads only the files its feed's listings say changed since.
 
 ## Start from the template
 

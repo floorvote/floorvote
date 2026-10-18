@@ -1339,7 +1339,8 @@ describe('a bill sync between full reads (#616)', () => {
     feed.edit(UPCOMING, m => { m.relatedItems = { bills: [m.relatedItems.bills[0]] } })
     await calendarThenBills()
     expect(govinfoCalls().filter(ZIPS)).toEqual([])
-    expect(govinfoCalls().map(billFiles).filter(Boolean)).toEqual(['BILLSTATUS-119hr131.xml'])
+    // HR 43 is still on the meeting, whose entry changed with its bills, so its record changes too.
+    expect(govinfoCalls().map(billFiles).filter(Boolean).sort()).toEqual(['BILLSTATUS-119hr131.xml', 'BILLSTATUS-119hr43.xml'])
     expect(JSON.parse((await storedRecord('HB131')).rawJson).meetings).toEqual([])
     expect(JSON.parse((await storedRecord('HB43')).rawJson).meetings.map((e: any) => e.event_id)).toEqual([MARKUP, UPCOMING])
   })
@@ -1349,7 +1350,7 @@ describe('a bill sync between full reads (#616)', () => {
     await pass()
     feed.edit(UPCOMING, m => { m.relatedItems.bills.push({ congress: 119, number: '3132', type: 'HR', url: 'x' }) })
     const run = await calendarThenBills()
-    expect(govinfoCalls().map(billFiles).filter(Boolean)).toEqual(['BILLSTATUS-119hr3132.xml'])
+    expect(govinfoCalls().map(billFiles).filter(Boolean).sort()).toEqual(['BILLSTATUS-119hr131.xml', 'BILLSTATUS-119hr3132.xml', 'BILLSTATUS-119hr43.xml'])
     expect(JSON.parse((await storedRecord('HB3132')).rawJson).meetings.map((e: any) => e.event_id)).toEqual([UPCOMING])
     expect(queuedIds(run)).toContain(await billId('HB3132'))
   })
@@ -1360,7 +1361,8 @@ describe('a bill sync between full reads (#616)', () => {
     feed.edit(UPCOMING, m => { m.relatedItems.bills.push({ congress: 119, number: '424242', type: 'HR', url: 'x' }) })
     await calendarThenBills()
     expect(govinfoCalls().filter(LISTINGS)).toHaveLength(8)
-    expect(govinfoCalls().map(billFiles).filter(Boolean)).toEqual([])
+    // The meeting's other bills are read again, for their entries changed with it; the bill GovInfo doesn't list isn't asked for.
+    expect(govinfoCalls().map(billFiles).filter(Boolean).sort()).toEqual(['BILLSTATUS-119hr131.xml', 'BILLSTATUS-119hr43.xml'])
     await expect(billId('HB424242')).rejects.toThrow(/no bill/)
   })
 

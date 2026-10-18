@@ -774,7 +774,8 @@ describe('between full reads (#616)', () => {
   const becomesLaw = (x: string) => x.replace('</latestAction>', '</latestAction>\n    <laws><item><number>119-99</number><type>Public Law</type></item></laws>')
   const goesToCommittee = (x: string) => x.replace('<actions>', `<committees><item><systemCode>ssfi00</systemCode><name>Finance Committee</name><chamber>Senate</chamber><type>Standing</type>
       <activities><item><name>Referred To</name><date>2026-03-18T10:00:00Z</date></item></activities></item></committees>\n    <actions>`)
-  const reported = (x: string) => x.replace('Ordered to be Reported by the Yeas and Nays: 12 - 11.', 'Reported by the Committee on Veterans\' Affairs. H. Rept. 119-1.')
+  // In the latest action and in the list of actions alike.
+  const reported = (x: string) => x.replaceAll('Ordered to be Reported by the Yeas and Nays: 12 - 11.', 'Reported by the Committee on Veterans\' Affairs. H. Rept. 119-1.')
 
   it('stores a watermark as its ETag from the first read of the zips', async () => {
     expect(await claim()).toMatchObject({ status: 200 })
@@ -855,10 +856,24 @@ describe('between full reads (#616)', () => {
     await firstRead()
     change('hr3132', reported)
     const { run } = await syncAndIngest()
+    expect(calls.filter(isZip)).toEqual([])
     const hb3132 = await billId('HB3132')
     expect(queuedIds(run)).toEqual([hb3132])
     expect(sentToTenant(run).filter((m: any) => !m.stubOnly).map((m: any) => m.billId)).toEqual([toHandle(hb3132)])
     expect(await bill('HB3132')).toMatchObject({ lastAction: 'Reported by the Committee on Veterans\' Affairs. H. Rept. 119-1.' })
+  })
+
+  it('never removes a bill: a type whose listing comes back empty keeps its bills and says nothing to instances', async () => {
+    await firstRead()
+    const stored = await bill('SCR5')
+    listingAnswers.set('sconres', () => new Response(buildListing(119, 'sconres', []), { headers: { 'content-type': 'application/json' } }))
+    const run = makeRun()
+    await sync(run)
+    expect(calls.filter(isZip)).toEqual([])
+    expect(await bill('SCR5')).toEqual(stored)
+    expect(await db().select().from(schema.providerRecords).all()).toHaveLength(BILLS.length)
+    expect(queuedIds(run)).toEqual([])
+    expect(sentToTenant(run)).toEqual([])
   })
 
   it('reads the zips in full on a forced run, whatever the stored ETag', async () => {

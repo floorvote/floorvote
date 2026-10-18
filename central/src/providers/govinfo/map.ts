@@ -66,7 +66,8 @@ export interface GovInfoRecord {
    * When GovInfo built the zip the record came from, from its Last-Modified
    * header, or null when it sent none. GovInfo stamps every file in a zip with
    * the time it built the zip, so a file's own last change is only in the bulk
-   * listing, and a pass between full reads takes it from there.
+   * listing, and a record a pass between full reads downloaded has that time
+   * instead. Not in the hash, and not the watermark (changes.ts).
    */
   modified: string | null
   /**
