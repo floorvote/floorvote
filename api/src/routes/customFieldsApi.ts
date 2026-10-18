@@ -1,7 +1,8 @@
 import { Hono } from 'hono'
 import { eq, max, and, ne } from 'drizzle-orm'
 import { getDb } from '../db/client'
-import { customFieldDefinitions } from '../db/schema'
+import { customFieldDefinitions, savedViews } from '../db/schema'
+import { detectOptionRenames, rewriteViewQuery, type OptionRename } from '../lib/savedViewRenames'
 import { nowDb } from '../lib/dbTime'
 import type { AppEnv } from '../types'
 
@@ -163,6 +164,7 @@ customFieldsApiRouter.put('/:id', async (c) => {
   const updates: Partial<typeof customFieldDefinitions.$inferInsert> = {
     updatedAt: nowDb(),
   }
+  let optionRenames: OptionRename[] = []
 
   if (body.name !== undefined) {
     if (!body.name?.trim()) return c.json({ error: 'name cannot be empty' }, 400)
@@ -178,6 +180,7 @@ customFieldsApiRouter.put('/:id', async (c) => {
       return c.json({ error: 'options must be a non-empty array' }, 400)
     }
     updates.options = JSON.stringify(body.options)
+    optionRenames = detectOptionRenames(parseOptions(existing.options) ?? [], body.options as string[])
   }
 
   if (body.pinned !== undefined) {
@@ -204,7 +207,24 @@ customFieldsApiRouter.put('/:id', async (c) => {
     updates.multiple = body.multiple
   }
 
-  await db.update(customFieldDefinitions).set(updates).where(eq(customFieldDefinitions.id, fieldId))
+  const fieldUpdate = db.update(customFieldDefinitions).set(updates).where(eq(customFieldDefinitions.id, fieldId))
+
+  // Saved views name a field by its slug and an option by its value, so a rename rewrites the views that use the
+  // old ones. The field and its views change in one batch, which D1 runs as one transaction: all or none.
+  const fromSlug = existing.slug
+  const toSlug = updates.slug ?? existing.slug
+  const viewUpdates = []
+  if (fromSlug && (toSlug !== fromSlug || optionRenames.length > 0)) {
+    const views = await db.select({ id: savedViews.id, query: savedViews.query }).from(savedViews).all()
+    for (const view of views) {
+      const query = rewriteViewQuery(view.query, { fromSlug, toSlug: toSlug ?? fromSlug, options: optionRenames })
+      if (query !== null) {
+        viewUpdates.push(db.update(savedViews).set({ query, updatedAt: nowDb() }).where(eq(savedViews.id, view.id)))
+      }
+    }
+  }
+  if (viewUpdates.length > 0) await db.batch([fieldUpdate, ...viewUpdates])
+  else await fieldUpdate
 
   return c.json({ ok: true, slug: updates.slug ?? existing.slug })
 })
