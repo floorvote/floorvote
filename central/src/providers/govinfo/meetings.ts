@@ -46,6 +46,8 @@ export const LIST_PAGE_SIZE = 250
  */
 export const DETAILS_PER_PASS = 60
 
+export const QUARANTINE_AFTER = 3
+
 /** More pages than the API could ever need, so a list that never ends fails and doesn't loop. */
 const MAX_PAGES = 100
 
