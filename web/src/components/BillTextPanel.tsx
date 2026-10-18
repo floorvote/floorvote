@@ -49,15 +49,23 @@ export type PassageRequest = HtmlPassageRequest | PdfPageRequest
 
 const isPdfRequest = (r: PassageRequest): r is PdfPageRequest => r.quote !== undefined
 
+/**
+ * A request to open another bill's document (#601): the one the summary was
+ * based on, when the page shows a companion's analysis. It opens beside this
+ * bill's own versions, as a claim's passage does. Each request has a new `key`.
+ */
+export type DocumentRequest = { key: number; billId: string; billNumber: string | null; document: ClaimDocument }
+
 interface BillTextPanelProps {
   billId: string
   texts: TextVersion[]
   externalOpen?: boolean
   requestedDocId?: string | null
+  requestedDocument?: DocumentRequest | null
   passage?: PassageRequest | null
 }
 
-export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, passage }: BillTextPanelProps) {
+export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, requestedDocument, passage }: BillTextPanelProps) {
   const [internalOpen, setInternalOpen] = useState(false)
   const open = externalOpen !== undefined ? externalOpen : internalOpen
   const [selectedDocId, setSelectedDocId] = useState<string | null>(
@@ -74,6 +82,7 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, pas
   const [highlight, setHighlight] = useState(false)
   const pendingRef = useRef<Set<string>>(new Set())
   const consumedPassageRef = useRef<number | null>(null)
+  const consumedDocumentRef = useRef<number | null>(null)
 
   // Another bill's version: the analyzed member's document a claim on a
   // companion's page opens, which is never in this bill's list (#571).
@@ -103,6 +112,7 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, pas
   useEffect(() => {
     if (!open || selectedDocId === null) return
     if (passage && consumedPassageRef.current !== passage.key) return
+    if (requestedDocument && consumedDocumentRef.current !== requestedDocument.key) return
     const version = allTexts.find(t => t.docId === selectedDocId)
     if (!version) return
     if (version.mime === 'application/pdf') {
@@ -128,6 +138,24 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, pas
     return () => cancelAnimationFrame(rafId)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestedDocId, texts])
+
+  // Another bill's document (#601): open it beside this bill's versions.
+  useEffect(() => {
+    if (!requestedDocument) return
+    consumedDocumentRef.current = requestedDocument.key
+    const doc = requestedDocument.document
+    setForeign({ billId: requestedDocument.billId, billNumber: requestedDocument.billNumber, version: doc })
+    setActivePassage(null)
+    setSelectedDocId(doc.docId)
+    if (doc.mime === 'application/pdf') {
+      if (!blobUrlsRef.current.has(doc.docId)) void loadPdf(doc.docId, requestedDocument.billId)
+    } else if (!loadedContent.has(doc.docId)) {
+      void loadText(doc.docId, requestedDocument.billId)
+    }
+    const rafId = reveal()
+    return () => cancelAnimationFrame(rafId)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedDocument?.key])
 
   // A claim's passage (#571): open its document, beside this bill's versions
   // when it is another bill's, and show it highlighted. The frame takes focus

@@ -292,7 +292,19 @@ export async function buildBillDetail(
     : (await db.select({
         id: bills.id, externalId: bills.externalId, billNumber: bills.billNumber,
         aiProcessedAt: bills.aiProcessedAt, aiSkipReason: bills.aiSkipReason, textStatus: bills.textStatus,
+        lastAiTextDocId: bills.lastAiTextDocId,
       }).from(bills).where(eq(bills.id, analysisBillId)).get()) ?? bill
+
+  // The document that analysis read, as the text list has it, for the page to
+  // name and open (#601). On a companion's page it is the analyzed member's,
+  // which is not in this bill's list. Null when none is recorded or it is no
+  // longer listed.
+  const analysisDocId = analysisBill.lastAiTextDocId ?? null
+  const analysisLastAiText = analysisDocId === null ? null : (await db.select({
+    docId: billTexts.docId, type: billTexts.type, date: billTexts.date, mime: billTexts.mime,
+    stateLink: billTexts.stateLink, altStateLink: billTexts.altStateLink,
+  }).from(billTexts)
+    .where(and(eq(billTexts.billId, analysisBill.id), eq(billTexts.docId, analysisDocId))).get()) ?? null
 
   const linksOn = await claimLinksEnabled(db)
   const stored = linksOn ? await readClaimSources(db, analysisBill.id) : null
@@ -377,6 +389,9 @@ export async function buildBillDetail(
     analysisAiProcessedAt: analysisBill.aiProcessedAt ?? null,
     analysisAiSkipReason: analysisBill.aiSkipReason ?? null,
     analysisTextStatus: analysisBill.textStatus ?? null,
+    // The document that analysis read (#601): the link above the summary names and opens it.
+    analysisLastAiTextDocId: analysisDocId,
+    analysisLastAiText,
     // Whether the instance shows claim links (#570). Off, a bill's stored claim
     // links render as plain text (#571, #572). It's the instance's setting, the
     // same for every bill, and the stored links are untouched either way.
