@@ -419,6 +419,35 @@ describe('POST /tenants/promote-bills/:tenantId — bulk promote', () => {
     expect(second.sent).toHaveLength(150)
   })
 
+  it('treats repeated billIds as one: each row once, each bill queued once, promoted counts distinct bills', async () => {
+    const { env2, sent } = ingestorEnv()
+    const billIds = [...Array.from({ length: 40 }, (_, i) => i + 1), ...Array.from({ length: 40 }, (_, i) => i + 1), 7, 7]
+    const res = await app.fetch(
+      new Request('http://central/api/tenants/promote-bills/ri', {
+        method: 'POST', headers: AUTH, body: JSON.stringify({ billIds }),
+      }),
+      env2,
+    )
+    expect(res.status).toBe(200)
+    expect((await res.json() as any).promoted).toBe(40)
+    expect(await riRows()).toHaveLength(40)
+    expect(sent).toHaveLength(40)
+    expect(new Set(sent.map(m => m.billId)).size).toBe(40)
+  })
+
+  it('rolls the whole batch back when a later chunk fails, and queues nothing', async () => {
+    // A trigger makes the insert of bill 95 (in the fourth chunk) fail.
+    await env.DB.exec("CREATE TRIGGER fail_bill_95 BEFORE INSERT ON bill_tenants WHEN NEW.bill_id = 95 BEGIN SELECT RAISE(ABORT, 'boom'); END")
+    try {
+      const { res, sent } = await promoteN(100)
+      expect(res.status).toBe(500)
+      expect(sent).toHaveLength(0)
+      expect(await riRows()).toHaveLength(0)
+    } finally {
+      await env.DB.exec('DROP TRIGGER IF EXISTS fail_bill_95')
+    }
+  })
+
   it('still refuses 1001 bills with nothing written', async () => {
     const { res, sent } = await promoteN(1001)
     expect(res.status).toBe(400)
