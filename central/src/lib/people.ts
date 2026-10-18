@@ -11,7 +11,8 @@ type PersonRow = typeof people.$inferInsert & { peopleId: number }
  * (sponsors embedded in getBill) and the weekly dataset load (people/*.json),
  * so both write the same columns the same way. bio_json is left out on purpose:
  * only the bulk seeder and getSessionPeople populate it, and an upsert from
- * here must not clear it.
+ * here must not clear it. bioguide_id is the other exception to the
+ * replace-the-row rule: undefined when the record has none (see below).
  */
 export function personRow(p: Partial<MeasurePerson> & { people_id: number }, fallbackStateId: number | null): PersonRow {
   return {
@@ -34,7 +35,11 @@ export function personRow(p: Partial<MeasurePerson> & { people_id: number }, fal
     opensecretsId: p.opensecrets_id ?? null,
     knowwhoPid:    p.knowwho_pid ?? null,
     ballotpedia:   p.ballotpedia ?? null,
-    bioguideId:    p.bioguide_id ?? null,
+    // Absent leaves a stored id alone (an undefined column is left out of the
+    // upsert's update), and null clears it. A sponsor record often carries no
+    // id, and clearing one a snapshot provider stored would downgrade a later
+    // cutover to name matching (the rule upsertProviderPeople follows).
+    bioguideId:    p.bioguide_id,
   }
 }
 
