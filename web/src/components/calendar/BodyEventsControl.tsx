@@ -182,10 +182,10 @@ export function BodyEventsControl({ onChanged }: { onChanged?: () => void }) {
         title={loadFailed ? 'Could not load which committee events show.' : 'Committee events'}
         style={trigger}
       >
-        <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: 20, lineHeight: 1 }}>settings</span>
+        <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: fontSize.xxl, lineHeight: 1 }}>settings</span>
         {filtered && (
           <>
-            <span data-testid="committee-filter-dot" aria-hidden="true" style={{ position: 'absolute', top: 6, right: 6, width: 8, height: 8, borderRadius: 4, background: color.accentAmber, border: `1.5px solid ${color.surfaceMuted}` }} />
+            <span data-testid="committee-filter-dot" aria-hidden="true" style={{ position: 'absolute', top: 6, right: 6, width: 8, height: 8, borderRadius: radius.sm, background: color.accentAmber, border: `1.5px solid ${color.surfaceMuted}` }} />
             <span id={noteId} style={visuallyHidden}>Some committee events are filtered.</span>
           </>
         )}

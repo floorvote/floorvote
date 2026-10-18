@@ -88,7 +88,7 @@ describe('Calendar page and the committee events control', () => {
     renderCalendar(COVERED)
     const control = await screen.findByRole('button', { name: 'Committee events settings' })
     const toolbar = control.parentElement!
-    expect(within(toolbar).getByRole('button', { name: 'Subscribe' })).toBeInTheDocument()
+    expect(await within(toolbar).findByRole('button', { name: 'Subscribe' })).toBeInTheDocument()
     expect(within(toolbar).getByRole('button', { name: 'Import events' })).toBeInTheDocument()
   })
 
