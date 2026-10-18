@@ -37,6 +37,10 @@ export function countUpdatedBills(events: readonly Pick<DigestEvent, 'billId' | 
   return new Set(events.map(digestCardKey)).size
 }
 
+export function countNewMatches(items: readonly unknown[]): number {
+  return items.length
+}
+
 export type NewMatchDigestItem = {
   billId: string; billNumber: string; billTitle: string
   billState: string | null; billSession: string; relevanceScore: number | null

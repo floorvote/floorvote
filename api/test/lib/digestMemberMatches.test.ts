@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { env } from 'cloudflare:test'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { feedEvents, associationConfig } from '../../src/db/schema'
+import { inArray } from 'drizzle-orm'
+import { feedEvents, associationConfig, bills } from '../../src/db/schema'
 import { runDigest } from '../../src/lib/digest'
 
 // #366: members get the same new-match section admins get, under a nested
@@ -138,5 +139,146 @@ describe("members' digests: new matches", () => {
 
     expect(to('admin@e.com')).toHaveLength(1)
     expect(to('admin@e.com')[0].html).toContain('NM 10')
+  })
+})
+
+
+// #638: a companion group is one policy, so it is one new match however many of
+// its members were matched. The digest's section, headline, contents box, and
+// subject count it once, for an admin's copy and a member's alike.
+describe('new matches: companion groups', () => {
+  const CARDS = /box-shadow:0 1px 3px/g
+  const cards = (html: string) => (html.match(CARDS) ?? []).length
+  const text = (html: string) => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
+  const db = () => getDb(env.DB)
+
+  const seed = (id: string, billNumber: string, over: Parameters<typeof seedBill>[0] = {}) =>
+    seedBill({ id, billNumber, state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recent(), relevanceScore: 70, ...over })
+  async function group(...ids: string[]) {
+    await db().update(bills).set({ groupKey: [...ids].sort()[0] }).where(inArray(bills.id, ids))
+  }
+  async function admin(email = 'admin@e.com') { await seedSession(await seedUser({ email, role: 'admin' })) }
+
+  it('lists a group of two new matches as one card naming both bills, counted once in the section, subject, and headline', async () => {
+    await admin()
+    await seed('a-house', 'H 101'); await seed('b-senate', 'S 202')
+    await group('a-house', 'b-senate')
+
+    await runDigest(env as any, getDb(env.DB))
+
+    expect(emails).toHaveLength(1)
+    const html = emails[0].html as string
+    expect(emails[0].subject).toBe('Your daily digest: 1 new match')
+    expect(text(html)).toContain('1 new match in the last day')
+    expect(text(html)).not.toContain('2 new matches')
+    expect(cards(html)).toBe(1)
+    expect(html).toMatch(/>RI H 101</)
+    expect(html).toMatch(/>RI S 202</)
+    expect(html.match(/>Set priority</g)).toHaveLength(1)
+    expect(html).not.toContain('See all')
+  })
+
+  it("gives a member the same single card and count, with no Set priority link", async () => {
+    await member('on@e.com')
+    await seed('a-house', 'H 101'); await seed('b-senate', 'S 202')
+    await group('a-house', 'b-senate')
+
+    await runDigest(env as any, getDb(env.DB))
+
+    const html = to('on@e.com')[0].html as string
+    expect(to('on@e.com')[0].subject).toBe('Your daily digest: 1 new match')
+    expect(text(html)).toContain('1 new match in the last day')
+    expect(cards(html)).toBe(1)
+    expect(html).toMatch(/>RI S 202</)
+    expect(html).not.toContain('>Set priority<')
+  })
+
+  it('counts a group and an ungrouped new match as two, and leaves the ungrouped one as it was', async () => {
+    await admin()
+    await seed('a-house', 'H 101'); await seed('b-senate', 'S 202'); await seed('d-alone', 'H 404')
+    await group('a-house', 'b-senate')
+
+    await runDigest(env as any, getDb(env.DB))
+
+    const html = emails[0].html as string
+    expect(emails[0].subject).toBe('Your daily digest: 2 new matches')
+    expect(text(html)).toContain('2 new matches in the last day')
+    expect(cards(html)).toBe(2)
+    expect(html.match(/>Set priority</g)).toHaveLength(2)
+    expect(html).toMatch(/>RI H 404</)
+  })
+
+  it('counts an ungrouped new match as one, exactly as before', async () => {
+    await admin()
+    await seed('d-alone', 'H 404')
+
+    await runDigest(env as any, getDb(env.DB))
+
+    expect(emails[0].subject).toBe('Your daily digest: 1 new match')
+    expect(cards(emails[0].html)).toBe(1)
+  })
+
+  it('counts the group once alongside updated bills, in the contents box and the subject', async () => {
+    await admin()
+    await seed('a-house', 'H 101'); await seed('b-senate', 'S 202')
+    await group('a-house', 'b-senate')
+    await priorityUpdate('PRI 1')
+
+    await runDigest(env as any, getDb(env.DB))
+
+    expect(emails[0].subject).toBe('Your daily digest: 1 updated bill, 1 new match')
+    expect(text(emails[0].html)).toContain('1 new match')
+    expect(text(emails[0].html)).not.toContain('2 new matches')
+  })
+
+  it('leaves a group out when one member is a new match and another was already triaged', async () => {
+    await admin()
+    await seed('a-house', 'H 101')
+    await seed('b-senate', 'S 202', { matchType: 'keyword', matchProvenance: 'routine', newMatchAt: null, triagedAt: recent() } as any)
+    await group('a-house', 'b-senate')
+
+    await runDigest(env as any, getDb(env.DB))
+
+    expect(emails).toHaveLength(0)
+  })
+
+  it('lists a group with one member that is a new match and one that is not matched at all as one entry', async () => {
+    await admin()
+    await seed('a-house', 'H 101')
+    await seed('b-senate', 'S 202', { matchType: null, matchProvenance: null, newMatchAt: null })
+    await group('a-house', 'b-senate')
+
+    await runDigest(env as any, getDb(env.DB))
+
+    expect(emails[0].subject).toBe('Your daily digest: 1 new match')
+    expect(cards(emails[0].html)).toBe(1)
+    expect(emails[0].html).toMatch(/>RI H 101</)
+  })
+
+  it('caps by cards, not bills, so 11 two-bill groups read as 11 new matches with a link to the rest', async () => {
+    await admin()
+    for (let i = 1; i <= 11; i++) {
+      const a = `g${String(i).padStart(2, '0')}-a`; const b = `g${String(i).padStart(2, '0')}-b`
+      await seed(a, `H ${100 + i}`, { relevanceScore: 50 + i }); await seed(b, `S ${100 + i}`, { relevanceScore: 50 + i })
+      await group(a, b)
+    }
+
+    await runDigest(env as any, getDb(env.DB))
+
+    const html = emails[0].html as string
+    expect(emails[0].subject).toBe('Your daily digest: 11 new matches')
+    expect(text(html)).toContain('See all 11 new matches')
+    expect(cards(html)).toBe(10)
+  })
+
+  it('keeps two groups apart', async () => {
+    await admin()
+    await seed('a-1', 'H 1'); await seed('a-2', 'S 1'); await seed('c-1', 'H 2'); await seed('c-2', 'S 2')
+    await group('a-1', 'a-2'); await group('c-1', 'c-2')
+
+    await runDigest(env as any, getDb(env.DB))
+
+    expect(emails[0].subject).toBe('Your daily digest: 2 new matches')
+    expect(cards(emails[0].html)).toBe(2)
   })
 })
