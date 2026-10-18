@@ -4,7 +4,7 @@ import { eq, and, desc, inArray, isNull } from 'drizzle-orm'
 import * as schema from '../db/schema'
 import { secretsMatch } from '../lib/auth'
 import { textCacheKey, getCachedText, putCachedText } from '../lib/billTextCache'
-import { pdfStreamOrNull } from '../lib/storedPdf'
+import { pdfStreamOrNull, startsWithPdfMagic } from '../lib/storedPdf'
 import { decodeStoredHtml } from '../lib/decodeHtml'
 import { resolveItemDate } from '../lib/itemDate'
 import { parseHandle, toHandle } from '../lib/billHandle'
@@ -523,7 +523,10 @@ billsRoutes.get('/:id/text', async (c) => {
     // Use Buffer.from for base64 (~250-350x faster than a char-by-char btoa
     // loop on multi-MB PDFs, and avoids ~200 MB of transient heap allocation).
     // Requires nodejs_compat — set in wrangler.toml.
+    // Only bytes that are a PDF: a provider's error page under a `.pdf` key would
+    // otherwise reach a client that decodes `content` as a PDF. The refusal isn't cached.
     const buf = await obj.arrayBuffer()
+    if (!startsWithPdfMagic(new Uint8Array(buf))) return c.json({ error: 'stored document is not a valid PDF' }, 502)
     res = c.json({ type: 'pdf', content: Buffer.from(buf).toString('base64'), ...served })
   } else {
     res = c.json({ type: 'html', content: decodeStoredHtml(await obj.arrayBuffer(), obj.httpMetadata?.contentType), ...served })

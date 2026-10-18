@@ -484,7 +484,7 @@ async function applyCentralBill(
   if (!msg.forceMetadata && !msg.forceAI && !msg.stubOnly && !msg.metadataOnly && !centralHasNewR2Key && !newlyMatched && existing?.providerUpdatedAt === centralBill.updatedAt && (existing?.aiProcessedAt != null || existing?.aiSkipReason != null)) {
     // Calendar reconciliation must still run even when the bill itself hasn't changed,
     // since hearings are updated independently of bill metadata.
-    if (msg.calendar && existing && (existing.matchType !== null || existing.priority !== null)) {
+    if (msg.calendar && existing && (existing.matchType !== null || existing.priority !== null || existing.groupKey !== null)) {
       const nowEarly = nowDb()
       await reconcileCalendar(db, existing.id, msg, false, nowEarly)
     }
@@ -874,9 +874,11 @@ async function applyCentralBill(
     lt(billTexts.updatedAt, fetchedAt),
   ))
 
-  // Feed events: only for tracked bills (keyword or manual) with AI data and detected changes from central.
+  // Feed events: only for tracked bills (keyword or manual) and members of a companion group (a companion pulled
+  // in through its group has no match type, and its actions belong in the group's card, #381) with AI data and
+  // detected changes from central.
   // F5+B5: switched gate from `!existing.isStub` to `existing.matchType !== null` (canonical field).
-  if (!isNew && existing?.aiProcessedAt && existing.matchType !== null && queueChanges.length > 0) {
+  if (!isNew && existing?.aiProcessedAt && (existing.matchType !== null || existing.groupKey !== null) && queueChanges.length > 0) {
     await db.insert(feedEvents).values({
       id:       crypto.randomUUID(),
       type:     'bill_updated',
@@ -919,8 +921,8 @@ async function applyCentralBill(
     }
   }
 
-  // Mirror hearings for tracked bills (priority filtering happens at read time).
-  if (msg.calendar && (derivedMatchType !== null || existing?.priority != null)) {
+  // Mirror hearings for tracked bills and group members (priority filtering happens at read time, by the group's priority).
+  if (msg.calendar && (derivedMatchType !== null || existing?.priority != null || existing?.groupKey != null)) {
     await reconcileCalendar(db, billInternalId, msg, isNew, now)
   }
 }
