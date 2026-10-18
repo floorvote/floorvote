@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  BILL_FILTER_DEFS, EMPTY_BILL_FILTER, FILTER_ANY, FILTER_NONE, billsListPath, parseBillFilter, serializeBillFilter, withBillFilter, type BillFilter,
+  BILL_FILTER_DEFS, EMPTY_BILL_FILTER, FILTER_ANY, FILTER_NONE, activeFilterCount, activeFilters, billsListPath, parseBillFilter, serializeBillFilter, withBillFilter, type BillFilter,
 } from './billFilter'
 
 // The bill filter is one typed value that travels as a query string: the URL, a saved view, a list request, a
@@ -406,5 +406,95 @@ describe('withBillFilter', () => {
 
   it('returns a frozen value', () => {
     expect(Object.isFrozen(withBillFilter({ status: ['a'] }))).toBe(true)
+  })
+})
+
+describe('activeFilters: the one list of filters with a value', () => {
+  const names = (f: BillFilter) => activeFilters(f).map(a => a.name)
+
+  it('is empty for a filter with nothing set', () => {
+    expect(activeFilters(EMPTY_BILL_FILTER)).toEqual([])
+    expect(activeFilterCount(activeFilters(EMPTY_BILL_FILTER))).toBe(0)
+  })
+
+  it('holds one entry per multi-select filter, counting each value', () => {
+    const list = activeFilters(filterOf({ status: ['2', '3'], tag: ['Water'], position: [FILTER_ANY, FILTER_NONE] }))
+    expect(list).toEqual([
+      { name: 'status', key: 'status', count: 2 },
+      { name: 'position', key: 'position', count: 2 },
+      { name: 'tag', key: 'tag', count: 1 },
+    ])
+    expect(activeFilterCount(list)).toBe(5)
+  })
+
+  it('counts a repeated value once', () => {
+    expect(activeFilters(filterOf({ year: ['2026', '2026', '2025'] }))).toEqual([{ name: 'year', key: 'year', count: 2 }])
+    const subject = { state: 'UT', name: 'Elections' }
+    expect(activeFilters(filterOf({ subject: [subject, { ...subject }] }))).toEqual([{ name: 'subject', key: 'subject', count: 1 }])
+  })
+
+  it.each(['myBills', 'unvoted', 'newMatches', 'drafts'] as const)('counts the %s toggle once', name => {
+    const list = activeFilters(filterOf({ [name]: true }))
+    expect(list).toEqual([{ name, key: name, count: 1 }])
+    expect(activeFilterCount(list)).toBe(1)
+  })
+
+  it('counts a minimum relevance once, zero included, since zero is a minimum in the shared value', () => {
+    expect(activeFilters(filterOf({ minRelevance: 5 }))).toEqual([{ name: 'minRelevance', key: 'minRelevance', count: 1 }])
+    expect(activeFilters(filterOf({ minRelevance: 0 }))).toEqual([{ name: 'minRelevance', key: 'minRelevance', count: 1 }])
+    expect(activeFilters(filterOf({ minRelevance: null }))).toEqual([])
+  })
+
+  it('holds a custom field by its own key, each value counted, and skips a field with no values', () => {
+    const list = activeFilters(filterOf({ field: { team: ['a', 'b'], 'cf-flag': ['true'], empty: [] } }))
+    expect(list).toEqual([
+      { name: 'field', key: 'field.team', count: 2 },
+      { name: 'field', key: 'field.cf-flag', count: 1 },
+    ])
+    expect(activeFilterCount(list)).toBe(3)
+  })
+
+  it('holds a search as an entry but adds nothing to the count', () => {
+    const list = activeFilters(filterOf({ search: 'water' }))
+    expect(list).toEqual([{ name: 'search', key: 'search', count: 1 }])
+    expect(activeFilterCount(list)).toBe(0)
+    expect(activeFilterCount(activeFilters(filterOf({ search: 'water', status: ['2'] })))).toBe(1)
+  })
+
+  it('treats a blank search as no search', () => {
+    expect(activeFilters(filterOf({ search: '   ' }))).toEqual([])
+  })
+
+  it('never holds the match mode', () => {
+    expect(activeFilters(filterOf({ match: 'any' }))).toEqual([])
+    expect(names(filterOf({ match: 'any', status: ['2'] }))).toEqual(['status'])
+  })
+
+  it('leaves out a filter named as hidden, and only that one', () => {
+    const f = filterOf({ drafts: true, newMatches: true, status: ['2'] })
+    expect(activeFilters(f, { hidden: ['drafts'] }).map(a => a.name)).toEqual(['status', 'newMatches'])
+    expect(activeFilters(f, { hidden: [] }).map(a => a.name)).toEqual(['status', 'newMatches', 'drafts'])
+  })
+
+  it('holds every filter with a value, in the order serialize writes them, for a filter with everything set', () => {
+    const everything = filterOf({
+      status: ['2'], stage: ['introduced'], year: ['2026'], sessionName: ['2026 Regular'], state: ['UT'], position: ['Support'], priority: ['high'],
+      tag: ['Water'], subject: [{ state: 'UT', name: 'Elections' }], minRelevance: 4, search: 'storm',
+      myBills: true, unvoted: true, newMatches: true, drafts: true, match: 'any', field: { team: ['a'] },
+    })
+    const expected = BILL_FILTER_DEFS.map(d => d.name).filter(n => n !== 'match')
+    expect(names(everything)).toEqual(expected)
+  })
+
+  it('agrees with serialize: a filter has an entry exactly when it writes a query key (but for the match mode)', () => {
+    for (const seed of SEEDS) {
+      const f = generate(seed)
+      const inList = new Set(activeFilters(f).map(a => a.name))
+      const written = new Set([...new URLSearchParams(serializeBillFilter(f)).keys()].map(k => k.startsWith('field.') ? 'field' : k))
+      written.delete('match')
+      // A blank search is written, but it narrows nothing.
+      if (f.search.trim() === '') written.delete('search')
+      expect(inList, `seed ${seed}`).toEqual(written)
+    }
   })
 })

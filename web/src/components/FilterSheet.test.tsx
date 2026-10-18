@@ -712,3 +712,40 @@ describe('FilterSheet — Subjects stop at the subject limit', () => {
     expect(screen.queryByText(HINT)).not.toBeInTheDocument()
   })
 })
+
+describe('FilterSheet: Reset reads the one list of active filters', () => {
+  it('shows Reset for a search alone, and no chip, as the page does', () => {
+    renderSheet({ search: 'storm' })
+    expect(screen.getByRole('button', { name: 'Reset filters' })).toBeInTheDocument()
+    expect(screen.queryByTestId('sheet-active-filter-chips')).not.toBeInTheDocument()
+  })
+
+  it('shows no Reset for a blank search', () => {
+    renderSheet({ search: '   ' })
+    expect(screen.queryByRole('button', { name: 'Reset filters' })).not.toBeInTheDocument()
+  })
+
+  it('shows no Reset for the match mode alone', () => {
+    renderSheet({ match: 'any' })
+    expect(screen.queryByRole('button', { name: 'Reset filters' })).not.toBeInTheDocument()
+  })
+
+  it('shows Reset for a custom field filter, and for a toggle, each on its own', () => {
+    const { unmount } = renderSheet({ customFieldDefs: [BINARY_CF], field: { 'cf-sponsor': ['true'] } })
+    expect(screen.getByRole('button', { name: 'Reset filters' })).toBeInTheDocument()
+    unmount()
+    renderSheet({ myBills: true })
+    expect(screen.getByRole('button', { name: 'Reset filters' })).toBeInTheDocument()
+  })
+
+  it('draws no chip for a toggle that has its own pill, but keeps Reset', () => {
+    renderSheet({ newMatches: true, isAdmin: true })
+    expect(screen.getByRole('button', { name: 'Reset filters' })).toBeInTheDocument()
+    expect(screen.queryByTestId('sheet-active-filter-chips')).not.toBeInTheDocument()
+  })
+
+  it('does not count Drafts for an instance that has no drafts and a filter that is off', () => {
+    renderSheet({ drafts: false, hasDrafts: false })
+    expect(screen.queryByRole('button', { name: 'Reset filters' })).not.toBeInTheDocument()
+  })
+})

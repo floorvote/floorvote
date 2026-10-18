@@ -224,3 +224,14 @@ export function billsListPath(patch: Partial<BillFilter> = {}): string {
   const query = serializeBillFilter(withBillFilter(patch))
   return query === '' ? '/bills' : `/bills?${query}`
 }
+
+/** One filter that has a value: its name, its key (a custom field's is `field.<key>`), and how many values it holds. */
+export type ActiveFilter = Readonly<{ name: Exclude<keyof BillFilter, 'match'>; key: string; count: number }>
+
+export function activeFilters(_filter: BillFilter, _options: { hidden?: readonly (keyof BillFilter)[] } = {}): readonly ActiveFilter[] {
+  return []
+}
+
+export function activeFilterCount(_active: readonly ActiveFilter[]): number {
+  return 0
+}

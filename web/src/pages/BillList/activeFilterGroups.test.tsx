@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { buildActiveFilterGroups, relevanceChipLabel, type ActiveFilterGroupArgs } from './activeFilterGroups'
 import { PRIORITY_COLORS, POSITION_COLORS } from '../../lib/chipStyles'
-import { FILTER_ANY } from '../../../../shared/billFilter'
+import { FILTER_ANY, activeFilters, withBillFilter } from '../../../../shared/billFilter'
 
 const noop = vi.fn()
 const base = {
@@ -151,5 +151,31 @@ describe('buildActiveFilterGroups', () => {
     const span = container.querySelector('span')
     expect(span).toHaveStyle({ background: PRIORITY_COLORS.high.fill, color: PRIORITY_COLORS.high.text })
     expect(span?.style.border).toBe('')
+  })
+})
+
+describe('buildActiveFilterGroups: drawn from the one list of active filters', () => {
+  it('draws a group only when the list holds its filter', () => {
+    const active = activeFilters(withBillFilter({ status: ['Introduced'] }))
+    const groups = buildActiveFilterGroups({ ...base, status: ['Introduced'], tag: ['a'], active })
+    expect(groups.map(g => g.key)).toEqual(['status'])
+  })
+
+  it('draws every group the list holds, in the chip row order', () => {
+    const f = withBillFilter({ state: ['UT'], status: ['Introduced'], tag: ['a'], myBills: true, search: 'x' })
+    const groups = buildActiveFilterGroups({ ...base, state: ['UT'], status: ['Introduced'], tag: ['a'], active: activeFilters(f) })
+    expect(groups.map(g => g.key)).toEqual(['state', 'status', 'tag'])
+  })
+
+  it('draws no group for a filter the list leaves out as hidden', () => {
+    const f = withBillFilter({ state: ['UT'], status: ['Introduced'] })
+    const groups = buildActiveFilterGroups({ ...base, state: ['UT'], status: ['Introduced'], active: activeFilters(f, { hidden: ['state'] }) })
+    expect(groups.map(g => g.key)).toEqual(['status'])
+  })
+
+  it('draws a custom field group by the field key the list holds', () => {
+    const f = withBillFilter({ field: { 'cf-1': ['a'], 'cf-2': ['b'] } })
+    const groups = buildActiveFilterGroups({ ...base, field: { 'cf-1': ['a'], 'cf-2': ['b'] }, active: activeFilters(f, { hidden: [] }) })
+    expect(groups.map(g => g.key)).toEqual(['field.cf-1', 'field.cf-2'])
   })
 })

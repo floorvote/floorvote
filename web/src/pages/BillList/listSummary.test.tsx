@@ -3,7 +3,7 @@ import { render } from '@testing-library/react'
 import { billsQueryFromSearch, type BillsQuery } from './billsQuery'
 import { buildListSummary, type SummaryFieldDef } from './listSummary'
 import { buildActiveFilterGroups, type ActiveFilterGroupArgs } from './activeFilterGroups'
-import { FILTER_ANY, encodeSubjectFilter, withBillFilter } from '../../../../shared/billFilter'
+import { FILTER_ANY, activeFilterCount, activeFilters, encodeSubjectFilter, withBillFilter } from '../../../../shared/billFilter'
 
 // A list URL as the query the pane summarizes. A search term never rides in the URL the app builds, so a test sets it beside.
 const values = (qs: string, over: { search?: string } = {}): BillsQuery => {
@@ -184,5 +184,35 @@ describe('buildListSummary: the filter list reads like the chips', () => {
       expect(s.filters).toEqual(chipTexts)
       expect(s.filterCount).toBe(chipTexts.length)
     }
+  })
+})
+
+describe('buildListSummary: reads the one list of active filters', () => {
+  it('has one entry per value of the shared list, search included, so its count is the badge plus the search', () => {
+    const qs = 'status=2&status=3&year=2026&myBills=1&field.team=Alpha&minRelevance=3&match=any'
+    const q = billsQueryFromSearch(new URLSearchParams(qs))
+    const withSearch = { ...q, filter: withBillFilter({ search: 'storm' }, q.filter) }
+    const list = activeFilters(withSearch.filter)
+    const s = buildListSummary({ values: withSearch })
+    expect(s.filterCount).toBe(list.reduce((n, a) => n + a.count, 0))
+    expect(s.filterCount).toBe(activeFilterCount(list) + 1)
+    expect(s.filters).toHaveLength(s.filterCount)
+  })
+
+  it('leaves out a filter the list holds as hidden', () => {
+    const s = buildListSummary({ values: values('drafts=1&status=2'), hidden: ['drafts'] })
+    expect(s.filters).toEqual([expect.any(String)])
+    expect(s.filterCount).toBe(1)
+  })
+
+  it('lists a toggle and a custom field once each', () => {
+    const s = summarize('unvoted=1&field.flagged=true', {}, { customFieldDefs: [{ id: 'f2', slug: 'flagged', name: 'Flagged', type: 'binary' }] })
+    expect(s.filters).toEqual(['Not yet voted', 'Flagged'])
+    expect(s.filterCount).toBe(2)
+  })
+
+  it('counts a search alone as the one entry, and says "All bills" for a blank one', () => {
+    expect(summarize('', { search: 'water' }).filters).toEqual(['Search: “water”'])
+    expect(summarize('', { search: ' ' }).filterCount).toBe(0)
   })
 })

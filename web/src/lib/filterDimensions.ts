@@ -167,3 +167,15 @@ export function isFilterDimensionVisible(key: FilterDimensionKey, ctx: FilterDim
 export function visibleFilterDimensions(ctx: FilterDimensionContext): FilterDimensionDef[] {
   return FILTER_DIMENSIONS.filter(d => d.isVisible(ctx))
 }
+
+import type { ActiveFilter } from '../../../shared/billFilter'
+
+export function chipFilters(_active: readonly ActiveFilter[]): ActiveFilter[] {
+  return []
+}
+
+export function hiddenFilterDimensions(_ctx: FilterDimensionContext): FilterDimensionKey[] {
+  return []
+}
+
+export const CHIP_SELECTION_LEAVES_OUT: Record<'billsNav' | 'prioritized', readonly string[]> = { billsNav: [], prioritized: [] }

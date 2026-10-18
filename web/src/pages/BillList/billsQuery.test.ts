@@ -4,6 +4,7 @@ import {
   searchFromListUrl, billsApiParamsFromSearch, billsFacetParams, billFilterForUrl, withCustomFieldKeys,
 } from './billsQuery'
 import { parseBillFilter, serializeBillFilter, EMPTY_BILL_FILTER } from '../../../../shared/billFilter'
+import { CHIP_SELECTION_LEAVES_OUT } from '../../lib/filterDimensions'
 
 const query = (qs: string, defs: Parameters<typeof billsQueryFromSearch>[1] = []) => billsQueryFromSearch(new URLSearchParams(qs), defs)
 
@@ -258,5 +259,43 @@ describe('a search term in the list URL', () => {
   it('is read from q, so the list and its summary agree on it', () => {
     expect(billsQueryFromSearch(new URLSearchParams('search=water')).filter.search).toBe('water')
     expect(billsApiParamsFromSearch(new URLSearchParams('search=water'), 1)).toBe('page=1&pageSize=100&search=water')
+  })
+})
+
+describe('chip selections read the one list of active filters', () => {
+  // Every filter, set on its own, with a query that sets it.
+  const EACH: Record<string, string> = {
+    status: 'status=2', stage: 'stage=introduced', year: 'year=2026', state: 'state=UT', position: 'position=Support',
+    priority: 'priority=high', tag: 'tag=Water', subject: 'subject=UT%3AElections', minRelevance: 'minRelevance=4', search: 'search=storm',
+    myBills: 'myBills=1', unvoted: 'unvoted=1', newMatches: 'newMatches=1', drafts: 'drafts=1', field: 'field.team=Alpha',
+  }
+  const PRIORITY_QS = 'priority=high&priority=medium&priority=low'
+
+  it('the Bills nav chip leaves out exactly the filters it declares', () => {
+    for (const [name, qs] of Object.entries(EACH)) {
+      const leftOut = CHIP_SELECTION_LEAVES_OUT.billsNav.includes(name)
+      const sel = billsChipSelection('/bills', `?${qs}`)
+      // A filter it leaves out is not "another filter", and one it does not leave out is.
+      expect(sel.allBills || sel.newMatches, name).toBe(leftOut)
+    }
+  })
+
+  it('the prioritized view leaves out exactly the filters it declares', () => {
+    for (const [name, qs] of Object.entries(EACH)) {
+      if (name === 'priority') continue
+      const leftOut = CHIP_SELECTION_LEAVES_OUT.prioritized.includes(name)
+      const sel = prioritizedChipSelection('/bills', `?${PRIORITY_QS}&${qs}`)
+      expect(sel.priority || sel.unvoted, name).toBe(leftOut)
+    }
+  })
+
+  it('the match mode never keeps a chip from being selected, because it is never in the list', () => {
+    expect(billsChipSelection('/bills', '?match=any')).toEqual({ allBills: true, newMatches: false })
+    expect(prioritizedChipSelection('/bills', `?${PRIORITY_QS}&match=any`)).toEqual({ priority: true, unvoted: false })
+  })
+
+  it('a search term does not keep either chip from being selected', () => {
+    expect(billsChipSelection('/bills', '?search=storm')).toEqual({ allBills: true, newMatches: false })
+    expect(prioritizedChipSelection('/bills', `?${PRIORITY_QS}&search=storm`)).toEqual({ priority: true, unvoted: false })
   })
 })
