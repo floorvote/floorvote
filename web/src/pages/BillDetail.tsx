@@ -1068,13 +1068,16 @@ export function BillDetail() {
     return () => { cancelled = true }
   }, [bill?.id, bill?.isDraft, isAdminUser])
 
-  // Keyboard arrow navigation between bills
+  // Keyboard navigation between bills: ArrowLeft/ArrowRight, and k/j to match the up/down arrows
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (isEditableTarget(e.target)) return
-      if (e.key === 'ArrowLeft' && prevPath) {
+      const modified = e.ctrlKey || e.metaKey || e.altKey || e.shiftKey
+      const goPrev = e.key === 'ArrowLeft' || (e.key === 'k' && !modified)
+      const goNext = e.key === 'ArrowRight' || (e.key === 'j' && !modified)
+      if (goPrev && prevPath) {
         navigateToBill(prevPath, { billPaths: navState!.billPaths!, currentIndex: navState!.currentIndex! - 1 })
-      } else if (e.key === 'ArrowRight' && nextPath) {
+      } else if (goNext && nextPath) {
         navigateToBill(nextPath, { billPaths: navState!.billPaths!, currentIndex: navState!.currentIndex! + 1 })
       }
     }
@@ -1524,14 +1527,14 @@ export function BillDetail() {
                   onClick={() => prevPath && navigateToBill(prevPath, { billPaths: navState!.billPaths!, currentIndex: navState!.currentIndex! - 1 })}
                   disabled={!prevPath || billNavPending}
                   style={{ fontSize: fontSize.sm, color: prevPath ? color.linkBlue : color.borderStrong, background: 'none', border: 'none', cursor: prevPath && !billNavPending ? 'pointer' : 'default', padding: '2px 4px' }}
-                  title="Previous bill"
+                  title="Previous bill (K)"
                   aria-label="Previous bill"
                 ><BillNavArrow direction="up" /></button>
                 <button
                   onClick={() => nextPath && navigateToBill(nextPath, { billPaths: navState!.billPaths!, currentIndex: navState!.currentIndex! + 1 })}
                   disabled={!nextPath || billNavPending}
                   style={{ fontSize: fontSize.sm, color: nextPath ? color.linkBlue : color.borderStrong, background: 'none', border: 'none', cursor: nextPath && !billNavPending ? 'pointer' : 'default', padding: '2px 4px' }}
-                  title="Next bill"
+                  title="Next bill (J)"
                   aria-label="Next bill"
                 ><BillNavArrow direction="down" /></button>
               </>
