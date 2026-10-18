@@ -80,10 +80,11 @@ describe('what the web serializes is what the API reads', () => {
       const sent = web(qs)
       const counted = await facetsOf(sent.facets)
       expect(counted).toEqual(await facetsOf(`/bills/facets?${qs}`))
-      // A facet leaves out its own filter, so the status counts are the bills' only when no status is picked.
+      // A facet leaves out its own filter, so the status counts are the bills' only when no status is picked. The stage
+      // is part of the status fact, so a stage picked leaves the status counts out of the narrowing too (#677).
       // Under match=any the other filters add bills to the count instead of narrowing it.
       const params = new URLSearchParams(qs)
-      if (!params.has('status') && params.get('match') !== 'any') {
+      if (!params.has('status') && !params.has('stage') && params.get('match') !== 'any') {
         expect(Object.values(counted.status).reduce((a, b) => a + b, 0)).toBe(expected.length)
       }
     })

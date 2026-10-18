@@ -29,6 +29,10 @@ export const CASES: Case[] = [
   { name: 'status', qs: 'status=Passed', expected: ['HB 1', 'HB 4'] },
   { name: 'two statuses', qs: 'status=Passed&status=Failed', expected: ['HB 1', 'HB 3', 'HB 4', 'HB 6'] },
   { name: 'stage', qs: 'stage=enacted', expected: ['HB 1', 'HB 4'] },
+  // A status and a stage are one bill fact joined by OR (#677): the union, where they once matched only the overlap.
+  { name: 'a status and a stage (a union)', qs: 'status=Introduced&stage=enacted', expected: ['HB 1', 'HB 2', 'HB 4', 'HB 5'] },
+  { name: 'a status inside the stage chosen with it', qs: 'status=Passed&stage=enacted', expected: ['HB 1', 'HB 4'] },
+  { name: 'a stage and a state', qs: 'stage=failed&state=UT', expected: ['HB 6'] },
   { name: 'year', qs: 'year=2025', expected: ['HB 3', 'HB 4'] },
   { name: 'session', qs: 'sessionName=S26', expected: ['HB 1', 'HB 2', 'HB 5', 'HB 6'] },
   { name: 'state', qs: 'state=UT', expected: ['HB 5', 'HB 6'] },
