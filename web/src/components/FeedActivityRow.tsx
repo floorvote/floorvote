@@ -10,6 +10,7 @@ import { BillBadge } from './BillBadge'
 import { DraftChip } from './DraftChip'
 import { PrioritySquare } from './PrioritySquare'
 import { color, radius, fontSize } from '../styles/tokens'
+import { billsListPath } from '../../../shared/billFilter'
 
 type AffectedBill = {
   id: string; billNumber: string; title: string
@@ -130,7 +131,7 @@ export function FeedActivityRow({ event, seenAt = null, currentUserId = null }: 
           ))}
           {event.type === 'new_matches' && (
             <Link
-              to="/bills?newMatches=1"
+              to={billsListPath({ newMatches: true })}
               style={{
                 display: 'block', padding: '8px 14px', fontSize: fontSize.sm, color: color.linkBlue, textDecoration: 'none',
                 borderTop: `1px solid ${CARD_STYLE.rowBorder}`,

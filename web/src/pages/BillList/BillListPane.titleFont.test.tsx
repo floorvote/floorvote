@@ -62,10 +62,10 @@ function tableTitle(text: string) {
   render(
     <MemoryRouter>
       <BillRow
-        bill={bill({ title: text })} index={0} selectedTags={[]} onTagClick={vi.fn()} isAdmin={false}
+        bill={bill({ title: text })} index={0} onTagClick={vi.fn()} isAdmin={false}
         positionVocabulary={[]} onStatusClick={vi.fn()} onPriorityClick={vi.fn()} onPositionClick={vi.fn()}
         onRelevanceClick={vi.fn()} onPriorityChange={vi.fn()} onPositionChange={vi.fn()} onVote={undefined}
-        filterStatuses={[]} filterPriorities={[]} filterPositions={[]} filterYears={[]} filterMinRelevance={0}
+        filter={{ status: [], priority: [], position: [], year: [], minRelevance: 0, tag: [] }}
         sortedPaths={[]} isMultiState={false} isSelectionMode={false} isSelected={false} onToggleSelect={undefined}
       />
     </MemoryRouter>,
