@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { MODULES, isModuleEnabled, getModuleSetting, visibleModuleSettings, digestCadenceDescription, weekAheadCadenceDescription, moduleKindLabel } from './modules'
+import { MODULES, isModuleEnabled, getModuleSetting, visibleModuleSettings, digestCadenceDescription, digestMatchesLabel, weekAheadCadenceDescription, moduleKindLabel } from './modules'
 import type { ModuleDef } from './modules'
 
 describe('MODULES registry', () => {
@@ -186,5 +186,29 @@ describe('upcoming-hearings widget config', () => {
 
   it('has no configurable settings (always prioritized bills, next 30 days)', () => {
     expect(m.settings).toBeUndefined()
+  })
+})
+
+describe('digestMatchesLabel', () => {
+  const daily = 'Also include newly matched bills in the digest, and send the digest on days with only those.'
+  const weekly = 'Also include newly matched bills in the digest, and send the digest on weeks with only those.'
+  const cfg = (settings?: Record<string, string>, enabled = true) => ({ 'email-digest': { enabled, ...(settings ? { settings } : {}) } })
+
+  it('says days for a daily digest and weeks for a weekly one', () => {
+    expect(digestMatchesLabel(cfg({ frequency: 'daily' }))).toBe(daily)
+    expect(digestMatchesLabel(cfg({ frequency: 'weekly', weeklyDay: '3' }))).toBe(weekly)
+  })
+
+  it('falls back to daily, as digestCadenceDescription does, when the frequency is missing or unknown', () => {
+    expect(digestMatchesLabel(undefined)).toBe(daily)
+    expect(digestMatchesLabel({})).toBe(daily)
+    expect(digestMatchesLabel(cfg())).toBe(daily)
+    expect(digestMatchesLabel(cfg({ weeklyDay: '3' }))).toBe(daily)
+    expect(digestMatchesLabel(cfg({ frequency: 'hourly' }))).toBe(daily)
+    expect(digestMatchesLabel(cfg({ frequency: '' }))).toBe(daily)
+  })
+
+  it('still names the configured period when the digest module is turned off', () => {
+    expect(digestMatchesLabel(cfg({ frequency: 'weekly' }, false))).toBe(weekly)
   })
 })

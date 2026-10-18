@@ -136,8 +136,8 @@ describe('legislator votes', () => {
     expect(res.status).toBe(200)
     const body = await res.json() as any
     expect(body.votes[0].legislatorVotes).toEqual([
-      { personId: '2', name: 'Brooke Pinto', vote: 'No' },
-      { personId: '1', name: 'Zachary Parker', vote: 'Yes' },
+      { personId: '2', name: 'Brooke Pinto', vote: 'No', url: null },
+      { personId: '1', name: 'Zachary Parker', vote: 'Yes', url: null },
     ])
   })
 
@@ -160,6 +160,6 @@ describe('bill detail with many roll calls', () => {
     const res = await app.request('/api/bills/legiscan:102', { headers: { 'x-admin-secret': 'test-secret' } }, env)
     expect(res.status).toBe(200)
     const body = await res.json() as any
-    expect(body.votes.find((v: any) => v.id === '1129').legislatorVotes).toEqual([{ personId: '1', name: 'Zachary Parker', vote: 'Yes' }])
+    expect(body.votes.find((v: any) => v.id === '1129').legislatorVotes).toEqual([{ personId: '1', name: 'Zachary Parker', vote: 'Yes', url: null }])
   })
 })

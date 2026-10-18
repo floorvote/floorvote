@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   DEFAULT_ORG_NOUN, normalizeOrgNoun,
-  titleCase, orgPositionLabel, orgRelevanceLabel, orgRolesLabel,
+  titleCase, orgPositionLabel, orgRelevanceLabel, orgRolesLabel, orgNotificationsLabel,
 } from './orgNoun'
 
 describe('normalizeOrgNoun', () => {
@@ -52,3 +52,22 @@ describe('display helpers', () => {
   })
 })
 
+
+describe('orgNotificationsLabel', () => {
+  it('capitalizes only the first word', () => {
+    expect(orgNotificationsLabel('association')).toBe('Association notifications')
+    expect(orgNotificationsLabel('team')).toBe('Team notifications')
+  })
+  it('falls back to the default noun for missing or empty input', () => {
+    expect(orgNotificationsLabel(undefined)).toBe('Team notifications')
+    expect(orgNotificationsLabel(null)).toBe('Team notifications')
+    expect(orgNotificationsLabel('')).toBe('Team notifications')
+    expect(orgNotificationsLabel('!!!')).toBe('Team notifications')
+  })
+  it('normalizes lowercase, mixed-case, all-caps, and multi-word nouns', () => {
+    expect(orgNotificationsLabel('chapter')).toBe('Chapter notifications')
+    expect(orgNotificationsLabel('cOaLiTiOn')).toBe('Coalition notifications')
+    expect(orgNotificationsLabel('LEAGUE')).toBe('League notifications')
+    expect(orgNotificationsLabel('Chapter Office')).toBe('Chapter notifications')
+  })
+})

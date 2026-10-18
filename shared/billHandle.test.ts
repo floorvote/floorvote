@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { HANDLE_PREFIX, isHandle, parseHandle, toHandle } from './billHandle'
+import { HANDLE_PREFIXES, NEUTRAL_HANDLE_PREFIX, chunkedForms, handleForms, isHandle, legacyHandle, normalizeHandle, parseHandle, toHandle, toLegacyHandle } from './billHandle'
 
 describe('bill handles', () => {
   it('builds the legacy legiscan: form', () => {
@@ -29,7 +29,133 @@ describe('bill handles', () => {
     expect(isHandle('legiscan:501')).toBe(true)
   })
 
-  it('every handle starts with HANDLE_PREFIX, for SQL LIKE filters', () => {
-    expect(toHandle(7).startsWith(HANDLE_PREFIX)).toBe(true)
+  it('every handle starts with one of HANDLE_PREFIXES, for SQL LIKE filters', () => {
+    expect(HANDLE_PREFIXES.some(prefix => toHandle(7).startsWith(prefix))).toBe(true)
+  })
+
+  it('every handle, neutral or legacy, starts with one of the known prefixes', () => {
+    expect([...HANDLE_PREFIXES]).toEqual(['legiscan:', 'bill:'])
+  })
+})
+
+// Release 1 of the neutral rename (#305): both forms parse, and only the legacy
+// form is built. A neutral handle names the same central bill as its legacy twin.
+describe('neutral bill handles', () => {
+  // Central row ids come from any provider, so any positive integer is a shape:
+  // small, large, and past 2^31.
+  const ids = [1, 9, 10, 501, 1900101, 2099974, 1012600769, 2 ** 31, Number.MAX_SAFE_INTEGER]
+
+  it.each(ids)('parses the neutral form of %i to the same bill as its legacy twin', (id) => {
+    expect(parseHandle(`bill:${id}`)).toBe(id)
+    expect(parseHandle(`bill:${id}`)).toBe(parseHandle(`legiscan:${id}`))
+    expect(isHandle(`bill:${id}`)).toBe(true)
+  })
+
+  it('still builds the legacy form, so central and tenants agree during the rollout', () => {
+    expect(toHandle(501)).toBe('legiscan:501')
+    expect(toLegacyHandle(501)).toBe('legiscan:501')
+  })
+
+  it('normalizeHandle rewrites a neutral handle to the stored (legacy) form', () => {
+    expect(normalizeHandle('bill:501')).toBe('legiscan:501')
+    expect(normalizeHandle('legiscan:501')).toBe('legiscan:501')
+  })
+
+  it.each([
+    ['a draft (null)', null],
+    ['undefined', undefined],
+    ['empty', ''],
+    ['a legacy ocd-bill id', 'ocd-bill/abc'],
+    ['a bare number', '501'],
+    ['a malformed handle', 'bill:12abc'],
+  ])('normalizeHandle leaves %s as it is', (_, value) => {
+    expect(normalizeHandle(value as string | null | undefined)).toBe(value)
+  })
+
+  it.each([
+    ['empty', ''],
+    ['a missing id', 'bill:'],
+    ['id zero', 'bill:0'],
+    ['a leading zero', 'bill:012'],
+    ['a negative id', 'bill:-5'],
+    ['a decimal', 'bill:1.5'],
+    ['trailing junk', 'bill:12abc'],
+    ['trailing whitespace', 'bill:12 '],
+    ['a trailing newline', 'bill:12\n'],
+    ['leading whitespace', ' bill:12'],
+    ['an uppercase prefix', 'BILL:12'],
+    ['a wrong prefix', 'item:12'],
+    ['a provider name inside the neutral prefix', 'legiscan-bill:12'],
+    ['a provider name after the neutral prefix', 'bill-legiscan:12'],
+    ['both prefixes', 'bill:legiscan:12'],
+    ['a doubled prefix', 'bill:bill:12'],
+    ['a slash instead of a colon', 'bill/12'],
+    ['a prefix with no colon', 'bill12'],
+  ])('rejects %s', (_, value) => {
+    expect(parseHandle(value)).toBeNull()
+    expect(isHandle(value)).toBe(false)
+    expect(normalizeHandle(value)).toBe(value)
+  })
+
+  it('the neutral prefix never names a provider', () => {
+    for (const provider of ['legiscan', 'openstates', 'lims', 'mga', 'lis']) {
+      expect(NEUTRAL_HANDLE_PREFIX.toLowerCase()).not.toContain(provider)
+    }
+  })
+
+  it('a handle round-trips through normalize without changing the bill', () => {
+    for (const id of ids) expect(parseHandle(normalizeHandle(`bill:${id}`))).toBe(id)
+  })
+})
+
+// A tenant row can hold either spelling (release 2's migration rewrites them while an
+// older worker is still running), so a lookup by handle matches both (#305).
+describe('looking a bill up by handle', () => {
+  it.each(['legiscan:501', 'bill:501'])('handleForms(%s) is both spellings of the bill, legacy first', (handle) => {
+    expect(handleForms(handle)).toEqual(['legiscan:501', 'bill:501'])
+  })
+
+  it.each([
+    ['a legacy ocd-bill id', 'ocd-bill/abc'],
+    ['empty', ''],
+    ['a bare number', '501'],
+    ['a malformed handle', 'bill:12abc'],
+  ])('handleForms leaves %s as the only form', (_, value) => {
+    expect(handleForms(value)).toEqual([value])
+  })
+
+  it('legacyHandle is the legacy spelling of a handle in either form', () => {
+    expect(legacyHandle('bill:501')).toBe('legiscan:501')
+    expect(legacyHandle('legiscan:501')).toBe('legiscan:501')
+  })
+
+  it.each(['ocd-bill/abc', '', '501', 'bill:12abc'])('legacyHandle leaves %j as it is', (value) => {
+    expect(legacyHandle(value)).toBe(value)
+  })
+})
+
+describe('chunkedForms', () => {
+  it('expands to both spellings before chunking, so no chunk binds more than its size', () => {
+    const handles = Array.from({ length: 60 }, (_, i) => `legiscan:${1000 + i}`)
+    const chunks = chunkedForms(handles, 40)
+    expect(chunks.map(c => c.length)).toEqual([40, 40, 40])
+    expect(chunks.flat()).toHaveLength(120)
+    expect(new Set(chunks.flat()).size).toBe(120)
+  })
+
+  it('names each bill by both spellings once, whichever spelling or repeat came in', () => {
+    expect(chunkedForms(['bill:7', 'legiscan:7', 'bill:7']).flat().sort()).toEqual(['bill:7', 'legiscan:7'])
+  })
+
+  it('keeps anything that is not a handle as the one spelling', () => {
+    expect(chunkedForms(['ocd-bill/abc', 'bill:7']).flat().sort()).toEqual(['bill:7', 'legiscan:7', 'ocd-bill/abc'])
+  })
+
+  it('returns no chunks for no handles', () => {
+    expect(chunkedForms([])).toEqual([])
+  })
+
+  it('defaults to chunks of 40', () => {
+    expect(chunkedForms(Array.from({ length: 50 }, (_, i) => `bill:${i + 1}`)).map(c => c.length)).toEqual([40, 40, 20])
   })
 })

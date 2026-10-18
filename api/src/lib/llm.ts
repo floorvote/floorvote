@@ -1,5 +1,6 @@
 import { GoogleGenAI, ServiceTier } from '@google/genai'
 import type { TaxonomyItem } from './taxonomy'
+import { parseClaimSources, type ClaimSource, type ClaimSourceInput } from './claimSources'
 import type { Env } from '../types'
 
 // ── Shared types ──────────────────────────────────────────────────────────────
@@ -12,14 +13,24 @@ interface ProcessBillParams {
   taxonomy: TaxonomyItem[]
   aiContext?: string
   relevanceQuestion?: string
+  /** Ask for claim sources (#568). Off unless set. Changes the schema only, never the prompt. */
+  claimSources?: boolean
 }
 
-interface ProcessBillResult {
+export interface ProcessBillResult {
   summary: string
   tags: string[]
   relevanceScore: number
   /** Statutory citations the bill affects, verbatim as printed in the bill. */
   affectedCitations: string[]
+  /** Claim sources when they were asked for (possibly empty), else null. */
+  claimSources: ClaimSource[] | null
+  /**
+   * True when the response was cut off inside the claim sources and this result
+   * is from the retry without them (#573). `claimSources` is null then, which
+   * alone looks like never asked, so the processor counts these.
+   */
+  claimSourcesRetried?: true
 }
 
 // ── Shared constants ──────────────────────────────────────────────────────────
@@ -44,13 +55,14 @@ interface ProcessBillResult {
  * Uniqueness is NOT expressible here — the SDK's Schema type has no `uniqueItems` — so
  * duplicates are removed downstream by filterTagsToTaxonomy in lib/taxonomy.ts.
  */
-export function buildAnalysisSchema(taxonomy: TaxonomyItem[]) {
+export function buildAnalysisSchema(taxonomy: TaxonomyItem[], claimSources: ClaimSourceInput | null = null) {
   const names = taxonomy.map(t => t.name).filter(n => n.length > 0)
   const tagItems = names.length > 0
     ? { type: 'string', format: 'enum', enum: names }
     : { type: 'string' }
   // affectedCitations is generated FIRST — see propertyOrdering below.
   const ordering = ['affectedCitations', 'summary', 'tags', 'relevanceScore']
+  if (claimSources) ordering.push('claimSources')
   return {
     type: 'object',
     properties: {
@@ -62,6 +74,7 @@ export function buildAnalysisSchema(taxonomy: TaxonomyItem[]) {
       summary: { type: 'string' },
       tags: { type: 'array', items: tagItems },
       relevanceScore: { type: 'integer', description: 'An integer from 1 to 10 inclusive.' },
+      ...(claimSources ? { claimSources: claimSourcesSchema(claimSources) } : {}),
     },
     // Generation is autoregressive, so field order is the order the model commits
     // to answers. Citations come first so the extraction is in context before the
@@ -76,6 +89,46 @@ export function buildAnalysisSchema(taxonomy: TaxonomyItem[]) {
     propertyOrdering: ordering,
     required: ordering,
     additionalProperties: false,
+  }
+}
+
+/**
+ * The `claimSources` property (#568, design in #560). It is generated LAST, after
+ * the summary it quotes from, and its instructions live only in these field
+ * descriptions: #347 measured that asking in the prompt shifted summaries toward
+ * lists (p = 0.003) and the schema-only form did not. The prompt is pinned by
+ * test/lib/llm-prompt-pin.test.ts. The wording is what #347 tested, so change it
+ * only with a new measurement.
+ *
+ * A PDF item adds `page`, the position in the file. #347 found it right 99.7%
+ * of the time where it could be checked. An HTML document has no pages.
+ */
+function claimSourcesSchema(input: ClaimSourceInput) {
+  const fields = input === 'pdf' ? ['claim', 'quote', 'page'] : ['claim', 'quote']
+  return {
+    type: 'array',
+    description: 'one entry for each distinct claim in the summary',
+    items: {
+      type: 'object',
+      properties: {
+        claim: {
+          type: 'string',
+          description: 'copied character for character from the summary above: one whole list item (without the leading "- ") or one sentence or clause of prose',
+        },
+        quote: {
+          type: 'string',
+          description: 'copied character for character from the bill text: one short contiguous passage (one sentence or less is best) that supports the claim; never paraphrase, abbreviate, correct, add ellipses, or join separate passages',
+        },
+        ...(input === 'pdf' ? {
+          page: {
+            type: 'integer',
+            description: 'the page of this PDF file the quote is on, counting the first page of the file as 1 (the position in the file, not a printed page number)',
+          },
+        } : {}),
+      },
+      propertyOrdering: fields,
+      required: fields,
+    },
   }
 }
 
@@ -132,7 +185,7 @@ ${taxonomyLines}
 4. ${relevanceQuestion} Give an integer 1–10. Anchor: 1 = no genuine connection to this subject (an incidental mention or shared procedure is not a connection); 5 = partially or indirectly bears on it; 10 = squarely and substantially about it. Judge by what the bill does, not surface keywords.`
 }
 
-function validateAndClamp(parsed: unknown): ProcessBillResult {
+function validateAndClamp(parsed: unknown, claimSources: ClaimSourceInput | null): ProcessBillResult {
   const p = parsed as any
   if (typeof p.summary !== 'string' || !Array.isArray(p.tags) || typeof p.relevanceScore !== 'number') {
     throw new Error('Invalid response structure from AI provider')
@@ -147,6 +200,8 @@ function validateAndClamp(parsed: unknown): ProcessBillResult {
     affectedCitations: Array.isArray(p.affectedCitations)
       ? p.affectedCitations.filter((c: unknown): c is string => typeof c === 'string' && c.trim().length > 0)
       : [],
+    // Supplementary in the same way: degrades to empty, never fails the analysis.
+    claimSources: claimSources ? parseClaimSources(p.claimSources, claimSources) : null,
   }
 }
 
@@ -239,6 +294,8 @@ async function callGemini(
     } : {}),
   })
 
+  const claimSources: ClaimSourceInput | null = params.claimSources ? (params.pdfBase64 ? 'pdf' : 'html') : null
+
   const parts = params.pdfBase64
     ? [
         { inlineData: { mimeType: 'application/pdf', data: params.pdfBase64 } },
@@ -246,21 +303,38 @@ async function callGemini(
       ]
     : [{ text: `${promptText}\n\nFull text:\n${params.text}` }]
 
-  const response = await client.models.generateContent({
-    model: resolveModel(env),
-    contents: [{ role: 'user', parts }],
-    config: {
-      systemInstruction: composeSystemInstruction(params.aiContext),
-      responseMimeType: 'application/json',
-      responseSchema: buildAnalysisSchema(params.taxonomy),
-      thinkingConfig: { thinkingBudget: resolveThinkingBudget(env) },
-      serviceTier: ({ flex: ServiceTier.FLEX, standard: ServiceTier.STANDARD, priority: ServiceTier.PRIORITY } as const)[tier],
-    },
-  })
+  const generate = async (claims: ClaimSourceInput | null): Promise<string> => {
+    const response = await client.models.generateContent({
+      model: resolveModel(env),
+      contents: [{ role: 'user', parts }],
+      config: {
+        systemInstruction: composeSystemInstruction(params.aiContext),
+        responseMimeType: 'application/json',
+        responseSchema: buildAnalysisSchema(params.taxonomy, claims),
+        thinkingConfig: { thinkingBudget: resolveThinkingBudget(env) },
+        serviceTier: ({ flex: ServiceTier.FLEX, standard: ServiceTier.STANDARD, priority: ServiceTier.PRIORITY } as const)[tier],
+      },
+    })
+    const raw = response.text
+    if (!raw) throw new Error('Gemini returned an empty response')
+    return raw
+  }
 
-  const raw = response.text
-  if (!raw) throw new Error('Gemini returned an empty response')
-  return validateAndClamp(JSON.parse(raw))
+  const raw = await generate(claimSources)
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch (err) {
+    if (!claimSources) throw err
+    // claimSources is the last property and the only unbounded one, so a
+    // response cut off at the output limit is cut off inside it, after a
+    // complete summary. Before claim sources, that summary would have been
+    // stored. Ask once more without them rather than fail the analysis. Not
+    // capped with maxItems, which would change the schema #347 measured.
+    console.warn(`[llm] response for ${params.billNumber} did not parse with claim sources asked; retrying without them`)
+    return { ...validateAndClamp(JSON.parse(await generate(null)), null), claimSourcesRetried: true }
+  }
+  return validateAndClamp(parsed, claimSources)
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────

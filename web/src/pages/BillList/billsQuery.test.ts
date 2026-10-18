@@ -147,3 +147,10 @@ describe('billsApiParamsFromSearch', () => {
     expect(billsApiParamsFromSearch(search, 1)).toBe('page=1&pageSize=100&cf_tracked_by_team=yes')
   })
 })
+
+describe('a search term in the list URL', () => {
+  it('is read from q, so the list and its summary agree on it', () => {
+    expect(billsFilterValuesFromSearch(new URLSearchParams('q=water')).search).toBe('water')
+    expect(billsApiParamsFromSearch(new URLSearchParams('q=water'), 1)).toBe('page=1&pageSize=100&q=water')
+  })
+})

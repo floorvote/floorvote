@@ -7,6 +7,15 @@ export type EngagementSnapshotData = {
   resend?: { monthlyUsed?: number; dailyUsed?: number; usedAt?: string; last429At?: string }
 }
 
+/** How an instance's claim links resolved (#573): counts only, mirroring the instance's `ClaimSourceCounts`. */
+export type ClaimSourceCountsData = {
+  analyses: { withClaimSources: number; emptyList: number; noList: number }
+  items: { exact: number; normalized: number; fuzzy: number; anchored: number; ungrounded: number; unverified: number; total: number }
+  cutOffRetries: number
+  /** When the instance last scanned its bills (it reuses the scan for a while), as an ISO time. */
+  computedAt?: string
+}
+
 /** RPC surface exposed by the tenant's CentralApi WorkerEntrypoint. */
 export interface TenantRpc {
   engagementStats(excludeDomains?: string[]): Promise<EngagementSnapshotData>
@@ -20,6 +29,7 @@ export interface TenantRpc {
     | { status: 'ok'; billNumber: string; tags: number; relevanceScore: number; usedFullText: boolean }
     | { status: 'skipped'; reason: string }
   >
+  claimSourceCounts(): Promise<ClaimSourceCountsData>
   unknownLoginAttempts(): Promise<Array<{ id: string; email: string; ipCountry: string | null; userAgent: string | null; createdAt: string }>>
 }
 

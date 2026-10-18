@@ -84,6 +84,11 @@ export const bills = sqliteTable('bills', {
   textsFetchedAt:  text('texts_fetched_at'),
   /** When a tenant last asked for the bill to be fetched without tracking it (0040). A lock on asking again, never read as a fetch. */
   textsRequestedAt: text('texts_requested_at'),
+  /** The change_hash the bill's detail was last fetched at, by an ingest (0041). Differs from changeHash while the detail is stale. */
+  detailHash:      text('detail_hash'),
+  /** The change_hash a page view last queued a detail refresh for, and when (0041, lib/stubRefresh.ts). A lock, never read as a fetch. */
+  detailRequestedHash: text('detail_requested_hash'),
+  detailRequestedAt:   text('detail_requested_at'),
   /** The id of the provider that wrote the row (src/providers): 'legiscan' unless another provider did. */
   provider:        text('provider').notNull().default('legiscan'),
   /**
@@ -101,6 +106,7 @@ export const bills = sqliteTable('bills', {
 }, (t) => [
   index('idx_bills_session').on(t.sessionId),
   index('idx_bills_state').on(t.state),
+  index('idx_bills_detail_requested_at').on(t.detailRequestedAt).where(sql`detail_requested_at IS NOT NULL`),
 ])
 
 export const committees = sqliteTable('committees', {
@@ -154,7 +160,7 @@ export const billSasts = sqliteTable('bill_sasts', {
   type:           text('type').notNull(),
   sastBillNumber: text('sast_bill_number').notNull(),
   sastBillId:     integer('sast_bill_id').notNull(),
-}, (t) => [index('idx_bill_sasts_bill').on(t.billId)])
+}, (t) => [index('idx_bill_sasts_bill').on(t.billId), index('idx_bill_sasts_sast_bill_id').on(t.sastBillId)])
 
 export const billSubjects = sqliteTable('bill_subjects', {
   id:          text('id').primaryKey(),

@@ -67,7 +67,7 @@ describe('the digest lists only routine new matches', () => {
     await runDigest(env as any, getDb(env.DB))
 
     expect(emails).toHaveLength(1)
-    expect(emails[0].html).toContain('New matches (1)')
+    expect(emails[0].html).toContain('1 new match')
     expect(emails[0].html).toContain('HB 1')
   })
 
@@ -105,7 +105,7 @@ describe('the digest lists only routine new matches', () => {
     await runDigest(env as any, getDb(env.DB))
 
     expect(emails).toHaveLength(1)
-    expect(emails[0].html).toContain('New matches (1)')
+    expect(emails[0].html).toContain('1 new match')
     expect(emails[0].html).toContain('HB 6')
     expect(emails[0].html).not.toContain('HB 7')
   })
@@ -120,7 +120,7 @@ describe('the digest lists only routine new matches', () => {
     await runDigest(env as any, db)
 
     expect(emails).toHaveLength(1)
-    expect(emails[0].html).toContain('New matches (1)')
+    expect(emails[0].html).toContain('1 new match')
     expect(emails[0].html).toContain('HI 1')
     expect(emails[0].html).not.toContain('LO 1')
   })

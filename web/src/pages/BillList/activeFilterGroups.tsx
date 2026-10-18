@@ -47,6 +47,64 @@ export function relevanceChipLabel(n: number): string {
   return n >= 10 ? 'Relevance 10' : `Relevance ${n}+`
 }
 
+// The words on a chip, one function per dimension that needs more than the raw
+// value. buildActiveFilterGroups draws them as chips; the split pane's summary
+// (listSummary.ts) lists them in its hover text. Both go through here so the
+// two can never word the same filter differently.
+export type ChipFieldDef = { id: string; slug: string | null; name?: string; type?: string }
+
+export function positionChipLabel(p: string, positionOptions: { value: string; label?: string }[]): string {
+  return p === FILTER_ANY ? 'Any position' : (positionOptions.find(o => o.value === p)?.label ?? p)
+}
+
+/** A priority chip's label: the sentinels' words, else the tier's own label. */
+export function priorityChipLabel(p: string): string {
+  if (p === FILTER_ANY) return 'Any priority'
+  if (p === 'none') return 'No priority'
+  return (PRIORITY_COLORS[p] ?? PRIORITY_COLORS['medium']).label ?? p
+}
+
+export function subjectChipLabel(subject: string, isMultiState: boolean): string {
+  const idx = subject.indexOf(':')
+  return idx > 0
+    ? (isMultiState ? `${subject.slice(0, idx)}: ${subject.slice(idx + 1)}` : subject.slice(idx + 1))
+    : subject
+}
+
+// fieldId here is normally the def's real id, but it can still be the raw slug
+// for a render or two after mount (useBillFilters resolves it against
+// customFieldDefs once those load, but that's async) — match by either so the
+// chip never falls back to printing the raw key.
+export function customFieldChipLabel(fieldId: string, v: string, defs: ReadonlyArray<ChipFieldDef>): string {
+  const field = defs.find(fld => fld.id === fieldId || fld.slug === fieldId)
+  return field?.type === 'binary' ? (field?.name ?? fieldId) : `${field?.name ?? fieldId}: ${v === FILTER_ANY ? 'Any' : v}`
+}
+
+export type ActiveFilterLabelArgs = Pick<ActiveFilterGroupArgs,
+  'filterStates' | 'filterStatuses' | 'filterStages' | 'filterPositions' | 'filterPriorities' | 'filterYears' |
+  'selectedTags' | 'selectedSubjects' | 'cfFilters' | 'filterMinRelevance' | 'positionOptions' | 'isMultiState'
+> & { customFieldDefs: ReadonlyArray<ChipFieldDef> }
+
+// Every chip's label, one group per active dimension, in the order the chips
+// are drawn. The same groups as buildActiveFilterGroups, minus the controls.
+export function activeFilterLabelGroups(a: ActiveFilterLabelArgs): { key: string; labels: string[] }[] {
+  const groups: { key: string; labels: string[] }[] = []
+  const push = (key: string, labels: string[]) => { if (labels.length > 0) groups.push({ key, labels }) }
+  push('state', a.filterStates)
+  push('status', a.filterStatuses.map(s => decodeStatus(s) ?? s))
+  push('stage', a.filterStages.map(s => stageLabel(s) ?? s))
+  push('position', a.filterPositions.map(p => positionChipLabel(p, a.positionOptions)))
+  push('priority', a.filterPriorities.map(priorityChipLabel))
+  push('year', a.filterYears.map(y => `Year: ${y}`))
+  if (a.filterMinRelevance > 0) push('minRelevance', [relevanceChipLabel(a.filterMinRelevance)])
+  push('tags', a.selectedTags.map(tag => tag === FILTER_ANY ? 'Any tag' : tag))
+  push('subjects', a.selectedSubjects.map(subject => subjectChipLabel(subject, a.isMultiState)))
+  for (const [fieldId, values] of Object.entries(a.cfFilters)) {
+    push(`cf_${fieldId}`, values.map(v => customFieldChipLabel(fieldId, v, a.customFieldDefs)))
+  }
+  return groups
+}
+
 // One group per active dimension, in filterDimensions registry order. Groups
 // are what the AND/OR operator sits between, so a dimension with three
 // selected values is ONE group of three chips, not three groups.
@@ -66,7 +124,7 @@ export function buildActiveFilterGroups(a: ActiveFilterGroupArgs): ActiveFilterG
     <ActiveChip key={`stage-${s}`} label={stageLabel(s) ?? s} color="gray" onRemove={() => a.onRemoveStage(s)} />
   )))
   push('position', a.filterPositions.map(p => {
-    const posLabel = p === FILTER_ANY ? 'Any position' : ((a.positionOptions.find(o => o.value === p) as { value: string; label?: string } | undefined)?.label ?? p)
+    const posLabel = positionChipLabel(p, a.positionOptions)
     const posColor = POSITION_COLORS[p] ?? POSITION_FALLBACK
     return (
       <span key={`pos-${p}`} style={{
@@ -84,7 +142,7 @@ export function buildActiveFilterGroups(a: ActiveFilterGroupArgs): ActiveFilterG
   }))
   push('priority', a.filterPriorities.map(p => {
     if (p === FILTER_ANY || p === 'none') {
-      return <ActiveChip key={`pri-${p}`} label={p === FILTER_ANY ? 'Any priority' : 'No priority'} color="gray" onRemove={() => a.onRemovePriority(p)} />
+      return <ActiveChip key={`pri-${p}`} label={priorityChipLabel(p)} color="gray" onRemove={() => a.onRemovePriority(p)} />
     }
     const pc = PRIORITY_COLORS[p] ?? PRIORITY_COLORS['medium']
     return (
@@ -93,7 +151,7 @@ export function buildActiveFilterGroups(a: ActiveFilterGroupArgs): ActiveFilterG
         background: pc.fill, color: pc.text,
         display: 'inline-flex', alignItems: 'center', gap: 3,
       }}>
-        {pc.label ?? p}
+        {priorityChipLabel(p)}
         <button
           onClick={() => a.onRemovePriority(p)}
           style={{ background: 'none', border: 'none', padding: '0 2px', cursor: 'pointer', color: pc.text, lineHeight: 1, fontSize: fontSize.base, display: 'flex', alignItems: 'center' }}
@@ -113,14 +171,10 @@ export function buildActiveFilterGroups(a: ActiveFilterGroupArgs): ActiveFilterG
     <ActiveChip key={`tag-${tag}`} label={tag === FILTER_ANY ? 'Any tag' : tag} color="blue" onRemove={() => a.onRemoveTag(tag)} />
   )))
   push('subjects', a.selectedSubjects.map(subject => {
-    const idx = subject.indexOf(':')
-    const label = idx > 0
-      ? (a.isMultiState ? `${subject.slice(0, idx)}: ${subject.slice(idx + 1)}` : subject.slice(idx + 1))
-      : subject
     return (
       <ActiveChip
         key={`subject-${subject}`}
-        label={label}
+        label={subjectChipLabel(subject, a.isMultiState)}
         color="purple"
         onRemove={() => a.onRemoveSubject(subject)}
       />
@@ -128,15 +182,10 @@ export function buildActiveFilterGroups(a: ActiveFilterGroupArgs): ActiveFilterG
   }))
   for (const [fieldId, values] of Object.entries(a.cfFilters)) {
     push(`cf_${fieldId}`, values.map(v => {
-      // fieldId here is normally the def's real id, but it can still be the raw
-      // slug for a render or two after mount (useBillFilters resolves it against
-      // customFieldDefs once those load, but that's async) — match by either so
-      // the chip never falls back to printing the raw key.
-      const field = a.customFieldDefs.find(fld => fld.id === fieldId || fld.slug === fieldId)
       return (
         <ActiveChip
           key={`cf-${fieldId}-${v}`}
-          label={field?.type === 'binary' ? (field?.name ?? fieldId) : `${field?.name ?? fieldId}: ${v === FILTER_ANY ? 'Any' : v}`}
+          label={customFieldChipLabel(fieldId, v, a.customFieldDefs)}
           color="blue"
           onRemove={() => a.onRemoveCf(fieldId, v)}
         />

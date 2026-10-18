@@ -1,14 +1,14 @@
-import { isNotNull, and, like } from 'drizzle-orm'
+import { isNotNull, and, like, or } from 'drizzle-orm'
 import { bills } from '../db/schema'
 import { centralFetch } from './centralFetch'
 import type { AppDb, Env } from '../types'
-import { HANDLE_PREFIX, parseHandle } from '../../../shared/billHandle'
+import { HANDLE_PREFIXES, parseHandle } from '../../../shared/billHandle'
 
 // Central's bill ids for the priority-set bills that have a handle.
 export async function collectPriorityLegiscanIds(db: AppDb): Promise<number[]> {
   const rows = await db.select({ externalId: bills.externalId })
     .from(bills)
-    .where(and(isNotNull(bills.priority), like(bills.externalId, `${HANDLE_PREFIX}%`)))
+    .where(and(isNotNull(bills.priority), or(...HANDLE_PREFIXES.map(prefix => like(bills.externalId, `${prefix}%`)))))
     .all()
   return rows
     .map(r => parseHandle(r.externalId))
