@@ -166,6 +166,7 @@ vi.mock('../../lib/api', () => {
     }
     if (path.startsWith('/bills/facets')) return (facetsState.respond ? facetsState.respond(path) : FACETS) as T
     if (path === '/bills/bulk-dismiss' || path.endsWith('/triage-dismiss')) return {} as T
+    if (init?.method === 'PATCH' && path.endsWith('/priority')) return { priority: JSON.parse(init.body as string).priority } as T
     if (path.endsWith('/votes')) {
       // When a test wants the vote to fail, hold the rejection open (deferred) so
       // the optimistic count stays observable until the test triggers the failure
@@ -1320,9 +1321,36 @@ describe('BillList new-match dismiss — counts and sidebar chip', () => {
     await screen.findByText('Fresh Match')
     refresh.mockClear()
 
-    fireEvent.click((await screen.findAllByTitle('Reviewed — no priority'))[0])
+    fireEvent.change((await screen.findAllByRole('combobox', { name: /priority/i }))[0], { target: { value: 'dismiss' } })
 
     await waitFor(() => expect(apiCalls).toContain('/bills/bill-new/triage-dismiss'))
     await waitFor(() => expect(refresh).toHaveBeenCalled())
+  })
+
+  it('turns the row\'s amber dropdown back into a plain "Set priority" after Dismiss', async () => {
+    facetsState.bills = [NEW_MATCH]
+    renderWithSidebarSpy()
+    await screen.findByText('Fresh Match')
+    const selects = () => screen.getAllByRole('combobox', { name: /priority/i })
+    expect(selects()[0]).toHaveDisplayValue('New · Set priority')
+
+    fireEvent.change(selects()[0], { target: { value: 'dismiss' } })
+
+    await waitFor(() => expect(selects()[0]).toHaveDisplayValue('Set priority'))
+    expect(screen.queryByText('New · Set priority')).toBeNull()
+  })
+
+  it('clears the new-match state when a priority is chosen from the dropdown', async () => {
+    facetsState.bills = [NEW_MATCH]
+    const refresh = renderWithSidebarSpy()
+    await screen.findByText('Fresh Match')
+    refresh.mockClear()
+
+    fireEvent.change(screen.getAllByRole('combobox', { name: /priority/i })[0], { target: { value: 'medium' } })
+
+    await waitFor(() => expect(apiCalls).toContain('/bills/bill-new/priority'))
+    await waitFor(() => expect(screen.getAllByRole('combobox', { name: /priority/i })[0]).toHaveDisplayValue('Medium Priority'))
+    expect(screen.queryByText('New · Set priority')).toBeNull()
+    expect(apiCalls).not.toContain('/bills/bill-new/triage-dismiss')
   })
 })

@@ -188,3 +188,35 @@ describe('Sidebar vote live region', () => {
     root.remove()
   })
 })
+
+// #588: the sidebar uses the same select, in its mini size. Its bills all have a
+// priority, so it never shows the amber new-match state, but its empty option
+// reads like every other priority dropdown and it never offers Dismiss.
+describe('Sidebar priority select', () => {
+  beforeEach(() => { hoisted.voteShouldFail = false; hoisted.role = 'admin' })
+
+  it('lists "Set priority" first, then the three priorities, and no Dismiss', async () => {
+    const { root } = renderSidebar()
+    const select = await screen.findByRole('combobox', { name: /priority/i })
+    const labels = Array.from(select.querySelectorAll('option')).map(o => o.textContent)
+    expect(labels).toEqual(['Set priority', 'High Priority', 'Medium Priority', 'Low Priority'])
+    expect(select).toHaveDisplayValue('High Priority')
+    expect(screen.queryByText('Not set')).toBeNull()
+    root.remove()
+  })
+
+  it('is not amber', async () => {
+    const { root } = renderSidebar()
+    const select = await screen.findByRole('combobox', { name: /priority/i })
+    expect(select).not.toHaveStyle({ background: '#fef3c7' })
+    root.remove()
+  })
+
+  it('shows a member the read-only chip, with no select', async () => {
+    hoisted.role = 'member'
+    const { root } = renderSidebar()
+    await screen.findByRole('button', { name: /vote support on this bill/i })
+    expect(screen.queryByRole('combobox')).toBeNull()
+    root.remove()
+  })
+})
