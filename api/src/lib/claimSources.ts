@@ -184,10 +184,11 @@ export function parseStoredItems(json: string): ResolvedClaimSource[] | null {
  * document, and the check that the pinned document is still there is against
  * that member's texts too.
  *
- * Null when the bill has none stored, when what is stored isn't a list, and
- * when the pinned document is no longer in the bill's texts: the offsets are
- * into a document the reader can't open, so no link could land on them. The
- * stored items stay, for when the document is back.
+ * Null when the bill has none stored, when what is stored isn't a list, when
+ * the pinned document is no longer in the bill's texts, and when its stored hash
+ * differs from the pinned one (its content changed under the same id): the
+ * offsets are into a document the reader can't open, so no link could land on
+ * them. The stored items stay, for when the document is back.
  */
 export async function readClaimSources(db: AppDb, billId: string): Promise<StoredClaimSources | null> {
   const row = await db.select({
@@ -200,25 +201,26 @@ export async function readClaimSources(db: AppDb, billId: string): Promise<Store
   const items = parseStoredItems(row.claimSources)
   if (items === null) return null
 
-  // Only the document id is checked. The pin also holds the text hash the model
-  // read, but an instance has no hash to compare it with: it stores `''` in
-  // `bill_texts.text_hash` for every listed text, and central's text list carries
-  // no per-document hash. A comparison would be dead code, or would read every
-  // pin as stale. If that column is ever filled with the value central serves as
-  // `textHash` for the document, compare it here, so a document whose content
-  // changed under the same id stops reading until a re-analysis re-pins.
   const listed = await db.select({
     docId: billTexts.docId, type: billTexts.type, date: billTexts.date, mime: billTexts.mime,
-    stateLink: billTexts.stateLink, altStateLink: billTexts.altStateLink,
+    stateLink: billTexts.stateLink, altStateLink: billTexts.altStateLink, textHash: billTexts.textHash,
   }).from(billTexts)
     .where(and(eq(billTexts.billId, billId), eq(billTexts.docId, row.docId))).get()
   if (!listed) return null
 
+  // The pin holds the hash of the text the model read, and the stored document
+  // the hash central last sent for it. A difference means the content changed
+  // under the same id, so the offsets are into a text that is gone (#603). Either
+  // side empty is unknown, never a change: rows from before central sent a hash
+  // hold '', and so does a document central has no hash for.
+  if (row.textHash && listed.textHash && row.textHash !== listed.textHash) return null
+
+  const { textHash: _stored, ...document } = listed
   return {
     billId,
     docId: row.docId,
     textHash: row.textHash,
-    document: listed,
+    document,
     items,
   }
 }

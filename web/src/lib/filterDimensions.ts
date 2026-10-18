@@ -12,7 +12,7 @@
  *
  * Two "kinds" exist because not every filter dimension is a pick-one-of-N
  * options list:
- *   - 'options': a set of selectable values (State, Status, Stage, Session
+ *   - 'options': a set of selectable values (State, Status, Session
  *     year, Position, Priority, Tags, Subject). Desktop renders these as a
  *     `FilterDropdown`; mobile renders them as a drill-down chip list.
  *   - 'toggle': a single on/off control (My bills, New matches). Desktop
@@ -21,6 +21,8 @@
  *     making them a drill-down target — the same treatment "Min. Relevance"
  *     already gets there, since neither is a list of options to choose among.
  */
+
+import type { ActiveFilter } from '../../../shared/billFilter'
 
 export type FilterDimensionKind = 'options' | 'toggle'
 
@@ -92,8 +94,8 @@ export interface FilterDimensionContext {
   /** Whether some covered state's provider fills in the in-committee statuses
    *  (`useStageFilterUseful`). Absent counts as true. */
   stageUseful?: boolean
-  /** Whether a Stage filter is applied (from a saved view or URL). Keeps the
-   *  dimension visible so the filter can still be seen and turned off. */
+  /** Whether a stage is chosen (from a saved view or URL). Keeps Status grouped by stage so
+   *  the stage can still be seen and turned off. */
   stageActive?: boolean
 }
 
@@ -114,30 +116,32 @@ export interface FilterDimensionDef {
    *  > 0`) — that data-availability check was never part of the drift this
    *  module fixes, so it stays local to each surface. */
   isVisible: (ctx: FilterDimensionContext) => boolean
+  /** The filter is a pill beside the search box and never a chip, so the chip row leaves it out while the badge,
+   *  Reset, and the summary still count it. */
+  hasOwnPill?: boolean
+  /** The filter is counted and drawn even where its control is hidden, because it narrows the list all the same. */
+  countsWhenHidden?: boolean
 }
 
 export const FILTER_DIMENSIONS: readonly FilterDimensionDef[] = [
-  { key: 'state',      label: 'State',         kind: 'options', scope: 'bill',   isVisible: ctx => ctx.isMultiState },
-  { key: 'myBills',    label: 'My bills',      kind: 'toggle',  scope: 'workflow', isVisible: () => true },
+  // Counted where its control is hidden (a single-state instance), since a state in a link still narrows the list.
+  { key: 'state',      label: 'State',         kind: 'options', scope: 'bill',   isVisible: ctx => ctx.isMultiState, countsWhenHidden: true },
+  { key: 'myBills',    label: 'My bills',      kind: 'toggle',  scope: 'workflow', isVisible: () => true, hasOwnPill: true },
   // Admin-only worklist, but visible to anyone while its own filter is on, so a member
   // who followed a link to it can see what is narrowing the list and turn it off.
-  { key: 'newMatches', label: 'New matches',   kind: 'toggle',  scope: 'workflow', isVisible: ctx => ctx.isAdmin || ctx.newMatchesActive },
-  { key: 'unvoted',    label: 'Not yet voted', kind: 'toggle',  scope: 'workflow', isVisible: () => true },
+  { key: 'newMatches', label: 'New matches',   kind: 'toggle',  scope: 'workflow', isVisible: ctx => ctx.isAdmin || ctx.newMatchesActive, hasOwnPill: true },
+  { key: 'unvoted',    label: 'Not yet voted', kind: 'toggle',  scope: 'workflow', isVisible: () => true, hasOwnPill: true },
   // Hidden only when the tenant has no drafts at all (hasDrafts). Never
   // hidden because the active filters happen to exclude drafts — draftsActive
   // is the safety net that keeps the chip (and its own way to turn itself
   // back off) visible while the Drafts filter is on, regardless of hasDrafts.
-  { key: 'drafts',     label: 'Drafts',        kind: 'toggle',  scope: 'workflow', isVisible: ctx => ctx.hasDrafts || ctx.draftsActive },
+  { key: 'drafts',     label: 'Drafts',        kind: 'toggle',  scope: 'workflow', isVisible: ctx => ctx.hasDrafts || ctx.draftsActive, hasOwnPill: true },
   { key: 'status',     label: 'Status',        kind: 'options', scope: 'bill',   isVisible: () => true },
-  // A status's common stage (Introduced, In committee, ..., Enacted), which
-  // compares bills across states whose status names differ. Hidden when every
-  // covered state is on LegiScan, which almost never reports in-committee.
-  { key: 'stage',      label: 'Stage',         kind: 'options', scope: 'bill',   isVisible: ctx => ctx.stageUseful !== false || !!ctx.stageActive },
-  { key: 'session',    label: 'Session year',  kind: 'options', scope: 'bill',   isVisible: () => true },
+  { key: 'year',       label: 'Session year',  kind: 'options', scope: 'bill',   isVisible: () => true },
   { key: 'position',   label: 'Position',      kind: 'options', scope: 'bill',   isVisible: () => true },
   { key: 'priority',   label: 'Priority',      kind: 'options', scope: 'bill',   isVisible: () => true },
-  { key: 'tags',       label: 'Tags',          kind: 'options', scope: 'bill',   isVisible: () => true },
-  { key: 'subjects',   label: 'Subject',       kind: 'options', scope: 'bill',   isVisible: () => true },
+  { key: 'tag',        label: 'Tags',          kind: 'options', scope: 'bill',   isVisible: () => true },
+  { key: 'subject',    label: 'Subject',       kind: 'options', scope: 'bill',   isVisible: () => true },
 ] as const
 
 export type FilterDimensionKey = (typeof FILTER_DIMENSIONS)[number]['key']
@@ -151,6 +155,23 @@ function get(key: FilterDimensionKey): FilterDimensionDef {
   if (!d) throw new Error(`Unknown filter dimension: ${key}`)
   return d
 }
+
+/**
+ * The Stage filter is no dimension of its own: a stage (Introduced, In committee, ..., Enacted) is a grouping inside
+ * Status, which compares bills across states whose status names differ (#677). Status is grouped under its stages
+ * where Stage was offered before: some covered state's provider is not LegiScan, which almost never reports
+ * in-committee, or a stage is already chosen, so it can be seen and turned off. Everywhere else Status stays a flat list.
+ * Dropping `stageUseful` later, to group LegiScan-only instances too, is this one condition.
+ */
+export function isStatusGroupedByStage(ctx: FilterDimensionContext): boolean {
+  return ctx.stageUseful !== false || !!ctx.stageActive
+}
+
+/**
+ * The name of the separate Stage control, which only a page talking to an API that predates `statusGroups` still
+ * draws (it falls back to Status and Stage as two controls). The grouped Status control has no such name.
+ */
+export const STAGE_FILTER_LABEL = 'Stage'
 
 /** The one place either surface may read a dimension's display label. */
 export function filterDimensionLabel(key: FilterDimensionKey): string {
@@ -166,4 +187,34 @@ export function isFilterDimensionVisible(key: FilterDimensionKey, ctx: FilterDim
 /** All dimensions visible under `ctx`, in registry order. */
 export function visibleFilterDimensions(ctx: FilterDimensionContext): FilterDimensionDef[] {
   return FILTER_DIMENSIONS.filter(d => d.isVisible(ctx))
+}
+
+/** The filters with their own pill, as a set of names. */
+const OWN_PILL: ReadonlySet<string> = new Set(FILTER_DIMENSIONS.filter(d => d.hasOwnPill).map(d => d.key))
+
+/**
+ * The entries of the list of active filters that draw chips: every one but the filters with their own pill, and the
+ * search, which is its own box. They stay in the list, so the badge, Reset, and the summary count them.
+ */
+export function chipFilters(active: readonly ActiveFilter[]): ActiveFilter[] {
+  return active.filter(a => !OWN_PILL.has(a.name) && a.name !== 'search')
+}
+
+/**
+ * The filters this instance does not offer under `ctx`, which the list of active filters leaves out. A filter
+ * with its own hidden-when-off rule (Drafts, New matches) stays visible while it is on, so one that is on is never
+ * in this list, and a filter that is off has no value to leave out.
+ */
+export function hiddenFilterDimensions(ctx: FilterDimensionContext): FilterDimensionKey[] {
+  return FILTER_DIMENSIONS.filter(d => !d.countsWhenHidden && !d.isVisible(ctx)).map(d => d.key as FilterDimensionKey)
+}
+
+/**
+ * The filters each chip selection leaves out when it asks whether "any other filter" is set: the Bills nav chip's
+ * (the new matches it selects, and the search box) and the prioritized-bills widget's (the priority tiers and the
+ * not-yet-voted toggle it selects, and the search box). The match mode is never in the list, so it is never named.
+ */
+export const CHIP_SELECTION_LEAVES_OUT: Record<'billsNav' | 'prioritized', readonly string[]> = {
+  billsNav: ['newMatches', 'search'],
+  prioritized: ['priority', 'unvoted', 'search'],
 }

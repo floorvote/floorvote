@@ -77,7 +77,7 @@ describe('Tracked-first query optimization', () => {
     await seedBill({ billNumber: 'HB 100', title: 'Election Reform', matchType: 'keyword' })
     await seedBill({ billNumber: 'HB 200', title: 'Election Procedures', matchType: null })
 
-    const data = await fetchBills('q=Election')
+    const data = await fetchBills('search=Election')
     expect(data.pagination.total).toBe(2)
     expect(data.bills).toHaveLength(2)
   })
