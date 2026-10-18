@@ -423,6 +423,22 @@ export interface ProviderContext<K extends ProviderEnvKey = ProviderEnvKey> {
    */
   ids(kind: string, nativeKeys: readonly string[]): Promise<Map<string, number>>
   /**
+   * What the provider keeps between runs: small text entries under keys it
+   * names, for what it fetched once and shouldn't fetch again (a feed that
+   * answers one request per record, and allows few requests, is the case it
+   * exists for). Durable, and the provider's own: no provider reads
+   * another's. Nothing expires, so a provider drops what it no longer needs.
+   * An entry is text, so the provider serializes what it keeps.
+   */
+  cache: {
+    /** Every entry whose key starts with `prefix` (the empty prefix lists them all), by key. */
+    list(prefix: string): Promise<Map<string, string>>
+    /** Add these entries, replacing any with the same key. */
+    put(entries: Readonly<Record<string, string>>): Promise<void>
+    /** Remove these keys. A key that isn't there is ignored. */
+    drop(keys: readonly string[]): Promise<void>
+  }
+  /**
    * The central ids already minted for these keys, without minting any: a key
    * central has never seen is left out. For linking to a record the provider
    * isn't sure exists, such as the earlier session's copy of a carried-over
@@ -436,6 +452,17 @@ export interface ProviderContext<K extends ProviderEnvKey = ProviderEnvKey> {
    * last one listed is the person instances already know.
    */
   people(): Promise<{ peopleId: number; name: string; role: string | null }[]>
+  /**
+   * Email the operators an ops alert (the `ALERT_EMAILS` recipients), for
+   * something a person has to look at that would otherwise go unnoticed,
+   * such as a record the provider has set aside because it can't read it.
+   * Core sends it, with the provider's id in the subject, and it never
+   * throws. With no recipients set it only logs. A throw doesn't always
+   * alert on its own (a failed body-events month is only logged), so call
+   * this for anything a person must see. The provider keeps whatever
+   * stops it alerting twice for one thing (`cache`).
+   */
+  alert(message: { subject: string; text: string }): Promise<void>
 }
 
 /** A session as central stores it, handed to the list methods. */

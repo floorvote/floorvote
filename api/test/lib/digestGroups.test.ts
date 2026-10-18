@@ -6,7 +6,7 @@ import { getDb } from '../../src/db/client'
 import { associationConfig, bills, feedEvents } from '../../src/db/schema'
 import { runDigest } from '../../src/lib/digest'
 import { groupByHand, splitFromGroup } from '../../src/lib/companionGroups'
-import { renderDigestEmail, type DigestEvent } from '../../src/lib/digestEmail'
+import { renderDigestEmail, countNewMatches, type DigestEvent, type NewMatchDigestItem } from '../../src/lib/digestEmail'
 
 // A companion group is one policy in the digest (#381): the events on every
 // member roll into one card, each event labeled with its bill's number, and the
@@ -265,5 +265,57 @@ describe('the sample digest', () => {
     // One card for the pair: each number is in the header once.
     expect(html.match(/>RI HB 1240</g)).toHaveLength(1)
     expect(html.match(/>RI S 0733</g)).toHaveLength(1)
+  })
+})
+
+
+describe('renderDigestEmail: new-match companion groups (#638)', () => {
+  const item = (billId: string, billNumber: string, over: Partial<NewMatchDigestItem> = {}): NewMatchDigestItem =>
+    ({ billId, billNumber, billTitle: 'An Act Relating to Elections', billState: 'RI', billSession: '2026', relevanceScore: 5, ...over })
+  const pair = [item('a', 'H 101', { billGroupKey: 'a' }), item('b', 'S 202', { billGroupKey: 'a', relevanceScore: 9 })]
+
+  it('counts a group once however many members matched', () => {
+    expect(countNewMatches(pair)).toBe(1)
+    expect(countNewMatches([...pair, item('c', 'H 303')])).toBe(2)
+    expect(countNewMatches([item('c', 'H 303'), item('d', 'H 404')])).toBe(2)
+    expect(countNewMatches([])).toBe(0)
+  })
+
+  it('renders one card for the group, both bills in its header, and counts it once', () => {
+    const html = render([], { newMatches: pair })
+    expect(cards(html)).toBe(1)
+    expect(html).toMatch(/>RI H 101</)
+    expect(html).toMatch(/>RI S 202</)
+    expect(text(html)).toContain('1 new match in')
+    expect(text(html)).not.toContain('2 new matches')
+  })
+
+  it('heads the group\'s card with its most relevant member and takes the summary from whichever member has one', () => {
+    const html = render([], { newMatches: [
+      item('a', 'H 101', { billGroupKey: 'a', billTitle: 'Lower Title', relevanceScore: 2, summary: 'A summary' }),
+      item('b', 'S 202', { billGroupKey: 'a', billTitle: 'Higher Title', relevanceScore: 9 }),
+    ] })
+    expect(text(html)).toContain('Higher Title')
+    expect(text(html)).toContain('A summary')
+  })
+
+  it('ranks a group by its best member, so it is not capped out below a worse single bill', () => {
+    const many = Array.from({ length: 10 }, (_, i) => item(`u${i}`, `H ${500 + i}`, { relevanceScore: 6 }))
+    const html = render([], { newMatches: [...many, item('a', 'H 101', { billGroupKey: 'a', relevanceScore: 1 }), item('b', 'S 202', { billGroupKey: 'a', relevanceScore: 8 })] })
+    expect(text(html)).toContain('11 new matches')
+    expect(html).toMatch(/>RI S 202</)
+    expect(text(html)).toContain('See all 11 new matches')
+  })
+
+  it('keeps the headline and contents box at one when updates and a new-match group share a digest', () => {
+    const html = render([ev({ billId: 'u1', billNumber: 'H 404' })], { newMatches: pair })
+    expect(text(html)).toContain('1 new match')
+    expect(text(html)).not.toContain('2 new matches')
+  })
+
+  it('leaves an ungrouped new match as it was', () => {
+    const html = render([], { newMatches: [item('c', 'H 303')] })
+    expect(cards(html)).toBe(1)
+    expect(text(html)).toContain('1 new match in')
   })
 })

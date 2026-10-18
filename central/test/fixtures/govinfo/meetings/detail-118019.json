@@ -1,0 +1,57 @@
+{
+  "committeeMeeting": {
+    "chamber": "House",
+    "committees": [
+      {
+        "name": "House Armed Services Subcommittee on Intelligence and Special Operations",
+        "systemCode": "hsas26",
+        "url": "https://api.congress.gov/v3/committee/house/hsas26?format=json"
+      }
+    ],
+    "congress": 119,
+    "date": "2025-04-09T12:00:00Z",
+    "eventId": "118019",
+    "hearingTranscript": [
+      {
+        "jacketNumber": 61487,
+        "url": "https://api.congress.gov/v3/hearing/119/house/61487?format=json"
+      }
+    ],
+    "isManuallyCurated": true,
+    "location": {
+      "building": "Rayburn House Office Building",
+      "room": "2118"
+    },
+    "meetingStatus": "Rescheduled",
+    "title": "U.S. Special Operations Forces and Command – Challenges and Resource Priorities for Fiscal Year 2026",
+    "type": "Hearing",
+    "updateDate": "2026-10-16T19:33:16Z",
+    "videos": [
+      {
+        "name": "20250401: ISO Hearing: U.S. SOF – Challenges and Resource Priorities for FY 2026",
+        "url": "https://www.congress.gov/event/119th-Congress/house-event/118019"
+      }
+    ],
+    "witnessDocuments": [
+      {
+        "documentType": "Witness Biography",
+        "format": "PDF",
+        "url": "https://www.congress.gov/119/meeting/house/118019/witnesses/HHRG-119-AS26-Bio-JenkinsC-20250409.pdf"
+      }
+    ],
+    "witnesses": [
+      {
+        "name": "The Honorable Colby Jenkins",
+        "organization": "U.S. Department of Defense",
+        "position": "Performing the Duties of the Assistant Secretary of Defense for Special Operations and Low Intensity Conflict"
+      }
+    ]
+  },
+  "request": {
+    "chamber": "house",
+    "congress": "119",
+    "contentType": "application/json",
+    "eventId": "118019",
+    "format": "json"
+  }
+}

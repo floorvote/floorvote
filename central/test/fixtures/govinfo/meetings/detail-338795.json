@@ -1,0 +1,406 @@
+{
+  "committeeMeeting": {
+    "chamber": "Senate",
+    "committees": [
+      {
+        "name": "Senate Energy and Natural Resources",
+        "systemCode": "sseg00",
+        "url": "https://api.congress.gov/v3/committee/senate/sseg00?format=json"
+      }
+    ],
+    "congress": 119,
+    "date": "2026-09-30T14:00:00Z",
+    "eventId": "338795",
+    "location": {
+      "building": "Dirksen Senate Office Building",
+      "room": "366"
+    },
+    "meetingDocuments": [
+      {
+        "description": "A bill to amend the Smith River National Recreation Area Act to include certain additions to the Smith River National Recreation Area, to amend the Wild and Scenic Rivers Act to designate certain wild rivers in the State of Oregon, and for other purposes.",
+        "documentType": "Bills and Resolutions"
+      }
+    ],
+    "meetingStatus": "Scheduled",
+    "relatedItems": {
+      "bills": [
+        {
+          "congress": 119,
+          "number": "1729",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/1729?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "2306",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/2306?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "2317",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/2317?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "249",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/249?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "2709",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/2709?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "3638",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/3638?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "5729",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/5729?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "677",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/677?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "7257",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/7257?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "7618",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/7618?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "1005",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/1005?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "1088",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/1088?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "1195",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/1195?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "1254",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/1254?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "1341",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/1341?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "1342",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/1342?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "1349",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/1349?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "1476",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/1476?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "1568",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/1568?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "1737",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/1737?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "1777",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/1777?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "1870",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/1870?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "2570",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/2570?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "2970",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/2970?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "3371",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/3371?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "3499",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/3499?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "3524",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/3524?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "3526",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/3526?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "3542",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/3542?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "365",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/365?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "3695",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/3695?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "3737",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/3737?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "3785",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/3785?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "3925",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/3925?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "4005",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/4005?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "4023",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/4023?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "4103",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/4103?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "4116",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/4116?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "4166",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/4166?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "4200",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/4200?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "4252",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/4252?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "4312",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/4312?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "4351",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/4351?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "4406",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/4406?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "4595",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/4595?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "462",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/462?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "465",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/465?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "4846",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/4846?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "4870",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/4870?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "5352",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/5352?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "5359",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/5359?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "5360",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/5360?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "5374",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/5374?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "5402",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/5402?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "730",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/730?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "764",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/764?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "791",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/791?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "888",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/888?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "945",
+          "type": "S",
+          "url": "https://api.congress.gov/v3/bill/119/s/945?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "331",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/331?format=json"
+        }
+      ]
+    },
+    "title": "Business meeting to consider S.365 and H.R.1729, bills to amend the John D. Dingell, Jr. Conservation, Management, and Recreation Act to allow for additional entities to be eligible to complete the maintenance work on Bolts Ditch and the Bolts Ditch Headgate within the Holy Cross Wilderness, Colorado, S.462, to provide for economic development and conservation in Washoe County, Nevada, S.465, to require the Federal Energy Regulatory Commission to reform the interconnection queue process for the prioritization and approval of certain projects, S.730, to direct the Secretary of the Interior to conduct a study to assess the suitability and feasibility of establishing the African Burial Ground International Memorial Museum and Educational Center at the African Burial Ground National Monument, S.764, to provide for the designation of certain wilderness areas, recreation management areas, and conservation areas in the State of Colorado, S.791, to establish the Justice Thurgood Marshall National Historic Site in the State of Maryland as an affiliated area of the National Park System, S.888, to designate certain land administered by the Bureau of Land Management and the Forest Service in the State of Oregon as wilderness and national recreation areas, to withdraw certain land located in Curry County and Josephine County, Oregon, from all forms of entry, appropriation, or disposal under the public land laws, location, entry, and patent under the mining laws, and operation under the mineral leasing and geothermal leasing laws, S.945, to amend the Smith River National Recreation Area Act to include certain additions to the Smith River National Recreation Area, to amend the Wild and Scenic Rivers Act to designate certain wild rivers in the State of Oregon, S.1005, to provide for conservation and economic development in the State of Nevada, S.1088, to provide that the memorial to commemorate the sacrifice and service of the women who worked on the home front to support the efforts of the United States military during World War II may be located on the National Mall, S.1195, to promote conservation, improve public land management, and provide for sensible development in Pershing County, Nevada, S.1254 and H.R.331, bills to amend the Aquifer Recharge Flexibility Act to clarify a provision relating to conveyances for aquifer recharge purposes, S.1341, to amend the Colorado Wilderness Act of 1993 to add certain land to the Sarvis Creek Wilderness, S.1342, to amend the Energy Conservation and Production Act to improve the weatherization assistance program, S.1349, to withdraw the National Forest System land in the Ruby Mountains subdistrict of the Humboldt-Toiyabe National Forest and the National Wildlife Refuge System land in Ruby Lake National Wildlife Refuge, Elko and White Pine Counties, Nevada, from operation under the mineral leasing laws, S.1476, to amend the Wild and Scenic Rivers Act to designate certain segments of the Gila River system in the State of New Mexico as components of the National Wild and Scenic Rivers System, to provide for the transfer of administrative jurisdiction over certain Federal land in the State of New Mexico, S.1568, to amend the Energy Policy and Conservation Act to modify standards for general service lamps, S.1737, to designate and expand wilderness areas in Olympic National Forest in the State of Washington, and to designate certain rivers in Olympic National Forest and Olympic National Park as wild and scenic rivers, S.1777, to amend the California Desert Protection Act of 1994 to expand the boundary of Joshua Tree National Park, to redesignate the Cottonwood Visitor Center at Joshua Tree National Park as the \"Dianne Feinstein Visitor Center\", S.1870, to adjust the boundary of the Santa Monica Mountains National Recreation Area to include the Rim of the Valley Corridor, S.2570, to amend the Energy Conservation and Production Act to reauthorize the weatherization assistance program, S.2970, to authorize the use of off-highway vehicles in certain areas of the Capitol Reef National Park, Utah, S.3371, to designate the Museum of the Blind People's Movement in Baltimore, Maryland, as the \"National Museum of the Blind People's Movement\", S.3499 and H.R.3638, bills to direct the Secretary of Energy to prepare periodic assessments and submit reports on the supply chain for the generation and transmission of electricity, S.3524 and H.R.7618, bills to amend title 54, United States Code, to modify certain cost-sharing requirements for grant programs under the American Battlefield Protection Program, S.3526, to provide for the protection of and investment in certain Federal land in the State of California, S.3542, to amend the Wild and Scenic Rivers Act to designate the Upper Raritan River Watershed in the State of New Jersey for study for potential addition to the National Wild and Scenic Rivers System, S.3695, to amend Public Law 96-586 to modernize the authority of the Forest Service to acquire",
+    "type": "Open Business Meeting",
+    "updateDate": "2026-09-30T00:08:25Z",
+    "videos": [
+      {
+        "name": "Business meeting to consider S.365 and H.R.1729, bills to amend the John D. Dingell, Jr. Conservation, Management, and Recreation Act to allow for additional entities to be eligible to complete the maintenance work on Bolts Ditch and the Bolts Ditch Headgate within the Holy Cross Wilderness, Colorado, S.462, to provide for economic development and conservation in Washoe County, Nevada, S.465, to require the Federal Energy Regulatory Commission to reform the interconnection queue process for the prioritization and approval of certain projects, S.730, to direct the Secretary of the Interior to conduct a study to assess the suitability and feasibility of establishing the African Burial Ground International Memorial Museum and Educational Center at the African Burial Ground National Monument, S.764, to provide for the designation of certain wilderness areas, recreation management areas, and conservation areas in the State of Colorado, S.791, to establish the Justice Thurgood Marshall National Historic Site in the State of Maryland as an affiliated area of the National Park System, S.888, to designate certain land administered by the Bureau of Land Management and the Forest Service in the State of Oregon as wilderness and national recreation areas, to withdraw certain land located in Curry County and Josephine County, Oregon, from all forms of entry, appropriation, or disposal under the public land laws, location, entry, and patent under the mining laws, and operation under the mineral leasing and geothermal leasing laws, S.945, to amend the Smith River National Recreation Area Act to include certain additions to the Smith River National Recreation Area, to amend the Wild and Scenic Rivers Act to designate certain wild rivers in the State of Oregon, S.1005, to provide for conservation and economic development in the State of Nevada, S.1088, to provide that the memorial to commemorate the sacrifice and service of the women who worked on the home front to support the efforts of the United States military during World War II may be located on the National Mall, S.1195, to promote conservation, improve public land management, and provide for sensible development in Pershing County, Nevada, S.1254 and H.R.331, bills to amend the Aquifer Recharge Flexibility Act to clarify a provision relating to conveyances for aquifer recharge purposes, S.1341, to amend the Colorado Wilderness Act of 1993 to add certain land to the Sarvis Creek Wilderness, S.1342, to amend the Energy Conservation and Production Act to improve the weatherization assistance program, S.1349, to withdraw the National Forest System land in the Ruby Mountains subdistrict of the Humboldt-Toiyabe National Forest and the National Wildlife Refuge System land in Ruby Lake National Wildlife Refuge, Elko and White Pine Counties, Nevada, from operation under the mineral leasing laws, S.1476, to amend the Wild and Scenic Rivers Act to designate certain segments of the Gila River system in the State of New Mexico as components of the National Wild and Scenic Rivers System, to provide for the transfer of administrative jurisdiction over certain Federal land in the State of New Mexico, S.1568, to amend the Energy Policy and Conservation Act to modify standards for general service lamps, S.1737, to designate and expand wilderness areas in Olympic National Forest in the State of Washington, and to designate certain rivers in Olympic National Forest and Olympic National Park as wild and scenic rivers, S.1777, to amend the California Desert Protection Act of 1994 to expand the boundary of Joshua Tree National Park, to redesignate the Cottonwood Visitor Center at Joshua Tree National Park as the \"Dianne Feinstein Visitor Center\", S.1870, to adjust the boundary of the Santa Monica Mountains National Recreation Area to include the Rim of the Valley Corridor, S.2570, to amend the Energy Conservation and Production Act to reauthorize the weatherization assistance program, S.2970, to authorize the use of off-highway vehicles in certain areas of the Capitol Reef National Park, Utah, S.3371, to designate the Museum of the Blind People's Movement in Baltimore, Maryland, as the \"National Museum of the Blind People's Movement\", S.3499 and H.R.3638, bills to direct the Secretary of Energy to prepare periodic assessments and submit reports on the supply chain for the generation and transmission of electricity, S.3524 and H.R.7618, bills to amend title 54, United States Code, to modify certain cost-sharing requirements for grant programs under the American Battlefield Protection Program, S.3526, to provide for the protection of and investment in certain Federal land in the State of California, S.3542, to amend the Wild and Scenic Rivers Act to designate the Upper Raritan River Watershed in the State of New Jersey for study for potential addition to the National Wild and Scenic Rivers System, S.3695, to amend Public Law 96-586 to modernize the authority of the Forest Service to acquire",
+        "url": "https://www.congress.gov/event/119th-Congress/senate-event/338795"
+      }
+    ]
+  },
+  "request": {
+    "chamber": "senate",
+    "congress": "119",
+    "contentType": "application/json",
+    "eventId": "338795",
+    "format": "json"
+  }
+}
