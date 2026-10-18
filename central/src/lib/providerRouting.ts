@@ -14,6 +14,12 @@ export function ingestQueueFor(provider: Provider, env: Env): Queue {
   return (provider.ingestQueue ? env[provider.ingestQueue] as Queue | undefined : undefined) ?? env.INGESTOR_QUEUE
 }
 
+/** The queue for a provider named by id: `ingestQueueFor`, or the shared queue for an id central doesn't know. */
+export function ingestQueueForId(providerId: string | null | undefined, env: Env): Queue {
+  const provider = findProvider(providerId)
+  return provider ? ingestQueueFor(provider, env) : env.INGESTOR_QUEUE
+}
+
 /** D1 binds at most 100 parameters, so a lookup by bill id reads this many at a time. */
 const LOOKUP_CHUNK = 90
 
@@ -32,9 +38,10 @@ export async function groupByIngestQueue(billIds: number[], env: Env, db: Db): P
   }
   const groups = new Map<Queue, number[]>()
   for (const billId of billIds) {
-    const provider = findProvider(providerOf.get(billId))
-    const queue = provider ? ingestQueueFor(provider, env) : env.INGESTOR_QUEUE
-    groups.set(queue, [...(groups.get(queue) ?? []), billId])
+    const queue = ingestQueueForId(providerOf.get(billId), env)
+    const ids = groups.get(queue)
+    if (ids) ids.push(billId)
+    else groups.set(queue, [billId])
   }
   return [...groups].map(([queue, ids]) => ({ queue, billIds: ids }))
 }

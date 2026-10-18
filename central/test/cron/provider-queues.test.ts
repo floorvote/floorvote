@@ -467,10 +467,14 @@ describe('where every other producer queues a bill', () => {
       expect(bodies(q[f.own])).toEqual([])
     })
 
-    it('sends a bill no row exists for to the shared queue', async () => {
-      if (producer.name !== 'an operator\'s single-bill re-ingest' && producer.name !== 'a single bill promotion' && producer.name !== 'a bulk bill promotion') return
+    it('sends a bill of a provider central does not know to the shared queue', async () => {
       const tenantId = await seedWorld()
-      const ghost: Fixture = { label: 'unknown', provider: 'legiscan', billId: 987001, sessionId: 0, state: 'RI', own: 'shared' }
+      const ghost: Fixture = { label: 'unknown', provider: 'nosuch', billId: 9105, sessionId: 104, state: 'RI', own: 'shared' }
+      await db().insert(schema.bills).values({
+        billId: ghost.billId, sessionId: ghost.sessionId, state: ghost.state, stateId: 0, billNumber: 'HB1',
+        title: 'A sales tax act', changeHash: 'h', status: 1, provider: ghost.provider,
+      })
+      await producer.prepare(tenantId, [ghost])
       const { env: e, q } = makeEnv(ALL)
       const res = await producer.run(e, tenantId, [ghost])
       expect(res.status).toBe(200)
