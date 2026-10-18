@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, cleanup } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { BillDetail } from './BillDetail'
 import * as api from '../lib/api'
@@ -247,12 +247,12 @@ describe.each(LAYOUTS)('bill page previous and next arrows, $layout', ({ width }
     }
   })
 
-  it('has tooltips that name the action without saying left or right', async () => {
+  it('has tooltips that name the action and its key, without saying left or right', async () => {
     await renderAt(1)
     const prev = screen.getByRole('button', { name: 'Previous bill' })
     const next = screen.getByRole('button', { name: 'Next bill' })
-    expect(prev).toHaveAttribute('title', 'Previous bill')
-    expect(next).toHaveAttribute('title', 'Next bill')
+    expect(prev).toHaveAttribute('title', 'Previous bill (K)')
+    expect(next).toHaveAttribute('title', 'Next bill (J)')
     expect(`${prev.title} ${next.title}`).not.toMatch(/[←→]|left|right/i)
   })
 
@@ -319,7 +319,7 @@ describe.each(LAYOUTS)('bill page previous and next arrows, $layout', ({ width }
     expect(screen.getByRole('button', { name: 'Next bill' })).toBeDisabled()
   })
 
-  describe('keyboard shortcuts are unchanged', () => {
+  describe('keyboard shortcuts', () => {
     it('ArrowLeft goes to the previous bill and ArrowRight to the next', async () => {
       await renderAt(1)
       fireEvent.keyDown(window, { key: 'ArrowLeft' })
@@ -327,6 +327,74 @@ describe.each(LAYOUTS)('bill page previous and next arrows, $layout', ({ width }
       fireEvent.keyDown(window, { key: 'ArrowRight' })
       expect(routerMock.navigate).toHaveBeenLastCalledWith(PATHS[2], { state: { billPaths: PATHS, currentIndex: 2 } })
       expect(routerMock.navigate).toHaveBeenCalledTimes(2)
+    })
+
+    it('k goes to the previous bill and j to the next', async () => {
+      await renderAt(1)
+      fireEvent.keyDown(window, { key: 'k' })
+      expect(routerMock.navigate).toHaveBeenLastCalledWith(PATHS[0], { state: { billPaths: PATHS, currentIndex: 0 } })
+      fireEvent.keyDown(window, { key: 'j' })
+      expect(routerMock.navigate).toHaveBeenLastCalledWith(PATHS[2], { state: { billPaths: PATHS, currentIndex: 2 } })
+      expect(routerMock.navigate).toHaveBeenCalledTimes(2)
+    })
+
+    it('k does nothing on the first bill and j does nothing on the last', async () => {
+      await renderAt(0)
+      fireEvent.keyDown(window, { key: 'k' })
+      expect(routerMock.navigate).not.toHaveBeenCalled()
+      cleanup()
+      await renderAt(2)
+      fireEvent.keyDown(window, { key: 'j' })
+      expect(routerMock.navigate).not.toHaveBeenCalled()
+    })
+
+    it('j and k do nothing when the bill was not opened from a list', async () => {
+      await renderAt(null, null)
+      fireEvent.keyDown(window, { key: 'j' })
+      fireEvent.keyDown(window, { key: 'k' })
+      expect(routerMock.navigate).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['ctrl', { ctrlKey: true }],
+      ['meta', { metaKey: true }],
+      ['alt', { altKey: true }],
+      ['shift', { shiftKey: true }],
+    ])('ignores j and k with %s held', async (_name, mods) => {
+      await renderAt(1)
+      fireEvent.keyDown(window, { key: 'j', ...mods })
+      fireEvent.keyDown(window, { key: 'k', ...mods })
+      expect(routerMock.navigate).not.toHaveBeenCalled()
+    })
+
+    it.each(['input', 'textarea', 'div'])('ignores j and k while typing in a %s', async (tag) => {
+      await renderAt(1)
+      const el = document.createElement(tag)
+      if (tag === 'div') el.setAttribute('contenteditable', 'true')
+      document.body.appendChild(el)
+      fireEvent.keyDown(el, { key: 'j' })
+      fireEvent.keyDown(el, { key: 'k' })
+      expect(routerMock.navigate).not.toHaveBeenCalled()
+      el.remove()
+    })
+
+    it('ignores j and k typed into a child of an editor', async () => {
+      await renderAt(1)
+      const editor = document.createElement('div')
+      editor.setAttribute('contenteditable', 'true')
+      const p = document.createElement('p')
+      editor.appendChild(p)
+      document.body.appendChild(editor)
+      fireEvent.keyDown(p, { key: 'j' })
+      expect(routerMock.navigate).not.toHaveBeenCalled()
+      editor.remove()
+    })
+
+    it('does not respond to other letters', async () => {
+      await renderAt(1)
+      fireEvent.keyDown(window, { key: 'h' })
+      fireEvent.keyDown(window, { key: 'l' })
+      expect(routerMock.navigate).not.toHaveBeenCalled()
     })
 
     it('does not take over ArrowUp and ArrowDown, which scroll the page', async () => {
