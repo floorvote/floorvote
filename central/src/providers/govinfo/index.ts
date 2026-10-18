@@ -285,7 +285,7 @@ async function alertVanished(congress: number, missing: GovInfoType[], sessionId
   for (const type of missing) {
     if (!await ctx.hasStored(sessionId, `${congress}/${type.toUpperCase()}[0-9]*`)) continue
     await ctx.alert({
-      subject: `GovInfo: the ${type} Bill Status zip for Congress ${congress} is gone`,
+      subject: `the ${type} Bill Status zip for Congress ${congress} is gone`,
       text: `The ${type} Bill Status zip for Congress ${congress} answered 404, though central has stored ${type} bills for it. Those bills have stopped updating, and the other types kept syncing. Check GovInfo's bulk data for BILLSTATUS/${congress}/${type}.`,
     })
   }

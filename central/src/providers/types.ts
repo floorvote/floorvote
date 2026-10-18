@@ -446,6 +446,12 @@ export interface ProviderContext<K extends ProviderEnvKey = ProviderEnvKey> {
    */
   knownIds(kind: string, nativeKeys: readonly string[]): Promise<Map<string, number>>
   /**
+   * Whether core has stored a record of this provider's for the session whose
+   * native key matches `glob` (SQLite GLOB). For a provider that must tell a
+   * feed that has nothing yet from one that lost what it had.
+   */
+  hasStored(sessionId: number, glob: string): Promise<boolean>
+  /**
    * The people core has stored for this provider, by central id ascending, for
    * resolving the names its records use. People a cutover carried over from
    * another provider come after the rest, so where two share a name, the
@@ -453,16 +459,16 @@ export interface ProviderContext<K extends ProviderEnvKey = ProviderEnvKey> {
    */
   people(): Promise<{ peopleId: number; name: string; role: string | null }[]>
   /**
-   * Whether core has stored a record of this provider's for the session whose
-   * native key matches `glob` (SQLite GLOB). For a provider that must tell a
-   * feed that has nothing yet from one that lost what it had.
+   * Email the operators an ops alert (the `ALERT_EMAILS` recipients), for
+   * something a person has to look at that would otherwise go unnoticed,
+   * such as a record the provider has set aside because it can't read it.
+   * Core sends it, with the provider's id in the subject, and it never
+   * throws. With no recipients set it only logs. A throw doesn't always
+   * alert on its own (a failed body-events month is only logged), so call
+   * this for anything a person must see. The provider keeps whatever
+   * stops it alerting twice for one thing (`cache`).
    */
-  hasStored(sessionId: number, glob: string): Promise<boolean>
-  /**
-   * Email an ops alert to central's operators (`ALERT_EMAILS`), for a problem
-   * that needn't fail the pass. Best-effort: never throws.
-   */
-  alert(msg: { subject: string; text: string }): Promise<void>
+  alert(message: { subject: string; text: string }): Promise<void>
 }
 
 /** A session as central stores it, handed to the list methods. */
