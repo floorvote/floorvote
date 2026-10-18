@@ -63,17 +63,23 @@ const AND_ANCHORS: Array<[string, string[]]> = [
   ['cf_cf2=x', ['cf_cf2']], ['subject=NJ:Elections', ['subject']], ['minRelevance=4', []],
   ['unvoted=1', []], ['newMatches=1', []], ['myBills=1', []],
   ['priority=none', ['priority']], ['position=none', ['position']], ['priority=__any__&status=Introduced', ['priority', 'status']],
-  // The provider facts that were never the active filter: each is a dimension with a facet of its own, so each must
-  // leave itself out of its own count and no other's. Drafts is a scope, which narrows every count.
+]
+// The same, for the provider facts that were never the active filter (state, stage, year, session) and for drafts: each is
+// a dimension with a facet of its own, so each must leave itself out of its own count and no other's. Drafts is a scope,
+// which narrows every count. They run in files of their own (groupFacetsRandom4, 5): a file slows with the number of
+// requests it has made, and these anchors would carry the others' past their time limit on a busy machine.
+const PROVIDER_AND_ANCHORS: Array<[string, string[]]> = [
   ['state=NJ', ['state']], ['stage=passed', ['stage']], ['year=2026', ['year']], ['session=2025', ['session']], ['drafts=1', []],
   ['year=2026&session=2025', ['year', 'session']], ['state=TX&stage=introduced', ['state', 'stage']], ['drafts=1&status=Passed', ['status']],
+]
+const PROVIDER_OR_ANCHORS = [
+  'state=NJ', 'stage=passed', 'year=2026', 'session=2025', 'drafts=1', 'year=2025&session=2026', 'state=TX&stage=introduced&year=2026',
+  'drafts=1&priority=high', 'session=2025&status=Passed',
 ]
 const OR_ANCHORS = [
   'status=Passed', 'priority=high', 'tag=Energy', 'position=Support', 'cf_cf1=Labor', 'subject=NJ:Elections',
   'status=Passed&priority=high', 'status=Introduced&tag=Labor&position=Oppose', 'priority=none&state=TX',
   'status=Passed&unvoted=1', 'priority=high&newMatches=1', 'tag=Energy&myBills=1', 'position=none&cf_cf1=__any__',
-  'state=NJ', 'stage=passed', 'year=2026', 'session=2025', 'drafts=1', 'year=2025&session=2026', 'state=TX&stage=introduced&year=2026',
-  'drafts=1&priority=high', 'session=2025&status=Passed',
 ]
 
 /**
@@ -82,7 +88,9 @@ const OR_ANCHORS = [
  * stale values, ties, and a value on one bill that the group's others never had. It is built once for the
  * tests, which only read.
  */
-export function randomFixtureSuite(seed: number, modes: Array<'AND' | 'OR'> = ['AND', 'OR']) {
+export function randomFixtureSuite(seed: number, modes: Array<'AND' | 'OR'> = ['AND', 'OR'], anchors: 'core' | 'provider' = 'core') {
+  const andAnchors = anchors === 'core' ? AND_ANCHORS : PROVIDER_AND_ANCHORS
+  const orAnchors = anchors === 'core' ? OR_ANCHORS : PROVIDER_OR_ANCHORS
   describe(`every count matches the list on a random fixture (seed ${seed})`, () => {
     beforeAll(async () => {
       await reset()
@@ -153,10 +161,10 @@ export function randomFixtureSuite(seed: number, modes: Array<'AND' | 'OR'> = ['
       checks.forEach(([label, , promised], i) => expect(actual[i], label).toBe(promised))
     }
 
-    for (const [qs, skip] of modes.includes('AND') ? AND_ANCHORS : []) {
+    for (const [qs, skip] of modes.includes('AND') ? andAnchors : []) {
       it(`AND: ${qs || 'no filter'}`, async () => { await expectCountsMatch(qs, skip) })
     }
-    for (const qs of modes.includes('OR') ? OR_ANCHORS : []) {
+    for (const qs of modes.includes('OR') ? orAnchors : []) {
       it(`OR: ${qs}`, async () => { await expectCountsMatch(`${qs}&match=any`, []) })
     }
   })
