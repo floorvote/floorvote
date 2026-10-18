@@ -4,7 +4,8 @@ import { stageLabel } from '../../../../shared/statusStages'
 import { PRIORITY_COLORS, POSITION_COLORS, POSITION_FALLBACK } from '../../lib/chipStyles'
 import { fontSize, radius } from '../../styles/tokens'
 import { ActiveChip } from './FilterPanel'
-import { FILTER_ANY } from '../../../../shared/billFilter'
+import { FILTER_ANY, type ActiveFilter } from '../../../../shared/billFilter'
+import { chipFilters } from '../../lib/filterDimensions'
 import type { CustomFieldDef } from './types'
 
 export type ActiveFilterGroup = { key: string; chips: ReactNode[] }
@@ -27,6 +28,8 @@ export type ActiveFilterGroupArgs = {
    *  dropped from the label only — the stored value, and therefore removal,
    *  is unaffected. */
   isMultiState: boolean
+  /** The one list of active filters. When given, a group is drawn only if the list holds its filter as a chip. */
+  active?: readonly ActiveFilter[]
   onRemoveState: (s: string) => void
   onRemoveStatus: (s: string) => void
   onRemoveStage: (s: string) => void
@@ -84,13 +87,21 @@ export function customFieldChipLabel(fieldId: string, v: string, defs: ReadonlyA
 export type ActiveFilterLabelArgs = Pick<ActiveFilterGroupArgs,
   'state' | 'status' | 'stage' | 'position' | 'priority' | 'year' |
   'tag' | 'subject' | 'field' | 'minRelevance' | 'positionOptions' | 'isMultiState'
-> & { customFieldDefs: ReadonlyArray<ChipFieldDef> }
+> & { customFieldDefs: ReadonlyArray<ChipFieldDef>; active?: readonly ActiveFilter[] }
+
+/** Whether the list of active filters (when there is one) holds this group's filter as a chip. */
+function chipGate(active: readonly ActiveFilter[] | undefined): (key: string) => boolean {
+  if (!active) return () => true
+  const keys = new Set(chipFilters(active).map(a => a.key))
+  return key => keys.has(key)
+}
 
 // Every chip's label, one group per active dimension, in the order the chips
 // are drawn. The same groups as buildActiveFilterGroups, minus the controls.
 export function activeFilterLabelGroups(a: ActiveFilterLabelArgs): { key: string; labels: string[] }[] {
   const groups: { key: string; labels: string[] }[] = []
-  const push = (key: string, labels: string[]) => { if (labels.length > 0) groups.push({ key, labels }) }
+  const drawn = chipGate(a.active)
+  const push = (key: string, labels: string[]) => { if (labels.length > 0 && drawn(key)) groups.push({ key, labels }) }
   push('state', a.state)
   push('status', a.status.map(s => decodeStatus(s) ?? s))
   push('stage', a.stage.map(s => stageLabel(s) ?? s))
@@ -113,7 +124,8 @@ export function activeFilterLabelGroups(a: ActiveFilterLabelArgs): { key: string
 // scope cluster beside search and always narrow.
 export function buildActiveFilterGroups(a: ActiveFilterGroupArgs): ActiveFilterGroup[] {
   const groups: ActiveFilterGroup[] = []
-  const push = (key: string, chips: ReactNode[]) => { if (chips.length > 0) groups.push({ key, chips }) }
+  const drawn = chipGate(a.active)
+  const push = (key: string, chips: ReactNode[]) => { if (chips.length > 0 && drawn(key)) groups.push({ key, chips }) }
 
   push('state', a.state.map(s => (
     <ActiveChip key={`state-${s}`} label={s} color="gray" onRemove={() => a.onRemoveState(s)} />

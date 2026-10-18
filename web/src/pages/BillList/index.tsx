@@ -637,6 +637,7 @@ export function BillList() {
     positionOptions: f.positionOptions,
     customFieldDefs,
     isMultiState: f.isMultiState,
+    active: f.activeFilters,
     onRemoveState: s => f.setState(prev => prev.filter(x => x !== s)),
     onRemoveStatus: s => f.setStatus(prev => prev.filter(x => x !== s)),
     onRemoveStage: s => f.setStage(prev => prev.filter(x => x !== s)),
@@ -1191,6 +1192,7 @@ export function BillList() {
         year={f.year.map(String)}
         minRelevance={f.minRelevance}
         myBills={f.myBills}
+        search={f.search}
         state={f.state}
         isAdmin={isAdmin}
         newMatches={f.newMatches}

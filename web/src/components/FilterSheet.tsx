@@ -5,7 +5,8 @@ import type { SubjectGroup } from '../pages/BillList/FilterPanel'
 import type { CustomFieldDef } from '../pages/BillList/types'
 import { FilterSheetVirtualList } from './FilterSheetVirtualList'
 import { useStageFilterUseful } from '../lib/capabilities'
-import { filterDimensionLabel, isFilterDimensionVisible, type FilterDimensionContext } from '../lib/filterDimensions'
+import { filterDimensionLabel, hiddenFilterDimensions, isFilterDimensionVisible, type FilterDimensionContext } from '../lib/filterDimensions'
+import { activeFilters, decodeSubjectFilter, withBillFilter } from '../../../shared/billFilter'
 import { filterableCustomFields } from '../lib/customFieldFilters'
 import { buildActiveFilterGroups } from '../pages/BillList/activeFilterGroups'
 import { GroupOperator } from '../pages/BillList/GroupOperator'
@@ -23,6 +24,8 @@ interface FilterSheetProps {
   state: string[]
   minRelevance: number
   myBills: boolean
+  /** The search box's text. The sheet has no control for it, but a search is an active filter, so it shows Reset. */
+  search?: string
   /** Admin-gates the New matches toggle — same check as desktop's `isAdmin`. */
   isAdmin: boolean
   newMatches: boolean
@@ -243,7 +246,7 @@ function useDrilldownFocus(dimension: DimensionKey | null, isOpen: boolean) {
 
 export function FilterSheet({
   isOpen, onClose,
-  status, stage, priority, position, tag, subject, year, state, minRelevance, myBills,
+  status, stage, priority, position, tag, subject, year, state, minRelevance, myBills, search = '',
   isAdmin, newMatches, newMatchesCount, unvoted, unvotedCount, drafts, draftCount, hasDrafts, uniqueStates, isMultiState,
   match, onMatchChange,
   statusOptions, stageOptions, priorityOptions, positionOptions, tagOptions, subjectGroups, yearOptions, totalYearCount, stateOptions,
@@ -293,11 +296,19 @@ export function FilterSheet({
   const newMatchesVisible = isFilterDimensionVisible('newMatches', filterDimensionCtx)
   const draftsVisible = isFilterDimensionVisible('drafts', filterDimensionCtx)
 
-  // Must mirror useBillFilters' totalActiveFilters (the mobile filter
-  // button's badge count) term for term — a mismatch is exactly the bug that
-  // orphaned `unvoted` on mobile (see task-7-report.md, Critical 1): the
-  // button badge counted it, this sheet's own "Reset filters" gate didn't.
-  const totalActive = status.length + stage.length + priority.length + position.length + tag.length + subject.length + year.length + state.length + (minRelevance > 0 ? 1 : 0) + (myBills ? 1 : 0) + (unvoted ? 1 : 0) + (newMatchesVisible && newMatches ? 1 : 0) + (draftsVisible && drafts ? 1 : 0) + Object.values(field).reduce((sum, v) => sum + v.length, 0)
+  // The one list of active filters, read from the shared module as the page's badge, Reset, chips, and summary read
+  // it: this sheet holds the filter as separate props, so it gathers them into the shared value and asks. A filter
+  // this instance does not offer is left out by the registry.
+  const activeList = activeFilters(
+    withBillFilter({
+      status, stage, priority, position, tag, year,
+      state,
+      subject: subject.flatMap(v => decodeSubjectFilter(v) ?? []),
+      minRelevance: minRelevance > 0 ? minRelevance : null,
+      myBills, unvoted, newMatches, drafts, field, search,
+    }),
+    { hidden: hiddenFilterDimensions(filterDimensionCtx) },
+  )
 
   function toggleItem(arr: string[], val: string, setter: (v: string[]) => void) {
     setter(arr.includes(val) ? arr.filter(v => v !== val) : [...arr, val])
@@ -354,6 +365,7 @@ export function FilterSheet({
     positionOptions,
     customFieldDefs,
     isMultiState,
+    active: activeList,
     onRemoveState: s => onStateChange(state.filter(x => x !== s)),
     onRemoveStatus: s => onStatusChange(status.filter(x => x !== s)),
     onRemoveStage: s => onStageChange(stage.filter(x => x !== s)),
@@ -409,7 +421,7 @@ export function FilterSheet({
             </div>
           )}
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            {totalActive > 0 && (
+            {activeList.length > 0 && (
               <button
                 onClick={onClearAll}
                 style={{ fontSize: fontSize.sm, color: color.linkBlue, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}

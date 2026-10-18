@@ -228,10 +228,47 @@ export function billsListPath(patch: Partial<BillFilter> = {}): string {
 /** One filter that has a value: its name, its key (a custom field's is `field.<key>`), and how many values it holds. */
 export type ActiveFilter = Readonly<{ name: Exclude<keyof BillFilter, 'match'>; key: string; count: number }>
 
-export function activeFilters(_filter: BillFilter, _options: { hidden?: readonly (keyof BillFilter)[] } = {}): readonly ActiveFilter[] {
-  return []
+const distinct = (values: readonly string[]): number => new Set(values).size
+
+/** How many values a filter holds, each distinct value once. A toggle, a minimum, and a search hold one when set. */
+function countValues(filter: BillFilter, name: Exclude<keyof BillFilter, 'match' | 'field'>): number {
+  const value = filter[name]
+  if (Array.isArray(value)) {
+    return name === 'subject'
+      ? distinct((value as readonly SubjectValue[]).map(s => encodeSubjectFilter(s.state, s.name)))
+      : distinct(value as readonly string[])
+  }
+  if (typeof value === 'boolean') return value ? 1 : 0
+  if (typeof value === 'number') return 1
+  if (typeof value === 'string') return value.trim() === '' ? 0 : 1
+  return 0
 }
 
-export function activeFilterCount(_active: readonly ActiveFilter[]): number {
-  return 0
+/**
+ * The one list of active filters: every filter with a value, search included, in the order `serializeBillFilter`
+ * writes them, with a custom field once per field. The match mode is not a filter and is never in it. The badge,
+ * Reset, the chips, the filter sheet, and the split pane's summary all read this list, so none counts for itself.
+ * A filter named in `hidden` (one this instance does not offer) is left out.
+ */
+export function activeFilters(filter: BillFilter, options: { hidden?: readonly string[] } = {}): readonly ActiveFilter[] {
+  const hidden = options.hidden ?? []
+  const list: ActiveFilter[] = []
+  for (const { name } of BILL_FILTER_DEFS) {
+    if (name === 'match' || hidden.includes(name)) continue
+    if (name === 'field') {
+      for (const [key, values] of Object.entries(filter.field)) {
+        const count = distinct(values)
+        if (count > 0) list.push({ name, key: CUSTOM_FIELD_KEY_PREFIX + key, count })
+      }
+      continue
+    }
+    const count = countValues(filter, name)
+    if (count > 0) list.push({ name, key: name, count })
+  }
+  return Object.freeze(list)
+}
+
+/** The badge's number: the values in the list. A search is in the list but is not counted, as it is not a value picked. */
+export function activeFilterCount(active: readonly ActiveFilter[]): number {
+  return active.reduce((sum, a) => (a.name === 'search' ? sum : sum + a.count), 0)
 }

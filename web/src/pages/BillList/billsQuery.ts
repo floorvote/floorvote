@@ -1,8 +1,9 @@
 import type { SortColumn, SortDir } from './types'
 import { PAGE_SIZE } from './constants'
 import {
-  BILL_FILTER_DEFS, parseBillFilter, serializeBillFilter, withBillFilter, type BillFilter,
+  activeFilters, parseBillFilter, serializeBillFilter, withBillFilter, type BillFilter,
 } from '../../../../shared/billFilter'
+import { CHIP_SELECTION_LEAVES_OUT } from '../../lib/filterDimensions'
 
 /** A bill list's query: the bill filter, one immutable value, and the sort, which is the list's order and not a filter. */
 export type BillsQuery = { filter: BillFilter; sortCol: SortColumn; sortDir: SortDir }
@@ -116,17 +117,9 @@ export function billsApiParamsFromSearch(
   return billsApiParams(billsQueryFromSearch(search, defs), page, PAGE_SIZE)
 }
 
-/** Whether a filter is set: a list with a value, a toggle that is on, or a minimum above zero. The group operator and the search box are not asked for here. */
-const isSet = (value: unknown): boolean =>
-  Array.isArray(value) ? value.length > 0
-    : typeof value === 'boolean' ? value
-    : typeof value === 'number' ? value > 0
-    : typeof value === 'object' && value !== null ? Object.keys(value).length > 0
-    : false
-
-/** Whether any filter but the named ones is set. Every filter the shared module names is asked, so a new one counts without an edit here. */
-function anyFilterBut(filter: BillFilter, ignored: ReadonlyArray<keyof BillFilter>): boolean {
-  return BILL_FILTER_DEFS.some(def => !ignored.includes(def.name) && isSet(filter[def.name]))
+/** Whether any filter but the named ones is in the list of active filters (the match mode never is, and a search is when typed). */
+function anyFilterBut(filter: BillFilter, ignored: readonly string[]): boolean {
+  return activeFilters(filter).some(a => !ignored.includes(a.name))
 }
 
 // Which Bills-nav count chip (if any) is "selected" — i.e. the current view is
@@ -138,7 +131,7 @@ function anyFilterBut(filter: BillFilter, ignored: ReadonlyArray<keyof BillFilte
 export function billsChipSelection(pathname: string, search: string): { allBills: boolean; newMatches: boolean } {
   if (pathname !== '/bills') return { allBills: false, newMatches: false }
   const f = billFilterFromSearch(new URLSearchParams(search))
-  if (anyFilterBut(f, ['newMatches', 'search', 'match'])) return { allBills: false, newMatches: false }
+  if (anyFilterBut(f, CHIP_SELECTION_LEAVES_OUT.billsNav)) return { allBills: false, newMatches: false }
   if (f.newMatches) return { allBills: false, newMatches: true }
   return { allBills: true, newMatches: false }
 }
@@ -164,7 +157,7 @@ export function prioritizedChipSelection(pathname: string, search: string): { pr
   if (pathname !== '/bills') return { priority: false, unvoted: false }
   const f = billFilterFromSearch(new URLSearchParams(search))
   if (!isExactlyPriorityTiers(f.priority)) return { priority: false, unvoted: false }
-  if (anyFilterBut(f, ['priority', 'unvoted', 'search', 'match'])) return { priority: false, unvoted: false }
+  if (anyFilterBut(f, CHIP_SELECTION_LEAVES_OUT.prioritized)) return { priority: false, unvoted: false }
   if (f.unvoted) return { priority: false, unvoted: true }
   return { priority: true, unvoted: false }
 }

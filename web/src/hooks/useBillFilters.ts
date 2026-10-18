@@ -4,7 +4,7 @@ import type { Location } from 'react-router-dom'
 import type { CustomFieldDef, FacetCounts, SortColumn, SortDir } from '../pages/BillList/types'
 import { STATUS_SEMANTIC_ORDER } from '../pages/BillList/constants'
 import {
-  EMPTY_BILL_FILTER, FILTER_ANY, decodeSubjectFilter, encodeSubjectFilter, serializeBillFilter, withBillFilter, type BillFilter,
+  EMPTY_BILL_FILTER, FILTER_ANY, activeFilterCount, activeFilters as activeFiltersOf, decodeSubjectFilter, encodeSubjectFilter, serializeBillFilter, withBillFilter, type BillFilter,
 } from '../../../shared/billFilter'
 import { billFilterForUrl, billFilterFromSearch, billsQueryFromSearch, withCustomFieldKeys } from '../pages/BillList/billsQuery'
 import { knownStates, knownStatuses, knownTagsCache } from '../pages/BillList'
@@ -239,13 +239,11 @@ export function useBillFilters(opts: {
     setSortDir(query.sortDir)
   }, [customFieldDefs, handleResetFilters, commit, setSortCol, setSortDir])
 
-  const hasActiveFilters = !!(
-    search || status.length > 0 || stage.length > 0 || priority.length > 0 || position.length > 0 ||
-    year.length > 0 || state.length > 0 || minRelevance > 0 || tag.length > 0 || subject.length > 0 || myBills || unvoted || newMatches || drafts ||
-    Object.keys(field).some(k => (field[k]?.length ?? 0) > 0)
-  )
-
-  const totalActiveFilters = status.length + stage.length + priority.length + position.length + tag.length + subject.length + year.length + state.length + (minRelevance > 0 ? 1 : 0) + (myBills ? 1 : 0) + (unvoted ? 1 : 0) + (newMatches ? 1 : 0) + (drafts ? 1 : 0) + Object.values(field).reduce((sum, v) => sum + v.length, 0)
+  // The one list of active filters. Reset's gate and the badge's count are read from it, as are the chips, the filter
+  // sheet, and the split pane's summary elsewhere, so none of them counts for itself.
+  const activeFilters = useMemo(() => activeFiltersOf(filter), [filter])
+  const hasActiveFilters = activeFilters.length > 0
+  const totalActiveFilters = activeFilterCount(activeFilters)
 
   const yearFacetKeys = useMemo(() => {
     return Object.keys(facetCounts.year)
@@ -335,7 +333,7 @@ export function useBillFilters(opts: {
     handleTagClick, handleTagsChange, handleSubjectsChange, handleStatusClick, handlePriorityClick,
     handlePositionClick, handleYearClick, handleRelevanceClick, handleResetFilters,
     yearFacetKeys, statuses, stageOptions, allTags, positionOptions, uniqueStates, isMultiState,
-    hasActiveFilters, totalActiveFilters,
+    activeFilters, hasActiveFilters, totalActiveFilters,
     applyView,
     activeViewSlug: searchParams.get('view'),
     clearView: () => {

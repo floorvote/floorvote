@@ -1,6 +1,6 @@
 import type { BillsQuery } from './billsQuery'
-import { encodeSubjectFilter, type BillFilter } from '../../../../shared/billFilter'
-import { filterDimensionLabel, type FilterDimensionKey } from '../../lib/filterDimensions'
+import { activeFilters, encodeSubjectFilter } from '../../../../shared/billFilter'
+import { FILTER_DIMENSIONS, filterDimensionLabel } from '../../lib/filterDimensions'
 import { activeFilterLabelGroups, type ChipFieldDef } from './activeFilterGroups'
 import type { SortColumn } from './types'
 
@@ -12,6 +12,8 @@ export type ListSummaryInput = {
   view?: { name: string } | null
   customFieldDefs?: ReadonlyArray<SummaryFieldDef>
   isMultiState?: boolean
+  /** Filters this instance does not offer, which the list of active filters leaves out. */
+  hidden?: readonly string[]
 }
 export type ListSummary = {
   /** The line: "<N filters | All bills | view name> · Sorted by <sort>". */
@@ -36,18 +38,6 @@ export const DEFAULT_SORT_NAME = 'default order'
 
 const unique = <T,>(xs: T[]): T[] => [...new Set(xs)]
 
-// The scope pills, in the registry's order. The Bills page draws them beside the
-// search box rather than as chips, but they narrow the list like any filter, and
-// the app links to lists that carry only one (/bills?newMatches=1), so a summary
-// that left them out would read "All bills" over a narrowed list. (The ticket
-// counts only chips; counting these is a deliberate departure.)
-const SCOPE_PILLS: { key: FilterDimensionKey; on: (f: BillFilter) => boolean }[] = [
-  { key: 'myBills', on: f => f.myBills },
-  { key: 'newMatches', on: f => f.newMatches },
-  { key: 'unvoted', on: f => f.unvoted },
-  { key: 'drafts', on: f => f.drafts },
-]
-
 /**
  * What a bill list's filters and sort come to, for the split pane's summary
  * line. "Filters" are the Bills page's chips, its scope pills (My bills, New
@@ -55,8 +45,14 @@ const SCOPE_PILLS: { key: FilterDimensionKey; on: (f: BillFilter) => boolean }[]
  * carries but a member still counts as a filter. The all-of/any-of operator is
  * not a filter.
  */
-export function buildListSummary({ values, view, customFieldDefs = [], isMultiState = false }: ListSummaryInput): ListSummary {
+export function buildListSummary({ values, view, customFieldDefs = [], isMultiState = false, hidden }: ListSummaryInput): ListSummary {
   const { filter } = values
+  // The one list of active filters, the same the badge, Reset, and the chips read. Each entry is one line here, so
+  // the count of lines is the badge's count plus the search term. The scope pills (a filter with its own pill) are
+  // listed too, because they narrow the list like any filter and the app links to lists that carry only one
+  // (/bills?newMatches=1), so a summary that left them out would read "All bills" over a narrowed list.
+  const active = activeFilters(filter, { hidden })
+  const onList = new Set<string>(active.map(a => a.name))
   const field = Object.fromEntries(Object.entries(filter.field).map(([k, v]) => [k, unique([...v])]))
   const chipLabels = activeFilterLabelGroups({
     state: unique([...filter.state]),
@@ -72,11 +68,12 @@ export function buildListSummary({ values, view, customFieldDefs = [], isMultiSt
     positionOptions: [{ value: 'none', label: 'Not set' }],
     customFieldDefs,
     isMultiState,
+    active,
   }).flatMap(g => g.labels)
 
   const term = filter.search.trim()
-  const pillLabels = SCOPE_PILLS.filter(p => p.on(filter)).map(p => filterDimensionLabel(p.key))
-  const filters = [...(term ? [`Search: “${term}”`] : []), ...pillLabels, ...chipLabels]
+  const pillLabels = FILTER_DIMENSIONS.filter(d => d.hasOwnPill && onList.has(d.key)).map(d => filterDimensionLabel(d.key))
+  const filters = [...(onList.has('search') ? [`Search: “${term}”`] : []), ...pillLabels, ...chipLabels]
   const sortName = values.sortCol === 'default' ? DEFAULT_SORT_NAME : SORT_NAMES[values.sortCol] ?? DEFAULT_SORT_NAME
   const viewName = view?.name.trim() ? view.name.trim() : null
   const lead = viewName

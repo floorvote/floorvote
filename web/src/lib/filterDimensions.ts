@@ -22,6 +22,8 @@
  *     already gets there, since neither is a list of options to choose among.
  */
 
+import type { ActiveFilter } from '../../../shared/billFilter'
+
 export type FilterDimensionKind = 'options' | 'toggle'
 
 /**
@@ -114,20 +116,26 @@ export interface FilterDimensionDef {
    *  > 0`) — that data-availability check was never part of the drift this
    *  module fixes, so it stays local to each surface. */
   isVisible: (ctx: FilterDimensionContext) => boolean
+  /** The filter is a pill beside the search box and never a chip, so the chip row leaves it out while the badge,
+   *  Reset, and the summary still count it. */
+  hasOwnPill?: boolean
+  /** The filter is counted and drawn even where its control is hidden, because it narrows the list all the same. */
+  countsWhenHidden?: boolean
 }
 
 export const FILTER_DIMENSIONS: readonly FilterDimensionDef[] = [
-  { key: 'state',      label: 'State',         kind: 'options', scope: 'bill',   isVisible: ctx => ctx.isMultiState },
-  { key: 'myBills',    label: 'My bills',      kind: 'toggle',  scope: 'workflow', isVisible: () => true },
+  // Counted where its control is hidden (a single-state instance), since a state in a link still narrows the list.
+  { key: 'state',      label: 'State',         kind: 'options', scope: 'bill',   isVisible: ctx => ctx.isMultiState, countsWhenHidden: true },
+  { key: 'myBills',    label: 'My bills',      kind: 'toggle',  scope: 'workflow', isVisible: () => true, hasOwnPill: true },
   // Admin-only worklist, but visible to anyone while its own filter is on, so a member
   // who followed a link to it can see what is narrowing the list and turn it off.
-  { key: 'newMatches', label: 'New matches',   kind: 'toggle',  scope: 'workflow', isVisible: ctx => ctx.isAdmin || ctx.newMatchesActive },
-  { key: 'unvoted',    label: 'Not yet voted', kind: 'toggle',  scope: 'workflow', isVisible: () => true },
+  { key: 'newMatches', label: 'New matches',   kind: 'toggle',  scope: 'workflow', isVisible: ctx => ctx.isAdmin || ctx.newMatchesActive, hasOwnPill: true },
+  { key: 'unvoted',    label: 'Not yet voted', kind: 'toggle',  scope: 'workflow', isVisible: () => true, hasOwnPill: true },
   // Hidden only when the tenant has no drafts at all (hasDrafts). Never
   // hidden because the active filters happen to exclude drafts — draftsActive
   // is the safety net that keeps the chip (and its own way to turn itself
   // back off) visible while the Drafts filter is on, regardless of hasDrafts.
-  { key: 'drafts',     label: 'Drafts',        kind: 'toggle',  scope: 'workflow', isVisible: ctx => ctx.hasDrafts || ctx.draftsActive },
+  { key: 'drafts',     label: 'Drafts',        kind: 'toggle',  scope: 'workflow', isVisible: ctx => ctx.hasDrafts || ctx.draftsActive, hasOwnPill: true },
   { key: 'status',     label: 'Status',        kind: 'options', scope: 'bill',   isVisible: () => true },
   // A status's common stage (Introduced, In committee, ..., Enacted), which
   // compares bills across states whose status names differ. Hidden when every
@@ -168,14 +176,32 @@ export function visibleFilterDimensions(ctx: FilterDimensionContext): FilterDime
   return FILTER_DIMENSIONS.filter(d => d.isVisible(ctx))
 }
 
-import type { ActiveFilter } from '../../../shared/billFilter'
+/** The filters with their own pill, as a set of names. */
+const OWN_PILL: ReadonlySet<string> = new Set(FILTER_DIMENSIONS.filter(d => d.hasOwnPill).map(d => d.key))
 
-export function chipFilters(_active: readonly ActiveFilter[]): ActiveFilter[] {
-  return []
+/**
+ * The entries of the list of active filters that draw chips: every one but the filters with their own pill, and the
+ * search, which is its own box. They stay in the list, so the badge, Reset, and the summary count them.
+ */
+export function chipFilters(active: readonly ActiveFilter[]): ActiveFilter[] {
+  return active.filter(a => !OWN_PILL.has(a.name) && a.name !== 'search')
 }
 
-export function hiddenFilterDimensions(_ctx: FilterDimensionContext): FilterDimensionKey[] {
-  return []
+/**
+ * The filters this instance does not offer under `ctx`, which the list of active filters leaves out. A filter
+ * with its own hidden-when-off rule (Drafts, New matches) stays visible while it is on, so one that is on is never
+ * in this list, and a filter that is off has no value to leave out.
+ */
+export function hiddenFilterDimensions(ctx: FilterDimensionContext): FilterDimensionKey[] {
+  return FILTER_DIMENSIONS.filter(d => !d.countsWhenHidden && !d.isVisible(ctx)).map(d => d.key as FilterDimensionKey)
 }
 
-export const CHIP_SELECTION_LEAVES_OUT: Record<'billsNav' | 'prioritized', readonly string[]> = { billsNav: [], prioritized: [] }
+/**
+ * The filters each chip selection leaves out when it asks whether "any other filter" is set: the Bills nav chip's
+ * (the new matches it selects, and the search box) and the prioritized-bills widget's (the priority tiers and the
+ * not-yet-voted toggle it selects, and the search box). The match mode is never in the list, so it is never named.
+ */
+export const CHIP_SELECTION_LEAVES_OUT: Record<'billsNav' | 'prioritized', readonly string[]> = {
+  billsNav: ['newMatches', 'search'],
+  prioritized: ['priority', 'unvoted', 'search'],
+}
