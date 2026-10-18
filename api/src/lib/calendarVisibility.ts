@@ -1,5 +1,6 @@
 import { and, eq, isNotNull, isNull, or, sql } from 'drizzle-orm'
 import { bills, calendarEvents, customFieldDefinitions } from '../db/schema'
+import { groupHasPriority } from './teamFields'
 
 /**
  * Which calendar rows the calendar page, the ICS feed, and the dashboard's
@@ -19,14 +20,16 @@ import { bills, calendarEvents, customFieldDefinitions } from '../db/schema'
  */
 /**
  * A bill's own entry ('hearing' source: hearings, markups, deadlines) that
- * qualifies for display: its bill has a priority, and no body event the
+ * qualifies for display: its bill has a priority, or a bill it is grouped
+ * with has (a companion group has one priority, so a hearing on a member
+ * shows whichever member the priority was set on), and no body event the
  * instance shows covers it. The one definition the calendar, ICS feed,
  * dashboard count, and week-ahead email share, so they can't drift apart.
  * Needs `bills` left-joined on calendar_events.bill_id.
  */
 export const prioritizedBillEntry = and(
   eq(calendarEvents.source, 'hearing'),
-  isNotNull(bills.priority),
+  groupHasPriority(bills),
   or(
     isNull(calendarEvents.coveredBy),
     // A cover whose event the instance doesn't have, or hides, shows the entry after all.

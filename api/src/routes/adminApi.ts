@@ -11,7 +11,8 @@ import { registerWithCentral } from '../cron/sync'
 import { matchesKeywords, billMatchText } from '../lib/keywords'
 import { summarizeKeywordMatches } from '../lib/keywordMatchSummary'
 import { centralFetch } from '../lib/centralFetch'
-import { parseHandle } from '../../../shared/billHandle'
+import { legacyHandle, parseHandle } from '../../../shared/billHandle'
+import { resolveStoredHandle } from '../lib/storedHandle'
 import { isWildcardKeyword } from '../../../shared/keywords'
 import { ensureAssociationName } from '../lib/associationName'
 import { parseTaxonomyItems } from '../lib/taxonomy'
@@ -35,6 +36,7 @@ import { mayChangeEmail, refuseSuperadmin, requestEmailChange } from '../lib/ema
 import { recordGroupTagChanges, snapshotGroupTags } from '../lib/teamFields'
 import { centralEmail, type DeliveryStatus, type SuppressionStatus } from '../lib/centralEmail'
 import { userTitleSql } from '../lib/userTitle'
+import { readClaimLinksSetting, writeClaimLinksSetting } from '../lib/claimLinksSetting'
 
 export const adminApiRouter = new Hono<AppEnv>()
 
@@ -805,6 +807,10 @@ adminApiRouter.get('/config', async (c) => {
     typeof result.position_label === 'string' ? result.position_label : null,
   )
   result.accountDeletionEnabled = await getAccountDeletionEnabled(db)
+  const claimLinks = await readClaimLinksSetting(db)
+  result.claim_links_enabled = claimLinks.enabled
+  result.claim_links_changed_at = claimLinks.changedAt
+  result.claim_links_changed_by = claimLinks.changedBy
   return c.json(result)
 })
 
@@ -817,6 +823,17 @@ adminApiRouter.put('/deletion-policy', requireOwner, async (c) => {
     .values({ key: ACCOUNT_DELETION_KEY, value: JSON.stringify(body.enabled) })
     .onConflictDoUpdate({ target: associationConfig.key, set: { value: sql`excluded.value` } })
   return c.json({ enabled: body.enabled })
+})
+
+// PUT /admin/claim-links — turn claim links on or off for the instance (#570).
+// Its own route rather than a config key, so the change always records the admin
+// and the time. On a demo instance the write guard refuses it, as it does the
+// other settings.
+adminApiRouter.put('/claim-links', async (c) => {
+  const body = await c.req.json<{ enabled?: unknown }>().catch(() => null)
+  if (!body || typeof body.enabled !== 'boolean') return c.json({ error: 'enabled (boolean) is required' }, 400)
+  const setting = await writeClaimLinksSetting(getDb(c.env.DB), body.enabled, c.get('user').id)
+  return c.json(setting)
 })
 
 // PUT /admin/config
@@ -1013,8 +1030,8 @@ adminApiRouter.post('/keyword-resync', async (c) => {
     protectedAsManual = toManual.length
 
     const centralUpdates: Array<{ externalId: string; matchType: 'manual' | null }> = [
-      ...toManual.map(b => ({ externalId: b.externalId!, matchType: 'manual' as const })),
-      ...toDemote.map(b => ({ externalId: b.externalId!, matchType: null })),
+      ...toManual.map(b => ({ externalId: legacyHandle(b.externalId!), matchType: 'manual' as const })),
+      ...toDemote.map(b => ({ externalId: legacyHandle(b.externalId!), matchType: null })),
     ]
     try {
       const mtRes = await centralFetch(c.env, `/admin/update-bill-match-types/${c.env.TENANT_ID}`, {
@@ -1131,7 +1148,8 @@ adminApiRouter.post('/keyword-match-summary', async (c) => {
 // POST /admin/reprocess-bill/:externalId — reprocess a single bill, forcing AI re-run
 adminApiRouter.post('/reprocess-bill/:externalId', async (c) => {
   if (!c.env.BILL_QUEUE) return c.json({ error: 'Queue not configured' }, 503)
-  const externalId = decodeURIComponent(c.req.param('externalId'))
+  // Either spelling names the bill; it is queued under the one this instance stores (#305).
+  const externalId = await resolveStoredHandle(getDb(c.env.DB), decodeURIComponent(c.req.param('externalId')))
   // A bill pulled in by its companion group keeps the match type central gave it (lib/companionAnalysis.ts).
   const bill = await getDb(c.env.DB).select({ id: bills.id }).from(bills).where(eq(bills.externalId, externalId)).get()
   const groupAnalysis = bill ? await isPulledByGroup(getDb(c.env.DB), bill.id) : false

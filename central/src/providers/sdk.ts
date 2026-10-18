@@ -6,6 +6,7 @@
  */
 export type * from './types'
 export { LEGISCAN_ATTRIBUTION } from '../../../shared/dataAttribution'
+export { httpUrl } from '../../../shared/httpUrl'
 export { rateLimitedFetch } from '../lib/rateLimitedFetch'
 export { sha256Hex } from '../lib/sha256'
 export { htmlToText } from '../lib/htmlToText'

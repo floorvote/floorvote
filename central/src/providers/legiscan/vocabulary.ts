@@ -96,6 +96,7 @@ export const vocabulary: ProviderVocabulary = {
     1: { label: 'Hearing', kind: 'hearing', explainer: 'A committee meeting on the bill, where the public can usually testify or submit written comments.' },
     2: { label: 'Executive Session', kind: 'markup', explainer: 'A committee meeting where members discuss and vote on bills. The public can usually watch but not testify.' },
     3: { label: 'Markup Session', kind: 'markup', explainer: 'A committee meeting where members amend the bill and vote on whether to report it.' },
+    10: { label: 'Deadline', kind: 'deadline', explainer: 'A date the law sets for the bill\'s next step, such as the end of the time to sign or veto it, or the day an emergency or temporary law expires.' },
   },
 
   // LegiScan's SAST types (see docs/internal/legiscan-api.md). Only the two

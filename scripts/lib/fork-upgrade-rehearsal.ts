@@ -241,6 +241,8 @@ interface Snapshot {
     calendar: Map<string, string>
     limsRecords: number[]
     legiscanLimit: string | null
+    /** Each ownership row as `state provider`, sorted. Empty before the ownership table, or while it holds none. */
+    ownership: string[]
   }
   instance?: {
     calendar: Map<string, { id: string; sequence: number; status: string; source: string }>
@@ -269,6 +271,7 @@ function snapshot(db: DatabaseSync, kind: DbKind, forkTables: string[], forkColu
         .map(r => [String(r.id), JSON.stringify([r.bill_id, r.type_id, r.date, r.description, r.event_hash])])),
       limsRecords: hasTable(db, 'lims_records') ? rows(db, 'SELECT bill_id FROM lims_records').map(r => Number(r.bill_id)) : [],
       legiscanLimit: setting(db, 'legiscan_monthly_limit'),
+      ownership: ownershipRows(db),
     }
   } else {
     s.instance = {
@@ -279,6 +282,10 @@ function snapshot(db: DatabaseSync, kind: DbKind, forkTables: string[], forkColu
     }
   }
   return s
+}
+
+function ownershipRows(db: DatabaseSync): string[] {
+  return hasTable(db, 'state_providers') ? rows(db, 'SELECT state, provider FROM state_providers ORDER BY state').map(r => `${r.state} ${r.provider}`) : []
 }
 
 /**
@@ -306,8 +313,8 @@ function sameFingerprints(before: Map<string, { rows: number; hash: string }>, a
 }
 
 export interface RehearsalOptions {
-  /** The fork's LIMS_STATES. Default DC. */
-  limsStates?: string[]
+  /** The states the fork will claim for LIMS after deploying. Default DC. */
+  claimStates?: string[]
   /**
    * The names of upstream's own migration files. Default: every file in
    * `migrations`. Pass them when the folder also holds the fork's own files
@@ -350,14 +357,14 @@ export function rehearse(db: DatabaseSync, kind: DbKind, label: string, migratio
 
   if (kind === 'central') {
     // Bills instances track that aren't in LIMS's id ranges: LegiScan's.
-    // Upstream seeds DC's ownership row from LIMS_STATES only while there
-    // are none, or DC stays on LegiScan.
-    const states = (opts.limsStates ?? ['DC']).map(s => s.toUpperCase())
+    // Upstream refuses a claim of DC for LIMS while there are any, and
+    // nothing else gives DC to LIMS, so DC would stay on LegiScan.
+    const states = (opts.claimStates ?? ['DC']).map(s => s.toUpperCase())
     for (const state of states) {
       const legiscan = hasColumn(db, 'bills', 'provider') ? `b.provider = 'legiscan'` : hasColumn(db, 'bills', 'source') ? `b.source = 'legiscan'` : `(b.bill_id < ${LIMS_ID_MIN} OR b.bill_id >= ${LIMS_ID_MAX})`
       const n = count(db, `SELECT COUNT(DISTINCT b.bill_id) AS n FROM bills b JOIN bill_tenants bt ON bt.bill_id = b.bill_id WHERE b.state = ? AND ${legiscan}`, state)
-      check(n === 0, `No LegiScan bill in ${state} is linked to an instance, so ${state}'s ownership row can be seeded`,
-        `${n} are. Upstream won't seed ${state} for LIMS while LegiScan has tracked bills there. ${state} would stay on LegiScan. See "If Something Goes Wrong" in docs/internal/fork-upgrade.md.`)
+      check(n === 0, `No LegiScan bill in ${state} is linked to an instance, so a claim of ${state} for LIMS won't be refused`,
+        `${n} are. Upstream refuses a claim of ${state} for LIMS while LegiScan has tracked bills there. ${state} would stay on LegiScan. See "If Something Goes Wrong" in docs/internal/fork-upgrade.md.`)
     }
   }
 
@@ -388,12 +395,12 @@ export function rehearse(db: DatabaseSync, kind: DbKind, label: string, migratio
     .map(([t, n]) => `${t}: ${n} rows before, ${after.counts.get(t) ?? 0} after`)
   check(shrunk.length === 0, 'No shared table lost rows', shrunk.join('. '))
 
-  if (kind === 'central') centralChecks(db, before, report, check)
+  if (kind === 'central') centralChecks(db, before, report, check, (opts.claimStates ?? ['DC']).map(s => s.toUpperCase()))
   else instanceChecks(db, before, report, check)
   return report
 }
 
-function centralChecks(db: DatabaseSync, before: Snapshot, report: RehearsalReport, check: (ok: boolean, name: string, detail?: string) => void) {
+function centralChecks(db: DatabaseSync, before: Snapshot, report: RehearsalReport, check: (ok: boolean, name: string, detail?: string) => void, claimStates: string[]) {
   const b = before.central!
   if (b.legiscanLimit === '30000' && setting(db, 'legiscan_monthly_limit') === '10000') {
     report.notes.push('The dashboard\'s LegiScan budget drops from 30,000 to 10,000 calls a month (0020_legiscan_limit_10k), LegiScan\'s free tier since October 1, 2026. Set it back on the dashboard if you pay for more.')
@@ -420,10 +427,23 @@ function centralChecks(db: DatabaseSync, before: Snapshot, report: RehearsalRepo
   const badSessions = sessions.filter(s => s.provider !== 'lims' || !/^CP\d+$/.test(String(s.session_tag)))
   check(badSessions.length === 0, `Every DC Council Period session is LIMS's, tagged with its period (${sessions.length})`, JSON.stringify(badSessions.slice(0, 5)))
 
-  const owners = hasTable(db, 'state_providers') ? rows(db, 'SELECT state, provider FROM state_providers') : []
+  // Only an operator's claim writes an ownership row (upstream no longer seeds
+  // one from an env var), so a fork older than the ownership table ends the
+  // upgrade with none, and its states are LegiScan's until it claims them.
+  const owners = ownershipRows(db)
+  const unclaimed = claimStates.join(' and ')
+  check(owners.join('\n') === b.ownership.join('\n'), `Upstream's migrations write no ownership row, so ${unclaimed} ${claimStates.length === 1 ? 'is' : 'are'} LegiScan's until ${claimStates.length === 1 ? 'it is' : 'they are'} claimed`,
+    `Rows before: ${b.ownership.join(', ') || 'none'}. After: ${owners.join(', ') || 'none'}.`)
   report.notes.push(owners.length === 0
-    ? 'No ownership rows yet. With LIMS_API_KEY and LIMS_STATES set, the first sync after the deploy writes DC\'s row. Confirm it with GET /api/admin/state-providers before removing LIMS_STATES.'
-    : `Ownership rows already present: ${owners.map(o => `${o.state} → ${o.provider}`).join(', ')}.`)
+    ? `No ownership rows. Right after deploying central, and before the next top of the hour, claim ${unclaimed} for LIMS: ${claimStates.map(s => `POST /api/admin/state-providers/${s}`).join(' and ')}, each with {"provider":"lims"}. Nothing else writes the row. Confirm it with GET /api/admin/state-providers.`
+    : `Ownership rows already present: ${owners.map(o => o.replace(' ', ' → ')).join(', ')}.`)
+  // Slugs never change once assigned, and the first cron tick slugs every
+  // session. LegiScan's DC sessions go first while DC has no row, so a claim
+  // after that tick leaves the current Council Period with "-2" for good.
+  const legiscanSessions = count(db, `SELECT COUNT(*) AS n FROM sessions WHERE state = 'DC' AND provider = 'legiscan'`)
+  if (legiscanSessions > 0) {
+    report.notes.push(`${legiscanSessions} LegiScan DC session${legiscanSessions === 1 ? '' : 's'} in this central. Claim DC for LIMS before the first cron tick after deploying: a claim after it leaves DC's session URLs on LegiScan's sessions for good, and the current Council Period gets "-2".`)
+  }
   if (hasTable(db, 'council_events')) {
     report.notes.push(`council_events (${count(db, 'SELECT COUNT(*) AS n FROM council_events')} rows) stays. Upstream's body_events replaces it, and it can be dropped by hand once upstream's calendar sync runs.`)
   }

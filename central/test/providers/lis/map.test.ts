@@ -301,6 +301,29 @@ describe('buildLisBill', () => {
     expect(e.last_action).toMatch(/Chapter text \(CHAP0350\)|Approved by Governor/)
   })
 
+  it('types a master-list row by its prefix, as the full build does, for every Virginia prefix', async () => {
+    const expected: Record<string, string> = { HB: 'B', SB: 'B', HJ: 'JR', SJ: 'JR', HR: 'R', SR: 'R' }
+    for (const [prefix, type] of Object.entries(expected)) {
+      const r = record(`${prefix}12`, {}, [['2026-01-10', 'Prefiled and ordered printed', '']])
+      const built = await buildLisBill(r, '20261', 1, 'h', SESSION, ids())
+      expect([prefix, toLisMasterListEntry(r, '20261', 1, 'h').bill_type]).toEqual([prefix, type])
+      expect([prefix, toLisMasterListEntry(r, '20261', 1, 'h').bill_type]).toEqual([prefix, built.bill_type])
+    }
+  })
+
+  it('types the sample files\' real rows by prefix', () => {
+    const types = Object.fromEntries([...y2026.records].map(([n, r]) => [n, toLisMasterListEntry(r, '20261', 1, 'h').bill_type]))
+    expect(types.HB1).toBe('B')
+    expect(Object.keys(types).length).toBeGreaterThan(0)
+    for (const [n, t] of Object.entries(types)) expect([n, t]).toEqual([n, /^(HJ|SJ)/.test(n) ? 'JR' : /^(HR|SR)/.test(n) ? 'R' : 'B'])
+  })
+
+  it('types an unknown prefix as a bill, as the full build does', async () => {
+    const r = record('XX7', {}, [])
+    expect(toLisMasterListEntry(r, '20261', 1, 'h').bill_type).toBe('B')
+    expect((await buildLisBill(r, '20261', 1, 'h', SESSION, ids())).bill_type).toBe('B')
+  })
+
   it('refers a bill to the committees a re-referral and a plain referral name, not only a first referral', async () => {
     const rec = record('SB9', {}, [
       ['2026-01-10', 'S Referred to Committee on Commerce and Labor', 'S02'],
@@ -405,6 +428,30 @@ describe('buildLisBill', () => {
     // Stable: the same bill and vote ask for the same id every time.
     expect(lisRollCallKey('20261', 'HB5', 'SHARED')).toBe('20261/HB5/SHARED')
     expect(mint(lisRollCallKey('20261', 'HB5', 'SHARED'))).toBe(va[0].roll_call_id)
+  })
+
+  it('gives Abstain its own vote id, apart from Not Voting and every other word', async () => {
+    const history: [string, string, string][] = [['2026-02-17', 'H Read third time and passed House (1-Y 1-N 1-A)', 'RC1']]
+    const rec = { ...record('HB5', {}, history), votes: { RC1: 'H0001Y,H0002N,H0003X,H0004A' } }
+    const [vote] = (await buildLisBill(rec, '20261', 1, 'h', SESSION, ids())).votes
+    const mv = vote.member_votes!
+    const byText = Object.fromEntries(mv.map(m => [m.vote_text, m.vote_id]))
+    expect(byText).toEqual({ Yea: 1, Nay: 2, 'Not Voting': 3, Abstain: 5 })
+    expect(new Set(mv.map(m => m.vote_id)).size).toBe(4)
+    // Abstain's id differs from Not Voting's, and from the Absent id (4) LegiScan and LIMS use.
+    expect(byText.Abstain).not.toBe(byText['Not Voting'])
+    expect(byText.Abstain).not.toBe(4)
+  })
+
+  it('counts an abstention in the tally\'s not-voting number, as the per-member words show it', async () => {
+    const history: [string, string, string][] = [['2026-02-17', 'H Read third time and passed House (2-Y 1-N 2-A)', 'RC1']]
+    const rec = { ...record('HB5', {}, history), votes: { RC1: 'H0001Y,H0002Y,H0003N,H0004X,H0005A' } }
+    const [vote] = (await buildLisBill(rec, '20261', 1, 'h', SESSION, ids())).votes
+    // The roll_calls row has no abstain column, so nv holds Not Voting and Abstain together.
+    expect(vote.nv).toBe(2)
+    const words = vote.member_votes!.map(m => m.vote_text)
+    expect(words.filter(w => w === 'Not Voting' || w === 'Abstain')).toHaveLength(vote.nv)
+    expect(vote.yea + vote.nay + vote.nv + vote.absent).toBe(vote.total)
   })
 
   it('leaves a voice vote out as a roll call, since no member has a recorded vote', async () => {

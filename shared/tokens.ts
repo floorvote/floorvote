@@ -58,6 +58,10 @@ export const color = {
   tagTextBlue:       '#1e4d8c', // tag chip text
   tooltipBg:         '#1e293b', // dark tooltip / popover background
 
+  // --- Claim links (#571) ---
+  claimUnderline:    '#e8a33d', // Honey: the underline of a claim in the summary, and the line under its highlighted passage. The same in both modes
+  claimHoverBg:      '#fbecd5', // faint Honey wash behind a claim link on hover and keyboard focus; body text stays the same color on it
+
   // --- Surface & background ---
   white:             '#fff',    // card / panel surface (absorbs #ffffff, #fafafa). Dark in dark mode; for text on a fill use textOnFill
   surfaceSubtle:     '#f8fafc', // neutral hover / surface

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  COUNCIL_CALENDAR_TOPIC, EMPTY_EVENT_RULES, eventMatchesRules, parseEventRules, rulesFromCouncilCalendar,
+  COUNCIL_CALENDAR_TOPIC, EMPTY_EVENT_RULES, eventMatchesRules, hasLegacyParts, legacyNote, legacyParts, parseEventRules, rulesFromCouncilCalendar,
+  withCommittee, withoutLegacyParts,
   type EventFacets, type EventRules,
 } from './eventRules'
 
@@ -149,5 +150,101 @@ describe('rulesFromCouncilCalendar', () => {
     expect(rulesFromCouncilCalendar(null, committees)).toBeNull()
     expect(rulesFromCouncilCalendar('x', committees)).toBeNull()
     expect(rulesFromCouncilCalendar({}, committees)).toEqual(EMPTY_EVENT_RULES)
+  })
+})
+
+// The Calendar page's one control (#420) offers all events or chosen committees. A rule saved
+// earlier may carry more, and it keeps matching exactly as before.
+describe('legacy rules under the simplified control', () => {
+  const legacy = rules({
+    committees: [{ ...health, kind: 'Roundtable' }, youth],
+    kinds: ['meeting'],
+    topics: [{ name: 'Youth detention', keywords: ['secure detention'] }],
+    trackedBills: true,
+  })
+
+  it('finds nothing extra in a committees-only rule, or in no rules', () => {
+    expect(hasLegacyParts(legacyParts(null))).toBe(false)
+    expect(hasLegacyParts(legacyParts(rules({ committees: [health, youth] })))).toBe(false)
+    expect(hasLegacyParts(legacyParts(EMPTY_EVENT_RULES))).toBe(false)
+  })
+
+  it('finds kinds, event types, topics, tracked bills, and a committee narrowed to a kind', () => {
+    expect(legacyParts(legacy)).toEqual({
+      kinds: ['meeting'],
+      topics: ['Youth detention'],
+      trackedBills: true,
+      narrowedCommittees: [{ name: health.name, kind: 'Roundtable' }],
+    })
+    expect(hasLegacyParts(legacyParts(rules({ kinds: ['Roundtable'] })))).toBe(true)
+    expect(hasLegacyParts(legacyParts(rules({ trackedBills: true })))).toBe(true)
+    expect(hasLegacyParts(legacyParts(rules({ topics: [{ name: 'T', keywords: ['k'] }] })))).toBe(true)
+    expect(hasLegacyParts(legacyParts(rules({ committees: [{ ...cow, kind: 'markup' }] })))).toBe(true)
+  })
+
+  it('says it in one line that starts "Kept from an earlier setting:"', () => {
+    const note = legacyNote(legacyParts(legacy))
+    expect(note).toMatch(/^Kept from an earlier setting: /)
+    expect(note).not.toContain('\n')
+    expect(note).toContain('meeting')
+    expect(note).toContain('Youth detention')
+    expect(note).toContain('a bill we track')
+    expect(note).toContain(health.name)
+    expect(note).toContain('Roundtable')
+    expect(legacyNote(legacyParts(rules({ trackedBills: true })))).toBe('Kept from an earlier setting: events with a bill we track.')
+    expect(legacyNote(legacyParts(rules({ kinds: ['Roundtable', 'meeting'] })))).toBe('Kept from an earlier setting: every Roundtable event and every meeting event.')
+  })
+
+  it('keeps matching what it matched, as before', () => {
+    // A committee narrowed to a kind.
+    expect(eventMatchesRules(event({ committeeId: health.committeeId, type: 'Roundtable', kind: 'hearing' }), legacy, NONE)).toBe(true)
+    expect(eventMatchesRules(event({ committeeId: health.committeeId, type: 'Hearing', kind: 'hearing', title: 'Other', topics: [] }), legacy, NONE)).toBe(false)
+    // A kind in any committee.
+    expect(eventMatchesRules(event({ committeeId: cow.committeeId, kind: 'meeting', type: 'Meeting', title: 'x', topics: [] }), legacy, NONE)).toBe(true)
+    // A topic, against the title and agenda.
+    expect(eventMatchesRules(event({ committeeId: cow.committeeId, kind: 'hearing', type: 'Hearing', title: 'Secure detention oversight', topics: [] }), legacy, NONE)).toBe(true)
+    // A tracked bill on the agenda.
+    expect(eventMatchesRules(event({ committeeId: cow.committeeId, kind: 'hearing', type: 'Hearing', title: 'x', topics: [] }), legacy, TRACKED)).toBe(true)
+    expect(eventMatchesRules(event({ committeeId: cow.committeeId, kind: 'hearing', type: 'Hearing', title: 'x', topics: [] }), legacy, NONE)).toBe(false)
+  })
+
+  it('goes on parsing: a saved legacy rule survives parseEventRules unchanged', () => {
+    expect(parseEventRules(legacy)).toEqual(legacy)
+  })
+
+  it('removes only the legacy parts, keeping every committee whole', () => {
+    expect(withoutLegacyParts(legacy)).toEqual({ committees: [{ committeeId: health.committeeId, name: health.name }, youth], kinds: [], topics: [], trackedBills: false })
+    const plain = rules({ committees: [health] })
+    expect(withoutLegacyParts(plain)).toEqual(plain)
+  })
+
+  it('selects, once the legacy parts are removed, only the committees\' events and prioritized ones', () => {
+    const simple = withoutLegacyParts(legacy)
+    expect(eventMatchesRules(event({ committeeId: cow.committeeId, kind: 'meeting', type: 'Meeting', title: 'x', topics: [] }), simple, TRACKED)).toBe(false)
+    expect(eventMatchesRules(event({ committeeId: health.committeeId, type: 'Hearing', kind: 'hearing', title: 'x', topics: [] }), simple, NONE)).toBe(true)
+    expect(eventMatchesRules(event({ committeeId: cow.committeeId, kind: 'meeting', type: 'Meeting' }), simple, PRIORITIZED)).toBe(true)
+  })
+})
+
+describe('withCommittee', () => {
+  it('starts from no rules with the one committee, selecting nothing else', () => {
+    const r = withCommittee(null, { committeeId: health.committeeId, name: health.name }, true)
+    expect(r).toEqual({ committees: [health], kinds: [], topics: [], trackedBills: false })
+    expect(eventMatchesRules(event({ committeeId: youth.committeeId }), r, TRACKED)).toBe(false)
+  })
+
+  it('adds a committee once and removes it, leaving the rest of the rule alone', () => {
+    const base = rules({ committees: [{ ...youth, kind: 'Roundtable' }], kinds: ['meeting'], trackedBills: true })
+    const added = withCommittee(base, health, true)
+    expect(added.committees).toEqual([{ ...youth, kind: 'Roundtable' }, health])
+    expect(added.kinds).toEqual(['meeting'])
+    expect(added.trackedBills).toBe(true)
+    expect(withCommittee(added, health, true).committees).toHaveLength(2)
+    expect(withCommittee(added, health, false)).toEqual(base)
+  })
+
+  it('removes a committee even if it was narrowed to a kind', () => {
+    const base = rules({ committees: [{ ...youth, kind: 'Roundtable' }, health] })
+    expect(withCommittee(base, youth, false).committees).toEqual([health])
   })
 })

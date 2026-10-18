@@ -22,6 +22,7 @@ import { sessions, tenants } from '../db/schema'
 import { DEFAULT_PROVIDER_ID, getProvider, type MeasurePerson } from '../providers'
 import { insertMissingPeople, personRow } from '../lib/people'
 import { providerContext } from '../lib/providerContext'
+import { ingestQueueFor } from '../lib/providerRouting'
 import { loadStateOwners, ownerOf } from '../lib/stateProviders'
 import { storedVoteCounts, writeMemberVotes, type RollCallMemberVotes } from '../lib/rollCallVotes'
 import { loadTrackedStates } from './sync'
@@ -84,7 +85,7 @@ export async function checkVoteDatasets(env: Env, db: Db): Promise<void> {
     .from(tenants).where(eq(tenants.active, true)).all()
   if (activeTenants.length === 0) return
   const trackedStates = await loadTrackedStates(db, activeTenants)
-  const owners = await loadStateOwners(env, db)
+  const owners = await loadStateOwners(db)
   for (const state of trackedStates) if (ownerOf(owners, state) !== provider.id) trackedStates.delete(state)
   if (trackedStates.size === 0) return
 
@@ -119,7 +120,7 @@ export async function checkVoteDatasets(env: Env, db: Db): Promise<void> {
             key: dataset.key,
             hash: dataset.hash,
           }
-          await env.INGESTOR_QUEUE.send(msg)
+          await ingestQueueFor(provider, env).send(msg)
           console.log(`[vote-datasets] ${state}/${s.sessionId}: dataset changed, load queued`)
         }
         // Checked either way. A queued load that fails leaves the old hash in
@@ -252,7 +253,7 @@ export async function loadVoteDataset(
 
   const summary = `${written} roll calls written, ${persons.size} people read, ${malformed} malformed files, ${statements} statements`
   if (!complete) {
-    await env.INGESTOR_QUEUE.send(msg)
+    await ingestQueueFor(provider, env).send(msg)
     console.log(`[vote-datasets] session ${msg.sessionId}: statement budget reached (${summary}), continuing in a new message`)
     return
   }

@@ -123,7 +123,7 @@ describe('DC from LIMS', () => {
     // Each Councilmember's vote on each floor reading.
     const firstReading = bill.votes.find((v: any) => v.date === '2026-03-03')
     expect(firstReading.legislatorVotes).toHaveLength(13)
-    expect(firstReading.legislatorVotes).toContainEqual({ personId: String(limsPeopleId(194)), name: 'Zachary Parker', vote: 'Yes' })
+    expect(firstReading.legislatorVotes).toContainEqual({ personId: String(limsPeopleId(194)), name: 'Zachary Parker', vote: 'Yes', url: null })
 
     // Hearing, mark-up, and reading videos, on the history entries they record.
     expect(bill.actions.filter((a: any) => a.videoUrl).map((a: any) => [a.date, a.description.trim(), a.videoUrl])).toEqual([

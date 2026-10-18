@@ -188,6 +188,16 @@ describe('calendar backfill', () => {
     expect(ids).toEqual([501])
   })
 
+  it('collectPriorityLegiscanIds also finds a priority bill held under a neutral handle (#305)', async () => {
+    const { collectPriorityLegiscanIds } = await import('../../src/lib/calendarBackfill')
+    await seedBill({ billNumber: 'H1', state: 'RI', session: '2026', externalId: 'legiscan:501', priority: 'high' })
+    await seedBill({ billNumber: 'H2', state: 'RI', session: '2026', externalId: 'bill:502', priority: 'high' })
+    await seedBill({ billNumber: 'H3', state: 'RI', session: '2026', externalId: 'bill:503' }) // no priority
+    await seedBill({ billNumber: 'H4', state: 'RI', session: '2026', externalId: 'ocd-bill/abc', priority: 'high' })
+    const ids = await collectPriorityLegiscanIds(getDb(env.DB))
+    expect(ids.sort()).toEqual([501, 502])
+  })
+
   it('POST /api/calendar/backfill requires admin and returns queued count', async () => {
     const adminId = await seedUser({ email: 'admin@b.com', role: 'admin' })
     const adminToken = await seedSession(adminId)

@@ -9,6 +9,7 @@ import { billSlug, legacySessionSlug, sessionToSlug } from '../../lib/sessionSlu
 import { buildBillDetail } from './detail'
 import { nextDraftNumber } from '../../lib/draftNumber'
 import { defaultDraftYear } from './draftRoutes'
+import { legacyHandle } from '../../../../shared/billHandle'
 
 // billSlug lives in lib/sessionSlug so the draft-number collision check can
 // compare the same notion of "answers to this URL" that these routes do.
@@ -158,7 +159,7 @@ export function registerLookupRoutes(router: Hono<AppEnv>) {
     if (!bill?.externalId) return c.json({ changes: [] })
 
     try {
-      const res = await centralFetch(c.env, `/bills/${bill.externalId}/changes`)
+      const res = await centralFetch(c.env, `/bills/${legacyHandle(bill.externalId)}/changes`)
       if (!res.ok) return c.json({ changes: [] })
       return c.json(await res.json())
     } catch {

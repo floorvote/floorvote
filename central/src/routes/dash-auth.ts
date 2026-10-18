@@ -16,6 +16,7 @@ import { verifySuperadminJwt } from '../lib/superadminJwt'
 import { isSuperadminJtiRevoked } from '../lib/superadminRevocation'
 import { setSuperadminCookie } from '../lib/superadminIssuer'
 import { sendAdminMagicLink } from '../lib/adminEmail'
+import { activeProvider } from '../lib/email'
 import { nowDb } from '../lib/dbTime'
 import { checkRateLimit } from '../../../shared/rateLimit'
 import { verifyTurnstile } from '../../../shared/turnstile'
@@ -107,8 +108,15 @@ dashAuthRoutes.post('/login', async (c) => {
   if (!isSuperAdmin(email, c.env.SUPERADMIN_EMAILS)) {
     return c.json({ data: { ok: true }, meta: { generatedAt: new Date().toISOString() } })
   }
-  if (!c.env.RESEND_API_KEY || !c.env.ADMIN_APP_URL) {
-    console.warn('Admin /login: allowlisted email but RESEND_API_KEY or ADMIN_APP_URL is unset; no email sent', { email })
+  // Gate on "a sender is configured" (Resend's key, or the Cloudflare binding
+  // `sendEmail` would pick), not on Resend specifically.
+  const missing: string[] = []
+  if (!c.env.RESEND_API_KEY && activeProvider(c.env) !== 'cloudflare') {
+    missing.push('an email sender (RESEND_API_KEY, or EMAIL_PROVIDER=cloudflare with an EMAIL binding)')
+  }
+  if (!c.env.ADMIN_APP_URL) missing.push('ADMIN_APP_URL')
+  if (missing.length > 0) {
+    console.warn(`Admin /login: allowlisted email but ${missing.join(' and ')} not configured; no email sent`, { email })
     return c.json({ data: { ok: true }, meta: { generatedAt: new Date().toISOString() } })
   }
 
@@ -142,11 +150,13 @@ dashAuthRoutes.post('/login', async (c) => {
   })
 
   const url = `${c.env.ADMIN_APP_URL}/admin/dash/auth/callback?token=${encodeURIComponent(rawToken)}`
-  try {
-    await sendAdminMagicLink(email, url, c.env)
-  } catch (err) {
-    console.error('sendAdminMagicLink failed', err)
-  }
+  // The provider round-trip, the largest part of this request, runs after the
+  // response is sent, so a listed address answers about as fast as an unlisted
+  // one (which returns above without it). A failed send is logged, never thrown
+  // into the response, and the promise handed to waitUntil never rejects.
+  c.executionCtx.waitUntil(
+    sendAdminMagicLink(email, url, c.env).catch((err) => console.error('sendAdminMagicLink failed', err)),
+  )
   return c.json({ data: { ok: true }, meta: { generatedAt: new Date().toISOString() } })
 })
 

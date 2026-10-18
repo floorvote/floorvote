@@ -18,8 +18,7 @@ const CLAIM_BATCH = 50
  * LIMS-owned DC's Council Periods beside older LegiScan DC sessions. Numbered
  * special sessions and Council Periods ask for a different slug than older
  * releases gave them, and tenants still resolve the old one (legacySessionSlug).
- * Callers load ownership first (loadStateOwners), so env-var ownership is
- * seeded before the first run. A slug, once assigned, never changes.
+ * A slug, once assigned, never changes.
  *
  * Runs on every cron tick and after every session write. Several jobs may run
  * it at once: each write claims a slug only if no other session of the state

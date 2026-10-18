@@ -3,11 +3,14 @@ import { eq, and, isNotNull, gte, lte, or, asc, inArray } from 'drizzle-orm'
 import { requireAuth, requireAdmin } from '../middleware/auth'
 import { getDb } from '../db/client'
 import { calendarEvents, calendarEventBills, bills, associationConfig } from '../db/schema'
+import { loadGroupPriorities, priorityWorn } from '../lib/teamFields'
+import { compareBillNumbers } from '../lib/companionGroups'
 import { buildVCalendar, tzidForState, type IcalEvent } from '../lib/ical'
 import { visibleCalendarEvent, billEntryGroupKey } from '../lib/calendarVisibility'
 import { hearingBody, customBody, customUrl, dateFieldBody } from '../lib/calendarIcsBody'
 import { loadDateFieldEvents, type DateFieldEvent } from '../lib/dateFieldEvents'
 import { billUrl } from '../../../shared/sessionSlug'
+import { filedSlug } from '../lib/sessionSlug'
 import { collectPriorityLegiscanIds, backfillCalendar } from '../lib/calendarBackfill'
 import { nowDb } from '../lib/dbTime'
 import { PRODUCT_NAME } from '../../../shared/brand'
@@ -120,7 +123,7 @@ calendarRouter.get('/events', requireAuth, async (c) => {
       details: calendarEvents.details, url: calendarEvents.url,
       status: calendarEvents.status,
       billNumber: bills.billNumber, billTitle: bills.title,
-      billState: bills.state, priority: bills.priority,
+      billState: bills.state, priority: bills.priority, billGroupKey: bills.groupKey,
       billIsDraft: bills.isDraft,
     })
     .from(calendarEvents)
@@ -137,16 +140,22 @@ calendarRouter.get('/events', requireAuth, async (c) => {
     ))
     .all()
 
+  // isDraft drives the dashed BillBadge variant on the event chips. Reachable
+  // through the custom-event path only: hearing events are synced from
+  // LegiScan and a draft has no LegiScan id, but a custom event can link any
+  // tenant bill, drafts included (see calendar_event_bills / setEventBills).
+  // `priority` is the bill's group's, and `groupKey` the group it is in (null for none).
+  type EventBill = { id: string; billNumber: string; billTitle: string; state: string | null; priority: string | null; isDraft: boolean; groupKey?: string | null }
   // Linked bills for custom and body events come from the join table.
   const linkedIds = rows.filter(r => linksBills(r.source)).map(r => r.id)
-  const linkMap = new Map<string, Array<{ id: string; billNumber: string; billTitle: string; state: string | null; priority: string | null; isDraft: boolean }>>()
+  const linkMap = new Map<string, EventBill[]>()
   // In chunks: a covered state's body events can number in the hundreds, past D1's bound-parameter limit.
   for (let i = 0; i < linkedIds.length; i += LINK_CHUNK) {
     const links = await db
       .select({
         eventId: calendarEventBills.eventId,
         id: bills.id, billNumber: bills.billNumber, billTitle: bills.title,
-        state: bills.state, priority: bills.priority, isDraft: bills.isDraft,
+        state: bills.state, priority: bills.priority, isDraft: bills.isDraft, groupKey: bills.groupKey,
       })
       .from(calendarEventBills)
       .innerJoin(bills, eq(calendarEventBills.billId, bills.id))
@@ -154,16 +163,12 @@ calendarRouter.get('/events', requireAuth, async (c) => {
       .all()
     for (const l of links) {
       const list = linkMap.get(l.eventId) ?? []
-      list.push({ id: l.id, billNumber: l.billNumber, billTitle: billDisplayTitle({ title: l.billTitle, isDraft: l.isDraft }), state: l.state, priority: l.priority, isDraft: l.isDraft })
+      list.push({ id: l.id, billNumber: l.billNumber, billTitle: billDisplayTitle({ title: l.billTitle, isDraft: l.isDraft }), state: l.state, priority: l.priority, isDraft: l.isDraft, groupKey: l.groupKey })
       linkMap.set(l.eventId, list)
     }
   }
 
-  // isDraft drives the dashed BillBadge variant on the event chips. Reachable
-  // through the custom-event path only: hearing events are synced from
-  // LegiScan and a draft has no LegiScan id, but a custom event can link any
-  // tenant bill, drafts included (see calendar_event_bills / setEventBills).
-  type EventBill = { id: string; billNumber: string; billTitle: string; state: string | null; priority: string | null; isDraft: boolean }
+  type EventGroup = { key: string; bills: Array<{ id: string; billNumber: string; state: string | null; sessionSlug: string | null }> }
   interface EventResult {
     id: string; uid: string; source: EventSource; billId: string | null
     /** A bill calendar entry's kind, from central (null for custom and date-field events, or before central sent one). */
@@ -176,13 +181,15 @@ calendarRouter.get('/events', requireAuth, async (c) => {
     date: string | null; time: string | null; location: string | null
     description: string | null; details: string | null; url: string | null
     status: string; bills: EventBill[]
+    /** The companion groups the entry's bills belong to, each with every bill in it, so the popover can link to them. Absent on a date-field event. */
+    groups?: EventGroup[]
   }
 
   const entries: EventResult[] = rows.map(r => {
     const billsArr: EventBill[] = linksBills(r.source)
       ? (linkMap.get(r.id) ?? [])
       : (r.billNumber
-          ? [{ id: r.billId!, billNumber: r.billNumber, billTitle: billDisplayTitle({ title: r.billTitle, isDraft: r.billIsDraft }), state: r.billState, priority: r.priority, isDraft: r.billIsDraft ?? false }]
+          ? [{ id: r.billId!, billNumber: r.billNumber, billTitle: billDisplayTitle({ title: r.billTitle, isDraft: r.billIsDraft }), state: r.billState, priority: r.priority, isDraft: r.billIsDraft ?? false, groupKey: r.billGroupKey }]
           : [])
     return {
       id: r.id, uid: r.uid, source: r.source, kind: r.kind, billId: r.billId,
@@ -191,6 +198,7 @@ calendarRouter.get('/events', requireAuth, async (c) => {
       description: r.description, details: r.details, url: r.url,
       status: r.status,
       bills: billsArr,
+      groups: [],
     }
   })
 
@@ -233,6 +241,25 @@ calendarRouter.get('/events', requireAuth, async (c) => {
     }
     // A merged hearing counts as confirmed if any of its bill rows is confirmed.
     if (e.status === 'confirmed') g.status = 'confirmed'
+  }
+
+  // Each entry's companion groups, with every bill in them: a group's members with no hearing of their own
+  // are in it too, so the popover links to each. Hearings stay separate entries; only this is shared.
+  const groupKeys = [...new Set(result.flatMap(e => e.bills.map(b => b.groupKey)).filter((k): k is string => k != null))]
+  const membersOf = new Map<string, EventGroup['bills']>()
+  for (let i = 0; i < groupKeys.length; i += LINK_CHUNK) {
+    const members = await db.select({ id: bills.id, billNumber: bills.billNumber, state: bills.state, session: bills.session, sessionSlug: bills.sessionSlug, groupKey: bills.groupKey })
+      .from(bills).where(inArray(bills.groupKey, groupKeys.slice(i, i + LINK_CHUNK))).all()
+    for (const m of members) membersOf.set(m.groupKey!, [...(membersOf.get(m.groupKey!) ?? []), { id: m.id, billNumber: m.billNumber, state: m.state, sessionSlug: filedSlug(m) }])
+  }
+  // A group has one priority, so a bill's chip wears it whichever member it was set on.
+  const groupPriorities = await loadGroupPriorities(db, groupKeys)
+  for (const e of result) {
+    const keys = [...new Set(e.bills.map(b => b.groupKey).filter((k): k is string => k != null))]
+    e.groups = keys.map(key => ({ key, bills: [...(membersOf.get(key) ?? [])].sort(compareBillNumbers) }))
+    for (const b of e.bills) {
+      b.priority = priorityWorn({ priority: b.priority as 'high' | 'medium' | 'low' | null, groupKey: b.groupKey ?? null }, groupPriorities)
+    }
   }
 
   // Date custom fields on prioritized bills: projected here, never stored, and never merged with anything.
@@ -429,7 +456,7 @@ calendarRouter.get('/feed/:slugIcs', async (c) => {
       timezone: calendarEvents.timezone,
       details: calendarEvents.details, url: calendarEvents.url,
       billId: calendarEvents.billId,
-      billNumber: bills.billNumber, billTitle: bills.title, priority: bills.priority, state: bills.state,
+      billNumber: bills.billNumber, billTitle: bills.title, priority: bills.priority, billGroupKey: bills.groupKey, state: bills.state,
       session: bills.session, sessionSlug: bills.sessionSlug, billIsDraft: bills.isDraft,
     })
     .from(calendarEvents)
@@ -443,6 +470,8 @@ calendarRouter.get('/feed/:slugIcs', async (c) => {
     ))
     .all()
 
+  // A companion group has one priority, so a hearing's text wears it whichever member it was set on.
+  const groupPriorities = await loadGroupPriorities(db, rows.map(r => r.billGroupKey))
   const nameRow = await db.select().from(associationConfig).where(eq(associationConfig.key, 'association_name')).get()
   // association_name is stored JSON-encoded (matches configApi); parse with a raw fallback.
   let assocName = PRODUCT_NAME
@@ -507,7 +536,7 @@ calendarRouter.get('/feed/:slugIcs', async (c) => {
       url = customUrl({ url: r.url, billHref, calendarHref })
     } else if (r.billNumber && r.billId) {
       const billHref = encodeURI(`https://${host}${billUrl({ id: r.billId, state: r.state, session: r.session, sessionSlug: r.sessionSlug, billNumber: r.billNumber })}`)
-      description = hearingBody({ billNumber: r.billNumber, billTitle: billDisplayTitle({ title: r.billTitle, isDraft: r.billIsDraft }) || null, priority: r.priority, billHref, assoc: assocName })
+      description = hearingBody({ billNumber: r.billNumber, billTitle: billDisplayTitle({ title: r.billTitle, isDraft: r.billIsDraft }) || null, priority: priorityWorn({ priority: r.priority, groupKey: r.billGroupKey }, groupPriorities), billHref, assoc: assocName })
       url = billHref
     }
 

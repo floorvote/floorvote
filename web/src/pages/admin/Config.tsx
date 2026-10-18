@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { actionRowStyle, actionRowStyleFirst, actionBtnBlue, actionBtnRed } from '../../styles/actionRow'
+import { primaryButtonColors } from '../../styles/primaryButton'
 import { apiFetch, ApiError } from '../../lib/api'
 import { normalizeOrgNoun, MAX_ORG_NOUN_LENGTH } from '../../lib/orgNoun'
 import { exportAllData } from '../../lib/exportData'
@@ -16,6 +17,7 @@ import { HintText } from '../../components/HintText'
 import { DropIndicator, ReorderLiveRegion, useDragReorder } from '../../components/dragReorder'
 import { inlineEditSaveStyle, inlineEditCancelStyle } from '../../lib/inlineEditStyles'
 import { ReprocessScopeModal, type ReprocessScope } from '../../components/ReprocessScopeModal'
+import { IosToggle } from '../../components/ui/IosToggle'
 import { aiInstructionsChanged, configChanged, type ConfigSnapshot, centralSyncWarning, type KeywordResyncResult } from './aiConfig'
 import { isWildcardKeyword } from '../../../../shared/keywords'
 import { buildDefaultAiContext, buildDefaultRelevanceQuestion, isAiConfigDefault } from '../../../../shared/aiDefaults'
@@ -36,6 +38,7 @@ type ConfigData = {
   matched_bills_count?: number
   prioritized_bills_count?: number
   new_match_min_relevance?: number
+  claim_links_enabled?: boolean
 }
 
 type CustomFieldDef = {
@@ -62,6 +65,12 @@ const aiTextareaStyle: React.CSSProperties = {
 
 // The add-custom-field form's labels keep its compact, muted look.
 const CF_LABEL: React.CSSProperties = { fontWeight: fontWeight.normal, color: color.textSecondary, marginBottom: 2 }
+
+// The scope dialog's text when claim links are turned on, rather than AI instructions saved.
+const CLAIM_LINKS_SCOPE_COPY = {
+  title: 'Claim links turned on',
+  intro: 'New bill summaries will include claim links. Existing summaries get claim links only when the AI is re-run on them. Do you want to re-run it on existing bills?',
+}
 
 export function Config() {
   usePageTitle('Settings')
@@ -110,6 +119,8 @@ export function Config() {
   const [saveAiError, setSaveAiError] = useState<string | null>(null)
   const [saveAiResult, setSaveAiResult] = useState<{ queued: number } | null>(null)
   const [showScopeModal, setShowScopeModal] = useState(false)
+  // What the scope dialog is for: saved AI instructions, or claim links turned on.
+  const [scopeModalReason, setScopeModalReason] = useState<'instructions' | 'claimLinks'>('instructions')
   // Snapshot of every savable field, as last loaded or successfully saved.
   // Backs both the "did AI instructions change" reprocess-modal decision (via
   // aiInstructionsChanged, ai-fields subset) and the page's unsaved-changes
@@ -119,6 +130,15 @@ export function Config() {
   // for this: reverting the unsaved-changes guard through it would flatten a
   // multi-line description and drop a row that has one but no name yet.
   const savedTaxonomyRows = useRef<TaxonomyRow[]>([])
+
+  // The claim links setting (#570). It saves the moment it's toggled, apart from
+  // the AI instructions above it, so it never rides along with unsaved edits.
+  const [claimLinks, setClaimLinks] = useState(true)
+  const [savingClaimLinks, setSavingClaimLinks] = useState(false)
+  const [saveClaimLinksError, setSaveClaimLinksError] = useState<string | null>(null)
+  // What the polite live region says after a save, so a screen reader user hears
+  // the result. Empty until the first toggle.
+  const [claimLinksAnnouncement, setClaimLinksAnnouncement] = useState('')
 
   const [newMatchMinRelevance, setNewMatchMinRelevance] = useState(0)
   const [savingNewMatch, setSavingNewMatch] = useState(false)
@@ -209,6 +229,8 @@ export function Config() {
         setRelevanceQuestion(relevanceQuestionValue)
         const newMatchMinRelevanceValue = typeof data.new_match_min_relevance === 'number' ? data.new_match_min_relevance : 0
         setNewMatchMinRelevance(newMatchMinRelevanceValue)
+        // On unless an admin turned it off, as the server reads it.
+        setClaimLinks(data.claim_links_enabled !== false)
         const loadedRows = rowsFromTaxonomy(
           Array.isArray(data.tag_taxonomy) ? data.tag_taxonomy as TaxonomyItem[] : [],
         )
@@ -430,11 +452,38 @@ export function Config() {
       })
       setSavedAi(true)
       setTimeout(() => setSavedAi(false), 5000)
-      if (changed && (matchedBillsCount ?? 0) > 0) setShowScopeModal(true)
+      if (changed && (matchedBillsCount ?? 0) > 0) { setScopeModalReason('instructions'); setShowScopeModal(true) }
     } catch (err) {
       setSaveAiError(err instanceof ApiError ? err.message : 'Failed to save.')
     } finally {
       setSavingAi(false)
+    }
+  }
+
+  async function handleToggleClaimLinks(next: boolean) {
+    // The box stays focusable while saving (aria-disabled, not disabled, which
+    // would drop a keyboard user's focus), so a toggle during a save is ignored here.
+    if (savingClaimLinks) return
+    setSaveClaimLinksError(null)
+    setClaimLinksAnnouncement('')
+    setClaimLinks(next)
+    setSavingClaimLinks(true)
+    try {
+      await apiFetch<{ enabled: boolean }>(
+        '/admin/claim-links',
+        { method: 'PUT', body: JSON.stringify({ enabled: next }) },
+      )
+      setClaimLinksAnnouncement(next ? 'Claim links turned on.' : 'Claim links turned off.')
+      // Existing summaries get claim links only when re-run, so offer that on
+      // turning on, once the save has succeeded and there are bills to re-run.
+      if (next && (matchedBillsCount ?? 0) > 0) { setScopeModalReason('claimLinks'); setShowScopeModal(true) }
+    } catch (err) {
+      setClaimLinks(!next)
+      const message = err instanceof ApiError ? err.message : 'Failed to save.'
+      setSaveClaimLinksError(message)
+      setClaimLinksAnnouncement(message)
+    } finally {
+      setSavingClaimLinks(false)
     }
   }
 
@@ -822,6 +871,23 @@ export function Config() {
                     Leaving this blank uses the generic instructions shown above. Personalizing them improves summaries and relevance scores.
                   </div>
                 )}
+                <div style={{ marginTop: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                    <span data-testid="claim-links-label" style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, color: color.textSlate }}>Claim links</span>
+                    <IosToggle
+                      checked={claimLinks}
+                      disabled={demoLocked}
+                      busy={savingClaimLinks}
+                      onChange={(n) => void handleToggleClaimLinks(n)}
+                      ariaLabel="Claim links"
+                    />
+                  </div>
+                  <div data-testid="claim-links-copy" style={hintStyle}>
+                    Links claims in a bill's summary to the associated passage in the bill. This will increase AI costs slightly.
+                  </div>
+                  {/* One polite live region for the result and any error. It's seen only when it's an error. */}
+                  <div data-testid="claim-links-status" role="status" aria-live="polite" style={saveClaimLinksError ? { ...hintStyle, color: color.textErrorRed } : SR_ONLY}>{claimLinksAnnouncement}</div>
+                </div>
               </div>
 
               <div>
@@ -1237,7 +1303,7 @@ export function Config() {
           )}
           <button
             {...cfGate.buttonProps(handleAddCustomField)}
-            style={{ background: !cfGate.disabled ? color.accentBlue : color.borderDefault, color: !cfGate.disabled ? color.textOnFill : color.textMuted, border: 'none', borderRadius: radius.md, padding: '8px 20px', cursor: !cfGate.disabled ? 'pointer' : 'not-allowed', fontSize: fontSize.sm, fontWeight: fontWeight.medium }}
+            style={{ ...primaryButtonColors(cfGate.disabled), border: 'none', borderRadius: radius.md, padding: '8px 20px', cursor: !cfGate.disabled ? 'pointer' : 'not-allowed', fontSize: fontSize.sm, fontWeight: fontWeight.medium }}
           >
             {cfAdding ? 'Adding…' : 'Add field'}
           </button>
@@ -1312,6 +1378,7 @@ export function Config() {
           prioritizedBillsCount={prioritizedBillsCount}
           onChoose={runReprocess}
           onDismiss={() => setShowScopeModal(false)}
+          {...(scopeModalReason === 'claimLinks' ? CLAIM_LINKS_SCOPE_COPY : {})}
         />
       )}
 
@@ -1334,8 +1401,7 @@ export function Config() {
             }}
             style={{
               width: 224, flexShrink: 0, borderRadius: radius.md, padding: '8px 14px',
-              background: demoLocked ? color.borderDefault : exporting ? color.accentBlueMuted : color.accentBlue,
-              color: demoLocked ? color.textMuted : color.textOnFill,
+              ...primaryButtonColors(exporting || demoLocked),
               cursor: exporting || demoLocked ? 'not-allowed' : 'pointer',
               fontSize: fontSize.sm, fontWeight: fontWeight.medium, lineHeight: 1.4,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
