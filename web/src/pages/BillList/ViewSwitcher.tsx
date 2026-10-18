@@ -50,15 +50,16 @@ const ALL_BILLS_KEY = '__all_bills__'
 // nothing at all, rather than a misleading number).
 function ViewCountBadge({ count, failed, inView = false }: { count: number | undefined; failed: boolean; inView?: boolean }) {
   if (failed) return null
-  return (
-    <span
-      // Hovering the count says what it counts. The envelope's hover is about the digest, so the count lives here.
-      title={count === undefined || !inView ? undefined : `${count.toLocaleString()} ${count === 1 ? 'bill matches' : 'bills match'} this view`}
-      style={{ ...countBadge(), marginLeft: 'auto', flexShrink: 0 }}
-    >
+  const chip = (describedAs?: string) => (
+    <span aria-description={describedAs} style={{ ...countBadge(), marginLeft: 'auto', flexShrink: 0 }}>
       {count === undefined ? '…' : count.toLocaleString()}
     </span>
   )
+  if (count === undefined || !inView) return chip()
+  // Hovering the count says what it counts. The envelope's hover is about the digest, so the count lives here.
+  // HoverTooltip, not `title`, which never fires on touch.
+  const text = `${count.toLocaleString()} ${count === 1 ? 'bill matches' : 'bills match'} this view`
+  return <HoverTooltip text={text}>{chip(text)}</HoverTooltip>
 }
 
 export function ViewSwitcher({

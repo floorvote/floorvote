@@ -54,7 +54,7 @@ export function CompactPrioritySelect({ billId, current, onChange, isFiltered, m
         data-testid="priority-select-sizer"
         aria-hidden="true"
         style={{
-          gridArea: '1 / 1', visibility: 'hidden', pointerEvents: 'none', whiteSpace: 'nowrap',
+          gridArea: '1 / 1', visibility: 'hidden', pointerEvents: 'none', whiteSpace: 'nowrap', fontFamily: 'inherit',
           fontSize: fs, fontWeight: fontWeight.semibold, padding: pad, border: '1px solid transparent',
         }}
       >
@@ -79,7 +79,7 @@ export function CompactPrioritySelect({ billId, current, onChange, isFiltered, m
         }}
         style={{
           WebkitAppearance: 'none', appearance: 'none',
-          gridArea: '1 / 1', width: 0, minWidth: '100%',
+          gridArea: '1 / 1', width: 0, minWidth: '100%', fontFamily: 'inherit',
           fontSize: fs, fontWeight: fontWeight.semibold,
           padding: pad, borderRadius: borderRad,
           border: `1px solid ${borderColor}`, background: c.fill, color: c.text,

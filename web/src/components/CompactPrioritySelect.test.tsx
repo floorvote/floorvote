@@ -220,7 +220,7 @@ describe('CompactPrioritySelect', () => {
 
     it('copies the select\'s font and padding onto the sizer, so the two measure alike', () => {
       render(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} newMatch onDismiss={vi.fn()} />)
-      for (const prop of ['fontSize', 'fontWeight', 'padding'] as const) {
+      for (const prop of ['fontSize', 'fontWeight', 'fontFamily', 'padding'] as const) {
         expect(sizer().style[prop]).toBe(selectEl().style[prop])
       }
       expect(sizer().style.border).toMatch(/1px solid/)

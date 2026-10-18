@@ -129,29 +129,34 @@ describe('ViewSwitcher: include a view in the digest', () => {
     renderSwitcher({})
     await waitFor(() => expect(screen.getByText('42')).toBeInTheDocument())
     const chip = screen.getByText('42')
-    expect(chip).toHaveAttribute('title', '42 bills match this view')
     expect(chip).toHaveAccessibleDescription('42 bills match this view')
+    await userEvent.hover(chip)
+    expect(await screen.findByText('42 bills match this view')).toBeInTheDocument()
   })
 
   it('says "1 bill matches this view" for a view of one', async () => {
     renderSwitcher({})
     await waitFor(() => expect(screen.getByText('1')).toBeInTheDocument())
     const chip = screen.getByText('1')
-    expect(chip).toHaveAttribute('title', '1 bill matches this view')
     expect(chip).toHaveAccessibleDescription('1 bill matches this view')
+    await userEvent.hover(chip)
+    expect(await screen.findByText('1 bill matches this view')).toBeInTheDocument()
   })
 
   it('formats a large count with separators in the chip hover', async () => {
     vi.spyOn(api, 'apiFetch').mockImplementation(async () => ({ pagination: { total: 1320 } }) as never)
     renderSwitcher({})
     await waitFor(() => expect(screen.getAllByText('1,320').length).toBeGreaterThan(0))
-    expect(screen.getAllByText('1,320')[1]).toHaveAttribute('title', '1,320 bills match this view')
+    await userEvent.hover(screen.getAllByText('1,320')[1])
+    expect(await screen.findByText('1,320 bills match this view')).toBeInTheDocument()
   })
 
   it('leaves the "All bills" count chip without the view hover, since it is not a view', async () => {
     renderSwitcher({})
     await waitFor(() => expect(screen.getByText('100')).toBeInTheDocument())
-    expect(screen.getByText('100')).not.toHaveAttribute('title')
+    expect(screen.getByText('100')).not.toHaveAccessibleDescription()
+    await userEvent.hover(screen.getByText('100'))
+    expect(screen.queryByText(/match(es)? this view/)).not.toBeInTheDocument()
   })
 
   it('gives the count chip no hover until the count has loaded, rather than saying 0', async () => {
@@ -159,13 +164,16 @@ describe('ViewSwitcher: include a view in the digest', () => {
     renderSwitcher({})
     const chips = screen.getAllByText('…')
     expect(chips.length).toBeGreaterThan(0)
-    for (const chip of chips) expect(chip).not.toHaveAttribute('title')
+    for (const chip of chips) expect(chip).not.toHaveAccessibleDescription()
+    await userEvent.hover(chips[0])
+    expect(screen.queryByText(/match(es)? this view/)).not.toBeInTheDocument()
   })
 
   it('keeps the count chip hover on a row with no digest control', async () => {
     renderSwitcher(undefined)
     await waitFor(() => expect(screen.getByText('42')).toBeInTheDocument())
-    expect(screen.getByText('42')).toHaveAttribute('title', '42 bills match this view')
+    await userEvent.hover(screen.getByText('42'))
+    expect(await screen.findByText('42 bills match this view')).toBeInTheDocument()
   })
 
   it('includes the view on a click, with the digest on, and does not apply the view or close the menu', () => {
