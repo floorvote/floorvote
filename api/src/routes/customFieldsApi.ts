@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { eq, max, and, ne } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { customFieldDefinitions, savedViews } from '../db/schema'
-import { detectOptionRenames, rewriteViewQuery, type OptionRename } from '../lib/savedViewRenames'
+import { validateOptionRenames, rewriteViewQuery, type OptionRename } from '../lib/savedViewRenames'
 import { nowDb } from '../lib/dbTime'
 import type { AppEnv } from '../types'
 
@@ -149,8 +149,8 @@ customFieldsApiRouter.put('/:id', async (c) => {
   const fieldId = c.req.param('id')
   const body = await c
     .req
-    .json<{ name?: string; options?: unknown; pinned?: boolean; multiple?: boolean }>()
-    .catch(() => ({} as { name?: string; options?: unknown; pinned?: boolean; multiple?: boolean }))
+    .json<{ name?: string; options?: unknown; renames?: unknown; pinned?: boolean; multiple?: boolean }>()
+    .catch(() => ({} as { name?: string; options?: unknown; renames?: unknown; pinned?: boolean; multiple?: boolean }))
 
   const db = getDb(c.env.DB)
   const existing = await db
@@ -180,7 +180,11 @@ customFieldsApiRouter.put('/:id', async (c) => {
       return c.json({ error: 'options must be a non-empty array' }, 400)
     }
     updates.options = JSON.stringify(body.options)
-    optionRenames = detectOptionRenames(parseOptions(existing.options) ?? [], body.options as string[])
+    const checked = validateOptionRenames(body.renames, parseOptions(existing.options) ?? [], body.options as string[])
+    if ('error' in checked) return c.json({ error: checked.error }, 400)
+    optionRenames = checked.renames
+  } else if (body.renames !== undefined) {
+    return c.json({ error: 'renames can only be sent with options' }, 400)
   }
 
   if (body.pinned !== undefined) {

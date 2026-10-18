@@ -101,7 +101,8 @@ async function openEditor() {
 }
 
 async function save() {
-  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  const editor = screen.getByLabelText('Option 1').closest('div')!.parentElement!.parentElement!
+  fireEvent.click(within(editor).getByRole('button', { name: 'Save' }))
   await waitFor(() => expect(putCalls()).toHaveLength(1))
   return JSON.parse(String(putCalls()[0][1]!.body)) as { options: string[]; renames?: { from: string; to: string }[] }
 }

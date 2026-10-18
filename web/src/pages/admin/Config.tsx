@@ -1,3 +1,4 @@
+import { optionsFromRows, rowsFromOptions, type OptionRow } from './optionRows'
 import { useEffect, useRef, useState } from 'react'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { actionRowStyle, actionRowStyleFirst, actionBtnBlue, actionBtnRed } from '../../styles/actionRow'
@@ -171,7 +172,7 @@ export function Config() {
   const [cfAdding, setCfAdding] = useState(false)
   const [cfEditing, setCfEditing] = useState<string | null>(null)
   const [cfEditName, setCfEditName] = useState('')
-  const [cfEditOptions, setCfEditOptions] = useState('')
+  const [cfEditOptions, setCfEditOptions] = useState<OptionRow[]>([])
   const [cfEditMultiple, setCfEditMultiple] = useState(false)
   const [cfEditError, setCfEditError] = useState<string | null>(null)
   // Drag- and keyboard-reorder, shared with the tag table
@@ -654,11 +655,12 @@ export function Config() {
       const newName = cfEditName.trim()
       if (newName && newName !== field.name) body.name = newName
       if (field.type === 'dropdown') {
-        const opts = cfEditOptions.split(',').map(s => s.trim()).filter(Boolean)
-        body.options = opts
+        const edited = optionsFromRows(cfEditOptions)
+        body.options = edited.options
+        if (edited.renames.length > 0) body.renames = edited.renames
         if (cfEditMultiple !== (field.multiple ?? false)) body.multiple = cfEditMultiple
       }
-      const newOpts = field.type === 'dropdown' ? cfEditOptions.split(',').map(s => s.trim()).filter(Boolean) : field.options
+      const newOpts = field.type === 'dropdown' ? optionsFromRows(cfEditOptions).options : field.options
       await apiFetch(`/admin/custom-fields/${id}`, {
         method: 'PUT',
         body: JSON.stringify(body),
@@ -1086,13 +1088,28 @@ export function Config() {
                       </div>
                       {field.type === 'dropdown' && (
                         <>
-                          <input
-                            type="text"
-                            value={cfEditOptions}
-                            onChange={e => setCfEditOptions(e.target.value)}
-                            placeholder="Option 1, Option 2, Option 3"
-                            style={{ fontSize: fontSize.sm, padding: '5px 10px', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, fontFamily: 'inherit' }}
-                          />
+                          {cfEditOptions.map((row, n) => (
+                            <div key={n} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <input
+                                type="text"
+                                aria-label={`Option ${n + 1}`}
+                                value={row.text}
+                                onChange={e => setCfEditOptions(prev => prev.map((r, j) => j === n ? { ...r, text: e.target.value } : r))}
+                                style={{ flex: 1, minWidth: 0, fontSize: fontSize.sm, padding: '5px 10px', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, fontFamily: 'inherit' }}
+                              />
+                              <button
+                                type="button"
+                                aria-label={`Remove option ${n + 1}`}
+                                onClick={() => setCfEditOptions(prev => prev.filter((_, j) => j !== n))}
+                                style={inlineEditCancelStyle()}
+                              >Remove</button>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => setCfEditOptions(prev => [...prev, { original: null, text: '' }])}
+                            style={{ ...inlineEditCancelStyle(), alignSelf: 'flex-start' }}
+                          >Add option</button>
                           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: fontSize.sm, color: color.textSlate, cursor: 'pointer' }}>
                             <input
                               type="checkbox"
@@ -1130,7 +1147,7 @@ export function Config() {
                           onClick={demoLocked ? undefined : () => {
                             setCfEditing(field.id)
                             setCfEditName(field.name)
-                            setCfEditOptions(field.type === 'dropdown' && field.options ? field.options.join(', ') : '')
+                            setCfEditOptions(field.type === 'dropdown' ? rowsFromOptions(field.options) : [])
                             setCfEditMultiple(field.multiple ?? false)
                             setCfEditError(null)
                           }}

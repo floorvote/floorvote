@@ -8,23 +8,32 @@ import { parseBillFilter, serializeBillFilter, withBillFilter } from '../../../s
 export type OptionRename = Readonly<{ from: string; to: string }>
 
 /**
- * The options a dropdown edit renamed. The edit sends the whole new list, so a rename is read off by position:
- * the lists are the same length, and an option at the same place changed to a value that neither list shared
- * before. A reorder, an add, or a delete is therefore never taken for a rename, whatever the lists look like.
+ * The `renames` of an options edit, checked against the options before and after: a list of `{ from, to }`
+ * where each `from` was an old option, each `to` is a new one, no `from` or `to` repeats, and none renames
+ * an option to itself. A chain (a to b, b to c) is refused. A swap (a to b, b to a) is allowed: every value
+ * of a view is mapped once, so the two do not cascade. An error message, or the renames.
  */
-export function detectOptionRenames(before: readonly string[], after: readonly string[]): OptionRename[] {
-  if (before.length !== after.length) return []
-  const was = new Set(before)
-  const is = new Set(after)
+export function validateOptionRenames(input: unknown, before: readonly string[], after: readonly string[]): { renames: OptionRename[] } | { error: string } {
+  if (input === undefined) return { renames: [] }
+  if (!Array.isArray(input)) return { error: 'renames must be an array of { from, to }' }
   const renames: OptionRename[] = []
-  for (let i = 0; i < before.length; i++) {
-    const from = before[i]
-    const to = after[i]
-    if (typeof from === 'string' && typeof to === 'string' && from !== to && !is.has(from) && !was.has(to)) {
-      renames.push({ from, to })
+  for (const entry of input) {
+    if (!entry || typeof entry !== 'object' || typeof (entry as OptionRename).from !== 'string' || typeof (entry as OptionRename).to !== 'string') {
+      return { error: 'each rename must be { from, to } with text values' }
     }
+    const { from, to } = entry as OptionRename
+    if (from === to) return { error: `rename of "${from}" to itself` }
+    if (!before.includes(from)) return { error: `rename from "${from}", which is not an existing option` }
+    if (!after.includes(to)) return { error: `rename to "${to}", which is not in the new options` }
+    renames.push({ from, to })
   }
-  return renames
+  if (new Set(renames.map(r => r.from)).size !== renames.length) return { error: 'an option is renamed more than once' }
+  if (new Set(renames.map(r => r.to)).size !== renames.length) return { error: 'two options are renamed to the same value' }
+  for (const r of renames) {
+    const next = renames.find(o => o.from === r.to)
+    if (next && next.to !== r.from) return { error: `rename chain through "${r.to}"` }
+  }
+  return { renames }
 }
 
 export type ViewRename = Readonly<{
