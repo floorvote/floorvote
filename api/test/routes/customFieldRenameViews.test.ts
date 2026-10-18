@@ -236,7 +236,7 @@ describe('renaming a dropdown option', () => {
     await seedView('b', 'field.stage_note=Mid', 1)
     await seedView('c', 'priority=high&field.stage_note=__any__', 2)
 
-    const res = await putField(fieldId, { options: ['Beginning', 'Mid', 'Late'] })
+    const res = await putField(fieldId, { options: ['Beginning', 'Mid', 'Late'], renames: [{ from: 'Early', to: 'Beginning' }] })
     expect(res.status).toBe(200)
 
     expect(await viewQuery('a')).toBe('field.stage_note=Beginning&field.stage_note=Late')
@@ -249,7 +249,7 @@ describe('renaming a dropdown option', () => {
     await seedField({ name: 'Weight', slug: 'weight', options: ['Big', 'Small'] })
     await seedView('a', 'field.size=Big&field.weight=Big')
 
-    await putField(fieldId, { options: ['Large', 'Small'] })
+    await putField(fieldId, { options: ['Large', 'Small'], renames: [{ from: 'Big', to: 'Large' }] })
 
     expect(await viewQuery('a')).toBe('field.size=Large&field.weight=Big')
   })
@@ -258,7 +258,7 @@ describe('renaming a dropdown option', () => {
     const fieldId = await seedField({ name: 'Kind', slug: 'kind', options: ['Plain', 'Other'] })
     await seedView('a', 'field.kind=Plain&field.kind=Other')
 
-    await putField(fieldId, { options: ['R&D / 50% + more=ok', 'Other'] })
+    await putField(fieldId, { options: ['R&D / 50% + more=ok', 'Other'], renames: [{ from: 'Plain', to: 'R&D / 50% + more=ok' }] })
 
     const query = await viewQuery('a')
     expect(query).toBe(`field.kind=${encodeURIComponent('R&D / 50% + more=ok').replace(/%20/g, '+')}&field.kind=Other`)
@@ -269,7 +269,7 @@ describe('renaming a dropdown option', () => {
     const fieldId = await seedField({ name: 'Kind', slug: 'kind', options: ['A&B', 'C'] })
     await seedView('a', `field.kind=${encodeURIComponent('A&B')}`)
 
-    await putField(fieldId, { options: ['A and B', 'C'] })
+    await putField(fieldId, { options: ['A and B', 'C'], renames: [{ from: 'A&B', to: 'A and B' }] })
 
     expect(await viewQuery('a')).toBe('field.kind=A+and+B')
   })
@@ -279,7 +279,7 @@ describe('renaming a dropdown option', () => {
     await seedView('a', 'field.level=high', 0)
     await seedView('b', 'field.level=low', 1)
 
-    await putField(fieldId, { options: ['High', 'low'] })
+    await putField(fieldId, { options: ['High', 'low'], renames: [{ from: 'high', to: 'High' }] })
 
     expect(await viewQuery('a')).toBe('field.level=High')
     expect(await viewQuery('b')).toBe('field.level=low')
@@ -289,7 +289,7 @@ describe('renaming a dropdown option', () => {
     const fieldId = await seedField({ name: 'Level', slug: 'level', options: ['a', 'b', 'c'], multiple: true })
     await seedView('v', 'field.level=a&field.level=b&field.level=c')
 
-    await putField(fieldId, { options: ['x', 'b', 'z'] })
+    await putField(fieldId, { options: ['x', 'b', 'z'], renames: [{ from: 'a', to: 'x' }, { from: 'c', to: 'z' }] })
 
     expect(await viewQuery('v')).toBe('field.level=x&field.level=b&field.level=z')
   })
@@ -319,7 +319,7 @@ describe('renaming a dropdown option', () => {
     const fieldId = await seedField({ name: 'Level', slug: 'level', options: ['a', 'b'] })
     await seedView('v', 'field.level=a&field.level=b&priority=low')
 
-    const res = await putField(fieldId, { name: 'Tier', options: ['x', 'b'] })
+    const res = await putField(fieldId, { name: 'Tier', options: ['x', 'b'], renames: [{ from: 'a', to: 'x' }] })
     expect(await res.json()).toEqual({ ok: true, slug: 'tier' })
 
     expect(await viewQuery('v')).toBe('priority=low&field.tier=x&field.tier=b')
@@ -332,10 +332,115 @@ describe('renaming a dropdown option', () => {
       `CREATE TRIGGER fail_view BEFORE UPDATE ON saved_views BEGIN SELECT RAISE(ABORT, 'view write failed'); END;`,
     )
 
-    const res = await putField(fieldId, { options: ['x', 'b'] })
+    const res = await putField(fieldId, { options: ['x', 'b'], renames: [{ from: 'a', to: 'x' }] })
     expect(res.status).toBeGreaterThanOrEqual(500)
 
     expect((await fieldRow(fieldId))?.options).toBe(JSON.stringify(['a', 'b']))
     expect(await viewQuery('v')).toBe('field.level=a')
+  })
+})
+
+describe('the options rename is explicit', () => {
+  it('follows a rename saved together with an added option', async () => {
+    const fieldId = await seedField({ name: 'Level', slug: 'level', options: ['a', 'b'], multiple: true })
+    await seedView('v', 'field.level=a&field.level=b')
+
+    const res = await putField(fieldId, { options: ['x', 'b', 'c'], renames: [{ from: 'a', to: 'x' }] })
+    expect(res.status).toBe(200)
+
+    expect(await viewQuery('v')).toBe('field.level=x&field.level=b')
+    expect((await fieldRow(fieldId))?.options).toBe(JSON.stringify(['x', 'b', 'c']))
+  })
+
+  it('follows a rename saved together with a deleted option', async () => {
+    const fieldId = await seedField({ name: 'Level', slug: 'level', options: ['a', 'b', 'c'], multiple: true })
+    await seedView('v', 'field.level=a&field.level=c')
+
+    await putField(fieldId, { options: ['x', 'c'], renames: [{ from: 'a', to: 'x' }] })
+
+    expect(await viewQuery('v')).toBe('field.level=x&field.level=c')
+  })
+
+  it('rewrites nothing when one option is deleted and another added in the same save', async () => {
+    const fieldId = await seedField({ name: 'Status', slug: 'review', options: ['Pending', 'Done'] })
+    const query = 'field.review=Pending'
+    await seedView('v', query)
+
+    const res = await putField(fieldId, { options: ['Withdrawn', 'Done'] })
+    expect(res.status).toBe(200)
+
+    expect(await viewQuery('v')).toBe(query)
+    expect((await fieldRow(fieldId))?.options).toBe(JSON.stringify(['Withdrawn', 'Done']))
+  })
+
+  it('follows a rename that also moves the option to a new position', async () => {
+    const fieldId = await seedField({ name: 'Level', slug: 'level', options: ['a', 'b', 'c'] })
+    await seedView('v', 'field.level=a')
+
+    await putField(fieldId, { options: ['b', 'c', 'x'], renames: [{ from: 'a', to: 'x' }] })
+
+    expect(await viewQuery('v')).toBe('field.level=x')
+  })
+
+  it('swaps two options by rename in one write per view', async () => {
+    const fieldId = await seedField({ name: 'Level', slug: 'level', options: ['A', 'B'], multiple: true })
+    await seedView('v1', 'field.level=A', 0)
+    await seedView('v2', 'field.level=B&field.level=A', 1)
+
+    const res = await putField(fieldId, { options: ['B', 'A'], renames: [{ from: 'A', to: 'B' }, { from: 'B', to: 'A' }] })
+    expect(res.status).toBe(200)
+
+    expect(await viewQuery('v1')).toBe('field.level=B')
+    expect(await viewQuery('v2')).toBe('field.level=A&field.level=B')
+  })
+
+  it('ignores a rename on a view that does not filter on the field', async () => {
+    const fieldId = await seedField({ name: 'Level', slug: 'level', options: ['a', 'b'] })
+    const query = 'priority=a&field.other=a'
+    await seedView('v', query)
+
+    await putField(fieldId, { options: ['x', 'b'], renames: [{ from: 'a', to: 'x' }] })
+
+    expect(await viewQuery('v')).toBe(query)
+  })
+
+  const invalid: [string, unknown][] = [
+    ['a from that was not in the old options', [{ from: 'zzz', to: 'x' }]],
+    ['a to that is not in the new options', [{ from: 'a', to: 'nope' }]],
+    ['a from listed twice', [{ from: 'a', to: 'x' }, { from: 'a', to: 'b' }]],
+    ['a to listed twice', [{ from: 'a', to: 'x' }, { from: 'b', to: 'x' }]],
+    ['a chain', [{ from: 'a', to: 'x' }, { from: 'x', to: 'b' }]],
+    ['a rename to itself', [{ from: 'b', to: 'b' }]],
+    ['an entry that is not an object', ['a']],
+    ['an entry with a non-string value', [{ from: 1, to: 'x' }]],
+    ['renames that is not an array', { from: 'a', to: 'x' }],
+  ]
+  for (const [label, renames] of invalid) {
+    it(`refuses ${label} with 400 and changes nothing`, async () => {
+      const fieldId = await seedField({ name: 'Level', slug: 'level', options: ['a', 'b', 'x'] })
+      await seedView('v', 'field.level=a')
+
+      const res = await putField(fieldId, { name: 'Tier', options: ['x', 'b', 'x2', 'a2'], renames })
+      // 'x' stays in the new list so the chain case is checked against valid targets.
+      expect(res.status).toBe(400)
+
+      const row = await fieldRow(fieldId)
+      expect(row?.name).toBe('Level')
+      expect(row?.slug).toBe('level')
+      expect(row?.options).toBe(JSON.stringify(['a', 'b', 'x']))
+      expect(await viewQuery('v')).toBe('field.level=a')
+    })
+  }
+
+  it('refuses renames sent without options', async () => {
+    const fieldId = await seedField({ name: 'Level', slug: 'level', options: ['a', 'b'] })
+    const res = await putField(fieldId, { renames: [{ from: 'a', to: 'b' }] })
+    expect(res.status).toBe(400)
+  })
+
+  it('refuses renames on a field that is not a dropdown', async () => {
+    const fieldId = await seedField({ name: 'Note', slug: 'note' })
+    const res = await putField(fieldId, { options: ['a'], renames: [{ from: 'a', to: 'a' }] })
+    expect(res.status).toBe(400)
   })
 })
