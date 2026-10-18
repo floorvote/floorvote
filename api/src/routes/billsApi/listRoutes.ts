@@ -1,21 +1,19 @@
 import { Hono } from 'hono'
 import { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core'
-import { eq, and, sql, SQL } from 'drizzle-orm'
+import { sql } from 'drizzle-orm'
 import { getDb } from '../../db/client'
-import { bills, billSubjects, customFieldDefinitions } from '../../db/schema'
+import { bills, billSubjects } from '../../db/schema'
 import type { AppEnv } from '../../types'
-import { billsAs, buildBillsFilter, buildFilterParts, composeFilter, isCheapFilter, loadMyBillsInGroups, myBillsCondition, unvotedCondition, canOptimize, tagCondition, hasGroupTags, type BillsFilter } from './query'
+import { billsAs, isCheapFilter, loadMyBillsInGroups, canOptimize } from './query'
+import { buildBillsFilter, buildFilterParts, countFacets, emptyFacets, facetsResponse, makeFacetContext } from './filterTable'
 import { billStatesForWildcard } from '../../lib/billStates'
-import { getNewMatchMinRelevance, newMatchWhere } from '../../lib/newMatch'
+import { getNewMatchMinRelevance } from '../../lib/newMatch'
+import { loadTaxonomyTagNameSet } from '../../lib/taxonomy'
 import { cacheKeyFor, getCachedPage, putCachedPage, listCacheTtl, isPerUserListRequest } from '../../lib/listCache'
 import type { CachedListPage } from '../../lib/listCache'
-import { loadTaxonomyTagNameSet } from '../../lib/taxonomy'
-import { holdsGroupPriority, holdsGroupValue } from '../../lib/teamFields'
-import { loadVotedInGroups } from '../../lib/companionGroups'
 import { countGroups, loadGroupRows, pageOfGroups, trackedBills, type PageOptions } from './groupList'
-import { countBy, countHolders, freshOf, type Counting, type CountRow } from './facetCounts'
-import { encodeSubjectFilter, loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../../lib/billSubjects'
-import { FILTER_ANY, FILTER_NONE, parseBillFilter } from '../../../../shared/billFilter'
+import { loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../../lib/billSubjects'
+import { parseBillFilter } from '../../../../shared/billFilter'
 import { subjectCapError } from './filterRequest'
 
 export function registerListRoutes(router: Hono<AppEnv>) {
@@ -52,19 +50,12 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     // pair, where billRows names the groups on the page. Per-user filters
     // (myBills/unvoted) make the bill SET user-specific, so they bypass the
     // cache entirely and always run fresh.
-    // newMatches is org-shared but admin-only and low-volume; skip the shared page
-    // cache rather than widen the cache key for it.
+    // The key is the whole bill filter (lib/listCache.ts), so a filter that changes the bill set can't be left out of it.
+    // newMatches is the triage worklist: it changes as bills are triaged, and is low-volume, so it skips the shared page cache.
     const cacheable = !isPerUserListRequest(bf) && !bf.newMatches
     const ttl = listCacheTtl(c.env)
     const cacheKey = cacheable
-      ? cacheKeyFor(c.env, {
-          statuses: bf.status, stages: bf.stage, priorities: bf.priority, positionValues: bf.position, sessions: bf.session,
-          years: bf.year, states: bf.state, tagFilters: bf.tag,
-          subjectFilters: bf.subject,
-          q, minRelevance: bf.minRelevance === null ? undefined : String(bf.minRelevance), cfParamMap: bf.cf,
-          sort: sort ?? 'default', dir: sortDir, page, pageSize,
-          drafts: bf.drafts,
-        })
+      ? cacheKeyFor(c.env, { filter: bf, sort: sort ?? 'default', dir: sortDir, page, pageSize })
       : null
 
     let total: number
@@ -196,246 +187,14 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     // explicit list, and cached per tenant (lib/billStates.ts). Per bill too.
     const billStates = await billStatesForWildcard(db, c.env.TENANT_ID, c.env.STATE)
 
-    if (parts.noMatch) {
-      return c.json({ status: {}, stage: {}, priority: {}, year: {}, session: {}, state: {}, position: { [FILTER_NONE]: 0 }, tags: {}, subjects: {}, subjectStates, billStates, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0, hasDrafts })
-    }
+    const tenant = { subjectStates, billStates, hasDrafts }
+    // "My bills" for a member with none matches nothing. The response is the real one's, built from the same table with every count at zero.
+    if (parts.noMatch) return c.json(emptyFacets(tenant))
 
-    // The list's filter in full: the current result, which myBillsCount, newMatchesCount, unvotedCount,
-    // draftCount, and an OR facet's resulting total are counted within.
-    const current = composeFilter(parts)
-    // Whether any bill-fact filter is actually set. The OR identity below only
-    // holds when there is an existing OR to add a value to: with nothing selected,
-    // picking a value NARROWS the list rather than widening it, so counts stay
-    // absolute (which is also exactly what AND mode does).
-    const factFiltersActive = parts.facts.length > 0
-
-    // Per-dimension facet filter. Under AND, disjunctive faceting omits only the
-    // dimension's own filter (dropping a term from an AND widens the set, which is
-    // what we want for "how many would there be if I picked something else here").
-    // Under OR (match=any) that logic inverts: a value's marginal contribution to
-    // an OR is independent of the other groups, so dropping just one term still
-    // narrows the count to bills matching every OTHER active filter — which is
-    // wrong (see MUST FIX 1: Clerk/Elections fixture, where the tag facet must
-    // not be scoped down to subject-matching bills only). So under match=any every
-    // dimensional facet query counts over the scopes alone, with no bill-fact
-    // filters at all — each dimension is evaluated independently of the others.
-    const scopesOnly = composeFilter(parts, { facts: false })
-    const filterWithout = (omit: string[]): BillsFilter => matchAny ? scopesOnly : composeFilter(parts, { omit: new Set(omit) })
-
-    // Under match=any a facet count is the RESULTING TOTAL — what the list will
-    // show if you pick this value — which is what AND mode's disjunctive faceting
-    // has always meant. Counting the value's whole population instead made one
-    // label answer a different question in each mode, and the arithmetic visibly
-    // failed for operators (see the 2026-09-07 spec).
-    //
-    //   resultingTotal(v) = currentTotal + |{v} ∩ scope ∩ NOT currentResult|
-    //
-    // The delta is shared across dimensions: under OR, adding v yields
-    // currentResult ∪ {v} whichever dimension v came from, so there is no
-    // own-dimension term to exclude. It counts GROUPS, so a group a different
-    // bill of which is already in the current result is not added again: `fresh`
-    // is true of a bill of a group none of whose bills is in it. It is a
-    // conditional count rather than a WHERE term on purpose: filtering the rows
-    // by NOT current would drop a value whose bills are ALL already showing out
-    // of the GROUP BY entirely, so it would vanish from the dropdown instead of
-    // reading "picking this changes nothing".
-    const shiftFacets = matchAny && factFiltersActive
-    const fresh = shiftFacets ? freshOf(current) : undefined
-    const counting = (...omit: string[]): Counting => ({ where: filterWithout(omit), fresh })
-
-    // The count of all groups a facet's filter meets, to name the groups with none of a team field by
-    // subtraction (they are the rest). Under AND the dimension's own fact is left out, so a dimension
-    // that is not filtered shares one count with the others.
-    const totals = new Map<string, Promise<number>>()
-    const groupsMeeting = (omit: string) => {
-      const key = !matchAny && parts.facts.some(f => f.key === omit) ? omit : ''
-      if (!totals.has(key)) totals.set(key, countBy(db, counting(omit), { values: [], from: sql`bills m` }).then(rows => rows[0].n))
-      return totals.get(key)!
-    }
-    const countsOf = (rows: CountRow[], keep: (value: unknown) => boolean = Boolean) => Object.fromEntries(rows.filter(r => keep(r.values[0])).map(r => [String(r.values[0]), r.n]))
-
-    // Custom fields. Multi-select fields store their value as a JSON array, so their option counts
-    // must json_each-expand it (same as the tag facet) instead of grouping by the raw
-    // array string. Single-value fields group by the raw value.
-    const cfDefs = await db.select({ id: customFieldDefinitions.id, multiple: customFieldDefinitions.multiple }).from(customFieldDefinitions).all()
-    const multiIds = new Set(cfDefs.filter(d => d.multiple).map(d => d.id))
-    const cfFieldIds = parts.facts.filter(f => f.key.startsWith('cf:')).map(f => f.key.slice(3))
-
-    // An active `cf_` param that resolves to no real field (deleted field, garbled
-    // key — see query.ts's `__unresolved_cf__` sentinel) still lands in the filter as
-    // a condition that matches zero bills. It is not a real facet dimension, so it
-    // must never be allowed to narrow (i.e. zero out) any OTHER field's facet filter
-    // — only its own now-defunct "facet" would ever legitimately exclude it, and
-    // nothing queries that. Excluding it explicitly, everywhere its exclusion
-    // matters, keeps a stale saved view from blanking every custom-field dropdown.
-    const validCfFieldIdSet = new Set(cfDefs.map(d => d.id))
-    const unresolvedCfFieldIds = cfFieldIds.filter(id => !validCfFieldIdSet.has(id))
-    const idList = (ids: string[]) => sql.join(ids.map(id => sql`${id}`), sql`, `)
-    const cfOmit = (...ids: string[]) => ids.map(id => `cf:${id}`)
-
-    // Custom field values are held, one per field per group, by the bill with the group's current one.
-    const cfFrom = sql`bill_custom_field_values p CROSS JOIN bills me ON me.id = p.bill_id`
-    const cfHolds = holdsGroupValue('bill_custom_field_values')
-    type CfRow = { field_id: string; opt: string; cnt: number }
-    const customFields: Record<string, Record<string, number>> = {}
-    const mergeCfRows = (rows: CfRow[]) => {
-      for (const r of rows) {
-        if (!customFields[r.field_id]) customFields[r.field_id] = {}
-        customFields[r.field_id][r.opt] = Number(r.cnt)
-      }
-    }
-    // Count one slice: single fields group raw; multi fields json_each-expand. When
-    // restrictFieldId is set (a field's own disjunctive query), only that field runs.
-    // When excludeFieldIds is set instead (the "everyone else" query), every field
-    // in that set is excluded from all three statements below — it must cover the
-    // single-value GROUP BY, the multi-select json_each expansion, AND the __any__
-    // count, or one of those three would leak the excluded fields'
-    // rows back in (with the wrong, own-filter-inclusive, WHERE).
-    const cfCounts = async (counts: Counting, restrictFieldId?: string, excludeFieldIds?: string[]): Promise<CfRow[]> => {
-      const restrictIsMulti = restrictFieldId ? multiIds.has(restrictFieldId) : undefined
-      const excludeCond = excludeFieldIds?.length ? sql`p.field_id NOT IN (${idList(excludeFieldIds)})` : undefined
-      const holding = (...extra: (SQL | undefined)[]) => sql.join([cfHolds, ...extra.filter((e): e is SQL => e !== undefined)], sql` AND `)
-      const [single, multi, any] = await Promise.all([
-        !restrictFieldId || restrictIsMulti === false
-          ? countHolders(db, counts, {
-              values: [sql`p.field_id`, sql`p.value`], from: cfFrom,
-              holds: holding(restrictFieldId ? sql`p.field_id = ${restrictFieldId}` : multiIds.size ? sql`p.field_id NOT IN (${idList([...multiIds])})` : undefined, excludeCond),
-            })
-          : [],
-        (!restrictFieldId && multiIds.size > 0) || restrictIsMulti === true
-          ? countHolders(db, counts, {
-              values: [sql`p.field_id`, sql`je.value`],
-              from: sql`(SELECT bill_id, field_id, value, updated_at FROM bill_custom_field_values WHERE ${restrictFieldId ? sql`field_id = ${restrictFieldId}` : sql`field_id IN (${idList([...multiIds])})`} AND json_valid(value) = 1) p
-                CROSS JOIN bills me ON me.id = p.bill_id JOIN json_each(p.value) je`,
-              holds: holding(excludeCond),
-            })
-          : [],
-        // "Any" = the groups with any value for the field (honest count for the top row).
-        countHolders(db, counts, { values: [sql`p.field_id`], from: cfFrom, holds: holding(restrictFieldId ? sql`p.field_id = ${restrictFieldId}` : undefined, excludeCond) }),
-      ])
-      return [
-        ...[...single, ...multi].map(r => ({ field_id: String(r.values[0]), opt: String(r.values[1]), cnt: r.n })),
-        ...any.map(r => ({ field_id: String(r.values[0]), opt: FILTER_ANY, cnt: r.n })),
-      ]
-    }
-
-    const tagSet = await loadTaxonomyTagNameSet(db)
-    // "Any tag" = a valid (in-taxonomy) tag: the list filter's own condition, so the two cannot drift.
-    const anyTagCond = tagCondition([FILTER_ANY], tagSet)!
-    const voted = await loadVotedInGroups(db, currentUser.id)
-    const m = billsAs('m')
-    const me = billsAs('me')
-    const currentOnM = current(m)
-    const both = (a: SQL | undefined, b: SQL): SQL => (a ? and(a, b)! : b)
-
-    // Custom fields: each field with an active filter of its own is counted with that filter left out (disjunctive).
-    // Fields with no active filter share one count, and leaving the filtered ones out of its output, not the merge
-    // order, keeps their own counts from being overwritten by ones that include their own filter. Separately,
-    // leaving unresolvedCfFieldIds out of the filter keeps a stale/garbled cf_ key from zeroing every real field's count.
-    const customFieldCounts = (async () => {
-      if (cfFieldIds.length === 0) {
-        mergeCfRows(await cfCounts(counting()))
-        return
-      }
-      const perField = await Promise.all(cfFieldIds.map(id => cfCounts(counting(...cfOmit(id, ...unresolvedCfFieldIds)), id)))
-      for (const rows of perField) mergeCfRows(rows)
-      mergeCfRows(await cfCounts(counting(...cfOmit(...unresolvedCfFieldIds)), undefined, cfFieldIds))
-    })()
-
-    // Run all dimensional facet queries in parallel. The list's total joins the same batch, but is only
-    // queried at all when shiftFacets is active: under AND mode (or with no bill-fact filter active) the
-    // shift is the identity and the value is thrown away, so there is nothing worth a query for.
-    const [
-      statusRows, stageRows, sessionRows, yearRows, stateRows, subjectRows, priorityRows, positionRows, tagRows, anyTagRows,
-      currentTotal, myBillsCount, newMatchesCount, unvotedCount, draftCount,
-    ] = await Promise.all([
-      countBy(db, counting('status'), { values: [sql`${m.status}`], from: sql`bills m` }),
-      countBy(db, counting('stage'), { values: [sql`${m.statusStage}`], from: sql`bills m` }),
-      countBy(db, counting('year'), { values: [sql`${m.session}`], from: sql`bills m` }),
-      countBy(db, counting('year'), { values: [sql`${m.yearStart}`], from: sql`bills m` }),
-      countBy(db, counting('state'), { values: [sql`${m.state}`], from: sql`bills m` }),
-      countBy(db, counting('subject'), { values: [sql`bs.state`, sql`bs.subject_name`], from: sql`bill_subjects bs JOIN bills m ON m.id = bs.bill_id` }),
-      // The team's own fields are the group's current value, held by one bill: a group counts under that bill's value.
-      countHolders(db, counting('priority'), { values: [sql`${me.priority}`], from: sql`bills me`, holds: sql`${me.priority} IN ('high', 'medium', 'low') AND ${holdsGroupPriority(me)}` }),
-      countHolders(db, counting('position'), { values: [sql`p.position`], from: sql`official_positions p CROSS JOIN bills me ON me.id = p.bill_id`, holds: holdsGroupValue('official_positions') }),
-      // Every bill of a group has the group's current tags as its group tags, so tags count as a fact about each
-      // bill does, starting from the few bills that have any.
-      countBy(db, counting('tag'), { values: [sql`jt.value`], from: sql`bills m, json_each(${m.groupTags}) jt`, where: hasGroupTags(m) }),
-      countBy(db, counting('tag'), { values: [], from: sql`bills m`, where: anyTagCond(m) }),
-      shiftFacets ? countGroups(db, currentOnM) : Promise.resolve(0),
-      // The counts beside the facets: the groups of the current result with a bill of the kind each names.
-      mine.length > 0 ? countGroups(db, both(currentOnM, myBillsCondition(mine)(m)), true) : Promise.resolve(0),
-      isAdmin ? countGroups(db, both(currentOnM, newMatchWhere(newMatchMinRelevance, m)), true) : Promise.resolve(0),
-      countGroups(db, both(currentOnM, unvotedCondition(voted)(m))),
-      // Most tenants have no drafts, where a count read through the draft index would still read the table (it holds one value).
-      hasDrafts ? countGroups(db, both(currentOnM, eq(m.isDraft, true))) : Promise.resolve(0),
-      customFieldCounts,
-    ])
-
-    // AND-mode counts are already absolute and pass through untouched.
-    const asResultingTotal = (counts: Record<string, number>): Record<string, number> =>
-      shiftFacets
-        ? Object.fromEntries(Object.entries(counts).map(([k, v]) => [k, v + currentTotal]))
-        : counts
-
-    // Custom-field options are selectable values like any other, so each field's
-    // map shifts too (myBillsCount/newMatchesCount/unvotedCount below do NOT —
-    // they describe the current result rather than naming a value you can pick).
-    for (const fieldId of Object.keys(customFields)) {
-      customFields[fieldId] = asResultingTotal(customFields[fieldId])
-    }
-
-    // Build dimensional facet count maps
-    // Each *Counts map is built from raw per-value numbers (deltas under
-    // match=any), any derived sentinel is summed from those, and asResultingTotal
-    // shifts the finished map exactly once at the end.
-    const statusCounts = asResultingTotal(countsOf(statusRows))
-    const stageCounts = asResultingTotal(countsOf(stageRows))
-    const sessionCounts = asResultingTotal(countsOf(sessionRows))
-    const yearCounts = asResultingTotal(countsOf(yearRows, v => v !== null && v !== undefined))
-    const stateCounts = asResultingTotal(countsOf(stateRows))
-    // A team field has no value for a group that never had one: "none" is the groups the facet's filter meets
-    // less those with a current value, and "any" is those with one (each group has one holder).
-    const sum = (rows: CountRow[]) => rows.reduce((a, r) => a + r.n, 0)
-    const priorityCounts: Record<string, number> = countsOf(priorityRows)
-    priorityCounts[FILTER_NONE] = (await groupsMeeting('priority')) - sum(priorityRows)
-    priorityCounts[FILTER_ANY] = sum(priorityRows)
-    const priorityCountsOut = asResultingTotal(priorityCounts)
-    const positionCounts: Record<string, number> = countsOf(positionRows)
-    positionCounts[FILTER_NONE] = (await groupsMeeting('position')) - sum(positionRows)
-    positionCounts[FILTER_ANY] = sum(positionRows)
-    const positionCountsOut = asResultingTotal(positionCounts)
-    const tagCounts: Record<string, number> = Object.fromEntries(
-      tagRows.filter(r => tagSet.has(String(r.values[0]))).map(r => [String(r.values[0]), r.n]),
-    )
-    // "Any tag" = groups whose current analysis has at least one VALID (in-taxonomy) tag (within the tag facet's scope).
-    tagCounts[FILTER_ANY] = anyTagRows[0]?.n ?? 0
-    const tagCountsOut = asResultingTotal(tagCounts)
-
-    const subjectCounts: Record<string, number> = asResultingTotal(Object.fromEntries(
-      subjectRows
-        .filter(r => !isSubjectsSuppressedForState(suppressedSubjectStates, String(r.values[0])))
-        .map(r => [encodeSubjectFilter(String(r.values[0]), String(r.values[1])), r.n]),
-    ))
-
-    return c.json({
-      status: statusCounts,
-      stage: stageCounts,
-      priority: priorityCountsOut,
-      year: yearCounts,
-      session: sessionCounts,
-      state: stateCounts,
-      position: positionCountsOut,
-      tags: tagCountsOut,
-      subjects: subjectCounts,
-      subjectStates,
-      billStates,
-      customFields,
-      myBillsCount,
-      newMatchesCount,
-      unvotedCount,
-      draftCount,
-      hasDrafts,
-    })
+    // Every filter's count, from the table (filterTable.ts): each leaves its own filter out, and the rest narrow it.
+    const counts = await countFacets(makeFacetContext({
+      db, parts, userId: currentUser.id, isAdmin, hasDrafts, newMatchMinRelevance, mine, suppressedSubjectStates,
+    }))
+    return c.json(facetsResponse(counts, tenant))
   })
 }

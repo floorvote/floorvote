@@ -6,6 +6,7 @@ import { bills, memberVotes, officialPositions, billSubjects, customFieldDefinit
 import { eq } from 'drizzle-orm'
 import { app } from '../../src/index'
 import { cacheKeyFor, getCachedPage, putCachedPage, listCacheTtl } from '../../src/lib/listCache'
+import { BILL_FILTER_DEFS, EMPTY_BILL_FILTER, parseBillFilter } from '../../../shared/billFilter'
 
 type ListBody = {
   bills: Array<{
@@ -38,11 +39,10 @@ function makeList(tenantId: string) {
 
 describe('listCache helper (direct put/get)', () => {
   const baseParams = {
-    statuses: [], stages: [], priorities: [], positionValues: [], sessions: [], years: [],
-    states: [], tagFilters: [], subjectFilters: [], q: undefined, minRelevance: undefined,
-    cfParamMap: {}, sort: 'default', dir: 'desc' as const, page: 1, pageSize: 50,
-    drafts: false,
+    filter: EMPTY_BILL_FILTER, sort: 'default', dir: 'desc' as const, page: 1, pageSize: 50,
   }
+  const withFilter = (qs: string) => ({ ...baseParams, filter: parseBillFilter(qs) })
+  const keyOf = (qs: string) => cacheKeyFor({ TENANT_ID: 'test-org' }, withFilter(qs)).url
 
   it('round-trips a stored page', async () => {
     const e = { TENANT_ID: 'test-org', LIST_CACHE_TTL: '60' }
@@ -69,8 +69,8 @@ describe('listCache helper (direct put/get)', () => {
 
   it('normalizes multi-value filter order into the same key', () => {
     const e = { TENANT_ID: 'test-org' }
-    const k1 = cacheKeyFor(e, { ...baseParams, statuses: ['Passed', 'Introduced'] })
-    const k2 = cacheKeyFor(e, { ...baseParams, statuses: ['Introduced', 'Passed'] })
+    const k1 = cacheKeyFor(e, withFilter('status=Passed&status=Introduced'))
+    const k2 = cacheKeyFor(e, withFilter('status=Introduced&status=Passed'))
     expect(k1.url).toBe(k2.url)
   })
 
@@ -78,6 +78,42 @@ describe('listCache helper (direct put/get)', () => {
     const k1 = cacheKeyFor({ TENANT_ID: 'tenant-a' }, baseParams)
     const k2 = cacheKeyFor({ TENANT_ID: 'tenant-b' }, baseParams)
     expect(k1.url).not.toBe(k2.url)
+  })
+
+  it('gives params that differ only in the match mode different keys (#687)', () => {
+    expect(keyOf('status=Passed&priority=high&match=any')).not.toBe(keyOf('status=Passed&priority=high'))
+  })
+
+  it('gives two equal bill filters the same key, however their query strings were written', () => {
+    expect(keyOf('priority=high&status=Passed&match=any')).toBe(keyOf('match=any&status=Passed&priority=high'))
+    expect(keyOf('cf_area=b&cf_area=a&cf_zone=x')).toBe(keyOf('cf_zone=x&cf_area=a&cf_area=b'))
+    expect(keyOf('subject=NJ:Taxes&subject=UT:Elections')).toBe(keyOf('subject=UT:Elections&subject=NJ:Taxes'))
+    expect(keyOf('status=Passed&match=all')).toBe(keyOf('status=Passed'))
+  })
+
+  it('leaves no filter out of the key: every filter the shared module names changes it when it is set', () => {
+    // One value per filter, taken from the module's own definitions so a filter added to it must be added here too.
+    const SET: Record<string, string> = {
+      status: 'status=Passed', stage: 'stage=passed', year: 'year=2026', session: 'session=2026', state: 'state=NJ',
+      position: 'position=Support', priority: 'priority=high', tag: 'tag=Clerk', subject: 'subject=UT:Elections',
+      minRelevance: 'minRelevance=5', q: 'q=election', myBills: 'myBills=1', unvoted: 'unvoted=1', newMatches: 'newMatches=1',
+      drafts: 'drafts=1', match: 'match=any', cf: 'cf_area=North',
+    }
+    expect(Object.keys(SET).sort()).toEqual(BILL_FILTER_DEFS.map(d => d.name).sort())
+    const unfiltered = keyOf('')
+    for (const [name, qs] of Object.entries(SET)) {
+      expect(keyOf(qs), `the key with ${name} set`).not.toBe(unfiltered)
+      expect(parseBillFilter(qs)[name as keyof typeof EMPTY_BILL_FILTER], `${qs} sets ${name}`).not.toEqual(EMPTY_BILL_FILTER[name as keyof typeof EMPTY_BILL_FILTER])
+    }
+    // And each one's key is its own.
+    const keys = new Set(Object.values(SET).map(keyOf))
+    expect(keys.size).toBe(Object.keys(SET).length)
+  })
+
+  it('gives a different page, sort, direction, and page size a different key', () => {
+    const k = (over: Partial<typeof baseParams>) => cacheKeyFor({ TENANT_ID: 'test-org' }, { ...baseParams, ...over }).url
+    const base = k({})
+    for (const over of [{ page: 2 }, { pageSize: 25 }, { sort: 'bill' }, { dir: 'asc' as const }]) expect(k(over)).not.toBe(base)
   })
 })
 
