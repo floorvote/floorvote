@@ -5,10 +5,10 @@ import { BillTextPanel } from './BillTextPanel'
 // BillTextPanel loads text via the global fetch on open. Stub it with a resolved,
 // empty text response so the load effect settles cleanly (the link row renders
 // independent of load state, but resolving avoids act warnings).
-function stubFetch() {
+function stubFetch(body = '') {
   const res = {
     ok: true,
-    arrayBuffer: async () => new ArrayBuffer(0),
+    arrayBuffer: async () => new TextEncoder().encode(body).buffer,
     blob: async () => new Blob([]),
     headers: { get: () => 'text/html; charset=utf-8' },
   }
@@ -95,6 +95,8 @@ describe('BillTextPanel — PDF where inline rendering is unavailable', () => {
   })
 
   it('keeps the inline iframe and no card on a desktop browser that renders PDFs', async () => {
+    // The panel only frames bytes that start like a PDF (#572).
+    stubFetch('%PDF-1.4\n')
     vi.stubGlobal('navigator', { userAgent: DESKTOP_UA, maxTouchPoints: 0, pdfViewerEnabled: true })
     const { container } = render(<BillTextPanel billId="legiscan:123" externalOpen texts={pdfText('https://leg.example.gov/pdf/7')} />)
     await waitFor(() => expect(container.querySelector('iframe')).not.toBeNull())

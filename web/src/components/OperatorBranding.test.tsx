@@ -1,10 +1,11 @@
-import { describe, it, expect } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { OperatorBranding } from './OperatorBranding'
 import { ConfigContext, type AppConfig } from '../context/ConfigContext'
 import { SOURCE_URL, LICENSE_URL } from '../../../shared/brand'
 import type { ProviderCredit } from '../../../shared/dataAttribution'
+import { setColorMode, watchSystemColorMode } from '../lib/colorMode'
 
 const full = { name: 'Example Org', url: 'https://example.org/elections', contactEmails: ['ops@example.org'] }
 
@@ -259,5 +260,272 @@ describe('OperatorBranding data credit by provider', () => {
     unmount()
     renderWithConfig([])
     expect(screen.getByRole('link', { name: 'LegiScan' })).toBeInTheDocument()
+  })
+})
+
+// The optional dark-mode logo. Image loads are mocked with fireEvent.load /
+// fireEvent.error, the way the existing logo tests do; "present" is decided by
+// whether the dark file loads, so a missing file is an error event on the <img>.
+describe('OperatorBranding dark-mode logo', () => {
+  const LIGHT_SRC = '/operator-logo.svg'
+  const DARK_SRC = '/operator-logo-dark.svg'
+  const isDark = () => document.documentElement.classList.contains('dark')
+
+  // A device whose light/dark setting can change while the app is open.
+  let deviceDark = false
+  const listeners = new Set<() => void>()
+  function stubDevice(dark: boolean) {
+    deviceDark = dark
+    listeners.clear()
+    vi.stubGlobal('matchMedia', (q: string) => ({
+      get matches() { return deviceDark && q.includes('dark') },
+      addEventListener: (type: string, fn: () => void) => { if (type === 'change') listeners.add(fn) },
+      removeEventListener: (type: string, fn: () => void) => { if (type === 'change') listeners.delete(fn) },
+    }))
+    watchSystemColorMode()
+  }
+  function switchDeviceTo(next: 'dark' | 'light') {
+    act(() => {
+      deviceDark = next === 'dark'
+      for (const fn of listeners) fn()
+    })
+  }
+  const logo = () => screen.getByAltText('Example Org') as HTMLImageElement
+  const srcOf = (img: HTMLElement) => new URL((img as HTMLImageElement).src).pathname
+
+  beforeEach(() => {
+    localStorage.clear()
+    document.documentElement.classList.remove('dark')
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    document.documentElement.classList.remove('dark')
+  })
+
+  it('shows the regular logo in light mode, and never asks for the dark file', () => {
+    stubDevice(false)
+    setColorMode('system')
+    renderBranding(<OperatorBranding operator={full} />)
+    expect(srcOf(logo())).toBe(LIGHT_SRC)
+    fireEvent.load(logo())
+    expect(logo()).toBeVisible()
+    expect(srcOf(logo())).toBe(LIGHT_SRC)
+  })
+
+  it('shows the dark file in dark mode when it loads', () => {
+    stubDevice(true)
+    setColorMode('system')
+    expect(isDark()).toBe(true)
+    renderBranding(<OperatorBranding operator={full} />)
+    expect(srcOf(logo())).toBe(DARK_SRC)
+    fireEvent.load(logo())
+    expect(logo()).toBeVisible()
+    expect(srcOf(logo())).toBe(DARK_SRC)
+  })
+
+  it('keeps the img hidden until it loads, in both modes, so a missing file never paints a broken image', () => {
+    stubDevice(true)
+    setColorMode('system')
+    const { unmount } = renderBranding(<OperatorBranding operator={full} />)
+    expect(logo()).not.toBeVisible()
+    unmount()
+    setColorMode('light')
+    renderBranding(<OperatorBranding operator={full} />)
+    expect(logo()).not.toBeVisible()
+  })
+
+  it('falls back to the regular logo in dark mode when the dark file is absent', () => {
+    stubDevice(true)
+    setColorMode('system')
+    renderBranding(<OperatorBranding operator={full} />)
+    fireEvent.error(logo()) // the dark file 404s
+    expect(srcOf(logo())).toBe(LIGHT_SRC)
+    // Still hidden: the fallback has not loaded yet, and the failed file is gone, so nothing broken shows.
+    expect(logo()).not.toBeVisible()
+    fireEvent.load(logo())
+    expect(logo()).toBeVisible()
+    expect(srcOf(logo())).toBe(LIGHT_SRC)
+    expect(screen.getByText('Example Org')).toBeInTheDocument()
+  })
+
+  it('keeps the operator link around the fallback logo', () => {
+    stubDevice(true)
+    setColorMode('system')
+    renderBranding(<OperatorBranding operator={full} />)
+    fireEvent.error(logo())
+    fireEvent.load(logo())
+    expect(screen.getByRole('link', { name: /Example Org/i })).toHaveAttribute('href', 'https://example.org/elections')
+  })
+
+  it('drops the img when both the dark file and the regular logo are absent, keeping the name', () => {
+    stubDevice(true)
+    setColorMode('system')
+    renderBranding(<OperatorBranding operator={full} />)
+    fireEvent.error(logo())
+    fireEvent.error(logo())
+    expect(screen.queryByAltText('Example Org')).toBeNull()
+    expect(screen.getByText('Example Org')).toBeInTheDocument()
+  })
+
+  it('renders no operator credit at all with no logo and no name, in dark mode too', () => {
+    stubDevice(true)
+    setColorMode('dark')
+    renderBranding(<OperatorBranding operator={{ name: '', url: '', contactEmails: [] }} sourceUrl="" />)
+    fireEvent.error(screen.getByAltText('FloorVote'))
+    fireEvent.error(screen.getByAltText('FloorVote'))
+    expect(screen.queryByAltText('FloorVote')).toBeNull()
+    expect(screen.getByRole('link', { name: 'LegiScan' })).toBeInTheDocument()
+  })
+
+  it('does not look for a dark file when the regular logo itself is absent in light mode', () => {
+    stubDevice(false)
+    setColorMode('light')
+    renderBranding(<OperatorBranding operator={{ name: '', url: '', contactEmails: [] }} sourceUrl="" />)
+    fireEvent.error(screen.getByAltText('FloorVote'))
+    expect(screen.queryByAltText('FloorVote')).toBeNull()
+  })
+
+  // The regular logo is not required for the dark one to show: a deployment that
+  // ships only operator-logo-dark.svg, or whose regular file 404s, still gets the
+  // dark logo in dark mode. A missing regular file only hides the logo in light mode.
+  it('shows the dark file in dark mode even after the regular logo 404ed in light mode', () => {
+    stubDevice(false)
+    setColorMode('light')
+    renderBranding(<OperatorBranding operator={full} />)
+    fireEvent.error(logo()) // regular file absent
+    expect(screen.queryByAltText('Example Org')).toBeNull()
+    act(() => setColorMode('dark'))
+    expect(srcOf(logo())).toBe(DARK_SRC)
+    expect(logo()).not.toBeVisible()
+    fireEvent.load(logo())
+    expect(logo()).toBeVisible()
+  })
+
+  it('hides the logo again on switching back to light once the regular logo is known missing', () => {
+    stubDevice(false)
+    setColorMode('light')
+    renderBranding(<OperatorBranding operator={full} />)
+    fireEvent.error(logo())
+    act(() => setColorMode('dark'))
+    fireEvent.load(logo())
+    act(() => setColorMode('light'))
+    expect(screen.queryByAltText('Example Org')).toBeNull()
+    expect(screen.getByText('Example Org')).toBeInTheDocument()
+  })
+
+  it('collapses the credit in light mode with no name, then shows the dark logo in dark mode', () => {
+    stubDevice(false)
+    setColorMode('light')
+    renderBranding(<OperatorBranding operator={{ name: '', url: '', contactEmails: [] }} sourceUrl="" />)
+    fireEvent.error(screen.getByAltText('FloorVote'))
+    expect(screen.queryByAltText('FloorVote')).toBeNull()
+    act(() => setColorMode('dark'))
+    expect(srcOf(screen.getByAltText('FloorVote'))).toBe(DARK_SRC)
+  })
+
+  it('shows nothing in dark mode when the dark file and the regular logo are both missing, after starting in light', () => {
+    stubDevice(false)
+    setColorMode('light')
+    renderBranding(<OperatorBranding operator={full} />)
+    fireEvent.error(logo())
+    act(() => setColorMode('dark'))
+    fireEvent.error(logo()) // dark absent too
+    expect(screen.queryByAltText('Example Org')).toBeNull()
+  })
+
+  it('lets an explicit Light choice override a dark device', () => {
+    stubDevice(true)
+    setColorMode('light')
+    renderBranding(<OperatorBranding operator={full} />)
+    expect(isDark()).toBe(false)
+    expect(srcOf(logo())).toBe(LIGHT_SRC)
+  })
+
+  it('lets an explicit Dark choice override a light device', () => {
+    stubDevice(false)
+    setColorMode('dark')
+    renderBranding(<OperatorBranding operator={full} />)
+    expect(isDark()).toBe(true)
+    expect(srcOf(logo())).toBe(DARK_SRC)
+  })
+
+  it('swaps the image when the choice changes while the footer is mounted', () => {
+    stubDevice(false)
+    setColorMode('light')
+    renderBranding(<OperatorBranding operator={full} />)
+    fireEvent.load(logo())
+    expect(srcOf(logo())).toBe(LIGHT_SRC)
+    act(() => setColorMode('dark'))
+    expect(srcOf(logo())).toBe(DARK_SRC)
+    fireEvent.load(logo())
+    expect(logo()).toBeVisible()
+    act(() => setColorMode('light'))
+    expect(srcOf(logo())).toBe(LIGHT_SRC)
+  })
+
+  it('swaps the image on a live system switch under System', () => {
+    stubDevice(false)
+    setColorMode('system')
+    renderBranding(<OperatorBranding operator={full} />)
+    fireEvent.load(logo())
+    expect(srcOf(logo())).toBe(LIGHT_SRC)
+    switchDeviceTo('dark')
+    expect(srcOf(logo())).toBe(DARK_SRC)
+    fireEvent.load(logo())
+    expect(logo()).toBeVisible()
+    switchDeviceTo('light')
+    expect(srcOf(logo())).toBe(LIGHT_SRC)
+  })
+
+  it('ignores a live system switch when the choice is an explicit Light or Dark', () => {
+    stubDevice(false)
+    setColorMode('light')
+    renderBranding(<OperatorBranding operator={full} />)
+    switchDeviceTo('dark')
+    expect(srcOf(logo())).toBe(LIGHT_SRC)
+    setColorMode('dark')
+    switchDeviceTo('light')
+    expect(srcOf(logo())).toBe(DARK_SRC)
+  })
+
+  it('shows the regular logo, hidden until it loads, after switching to light from a loaded dark logo', () => {
+    stubDevice(true)
+    setColorMode('system')
+    renderBranding(<OperatorBranding operator={full} />)
+    fireEvent.load(logo())
+    switchDeviceTo('light')
+    // The dark file must not stay on screen over a light background while the regular one loads.
+    expect(srcOf(logo())).toBe(LIGHT_SRC)
+    expect(logo()).not.toBeVisible()
+    fireEvent.load(logo())
+    expect(logo()).toBeVisible()
+  })
+
+  it('remembers a missing dark file across mode switches, so it keeps the regular logo', () => {
+    stubDevice(true)
+    setColorMode('system')
+    renderBranding(<OperatorBranding operator={full} />)
+    fireEvent.error(logo())
+    fireEvent.load(logo())
+    switchDeviceTo('light')
+    fireEvent.load(logo())
+    switchDeviceTo('dark')
+    expect(srcOf(logo())).toBe(LIGHT_SRC)
+  })
+
+  it('keeps the same alt text in light and dark', () => {
+    stubDevice(false)
+    setColorMode('light')
+    renderBranding(<OperatorBranding operator={full} />)
+    expect(logo()).toHaveAttribute('alt', 'Example Org')
+    act(() => setColorMode('dark'))
+    expect(logo()).toHaveAttribute('alt', 'Example Org')
+  })
+
+  it('falls back to the product name for alt text with no operator name, in dark mode', () => {
+    stubDevice(true)
+    setColorMode('dark')
+    renderBranding(<OperatorBranding operator={{ name: '', url: '', contactEmails: [] }} />)
+    expect(screen.getByAltText('FloorVote')).toBeInTheDocument()
   })
 })

@@ -23,7 +23,7 @@ vi.mock('../../src/lib/centralFetch', () => ({
       const ids: unknown[] = JSON.parse((init?.body as string) ?? '{}').ids ?? []
       const byId: Record<string, unknown> = {}
       for (const id of ids) {
-        const numeric = String(id).replace('legiscan:', '')
+        const numeric = String(id).replace(/^(legiscan|bill):/, '')
         const entry = centralRichByBill[`legiscan:${numeric}`]
         byId[numeric] = entry
           ? { amendments: entry.amendments ?? [], supplements: entry.supplements ?? [], votes: entry.votes ?? [] }
@@ -418,6 +418,20 @@ describe('Export API', () => {
       expect(body.votes.length).toBe(1)
       expect(body.votes[0]).toMatchObject({ billId, billNumber: 'HB 200', voteId: 'rc-1', result: 'pass', yes: 40, no: 10, notVoting: 2, absent: 1 })
       expect(body.nextCursor).toBeNull()
+    })
+
+    it('includes a bill held under a neutral handle (#305)', async () => {
+      const billId = await seedBill({ billNumber: 'HB 201', title: 'Neutral Bill', state: 'RI', externalId: 'bill:998', matchType: 'keyword' })
+      centralRichByBill['legiscan:998'] = {
+        amendments: [{ amendmentId: 12, adopted: true, chamber: 'H', date: '2026-01-02', title: 'Amd 1', description: 'd', mime: 'application/pdf', url: 'u', stateLink: 's' }],
+        supplements: [],
+        votes: [],
+      }
+      const res = await app.request('/api/admin/export/rich', { headers: { Cookie: adminCookie } }, env)
+      expect(res.status).toBe(200)
+      const body = await res.json() as any
+      expect(body.amendments).toHaveLength(1)
+      expect(body.amendments[0]).toMatchObject({ billId, billNumber: 'HB 201', amendmentId: 12 })
     })
 
     it('skips non-LegiScan bills', async () => {

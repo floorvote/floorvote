@@ -216,6 +216,11 @@ export function toMgaMasterListEntry(
 ): SyncEntry {
   const status = mgaStatus(r)
   const history = milestones(r)
+  // The text and the date can disagree. The text is the file's Status ("In the House - Hearing 3/04"),
+  // which names the bill's current step, often a hearing or vote later than any reading or report. The
+  // date is the last reading or report the file dates. The feed has no action history, and the Status
+  // text carries no year, so the later date can't be dated without guessing one. Left as the feed gives
+  // it: no year is inferred from the text.
   return {
     bill_id: billId,
     number: mgaDisplayNumber(r.BillNumber),
@@ -227,6 +232,7 @@ export function toMgaMasterListEntry(
     last_action: r.Status?.trim() || undefined,
     last_action_date: lastActionDate(history),
     state_link: mgaBillUrl(sessionCode, r.BillNumber),
+    bill_type: mgaBillType(r.BillNumber).type,
   }
 }
 

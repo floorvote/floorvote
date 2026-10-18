@@ -443,7 +443,7 @@ describe('a cutover', () => {
     // Legislators kept their person ids, in sponsors and in votes.
     expect(bill.sponsors.map((s: any) => [s.name, s.personId])).toEqual([['Zachary Parker', String(PARKER)], ['Anita Bonds', String(BONDS)]])
     const firstReading = bill.votes.find((v: any) => v.date === '2026-03-03')
-    expect(firstReading.legislatorVotes).toContainEqual({ personId: String(PARKER), name: 'Zachary Parker', vote: 'Yes' })
+    expect(firstReading.legislatorVotes).toContainEqual({ personId: String(PARKER), name: 'Zachary Parker', vote: 'Yes', url: null })
 
     // The first ingest is quiet: the instance is told the bill moved, but of no change.
     const notified = sentToTenant(run).filter((m: any) => m.billId === toHandle(B0400) && !m.stubOnly)
@@ -726,7 +726,7 @@ describe('a cutover beside other work', () => {
     const bill = await getJson(`/bills/${toHandle(B0400)}`)
     expect(bill.sponsors.map((s: any) => s.personId)).toEqual([String(PARKER), String(BONDS)])
     expect(bill.votes.find((v: any) => v.date === '2026-03-03').legislatorVotes)
-      .toContainEqual({ personId: String(PARKER), name: 'Zachary Parker', vote: 'Yes' })
+      .toContainEqual({ personId: String(PARKER), name: 'Zachary Parker', vote: 'Yes', url: null })
   })
 
   it('ingests a tracked bill whose keyword match the new title loses, so its documents are replaced', async () => {
@@ -817,7 +817,7 @@ describe('a moved bill no instance tracks', () => {
     expect(bill.texts.map((t: any) => t.docId)).not.toContain('5003')
     expect(bill.votes.map((v: any) => v.id)).not.toContain('8003')
     expect(bill.votes.find((v: any) => v.date === '2026-03-03').legislatorVotes)
-      .toContainEqual({ personId: String(PARKER), name: 'Zachary Parker', vote: 'Yes' })
+      .toContainEqual({ personId: String(PARKER), name: 'Zachary Parker', vote: 'Yes', url: null })
     expect(bill.actions.map((a: any) => a.description)).toContain('Retained by the Council')
     expect(await row('SELECT carried_from FROM bills WHERE bill_id = ?', B0001)).toEqual({ carried_from: null })
 

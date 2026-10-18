@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
+import { primaryButtonColors } from '../../styles/primaryButton'
 import { BillPicker, type BillOption } from '../BillPicker'
 import { todayIso } from '../../lib/calendarGrid'
 import { useDemo } from '../../context/DemoContext'
@@ -123,7 +124,7 @@ export function EventFormFields({ initial, billOptions, multiState, onSave, onCl
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginTop: 16 }}>
         <button type="button" onClick={onClose} style={{ background: color.white, border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, padding: '7px 14px', cursor: 'pointer', fontSize: fontSize.sm }}>Cancel</button>
         <button type="button" {...gate.buttonProps(submit)} style={{
-          background: !gate.disabled ? color.accentBlue : color.accentBlueMuted, color: color.textOnFill, border: 'none',
+          ...primaryButtonColors(gate.disabled), border: 'none',
           borderRadius: radius.md, padding: '7px 14px', cursor: !gate.disabled ? 'pointer' : 'not-allowed',
           fontSize: fontSize.sm, fontWeight: fontWeight.medium,
         }}>Save</button>

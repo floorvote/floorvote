@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm'
 import { people } from '../db/schema'
-import type { MeasurePerson } from '../providers'
+import { DEFAULT_PROVIDER_ID, findProvider, type MeasurePerson } from '../providers'
+import { httpUrl } from '../../../shared/httpUrl'
 import type { Db } from '../types'
 
 type PersonRow = typeof people.$inferInsert & { peopleId: number }
@@ -10,7 +11,8 @@ type PersonRow = typeof people.$inferInsert & { peopleId: number }
  * (sponsors embedded in getBill) and the weekly dataset load (people/*.json),
  * so both write the same columns the same way. bio_json is left out on purpose:
  * only the bulk seeder and getSessionPeople populate it, and an upsert from
- * here must not clear it.
+ * here must not clear it. bioguide_id is the other exception to the
+ * replace-the-row rule: undefined when the record has none (see below).
  */
 export function personRow(p: Partial<MeasurePerson> & { people_id: number }, fallbackStateId: number | null): PersonRow {
   return {
@@ -33,7 +35,11 @@ export function personRow(p: Partial<MeasurePerson> & { people_id: number }, fal
     opensecretsId: p.opensecrets_id ?? null,
     knowwhoPid:    p.knowwho_pid ?? null,
     ballotpedia:   p.ballotpedia ?? null,
-    bioguideId:    p.bioguide_id ?? null,
+    // Absent leaves a stored id alone (an undefined column is left out of the
+    // upsert's update), and null clears it. A sponsor record often carries no
+    // id, and clearing one a snapshot provider stored would downgrade a later
+    // cutover to name matching (the rule upsertProviderPeople follows).
+    bioguideId:    p.bioguide_id,
   }
 }
 
@@ -62,4 +68,25 @@ export async function insertMissingPeople(db: Db, rows: PersonRow[]): Promise<nu
   }
   await db.batch(stmts as [typeof stmts[number], ...typeof stmts])
   return 1 + stmts.length
+}
+
+/** A person's stored `bio_json`, parsed. Null when there is none or it is not an object. */
+export function parseBio(bioJson: string | null | undefined): { social?: { biography?: string } } | null {
+  if (!bioJson) return null
+  try {
+    const bio: unknown = JSON.parse(bioJson)
+    return bio && typeof bio === 'object' ? bio : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The profile page the provider that wrote a person declares for them, for a
+ * link on their name. Only an http(s) URL; null when the provider declares
+ * none (or the person has no row).
+ */
+export function profileUrlOf(p: { bioJson: string | null; ballotpedia: string | null; personProvider: string | null }): string | null {
+  const provider = findProvider(p.personProvider ?? DEFAULT_PROVIDER_ID)
+  return httpUrl(provider?.profileUrl?.({ bio: parseBio(p.bioJson), ballotpedia: p.ballotpedia }))
 }

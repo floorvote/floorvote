@@ -18,7 +18,7 @@ import type { Env, Db } from '../types'
  */
 export async function runBodyEventSync(provider: Provider, env: Env, db: Db): Promise<BodyEventSyncReport[]> {
   if (!provider.listBodyEvents) return []
-  const owned = statesOwnedBy(await loadStateOwners(env, db), provider.id)
+  const owned = statesOwnedBy(await loadStateOwners(db), provider.id)
   // The snapshot sync warns about an owner that isn't configured.
   if (owned.length === 0 || !providerConfigured(provider, env)) return []
 
