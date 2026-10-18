@@ -1,6 +1,6 @@
 import { and, eq, gt, inArray, exists, sql } from 'drizzle-orm'
 import { feedEvents, bills, users, sessions, associationConfig } from '../db/schema'
-import { renderDigestEmail, digestSubject, digestCadence, countUpdatedBills, type DigestEvent, type NewMatchDigestItem } from './digestEmail'
+import { renderDigestEmail, digestSubject, digestCadence, countUpdatedBills, countNewMatches, type DigestEvent, type NewMatchDigestItem } from './digestEmail'
 import { sendBatch, unsubscribeHeaders } from './email'
 import { nowDb } from './dbTime'
 import { getNewMatchMinRelevance, routineNewMatchWhere } from './newMatch'
@@ -80,7 +80,7 @@ export async function runDigest(
   const newMatches: NewMatchDigestItem[] = await db.select({
       billId: bills.id, billNumber: bills.billNumber, billTitle: bills.title,
       billState: bills.state, billSession: bills.session, billSessionSlug: bills.sessionSlug, relevanceScore: bills.relevanceScore,
-      summary: bills.tenantSummary,
+      summary: bills.tenantSummary, billGroupKey: bills.groupKey,
     })
     .from(bills)
     .where(and(
@@ -113,7 +113,7 @@ export async function runDigest(
   // matched bills". The rest get the priority-event digest alone, and none at all
   // when there are no priority events.
   const cadence = digestCadence(since, now)
-  const subjectWithMatches = digestSubject({ updatedBills: billCount, newMatches: newMatches.length, cadence })
+  const subjectWithMatches = digestSubject({ updatedBills: billCount, newMatches: countNewMatches(newMatches), cadence })
   const updatesOnlySubject = digestSubject({ updatedBills: billCount, newMatches: 0, cadence })
   const render = (opts: { newMatches?: NewMatchDigestItem[]; forMember?: boolean }) =>
     renderDigestEmail({ events, assocName, appUrl: env.APP_URL, periodStart: since, periodEnd: now, ...opts })

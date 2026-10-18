@@ -39,6 +39,10 @@ import { DEFAULT_ORG_NOUN, orgRolesLabel } from '../lib/orgNoun'
 import { HearingRow } from './sidebar/HearingRow'
 import { calendarChipLabel, showCustomizeControl } from './sidebar/helpers'
 import type { SidebarProps, SidebarData, Stats, Config, Member } from './sidebar/types'
+import { billsListPath } from '../../../shared/billFilter'
+
+// The sidebar's New matches chip links to the Bills list filtered to new matches.
+const NEW_MATCHES_PATH = billsListPath({ newMatches: true })
 
 // Re-exported for consumers/tests that import these from the Sidebar module.
 export { formatHearingTime } from '../lib/hearingTime'
@@ -532,9 +536,9 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                         role="link"
                         tabIndex={0}
                         aria-label={newMeaning}
-                        onClick={(e) => { if (maybeOpenInNewTab(e, '/bills?newMatches=1')) return; e.preventDefault(); e.stopPropagation(); onClose(); navigate('/bills?newMatches=1') }}
-                        onAuxClick={(e) => { maybeOpenInNewTab(e, '/bills?newMatches=1') }}
-                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onClose(); navigate('/bills?newMatches=1') } }}
+                        onClick={(e) => { if (maybeOpenInNewTab(e, NEW_MATCHES_PATH)) return; e.preventDefault(); e.stopPropagation(); onClose(); navigate(NEW_MATCHES_PATH) }}
+                        onAuxClick={(e) => { maybeOpenInNewTab(e, NEW_MATCHES_PATH) }}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onClose(); navigate(NEW_MATCHES_PATH) } }}
                         onMouseEnter={() => setNewChipHover(true)}
                         onMouseLeave={() => setNewChipHover(false)}
                         // Orange when newMatches=1 is the only active filter; gray clickable pill otherwise.
@@ -612,7 +616,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
               of that overlay as independent siblings (position:relative +
               zIndex so they paint above it), not descendants of the title link. */}
           {(() => {
-            const priorityFilter = '/bills?priority=high&priority=medium&priority=low'
+            const priorityFilter = billsListPath({ priority: ['high', 'medium', 'low'] })
             const headerActive = priorityHeaderHover && !unvotedChipHover
             const goToPriority = () => { onClose(); navigate(priorityFilter) }
             // The leftmost count chip sits above the title link's stretched
@@ -685,7 +689,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                     // sidebar's right edge, being the rightmost chip).
                     <HoverTooltip text={unvotedMeaning} maxWidth={220}>
                       <Link
-                        to={`${priorityFilter}&unvoted=1`}
+                        to={billsListPath({ priority: ['high', 'medium', 'low'], unvoted: true })}
                         aria-label={unvotedMeaning}
                         onClick={() => onClose()}
                         onMouseEnter={() => setUnvotedChipHover(true)}

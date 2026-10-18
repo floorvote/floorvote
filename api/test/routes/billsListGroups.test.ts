@@ -143,9 +143,9 @@ describe('bill list: one row per companion group', () => {
       await seedBill({ id: 'b1713', billNumber: 'S1713', state: 'NJ', status: 'Passed', statusRank: 300, session: 'Session Y' })
       await group('a190', 'b1713')
       // S1713 is Passed but in Y, A190 is in X but Introduced. No bill is both.
-      expect((await list('status=Passed&session=Session%20X')).pagination.total).toBe(0)
-      expect((await list('status=Passed&session=Session%20Y')).pagination.total).toBe(1)
-      expect((await list('status=Passed&session=Session%20X&match=any')).pagination.total).toBe(1)
+      expect((await list('status=Passed&sessionName=Session%20X')).pagination.total).toBe(0)
+      expect((await list('status=Passed&sessionName=Session%20Y')).pagination.total).toBe(1)
+      expect((await list('status=Passed&sessionName=Session%20X&match=any')).pagination.total).toBe(1)
     })
 
     it('lists the same groups however many status values the filter names', async () => {
@@ -173,7 +173,7 @@ describe('bill list: one row per companion group', () => {
       await seedBill({ id: 'b1713', billNumber: 'S1713', title: 'Ballot access', state: 'NJ', statusRank: 300 })
       await seedBill({ id: 'o', billNumber: 'HB 5', title: 'Other', state: 'NJ' })
       await group('a190', 'b1713')
-      const body = await list('q=S1713')
+      const body = await list('search=S1713')
       expect(body.pagination.total).toBe(1)
       expect(body.bills[0].group?.map(g => [g.billNumber, g.matched])).toEqual([['S1713', true], ['A190', false]])
     })
@@ -183,7 +183,7 @@ describe('bill list: one row per companion group', () => {
       await seedBill({ id: 'a190', billNumber: 'A190', title: 'Ballot 5 reform', state: 'NJ' })
       await seedBill({ id: 'b1713', billNumber: 'S1713', title: 'Ballot 5 reform', state: 'NJ' })
       await group('a190', 'b1713')
-      expect(numbers(await list('q=S1713'))[0]).toBe('A190+S1713')
+      expect(numbers(await list('search=S1713'))[0]).toBe('A190+S1713')
     })
   })
 
@@ -242,11 +242,11 @@ describe('bill list: one row per companion group', () => {
 
     it('custom fields: not through the bill with the value the group replaced', async () => {
       await staleValues()
-      expect((await list('cf_committee=Energy')).pagination.total).toBe(0)
-      const labor = await list('cf_committee=Labor')
+      expect((await list('field.committee=Energy')).pagination.total).toBe(0)
+      const labor = await list('field.committee=Labor')
       expect(labor.pagination.total).toBe(1)
       expect(labor.bills[0].group?.map(g => [g.billNumber, g.matched])).toEqual([['S1713', true], ['A190', true]])
-      expect((await list('cf_committee=__any__')).pagination.total).toBe(1)
+      expect((await list('field.committee=__any__')).pagination.total).toBe(1)
     })
 
     it('tags: not through the bill whose analysis the group replaced', async () => {
@@ -310,10 +310,10 @@ describe('bill list: one row per companion group', () => {
       it('a custom field: finds the group', async () => {
         await companions()
         await db().insert(billCustomFieldValues).values({ billId: 'a190', fieldId: 'cf1', value: 'Energy', setBy: ada, updatedAt: '2026-10-01 10:00:00' })
-        const body = await list('status=Passed&cf_committee=Energy')
+        const body = await list('status=Passed&field.committee=Energy')
         expect(body.pagination.total).toBe(1)
         expect(body.bills[0].group?.map(g => [g.billNumber, g.matched])).toEqual([['S1713', true], ['A190', false]])
-        expect((await list('status=Passed&cf_committee=Labor')).pagination.total).toBe(0)
+        expect((await list('status=Passed&field.committee=Labor')).pagination.total).toBe(0)
       })
 
       it('tags: finds the group', async () => {
@@ -330,7 +330,7 @@ describe('bill list: one row per companion group', () => {
         await priority('a190', 'high', '2026-10-01 10:00:00')
         const res = await SELF.fetch('https://x/api/bills/bulk', {
           method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ filter: { status: ['Passed'], priority: ['high'] }, position: 'Support' }),
+          body: JSON.stringify({ filter: 'status=Passed&priority=high', position: 'Support' }),
         })
         expect(await res.json()).toEqual({ updated: 1 })
       })
@@ -510,7 +510,7 @@ describe('bill list: one row per companion group', () => {
       // pageSize 4 stays within the four tracked groups, so the default sort takes the fast path.
       const fast = await list('pageSize=4')
       // A search that matches every bill takes the full path, with the same ordering.
-      const full = await list('pageSize=4&q=%25')
+      const full = await list('pageSize=4&search=%25')
       const ids = (b: ListBody) => b.bills.map(r => r.group ? r.group.map(g => g.id).sort().join('+') : r.id)
       expect(ids(fast)).toEqual(ids(full))
     })
@@ -640,8 +640,8 @@ describe('bill list: one row per companion group', () => {
         await seedBill({ id: 'solo', billNumber: 'HB 1', state: 'NJ', status: 'Introduced' })
         await vote('a190')
         await priority('b1713', 'high', '2026-10-01 10:00:00')
-        expect(groupRow(await list('myBills=1&q=S1713'))).toEqual(['A190+S1713'])
-        expect(groupRow(await list('myBills=1&q=HB'))).toEqual([])
+        expect(groupRow(await list('myBills=1&search=S1713'))).toEqual(['A190+S1713'])
+        expect(groupRow(await list('myBills=1&search=HB'))).toEqual([])
         expect(groupRow(await list('myBills=1&priority=high'))).toEqual(['A190+S1713'])
         expect(groupRow(await list('myBills=1&priority=low'))).toEqual([])
         // The scope narrows whatever the operator joins: only the group is mine.
@@ -703,7 +703,7 @@ describe('bill list: one row per companion group', () => {
     it('stays within the parameter limit with the heaviest search the list accepts', async () => {
       await companions()
       const q = Array.from({ length: 12 }, (_, i) => `term${i}`).join(', ')
-      const res = await SELF.fetch(`https://x/api/bills?q=${encodeURIComponent(q)}`, { headers: { Cookie: cookie } })
+      const res = await SELF.fetch(`https://x/api/bills?search=${encodeURIComponent(q)}`, { headers: { Cookie: cookie } })
       expect(res.status).toBe(200)
     })
   })
