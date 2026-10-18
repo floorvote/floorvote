@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { render, screen, fireEvent, within, act, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { color } from '../../styles/tokens'
@@ -189,23 +191,29 @@ describe('resize handle', () => {
       drop(320)
     })
 
-    it('keeps a visible focus ring in the focus-ring token on focus, and none at rest', async () => {
+    // jsdom cannot evaluate :focus-visible, so the test pins what the browser rule needs:
+    // no inline outline (which would show on a mouse click too), and the class that
+    // styles the ring's offset in mobile.css, under the global :focus-visible rule.
+    it('leaves the focus ring to the global :focus-visible rule: no inline outline on focus, a mouse press, or a key', async () => {
       renderPane()
       await ready()
       expect(separator().style.outline).toBe('')
       fireEvent.focus(separator())
-      expect(separator().style.outline).toContain('2px solid')
-      expect(separator().style.outline).toContain(color.focusRing)
-      fireEvent.blur(separator())
       expect(separator().style.outline).toBe('')
+      fireEvent.pointerDown(separator(), { clientX: 300, button: 0, pointerId: 1 })
+      expect(separator().style.outline).toBe('')
+      drop(300)
+      fireEvent.keyDown(separator(), { key: 'ArrowRight' })
+      expect(separator().style.outline).toBe('')
+      expect(separator().getAttribute('style')).not.toMatch(/outline/)
     })
 
-    it('keeps the focus ring after a key press moves the handle', async () => {
+    it('carries the class that insets its :focus-visible ring, and the stylesheet defines it', async () => {
       renderPane()
       await ready()
-      fireEvent.focus(separator())
-      fireEvent.keyDown(separator(), { key: 'ArrowRight' })
-      expect(separator().style.outline).toContain(color.focusRing)
+      expect(separator()).toHaveClass('pane-resize-handle')
+      const css = readFileSync(join(__dirname, '../../styles/mobile.css'), 'utf8')
+      expect(css).toMatch(/\.pane-resize-handle:focus-visible\s*\{[^}]*outline-offset:\s*-2px/)
     })
   })
 
