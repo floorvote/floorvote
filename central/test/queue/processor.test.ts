@@ -961,3 +961,34 @@ describe('match provenance fan-out', () => {
     expect(b.send.mock.calls[0][0].matchProvenance).toBe('routine')
   })
 })
+
+// #637: a bill an instance didn't match (a companion it pulled in through its group) is delivered
+// the same full message as a tracked one, with its changes and its calendar, and no stub-only flag.
+describe('full ingest of a bill an instance did not match', () => {
+  it('sends the instance the changes and calendar of the ingest, with a null match type', async () => {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.sessions).values({
+      sessionId: 2154, state: 'WI', stateId: 50,
+      yearStart: 2025, yearEnd: 2026,
+      sessionName: '2025-2026 Regular', sessionTitle: '2025-2026 Regular', sessionTag: '',
+      prefile: 0, sineDie: 0, prior: 0, special: 0,
+    })
+    await db.insert(schema.bills).values({
+      billId: 9001, changeHash: 'hash-v0', sessionId: 2154, state: 'WI', stateId: 50,
+      billNumber: 'AB99', title: 'Original title', status: 1,
+    })
+    await db.insert(schema.tenants).values({ tenantId: 'prov-a', name: 'prov-a', stateCoverage: '["WI"]', active: true })
+    await db.insert(schema.billTenants).values({ billId: 9001, tenantId: 'prov-a', matchType: null })
+    vi.mocked(legiscan.getBill).mockResolvedValue(buildFixtureBill({ change_hash: 'hash-v1', title: 'Updated title' }))
+    const a = { send: vi.fn().mockResolvedValue(undefined), sendBatch: vi.fn() }
+
+    await processIngestorQueue(makeBatch(9001), { ...makeEnv(), [tenantQueueBindingName('prov-a')]: a }, db)
+
+    const msg = a.send.mock.calls[0][0]
+    expect(msg.stubOnly).toBeUndefined()
+    expect(msg.matchType).toBeNull()
+    expect(msg.changes.map((c: { changeType: string }) => c.changeType)).toContain('title_changed')
+    expect(msg.calendar.events).toHaveLength(1)
+    expect(msg.calendar.changes[0].changeType).toBe('hearing_added')
+  })
+})

@@ -6,7 +6,13 @@ import { getDb } from '../../src/db/client'
 import { bills, calendarEvents, feedEvents } from '../../src/db/schema'
 import { groupByHand } from '../../src/lib/companionGroups'
 import { newMatchWhere } from '../../src/lib/newMatch'
+import { PRIORITY_COLORS } from '../../../shared/billChipColors'
+import { runWeekAhead } from '../../src/lib/weekAhead'
+import { associationConfig } from '../../src/db/schema'
 import { resetDb, applyMigrations, seedBill, seedUser, seedSession } from '../helpers'
+
+const sendBatch = vi.hoisted(() => vi.fn(async () => ({ sent: 1, failed: 0 })))
+vi.mock('../../src/lib/email', async (importOriginal) => ({ ...await importOriginal<typeof import('../../src/lib/email')>(), sendBatch }))
 
 // A pulled companion (#378) is analyzed because it shares a group with a tracked
 // bill, and holds no match type or priority of its own. A group is one policy
@@ -32,9 +38,9 @@ function centralBillJson(handle: string, number: string, updatedAt: string) {
 
 const testEnv = { ...env, TENANT_ID: 'ri', CENTRAL_API_URL: 'https://central.test', CENTRAL_ADMIN_SECRET: 'x' }
 
-function calendarBlock() {
+function calendarBlock(day = 5) {
   const event = {
-    identityKey: '1|house cmte on elections', date: isoDay(5), time: '14:00:00',
+    identityKey: '1|house cmte on elections', date: isoDay(day), time: '14:00:00',
     location: 'Room 35', description: 'House Cmte on Elections', eventHash: 'h1',
   }
   return { events: [event], changes: [{ changeType: 'hearing_added' as const, ...event }] }
@@ -56,7 +62,8 @@ describe('processCentralNotification: a pulled companion in a group', () => {
     ))
   }
   async function deliver(handle: string, extra: Record<string, unknown>) {
-    await processCentralNotification({ tenantId: 'ri', billId: handle, ...extra } as never, testEnv as never, db())
+    // Central's full delivery to an instance that didn't match the bill carries a null match type.
+    await processCentralNotification({ tenantId: 'ri', billId: handle, forceMetadata: false, forceAI: false, matchType: null, ...extra } as never, testEnv as never, db())
   }
   async function feed(qs = '') {
     const res = await SELF.fetch(`http://localhost/api/feed${qs}`, { headers: { Cookie: cookie } })
@@ -120,6 +127,30 @@ describe('processCentralNotification: a pulled companion in a group', () => {
 
     const types = (await db().select().from(feedEvents).where(eq(feedEvents.billId, 'b-companion')).all()).map(e => e.type)
     expect(types).toEqual(['hearing_added'])
+  })
+
+  it('shows its hearing in the ICS feed', async () => {
+    serve(COMPANION, 'S 200', '2026-06-03T00:00:00Z')
+    await deliver(COMPANION, { calendar: calendarBlock() })
+
+    const info = await (await SELF.fetch('http://localhost/api/calendar/info', { headers: { Cookie: cookie } })).json() as { slug: string }
+    const ics = await (await SELF.fetch(`http://localhost/api/calendar/feed/${info.slug}.ics`)).text()
+    expect(ics).toContain('House Cmte on Elections')
+    expect(ics).toContain('hearing-legiscan-200-')
+  })
+
+  it('lists its hearing in the week-ahead email, under the group\'s priority marker', async () => {
+    const weekday = String(new Date().getUTCDay())
+    await db().insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'week-ahead': { enabled: true, settings: { weeklyDay: weekday } } }) })
+    sendBatch.mockClear()
+    serve(COMPANION, 'S 200', '2026-06-03T00:00:00Z')
+    await deliver(COMPANION, { calendar: calendarBlock(2) })
+
+    await runWeekAhead(env as never, db())
+    const html = (sendBatch.mock.calls.at(-1) as unknown as [unknown, { html: string }[]] | undefined)?.[1][0].html ?? ''
+    expect(html).toContain('House Cmte on Elections')
+    expect(html).toContain('RI S 200')
+    expect(html).toContain(`title="${PRIORITY_COLORS.high.label}"`)
   })
 
   it('reconciles the hearing when the bill\'s own data is unchanged and the delivery short-circuits', async () => {

@@ -1,6 +1,7 @@
 import { eq, and, inArray, isNotNull } from 'drizzle-orm'
 import { DEFAULT_PROVIDER_ID, getProvider, type Provider, type SessionRef, type SyncEntry } from '../providers'
-import { sessions, bills, billTenants, tenants, keywordRegistry, sessionSyncLog } from '../db/schema'
+import { sessions, bills, billTenants, billSasts, tenants, keywordRegistry, sessionSyncLog } from '../db/schema'
+import { relationshipKind } from '../lib/vocabulary'
 import { matchesUnion, billMatchText } from '../lib/keywords'
 import { decideMode, getCurrentEtHour } from '../lib/sync-schedule'
 import { nowDb } from '../lib/dbTime'
@@ -14,6 +15,49 @@ import { queueCalendarRechecks } from '../lib/billCalendar'
 
 const BATCH = 80
 const FLUSH_BATCH = 500
+
+
+/**
+ * For the listed bills, the instances that track an identical companion of each
+ * (a bill the provider names as the same measure, linked to the instance with a
+ * match type). An instance groups such companions (#374), and a companion it
+ * didn't match is analyzed through the group, so its actions and hearings belong
+ * in the group's card and calendar (#637): it gets full deliveries, not stubs.
+ * Read from the links as they stood before the pass.
+ */
+async function trackedCompanionTenants(
+  db: Db,
+  provider: Provider,
+  state: string,
+  billIds: number[],
+): Promise<Map<number, Set<string>>> {
+  const out = new Map<number, Set<string>>()
+  for (let i = 0; i < billIds.length; i += BATCH) {
+    const chunk = billIds.slice(i, i + BATCH)
+    const pairs: Array<[number, number]> = []
+    for (const r of await db.select({ billId: billSasts.billId, other: billSasts.sastBillId, type: billSasts.type })
+      .from(billSasts).where(inArray(billSasts.billId, chunk)).all()) {
+      if (relationshipKind(provider, state, r.type) === 'identical') pairs.push([r.billId, r.other])
+    }
+    for (const r of await db.select({ billId: billSasts.billId, other: billSasts.sastBillId, type: billSasts.type })
+      .from(billSasts).where(inArray(billSasts.sastBillId, chunk)).all()) {
+      if (relationshipKind(provider, state, r.type) === 'identical') pairs.push([r.other, r.billId])
+    }
+    if (pairs.length === 0) continue
+    const others = [...new Set(pairs.map(p => p[1]))]
+    const tracked = new Map<number, string[]>()
+    for (let j = 0; j < others.length; j += BATCH) {
+      for (const l of await db.select({ billId: billTenants.billId, tenantId: billTenants.tenantId })
+        .from(billTenants).where(and(inArray(billTenants.billId, others.slice(j, j + BATCH)), isNotNull(billTenants.matchType))).all()) {
+        tracked.set(l.billId, [...(tracked.get(l.billId) ?? []), l.tenantId])
+      }
+    }
+    for (const [bill, other] of pairs) {
+      for (const t of tracked.get(other) ?? []) out.set(bill, (out.get(bill) ?? new Set()).add(t))
+    }
+  }
+  return out
+}
 
 /** The states active instances cover, which are the states central keeps in sync. */
 export async function loadTrackedStates(
@@ -289,6 +333,8 @@ export async function applyMasterList(
     if (held) seeded.add(tenantId)
   }
 
+  const companionTracked = await trackedCompanionTenants(db, getProvider(session.provider), session.state, billIds)
+
   const now = nowDb()
   const billStmts: any[] = []
   const billTenantStmts: any[] = []
@@ -389,7 +435,11 @@ export async function applyMasterList(
       // before the other provider ingested it, whose change hash is still this
       // provider's. It's queued each pass until that ingest clears carried_from.
       const carriedAndTracked = ((prevMatchType ?? null) !== null || newMatchType !== null) && !!stored?.carriedFrom
-      if (justMatched || alreadyMatchedAndChanged || carriedAndTracked) {
+      // A bill the instance didn't match, whose identical companion it tracks, is in a companion group
+      // there: its changes go as a full ingest (with the changes and calendar), which instances apply to
+      // group members as they do to tracked bills (#637). A stub carries neither.
+      const trackedCompanion = newMatchType === null && billChanged && !!companionTracked.get(entry.bill_id)?.has(t.tenantId)
+      if (justMatched || alreadyMatchedAndChanged || carriedAndTracked || trackedCompanion) {
         toQueue.add(entry.bill_id)
       }
 
