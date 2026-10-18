@@ -1,4 +1,4 @@
-import { optionsFromRows, rowsFromOptions, type OptionRow } from './optionRows'
+import { newOptionRow, optionsFromRows, rowsFromOptions, type OptionRow } from './optionRows'
 import { useEffect, useRef, useState } from 'react'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { actionRowStyle, actionRowStyleFirst, actionBtnBlue, actionBtnRed } from '../../styles/actionRow'
@@ -174,7 +174,17 @@ export function Config() {
   const [cfEditName, setCfEditName] = useState('')
   const [cfEditOptions, setCfEditOptions] = useState<OptionRow[]>([])
   const [cfEditMultiple, setCfEditMultiple] = useState(false)
+  // Where focus goes once the option rows next render: a row's id, or the Add option button.
+  const [cfOptionFocus, setCfOptionFocus] = useState<number | 'add' | null>(null)
+  const cfOptionInputs = useRef(new Map<number, HTMLInputElement>())
+  const cfAddOptionButton = useRef<HTMLButtonElement | null>(null)
   const [cfEditError, setCfEditError] = useState<string | null>(null)
+  useEffect(() => {
+    if (cfOptionFocus === null) return
+    if (cfOptionFocus === 'add') cfAddOptionButton.current?.focus()
+    else cfOptionInputs.current.get(cfOptionFocus)?.focus()
+    setCfOptionFocus(null)
+  }, [cfOptionFocus, cfEditOptions])
   // Drag- and keyboard-reorder, shared with the tag table
   // (TagTaxonomyTable.tsx) and saved views (BillList/ViewSwitcher.tsx) — see
   // components/dragReorder.tsx. Persistence stays here, because it is this
@@ -652,15 +662,16 @@ export function Config() {
     setCfEditError(null)
     try {
       const body: Record<string, unknown> = {}
+      let edited: ReturnType<typeof optionsFromRows> | null = null
       const newName = cfEditName.trim()
       if (newName && newName !== field.name) body.name = newName
       if (field.type === 'dropdown') {
-        const edited = optionsFromRows(cfEditOptions)
+        edited = optionsFromRows(cfEditOptions)
         body.options = edited.options
         if (edited.renames.length > 0) body.renames = edited.renames
         if (cfEditMultiple !== (field.multiple ?? false)) body.multiple = cfEditMultiple
       }
-      const newOpts = field.type === 'dropdown' ? optionsFromRows(cfEditOptions).options : field.options
+      const newOpts = edited ? edited.options : field.options
       await apiFetch(`/admin/custom-fields/${id}`, {
         method: 'PUT',
         body: JSON.stringify(body),
@@ -1089,10 +1100,11 @@ export function Config() {
                       {field.type === 'dropdown' && (
                         <>
                           {cfEditOptions.map((row, n) => (
-                            <div key={n} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <div key={row.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                               <input
                                 type="text"
                                 aria-label={`Option ${n + 1}`}
+                                ref={el => { if (el) cfOptionInputs.current.set(row.id, el); else cfOptionInputs.current.delete(row.id) }}
                                 value={row.text}
                                 onChange={e => setCfEditOptions(prev => prev.map((r, j) => j === n ? { ...r, text: e.target.value } : r))}
                                 style={{ flex: 1, minWidth: 0, fontSize: fontSize.sm, padding: '5px 10px', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, fontFamily: 'inherit' }}
@@ -1100,14 +1112,24 @@ export function Config() {
                               <button
                                 type="button"
                                 aria-label={`Remove option ${n + 1}`}
-                                onClick={() => setCfEditOptions(prev => prev.filter((_, j) => j !== n))}
+                                onClick={() => {
+                                  // Focus the row that takes this one's place, else the one before it, else Add option.
+                                  const after = cfEditOptions[n + 1] ?? cfEditOptions[n - 1]
+                                  setCfOptionFocus(after ? after.id : 'add')
+                                  setCfEditOptions(prev => prev.filter((_, j) => j !== n))
+                                }}
                                 style={inlineEditCancelStyle()}
                               >Remove</button>
                             </div>
                           ))}
                           <button
                             type="button"
-                            onClick={() => setCfEditOptions(prev => [...prev, { original: null, text: '' }])}
+                            ref={cfAddOptionButton}
+                            onClick={() => {
+                              const row = newOptionRow()
+                              setCfOptionFocus(row.id)
+                              setCfEditOptions(prev => [...prev, row])
+                            }}
                             style={{ ...inlineEditCancelStyle(), alignSelf: 'flex-start' }}
                           >Add option</button>
                           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: fontSize.sm, color: color.textSlate, cursor: 'pointer' }}>

@@ -2,12 +2,19 @@
 // editor opened (`original`, null for a row added since). A rename is a row whose text changed, so the API is told
 // exactly which options were renamed (and views that filter on them follow), instead of guessing from two lists.
 
-export type OptionRow = { original: string | null; text: string }
+export type OptionRow = { id: number; original: string | null; text: string }
+
+let nextRowId = 1
+
+/** A row with no option behind it yet. */
+export function newOptionRow(): OptionRow {
+  return { id: nextRowId++, original: null, text: '' }
+}
 
 export type OptionRename = { from: string; to: string }
 
 export function rowsFromOptions(options: readonly string[] | null | undefined): OptionRow[] {
-  return (options ?? []).map(o => ({ original: o, text: o }))
+  return (options ?? []).map(o => ({ id: nextRowId++, original: o, text: o }))
 }
 
 /** The options to save (trimmed, empty rows dropped) and the renames among them: rows that had an option and now read differently. */
