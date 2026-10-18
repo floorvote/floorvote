@@ -18,7 +18,7 @@ export const GOVINFO_BASE = 'https://www.govinfo.gov'
 export const GOVINFO_TYPES = ['hr', 's', 'hres', 'sres', 'hjres', 'sjres', 'hconres', 'sconres'] as const
 export type GovInfoType = typeof GOVINFO_TYPES[number]
 
-/** Eight downloads a pass, paced as a courtesy: GovInfo documents no limit for its bulk data. */
+/** Eight downloads a full read (or eight listings and the changed files between), paced as a courtesy: GovInfo documents no limit for its bulk data. */
 const GOVINFO_RATE_PER_SEC = 2
 
 export function billStatusZipUrl(congress: number, type: GovInfoType): string {
@@ -28,6 +28,11 @@ export function billStatusZipUrl(congress: number, type: GovInfoType): string {
 /** One bill's Bill Status file, by its own address: `.../119/hr/BILLSTATUS-119hr3132.xml`. */
 export function billStatusFileUrl(congress: number, type: GovInfoType, number: string): string {
   return `${GOVINFO_BASE}/bulkdata/BILLSTATUS/${congress}/${type}/BILLSTATUS-${congress}${type}${number}.xml`
+}
+
+/** One type's bulk listing, which names each of its files with the time GovInfo last changed it. */
+export function billStatusListingUrl(congress: number, type: GovInfoType): string {
+  return `${GOVINFO_BASE}/bulkdata/json/BILLSTATUS/${congress}/${type}`
 }
 
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false })
@@ -42,7 +47,8 @@ function httpDate(value: string | null): string | null {
 /**
  * Read one zip, handing each file's text to `onFile` as it is unpacked, with
  * the time GovInfo says it built the zip. Resolves with whether the zip
- * exists, and how many files it held.
+ * exists, how many files it held, and that time (null when the zip says
+ * none).
  *
  * A 404 is a zip GovInfo hasn't published yet, such as a type with no bills at
  * the start of a Congress: `found` is false and no file is handed over. The
@@ -58,20 +64,99 @@ export async function readBillStatusZip(
   type: GovInfoType,
   onFile: (name: string, xml: string, modified: string | null) => void | Promise<void>,
   onRequest?: () => void,
-): Promise<{ found: boolean; entries: number }> {
+): Promise<{ found: boolean; entries: number; modified: string | null }> {
   const url = billStatusZipUrl(congress, type)
   try {
     const res = await rateLimitedFetch(url, { headers: { Accept: 'application/zip' } },
       { ratePerSec: GOVINFO_RATE_PER_SEC, bucketKey: 'govinfo', onRequest })
     if (res.status === 404) {
       await res.body?.cancel().catch(() => {})
-      return { found: false, entries: 0 }
+      return { found: false, entries: 0, modified: null }
     }
     const modified = httpDate(res.headers.get('Last-Modified'))
     const { entries } = await readZip(res, (name, data) => onFile(name, utf8.decode(data), modified))
-    return { found: true, entries }
+    return { found: true, entries, modified }
   } catch (err) {
     throw new Error(`GovInfo ${congress}/${type}: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
+/** A Bill Status file as a type's bulk listing names it: its file name, its bill's number, and when GovInfo last changed it (ISO, to the minute). */
+export interface ListedBillFile { name: string; number: string; modified: string }
+
+const MONTH: Record<string, number> = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 }
+const LISTING_TIME = /^(\d{2})-([A-Z][a-z]{2})-(\d{4}) (\d{2}):(\d{2})$/
+
+/**
+ * A listing's time (`18-Jul-2026 23:27`) as ISO (`2026-07-18T23:27:00Z`), or
+ * null when it isn't one. The listing writes UTC: a type's zip is listed at
+ * the minute its own Last-Modified header gives in GMT.
+ */
+export function listingTime(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const m = LISTING_TIME.exec(value)
+  if (!m || !(m[2] in MONTH)) return null
+  const [day, year, hour, minute] = [Number(m[1]), Number(m[3]), Number(m[4]), Number(m[5])]
+  const d = new Date(Date.UTC(year, MONTH[m[2]], day, hour, minute))
+  if (d.getUTCDate() !== day || d.getUTCHours() !== hour || d.getUTCMinutes() !== minute) return null
+  return d.toISOString().replace('.000Z', 'Z')
+}
+
+/**
+ * One type's bulk listing (`/bulkdata/json/BILLSTATUS/119/hr`, asked for as
+ * JSON): every Bill Status file of the type, with the time GovInfo last
+ * changed it, which only the listing gives (every file in a zip carries the
+ * zip's build time), and the time the listing gives the type's zip (null when
+ * it lists none). Anything else that isn't an XML file is left out.
+ *
+ * Fails closed, with an error that names the listing: an answer that isn't
+ * 200 (a 404 too, since a pass can't tell a type it can't list from a type
+ * with no files), that isn't JSON, or that isn't shaped as `{ files: [...] }`,
+ * and any XML file that isn't one of this type's for this Congress, has no
+ * time, or is named twice.
+ */
+export async function readBillStatusListing(
+  congress: number,
+  type: GovInfoType,
+  onRequest?: () => void,
+): Promise<{ files: ListedBillFile[]; zipModified: string | null }> {
+  const url = billStatusListingUrl(congress, type)
+  try {
+    const res = await rateLimitedFetch(url, { headers: { Accept: 'application/json' } },
+      { ratePerSec: GOVINFO_RATE_PER_SEC, bucketKey: 'govinfo', onRequest })
+    if (res.status !== 200) {
+      await res.body?.cancel().catch(() => {})
+      throw new Error(`HTTP ${res.status}`)
+    }
+    let body: unknown
+    try {
+      body = JSON.parse(utf8.decode(await res.arrayBuffer()))
+    } catch {
+      throw new Error('the answer is not JSON')
+    }
+    const files = (body as { files?: unknown } | null)?.files
+    if (typeof body !== 'object' || body === null || !Array.isArray(files)) throw new Error('the answer has no list of files')
+    const name = new RegExp(`^BILLSTATUS-${congress}${type}([1-9]\\d*)\\.xml$`)
+    const out: ListedBillFile[] = []
+    const seen = new Set<string>()
+    const zipName = `BILLSTATUS-${congress}-${type}.zip`
+    let zipModified: string | null = null
+    for (const f of files as unknown[]) {
+      const entry = f as { name?: unknown; formattedLastModifiedTime?: unknown; folder?: unknown } | null
+      if (typeof entry !== 'object' || entry === null || typeof entry.name !== 'string') throw new Error('it lists a file with no name')
+      if (entry.name === zipName) zipModified = listingTime(entry.formattedLastModifiedTime)
+      if (entry.folder === true || !entry.name.toLowerCase().endsWith('.xml')) continue
+      const m = name.exec(entry.name)
+      if (!m) throw new Error(`it lists ${entry.name}, which isn't a ${type} Bill Status file of Congress ${congress}`)
+      if (seen.has(entry.name)) throw new Error(`it lists ${entry.name} twice`)
+      seen.add(entry.name)
+      const modified = listingTime(entry.formattedLastModifiedTime)
+      if (!modified) throw new Error(`it gives ${entry.name} no time it changed`)
+      out.push({ name: entry.name, number: m[1], modified })
+    }
+    return { files: out, zipModified }
+  } catch (err) {
+    throw new Error(`GovInfo ${congress}/${type} listing: ${err instanceof Error ? err.message : String(err)}`)
   }
 }
 

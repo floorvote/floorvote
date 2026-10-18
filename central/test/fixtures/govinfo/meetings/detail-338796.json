@@ -1,0 +1,36 @@
+{
+  "committeeMeeting": {
+    "chamber": "NoChamber",
+    "committees": [
+      {
+        "name": "Commission on Security and Cooperation in Europe (U.S. Helsinki Commission)",
+        "systemCode": "jcse00",
+        "url": "https://api.congress.gov/v3/committee/joint/jcse00?format=json"
+      }
+    ],
+    "congress": 119,
+    "date": "2026-09-28T18:00:00Z",
+    "eventId": "338796",
+    "location": {
+      "building": "Russell Senate Office Building",
+      "room": "188"
+    },
+    "meetingStatus": "Scheduled",
+    "title": "To receive a briefing on protecting Ukraine's energy infrastructure, focusing on winter, war, and lessons for the United States.",
+    "type": "Open Hearing",
+    "updateDate": "2026-09-26T02:08:20Z",
+    "videos": [
+      {
+        "name": "To receive a briefing on protecting Ukraine's energy infrastructure, focusing on winter, war, and lessons for the United States.",
+        "url": "https://www.congress.gov/event/119th-Congress/joint-event/338796"
+      }
+    ]
+  },
+  "request": {
+    "chamber": "nochamber",
+    "congress": "119",
+    "contentType": "application/json",
+    "eventId": "338796",
+    "format": "json"
+  }
+}

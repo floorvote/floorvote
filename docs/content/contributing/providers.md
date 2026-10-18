@@ -13,7 +13,7 @@ The [State coverage](/contributing/state-coverage) page lists the providers that
 A provider knows one API and how to map what it returns into FloorVote's shapes. Central, the shared data service, does everything else: deciding what to sync and when, writing to the database, matching keywords, and notifying instances. Two things hold that line:
 
 - ESLint lets provider code import only its own directory and [`providers/sdk.ts`](https://github.com/floorvote/floorvote/blob/main/central/src/providers/sdk.ts), and lets the rest of central reach a provider only through the registry (`providers/index.ts`). `npm run lint` in `central/` enforces both.
-- A provider's `env` holds only the keys it declares in `envKeys`, such as its API key. It never holds central's database, buckets, or queues.
+- A provider's `env` holds only the keys it declares in `envKeys`, such as its API key. It never holds central's database, buckets, or queues. What a provider keeps between runs goes through `ctx.cache`, small text entries of its own that central stores for it.
 
 Instances never call a legislative API. They read central, so a new provider changes nothing for them.
 
@@ -70,7 +70,7 @@ Providers sync one of two ways:
 
 Most legislatures publish a file or an API without change filters, so start with a snapshot.
 
-A snapshot provider whose feed can say what changed since its last read can return only those records: set `partial: true` on the snapshot. Central hands the provider the ETag of the last snapshot a pass finished (`SnapshotSession.etag`, which can hold any watermark you choose), replaces the stored records the partial snapshot names, by bill id, and runs the pass on every stored record, so matching and retries work as for a full read. A record you leave out stays as it is, and central never removes one. When `etag` is null (a session's first read, a forced run, or a new claim), read in full: a partial snapshot answering a null ETag fails the pass, and nothing is written.
+A snapshot provider whose feed can say what changed since its last read can return only those records: set `partial: true` on the snapshot. Central hands the provider the ETag of the last snapshot a pass finished (`SnapshotSession.etag`, which can hold any watermark you choose), replaces the stored records the partial snapshot names, by bill id, and runs the pass on every stored record, so matching and retries work as for a full read. A record you leave out stays as it is, and central never removes one. When `etag` is null (a session's first read, a forced run, or a new claim), read in full: a partial snapshot answering a null ETag fails the pass, and nothing is written. Congress's GovInfo provider (`providers/govinfo/changes.ts`) is an example: its ETag holds a watermark, and between daily full reads it downloads only the files its feed's listings say changed since.
 
 ## Start from the template
 
