@@ -34,8 +34,8 @@ describe('FilterDropdown grouped by stage', () => {
     const { open } = renderGrouped()
     open()
     const menu = screen.getByRole('group', { name: 'Status' })
-    const rows = Array.from(menu.querySelectorAll('button[aria-pressed], input[type="checkbox"]')).map(el =>
-      el.tagName === 'BUTTON' ? `heading:${(el.textContent ?? '').replace(/\d+$/, '')}` : `status:${el.closest('label')?.textContent?.replace(/\d+$/, '')}`)
+    const rows = Array.from(menu.querySelectorAll('input[type="checkbox"]')).map(el =>
+      el.hasAttribute('data-stage') ? `heading:${(el.closest('label')?.textContent ?? '').replace(/\d+$/, '')}` : `status:${el.closest('label')?.textContent?.replace(/\d+$/, '')}`)
     expect(rows).toEqual([
       'heading:Enacted', 'status:Chaptered', 'status:Signed', 'heading:In committee', 'status:In Committee', 'status:Not Applicable',
     ])
@@ -44,7 +44,7 @@ describe('FilterDropdown grouped by stage', () => {
   it('gives the Other heading no button, since no stage names it, and lists its statuses last', () => {
     const { open } = renderGrouped()
     open()
-    expect(screen.queryByRole('button', { name: /^Other/ })).toBeNull()
+    expect(screen.queryByRole('checkbox', { name: /^Other/ })).toBeNull()
     expect(screen.getByText('Other')).toBeInTheDocument()
     expect(screen.getByRole('checkbox', { name: /Not Applicable/ })).toBeInTheDocument()
   })
@@ -52,8 +52,8 @@ describe('FilterDropdown grouped by stage', () => {
   it('shows a count beside each heading and each status', () => {
     const { open } = renderGrouped()
     open()
-    expect(within(screen.getByRole('button', { name: /^Enacted/ })).getByText('5')).toBeInTheDocument()
-    expect(within(screen.getByRole('button', { name: /^In committee/ })).getByText('2')).toBeInTheDocument()
+    expect(within(screen.getByRole('checkbox', { name: /^Enacted/ }).closest('label')!).getByText('5')).toBeInTheDocument()
+    expect(within(screen.getByRole('checkbox', { name: /^In committee/ }).closest('label')!).getByText('2')).toBeInTheDocument()
     expect(within(screen.getByText('Signed').closest('label')!).getByText('3')).toBeInTheDocument()
     expect(within(screen.getByText('Chaptered').closest('label')!).getByText('2')).toBeInTheDocument()
   })
@@ -61,22 +61,92 @@ describe('FilterDropdown grouped by stage', () => {
   it('says on hover that a heading selects every status in its stage', () => {
     const { open } = renderGrouped()
     open()
-    expect(screen.getByRole('button', { name: /^Enacted/ })).toHaveAttribute('title', 'All statuses in this stage.')
+    expect(screen.getByRole('checkbox', { name: /^Enacted/ }).closest('label')).toHaveAttribute('title', 'All statuses in this stage.')
   })
 
-  it('announces a heading as pressed when its stage is chosen', () => {
+  it('draws each heading as a checkbox, checked when its stage is chosen', () => {
     const { open } = renderGrouped({ selectedGroups: ['enacted'] })
     open()
-    expect(screen.getByRole('button', { name: /^Enacted/ })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: /^In committee/ })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('checkbox', { name: /^Enacted/ })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /^Enacted/ })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('checkbox', { name: /^In committee/ })).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /^In committee/ })).toHaveAttribute('aria-checked', 'false')
+  })
+
+  it('checks a heading when every status under it is chosen, though its stage is not', () => {
+    const { open } = renderGrouped({ selected: ['Chaptered', 'Signed'] })
+    open()
+    const box = screen.getByRole('checkbox', { name: /^Enacted/ })
+    expect(box).toBeChecked()
+    expect(box).toHaveAttribute('aria-checked', 'true')
+    expect((box as HTMLInputElement).indeterminate).toBe(false)
+    expect(screen.getByRole('checkbox', { name: /^In committee/ })).not.toBeChecked()
+  })
+
+  it('draws a heading mixed when only some of its statuses are chosen', () => {
+    const { open } = renderGrouped({ selected: ['Signed'] })
+    open()
+    const box = screen.getByRole('checkbox', { name: /^Enacted/ }) as HTMLInputElement
+    expect(box.indeterminate).toBe(true)
+    expect(box).toHaveAttribute('aria-checked', 'mixed')
+    expect(box.checked).toBe(false)
+    // A stage with none chosen stays off.
+    const other = screen.getByRole('checkbox', { name: /^In committee/ }) as HTMLInputElement
+    expect(other.indeterminate).toBe(false)
+    expect(other).toHaveAttribute('aria-checked', 'false')
+  })
+
+  it('keeps a stage chosen and a status of another stage from marking each other', () => {
+    const { open } = renderGrouped({ selected: ['In Committee'], selectedGroups: ['enacted'] })
+    open()
+    expect(screen.getByRole('checkbox', { name: /^Enacted/ })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /^In committee/ })).toBeChecked()
+  })
+
+  it('shows a chosen stage as checked even with only some of its statuses also chosen', () => {
+    const { open } = renderGrouped({ selected: ['Signed'], selectedGroups: ['enacted'] })
+    open()
+    expect(screen.getByRole('checkbox', { name: /^Enacted/ })).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('selects the whole stage when a mixed heading is clicked, keeping the statuses already chosen', () => {
+    const { open, onGroupsChange, onChange } = renderGrouped({ selected: ['Signed'] })
+    open()
+    fireEvent.click(screen.getByRole('checkbox', { name: /^Enacted/ }))
+    expect(onGroupsChange).toHaveBeenLastCalledWith(['enacted'])
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('clears a stage and the statuses of it chosen one by one when its checked heading is clicked', () => {
+    const { open, onGroupsChange, onChange } = renderGrouped({ selected: ['Signed', 'In Committee'], selectedGroups: ['enacted'] })
+    open()
+    fireEvent.click(screen.getByRole('checkbox', { name: /^Enacted/ }))
+    expect(onGroupsChange).toHaveBeenLastCalledWith([])
+    expect(onChange).toHaveBeenLastCalledWith(['In Committee'])
+  })
+
+  it('clears every status of a stage chosen only status by status when its checked heading is clicked', () => {
+    const { open, onGroupsChange, onChange } = renderGrouped({ selected: ['Chaptered', 'Signed'] })
+    open()
+    fireEvent.click(screen.getByRole('checkbox', { name: /^Enacted/ }))
+    expect(onChange).toHaveBeenLastCalledWith([])
+    expect(onGroupsChange).not.toHaveBeenCalled()
+  })
+
+  it('checks the stage of an unchecked heading with no status change', () => {
+    const { open, onGroupsChange, onChange } = renderGrouped({ selected: ['In Committee'] })
+    open()
+    fireEvent.click(screen.getByRole('checkbox', { name: /^Enacted/ }))
+    expect(onGroupsChange).toHaveBeenLastCalledWith(['enacted'])
+    expect(onChange).not.toHaveBeenCalled()
   })
 
   it('chooses a stage through the groups callback, and takes it back on a second press', () => {
     const { open, onGroupsChange, onChange } = renderGrouped({ selectedGroups: ['in_committee'] })
     open()
-    fireEvent.click(screen.getByRole('button', { name: /^Enacted/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /^Enacted/ }))
     expect(onGroupsChange).toHaveBeenLastCalledWith(['in_committee', 'enacted'])
-    fireEvent.click(screen.getByRole('button', { name: /^In committee/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /^In committee/ }))
     expect(onGroupsChange).toHaveBeenLastCalledWith([])
     expect(onChange).not.toHaveBeenCalled()
   })
@@ -108,19 +178,19 @@ describe('FilterDropdown grouped by stage', () => {
     // Focus lands on the chosen status, as FilterDropdown always did.
     expect(screen.getByRole('checkbox', { name: /Signed/ })).toHaveFocus()
     await user.keyboard('{Home}')
-    expect(screen.getByRole('button', { name: /^Enacted/ })).toHaveFocus()
+    expect(screen.getByRole('checkbox', { name: /^Enacted/ })).toHaveFocus()
     await user.keyboard('{ArrowDown}')
     expect(screen.getByRole('checkbox', { name: /Chaptered/ })).toHaveFocus()
     await user.keyboard('{End}')
     expect(screen.getByRole('checkbox', { name: /Not Applicable/ })).toHaveFocus()
     await user.keyboard('{ArrowDown}')
-    expect(screen.getByRole('button', { name: /^Enacted/ })).toHaveFocus()
+    expect(screen.getByRole('checkbox', { name: /^Enacted/ })).toHaveFocus()
   })
 
   it('opens with focus on the first heading when nothing is chosen', () => {
     const { open } = renderGrouped()
     open()
-    expect(screen.getByRole('button', { name: /^Enacted/ })).toHaveFocus()
+    expect(screen.getByRole('checkbox', { name: /^Enacted/ })).toHaveFocus()
   })
 
   it('toggles a heading from the keyboard with Space and with Enter', async () => {
