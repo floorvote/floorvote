@@ -144,6 +144,15 @@ describe('the "Shown: prioritized bill" flag (#695)', () => {
   })
 })
 
+describe('a fork\'s unsettled carry-over rules (#695)', () => {
+  it('flag no event as shown by a prioritized bill, since they are provisional and not applied', async () => {
+    await sync()
+    await getDb(env.DB).insert(associationConfig).values({ key: 'council_calendar_rules', value: JSON.stringify({ include: [{ committee: 'Committee on Housing' }] }) })
+    fetchMock.mockImplementation(async () => new Response('down', { status: 500 }))
+    for (const e of await events()) expect(e.shownByPriority).toBe(false)
+  })
+})
+
 describe('rules per state (#695)', () => {
   it('keep every event of a state in allStates, and apply committees to the others', async () => {
     await sync()
@@ -158,6 +167,12 @@ describe('rules per state (#695)', () => {
     await saveRules({ committees: [FINANCE], kinds: [], topics: [], trackedBills: false })
     const titles = (await events()).filter(e => e.source === 'body').map(e => e.description).sort()
     expect(titles).toEqual(['Finance hearing', 'Whole hearing: Stadium Act'].sort())
+  })
+
+  it('refuse allStates values that are not two-letter uppercase state codes', async () => {
+    for (const bad of ['dc', 'DCX', 'D', 'Maryland']) {
+      expect((await saveRules({ committees: [], allStates: [bad] })).status).toBe(400)
+    }
   })
 
   it('refuse allStates that is not a list', async () => {

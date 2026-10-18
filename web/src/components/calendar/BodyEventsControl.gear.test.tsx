@@ -310,6 +310,22 @@ describe('with two configurable states (#695)', () => {
     await waitFor(() => expect(puts(spy)).toEqual([null]))
   })
 
+  it('keeps the other state showing every event when a state goes to All events and back to Only these committees', async () => {
+    const spy = mockApi(null)
+    renderGear(TWO_STATES)
+    const { user, menu } = await open()
+    const dc = () => section(menu, /DC Council/)
+    await user.click(within(dc()).getByRole('radio', { name: 'Only these committees' }))
+    await waitFor(() => expect(puts(spy)).toHaveLength(1))
+    await user.click(within(dc()).getByRole('radio', { name: 'All events' }))
+    await waitFor(() => expect(puts(spy)).toHaveLength(2))
+    expect(puts(spy)[1]).toBeNull()
+    await user.click(within(dc()).getByRole('radio', { name: 'Only these committees' }))
+    await waitFor(() => expect(puts(spy)).toHaveLength(3))
+    expect(puts(spy)[2]).toEqual(rulesOf([], ['MD']))
+    expect(within(section(menu, /MD General Assembly/)).getByTestId('state-summary-MD')).toHaveTextContent('All events')
+  })
+
   it('counts each state\'s events on its own line', async () => {
     mockApi(rulesOf([HEALTH], ['MD']))
     renderGear(TWO_STATES)

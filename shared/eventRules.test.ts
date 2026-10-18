@@ -266,6 +266,7 @@ describe('event rules per state (#695)', () => {
     expect(parseEventRules({ allStates: ['MD', 'MD', ' DC '] })).toMatchObject({ allStates: ['MD', 'DC'] })
     expect(typeof parseEventRules({ allStates: 'MD' })).toBe('string')
     expect(typeof parseEventRules({ allStates: [''] })).toBe('string')
+    for (const bad of ['dc', 'DCX', 'D', 'D1', 'The District']) expect(typeof parseEventRules({ allStates: [bad] })).toBe('string')
   })
 
   it('selects every event of a state listed in allStates, and no other state\'s', () => {
