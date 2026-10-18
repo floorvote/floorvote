@@ -145,3 +145,29 @@ describe('faded month-view events', () => {
     expect(upcoming.style.opacity).toBe('')
   })
 })
+
+describe('past card titles', () => {
+  const titleOf = (card: HTMLElement) =>
+    [...card.querySelectorAll<HTMLElement>('div')].find(d => d.textContent === 'Elections Cmte') as HTMLElement
+
+  it('a past title uses textSecondary, unlike an upcoming one', () => {
+    const past = titleOf(renderCard(richEvent({ date: '2000-01-01' }), true))
+    document.body.innerHTML = ''
+    const upcoming = titleOf(renderCard(richEvent({}), false))
+    expect(past.style.color).toBe('var(--fv-text-secondary)')
+    expect(past.style.color).not.toBe(upcoming.style.color)
+  })
+
+  it('a cancelled title keeps textMuted with line-through, even when past', () => {
+    const t = titleOf(renderCard(richEvent({ date: '2000-01-01', status: 'cancelled' }), true))
+    expect(t.style.color).toBe('var(--fv-text-muted)')
+    expect(t.style.textDecoration).toBe('line-through')
+  })
+
+  for (const mode of MODES) {
+    it(`a past title meets 4.5:1 on the muted fill in ${mode} mode`, () => {
+      const t = titleOf(renderCard(richEvent({ date: '2000-01-01' }), true))
+      expect(contrast(resolveColor(t.style.color, mode), resolveColor(fillBehind(t), mode))).toBeGreaterThanOrEqual(4.5)
+    })
+  }
+})

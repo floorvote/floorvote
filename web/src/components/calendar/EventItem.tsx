@@ -82,7 +82,7 @@ export function EventItem({ event, isPast, isAdmin, editing, flashing, billOptio
             <EventSourceIcon event={event} />
           </HoverTooltip>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <EventLines event={event} linkChips clampDetails />
+            <EventLines event={event} linkChips clampDetails pastTitle={isPast} />
           </div>
           {canManage && isAdmin && (
             <div style={{ display: 'flex', gap: 2, flexShrink: 0, alignSelf: 'center' }}>

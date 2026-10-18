@@ -160,7 +160,7 @@ function EventCard({ ev, past, fixedHeight, suppressHover, alignRight, onSelect 
 
   return (
     <button type="button" onClick={e => { e.stopPropagation(); onSelect(ev, e.currentTarget, alignRight) }} style={cardStyle}>
-      <EventLines event={ev} compact suppressHover={suppressHover} />
+      <EventLines event={ev} compact suppressHover={suppressHover} pastTitle={past} />
     </button>
   )
 }
