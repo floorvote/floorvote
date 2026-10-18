@@ -1,4 +1,4 @@
-import { parseBillFilter, serializeBillFilter, withBillFilter } from '../../../shared/billFilter'
+import { BILL_FILTER_DEFS, CUSTOM_FIELD_KEY_PREFIX, parseBillFilter, serializeBillFilter, withBillFilter } from '../../../shared/billFilter'
 
 // A saved view stores a bill filter's query string, and a custom field is named in it by `field.<slug>` with
 // its dropdown options as the values. When an admin renames a field or one of its options, the views that
@@ -59,7 +59,42 @@ export function rewriteViewQuery(query: string, rename: ViewRename): string | nu
   const existing = rename.toSlug === rename.fromSlug ? [] : (field[rename.toSlug] ?? [])
   field[rename.toSlug] = [...new Set([...existing, ...moved])]
 
-  const next = serializeBillFilter(withBillFilter({ field }, filter))
+  // The filter is written by serialize. What a view holds besides the filter (its sort and dir, or any key the filter
+  // does not own) is not parsed, so it is carried over as it was.
+  const owned = new Set(BILL_FILTER_DEFS.map(d => d.name as string))
+  const rest = new URLSearchParams()
+  for (const [key, value] of new URLSearchParams(query)) {
+    if (!owned.has(key) && !key.startsWith(CUSTOM_FIELD_KEY_PREFIX)) rest.append(key, value)
+  }
+  const kept = rest.toString()
+  const filterPart = serializeBillFilter(withBillFilter({ field }, filter))
+  const next = kept === '' ? filterPart : filterPart === '' ? kept : `${filterPart}&${kept}`
   return next === query ? null : next
 }
 
+
+/**
+ * The statements that move the stored bill values of a dropdown field along with its renamed options: one for a
+ * single-select value (a bare string) and one for a multi-select value (a JSON array, each element mapped once,
+ * a repeat dropped). Each value goes through one CASE, so a swap does not cascade. Bind `[from, to, ...]` pairs
+ * and then `fieldId` and the `from` values, in the order the SQL reads them.
+ */
+export function billValueRenameStatements(fieldId: string, renames: readonly OptionRename[]): { sql: string; params: string[] }[] {
+  if (renames.length === 0) return []
+  const cases = renames.map(() => 'WHEN ? THEN ?').join(' ')
+  const pairs = renames.flatMap(r => [r.from, r.to])
+  const froms = renames.map(r => r.from)
+  const marks = froms.map(() => '?').join(', ')
+  return [
+    {
+      sql: `UPDATE bill_custom_field_values SET value = CASE value ${cases} ELSE value END WHERE field_id = ? AND value IN (${marks})`,
+      params: [...pairs, fieldId, ...froms],
+    },
+    {
+      sql: `UPDATE bill_custom_field_values SET value = (SELECT json_group_array(DISTINCT CASE je.value ${cases} ELSE je.value END) FROM json_each(bill_custom_field_values.value) je)
+        WHERE field_id = ? AND json_valid(value) = 1 AND json_type(value) = 'array'
+          AND EXISTS (SELECT 1 FROM json_each(bill_custom_field_values.value) je WHERE je.value IN (${marks}))`,
+      params: [...pairs, fieldId, ...froms],
+    },
+  ]
+}

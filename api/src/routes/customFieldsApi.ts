@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { eq, max, and, ne } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { customFieldDefinitions, savedViews } from '../db/schema'
-import { validateOptionRenames, rewriteViewQuery, type OptionRename } from '../lib/savedViewRenames'
+import { billValueRenameStatements, validateOptionRenames, rewriteViewQuery, type OptionRename } from '../lib/savedViewRenames'
 import { nowDb } from '../lib/dbTime'
 import type { AppEnv } from '../types'
 
@@ -211,24 +211,57 @@ customFieldsApiRouter.put('/:id', async (c) => {
     updates.multiple = body.multiple
   }
 
-  const fieldUpdate = db.update(customFieldDefinitions).set(updates).where(eq(customFieldDefinitions.id, fieldId))
-
-  // Saved views name a field by its slug and an option by its value, so a rename rewrites the views that use the
-  // old ones. The field and its views change in one batch, which D1 runs as one transaction: all or none.
+  // Saved views name a field by its slug and an option by its value, and bills hold an option by its value, so a
+  // rename moves all three: the field, the views that use it, and the bill values. They change in one batch,
+  // which D1 runs as one transaction. Each write names what it read (the field's slug, options, and updated_at, a
+  // view's query), and a closing statement fails the batch when any of them did not land, so a rename that
+  // raced another edit answers 409 and writes nothing, instead of overwriting it.
   const fromSlug = existing.slug
   const toSlug = updates.slug ?? existing.slug
-  const viewUpdates = []
-  if (fromSlug && (toSlug !== fromSlug || optionRenames.length > 0)) {
-    const views = await db.select({ id: savedViews.id, query: savedViews.query }).from(savedViews).all()
-    for (const view of views) {
-      const query = rewriteViewQuery(view.query, { fromSlug, toSlug: toSlug ?? fromSlug, options: optionRenames })
-      if (query !== null) {
-        viewUpdates.push(db.update(savedViews).set({ query, updatedAt: nowDb() }).where(eq(savedViews.id, view.id)))
-      }
-    }
+  if (!fromSlug || (toSlug === fromSlug && optionRenames.length === 0)) {
+    await db.update(customFieldDefinitions).set(updates).where(eq(customFieldDefinitions.id, fieldId))
+    return c.json({ ok: true, slug: updates.slug ?? existing.slug })
   }
-  if (viewUpdates.length > 0) await db.batch([fieldUpdate, ...viewUpdates])
-  else await fieldUpdate
+
+  const D = c.env.DB
+  const columns: Record<string, string> = { name: 'name', slug: 'slug', options: 'options', multiple: 'multiple', pinned: 'pinned', updatedAt: 'updated_at' }
+  const set = Object.keys(updates).filter(k => k in columns)
+  const values = set.map(k => {
+    const v = (updates as Record<string, unknown>)[k]
+    return typeof v === 'boolean' ? (v ? 1 : 0) : v
+  })
+  const finalSlug = toSlug as string
+  const finalOptions = updates.options ?? existing.options
+  const statements: D1PreparedStatement[] = [
+    D.prepare(`UPDATE custom_field_definitions SET ${set.map(k => `${columns[k]} = ?`).join(', ')} WHERE id = ? AND slug IS ? AND options IS ? AND updated_at IS ?`)
+      .bind(...values, fieldId, existing.slug, existing.options, existing.updatedAt),
+  ]
+  const rewritten: { id: string; query: string }[] = []
+  const views = await db.select({ id: savedViews.id, query: savedViews.query }).from(savedViews).all()
+  for (const view of views) {
+    const query = rewriteViewQuery(view.query, { fromSlug, toSlug: finalSlug, options: optionRenames })
+    if (query === null) continue
+    rewritten.push({ id: view.id, query })
+    statements.push(D.prepare(`UPDATE saved_views SET query = ?, updated_at = ? WHERE id = ? AND query = ?`).bind(query, nowDb(), view.id, view.query))
+  }
+  for (const s of billValueRenameStatements(fieldId, optionRenames)) statements.push(D.prepare(s.sql).bind(...s.params))
+  // json() of text that is not JSON raises, which rolls the whole batch back.
+  const landed = [
+    `EXISTS (SELECT 1 FROM custom_field_definitions WHERE id = ? AND slug IS ? AND options IS ? AND updated_at IS ?)`,
+    ...rewritten.map(() => `EXISTS (SELECT 1 FROM saved_views WHERE id = ? AND query = ?)`),
+  ]
+  statements.push(
+    D.prepare(`SELECT json('conflict') WHERE NOT (${landed.join(' AND ')})`)
+      .bind(fieldId, finalSlug, finalOptions, updates.updatedAt, ...rewritten.flatMap(r => [r.id, r.query])),
+  )
+  try {
+    await D.batch(statements)
+  } catch (err) {
+    if (/malformed JSON/i.test(String((err as Error)?.message ?? err) + String((err as { cause?: unknown })?.cause ?? ''))) {
+      return c.json({ error: 'This field or a saved view changed while it was being renamed. Reload and try again.' }, 409)
+    }
+    throw err
+  }
 
   return c.json({ ok: true, slug: updates.slug ?? existing.slug })
 })
