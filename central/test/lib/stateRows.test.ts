@@ -251,6 +251,7 @@ describe('loadStateRows: schedule column', () => {
 describe('loadStateRows: after a cutover', () => {
   it('counts the state\'s moved bills still waiting for their first ingest', async () => {
     await owner(LIMS_STATE, 'lims')
+    await tenant('a', ['RI'])
     await session(1, LIMS_STATE, { provider: 'lims' })
     const bill = (billId: number, state: string, carriedFrom: string | null) =>
       ({ billId, sessionId: 1, state, stateId: 1, billNumber: `B${billId}`, changeHash: 'h', title: 't', carriedFrom }) as any
