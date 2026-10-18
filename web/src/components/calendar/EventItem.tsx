@@ -31,11 +31,14 @@ export function EventItem({ event, isPast, isAdmin, editing, flashing, billOptio
   const { demoLocked } = useDemo()
   const cancelled = event.status === 'cancelled'
   const canManage = canEditEventSource(event.source)
+  const faded = !editing && (cancelled || isPast)
   const cardStyle: CSSProperties = {
     ...EVENT_CARD_BASE,
     padding: editing ? 0 : '8px 10px',
-    opacity: !editing && (cancelled || isPast) ? 0.55 : 1,
-    boxShadow: flashing ? `0 0 0 3px ${color.borderAmber}` : EVENT_CARD_BASE.boxShadow,
+    // Cancelled and past cards read as de-emphasized through a muted surface and
+    // no lift, not opacity: fading the whole card drags text and links below 4.5:1.
+    ...(faded ? { background: color.surfaceMuted, boxShadow: 'none' } : null),
+    ...(flashing ? { boxShadow: `0 0 0 3px ${color.borderAmber}` } : null),
     transition: 'box-shadow 0.6s ease',
   }
 

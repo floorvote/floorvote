@@ -151,8 +151,9 @@ function EventCard({ ev, past, fixedHeight, suppressHover, alignRight, onSelect 
     width: '100%', textAlign: 'left', cursor: 'pointer', font: 'inherit',
     padding: '3px 6px', borderRadius: radius.md,
     border: `1px solid ${color.borderDefault}`,
-    background: color.white, color: color.textSlate,
-    opacity: past ? 0.55 : 1, overflow: 'hidden',
+    // Past cards are muted by surface, not opacity (opacity drags text below 4.5:1).
+    background: past ? color.surfaceMuted : color.white, color: color.textSlate,
+    overflow: 'hidden',
     display: 'flex', flexDirection: 'column', gap: 2,
     ...(fixedHeight ? { height: CARD_H, flexShrink: 0 } : {}),
   }
