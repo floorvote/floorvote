@@ -57,6 +57,10 @@ export const darkColor: Record<ColorToken, string> = {
   tagTextBlue:       '#93c5fd',
   tooltipBg:         '#dfe5ee',
 
+  // --- Claim links ---
+  claimUnderline:    '#e8a33d', // Honey, unchanged: it reads on the dark card as on the light one
+  claimHoverBg:      '#3a3020', // a dark Honey wash; text on it keeps its color (textPrimary 11:1)
+
   // --- Surface & background ---
   white:             '#182231',
   surfaceSubtle:     '#141d2a',

@@ -18,6 +18,11 @@ export type FeedEvent = {
   // (api/src/lib/digestEmail.ts, api/src/lib/mentions.ts); absent is read as
   // "not a draft". The card model reads it to label an untitled draft.
   billIsDraft?: boolean
+  // The key of the bill's companion group (see **Companion group** in CONTEXT.md),
+  // or null for a bill in no group. Events on any member share it, so the feed rolls
+  // them into one card. Optional because producers other than GET /feed build
+  // FeedEvent-shaped objects; absent is read as "in no group".
+  billGroupKey?: string | null
   userId: string
   userName: string
   userTitle: string | null
@@ -25,8 +30,18 @@ export type FeedEvent = {
   createdAt: string
 }
 
+/** A bill with events in a group's card, as the card's header and its rows name it. */
+export type GroupedBill = {
+  billId: string | null
+  billNumber: string
+  billState: string | null
+  billSessionSlug: string | null
+  billIsDraft: boolean
+}
+
 export type GroupedBillEvents = {
-  key: string          // `${billId}::${date}`, or `event:${eventId}::${date}` for a bill-less event
+  // `${billId}::${date}`, `group:${groupKey}::${date}` for a companion group, or `event:${eventId}::${date}` for a bill-less event
+  key: string
   // Null for a bill-less event, which is always a group of exactly that one event.
   billId: string | null
   billNumber: string
@@ -37,6 +52,15 @@ export type GroupedBillEvents = {
   billPriority: string | null
   billMatchType: 'keyword' | 'manual' | null
   billIsDraft?: boolean
+  /** The companion group the card stands for, or null for a bill in no group. Absent is read as null. */
+  groupKey?: string | null
+  /**
+   * The bills with events in a group's card, the newest event's bill first and
+   * each once. Only a group's card has it: one card, many bills, so each row
+   * names its bill and the header lists them. The fields above describe the
+   * first of them.
+   */
+  bills?: GroupedBill[]
   date: string         // YYYY-MM-DD
   events: FeedEvent[]
 }
@@ -46,17 +70,28 @@ export function groupEventsByBillAndDay(events: FeedEvent[]): GroupedBillEvents[
   for (const e of events) {
     const date = dbTsToLocalDay(e.createdAt)
     // A bill-less event has no bill to share a group with, so it is its own group.
-    const key = `${e.billId ?? `event:${e.id}`}::${date}`
+    // A companion group is one policy: its members' events share a card.
+    const groupKey = e.billId === null ? null : (e.billGroupKey ?? null)
+    const key = groupKey !== null ? `group:${groupKey}::${date}` : `${e.billId ?? `event:${e.id}`}::${date}`
     if (!map.has(key)) {
       map.set(key, {
         key, billId: e.billId, billNumber: e.billNumber,
         billTitle: e.billTitle, billSessionSlug: e.billSessionSlug, billState: e.billState,
         billSummary: e.billSummary, billPriority: e.billPriority, billMatchType: e.billMatchType,
         billIsDraft: e.billIsDraft ?? false,
+        groupKey,
+        ...(groupKey !== null ? { bills: [] } : {}),
         date, events: [],
       })
     }
-    map.get(key)!.events.push(e)
+    const g = map.get(key)!
+    g.events.push(e)
+    if (g.bills && !g.bills.some(b => b.billId === e.billId)) {
+      g.bills.push({
+        billId: e.billId, billNumber: e.billNumber, billState: e.billState,
+        billSessionSlug: e.billSessionSlug, billIsDraft: e.billIsDraft ?? false,
+      })
+    }
   }
   return Array.from(map.values()).sort((a, b) =>
     dbTsToEpoch(b.events[0].createdAt) - dbTsToEpoch(a.events[0].createdAt)

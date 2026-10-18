@@ -12,7 +12,8 @@ import { usePageTitle } from '../hooks/usePageTitle'
 import { useDemo } from '../context/DemoContext'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 import { actionRowStyle, actionRowStyleFirst, actionBtnBlue, actionBtnRed } from '../styles/actionRow'
-import { digestCadenceDescription, weekAheadCadenceDescription, isModuleEnabled } from '../lib/modules'
+import { primaryButtonColors } from '../styles/primaryButton'
+import { digestCadenceDescription, digestMatchesLabel, weekAheadCadenceDescription, isModuleEnabled } from '../lib/modules'
 import type { ModulesConfig } from '../lib/modules'
 import { DEFAULT_ORG_NOUN } from '../lib/orgNoun'
 import { emailChangedLabel, ownEmailChangeLabel, type EmailChangeStepFields } from '../lib/emailChangedLabel'
@@ -136,7 +137,7 @@ export function Profile() {
     setDigestEnabled(user?.emailDigestEnabled ?? true)
   }, [user?.emailDigestEnabled])
 
-  // "Include newly matched bills", nested under the digest switch. Admins always
+  // "Also include newly matched bills in the digest", nested under the digest switch. Admins always
   // get the new-match section, so only members are offered it.
   const isMember = user?.role === 'member'
   const [digestMatchesEnabled, setDigestMatchesEnabled] = useState<boolean>(() => user?.emailDigestMatchesEnabled ?? true)
@@ -504,9 +505,9 @@ export function Profile() {
                 type="submit"
                 disabled={!changeEmailReady}
                 style={{
-                  background: color.accentBlue, color: color.textOnFill, border: 'none', borderRadius: radius.md,
+                  ...primaryButtonColors(!changeEmailReady), border: 'none', borderRadius: radius.md,
                   padding: '8px 20px', fontSize: fontSize.base, fontWeight: fontWeight.medium,
-                  cursor: changeEmailReady ? 'pointer' : 'not-allowed', opacity: changeEmailReady ? 1 : 0.5,
+                  cursor: changeEmailReady ? 'pointer' : 'not-allowed',
                 }}
               >
                 {changeEmailSending ? 'Sending…' : 'Send confirmation'}
@@ -563,15 +564,13 @@ export function Profile() {
             onClick={handleSave}
             disabled={saving || demoLocked}
             style={{
-              background: color.accentBlue,
-              color: color.textOnFill,
+              ...primaryButtonColors(saving || demoLocked),
               border: 'none',
               borderRadius: radius.md,
               padding: '8px 20px',
               cursor: saving || demoLocked ? 'not-allowed' : 'pointer',
               fontSize: fontSize.base,
               fontWeight: fontWeight.medium,
-              opacity: saving || demoLocked ? 0.5 : 1,
             }}
           >
             {saving ? 'Saving…' : 'Save'}
@@ -587,9 +586,9 @@ export function Profile() {
         )}
       </div>
 
-      {/* Email card: one section for every email a member can control, plus the always-sent line */}
+      {/* Notifications card: every email a member can control, most frequent first, plus the always-sent line */}
       <div style={SECTION_CARD}>
-        <h2 style={CARD_TITLE}>Your Email</h2>
+        <h2 style={CARD_TITLE}>Notifications</h2>
         <p style={{ ...HELPER_TEXT, marginTop: 0, marginBottom: 12 }}>
           You'll always get an email when someone mentions you, your role, @admins, or @everyone.
         </p>
@@ -728,8 +727,7 @@ export function Profile() {
                 }}
               >
                 <div style={{ fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5 }}>
-                  <div style={{ fontWeight: fontWeight.bold, color: color.textPrimary }}>Include newly matched bills</div>
-                  <div>Also list bills your keywords newly matched, and send the digest on days with only those.</div>
+                  <div id="digest-matches-label" style={{ fontWeight: fontWeight.medium, color: color.textPrimary }}>{digestMatchesLabel(modules)}</div>
                 </div>
                 <label
                   style={{
@@ -744,7 +742,7 @@ export function Profile() {
                   <input
                     type="checkbox"
                     role="switch"
-                    aria-label="Include newly matched bills"
+                    aria-labelledby="digest-matches-label"
                     checked={digestMatchesEnabled}
                     disabled={digestMatchesSaving || demoLocked || digestAdminOff || !digestEnabled}
                     onChange={toggleDigestMatches}
@@ -841,47 +839,51 @@ export function Profile() {
               </label>
             </div>
           </div>
+        </div>
+      </div>
 
-          <div
-            id="setting-color-mode"
-            style={{
-              padding: '12px 14px',
-              border: `1px solid ${color.borderDefault}`,
-              borderRadius: radius.lg,
-              background: color.white,
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
-              <div style={{ fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5 }}>
-                <div id="color-mode-label" style={{ fontWeight: fontWeight.bold, color: color.textPrimary }}>Appearance</div>
-                <div>System follows your device. Saved in this browser.</div>
-              </div>
-              <div
-                role="group"
-                aria-labelledby="color-mode-label"
-                style={{ display: 'inline-flex', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, overflow: 'hidden', flexShrink: 0 }}
-              >
-                {COLOR_MODES.map(({ value, label }) => (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-pressed={colorMode === value}
-                    onClick={() => { setColorMode(value); setColorModeState(value) }}
-                    style={{
-                      padding: '5px 12px',
-                      fontSize: fontSize.sm,
-                      cursor: 'pointer',
-                      border: 'none',
-                      background: colorMode === value ? color.bgAmberPriority : color.white,
-                      color: colorMode === value ? color.billBadgeNavy : color.textSlate,
-                      fontWeight: colorMode === value ? fontWeight.semibold : fontWeight.normal,
-                      fontFamily: 'inherit',
-                    }}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+      {/* Appearance card: display preferences, saved in this browser */}
+      <div style={SECTION_CARD}>
+        <h2 style={CARD_TITLE}>Appearance</h2>
+        <div
+          id="setting-color-mode"
+          style={{
+            padding: '12px 14px',
+            border: `1px solid ${color.borderDefault}`,
+            borderRadius: radius.lg,
+            background: color.white,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
+            <div style={{ fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5 }}>
+              <div id="color-mode-label" style={{ fontWeight: fontWeight.bold, color: color.textPrimary }}>Color mode</div>
+              <div>System follows your device. Saved in this browser.</div>
+            </div>
+            <div
+              role="group"
+              aria-labelledby="color-mode-label"
+              style={{ display: 'inline-flex', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, overflow: 'hidden', flexShrink: 0 }}
+            >
+              {COLOR_MODES.map(({ value, label }) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={colorMode === value}
+                  onClick={() => { setColorMode(value); setColorModeState(value) }}
+                  style={{
+                    padding: '5px 12px',
+                    fontSize: fontSize.sm,
+                    cursor: 'pointer',
+                    border: 'none',
+                    background: colorMode === value ? color.bgAmberPriority : color.white,
+                    color: colorMode === value ? color.billBadgeNavy : color.textSlate,
+                    fontWeight: colorMode === value ? fontWeight.semibold : fontWeight.normal,
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
         </div>

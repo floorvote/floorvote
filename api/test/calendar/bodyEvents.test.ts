@@ -3,7 +3,7 @@ import { env, SELF } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { associationConfig, calendarEvents, calendarEventBills } from '../../src/db/schema'
+import { associationConfig, bills, calendarEvents, calendarEventBills } from '../../src/db/schema'
 import { syncBodyEvents, type CentralBodyEvent } from '../../src/lib/bodyEvents'
 import { hearingUid } from '../../src/lib/hearingUid'
 import { app } from '../../src/index'
@@ -234,6 +234,13 @@ describe('state capabilities', () => {
     expect(config.capabilities).toEqual(CAPABLE)
   })
 
+  it('carry the name members call the legislature\'s body, for the Calendar page\'s control (#420)', async () => {
+    central = { capabilities: { DC: { bodyEvents: true, deadlines: true, bodyName: 'Council' } }, events: [bodyEvent()] }
+    await sync()
+    const config = await (await SELF.fetch('http://localhost/api/config', { headers: { Cookie: `session=${token}` } })).json() as any
+    expect(config.capabilities).toEqual({ DC: { bodyEvents: true, deadlines: true, bodyName: 'Council' } })
+  })
+
   it('are asked for every hour while no covered state has body events, so a newly claimed state shows within the hour', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-10-10T12:00:00Z'))
@@ -439,5 +446,52 @@ describe('central dashboard address', () => {
   it('serves a stored address without its trailing slashes', async () => {
     await db().insert(associationConfig).values({ key: 'central_dashboard_url', value: 'https://admin.example.com/' })
     expect(await configDashboardUrl()).toBe('https://admin.example.com')
+  })
+})
+
+// Release 1 of the neutral handle rename (#305): central may name a bill by
+// either form of its handle, and the instance finds the same bill and the same
+// calendar entry. Entry UIDs keep the legacy form.
+describe('body events naming bills by a neutral handle', () => {
+  const NEUTRAL = HANDLE.replace('legiscan:', 'bill:')
+
+  it('links an agenda bill the instance holds under the legacy handle', async () => {
+    central.events = [stadiumHearing({ bills: [NEUTRAL], covers: [] })]
+    await sync()
+    const db = getDb(env.DB)
+    const ev = await db.select().from(calendarEvents).where(eq(calendarEvents.uid, 'council-2405@lims.dccouncil.gov')).get()
+    const links = await db.select().from(calendarEventBills).where(eq(calendarEventBills.eventId, ev!.id)).all()
+    expect(links.map(l => l.billId)).toEqual([billId])
+  })
+
+  it('links the same bill whichever form names it', async () => {
+    central.events = [stadiumHearing({ bills: [HANDLE, NEUTRAL], covers: [] })]
+    await sync()
+    const db = getDb(env.DB)
+    const ev = await db.select().from(calendarEvents).where(eq(calendarEvents.uid, 'council-2405@lims.dccouncil.gov')).get()
+    expect((await db.select().from(calendarEventBills).where(eq(calendarEventBills.eventId, ev!.id)).all())).toHaveLength(1)
+  })
+
+  it('covers the bill\'s own entry, found by its legacy UID', async () => {
+    central.events = [stadiumHearing({ covers: [{ billId: NEUTRAL, identityKey: IDENTITY }] })]
+    await sync()
+    expect(HEARING_UID).toBe('hearing-legiscan-1012600769-hearing-2026-10-23-public-hearing-on-b26-0769@bpc-test')
+    expect((await row(HEARING_UID))?.coveredBy).toBe('council-2405@lims.dccouncil.gov')
+  })
+})
+
+// Release 2's migration may have rewritten the instance's bills to `bill:<n>` before this worker
+// is replaced, so agenda bills resolve by either spelling (#305).
+describe('body events for a bill already stored under the neutral handle', () => {
+  beforeEach(async () => {
+    await getDb(env.DB).update(bills).set({ externalId: HANDLE.replace('legiscan:', 'bill:') }).where(eq(bills.id, billId))
+  })
+
+  it.each([HANDLE, HANDLE.replace('legiscan:', 'bill:')])('links an agenda bill named %s', async (handle) => {
+    central.events = [stadiumHearing({ bills: [handle], covers: [] })]
+    await sync()
+    const db = getDb(env.DB)
+    const ev = await db.select().from(calendarEvents).where(eq(calendarEvents.uid, 'council-2405@lims.dccouncil.gov')).get()
+    expect((await db.select().from(calendarEventBills).where(eq(calendarEventBills.eventId, ev!.id)).all()).map(l => l.billId)).toEqual([billId])
   })
 })

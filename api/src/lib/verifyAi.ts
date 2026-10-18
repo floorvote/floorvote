@@ -1,6 +1,8 @@
 import { centralFetch } from './centralFetch'
 import { loadAnalysisInputs, loadBillTextForAi } from './analysisInputs'
+import { claimLinksEnabled } from './claimSources'
 import { processBill } from './llm'
+import { legacyHandle } from '../../../shared/billHandle'
 import type { AppDb, Env } from '../types'
 
 export type VerifyAiResult =
@@ -28,18 +30,20 @@ export async function verifyAi(env: Env, db: AppDb, billId: string): Promise<Ver
     return { status: 'skipped', reason: 'no AI is configured (AI_GATEWAY_ENABLED is not "true" and GEMINI_API_KEY is not set)' }
   }
 
-  const res = await centralFetch(env, `/bills/${billId}`)
+  const res = await centralFetch(env, `/bills/${legacyHandle(billId)}`)
   if (!res.ok) throw new Error(`Central API returned ${res.status} for bill ${billId}`)
   const bill = await res.json() as { number: string; title: string; abstract: string | null }
 
   const { aiContext, relevanceQuestion, taxonomy } = await loadAnalysisInputs(db)
-  const { billText, billPdfBase64, hasFullText } = await loadBillTextForAi(env, billId, bill)
+  const { billText, billPdfBase64, hasFullText, textDocId } = await loadBillTextForAi(env, billId, bill)
+  // The same call the pipeline makes, claim sources included when it would ask.
+  const claimSources = textDocId !== null && await claimLinksEnabled(db)
 
   // Standard tier, not the queue's flex: flex sheds under load and the pipeline
   // retries it later, but a check that fails on a shed would report a healthy
   // deployment as broken.
   const result = await processBill(
-    { billNumber: bill.number, title: bill.title, text: billText, pdfBase64: billPdfBase64, taxonomy, aiContext, relevanceQuestion },
+    { billNumber: bill.number, title: bill.title, text: billText, pdfBase64: billPdfBase64, taxonomy, aiContext, relevanceQuestion, claimSources },
     env,
     'standard',
   )

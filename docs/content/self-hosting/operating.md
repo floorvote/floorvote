@@ -1,5 +1,5 @@
 ---
-description: "Day-to-day operation of a running FloorVote deployment: the optional superadmin dashboard, adding states, adding teams, upgrading, and monitoring."
+description: "Day-to-day operation of a running FloorVote deployment: the optional superadmin dashboard, adding states, adding teams, upgrading, monitoring, and claim links."
 ---
 
 # Operating your deployment
@@ -11,7 +11,8 @@ Once your central service and at least one tenant are running, this page covers 
 The LegiScan central can serve a superadmin dashboard with its own magic-link login and cross-domain single sign-on. It's optional — central works fine without it. To turn it on, first make sure your `central/wrangler.toml` has the `[env.legiscan.assets]` block from the example (it tells Cloudflare to serve the dashboard SPA). Also set `ADMIN_APP_URL` (the dashboard's base URL, used in its sign-in links) and `EMAIL_FROM` (the sender address, on a domain you have verified) in `[env.legiscan.vars]`. Without `EMAIL_FROM` the mail goes out as `notifications@example.com`, which you won't have verified. Then set these secrets on central (run from inside `central/`):
 
 ```bash
-# Magic-link email for the dashboard
+# Magic-link email for the dashboard: only if central sends through Resend.
+# Skip it when central uses Cloudflare Email (EMAIL_PROVIDER="cloudflare" with the EMAIL binding).
 wrangler secret put RESEND_API_KEY --env legiscan
 
 # ES256 private JWK (JSON string); central is the sole issuer
@@ -24,7 +25,7 @@ wrangler secret put SUPERADMIN_EMAILS --env legiscan
 Generate the keypair with `node scripts/gen-superadmin-keys.mjs` from the repository root, which prints both halves as JWK JSON. Central holds the private half; each tenant verifies with the matching **public** JWK, which is not a secret — it goes in each tenant's `[env.*.vars]` as `SUPERADMIN_JWT_PUBLIC_KEY` (see the tenant env block in [Adding tenants](/self-hosting/tenants)).
 
 > [!WARNING]
-> The dashboard login needs both `RESEND_API_KEY` and `ADMIN_APP_URL`. If either is unset, signing in as a listed superadmin still answers "ok" but sends no email (central logs a warning), so it looks like the link never arrives.
+> The dashboard login needs an email sender and `ADMIN_APP_URL`. Either sender is enough: Cloudflare Email (`EMAIL_PROVIDER = "cloudflare"` with the `EMAIL` binding) or `RESEND_API_KEY`. If there is no sender or `ADMIN_APP_URL` is unset, signing in as a listed superadmin still answers "ok" but sends no email (central logs a warning naming what's missing), so it looks like the link never arrives.
 
 ### Superadmin profile
 
@@ -101,3 +102,56 @@ cd ../api && npm run deploy:tenant -- org-nj
 ## Monitoring
 
 Each tenant Worker exposes `GET /api/health`. On the LegiScan central, the health check is also `GET /api/health` (the bare `/health` path is served by the admin dashboard). The central worker pulls aggregate engagement stats from each tenant once a day, at 06:00 UTC.
+
+## Claim links
+
+A claim link takes a reader from a claim in an AI summary to the bill text behind it. When an instance analyzes a bill, it asks the model, in the same call, for a short quote from the bill that supports each claim in the summary. The instance then looks for each quote in the text the reader sees, and records how it matched. On an HTML bill, clicking a claim opens the bill text at that passage, highlighted. On a PDF, it opens the cited page, with the quote shown beside the link. A claim whose quote can't be found is shown as plain text, with no link.
+
+Links arrive with a bill's next analysis. Summaries already written are not backfilled, and a bill with no claim sources reads exactly as it did before.
+
+### The setting
+
+Claim links are a per-instance setting, on by default. An admin can turn them off in the instance's AI settings. With the setting off, new analyses don't ask for claim sources and store none, and existing links show as plain text. Turning it back on shows the stored links again, and new analyses ask again.
+
+### What it costs
+
+Asking for claim sources adds about 490 output tokens to each analysis. That figure comes from the research behind the feature, measured in October 2026. A different model, set with `GEMINI_MODEL`, can differ (see [Choosing the analysis model](/self-hosting/tenants#choosing-the-analysis-model)).
+
+### Relevance scores move slightly
+
+Any change to the analysis call moves relevance scores slightly, and this one does too. In the research behind the feature, the mean score dropped by 0.07 to 0.19 points on the 10-point scale. Of 160 bills, 16 to 17 moved by 2 or more points, against 6 from re-running the same analysis, so a few more bills than usual may cross the digest's relevance threshold when they are next analyzed. Summary quality was unchanged in a blind comparison.
+
+### Reading the counts
+
+Central's dashboard shows, for each instance, how its stored claim sources resolved. Open **Tenants**, choose the instance, and find **Claim links**, beside the instance's AI instructions status. Central asks the instance, which scans its bills at most every 30 minutes and reuses the answer in between. The section says how old the counts are, and the cut-off count is always current. When central can't ask, because it has no binding for the instance or the instance hasn't been upgraded to this release, the section says "unavailable" with the reason.
+
+Each claim source is counted once, by how its quote matched:
+
+| Status | What it means |
+|---|---|
+| **Exact** | Found character for character. |
+| **Normalized** | Found after folding spacing, curly quotes, and dashes, and ignoring retained redline markup. |
+| **Fuzzy** | Found by a close match (similarity of 0.8 or more), as when line numbers or a running header sit inside the passage. |
+| **Anchored** | Only the first or last 32 characters of a long quote matched, so the link lands near the passage but not on all of it. |
+| **Ungrounded** | Not found, or the quote was empty. The claim shows as plain text. |
+| **Unverified** | A PDF quote. The instance extracts no PDF text, so it can't check the quote, and the link goes by the cited page. This is expected, not a failure. |
+
+Two more signals sit beside the table:
+
+- **Asked, none stored** counts analyses that asked for claim sources and got nothing usable back. Each stored `[]`.
+- **Cut off, retried without claim sources** counts analyses whose response ran out of output inside the claim sources. The instance asks once more without them and stores the summary, so the bill is fine but has no links. These retries also leave no list on the bill, so they are counted under **No list stored** along with bills analyzed before claim links, bills analyzed with the setting off, and bills analyzed on their title and abstract alone. The retry count starts from the release that added it. Each retry also logs `did not parse with claim sources asked; retrying without them`.
+
+For a healthy HTML instance, most quotes resolve as exact, normalized, or fuzzy. The research behind the feature located 91 to 93 percent of quotes in the bill text. A much lower share, with a large ungrounded count, is worth a look. Very long bills resolve fewer quotes, because the instance caps the matching work it spends on one bill. A quote that matches exactly or after normalizing is never affected, so the quotes that go ungrounded first are the ones that would have needed a close match.
+
+The counts are read from the bills, so you can also query them directly:
+
+```bash
+npx wrangler d1 execute floorvote-[slug] --remote --env [slug] \
+  --command "SELECT json_extract(j.value, '$.status') AS status, COUNT(*) AS n FROM bills b, json_each(b.claim_sources) j WHERE json_valid(b.claim_sources) GROUP BY status"
+
+# Responses cut off inside claim sources and retried without them
+npx wrangler d1 execute floorvote-[slug] --remote --env [slug] \
+  --command "SELECT value FROM association_config WHERE key = 'claim_sources_cutoff_retries'"
+```
+
+Counts cover only bills analyzed since the instance began asking for claim sources, so they grow as bills are analyzed again.

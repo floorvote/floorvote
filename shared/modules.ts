@@ -123,6 +123,18 @@ export function digestCadenceDescription(modules: ModulesConfig | undefined): st
   return `A weekly summary of ${subject}, sent every ${day} morning.`
 }
 
+/**
+ * Visible label (and accessible name) of the member's "include newly matched
+ * bills" switch. It names the digest's period, which is an instance setting, so
+ * it reads the same frequency as digestCadenceDescription: anything but "weekly"
+ * (missing, unknown, or the module off) is daily.
+ */
+export function digestMatchesLabel(modules: ModulesConfig | undefined): string {
+  const frequency = getModuleSetting<string>(modules, 'email-digest', 'frequency', 'daily')
+  const period = frequency === 'weekly' ? 'weeks' : 'days'
+  return `Also include newly matched bills in the digest, and send the digest on ${period} with only those.`
+}
+
 /** Human description of the week-ahead (upcoming hearings & events) digest cadence for the Account page. */
 export function weekAheadCadenceDescription(modules: ModulesConfig | undefined): string {
   const subject = 'upcoming hearings and events'

@@ -1,9 +1,12 @@
-import { and, eq, lt, sql } from 'drizzle-orm'
-import { processBill } from '../lib/llm'
+import { and, eq, inArray, lt, sql } from 'drizzle-orm'
+import { processBill, type ProcessBillResult } from '../lib/llm'
 import { filterTagsToTaxonomy } from '../lib/taxonomy'
 import { centralFetch } from '../lib/centralFetch'
 import { recordDeliveryProbe } from '../lib/deliveryProbe'
 import { loadAnalysisInputs, loadBillTextForAi } from '../lib/analysisInputs'
+import { claimLinksEnabled, type ResolvedClaimSource } from '../lib/claimSources'
+import { resolveClaimSources } from '../lib/claimResolution'
+import { recordClaimSourcesCutOff } from '../lib/claimSourceCounts'
 import { hearingUid } from '../lib/hearingUid'
 import { matchesKeywords, billMatchText } from '../lib/keywords'
 import { bills, associationConfig, feedEvents, billTexts, calendarEvents } from '../db/schema'
@@ -15,6 +18,8 @@ import { nowDb } from '../lib/dbTime'
 import { addToNewMatchesRow } from '../lib/newMatch'
 import { LEGACY_STATUS_ORDER, LEGISCAN_CODE_WORDS } from '../../../shared/legacyStatusOrder'
 import { httpUrl } from '../../../shared/httpUrl'
+import { handleForms, legacyHandle } from '../../../shared/billHandle'
+import { resolveStoredHandle } from '../lib/storedHandle'
 import type { AppDb, Env, TenantQueueMessage } from '../types'
 
 class AiShedError extends Error {
@@ -117,7 +122,7 @@ async function recordShedAttempt(
     // into permanent silence. A later success clears aiError.
     await db.update(bills)
       .set({ aiAttemptedAt: nowDb(), aiError: note.slice(0, 300) })
-      .where(eq(bills.externalId, billId))
+      .where(inArray(bills.externalId, handleForms(billId)))
       .run()
   } catch (recordErr) {
     console.error(`[processor] could not record shed for ${billId}:`, recordErr)
@@ -272,6 +277,11 @@ export async function processCentralNotification(
   db: AppDb,
 ): Promise<void> {
   if (msg.tenantId !== env.TENANT_ID) return
+  // A handle may arrive in either form (#305). Everything below, including the
+  // bill lookup and the handle it is stored under, sees the spelling this
+  // instance stores for the bill. Only the reads from central and the calendar
+  // UIDs use the legacy one.
+  msg = { ...msg, billId: await resolveStoredHandle(db, msg.billId) }
 
   // A delivery check (scripts/verify-instance.sh): record that it arrived and
   // stop. It must reach no bill write, no feed event, and no analysis.
@@ -279,7 +289,7 @@ export async function processCentralNotification(
 
   // When this copy of the bill was read: texts stored later come from a newer one.
   const fetchedAt = nowDb()
-  const res = await centralFetch(env, `/bills/${msg.billId}`)
+  const res = await centralFetch(env, `/bills/${legacyHandle(msg.billId)}`)
   if (!res.ok) throw new Error(`Central API returned ${res.status} for bill ${msg.billId}`)
 
   const centralBill = await res.json() as CentralBill
@@ -597,21 +607,30 @@ async function applyCentralBill(
   // bill the reader had just prioritized. Only forceAI forces the model.
   const aiDedup = !msg.forceAI && existing?.lastAiTextHash && existing.lastAiTextHash === centralBill.textHash
 
-  let aiResult: { summary: string; tags: string[]; relevanceScore: number; affectedCitations: string[] } | null = null
+  let aiResult: ProcessBillResult | null = null
+  // The document the model read, which claim sources are pinned to (#568).
+  let claimSourcesPin: { docId: string; textHash: string | null } | null = null
+  // The model's claim sources, each resolved against that document and the summary (#569).
+  let resolvedClaimSources: ResolvedClaimSource[] | null = null
   let aiSkipReason: AiSkipReason | null = null
   // Transient failure text, recorded so a bill that failed is distinguishable
   // from one never attempted. Truncated — this is a diagnostic breadcrumb, not a log.
   let aiError: string | null = null
   if (shouldRunAi && !aiDedup) {
     const { aiContext, relevanceQuestion, taxonomy } = await loadAnalysisInputs(db)
-    const { billText, billPdfBase64, hasFullText } = await loadBillTextForAi(env, msg.billId, centralBill)
+    const { billText, billPdfBase64, hasFullText, textDocId, textHash } = await loadBillTextForAi(env, msg.billId, centralBill)
     if (!hasFullText) console.log(`[processor] No full text for ${centralBill.number}, AI ran on title+abstract only`)
+    // Ask for claim sources only when they can be pinned to the document read:
+    // not on the title and abstract, and not from an older central that does
+    // not name the document it served.
+    if (textDocId !== null && await claimLinksEnabled(db)) claimSourcesPin = { docId: textDocId, textHash }
+    const claimSources = claimSourcesPin !== null
 
     const tier: 'flex' | 'priority' = msg.interactive ? 'priority' : 'flex'
 
     try {
       aiResult = await processBill(
-        { billNumber: centralBill.number, title: centralBill.title, text: billText, pdfBase64: billPdfBase64, taxonomy, aiContext, relevanceQuestion },
+        { billNumber: centralBill.number, title: centralBill.title, text: billText, pdfBase64: billPdfBase64, taxonomy, aiContext, relevanceQuestion, claimSources },
         env,
         tier,
       )
@@ -621,7 +640,7 @@ async function applyCentralBill(
           console.warn(`[processor] priority shed for ${centralBill.number}, retrying at standard tier`)
           try {
             aiResult = await processBill(
-              { billNumber: centralBill.number, title: centralBill.title, text: billText, pdfBase64: billPdfBase64, taxonomy, aiContext, relevanceQuestion },
+              { billNumber: centralBill.number, title: centralBill.title, text: billText, pdfBase64: billPdfBase64, taxonomy, aiContext, relevanceQuestion, claimSources },
               env,
               'standard',
             )
@@ -663,6 +682,38 @@ async function applyCentralBill(
         console.warn(`[processor] dropped ${dropped.length} off-taxonomy tag(s) for ${centralBill.number}: ${JSON.stringify(dropped)}`)
       }
       aiResult.tags = filterTagsToTaxonomy(aiResult.tags, allowed)
+
+      // A response cut off inside the claim sources was retried without them
+      // (lib/llm.ts), which leaves a null list that looks like never asked. Count
+      // it so operators can see it (#573). Extra to the analysis, so a failure
+      // to count never fails it.
+      if (aiResult.claimSourcesRetried) {
+        try {
+          await recordClaimSourcesCutOff(db)
+        } catch (err) {
+          console.error(`[processor] could not count the claim sources cut-off for ${centralBill.number}:`, err)
+        }
+      }
+
+      // Resolve the claim sources here, while the document the model read is in
+      // hand: a PDF has no text to match, so its quotes stay unverified.
+      if (Array.isArray(aiResult.claimSources) && claimSourcesPin !== null) {
+        try {
+          const resolved = resolveClaimSources(aiResult.claimSources, aiResult.summary, billPdfBase64 === undefined ? billText : null)
+          resolvedClaimSources = resolved.items
+          if (resolved.dropped > 0) {
+            console.warn(`[processor] dropped ${resolved.dropped} claim source(s) for ${centralBill.number} whose claim is not in the summary`)
+          }
+          if (resolved.capped > 0 || resolved.unsearched > 0) {
+            console.warn(`[processor] ${resolved.capped} claim source(s) past the limit and ${resolved.unsearched} fuzzy search(es) past the work budget left ungrounded for ${centralBill.number}`)
+          }
+        } catch (err) {
+          // Extra to the analysis, so it never fails it: the summary, tags, and
+          // score are the contract.
+          console.error(`[processor] could not resolve claim sources for ${centralBill.number}:`, err)
+          resolvedClaimSources = []
+        }
+      }
     }
   }
 
@@ -688,7 +739,11 @@ async function applyCentralBill(
   // bill has text to analyse, so it is kept on the bill until the match is
   // recorded and goes on the bill_matched event from there. Once the match
   // is recorded it never changes. With no declaration it stays NULL: bulk.
-  const declaredProvenance = !existing?.newMatchAt && msg.matchProvenance ? msg.matchProvenance : undefined
+  // A group analysis is for a bill that didn't match (lib/companionAnalysis.ts)
+  // and brings no match, so any declaration on it is ignored: it would
+  // otherwise be kept until the bill matched on its own, and be taken for that
+  // match's provenance.
+  const declaredProvenance = !existing?.newMatchAt && !msg.groupAnalysis && msg.matchProvenance ? msg.matchProvenance : undefined
   const matchProvenance = declaredProvenance ?? existing?.matchProvenance ?? null
 
   const upsertData = {
@@ -706,6 +761,14 @@ async function applyCentralBill(
       // layer over bill text, kept verbatim so a later consumer can decide what
       // structure it needs.
       affectedCitations: JSON.stringify(aiResult.affectedCitations),
+      // Every analysis writes all three, so a re-analysis replaces the list,
+      // and one that did not ask clears it: a list never outlives its summary.
+      // Not yet surfaced anywhere.
+      ...(resolvedClaimSources !== null && claimSourcesPin !== null ? {
+        claimSources: JSON.stringify(resolvedClaimSources),
+        claimSourcesDocId: claimSourcesPin.docId,
+        claimSourcesTextHash: claimSourcesPin.textHash,
+      } : { claimSources: null, claimSourcesDocId: null, claimSourcesTextHash: null }),
       // Clear any prior permanent skip — AI ran successfully on this text version.
       aiSkipReason: null,
       // …and any prior transient failure, for the same reason.
@@ -754,16 +817,26 @@ async function applyCentralBill(
 
   // Tags are a team field (lib/teamFields.ts), set only by the analysis. The
   // group's tags before this one, for the team event recording a change.
-  const tagsBefore = aiResult && existing ? (await loadGroupTeamValues(db, existing.id)).analysis?.tags ?? [] : []
+  // The event is advisory history: failing to read or write it is logged and never fails the delivery.
+  const tagsBefore = aiResult && existing
+    ? await loadGroupTeamValues(db, existing.id).then(v => v.analysis?.tags ?? []).catch(err => {
+      console.error(`[processor] reading group tags before the analysis failed for ${msg.billId}:`, err)
+      return null
+    })
+    : []
   // An analysis records the tags it leaves the group with, including the effect of the match type it
   // arrives with, so the upsert records a match type's effect only when no analysis runs.
   const { id: billInternalId, isNew } = await upsertBill(db, msg.billId, upsertData, aiResult ? undefined : existing)
-  if (aiResult) {
-    // The group's tags after this analysis: its own when the bill is tracked or
-    // the group has no tracked analysis, the tracked bill's otherwise, so a
-    // pulled companion's analysis records no change to them.
-    const tagsAfter = (await loadGroupTeamValues(db, billInternalId)).analysis?.tags ?? []
-    await recordFieldChanges(db, [{ billId: billInternalId, field: 'tags', label: 'tags', old: tagsBefore, new: tagsAfter }], null)
+  if (aiResult && tagsBefore) {
+    try {
+      // The group's tags after this analysis: its own when the bill is tracked or
+      // the group has no tracked analysis, the tracked bill's otherwise, so a
+      // pulled companion's analysis records no change to them.
+      const tagsAfter = (await loadGroupTeamValues(db, billInternalId)).analysis?.tags ?? []
+      await recordFieldChanges(db, [{ billId: billInternalId, field: 'tags', label: 'tags', old: tagsBefore, new: tagsAfter }], null)
+    } catch (err) {
+      console.error(`[processor] recording the tags event failed for ${msg.billId}:`, err)
+    }
   }
   await syncBillSubjects(db, billInternalId, centralBill.state, centralBill.subjects ?? [])
 
@@ -957,6 +1030,14 @@ async function upsertBill(
   data: Record<string, unknown>,
   existing?: { id: string; matchType: 'keyword' | 'manual' | null; groupKey: string | null } | undefined,
 ): Promise<{ id: string; isNew: boolean }> {
+  // Resolve the stored spelling again just before writing: release 2's migration can rename the
+  // row after the delivery began, and the write's conflict target is the spelling, so a stale one
+  // would insert a second row for the bill (#305).
+  const stored = await resolveStoredHandle(db, externalId)
+  if (stored !== externalId) {
+    externalId = stored
+    data = { ...data, externalId: stored }
+  }
   const startsMatching = existing?.matchType === null && data.matchType != null && existing.groupKey !== null
   // The event is advisory history: failing to read or write it is logged and never fails the delivery.
   const tagsBefore = startsMatching ? await snapshotGroupTags(db, [existing]).catch(err => {

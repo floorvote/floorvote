@@ -24,3 +24,16 @@ export function useHasBodyEvents(): boolean {
   const { config } = useConfig()
   return Object.values(config?.capabilities ?? {}).some(c => c.bodyEvents)
 }
+
+/**
+ * What members call the body whose calendar the instance shows ("Council"),
+ * from the provider that publishes it, for the Calendar page's "Council
+ * events" control. "Legislature" when no covered state's provider names one,
+ * or when the covered states' providers name different ones.
+ */
+export function useBodyEventsName(): string {
+  const { config } = useConfig()
+  const names = new Set(Object.values(config?.capabilities ?? {}).filter(c => c.bodyEvents).map(c => c.bodyName?.trim() || ''))
+  const [only] = names.size === 1 ? names : []
+  return only || 'Legislature'
+}

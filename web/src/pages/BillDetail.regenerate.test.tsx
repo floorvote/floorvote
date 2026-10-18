@@ -116,7 +116,6 @@ const BILL = {
   voteSummary: [],
   subjects: [],
   relatedBillIds: [],
-  companionBillIds: [],
   texts: [],
   calendar: [],
   supplements: [],

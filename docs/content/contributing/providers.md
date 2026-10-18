@@ -70,6 +70,8 @@ Providers sync one of two ways:
 
 Most legislatures publish a file or an API without change filters, so start with a snapshot.
 
+A snapshot provider whose feed can say what changed since its last read can return only those records: set `partial: true` on the snapshot. Central hands the provider the ETag of the last snapshot a pass finished (`SnapshotSession.etag`, which can hold any watermark you choose), replaces the stored records the partial snapshot names, by bill id, and runs the pass on every stored record, so matching and retries work as for a full read. A record you leave out stays as it is, and central never removes one. When `etag` is null (a session's first read, a forced run, or a new claim), read in full: a partial snapshot answering a null ETag fails the pass, and nothing is written.
+
 ## Start from the template
 
 Copy these three directories, rename them to your provider's id, and replace every `TEMPLATE` note:
@@ -206,7 +208,9 @@ curl -X POST "$CENTRAL/api/admin/state-providers/MD" \
 
 Central refuses the claim when the provider doesn't serve that state or isn't configured, and when the state's current provider has bills that instances track. Moving those bills without orphaning anyone's links takes a cutover, a separate operation that matches bills across providers and moves each matched bill onto the new provider's data, keeping its id so instances' links stay as they are. A new deployment, or a state no instance covers yet, can switch at once. A state whose provider later loses its key goes unsynced rather than falling back to LegiScan, since a fallback would duplicate every tracked bill.
 
-You don't write any of this as a contributor. It matters for two reasons: your provider should work for a state that is claimed at launch, and it should keep every bill's id stable across passes, since cutover and calendar subscriptions depend on that.
+A provider's bills queue for ingest on `INGESTOR_QUEUE`, the queue LegiScan's bills use, unless the provider declares `ingestQueue` (the env key of a queue binding, such as `MGA_INGESTOR_QUEUE`) and the operator has bound it. Declare one when your API can't take concurrent calls, or when a state's first sync or a cutover queues thousands of bills. Without its own queue, that backlog holds up every LegiScan ingest behind it. When a provider that declares one is claimed, the operator **binds its queue before claiming or cutting over a large state**: create the queue in Cloudflare, uncomment the provider's producer and consumer in their `central/wrangler.toml` (copied from `wrangler.example.toml`) at `max_concurrency = 1`, and deploy central before claiming. If the binding is missing, the provider still works on the shared queue, only slower for everyone. Add your provider's commented binding and consumer to `central/wrangler.example.toml`, next to the others, with a one-line reason for its concurrency.
+
+You don't write any of this as a contributor, beyond that declaration. It matters for two reasons: your provider should work for a state that is claimed at launch, and it should keep every bill's id stable across passes, since cutover and calendar subscriptions depend on that.
 
 ## Where the internals live
 

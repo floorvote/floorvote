@@ -21,6 +21,8 @@ When a tracked bill gets new text, the bill is sent to an AI model for summarizi
 
 Typical AI usage is pretty cheap: With Google Gemini 2.5 Flash, $10 summarizes about 2,000 bills. That's the model FloorVote uses by default, and it appears to be cost-effective and does a good job with bill formats (HTML and long PDFs).
 
+Claim links add a little to each analysis. When they're on, the model also quotes the passage of the bill behind each claim in its summary, so a reader can jump from the claim to the text. That's about 490 output tokens per analysis, measured in October 2026 on a sample of bills; it will drift as models and bill text change. Claim links are on by default. An admin can turn them off under **Settings → Config → AI instructions**, and new analyses then stop asking for the passages.
+
 You can change the model if you like — set `GEMINI_MODEL` (and optionally `GEMINI_THINKING_BUDGET`) in the tenant's config block. [Choosing the analysis model](/self-hosting/tenants#choosing-the-analysis-model) covers how to name a model and when a newer one earns its cost. Provider rates are passed through without markup; the only markup is the fee on [prepaid gateway credits](https://developers.cloudflare.com/ai-gateway/features/unified-billing/). A newer or larger model can cost several times as much per bill — and the largest is not necessarily the most accurate — so compare on your own bills before you switch.
 
 ## LegiScan — free for most, paid for heavy users {#legiscan-free-for-most-paid-for-heavy-users}

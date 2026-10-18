@@ -117,7 +117,6 @@ const BILL = {
   voteSummary: [],
   subjects: [],
   relatedBillIds: [],
-  companionBillIds: [],
   texts: [],
   calendar: [],
   supplements: [],
@@ -141,7 +140,7 @@ const BILL = {
   memberVotes: [],
   comments: [],
   commentsTotal: 0,
-  groupBills: [{ billId: '42', billNumber: 'A190' }],
+  groupBills: [{ billId: '42', billNumber: 'A190', state: 'RI', sessionSlug: '2026' }],
 }
 
 const CONFIG = {
@@ -164,7 +163,7 @@ const BILL_OPTIONS = [
 // What splitting A190 would leave: S1713 and S1714, which only A190 linked.
 const SPLIT_PREVIEW = { billNumber: 'A190', parts: [[{ billId: 'b1713', billNumber: 'S1713' }], [{ billId: 'c1714', billNumber: 'S1714' }]] }
 
-const GROUPED = { groupBills: [{ billId: '42', billNumber: 'A190' }, { billId: 'b1713', billNumber: 'S1713' }] }
+const GROUPED = { groupBills: [{ billId: '42', billNumber: 'A190', state: 'RI', sessionSlug: '2026' }, { billId: 'b1713', billNumber: 'S1713', state: 'RI', sessionSlug: '2026' }] }
 
 function renderBillDetail(overrides: Record<string, unknown> = {}) {
   const bill = { ...BILL, ...overrides }
@@ -202,6 +201,24 @@ describe('grouping and splitting from the overflow menu', () => {
     await openMenu(user)
     expect(screen.getByRole('menuitem', { name: /Group with…/ })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: /Split from group/ })).toBeInTheDocument()
+  })
+
+  it("describes both actions in the page's own terms: comments, votes, and the org noun's position", async () => {
+    const user = userEvent.setup()
+    renderBillDetail(GROUPED)
+    await openMenu(user)
+    expect(screen.getByRole('menuitem', { name: /Group with…/ })).toHaveTextContent('Share comments, votes, and association position with an identical bill.')
+    expect(screen.getByRole('menuitem', { name: /Split from group/ })).toHaveTextContent('Give A190 back its own comments, votes, and association position.')
+  })
+
+  it('says what grouped bills share in the Group with… dialog, priority included', async () => {
+    const user = userEvent.setup()
+    renderBillDetail(GROUPED)
+    await openMenu(user)
+    await user.click(screen.getByRole('menuitem', { name: /Group with…/ }))
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('Grouped bills share comments, votes, association position, and priority.')
+    expect(dialog).not.toHaveTextContent(/discussion|team's/)
   })
 
   it('offers no "Split from group" on a bill in no group', async () => {
@@ -378,5 +395,45 @@ describe('grouping and splitting from the overflow menu', () => {
     await openMenu(user)
     await user.click(screen.getByRole('menuitem', { name: /Split from group/ }))
     expect(await screen.findByText("Couldn't split the bill from its group. Try again.")).toBeInTheDocument()
+  })
+})
+
+describe('the header of a bill an admin grouped by hand', () => {
+  it("shows the companion's badge, linking to its page, though the bill names no relationship to it", async () => {
+    renderBillDetail({ ...GROUPED, relatedBillIds: [] })
+    const header = await screen.findByTestId('bill-group-badges')
+    expect(within(header).getByRole('link', { name: 'S1713' })).toHaveAttribute('href', '/RI/2026/S1713')
+    expect(within(header).getByText('A190').closest('a')).toBeNull()
+    expect(screen.queryByText('Identical to:')).toBeNull()
+  })
+
+  it("shows only the bill's own badge on a bill in no group", async () => {
+    renderBillDetail()
+    await screen.findByText('Test Bill')
+    expect(screen.getAllByText('A190')).toHaveLength(1)
+    expect(screen.getByText('A190').closest('a')).toBeNull()
+    expect(screen.queryByRole('link', { name: 'S1713' })).toBeNull()
+  })
+})
+
+describe('the line saying what a group made by hand shares', () => {
+  it("renders the same as for a provider's group: naming the companion, linking to its page, though no relationship links them", async () => {
+    renderBillDetail({ ...GROUPED, relatedBillIds: [] })
+    const line = await screen.findByTestId('group-shares-line')
+    expect(line).toHaveTextContent('Comments, votes, and association position are shared with S1713.')
+    expect(within(line).getByRole('link', { name: 'S1713' })).toHaveAttribute('href', '/RI/2026/S1713')
+    expect(within(line).queryByText('A190')).toBeNull()
+  })
+
+  it('shows no line on a bill in no group', async () => {
+    renderBillDetail()
+    await screen.findByText('Test Bill')
+    expect(screen.queryByTestId('group-shares-line')).toBeNull()
+  })
+
+  it('shows no line once the group splits and the bill stands alone again', async () => {
+    renderBillDetail({ groupBills: [{ billId: '42', billNumber: 'A190', state: 'RI', sessionSlug: '2026' }] })
+    await screen.findByText('Test Bill')
+    expect(screen.queryByText(/are shared with/)).toBeNull()
   })
 })

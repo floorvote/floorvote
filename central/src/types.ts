@@ -33,11 +33,6 @@ export type Env = {
    */
   CONGRESS_API_KEY?: string
   /**
-   * "DC" to seed DC's ownership row for LIMS on the first sync, when DC has no
-   * row (lib/stateProviders.ts). Kept for one release.
-   */
-  LIMS_STATES?: string
-  /**
    * Comma-separated LIMS category ids to sync (GET LegislationCategories).
    * Default "1,6,13,14,18": bills, resolutions, grant budget modifications,
    * reprogrammings, and oversight hearing/roundtable notices.
@@ -49,6 +44,21 @@ export type Env = {
    * Falls back to INGESTOR_QUEUE when unset.
    */
   LIMS_INGESTOR_QUEUE?: Queue
+  /**
+   * Ingestor queue for Maryland (MGA) bills, so a Maryland cutover's backlog
+   * never waits behind LegiScan's, or LegiScan's behind it. The MGA's data
+   * comes from one session file, but each bill's text is a separate download
+   * paced per isolate, so this queue's consumer should run with
+   * max_concurrency = 1. Falls back to INGESTOR_QUEUE when unset.
+   */
+  MGA_INGESTOR_QUEUE?: Queue
+  /**
+   * Ingestor queue for Virginia (LIS) bills, for the same reason as
+   * MGA_INGESTOR_QUEUE. The LIS paces its requests per isolate too (two a
+   * second), so run this queue's consumer at max_concurrency = 1. Falls back
+   * to INGESTOR_QUEUE when unset.
+   */
+  LIS_INGESTOR_QUEUE?: Queue
   ADMIN_SECRET: string
   OPERATOR_NAME: string
   RESEND_API_KEY?: string
@@ -195,7 +205,7 @@ export type CalendarBlock = {
 
 export type NotificationMessage = {
   tenantId: string
-  billId: string   // the bill handle, "legiscan:{bill_id}" (toHandle in lib/billHandle)
+  billId: string   // the bill handle, "legiscan:{bill_id}" (toHandle in lib/billHandle; central sends the legacy form, and tenants also accept "bill:{bill_id}")
   forceMetadata?: boolean
   forceAI?: boolean
   interactive?: true     // only set when true; omitted for all background paths

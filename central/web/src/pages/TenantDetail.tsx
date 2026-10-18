@@ -4,6 +4,7 @@ import { api } from '../lib/api'
 import { StackedBar } from '../components/StackedBar'
 import { DataTable, Column } from '../components/DataTable'
 import { EngagementChart } from '../components/EngagementChart'
+import { ClaimLinkCounts } from '../components/ClaimLinkCounts'
 
 type D = {
   tenant: { id: string; name: string; states: string[]; aiContextPersonalized: boolean }
@@ -115,6 +116,8 @@ export default function TenantDetail() {
       >
         {data.tenant.aiContextPersonalized ? 'AI instructions: personalized' : 'AI instructions: generic default'}
       </div>
+
+      <ClaimLinkCounts tenantId={data.tenant.id} />
 
       <h2 style={{ fontSize: 16 }}>Match type</h2>
       <div style={{ marginBottom: 24 }}>

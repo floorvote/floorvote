@@ -9,7 +9,7 @@ import { visibleCalendarEvent } from '../lib/calendarVisibility'
 import { loadDateFieldEvents } from '../lib/dateFieldEvents'
 import { filedSlug } from '../lib/sessionSlug'
 import { centralFetch } from '../lib/centralFetch'
-import { parseHandle, toHandle } from '../../../shared/billHandle'
+import { chunkedForms, normalizeHandle, parseHandle, toHandle } from '../../../shared/billHandle'
 import { loadUpcomingDemoHearings } from '../lib/demoCalendar'
 import { myGroupVote } from '../lib/companionGroups'
 import { billsAs } from './billsApi/query'
@@ -251,34 +251,38 @@ async function fetchUpcomingHearings(
 
   // Tenant bills store the central bill's handle as externalId.
   // Look up tenant rows, including summary/priority for the chip tooltip.
+  // A row may be stored under either spelling of the handle (#305), so look both up and key by the normalized one.
   const billExternalIds = [...new Set(centralResults.map(h => toHandle(h.billId)))]
 
   // Scope is fixed to prioritized bills only.
-  const billRows = await db
-    .select({
-      id: bills.id,
-      externalId: bills.externalId,
-      billNumber: bills.billNumber,
-      title: bills.title,
-      summary: bills.tenantSummary,
-      priority: bills.priority,
-      state: bills.state,
-      session: bills.session,
-      sessionSlug: bills.sessionSlug,
-      isDraft: bills.isDraft,
-      // The member's vote on the bill's companion group.
-      myVote: myGroupVote(bills.id, userId),
-    })
-    .from(bills)
-    .where(and(inArray(bills.externalId, billExternalIds), isNotNull(bills.priority)))
-    .all()
+  const billRows = []
+  for (const part of chunkedForms(billExternalIds)) {
+    billRows.push(...await db
+      .select({
+        id: bills.id,
+        externalId: bills.externalId,
+        billNumber: bills.billNumber,
+        title: bills.title,
+        summary: bills.tenantSummary,
+        priority: bills.priority,
+        state: bills.state,
+        session: bills.session,
+        sessionSlug: bills.sessionSlug,
+        isDraft: bills.isDraft,
+        // The member's vote on the bill's companion group.
+        myVote: myGroupVote(bills.id, userId),
+      })
+      .from(bills)
+      .where(and(inArray(bills.externalId, part), isNotNull(bills.priority)))
+      .all())
+  }
 
   if (billRows.length === 0) return { hearings: [], lookaheadDays }
 
   const billByExternal = new Map<string, HearingBill>()
   for (const row of billRows) {
     if (!row.externalId) continue
-    billByExternal.set(row.externalId, {
+    billByExternal.set(normalizeHandle(row.externalId), {
       id: row.id,
       billNumber: row.billNumber,
       title: row.title,
@@ -296,7 +300,7 @@ async function fetchUpcomingHearings(
   for (const h of centralResults) {
     // A deadline isn't a hearing. The calendar shows it, and this widget doesn't.
     if (h.kind === 'deadline') continue
-    const bill = billByExternal.get(toHandle(h.billId))
+    const bill = billByExternal.get(normalizeHandle(toHandle(h.billId)))
     if (!bill) continue
     // Composite key: same date+time+description+location = same hearing
     const hearingKey = `${h.date}|${h.time ?? ''}|${(h.description ?? '').trim()}|${(h.location ?? '').trim()}`
