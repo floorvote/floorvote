@@ -269,7 +269,7 @@ describe('extras placed in the meta row, the detail list, and as chips', () => {
     expect(screen.getByTestId('extra-meta-requestedBy')).toHaveTextContent('Introduced at the request of: Mayor')
     expect(screen.getByTestId('extra-meta-lawEffective')).toHaveTextContent('Law effective: 2026-06-11')
     // They share the meta row with the body label.
-    expect(act.parentElement).toBe(screen.getByText('Council bill').parentElement?.parentElement ?? screen.getByText('Council bill').parentElement)
+    expect(act.parentElement).toBe(screen.getByText('Council bill').parentElement)
     expect(foldOut()).toBeNull()
   })
 
@@ -384,7 +384,7 @@ describe('extras placed in the meta row, the detail list, and as chips', () => {
     expect(screen.getByText('Unplaced label')).toBeInTheDocument()
     // Each field shows once.
     for (const text of ['Meta label', 'Detail label', 'Flag label', 'Panel label', 'Unplaced label']) {
-      expect(screen.getAllByText(new RegExp(`^${text}$`)), text).toHaveLength(1)
+      expect(screen.getAllByText(new RegExp(`^${text}:?$`)), text).toHaveLength(1)
     }
   })
 
@@ -429,7 +429,7 @@ describe('extras placed in the meta row, the detail list, and as chips', () => {
   })
 
   it('keeps a 256-character committee list inside the page width: it wraps, with no nowrap on the item, the row, or the list', async () => {
-    const long = Array.from({ length: 12 }, (_, i) => `Committee on Example Matters ${i + 1}`).join(', ').padEnd(256, 'x')
+    const long = Array.from({ length: 12 }, (_, i) => `Committee on Example Matters ${i + 1}`).join(', ').slice(0, 256).trimEnd() + 'x'
     expect(long).toHaveLength(256)
     renderBillDetail({
       state: 'DC', billNumber: 'B26-0001',

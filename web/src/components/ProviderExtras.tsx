@@ -1,5 +1,5 @@
 import type { BillExtraField } from '../../../shared/providerExtras'
-import { color, fontSize, fontWeight } from '../styles/tokens'
+import { color, fontSize, fontWeight, radius } from '../styles/tokens'
 import { safeDate } from '../lib/dates'
 import { ExternalLinkIcon } from './ExternalLinkIcon'
 import { HoverTooltip } from './HoverTooltip'
@@ -9,6 +9,11 @@ import { HoverTooltip } from './HoverTooltip'
  * row per extra, labeled as the provider's vocabulary labels it and shown by
  * its display type. Generic on purpose, so no provider needs UI code of its
  * own. Display only.
+ *
+ * Which fields reach the panel is `placeExtras`'s call: only those placed in
+ * `panel`. The others show in the meta row (`ExtraMetaItem`), under it
+ * (`ExtraDetailList`), or as chips beside the body label (`ExtraFlagChips`),
+ * and every one of them takes its place from the `placement` central sends.
  */
 export function ProviderExtrasList({ fields }: { fields: BillExtraField[] }) {
   return (
@@ -70,10 +75,82 @@ export interface PlacedExtras {
   panel: BillExtraField[]
 }
 
-/** Stub: filled in by the implementation commit. */
-export function placeExtras(_fields: BillExtraField[]): PlacedExtras {
-  return { meta: [], detail: [], flags: [], panel: [] }
+/**
+ * Sort a bill's extras by `placement`, keeping the order central sent within
+ * each place. Every field lands in exactly one place:
+ * - a missing or unknown placement is `panel`, so a page and a central of
+ *   different ages still show every value;
+ * - a flag whose value isn't "Yes" is a meta item, so a value is never hidden
+ *   behind a chip that says nothing;
+ * - a date that is only the placeholder (`0000-00-00`) is dropped, since it
+ *   says nothing.
+ */
+export function placeExtras(fields: BillExtraField[]): PlacedExtras {
+  const placed: PlacedExtras = { meta: [], detail: [], flags: [], panel: [] }
+  for (const f of fields) {
+    if (f.display === 'date' && safeDate(f.value) === null) continue
+    switch (f.placement) {
+      case 'meta': placed.meta.push(f); break
+      case 'detail': placed.detail.push(f); break
+      case 'flag': (f.value === 'Yes' ? placed.flags : placed.meta).push(f); break
+      default: placed.panel.push(f)
+    }
+  }
+  return placed
 }
-export function ExtraMetaItem(_p: { field: BillExtraField }) { return null }
-export function ExtraDetailList(_p: { fields: BillExtraField[] }) { return null }
-export function ExtraFlagChips(_p: { fields: BillExtraField[] }) { return null }
+
+/**
+ * One meta item: "Label: value", for the bill page's meta row. The label keeps
+ * its hover and click explainer. A long value wraps (it never holds the row
+ * open past the page's width), and an identifier is one click from selected.
+ */
+export function ExtraMetaItem({ field }: { field: BillExtraField }) {
+  return (
+    <span data-testid={`extra-meta-${field.key}`} style={{ minWidth: 0, maxWidth: '100%', overflowWrap: 'anywhere' }}>
+      <span style={{ color: color.textMuted }}>
+        <HoverTooltip text={field.explainer} describe>{field.label}</HoverTooltip>:
+      </span>{' '}
+      <ExtraValue field={field} />
+    </span>
+  )
+}
+
+/**
+ * The fields placed in `detail`: a labeled, full-width list under the meta
+ * row, for values too long for the dotted row. Line breaks are kept and a long
+ * value wraps. Nothing for no fields.
+ */
+export function ExtraDetailList({ fields }: { fields: BillExtraField[] }) {
+  if (fields.length === 0) return null
+  return (
+    <dl data-testid="extras-detail" style={{ width: '100%', boxSizing: 'border-box', margin: '0 0 6px', padding: 0, fontSize: fontSize.sm, display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {fields.map(f => (
+        <div key={f.key} style={{ display: 'flex', flexWrap: 'wrap', columnGap: 8, minWidth: 0 }}>
+          <dt style={{ color: color.textMuted }}>
+            <HoverTooltip text={f.explainer} describe>{f.label}</HoverTooltip>
+          </dt>
+          <dd style={{ margin: 0, color: color.textSlate, flex: '1 1 200px', minWidth: 0 }}>
+            <ExtraValue field={f} />
+          </dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+/** The fields placed in `flag`, as small chips named by their labels. The value is "Yes", so it isn't shown. */
+export function ExtraFlagChips({ fields }: { fields: BillExtraField[] }) {
+  return (
+    <>
+      {fields.map(f => (
+        <span
+          key={f.key}
+          data-testid={`extra-flag-${f.key}`}
+          style={{ display: 'inline-flex', alignItems: 'center', background: color.bgAmberPriority, color: color.textAmberDark, borderRadius: radius.pill, padding: '1px 8px', fontSize: fontSize.xs, fontWeight: fontWeight.medium }}
+        >
+          <HoverTooltip text={f.explainer} describe>{f.label}</HoverTooltip>
+        </span>
+      ))}
+    </>
+  )
+}

@@ -21,9 +21,19 @@ export const EXTRA_DISPLAYS = ['text', 'date', 'link', 'identifier'] as const
  */
 export type ExtraDisplay = typeof EXTRA_DISPLAYS[number]
 
-/** Stub: filled in by the implementation commit. */
-export const EXTRA_PLACEMENTS = [] as const
-export type ExtraPlacement = 'meta' | 'detail' | 'flag' | 'panel'
+
+/**
+ * Where the bill page shows an extra, set per field in the provider's
+ * vocabulary:
+ * - `meta`: a "Label: value" item in the meta row at the top of the page.
+ * - `detail`: a labeled, full-width line under the meta row, line breaks kept.
+ *   For values too long for the dotted meta row.
+ * - `flag`: a small chip beside the bill's body label. The value is "Yes"; a
+ *   flag with any other value shows as a meta item, so a value is never hidden.
+ * - `panel`: the "Additional information" fold-out. The default.
+ */
+export const EXTRA_PLACEMENTS = ['meta', 'detail', 'flag', 'panel'] as const
+export type ExtraPlacement = typeof EXTRA_PLACEMENTS[number]
 
 /** One extra on a bill, as central's bill detail sends it. */
 export interface BillExtraField {
@@ -31,6 +41,11 @@ export interface BillExtraField {
   label: string
   explainer: string | null
   display: ExtraDisplay
+  /**
+   * Where the page shows it. Missing from a central older than placements,
+   * and read as `panel` then, so a page shows such a field in the fold-out.
+   */
+  placement?: ExtraPlacement
   value: string
 }
 

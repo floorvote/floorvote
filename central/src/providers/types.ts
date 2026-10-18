@@ -1,6 +1,6 @@
 import type { Env } from '../types'
 import type { StatusStage } from '../../../shared/statusStages'
-import type { ExtraDisplay } from '../../../shared/providerExtras'
+import type { ExtraDisplay, ExtraPlacement } from '../../../shared/providerExtras'
 import type { CalendarKind } from '../../../shared/calendarKinds'
 import type { RelationshipKind } from '../../../shared/relationshipKinds'
 import type { DataAttribution } from '../../../shared/dataAttribution'
@@ -365,6 +365,8 @@ export interface VocabularyExtra {
   readonly explainer?: string
   /** How the bill page shows its value. */
   readonly display: ExtraDisplay
+  /** Where the bill page shows it. `panel` (the "Additional information" fold-out) when missing. */
+  readonly placement?: ExtraPlacement
 }
 
 /**
@@ -387,7 +389,7 @@ export type FieldInventory = Readonly<Record<string, FieldUse>>
 /** What a provider does with one feed field (`FieldInventory`). */
 export type FieldUse = 'mapped' | { readonly extra: string } | { readonly ignored: string }
 
-export type { StatusStage, ExtraDisplay, CalendarKind, RelationshipKind }
+export type { StatusStage, ExtraDisplay, ExtraPlacement, CalendarKind, RelationshipKind }
 
 /** One session's vote dataset, as `listVoteDatasets` lists it. */
 export interface VoteDataset {

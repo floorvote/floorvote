@@ -66,7 +66,7 @@ import { isEditableTarget } from '../lib/isEditableTarget'
 import { BillPicker, type BillOption } from '../components/BillPicker'
 import { editableFieldBox } from '../lib/editableFieldStyle'
 import { CollapsibleSection } from '../components/CollapsibleSection'
-import { ProviderExtrasList } from '../components/ProviderExtras'
+import { ProviderExtrasList, ExtraMetaItem, ExtraDetailList, ExtraFlagChips, placeExtras } from '../components/ProviderExtras'
 import type { BillExtras } from '../../../shared/providerExtras'
 import { RELATIONSHIP_KINDS, RELATIONSHIP_KIND_LABELS, isRelationshipKind, type RelationshipKind } from '../../../shared/relationshipKinds'
 import type { GroupBill, GroupBillLink, GroupingEvent, GroupNote } from '../../../shared/companionGroups'
@@ -863,6 +863,9 @@ export function BillDetail() {
     return () => cancelAnimationFrame(rafId)
   }, [location.hash, comments.length])
 
+  // Whether the bill has extras for the "Additional information" fold-out: those placed in `panel`.
+  const hasPanelExtras = placeExtras(bill?.extras?.fields ?? []).panel.length > 0
+
   // Scroll to and flash a section when the URL hash is #section-{name} or open text panel for #text-{docId}
   useEffect(() => {
     const hash = location.hash
@@ -888,7 +891,8 @@ export function BillDetail() {
     if (sectionId === 'section-amendments') setShowAmendments(true)
     if (sectionId === 'section-documents') setShowDocuments(true)
     if (sectionId === 'section-hearings') setShowHearings(true)
-    if (sectionId === 'section-extras') setShowExtras(true)
+    // Only a bill with panel extras has the fold-out. Its others show elsewhere.
+    if (sectionId === 'section-extras' && hasPanelExtras) setShowExtras(true)
 
     // setTimeout gives React one extra tick to flush collapsible expansion before measuring
     const timerId = setTimeout(() => {
@@ -907,7 +911,7 @@ export function BillDetail() {
       }, 1500)
     }, 0)
     return () => clearTimeout(timerId)
-  }, [location.hash, location.key, bill?.id])
+  }, [location.hash, location.key, bill?.id, hasPanelExtras])
 
   // Value-stable key: refresh() hands back a new array every time (a fresh parse
   // of the response, NotificationsContext.tsx), so depending on `notifications` itself
@@ -1786,17 +1790,28 @@ export function BillDetail() {
             const ofKind = listedRelated.filter(r => (isRelationshipKind(r.kind) ? r.kind : 'related') === kind)
             if (ofKind.length > 0) grouped.set(kind, ofKind)
           }
-          const hasAny = bodyLabel || typeLabel || (bill.calendar ?? []).some(e => e.kind === 'deadline') || listedRelated.length > 0 || bill.stateUrl || bill.stateLink || bill.legiscanUrl || (bill.subjects ?? []).length > 0
+          const placedExtras = placeExtras(bill.extras?.fields ?? [])
+          const hasAny = bodyLabel || typeLabel || placedExtras.meta.length > 0 || placedExtras.detail.length > 0 || placedExtras.flags.length > 0 || (bill.calendar ?? []).some(e => e.kind === 'deadline') || listedRelated.length > 0 || bill.stateUrl || bill.stateLink || bill.legiscanUrl || (bill.subjects ?? []).length > 0
           if (!hasAny) return null
 
           // Collect all display items, then render with · separators only between items
           const metaItems: React.ReactNode[] = []
           const typeExplainer = billTypeExplainer(stateLabels, bill.billType)
-          if (bodyLabel) metaItems.push(typeExplainer
+          const bodyLabelEl = !bodyLabel ? null : typeExplainer
             ? <span key="body" style={{ whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center' }}>
                 <HoverTooltip text={typeExplainer} describe={{ id: 'bill-type-explainer' }}>{bodyLabel}</HoverTooltip>
               </span>
-            : <span key="body" style={{ whiteSpace: 'nowrap' }}>{bodyLabel}</span>)
+            : <span key="body" style={{ whiteSpace: 'nowrap' }}>{bodyLabel}</span>
+          // The provider's flags (an emergency bill, a constitutional amendment)
+          // are chips beside the body label, which keeps its own wording.
+          if (placedExtras.flags.length > 0) {
+            metaItems.push(
+              <span key="body" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                {bodyLabelEl}
+                <ExtraFlagChips fields={placedExtras.flags} />
+              </span>,
+            )
+          } else if (bodyLabelEl) metaItems.push(bodyLabelEl)
           // The bill's next deadline (an executive's time to act, a review
           // period ending, an act expiring), where it's hard to miss.
           const nextDeadline = (bill.calendar ?? []).filter(e => e.kind === 'deadline' && e.date >= todayIso())
@@ -1811,6 +1826,8 @@ export function BillDetail() {
               </span>
             )
           }
+          // The provider's own facts: a law number, who asked for the measure.
+          for (const f of placedExtras.meta) metaItems.push(<ExtraMetaItem key={`extra-${f.key}`} field={f} />)
           if (typeLabel) metaItems.push(<span key="type" style={{ whiteSpace: 'nowrap' }}>{typeLabel}</span>)
           grouped.forEach((related, kind) => {
             const label = RELATIONSHIP_KIND_LABELS[kind]
@@ -1868,9 +1885,14 @@ export function BillDetail() {
             separated.push(metaItems[i])
           }
           return (
-            <div style={{ fontSize: fontSize.sm, color: color.textSecondary, marginBottom: 6, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-              {separated}
-            </div>
+            <>
+              {separated.length > 0 && (
+                <div style={{ fontSize: fontSize.sm, color: color.textSecondary, marginBottom: 6, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                  {separated}
+                </div>
+              )}
+              <ExtraDetailList fields={placedExtras.detail} />
+            </>
           )
         })()}
 
@@ -2910,17 +2932,17 @@ export function BillDetail() {
         })()}
 
         {/* Additional information: fields only the bill's provider publishes */}
-        {bill.extras && bill.extras.fields.length > 0 && (
+        {bill.extras && hasPanelExtras && (
           <CollapsibleSection
             id="section-extras"
             label={`Additional information from ${bill.extras.providerName}`}
-            count={bill.extras.fields.length}
+            count={placeExtras(bill.extras.fields).panel.length}
             open={showExtras}
             onToggle={() => setShowExtras(v => !v)}
             hasPrev={hasBillText || hasAmendments || hasActions || hasHearings || hasDocuments}
             flashed={flashedSectionId === 'section-extras'}
           >
-            <ProviderExtrasList fields={bill.extras.fields} />
+            <ProviderExtrasList fields={placeExtras(bill.extras.fields).panel} />
           </CollapsibleSection>
         )}
       </div>
