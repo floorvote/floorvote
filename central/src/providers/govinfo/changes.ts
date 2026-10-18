@@ -16,9 +16,9 @@ import { GOVINFO_TYPES, type GovInfoType } from './client'
  * it up (meetings.ts), which change without its file. So with meetings on the
  * records, the mark names a digest of each bill's entries, as the pass that
  * made the mark put them on records, kept in the provider's cache under
- * `snapshot/<congress>/<id>`. The next pass compares it with the entries as
- * they are now, and downloads the file of every bill whose entries differ, as
- * though its file had changed. A digest that is gone or doesn't read is a read
+ * `snapshot/<congress>/<id>/<piece>`. The next pass compares it with the
+ * entries as they are now, and downloads the file of every bill whose entries
+ * differ, as though its file had changed. A digest that is gone or doesn't read is a read
  * in full, so a bill's record never keeps entries it no longer has.
  */
 export interface Mark {
@@ -87,24 +87,33 @@ export async function digestOf(byBill: ReadonlyMap<string, MeasureCalendarEntry[
 }
 
 const PREFIX = 'snapshot/'
-const keyOf = (congress: number, id: string) => `${PREFIX}${congress}/${id}`
+/** A digest is kept in pieces of this many bills, each a few KB, well under what one D1 statement takes: a Congress has thousands of bills with meetings. */
+const PIECE = 500
+const piecesOf = (congress: number, id: string) => `${PREFIX}${congress}/${id}/`
 
-function serialize(digest: Digest): string {
-  return JSON.stringify([...digest].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
-}
+type Pairs = [string, string][]
+const sorted = (digest: Digest): Pairs => [...digest].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+const idOf = async (pairs: Pairs) => (await sha256Hex(JSON.stringify(pairs))).slice(0, 16)
 
-/** The digest a mark names, or null when it is gone or isn't the digest its id says. */
+/** The digest a mark names, or null when any piece of it is gone or it isn't the digest its id says. */
 export async function loadDigest(ctx: Pick<ProviderContext, 'cache'>, congress: number, id: string): Promise<Digest | null> {
-  const value = (await ctx.cache.list(keyOf(congress, id))).get(keyOf(congress, id))
-  if (value === undefined) return null
-  if ((await sha256Hex(value)).slice(0, 16) !== id) return null
-  try {
-    const pairs = JSON.parse(value) as unknown
-    if (!Array.isArray(pairs) || !pairs.every(p => Array.isArray(p) && p.length === 2 && typeof p[0] === 'string' && typeof p[1] === 'string')) return null
-    return new Map(pairs as [string, string][])
-  } catch {
-    return null
+  const prefix = piecesOf(congress, id)
+  const pieces = await ctx.cache.list(prefix)
+  const pairs: Pairs = []
+  for (let i = 0; i < pieces.size; i++) {
+    const value = pieces.get(`${prefix}${i}`)
+    if (value === undefined) return null
+    try {
+      const piece = JSON.parse(value) as unknown
+      if (!Array.isArray(piece) || !piece.every(p => Array.isArray(p) && p.length === 2 && typeof p[0] === 'string' && typeof p[1] === 'string')) return null
+      pairs.push(...(piece as Pairs))
+    } catch {
+      return null
+    }
   }
+  // Every piece there, and nothing in them but what was kept: a piece lost or changed is no digest.
+  if (pieces.size === 0 || await idOf(pairs) !== id) return null
+  return new Map(pairs)
 }
 
 /**
@@ -115,15 +124,22 @@ export async function loadDigest(ctx: Pick<ProviderContext, 'cache'>, congress: 
  */
 export async function keepDigest(ctx: Pick<ProviderContext, 'cache'>, congress: number, digest: Digest | null, previous: Mark | null): Promise<string | null> {
   let id: string | null = null
-  const keep = new Set<string>()
-  if (previous?.meetings) keep.add(keyOf(previous.congress, previous.meetings))
+  const keep: string[] = []
+  if (previous?.meetings) keep.push(piecesOf(previous.congress, previous.meetings))
   if (digest) {
-    const value = serialize(digest)
-    id = (await sha256Hex(value)).slice(0, 16)
-    keep.add(keyOf(congress, id))
-    await ctx.cache.put({ [keyOf(congress, id)]: value })
+    const pairs = sorted(digest)
+    id = await idOf(pairs)
+    const prefix = piecesOf(congress, id)
+    keep.push(prefix)
+    // The same entries as the mark's are the same pieces, already kept.
+    if (!(previous?.congress === congress && previous.meetings === id)) {
+      const put: Record<string, string> = {}
+      // An empty digest is still one piece, so it reads back as empty and not as gone.
+      for (let i = 0; i === 0 || i * PIECE < pairs.length; i++) put[`${prefix}${i}`] = JSON.stringify(pairs.slice(i * PIECE, (i + 1) * PIECE))
+      await ctx.cache.put(put)
+    }
   }
-  const stale = [...(await ctx.cache.list(PREFIX)).keys()].filter(k => !keep.has(k))
+  const stale = [...(await ctx.cache.list(PREFIX)).keys()].filter(k => !keep.some(p => k.startsWith(p)))
   if (stale.length > 0) await ctx.cache.drop(stale)
   return id
 }
