@@ -37,10 +37,6 @@ export function countUpdatedBills(events: readonly Pick<DigestEvent, 'billId' | 
   return new Set(events.map(digestCardKey)).size
 }
 
-export function countNewMatches(items: readonly unknown[]): number {
-  return items.length
-}
-
 export type NewMatchDigestItem = {
   billId: string; billNumber: string; billTitle: string
   billState: string | null; billSession: string; relevanceScore: number | null
@@ -48,6 +44,34 @@ export type NewMatchDigestItem = {
   billSessionSlug?: string | null
   /** The bill's tenant summary, for the card's preview. Absent or empty = no preview. */
   summary?: string | null
+  /** The key of the bill's companion group. Members of one group share a card and count once. Absent or null = in no group. */
+  billGroupKey?: string | null
+}
+
+/** A new match as the digest shows it: one bill, or one companion group of them. `head` is the bill the card opens, the group's most relevant member. */
+type NewMatchCard = { head: NewMatchDigestItem; members: NewMatchDigestItem[]; summary: string | null }
+
+const byRelevance = (a: NewMatchDigestItem, b: NewMatchDigestItem) => (b.relevanceScore ?? -1) - (a.relevanceScore ?? -1)
+
+// A companion group is one policy, so its matched members are one new match
+// (#638), as its updated bills are one card (#381). Cards come out in the order
+// each key is first seen. Members are most relevant first, and the group's
+// summary is the head's own, else the first companion's that has one.
+function toNewMatchCards(items: readonly NewMatchDigestItem[]): NewMatchCard[] {
+  const byKey = new Map<string, NewMatchDigestItem[]>()
+  for (const it of items) {
+    const key = it.billGroupKey ? `group:${it.billGroupKey}` : it.billId
+    byKey.set(key, [...(byKey.get(key) ?? []), it])
+  }
+  return [...byKey.values()].map(group => {
+    const members = [...group].sort(byRelevance)
+    return { head: members[0], members, summary: members.find(m => m.summary)?.summary ?? null }
+  })
+}
+
+/** How many new matches the digest reports for these bills: one per card, so a companion group counts once however many of its bills matched. */
+export function countNewMatches(items: readonly NewMatchDigestItem[]): number {
+  return toNewMatchCards(items).length
 }
 
 function escHtml(s: string): string {
@@ -236,18 +260,22 @@ const NEW_MATCH_CHIP = { label: 'New match', bg: color.bgAmberPriority, text: co
 // A new match as the same card an updated bill gets, minus activity rows: badge,
 // title and summary preview (none when the bill has no summary yet), with a
 // "New match" chip where the priority chip goes.
-function renderNewMatchCard(it: NewMatchDigestItem, appUrl: string, forMember: boolean): string {
+function renderNewMatchCard(card: NewMatchCard, appUrl: string, forMember: boolean): string {
+  const it = card.head
+  const hrefOf = (m: NewMatchDigestItem) => `${appUrl}${billUrl({ id: m.billId, state: m.billState, session: m.billSession, sessionSlug: m.billSessionSlug, billNumber: m.billNumber })}`
   const model = buildBillCardModel({
     key: it.billId, billId: it.billId, billNumber: it.billNumber, billTitle: it.billTitle,
-    billSessionSlug: null, billState: it.billState, billSummary: it.summary ?? null,
+    billSessionSlug: null, billState: it.billState, billSummary: card.summary,
     billPriority: null, billMatchType: null, date: '', billIsDraft: false, events: [],
   })
-  const billHref = `${appUrl}${billUrl({ id: it.billId, state: it.billState, session: it.billSession, sessionSlug: it.billSessionSlug, billNumber: it.billNumber })}`
+  const billHref = hrefOf(it)
+  // A companion group's other matched bills, as badges beside the first.
+  const otherBadges = card.members.slice(1).map(m => ({ text: m.billState ? `${m.billState} ${m.billNumber}` : m.billNumber, href: hrefOf(m) }))
   // The bill page is where the amber "New · Set priority" dropdown is. A member
   // can't set a priority, so their cards carry no link.
   const setPriority = forMember ? '' : `
     <tr style="background:${color.white};"><td colspan="3" style="padding:8px 14px 10px 14px;border-top:1px solid ${CARD_STYLE.rowBorder};font-size:${fontSize.sm}px;"><a href="${escHtml(billHref)}" style="color:${color.accentBlue};font-weight:${fontWeight.semibold};text-decoration:none;">Set priority</a></td></tr>`
-  return `${renderBillCardOpen({ model, billHref, appUrl, chip: NEW_MATCH_CHIP })}${setPriority}${BILL_CARD_CLOSE}`
+  return `${renderBillCardOpen({ model, billHref, appUrl, chip: NEW_MATCH_CHIP, otherBadges })}${setPriority}${BILL_CARD_CLOSE}`
 }
 
 // New-match section (admins always, members who haven't opted out). Not
@@ -257,22 +285,23 @@ function renderNewMatchCard(it: NewMatchDigestItem, appUrl: string, forMember: b
 // rest. A member can't triage, so their copy leaves off the line telling an
 // admin how.
 function renderNewMatchSection(items: NewMatchDigestItem[], appUrl: string, forMember: boolean, spaceAbove: boolean): string {
-  if (items.length === 0) return ''
-  const top = [...items]
-    .sort((a, b) => (b.relevanceScore ?? -1) - (a.relevanceScore ?? -1))
+  const cards = toNewMatchCards(items)
+  if (cards.length === 0) return ''
+  const top = [...cards]
+    .sort((a, b) => byRelevance(a.head, b.head))
     .slice(0, NEW_MATCH_LIMIT)
-  const seeAll = items.length > top.length
+  const seeAll = cards.length > top.length
     ? `
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tbody>
-  <tr><td style="padding:6px 2px 0 2px;font-size:${fontSize.sm}px;"><a href="${escHtml(`${appUrl}/bills?newMatches=1`)}" style="color:${color.accentBlue};font-weight:${fontWeight.semibold};text-decoration:none;">See all ${items.length} new matches</a></td></tr>
+  <tr><td style="padding:6px 2px 0 2px;font-size:${fontSize.sm}px;"><a href="${escHtml(`${appUrl}/bills?newMatches=1`)}" style="color:${color.accentBlue};font-weight:${fontWeight.semibold};text-decoration:none;">See all ${cards.length} new matches</a></td></tr>
 </tbody></table>`
     : ''
   return `${renderSectionHeader({
     id: NEW_MATCHES_ID, ruleColor: color.accentAmber, spaceAbove,
-    title: countOf(items.length, 'new match', 'new matches'),
+    title: countOf(cards.length, 'new match', 'new matches'),
     subtitle: forMember ? undefined : 'Set a priority or dismiss each from the bill list.',
   })}
-${top.map(it => renderNewMatchCard(it, appUrl, forMember)).join('\n')}${seeAll}`
+${top.map(card => renderNewMatchCard(card, appUrl, forMember)).join('\n')}${seeAll}`
 }
 
 export function renderDigestEmail(input: { events: DigestEvent[]; assocName: string; appUrl: string; periodStart?: string; periodEnd?: string; newMatches?: NewMatchDigestItem[]; forMember?: boolean }): string {
@@ -294,8 +323,9 @@ export function renderDigestEmail(input: { events: DigestEvent[]; assocName: str
   const periodEnd = input.periodEnd ?? new Date().toISOString() // ts-write-ok: formatted for email display, not a DB column
   const range = formatDateRange(fmtDay(periodStart), fmtDay(periodEnd))
   const newMatches = input.newMatches ?? []
+  const matchCount = countNewMatches(newMatches)
   const hasUpdates = billCount > 0
-  const hasMatches = newMatches.length > 0
+  const hasMatches = matchCount > 0
   const window = describeWindow(periodStart, periodEnd)
   // Both kinds: the headline names the digest and the contents box below names the kinds.
   // One kind: the headline says what happened, as before.
@@ -303,11 +333,11 @@ export function renderDigestEmail(input: { events: DigestEvent[]; assocName: str
     ? `Your digest for ${window}`
     : hasUpdates
       ? `${countOf(billCount, 'priority bill', 'priority bills')} ${billCount === 1 ? 'was' : 'were'} updated in ${window}`
-      : `${countOf(newMatches.length, 'new match', 'new matches')} in ${window}`
+      : `${countOf(matchCount, 'new match', 'new matches')} in ${window}`
   const contentsBox = hasUpdates && hasMatches
     ? renderContentsBox([
         { href: `#${UPDATES_ID}`, ruleColor: color.billBadgeNavy, text: `${countOf(billCount, 'priority bill', 'priority bills')} updated` },
-        { href: `#${NEW_MATCHES_ID}`, ruleColor: color.accentAmber, text: countOf(newMatches.length, 'new match', 'new matches') },
+        { href: `#${NEW_MATCHES_ID}`, ruleColor: color.accentAmber, text: countOf(matchCount, 'new match', 'new matches') },
       ])
     : ''
   const updatesSection = hasUpdates

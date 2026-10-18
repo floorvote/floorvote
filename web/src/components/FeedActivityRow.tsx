@@ -14,6 +14,8 @@ import { color, radius, fontSize } from '../styles/tokens'
 type AffectedBill = {
   id: string; billNumber: string; title: string
   state: string | null; sessionSlug: string | null; isDraft: boolean
+  /** The bill's companion group. Members of one group read as one entry. Absent or null = in no group. */
+  groupKey?: string | null
 }
 type Load = { status: 'idle' } | { status: 'loading' } | { status: 'error' } | { status: 'done'; bills: AffectedBill[] }
 
@@ -125,8 +127,8 @@ export function FeedActivityRow({ event, seenAt = null, currentUserId = null }: 
             </Note>
           )}
           {load.status === 'done' && load.bills.length === 0 && <Note>These bills are no longer available.</Note>}
-          {load.status === 'done' && load.bills.map((b, i) => (
-            <BillLink key={b.id} bill={b} first={i === 0} />
+          {load.status === 'done' && asEntries(load.bills).map((members, i) => (
+            <BillLink key={members[0].id} bills={members} first={i === 0} />
           ))}
           {event.type === 'new_matches' && (
             <Link
@@ -149,26 +151,57 @@ function Note({ children }: { children: React.ReactNode }) {
   return <div style={{ padding: '10px 14px', fontSize: fontSize.sm, color: color.textMuted }}>{children}</div>
 }
 
-function BillLink({ bill, first }: { bill: AffectedBill; first: boolean }) {
+// A companion group is one policy, so its bills are one entry (#638), listed
+// where its first member is. A bill in no group is an entry of its own.
+function asEntries(bills: AffectedBill[]): AffectedBill[][] {
+  const entries: AffectedBill[][] = []
+  const ofGroup = new Map<string, AffectedBill[]>()
+  for (const b of bills) {
+    const members = b.groupKey ? ofGroup.get(b.groupKey) : undefined
+    if (members) { members.push(b); continue }
+    const entry = [b]
+    entries.push(entry)
+    if (b.groupKey) ofGroup.set(b.groupKey, entry)
+  }
+  return entries
+}
+
+const billTo = (bill: AffectedBill) => billUrl({ id: bill.id, state: bill.state, sessionSlug: bill.sessionSlug, billNumber: bill.billNumber })
+
+// One entry: a badge linking to each of its bills, then the first one's title,
+// which links to the first too. A lone bill's entry is one link, as it always was.
+function BillLink({ bills, first }: { bills: AffectedBill[]; first: boolean }) {
   const [hovered, setHovered] = useState(false)
+  const bill = bills[0]
   const title = billDisplayTitle({ title: bill.title, isDraft: bill.isDraft })
+  const titleStyle = {
+    fontSize: fontSize.sm, color: color.textPrimary, flex: 1, minWidth: 0,
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  } as const
+  const rowStyle = {
+    display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', textDecoration: 'none',
+    background: hovered ? color.surfaceMuted : color.white,
+    borderTop: first ? 'none' : `1px solid ${CARD_STYLE.rowBorder}`,
+  } as const
+  const hover = { onMouseEnter: () => setHovered(true), onMouseLeave: () => setHovered(false) }
+  if (bills.length === 1) {
+    return (
+      <Link to={billTo(bill)} data-bill-entry {...hover} style={rowStyle}>
+        <BillBadge billNumber={bill.billNumber} state={bill.state ?? undefined} isDraft={bill.isDraft} mini />
+        {bill.isDraft && <DraftChip />}
+        <span style={titleStyle}>{title}</span>
+      </Link>
+    )
+  }
   return (
-    <Link
-      to={billUrl({ id: bill.id, state: bill.state, sessionSlug: bill.sessionSlug, billNumber: bill.billNumber })}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', textDecoration: 'none',
-        background: hovered ? color.surfaceMuted : color.white,
-        borderTop: first ? 'none' : `1px solid ${CARD_STYLE.rowBorder}`,
-      }}
-    >
-      <BillBadge billNumber={bill.billNumber} state={bill.state ?? undefined} isDraft={bill.isDraft} mini />
-      {bill.isDraft && <DraftChip />}
-      <span style={{
-        fontSize: fontSize.sm, color: color.textPrimary, flex: 1, minWidth: 0,
-        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-      }}>{title}</span>
-    </Link>
+    <div data-bill-entry {...hover} style={rowStyle}>
+      {bills.map((b) => (
+        <Link key={b.id} to={billTo(b)} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}>
+          <BillBadge billNumber={b.billNumber} state={b.state ?? undefined} isDraft={b.isDraft} mini />
+          {b.isDraft && <DraftChip />}
+        </Link>
+      ))}
+      <Link to={billTo(bill)} style={{ ...titleStyle, textDecoration: 'none' }}>{title}</Link>
+    </div>
   )
 }
