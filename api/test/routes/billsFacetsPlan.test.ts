@@ -89,7 +89,9 @@ describe('GET /bills/facets query plans', () => {
     for (const qs of ['', 'state=NJ', 'status=Passed&priority=high']) {
       const groups = select(await facetPlans(qs), STATUS_GROUPS)
       expect(groups.length, `no statusGroups statement for "${qs}"`).toBe(1)
-      expect(groups[0].plan, `${groups[0].sql}\n${groups[0].plan}`).toMatch(/USING COVERING INDEX/)
+      // With nothing to narrow it the whole population is read, from the covering index. A filter may start from its own
+      // index instead, which bounds the read to the bills it meets.
+      if (qs === '') expect(groups[0].plan, `${groups[0].sql}\n${groups[0].plan}`).toMatch(/USING COVERING INDEX idx_bills_status_rank/)
       expect(groups[0].plan, `${groups[0].sql}\n${groups[0].plan}`).not.toMatch(TABLE_SCAN)
     }
   })
