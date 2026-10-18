@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
-import { eq, inArray } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { processCentralNotification } from '../../src/queue/processor'
 import { getDb } from '../../src/db/client'
 import { bills, calendarEvents, feedEvents } from '../../src/db/schema'
+import { groupByHand } from '../../src/lib/companionGroups'
 import { newMatchWhere } from '../../src/lib/newMatch'
 import { resetDb, applyMigrations, seedBill, seedUser, seedSession } from '../helpers'
 
@@ -44,6 +45,7 @@ const actionChange = [{ changeType: 'action_added', oldValue: null, newValue: 'R
 describe('processCentralNotification: a pulled companion in a group', () => {
   const db = () => getDb(env.DB)
   let cookie: string
+  let adminId: string
   // A pulled companion has a match type of none, no priority, and a group; its group mate is tracked.
   const COMPANION = 'legiscan:200'
   const MATE = 'legiscan:100'
@@ -73,7 +75,7 @@ describe('processCentralNotification: a pulled companion in a group', () => {
     await resetDb()
     await applyMigrations()
     vi.clearAllMocks()
-    const adminId = await seedUser({ role: 'admin', email: 'ada@example.com' })
+    adminId = await seedUser({ role: 'admin', email: 'ada@example.com' })
     cookie = `session=${await seedSession(adminId)}`
     // Ids sort a < b, so the group's key is the tracked mate's id.
     await seedBill({
@@ -85,7 +87,9 @@ describe('processCentralNotification: a pulled companion in a group', () => {
       id: 'b-companion', billNumber: 'S 200', externalId: COMPANION, matchType: null,
       aiProcessedAt: '2026-06-01T00:00:00Z', providerUpdatedAt: '2026-06-01T00:00:00Z',
     })
-    await db().update(bills).set({ groupKey: 'a-mate' }).where(inArray(bills.id, ['a-mate', 'b-companion']))
+    // Grouped by hand, so the group survives the processor's own reconciliation of companions against central's links.
+    await groupByHand(db(), 'a-mate', 'b-companion', adminId)
+    expect((await db().select({ k: bills.groupKey }).from(bills).where(eq(bills.id, 'b-companion')).get())?.k).toBe('a-mate')
   })
 
   it('writes a bill_updated feed event for its action, and the event shows in the group\'s feed card', async () => {
