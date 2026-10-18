@@ -245,6 +245,7 @@ export async function ingestMeasure(
   let detectedChanges: ChangeRecord[] = []
   // Logged, but not sent to instances (lib/detect-changes.ts).
   let companionChanges: CompanionChange[] = []
+  let textHashChanged = false
   let calendarChanges: CalendarChange[] = []
   let priorCalendar: CalendarRow[] = []
 
@@ -252,7 +253,7 @@ export async function ingestMeasure(
     // Read before-snapshot from child tables
     const [historyRows, textRows, supplementRows, amendmentRows, voteRows, sponsorRows, priorCalRows, priorSasts] = await Promise.all([
       db.select({ seq: billHistory.seq }).from(billHistory).where(eq(billHistory.billId, bill.bill_id)).all(),
-      db.select({ docId: billTexts.docId }).from(billTexts).where(eq(billTexts.billId, bill.bill_id)).all(),
+      db.select({ docId: billTexts.docId, textHash: billTexts.textHash }).from(billTexts).where(eq(billTexts.billId, bill.bill_id)).all(),
       db.select({ supplementId: billSupplements.supplementId }).from(billSupplements).where(eq(billSupplements.billId, bill.bill_id)).all(),
       db.select({ amendmentId: billAmendments.amendmentId }).from(billAmendments).where(eq(billAmendments.billId, bill.bill_id)).all(),
       db.select({
@@ -294,6 +295,15 @@ export async function ingestMeasure(
     }
 
     detectedChanges = detectChanges(snapshot, bill, provider)
+    // A document whose provider hash changed under the same doc id is no change a
+    // member reads, so it has no record. But instances compare it with their
+    // claim sources' pins (#603) and fetch a bill only when `updated_at` moved,
+    // so it moves that. An empty hash on either side is no signal.
+    const storedHashes = new Map(textRows.map(t => [t.docId, t.textHash]))
+    textHashChanged = (bill.texts ?? []).some(t => {
+      const was = storedHashes.get(t.doc_id)
+      return !!was && !!t.text_hash && was !== t.text_hash
+    })
     companionChanges = detectCompanionChanges(priorSasts, bill, provider)
   }
 
@@ -371,7 +381,7 @@ export async function ingestMeasure(
       currentBodyId:      bill.current_body_id,
       // A cutover's first ingest changes the bill's data without reporting a
       // change, so instances still see it moved and fetch it again.
-      updatedAt:          detectedChanges.length > 0 || carriedFrom ? now : sql`updated_at`,
+      updatedAt:          detectedChanges.length > 0 || textHashChanged || carriedFrom ? now : sql`updated_at`,
       textsFetchedAt:     now,
       detailHash:         bill.change_hash,
     },

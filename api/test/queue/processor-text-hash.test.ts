@@ -145,3 +145,16 @@ describe('bill_texts.text_hash from a central notification', () => {
     })
   })
 })
+
+// Central moves a bill's updated_at whenever a document's hash changes, so this
+// should not arrive. Pinned anyway: with the provider timestamp unchanged, the
+// unchanged-bill early return skips the text list, and the stored hash stays.
+describe('a new hash under an unchanged bill timestamp', () => {
+  it('is not stored, because the unchanged bill is skipped', async () => {
+    central(centralBill)
+    await processCentralNotification(msg, testEnv, getDb(env.DB))
+    central(withTexts([centralBill.texts[0], { ...centralBill.texts[1], textHash: 'hash-6002-v2' }]))
+    await processCentralNotification(msg, testEnv, getDb(env.DB))
+    expect(await hashes()).toEqual({ '6001': 'hash-6001-v1', '6002': 'hash-6002-v1' })
+  })
+})
