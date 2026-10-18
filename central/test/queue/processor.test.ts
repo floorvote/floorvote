@@ -1089,6 +1089,84 @@ describe('processBill: a text whose hash changed under the same doc id', () => {
       expect(await updatedAt()).not.toBe(STALE)
     })
 
+    it('never serves a cached body from before the change: the pair /text returns is the new one', async () => {
+      // A request in the cache's five minutes warmed the old pair.
+      expect(await served()).toMatchObject({ textHash: 'v1-b', content: '<html>old bytes</html>' })
+      fetchMock.mockImplementation(async () => html('new bytes'))
+      await ingest([text(1000, 'v1-a'), text(1001, 'v2-b')])
+      expect(await served()).toMatchObject({ docId: '1001', textHash: 'v2-b', content: '<html>new bytes</html>' })
+    })
+
+    it('the stored r2_key points at the new bytes, beside the new hash', async () => {
+      fetchMock.mockImplementation(async () => html('new bytes'))
+      await ingest([text(1000, 'v1-a'), text(1001, 'v2-b')])
+      const r = await env.DB.prepare('SELECT r2_key, text_hash FROM bill_texts WHERE doc_id = 1001').first<{ r2_key: string; text_hash: string }>()
+      expect(r!.text_hash).toBe('v2-b')
+      const obj = await env.BILLS_BUCKET.get(r!.r2_key)
+      expect(await obj!.text()).toBe('<html>new bytes</html>')
+    })
+
+    describe('a refetch that keeps failing', () => {
+      const changeHash = async () => (await env.DB.prepare('SELECT change_hash, detail_hash FROM bills WHERE bill_id = 9001').first<{ change_hash: string; detail_hash: string }>())!
+      const failing = () => {
+        fetchMock.mockImplementation(async () => new Response('nope', { status: 500 }))
+        vi.mocked(legiscan.getBillText).mockRejectedValue(new Error('quota'))
+      }
+      const changed = () => ingest([text(1000, 'v1-a'), text(1001, 'v2-b')])
+
+      it('leaves the bill\'s change hash behind, so the next sync pass queues it again', async () => {
+        failing()
+        await changed()
+        expect((await changeHash()).change_hash).toBe('')
+      })
+
+      it('counts its attempts, and stops after three: the hash moves on and it is logged once', async () => {
+        failing()
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        await changed(); await changed()
+        expect((await changeHash()).change_hash).toBe('')
+        fetchMock.mockClear()
+        await changed()
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        expect((await changeHash()).change_hash).toBe('hash-v1')
+        expect(warn.mock.calls.filter(c => String(c[0]).includes('giving up refetching doc 1001'))).toHaveLength(1)
+        // Past the cap it does not try again, and does not log again.
+        fetchMock.mockClear()
+        await changed()
+        expect(fetchMock).not.toHaveBeenCalled()
+        expect((await changeHash()).change_hash).toBe('hash-v1')
+        expect(warn.mock.calls.filter(c => String(c[0]).includes('giving up refetching doc 1001'))).toHaveLength(1)
+        expect(await sentHashes()).toEqual({ '1000': 'v1-a', '1001': 'v1-b' })
+        warn.mockRestore()
+      })
+
+      it('is still tried by forceTextRefetch after the cap, and lands the new pair', async () => {
+        failing()
+        await changed(); await changed(); await changed()
+        fetchMock.mockImplementation(async () => html('new bytes'))
+        vi.mocked(legiscan.getBill).mockResolvedValue(buildFixtureBill({ texts: [text(1000, 'v1-a'), text(1001, 'v2-b')] }))
+        await processIngestorQueue(makeBatch(9001, { forceTextRefetch: true }), makeEnv(), db())
+        expect(await served()).toMatchObject({ textHash: 'v2-b', content: '<html>new bytes</html>' })
+      })
+
+      it('starts the count over for a newer hash', async () => {
+        failing()
+        await changed(); await changed(); await changed()
+        fetchMock.mockClear()
+        await ingest([text(1000, 'v1-a'), text(1001, 'v3-b')])
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        expect((await changeHash()).change_hash).toBe('')
+      })
+
+      it('keeps the real change hash once a retry succeeds', async () => {
+        failing()
+        await changed()
+        fetchMock.mockImplementation(async () => html('new bytes'))
+        await changed()
+        expect((await changeHash()).change_hash).toBe('hash-v1')
+      })
+    })
+
     it('does not fetch twice under forceTextRefetch', async () => {
       fetchMock.mockImplementation(async () => html('new bytes'))
       vi.mocked(legiscan.getBill).mockResolvedValue(buildFixtureBill({ texts: [text(1000, 'v1-a'), text(1001, 'v2-b')] }))
