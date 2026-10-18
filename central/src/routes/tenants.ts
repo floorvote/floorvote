@@ -24,6 +24,8 @@ import { guardCallerTenantParam, guardCallerTenantBody } from '../lib/callerTena
 import { toHandle } from '../lib/billHandle'
 
 const REPROCESS_LIMIT = 1000
+// Rows per bill_tenants upsert in promote-bills: 3 bound parameters each, under D1's limit of 100.
+const PROMOTE_UPSERT_CHUNK = 30
 
 export const tenantsRoutes = new Hono<{ Bindings: Env }>()
 
@@ -495,12 +497,20 @@ tenantsRoutes.post('/promote-bills/:tenantId', guardCallerTenantParam(), async (
   }
   if (billIds.length === 0) return c.json({ ok: true, tenantId, promoted: 0 })
 
-  await db.insert(schema.billTenants)
-    .values(billIds.map(billId => ({ billId, tenantId, matchType: 'manual' as const })))
-    .onConflictDoUpdate({
-      target: [schema.billTenants.billId, schema.billTenants.tenantId],
-      set: { matchType: 'manual' },
-    })
+  // D1 binds at most 100 parameters per statement and each row binds 3, so one statement
+  // fails above 33 rows. Chunk the upsert and run the chunks in one atomic batch.
+  const upserts = []
+  for (let i = 0; i < billIds.length; i += PROMOTE_UPSERT_CHUNK) {
+    upserts.push(
+      db.insert(schema.billTenants)
+        .values(billIds.slice(i, i + PROMOTE_UPSERT_CHUNK).map(billId => ({ billId, tenantId, matchType: 'manual' as const })))
+        .onConflictDoUpdate({
+          target: [schema.billTenants.billId, schema.billTenants.tenantId],
+          set: { matchType: 'manual' },
+        }),
+    )
+  }
+  await db.batch(upserts as [typeof upserts[number], ...typeof upserts])
 
   for (let i = 0; i < billIds.length; i += 100) {
     await c.env.INGESTOR_QUEUE.sendBatch(
