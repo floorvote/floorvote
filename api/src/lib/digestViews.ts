@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 import { bills, feedEvents, savedViews, savedViewSubscriptions, users } from '../db/schema'
-import { buildBillsFilter, parseBillFilterParams } from '../routes/billsApi/query'
+import { billsAs, buildBillsFilter, parseBillFilterParams, type BillFilterParams } from '../routes/billsApi/query'
 import { isPerUserListRequest } from './listCache'
 import { activeUser } from './accountDeletion'
 import { digestCardKey, type DigestEvent, type NewMatchDigestItem, type ViewDigestSection } from './digestEmail'
@@ -33,19 +33,22 @@ export async function loadViewSubscriptions(db: AppDb, userIds: readonly string[
 }
 
 /**
- * What is new in one view in the digest's window: the activity on the bills that meet its filter, and the bills
- * that entered the instance in the window and meet it (drafts are the author's own and never listed).
+ * What is new in one view in the digest's window: the activity on the bills of the groups the view shows, and the
+ * bills that entered the instance in the window and meet its filter (a draft is left out of the latter, since
+ * creating one is not a bill entering the view, though its activity is listed as the list would show it).
  *
- * The filter is read from the view's stored query by `parseBillFilterParams`, the function the bill list reads its
- * own with, and built by `buildBillsFilter`, so a view lists what the list shows for it. `userId` is whose "my bills"
- * and "unvoted" the filter means. A query that can't be read (an over-cap subject filter) lists nothing.
+ * `params` are the view's stored query as `parseBillFilterParams` read it (the function the bill list reads its
+ * own with), built by `buildBillsFilter`, so a view lists what the list shows for it.
  */
 async function loadViewNews(
-  db: AppDb, view: SubscribedView, userId: string, since: string, now: string,
-): Promise<{ events: DigestEvent[]; newBills: NewMatchDigestItem[] } | null> {
-  const parsed = await parseBillFilterParams(db, new URLSearchParams(view.query), userId)
-  if ('error' in parsed) return null
-  const filter = (await buildBillsFilter(db, parsed.params))(bills)
+  db: AppDb, params: BillFilterParams, since: string, now: string,
+): Promise<{ events: DigestEvent[]; newBills: NewMatchDigestItem[] }> {
+  const built = await buildBillsFilter(db, params)
+  const filter = built(bills)
+  // The list shows a companion group when any bill in it meets the filter, so activity on any member is
+  // activity in the view. The filter is held once, in the subquery, to stay clear of D1's bound on parameters.
+  const groupInView = filter === undefined ? undefined
+    : sql`COALESCE(${bills.groupKey}, ${bills.id}) IN (SELECT COALESCE(m.group_key, m.id) FROM bills m WHERE ${built(billsAs('m'))})`
 
   const events = await db
     .select({
@@ -59,7 +62,7 @@ async function loadViewNews(
     .innerJoin(bills, eq(feedEvents.billId, bills.id))
     .leftJoin(users, eq(feedEvents.userId, users.id))
     .where(and(
-      filter,
+      groupInView,
       inArray(feedEvents.type, DIGEST_CATEGORIES as any),
       sql`datetime(${feedEvents.createdAt}) > datetime(${since})`,
       sql`datetime(${feedEvents.createdAt}) <= datetime(${now})`,
@@ -101,11 +104,20 @@ export async function buildViewSections(
 
   const byId = new Map(views.map(v => [v.id, v]))
   const news = new Map<string, Promise<{ events: DigestEvent[]; newBills: NewMatchDigestItem[] } | null>>()
-  const newsFor = (view: SubscribedView, userId: string) => {
-    const params = new URLSearchParams(view.query)
-    const perUser = isPerUserListRequest({ myBills: params.get('myBills') ?? undefined, unvoted: params.get('unvoted') ?? undefined })
+  // One view's news, or null when it can't be had: a query the list would refuse (an over-cap subject filter), or
+  // SQL that fails (a stored query near D1's bound on parameters). One view must not stop everyone's digest.
+  const newsFor = async (view: SubscribedView, userId: string) => {
+    const parsed = await parseBillFilterParams(db, new URLSearchParams(view.query), userId).catch(() => null)
+    if (!parsed || 'error' in parsed) return null
+    // A filter that depends on the member (my bills, unvoted) is read for each, any other once.
+    const perUser = isPerUserListRequest({ myBills: parsed.params.myBillsParam, unvoted: parsed.params.unvoted })
     const key = perUser ? `${view.id}:${userId}` : view.id
-    if (!news.has(key)) news.set(key, loadViewNews(db, view, userId, opts.since, opts.now))
+    if (!news.has(key)) {
+      news.set(key, loadViewNews(db, parsed.params, opts.since, opts.now).catch(err => {
+        console.error(`digest: skipped saved view ${view.id}`, err)
+        return null
+      }))
+    }
     return news.get(key)!
   }
 

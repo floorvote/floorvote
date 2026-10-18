@@ -429,6 +429,43 @@ describe('runDigest: saved views', () => {
     expect(text(emails[0].html)).not.toContain('In your Broken view')
   })
 
+  it('lists activity on a companion whose group meets the view, as the list shows the group', async () => {
+    // Only the House bill is in Rhode Island, so only it meets the view, but the list shows the group.
+    await settled({ id: 'a-house', billNumber: 'H 101', state: 'RI', session: '2026' })
+    const senate = await settled({ id: 'b-senate', billNumber: 'S 202', state: 'UT', session: '2026' })
+    await db().update(bills).set({ groupKey: 'a-house' }).where(inArray(bills.id, ['a-house', 'b-senate']))
+    const other = await settled({ billNumber: 'U 303', state: 'UT', session: '2026' })
+    await event(senate, { changes: [{ changeType: 'action_added', newValue: 'Passed Senate committee' }] })
+    await event(other, { changes: [{ changeType: 'action_added', newValue: 'Unrelated' }] })
+    await subscribe(ada.cookie, 'v-ri')
+
+    await runDigest(env as never, db())
+
+    const html = to('ada@example.com')[0].html
+    expect(cards(html)).toBe(1)
+    expect(text(html)).toContain('S 202: Action: Passed Senate committee')
+    expect(text(html)).not.toContain('Unrelated')
+  })
+
+  it('skips a view whose query makes the SQL throw, and still sends the rest of every digest', async () => {
+    await makeView('v-big', 'Huge', Array.from({ length: 150 }, (_, i) => `status=S${i}`).join('&'))
+    await seedBill({ billNumber: 'H 101', state: 'RI', session: '2026' })
+    const pri = await settled({ billNumber: 'P 1', state: 'UT', session: '2026', priority: 'high' })
+    await event(pri)
+    await subscribe(ada.cookie, 'v-big'); await subscribe(ada.cookie, 'v-ri')
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await runDigest(env as never, db())
+
+    const mine = text(to('ada@example.com')[0].html)
+    expect(mine).toContain('In your Transportation view')
+    expect(mine).not.toContain('In your Huge view')
+    expect(to('ben@example.com')).toHaveLength(1)
+    expect(text(to('ben@example.com')[0].html)).toContain('P 1')
+    expect(err.mock.calls.some(c => String(c[0]).includes('v-big'))).toBe(true)
+    err.mockRestore()
+  })
+
   it('stamps the window so the next run does not repeat the same news', async () => {
     await seedBill({ billNumber: 'H 101', state: 'RI', session: '2026' })
     await subscribe(ada.cookie, 'v-ri')
