@@ -36,13 +36,17 @@ import { runBodyEventSync } from '../../src/cron/body-events'
 import { toHandle } from '../../src/lib/billHandle'
 import { providerContext } from '../../src/lib/providerContext'
 import { mainSeam, resetCentral, type Run } from '../helpers/mainSeam'
-import { buildZip, fileType, fixtureFiles, serveZip } from '../helpers/govinfoZip'
+import { buildListing, buildZip, fileType, fixtureFiles, serveZip } from '../helpers/govinfoZip'
 import { rollCallBillFiles, rollCallNetwork } from '../helpers/govinfoRollCalls'
 import { CONGRESS_KEY, MeetingFeed, json } from '../helpers/govinfoMeetings'
 
 const ZIP_URL = /^https:\/\/www\.govinfo\.gov\/bulkdata\/BILLSTATUS\/(\d+)\/([a-z]+)\/BILLSTATUS-\d+-([a-z]+)\.zip$/
 const FILE_URL = /^https:\/\/www\.govinfo\.gov\/bulkdata\/BILLSTATUS\/(\d+)\/([a-z]+)\/(BILLSTATUS-\d+[a-z]+\d+\.xml)$/
 const PDF_URL = /^https:\/\/www\.govinfo\.gov\/content\/pkg\/([A-Za-z0-9-]+)\/pdf\/\1\.pdf$/
+// Each type's bulk listing, which a bill sync between full reads reads for the files changed since the last (#616).
+const LISTING_URL = /^https:\/\/www\.govinfo\.gov\/bulkdata\/json\/BILLSTATUS\/(\d+)\/([a-z]+)$/
+/** When the recorded files last changed, as the listing gives it: months before the zips were built. */
+const RECORDED = '2026-07-18T23:27:00Z'
 const WINDOW = 'from=2026-09-01&to=2027-01-31'
 /** How many of the recorded meetings are dated in the window (September 2026 through January 2027). */
 const IN_WINDOW = 13
@@ -60,6 +64,8 @@ const uid = (id: string) => `body-govinfo-${id}@floorvote.org`
 let feed: MeetingFeed
 /** What the stubbed GovInfo, House Clerk, and Senate answer. */
 let files: Map<string, string>
+/** The files as recorded, so the listing can say which a test changed: those changed just now. */
+let recorded: Map<string, string>
 let served: Map<string, () => Response>
 /** Every address asked for, in order. */
 let calls: string[]
@@ -84,6 +90,7 @@ beforeEach(async () => {
   clearMeetingCaches()
   net.paced.length = 0
   files = new Map([...fixtureFiles, ...rollCallBillFiles])
+  recorded = new Map(files)
   served = rollCallNetwork()
   calls = []
   feed = new MeetingFeed()
@@ -94,6 +101,12 @@ beforeEach(async () => {
     if (congress) return congress
     const zip = ZIP_URL.exec(url)
     if (zip && zip[2] === zip[3]) return serveZips()(zip[2])
+    const listing = LISTING_URL.exec(url)
+    if (listing && listing[1] === '119') {
+      const type = listing[2]
+      return new Response(buildListing(119, type, [...files].filter(([name]) => fileType(name) === type)
+        .map(([name, data]): [string, string] => [name, data === recorded.get(name) ? RECORDED : new Date().toISOString()])), { headers: { 'content-type': 'application/json' } })
+    }
     const f = FILE_URL.exec(url)
     if (f) {
       const data = files.get(f[3])
@@ -1264,5 +1277,146 @@ describe('a bill that is not a bill of its own file', () => {
     await syncCalendar()
     expect(consoleText([errors])).toMatch(/HAMDT/)
     expect((await events()).events).toEqual([])
+  })
+})
+
+describe('a bill sync between full reads (#616)', () => {
+  const ZIPS = (u: string) => ZIP_URL.test(u)
+  const LISTINGS = (u: string) => LISTING_URL.test(u)
+  const billFiles = (u: string) => FILE_URL.exec(u)?.[3]
+  const govinfoCalls = () => calls.filter(u => u.startsWith('https://www.govinfo.gov/bulkdata/'))
+  const storedRecord = async (number: string) => (await db().select().from(schema.providerRecords)
+    .where(eq(schema.providerRecords.billId, await billId(number))).get())!
+  /** The body calendar's sync, then the bill sync alone, with no ingest, so every request is the bill sync's or the calendar's. */
+  async function calendarThenBills(run: Run = makeRun()) {
+    await syncCalendar(run)
+    calls = []
+    await seam.sync(run)
+    return run
+  }
+
+  it('reads the zips in full on the bill sync after the meetings are first read in full, and only the listings after that', async () => {
+    linkBills()
+    await calendarThenBills()
+    // The meetings are now on bills' records, so every record changed: a read in full.
+    expect(govinfoCalls().filter(ZIPS)).toHaveLength(8)
+    expect(govinfoCalls().filter(LISTINGS)).toEqual([])
+    await calendarThenBills()
+    expect(govinfoCalls().filter(ZIPS)).toEqual([])
+    expect(govinfoCalls().filter(LISTINGS)).toHaveLength(8)
+  })
+
+  it('downloads no bill file and queues nothing when neither a file nor a meeting changed', async () => {
+    linkBills()
+    await pass()
+    const before = await storedRecord('HB43')
+    const run = await calendarThenBills()
+    expect(govinfoCalls().filter(u => !LISTINGS(u))).toEqual([])
+    expect(queuedIds(run)).toEqual([])
+    expect(await storedRecord('HB43')).toEqual(before)
+  })
+
+  it('updates the record of a bill whose meeting changed though its file didn\'t, downloading only that bill\'s file', async () => {
+    linkBills()
+    await pass()
+    const before = await storedRecord('SB296')
+    feed.edit(OCT_HEARING, m => { m.date = '2026-10-06T14:00:00Z' })
+    const run = await calendarThenBills()
+    expect(govinfoCalls().filter(ZIPS)).toEqual([])
+    expect(govinfoCalls().map(billFiles).filter(Boolean)).toEqual(['BILLSTATUS-119s296.xml'])
+    const after = await storedRecord('SB296')
+    expect(after.rawHash).not.toBe(before.rawHash)
+    expect(JSON.parse(after.rawJson).meetings).toEqual([expect.objectContaining({ event_id: OCT_HEARING, date: '2026-10-06', time: '10:00' })])
+    expect(queuedIds(run)).toEqual([await billId('SB296')])
+    // And the bill's calendar shows it once ingested.
+    await seam.ingest(await billId('SB296'), run)
+    expect((await billEntries('SB296')).map((c: any) => [c.date, c.time])).toEqual([['2026-10-06', '10:00']])
+  })
+
+  it('takes a meeting off a bill whose file didn\'t change, once the meeting stops taking it up', async () => {
+    linkBills()
+    await pass()
+    feed.edit(UPCOMING, m => { m.relatedItems = { bills: [m.relatedItems.bills[0]] } })
+    await calendarThenBills()
+    expect(govinfoCalls().filter(ZIPS)).toEqual([])
+    expect(govinfoCalls().map(billFiles).filter(Boolean)).toEqual(['BILLSTATUS-119hr131.xml'])
+    expect(JSON.parse((await storedRecord('HB131')).rawJson).meetings).toEqual([])
+    expect(JSON.parse((await storedRecord('HB43')).rawJson).meetings.map((e: any) => e.event_id)).toEqual([MARKUP, UPCOMING])
+  })
+
+  it('puts a meeting on a bill no meeting took up before, though the bill\'s file didn\'t change', async () => {
+    linkBills()
+    await pass()
+    feed.edit(UPCOMING, m => { m.relatedItems.bills.push({ congress: 119, number: '3132', type: 'HR', url: 'x' }) })
+    const run = await calendarThenBills()
+    expect(govinfoCalls().map(billFiles).filter(Boolean)).toEqual(['BILLSTATUS-119hr3132.xml'])
+    expect(JSON.parse((await storedRecord('HB3132')).rawJson).meetings.map((e: any) => e.event_id)).toEqual([UPCOMING])
+    expect(queuedIds(run)).toContain(await billId('HB3132'))
+  })
+
+  it('ignores a meeting\'s bill that GovInfo doesn\'t list, as a read in full does', async () => {
+    linkBills()
+    await pass()
+    feed.edit(UPCOMING, m => { m.relatedItems.bills.push({ congress: 119, number: '424242', type: 'HR', url: 'x' }) })
+    await calendarThenBills()
+    expect(govinfoCalls().filter(LISTINGS)).toHaveLength(8)
+    expect(govinfoCalls().map(billFiles).filter(Boolean)).toEqual([])
+    await expect(billId('HB424242')).rejects.toThrow(/no bill/)
+  })
+
+  it('reads the zips in full when what the last bill sync put on records is gone from what it keeps', async () => {
+    linkBills()
+    await pass()
+    await env.DB.prepare(`DELETE FROM provider_cache WHERE provider = 'govinfo' AND key LIKE 'snapshot/%'`).run()
+    feed.edit(OCT_HEARING, m => { m.date = '2026-10-06T14:00:00Z' })
+    const run = await calendarThenBills()
+    // It finds out from the listings' pass, and reads in full instead.
+    expect(govinfoCalls().filter(LISTINGS)).toHaveLength(8)
+    expect(govinfoCalls().filter(ZIPS)).toHaveLength(8)
+    expect(queuedIds(run)).toEqual([await billId('SB296')])
+  })
+
+  it('reads the zips in full when the kept meetings go cold, and again once they are warm', async () => {
+    linkBills()
+    await pass()
+    // A kept meeting is lost, so the meetings are cold until it is read again.
+    await env.DB.prepare(`DELETE FROM provider_cache WHERE provider = 'govinfo' AND key = 'warm/119'`).run()
+    calls = []
+    await seam.sync()
+    expect(govinfoCalls().filter(ZIPS)).toHaveLength(8)
+    // Cold, the records carry no meetings.
+    expect(JSON.parse((await storedRecord('HB43')).rawJson).meetings).toBeUndefined()
+    await calendarThenBills()
+    expect(govinfoCalls().filter(ZIPS)).toHaveLength(8)
+    expect(JSON.parse((await storedRecord('HB43')).rawJson).meetings.map((e: any) => e.event_id)).toEqual([MARKUP, UPCOMING])
+    await calendarThenBills()
+    expect(govinfoCalls().filter(ZIPS)).toEqual([])
+  })
+
+  it('reads the zips in full when the key is set or taken away', async () => {
+    linkBills()
+    await pass()
+    calls = []
+    await keyless.sync()
+    expect(govinfoCalls().filter(ZIPS)).toHaveLength(8)
+    expect(JSON.parse((await storedRecord('HB43')).rawJson).meetings).toBeUndefined()
+    calls = []
+    await seam.sync()
+    expect(govinfoCalls().filter(ZIPS)).toHaveLength(8)
+    calls = []
+    await seam.sync()
+    expect(govinfoCalls().filter(ZIPS)).toEqual([])
+  })
+
+  it('keeps no more than what two bill syncs put on records', async () => {
+    linkBills()
+    await pass()
+    for (const at of ['2026-10-06T14:00:00Z', '2026-10-06T15:00:00Z', '2026-10-06T16:00:00Z']) {
+      feed.edit(OCT_HEARING, m => { m.date = at })
+      await calendarThenBills()
+    }
+    const kept = await env.DB.prepare(`SELECT key FROM provider_cache WHERE provider = 'govinfo' AND key LIKE 'snapshot/%'`).all()
+    expect(kept.results.length).toBeGreaterThan(0)
+    expect(kept.results.length).toBeLessThanOrEqual(2)
   })
 })

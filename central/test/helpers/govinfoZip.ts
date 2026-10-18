@@ -162,3 +162,42 @@ export function fileType(name: string): string {
 
 /** The eight GovInfo bill types, in the order the provider reads them. */
 export const BILL_TYPES = ['hr', 's', 'hres', 'sres', 'hjres', 'sjres', 'hconres', 'sconres'] as const
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** A time as GovInfo's bulk listing writes it, in UTC to the minute: `2026-07-18T23:27:41Z` is `18-Jul-2026 23:27`. */
+export function listingTime(iso: string): string {
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(d.getUTCDate())}-${MONTHS[d.getUTCMonth()]}-${d.getUTCFullYear()} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`
+}
+
+/**
+ * GovInfo's bulk listing of one bill type's folder, as
+ * `/bulkdata/json/BILLSTATUS/<congress>/<type>` answers it with
+ * `Accept: application/json`: every Bill Status file of the type with the time
+ * it last changed, and the type's zip with the time it was built. The shape is
+ * a real answer's, recorded on October 18, 2026.
+ */
+export function buildListing(
+  congress: number,
+  type: string,
+  files: Iterable<[name: string, modified: string]>,
+  zipModified: string | null = '2026-10-17T00:19:30Z',
+): string {
+  const entry = (name: string, ext: string, modified: string, size: number) => ({
+    displayLabel: name,
+    fileExtension: ext,
+    folder: false,
+    formattedLastModifiedTime: listingTime(modified),
+    formattedSize: `${(size / 1024).toFixed(1)} KB`,
+    justFileName: name,
+    link: `https://www.govinfo.gov/bulkdata/BILLSTATUS/${congress}/${type}/${name}`,
+    mimeType: ext === 'zip' ? 'application/zip' : 'application/xml',
+    name,
+    size,
+  })
+  const out = [...files].map(([name, modified]) => entry(name, 'xml', modified, 9000))
+  if (zipModified) out.push(entry(`BILLSTATUS-${congress}-${type}.zip`, 'zip', zipModified, 200000))
+  return JSON.stringify({ files: out })
+}
