@@ -332,11 +332,12 @@ export async function applyMasterList(
     if (held) seeded.add(tenantId)
   }
 
-  // Only a changed bill some covering instance doesn't track can need a full ingest for its companion's sake. The
-  // reverse lookup has no index on the companion's side, so it is kept to those bills: most passes list none.
+  // Only a changed bill an instance doesn't hold by hand can need a full ingest for its companion's sake: it
+  // doesn't match there now, or this pass's keywords drop its match (a title that changed). The reverse lookup has
+  // no index on the companion's side, so it is kept to those bills: most passes list none.
   const companionCandidates = list
     .filter(e => existing.get(e.bill_id)?.changeHash !== e.change_hash
-      && coveringTenants.some(t => (existingLinks.get(`${e.bill_id}:${t.tenantId}`) ?? null) === null))
+      && coveringTenants.some(t => existingLinks.get(`${e.bill_id}:${t.tenantId}`) !== 'manual'))
     .map(e => e.bill_id)
   const companionTracked = await trackedCompanionTenants(db, getProvider(session.provider), session.state, companionCandidates)
 
