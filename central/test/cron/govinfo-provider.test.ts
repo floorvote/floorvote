@@ -15,6 +15,12 @@ vi.mock('../../src/lib/sync-schedule', async () => {
   const actual = await vi.importActual<typeof import('../../src/lib/sync-schedule')>('../../src/lib/sync-schedule')
   return { ...actual, getCurrentEtHour: vi.fn(() => 5) }
 })
+// The ops alert a vanished type raises (#671): every call is kept, none is sent.
+const opsAlert = vi.fn(async (_env: unknown, _msg: { subject: string; text: string; html: string }) => {})
+vi.mock('../../src/lib/jobAlert', async () => {
+  const actual = await vi.importActual<typeof import('../../src/lib/jobAlert')>('../../src/lib/jobAlert')
+  return { ...actual, sendOpsAlert: (env: unknown, msg: { subject: string; text: string; html: string }) => opsAlert(env, msg) }
+})
 const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
 
@@ -714,6 +720,120 @@ describe('failing closed', () => {
     // Nothing was removed.
     expect(await bill('SCR5')).toMatchObject({ number: 'SCR5', status: 'In committee' })
     expect(sentToTenant(run)).toEqual([])
+  })
+})
+
+describe('a missing type zip is logged, and a type that vanishes after it had bills alerts (#671)', () => {
+  const notFound = () => new Response('not found', { status: 404 })
+  const warnings = (warn: { mock: { calls: unknown[][] } }) => warn.mock.calls.map(c => c.map(String).join(' ')).filter(m => m.includes('[sync-govinfo]'))
+  const alerts = () => opsAlert.mock.calls.map(c => c[1])
+  const alertText = (a: { subject: string; text: string }) => `${a.subject}\n${a.text}`
+  let warn: ReturnType<typeof vi.spyOn>
+
+  beforeEach(() => {
+    opsAlert.mockClear()
+    warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+  afterEach(() => { warn.mockRestore() })
+
+  it.each(BILL_TYPES)('logs one warning naming the Congress and the type when only the %s zip is 404, and the pass succeeds', async (type) => {
+    await claim()
+    answers.set(type, notFound)
+    const others = BILLS.filter(([name]) => name.replace(/\d+$/, '') !== type)
+    expect(await sync()).toEqual([expect.objectContaining({ records: others.length })])
+    const logged = warnings(warn)
+    expect(logged).toHaveLength(1)
+    expect(logged[0]).toMatch(/119/)
+    expect(logged[0]).toMatch(new RegExp(`\\b${type}\\b`))
+  })
+
+  it('logs one warning for each missing zip', async () => {
+    await claim()
+    for (const t of ['hjres', 'sjres'] as const) answers.set(t, notFound)
+    await sync()
+    expect(warnings(warn)).toHaveLength(2)
+  })
+
+  it('logs nothing when every zip answers', async () => {
+    await claim()
+    await sync()
+    expect(warnings(warn)).toEqual([])
+  })
+
+  it('alerts once, naming the Congress and the type, when a type with stored records returns 404, and still syncs the other types', async () => {
+    await claim()
+    await syncAndIngest()
+    const stored = await bill('SCR5')
+    files.set(file('hr3132'), xml('hr3132').replace('Veterans Act of 2025</title>', 'Veterans Act of 2026</title>'))
+    serveAll()
+    answers.set('sconres', notFound)
+    await forcedSync()
+    expect(alerts()).toHaveLength(1)
+    expect(alertText(alerts()[0])).toMatch(/119/)
+    expect(alertText(alerts()[0])).toMatch(/sconres/)
+    // The other types kept syncing, and the missing type's bills stayed as they were.
+    expect((await bill('HB3132')).title).toMatch(/2026/)
+    expect(await bill('SCR5')).toEqual(stored)
+  })
+
+  it('alerts once for each vanished type', async () => {
+    await claim()
+    await syncAndIngest()
+    answers.set('sconres', notFound)
+    answers.set('hr', notFound)
+    await forcedSync()
+    expect(alerts()).toHaveLength(2)
+    expect(alerts().map(alertText).filter(t => /sconres/.test(t))).toHaveLength(1)
+    expect(alerts().map(alertText).filter(t => /\bhr\b/.test(t) && !/sconres/.test(t))).toHaveLength(1)
+  })
+
+  it('alerts on the first full read of a new UTC day, as it does on a forced one', async () => {
+    await claim()
+    await syncAndIngest()
+    answers.set('sconres', notFound)
+    vi.setSystemTime(new Date('2026-10-20T09:00:00Z'))
+    await sync()
+    expect(calls.some(c => ZIP_URL.test(c.url))).toBe(true)
+    expect(alerts()).toHaveLength(1)
+    expect(alertText(alerts()[0])).toMatch(/sconres/)
+  })
+
+  it('does not alert on a pass between full reads, which legitimately returns no records for a type', async () => {
+    await claim()
+    await syncAndIngest()
+    calls = []
+    answers.set('sconres', notFound)
+    files.set(file('hr3132'), xml('hr3132').replace('Veterans Act of 2025</title>', 'Veterans Act of 2026</title>'))
+    vi.setSystemTime(new Date('2026-10-19T10:00:00Z'))
+    await sync()
+    // No zip was asked for, so this was a partial pass, and it said nothing.
+    expect(calls.some(c => ZIP_URL.test(c.url))).toBe(false)
+    expect(alerts()).toEqual([])
+    expect(warnings(warn)).toEqual([])
+  })
+
+  it('neither alerts nor fails for a type that never had stored records, the start of a Congress', async () => {
+    await claim()
+    for (const t of ['hjres', 'sjres', 'hconres', 'sconres'] as const) answers.set(t, notFound)
+    await sync()
+    expect(alerts()).toEqual([])
+    // It is still logged.
+    expect(warnings(warn)).toHaveLength(4)
+  })
+
+  it('does not alert when every type answers', async () => {
+    await claim()
+    await syncAndIngest()
+    await forcedSync()
+    expect(alerts()).toEqual([])
+  })
+
+  it('does not alert when all eight are 404, which fails closed as before', async () => {
+    await claim()
+    await syncAndIngest()
+    for (const t of BILL_TYPES) answers.set(t, notFound)
+    await expect(forcedSync()).rejects.toThrow(/GovInfo.*404|all eight/i)
+    expect(alerts()).toEqual([])
   })
 })
 
