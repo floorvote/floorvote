@@ -1,9 +1,10 @@
-import { and, eq, inArray, isNotNull, or } from 'drizzle-orm'
+import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm'
 import { associationConfig, bills, calendarEventBills, calendarEvents } from '../db/schema'
 import {
   eventMatchesRules, parseEventRules, rulesFromCouncilCalendar, type AgendaBills, type EventFacets, type EventRules,
 } from '../../../shared/eventRules'
 import { centralFetch } from './centralFetch'
+import { groupHasPriority } from './teamFields'
 import type { AppDb, Env } from '../types'
 import type { CentralBodyEvent } from './bodyEvents'
 
@@ -173,20 +174,20 @@ export interface RuleCounts {
 const NO_AGENDA_BILLS: AgendaBills = { tracked: false, prioritized: false }
 
 /**
- * Whether each body event has a bill the instance tracks, and one with a
- * priority, on its agenda, by event id (`ids` limits it to those events).
+ * Whether each body event has a bill the instance tracks, and one whose group
+ * has a priority (the bill's own, or a companion's: `groupHasPriority`), on its agenda, by event id (`ids` limits it to those events).
  */
 export async function agendaBills(db: AppDb, ids?: readonly string[]): Promise<Map<string, AgendaBills>> {
   const out = new Map<string, AgendaBills>()
   const read = async (only?: readonly string[]) => {
-    for (const r of await db.select({ eventId: calendarEventBills.eventId, matchType: bills.matchType, priority: bills.priority })
+    for (const r of await db.select({ eventId: calendarEventBills.eventId, matchType: bills.matchType, prioritized: sql<number>`${groupHasPriority(bills)}` })
       .from(calendarEventBills)
       .innerJoin(calendarEvents, eq(calendarEvents.id, calendarEventBills.eventId))
       .innerJoin(bills, eq(bills.id, calendarEventBills.billId))
-      .where(and(eq(calendarEvents.source, 'body'), or(isNotNull(bills.matchType), isNotNull(bills.priority)),
+      .where(and(eq(calendarEvents.source, 'body'), or(isNotNull(bills.matchType), groupHasPriority(bills)),
         only ? inArray(calendarEventBills.eventId, [...only]) : undefined)).all()) {
       const prior = out.get(r.eventId) ?? NO_AGENDA_BILLS
-      out.set(r.eventId, { tracked: true, prioritized: prior.prioritized || r.priority !== null })
+      out.set(r.eventId, { tracked: true, prioritized: prior.prioritized || r.prioritized === 1 })
     }
   }
   if (!ids) await read()
