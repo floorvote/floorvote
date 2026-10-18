@@ -395,7 +395,7 @@ describe('date custom fields on companion groups', () => {
 
     const rows = await fieldEvents()
     expect(rows.map(e => e.description)).toEqual(['Comment deadline: HB 1'])
-    expect(rows[0].id).toBe(`cf-f1-${m['HB 1']}`)
+    expect(rows[0].id).toBe('cf-f1-group-g1')
     expect(rows[0].bills.map(b => b.id)).toEqual([m['HB 1']])
   })
 
@@ -493,7 +493,30 @@ describe('date custom fields on companion groups', () => {
 
     expect(await upcomingCount()).toBe(1)
     const ics = await feed()
-    expect(ics).toContain(`UID:cf-f1-${m['HB 1']}`)
+    expect(ics).toContain('UID:cf-f1-group-g1')
     expect(ics).not.toContain(`UID:cf-f1-${m['SB 1']}`)
+    expect(ics).not.toContain(`UID:cf-f1-${m['HB 1']}`)
+  })
+
+  it('keeps the same id and feed UID when a later value on another member replaces the holder, and links the new holder', async () => {
+    const m = await group('g1', { 'HB 1': 'high', 'SB 1': 'high' })
+    await addField('f1', 'Comment deadline')
+    await setValue(m['HB 1'], 'f1', isoDay(3), stamp(2))
+    const [before] = await fieldEvents()
+    expect([before.id, before.uid, before.billId]).toEqual(['cf-f1-group-g1', 'cf-f1-group-g1', m['HB 1']])
+
+    await setValue(m['SB 1'], 'f1', isoDay(4), stamp(3))
+    const [after] = await fieldEvents()
+    expect([after.id, after.uid, after.billId, after.date]).toEqual(['cf-f1-group-g1', 'cf-f1-group-g1', m['SB 1'], isoDay(4)])
+    expect(vevent(await feed(), 'cf-f1-group-g1')).toBeDefined()
+  })
+
+  it('keys a grouped event by its group key, not its bill id', async () => {
+    const a = await group('same', { 'HB 1': 'high' })
+    await group('other', { 'HB 2': 'high' })
+    await addField('f1', 'Comment deadline')
+    await setValue(a['HB 1'], 'f1', isoDay(3), stamp(2))
+    const rows = await fieldEvents()
+    expect(rows.map(e => e.id)).toEqual(['cf-f1-group-same'])
   })
 })
