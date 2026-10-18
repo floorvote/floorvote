@@ -143,7 +143,7 @@ export function BodyEventsControl({ onChanged }: { onChanged?: () => void }) {
       // Everything showed: with one state, restore what "All events" cleared, as it stood. With several, bring back this state's committees and what was kept from an earlier setting.
       if (solo) { void commit(stashedRef.current ?? EMPTY_EVENT_RULES); return }
       const was = stashedRef.current
-      const base: EventRules | null = was ? { ...was, committees: [], allStates: undefined } : null
+      const base: EventRules | null = was ? { ...was, committees: [], allStates: [...configured] } : null
       void commit(withStateOnly(base, s.code, configured, stateStashRef.current.get(s.code) ?? [], idsOf(s)))
       return
     }

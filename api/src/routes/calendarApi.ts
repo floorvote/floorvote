@@ -275,8 +275,8 @@ calendarRouter.get('/events', requireAuth, async (c) => {
   // A body event the rules hide that a prioritized bill brings back says so, so its committee isn't read as one the instance chose.
   const bodyRows = new Map(rows.filter(r => r.source === 'body').map(r => [r.id, parseFacets(r.ruleFacets)]))
   if (bodyRows.size > 0) {
-    const { rules } = await loadEventRules(db, null)
-    if (rules) {
+    const { rules, settled } = await loadEventRules(db, null)
+    if (rules && settled) {
       for (const e of result) {
         const facets = bodyRows.get(e.id)
         if (facets && e.bills.some(b => b.priority) && !eventMatchesRules(facets, rules, { tracked: e.bills.length > 0, prioritized: false })) e.shownByPriority = true

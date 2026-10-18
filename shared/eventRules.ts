@@ -134,6 +134,7 @@ export function parseEventRules(input: unknown): EventRules | string {
   if (r.trackedBills !== undefined && typeof r.trackedBills !== 'boolean') return 'trackedBills must be true or false'
   const allStates = list(r.allStates, 'allStates')
   if (typeof allStates === 'string') return allStates
+  if (allStates.some(code => !/^[A-Z]{2}$/.test(code))) return 'allStates entries must be two-letter uppercase state codes'
   return { committees, kinds, topics, trackedBills: r.trackedBills === true, ...(allStates.length > 0 ? { allStates } : {}) }
 }
 

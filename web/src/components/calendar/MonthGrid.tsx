@@ -12,8 +12,10 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 // Up to two cards per cell, each ~half the cell height; the rest fold into "+N more".
 // ROW_H is near the floor that still fits two CARD_H cards plus the "+N more" row.
 const CELL_CAP = 2
-// A body event's committee line adds COMMITTEE_LINE_H to its card, and a row makes room for two such cards.
-const ROW_H = 138 + 2 * COMMITTEE_LINE_H
+// A body event's committee line adds COMMITTEE_LINE_H to its card.
+const ROW_H = 138
+// A week with a committee line on some card makes room for two such cards.
+const ROW_H_COMMITTEE = ROW_H + 2 * COMMITTEE_LINE_H
 const CARD_H = 46
 
 export function MonthGrid({ events, initialYear, initialMonth, onSelect, onSelectDay, onAddEvent, suppressHover, activeDateIso }: {
@@ -65,7 +67,7 @@ export function MonthGrid({ events, initialYear, initialMonth, onSelect, onSelec
         display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)',
         ...(isMobile
           ? { gridAutoRows: 'minmax(44px, auto)', gap: 2 }
-          : { gridTemplateRows: `auto repeat(6, ${ROW_H}px)`, gap: 4 }),
+          : { gridTemplateRows: `auto ${weeks.map(w => `${w.some(c => (byDate.get(c.iso) ?? []).some(hasCommitteeTag)) ? ROW_H_COMMITTEE : ROW_H}px`).join(' ')}`, gap: 4 }),
       }}>
         {dowLabels.map((d, i) => (
           <div key={i} style={{ fontSize: fontSize.xs, color: color.textMuted, textTransform: 'uppercase', textAlign: 'center', padding: '2px 0' }}>{d}</div>
