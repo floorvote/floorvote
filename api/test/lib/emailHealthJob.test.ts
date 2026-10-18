@@ -158,7 +158,7 @@ describe('runEmailHealth', () => {
     expect(await runEmailHealth(e, db, NOW)).toBe('trip')
     expect(cfSend).toHaveBeenCalledOnce()
     expect(fetch).not.toHaveBeenCalled()
-    const sent = cfSend.mock.calls[0][0] as { to: string[]; subject: string }
+    const sent = (cfSend.mock.calls as unknown as [{ to: string[]; subject: string }][])[0][0]
     expect(sent.to).toEqual(['ops@example.test'])
     expect(sent.subject).toContain('resend')
   })
