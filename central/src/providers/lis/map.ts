@@ -690,7 +690,8 @@ export interface LisIds {
 export interface LisSession { session_id: number; session_name: string; year_start: number; year_end: number }
 
 const MAJOR = /passed|reported|failed|defeated|continued|approved|vetoed|signed by governor|chapter|agreed to|incorporated|stricken|tabled/i
-const VOTE_ID: Record<string, number> = { Y: 1, N: 2, X: 3, A: 3 }
+/** LegiScan and LIMS use 1 to 4 (Yea, Nay, Not Voting, Absent), so Abstain, which they have no id for, takes 5. */
+const VOTE_ID: Record<string, number> = { Y: 1, N: 2, X: 3, A: 5 }
 
 function billType(number: string): { type: string; typeId: string } {
   if (/^(HJ|SJ)/.test(number)) return { type: 'JR', typeId: '3' }
