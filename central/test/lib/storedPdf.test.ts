@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { pdfStreamOrNull } from '../../src/lib/storedPdf'
+import { pdfStreamOrNull, startsWithPdfMagic } from '../../src/lib/storedPdf'
 
 const bytes = (s: string) => Uint8Array.from(s, ch => ch.charCodeAt(0))
 
@@ -103,5 +103,52 @@ describe('pdfStreamOrNull', () => {
     const out = await pdfStreamOrNull(stream)
     await out!.cancel()
     expect(state.cancelled).toBe(true)
+  })
+})
+
+describe('startsWithPdfMagic', () => {
+  it('is true for bytes that start with %PDF-', () => {
+    expect(startsWithPdfMagic(bytes('%PDF-1.7\nbody'))).toBe(true)
+  })
+
+  it('is true for exactly the five magic bytes', () => {
+    expect(startsWithPdfMagic(bytes('%PDF-'))).toBe(true)
+  })
+
+  it('is false for an empty body and for one shorter than the magic', () => {
+    expect(startsWithPdfMagic(new Uint8Array(0))).toBe(false)
+    expect(startsWithPdfMagic(bytes('%'))).toBe(false)
+    expect(startsWithPdfMagic(bytes('%PDF'))).toBe(false)
+  })
+
+  it.each([
+    ['an HTML page', '<html><body>503</body></html>'],
+    ['the magic without its dash', '%PDF1.7\n'],
+    ['a lowercase magic', '%pdf-1.7'],
+    ['whitespace before the magic', ' %PDF-1.7'],
+    ['a newline before the magic', '\n%PDF-1.7'],
+    ['the magic later in the body', '<p>%PDF-1.7</p>'],
+    ['a near miss in the last byte', '%PDF+'],
+  ])('is false for %s', (_label, body) => {
+    expect(startsWithPdfMagic(bytes(body))).toBe(false)
+  })
+
+  it('is false for a byte order mark before the magic', () => {
+    expect(startsWithPdfMagic(Uint8Array.from([0xef, 0xbb, 0xbf, ...bytes('%PDF-')]))).toBe(false)
+  })
+
+  it('reads a view of a larger buffer from the view\'s own start', () => {
+    const buf = new Uint8Array([...bytes('xx%PDF-1.7')])
+    expect(startsWithPdfMagic(buf.subarray(2))).toBe(true)
+    expect(startsWithPdfMagic(buf.subarray(1))).toBe(false)
+    expect(startsWithPdfMagic(buf)).toBe(false)
+  })
+
+  it('does not read past the first five bytes of a large body', () => {
+    const big = new Uint8Array(4 * 1024 * 1024)
+    big.set(bytes('%PDF-'), 0)
+    expect(startsWithPdfMagic(big)).toBe(true)
+    big[4] = 0
+    expect(startsWithPdfMagic(big)).toBe(false)
   })
 })

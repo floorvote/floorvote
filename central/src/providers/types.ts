@@ -423,6 +423,22 @@ export interface ProviderContext<K extends ProviderEnvKey = ProviderEnvKey> {
    */
   ids(kind: string, nativeKeys: readonly string[]): Promise<Map<string, number>>
   /**
+   * What the provider keeps between runs: small text entries under keys it
+   * names, for what it fetched once and shouldn't fetch again (a feed that
+   * answers one request per record, and allows few requests, is the case it
+   * exists for). Durable, and the provider's own: no provider reads
+   * another's. Nothing expires, so a provider drops what it no longer needs.
+   * An entry is text, so the provider serializes what it keeps.
+   */
+  cache: {
+    /** Every entry whose key starts with `prefix` (the empty prefix lists them all), by key. */
+    list(prefix: string): Promise<Map<string, string>>
+    /** Add these entries, replacing any with the same key. */
+    put(entries: Readonly<Record<string, string>>): Promise<void>
+    /** Remove these keys. A key that isn't there is ignored. */
+    drop(keys: readonly string[]): Promise<void>
+  }
+  /**
    * The central ids already minted for these keys, without minting any: a key
    * central has never seen is left out. For linking to a record the provider
    * isn't sure exists, such as the earlier session's copy of a carried-over
@@ -674,7 +690,8 @@ export interface MeasurePerson {
   opensecrets_id?: string
   knowwho_pid?: number
   ballotpedia?: string
-  bioguide_id?: string
+  /** The member's Bioguide id. Absent leaves a stored one alone on ingest, and null clears it. */
+  bioguide_id?: string | null
   bio?: {
     social?: {
       biography?: string
@@ -726,7 +743,7 @@ interface MeasureVote {
    * Per-member votes. getBill never returns these (LegiScan needs a getRollCall
    * per vote); providers that include them inline, such as DC LIMS, set this and
    * the ingestor writes roll_call_votes. vote_id follows LegiScan: 1 Yea, 2 Nay,
-   * 3 NV, 4 Absent.
+   * 3 NV, 4 Absent. Virginia's Abstain, which LegiScan has no id for, is 5.
    */
   member_votes?: { people_id: number | null; vote_id: number; vote_text: string }[]
 }
