@@ -1,50 +1,149 @@
 import { describe, it, expect } from 'vitest'
 import {
-  billsApiParams, billsFilterValuesFromSearch, billsChipSelection, prioritizedChipSelection,
-  searchFromListUrl, billsApiParamsFromSearch,
+  billsApiParams, billsQueryFromSearch, billsChipSelection, prioritizedChipSelection,
+  searchFromListUrl, billsApiParamsFromSearch, billsFacetParams, billFilterForUrl, withCustomFieldKeys,
 } from './billsQuery'
+import { parseBillFilter, serializeBillFilter, EMPTY_BILL_FILTER } from '../../../../shared/billFilter'
 
-describe('billsApiParams', () => {
-  it('emits params in the canonical order matching fetchBills', () => {
-    const v = billsFilterValuesFromSearch(new URLSearchParams('status=2&priority=high&newMatches=1&tag=elections'))
-    const s = billsApiParams(v, 1, 100)
-    expect(s).toBe('page=1&pageSize=100&status=2&priority=high&newMatches=1&tag=elections')
+const query = (qs: string, defs: Parameters<typeof billsQueryFromSearch>[1] = []) => billsQueryFromSearch(new URLSearchParams(qs), defs)
+
+describe('billsQueryFromSearch', () => {
+  it('reads the filter with the shared parse, so the Bills page and the API read the same string alike', () => {
+    const qs = 'status=2&stage=enacted&year=2026&state=UT&position=none&priority=high&tag=a&subject=UT%3AElections&minRelevance=4&myBills=1&unvoted=1&newMatches=1&drafts=1&match=any&q=water'
+    expect(query(qs).filter).toEqual(parseBillFilter(qs))
   })
 
-  // Regression guard for the bill LIST honouring the group operator: the
-  // facets endpoint and the bulk-action routes both read `matchAny` off
-  // client state independently, so this is the one place that pins the
-  // client's actual GET /bills query string. If this silently stops emitting
-  // `match=any`, the list disagrees with the facet counts and the row
-  // highlighting they drive, with no error.
+  it('reads sort and dir beside the filter, and an unknown sort as the default', () => {
+    expect(query('sort=relevance&dir=desc')).toMatchObject({ sortCol: 'relevance', sortDir: 'desc' })
+    expect(query('sort=nope&dir=up')).toMatchObject({ sortCol: 'default', sortDir: 'asc' })
+    expect(query('')).toMatchObject({ sortCol: 'default', sortDir: 'asc' })
+  })
+
+  it('holds a custom field by its id when the defs know it, and by the key as given when they do not', () => {
+    const defs = [{ id: 'cf-uuid-1', slug: 'tracked_by_team' }]
+    expect(query('cf_tracked_by_team=yes', defs).filter.cf).toEqual({ 'cf-uuid-1': ['yes'] })
+    expect(query('cf_cf-uuid-1=yes', defs).filter.cf).toEqual({ 'cf-uuid-1': ['yes'] })
+    expect(query('cf_tracked_by_team=yes').filter.cf).toEqual({ tracked_by_team: ['yes'] })
+  })
+
+  it('merges a field named by its slug and by its id, each value once', () => {
+    const defs = [{ id: 'cf-uuid-1', slug: 'tracked_by_team' }]
+    expect(query('cf_tracked_by_team=a&cf_cf-uuid-1=a&cf_cf-uuid-1=b', defs).filter.cf).toEqual({ 'cf-uuid-1': ['a', 'b'] })
+  })
+
+  it('drops a year that is not a number, and reads a minimum relevance of zero as none', () => {
+    expect(query('year=2026&year=abc').filter.year).toEqual(['2026'])
+    expect(query('minRelevance=0').filter.minRelevance).toBeNull()
+    expect(query('minRelevance=5').filter.minRelevance).toBe(5)
+  })
+
+  it('returns an immutable value', () => {
+    const f = query('status=2&cf_x=1').filter
+    expect(Object.isFrozen(f)).toBe(true)
+    expect(Object.isFrozen(f.status)).toBe(true)
+    expect(Object.isFrozen(f.cf)).toBe(true)
+  })
+})
+
+describe('billsApiParams', () => {
+  it('writes the page, then the filter as the shared serialize writes it, then the sort', () => {
+    const q = query('status=2&priority=high&newMatches=1&tag=elections&sort=bill&dir=desc')
+    expect(billsApiParams(q, 1, 100)).toBe(`page=1&pageSize=100&${serializeBillFilter(q.filter)}&sort=bill&dir=desc`)
+  })
+
+  it("writes the filter in the shared module's one key order, whatever order the URL had", () => {
+    const s = billsApiParams(query('newMatches=1&tag=elections&priority=high&status=2'), 1, 100)
+    expect(s).toBe('page=1&pageSize=100&status=2&priority=high&tag=elections&newMatches=1')
+  })
+
+  // Regression guard for the bill LIST honouring the group operator: if this silently stops emitting
+  // `match=any`, the list disagrees with the facet counts and the row highlighting they drive, with no error.
   it('emits match=any when the operator is set, hydrated from the URL', () => {
-    const v = billsFilterValuesFromSearch(new URLSearchParams('status=2&priority=high&newMatches=1&match=any&tag=elections'))
-    expect(v.matchAny).toBe(true)
-    const s = billsApiParams(v, 1, 100)
-    expect(s).toBe('page=1&pageSize=100&status=2&priority=high&newMatches=1&match=any&tag=elections')
+    const q = query('status=2&priority=high&newMatches=1&match=any&tag=elections')
+    expect(q.filter.match).toBe('any')
+    expect(billsApiParams(q, 1, 100)).toBe('page=1&pageSize=100&status=2&priority=high&tag=elections&newMatches=1&match=any')
   })
 
   it('omits match when the operator is not set', () => {
-    const v = billsFilterValuesFromSearch(new URLSearchParams('status=2'))
-    expect(v.matchAny).toBe(false)
-    const s = billsApiParams(v, 1, 100)
-    expect(s).not.toContain('match=')
+    const q = query('status=2')
+    expect(q.filter.match).toBe('all')
+    expect(billsApiParams(q, 1, 100)).not.toContain('match=')
   })
 
   it('round-trips the stage filter', () => {
-    const v = billsFilterValuesFromSearch(new URLSearchParams('stage=enacted&stage=vetoed'))
-    expect(v.stages).toEqual(['enacted', 'vetoed'])
-    expect(billsApiParams(v, 1, 100)).toBe('page=1&pageSize=100&stage=enacted&stage=vetoed')
+    const q = query('stage=enacted&stage=vetoed')
+    expect(q.filter.stage).toEqual(['enacted', 'vetoed'])
+    expect(billsApiParams(q, 1, 100)).toBe('page=1&pageSize=100&stage=enacted&stage=vetoed')
   })
 
   it('parses a bare /bills URL to an empty (page-1) query', () => {
-    const v = billsFilterValuesFromSearch(new URLSearchParams(''))
-    expect(billsApiParams(v, 1, 100)).toBe('page=1&pageSize=100')
+    expect(billsApiParams(query(''), 1, 100)).toBe('page=1&pageSize=100')
   })
 
   it('round-trips sort/dir and minRelevance', () => {
-    const v = billsFilterValuesFromSearch(new URLSearchParams('sort=relevance&dir=desc&minRelevance=5'))
-    expect(billsApiParams(v, 1, 100)).toBe('page=1&pageSize=100&minRelevance=5&sort=relevance&dir=desc')
+    expect(billsApiParams(query('sort=relevance&dir=desc&minRelevance=5'), 1, 100)).toBe('page=1&pageSize=100&minRelevance=5&sort=relevance&dir=desc')
+  })
+
+  it('writes a custom field by its id, so two URLs for one field key one cache entry', () => {
+    const defs = [{ id: 'cf-uuid-1', slug: 'tracked_by_team' }]
+    expect(billsApiParams(query('cf_tracked_by_team=yes', defs), 1, 100)).toBe('page=1&pageSize=100&cf_cf-uuid-1=yes')
+    expect(billsApiParams(query('cf_cf-uuid-1=yes', defs), 1, 100)).toBe(billsApiParams(query('cf_tracked_by_team=yes', defs), 1, 100))
+  })
+
+  it('writes every filter the shared module names: nothing the URL carried is dropped', () => {
+    const qs = 'status=2&stage=enacted&year=2026&session=S1&state=UT&position=none&priority=high&tag=a&subject=UT%3AElections&minRelevance=4&q=water&myBills=1&unvoted=1&newMatches=1&drafts=1&match=any&cf_x=1'
+    const sent = new URLSearchParams(billsApiParams(query(qs), 2, 100))
+    expect(parseBillFilter(sent)).toEqual(parseBillFilter(qs))
+    expect(sent.get('page')).toBe('2')
+  })
+})
+
+describe('billsFacetParams', () => {
+  it('is the shared serialize of the filter, search included', () => {
+    const f = query('status=2&tag=a&match=any&cf_x=1&q=water').filter
+    expect(billsFacetParams(f)).toBe(serializeBillFilter(f))
+    expect(billsFacetParams(f)).toContain('q=water')
+  })
+
+  it('is empty for the filter with nothing set', () => {
+    expect(billsFacetParams(EMPTY_BILL_FILTER)).toBe('')
+  })
+
+  it('carries what the list request carries, minus the page and the sort', () => {
+    const q = query('status=2&priority=high&minRelevance=4&drafts=1&sort=bill&dir=desc')
+    const list = new URLSearchParams(billsApiParams(q, 1, 100))
+    list.delete('page'); list.delete('pageSize'); list.delete('sort'); list.delete('dir')
+    expect(billsFacetParams(q.filter)).toBe(list.toString())
+  })
+})
+
+describe('withCustomFieldKeys', () => {
+  const defs = [{ id: 'cf-uuid-1', slug: 'tracked_by_team' }, { id: 'cf-uuid-2', slug: null }]
+
+  it('names each field by its id', () => {
+    const filter = parseBillFilter('cf_tracked_by_team=a&cf_cf-uuid-2=b&cf_unknown=c')
+    expect(withCustomFieldKeys(filter, defs, 'id').cf).toEqual({ 'cf-uuid-1': ['a'], 'cf-uuid-2': ['b'], unknown: ['c'] })
+  })
+
+  it('names each field by its slug, or its id when it has none', () => {
+    const filter = parseBillFilter('cf_cf-uuid-1=a&cf_cf-uuid-2=b&cf_unknown=c')
+    expect(withCustomFieldKeys(filter, defs, 'slug').cf).toEqual({ tracked_by_team: ['a'], 'cf-uuid-2': ['b'], unknown: ['c'] })
+  })
+
+  it('returns a new frozen value and leaves the filter it was given alone', () => {
+    const filter = parseBillFilter('cf_tracked_by_team=a')
+    const out = withCustomFieldKeys(filter, defs, 'id')
+    expect(out).not.toBe(filter)
+    expect(Object.isFrozen(out)).toBe(true)
+    expect(filter.cf).toEqual({ tracked_by_team: ['a'] })
+  })
+})
+
+describe('billFilterForUrl', () => {
+  it('names a custom field by its slug and leaves the search box out, which never reaches the URL', () => {
+    const defs = [{ id: 'cf-uuid-1', slug: 'tracked_by_team' }]
+    const f = query('status=2&cf_cf-uuid-1=yes&q=water', defs).filter
+    expect(serializeBillFilter(billFilterForUrl(f, defs))).toBe('status=2&cf_tracked_by_team=yes')
   })
 })
 
@@ -137,7 +236,7 @@ describe('searchFromListUrl', () => {
 describe('billsApiParamsFromSearch', () => {
   it('matches billsApiParams over the same search at the page size', () => {
     const search = new URLSearchParams('status=2&priority=high&sort=bill&dir=desc')
-    expect(billsApiParamsFromSearch(search, 1)).toBe(billsApiParams(billsFilterValuesFromSearch(search), 1, 100))
+    expect(billsApiParamsFromSearch(search, 1)).toBe(billsApiParams(billsQueryFromSearch(search), 1, 100))
     expect(billsApiParamsFromSearch(search, 3)).toContain('page=3&pageSize=100')
   })
   it('resolves a custom-field slug to its id when given the defs', () => {
@@ -150,7 +249,7 @@ describe('billsApiParamsFromSearch', () => {
 
 describe('a search term in the list URL', () => {
   it('is read from q, so the list and its summary agree on it', () => {
-    expect(billsFilterValuesFromSearch(new URLSearchParams('q=water')).search).toBe('water')
+    expect(billsQueryFromSearch(new URLSearchParams('q=water')).filter.q).toBe('water')
     expect(billsApiParamsFromSearch(new URLSearchParams('q=water'), 1)).toBe('page=1&pageSize=100&q=water')
   })
 })

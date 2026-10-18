@@ -1,13 +1,16 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render } from '@testing-library/react'
-import { billsFilterValuesFromSearch, type BillsFilterValues } from './billsQuery'
+import { billsQueryFromSearch, type BillsQuery } from './billsQuery'
 import { buildListSummary, type SummaryFieldDef } from './listSummary'
 import { buildActiveFilterGroups, type ActiveFilterGroupArgs } from './activeFilterGroups'
-import { FILTER_ANY } from '../../../../shared/billFilter'
+import { FILTER_ANY, encodeSubjectFilter, withBillFilter } from '../../../../shared/billFilter'
 
-const values = (qs: string, over: Partial<BillsFilterValues> = {}): BillsFilterValues =>
-  ({ ...billsFilterValuesFromSearch(new URLSearchParams(qs)), ...over })
-const summarize = (qs: string, over: Partial<BillsFilterValues> = {}, extra: Parameters<typeof buildListSummary>[0] extends infer I ? Partial<I> : never = {}) =>
+// A list URL as the query the pane summarizes. A search term never rides in the URL the app builds, so a test sets it beside.
+const values = (qs: string, over: { search?: string } = {}): BillsQuery => {
+  const q = billsQueryFromSearch(new URLSearchParams(qs))
+  return over.search === undefined ? q : { ...q, filter: withBillFilter({ q: over.search }, q.filter) }
+}
+const summarize = (qs: string, over: { search?: string } = {}, extra: Parameters<typeof buildListSummary>[0] extends infer I ? Partial<I> : never = {}) =>
   buildListSummary({ values: values(qs, over), ...extra })
 
 describe('buildListSummary: the headline', () => {
@@ -163,9 +166,10 @@ describe('buildListSummary: the filter list reads like the chips', () => {
     for (const isMultiState of [false, true]) {
       const noop = vi.fn()
       const args: ActiveFilterGroupArgs = {
-        filterStates: v.states, filterStatuses: v.statuses, filterStages: v.stages, filterPositions: v.positions,
-        filterPriorities: v.priorities, filterYears: v.years, selectedTags: v.tags, selectedSubjects: v.subjects,
-        cfFilters: { f1: ['Alpha', FILTER_ANY], f2: ['yes'] }, filterMinRelevance: v.minRelevance,
+        filterStates: [...v.filter.state], filterStatuses: [...v.filter.status], filterStages: [...v.filter.stage], filterPositions: [...v.filter.position],
+        filterPriorities: [...v.filter.priority], filterYears: v.filter.year.map(Number), selectedTags: [...v.filter.tag],
+        selectedSubjects: v.filter.subject.map(x => encodeSubjectFilter(x.state, x.name)),
+        cfFilters: { f1: ['Alpha', FILTER_ANY], f2: ['yes'] }, filterMinRelevance: v.filter.minRelevance ?? 0,
         positionOptions: [{ value: 'Support' }, { value: 'none', label: 'Not set' }], customFieldDefs: defs, isMultiState,
         onRemoveState: noop, onRemoveStatus: noop, onRemoveStage: noop, onRemovePosition: noop, onRemovePriority: noop,
         onRemoveYear: noop, onRemoveTag: noop, onRemoveSubject: noop, onRemoveCf: noop, onRemoveMinRelevance: noop,

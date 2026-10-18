@@ -53,7 +53,7 @@ describe('bulk actions on companion groups', () => {
     await seedBill({ id: 'b1713', billNumber: 'S1713', state: 'NJ' })
     await group('a190', 'b1713')
     await seedBill({ id: 'solo', billNumber: 'HB 1', state: 'NJ' })
-    const res = await bulk({ filter: { state: ['NJ'] }, priority: 'high' })
+    const res = await bulk({ filter: 'state=NJ', priority: 'high' })
     expect(res.status).toBe(200)
     expect(res.body.updated).toBe(2)
     const rows = (await list()).bills
@@ -73,14 +73,14 @@ describe('bulk actions on companion groups', () => {
 
   it('counts groups against the 1,000 cap, so 600 pairs are one selection', async () => {
     await pairs(600)
-    const res = await bulk({ filter: { state: ['NJ'] }, priority: 'low' })
+    const res = await bulk({ filter: 'state=NJ', priority: 'low' })
     expect(res.status).toBe(200)
     expect(res.body.updated).toBe(600)
   })
 
   it('refuses a selection of more than 1,000 groups, naming how many', async () => {
     await pairs(1001)
-    const res = await bulk({ filter: { state: ['NJ'] }, priority: 'low' })
+    const res = await bulk({ filter: 'state=NJ', priority: 'low' })
     expect(res.status).toBe(400)
     expect(res.body.error).toContain('Too many bills (1001)')
   })
@@ -89,7 +89,7 @@ describe('bulk actions on companion groups', () => {
     await seedBill({ id: 'a190', billNumber: 'A190', state: 'NJ', status: 'Introduced' })
     await seedBill({ id: 'b1713', billNumber: 'S1713', state: 'NJ', status: 'Passed' })
     await group('a190', 'b1713')
-    const res = await bulk({ filter: { status: ['Passed'] }, priority: 'medium' })
+    const res = await bulk({ filter: 'status=Passed', priority: 'medium' })
     expect(res.body.updated).toBe(1)
     const rows = (await list()).bills
     expect(rows).toHaveLength(1)
@@ -102,7 +102,7 @@ describe('bulk actions on companion groups', () => {
     await group('a190', 'b1713')
     await db().update(bills).set({ priority: 'low', prioritySetAt: '2026-10-01 09:00:00' }).where(eq(bills.id, 'a190'))
     await db().update(bills).set({ priority: 'high', prioritySetAt: '2026-10-01 10:00:00' }).where(eq(bills.id, 'b1713'))
-    const res = await bulk({ filter: { priority: ['low'] }, position: 'Support' })
+    const res = await bulk({ filter: 'priority=low', position: 'Support' })
     expect(res.status).toBe(200)
     expect(res.body.updated).toBe(0)
     expect((await db().select().from(officialPositions).all())).toHaveLength(0)
@@ -129,7 +129,7 @@ describe('bulk actions on companion groups', () => {
       await vote('a190')
       const shown = await list('myBills=1&status=Passed')
       expect(shown.pagination.total).toBe(1)
-      const res = await bulk({ filter: { myBills: '1', status: ['Passed'] }, priority: 'high' })
+      const res = await bulk({ filter: 'myBills=1&status=Passed', priority: 'high' })
       expect(res.status).toBe(200)
       expect(res.body.updated).toBe(1)
       const rows = (await list()).bills
@@ -140,7 +140,7 @@ describe('bulk actions on companion groups', () => {
     it('leaves out a group with none of my bills and counts a bill in no group on its own', async () => {
       await seed()
       await vote('solo')
-      const res = await bulk({ filter: { myBills: '1', status: ['Passed'] }, priority: 'low' })
+      const res = await bulk({ filter: 'myBills=1&status=Passed', priority: 'low' })
       expect(res.body.updated).toBe(1)
       expect(await priorities('myBills=1')).toEqual({ 'HB 1': 'low' })
       expect((await list()).bills.filter(r => r.priority === null)).toHaveLength(2)
@@ -151,15 +151,15 @@ describe('bulk actions on companion groups', () => {
       await db().insert(notes).values({ id: 'n1', billId: 'a190', userId: ada, content: '<p>mine</p>' })
       await vote('solo')
       // The group is mine (a note) and unvoted; HB 1 is mine and voted.
-      for (const [qs, filter, groups] of [
-        ['myBills=1&unvoted=1&status=Passed', { myBills: '1', unvoted: '1', status: ['Passed'] }, 1],
-        ['myBills=1&unvoted=1', { myBills: '1', unvoted: '1' }, 1],
-        ['myBills=1', { myBills: '1' }, 2],
+      for (const [qs, groups] of [
+        ['myBills=1&unvoted=1&status=Passed', 1],
+        ['myBills=1&unvoted=1', 1],
+        ['myBills=1', 2],
       ] as const) {
         expect([qs, 'list', (await list(qs)).pagination.total]).toEqual([qs, 'list', groups])
         expect([qs, 'form', (await values(qs)).count]).toEqual([qs, 'form', groups])
         // The edit is applied once to each of the groups the list shows, and writes nothing else.
-        expect([qs, 'edit', (await bulk({ filter, priority: 'medium' })).body.updated]).toEqual([qs, 'edit', groups])
+        expect([qs, 'edit', (await bulk({ filter: qs, priority: 'medium' })).body.updated]).toEqual([qs, 'edit', groups])
       }
     })
 
@@ -167,9 +167,9 @@ describe('bulk actions on companion groups', () => {
       await seed()
       await vote('a190')
       await db().update(bills).set({ groupKey: null }).where(inArray(bills.id, ['a190', 'b1713']))
-      const res = await bulk({ filter: { myBills: '1', status: ['Passed'] }, priority: 'high' })
+      const res = await bulk({ filter: 'myBills=1&status=Passed', priority: 'high' })
       expect(res.body.updated).toBe(0)
-      expect((await bulk({ filter: { myBills: '1' }, priority: 'high' })).body.updated).toBe(1)
+      expect((await bulk({ filter: 'myBills=1', priority: 'high' })).body.updated).toBe(1)
       expect(await priorities()).toEqual({ A190: 'high', 'S1713': null, 'HB 1': null, 'HB 2': null })
     })
   })
@@ -194,7 +194,7 @@ describe('bulk actions on companion groups', () => {
   })
 
   describe('dismissing new matches', () => {
-    async function dismissFilter(filter: object) {
+    async function dismissFilter(filter: string) {
       const res = await api('/bills/bulk-dismiss', { method: 'POST', body: JSON.stringify({ filter }) })
       return await res.json() as { dismissed: number }
     }
@@ -204,7 +204,7 @@ describe('bulk actions on companion groups', () => {
       await seedBill({ id: 'b1713', billNumber: 'S1713', state: 'NJ', newMatchAt: '2026-10-01 10:00:00' })
       await group('a190', 'b1713')
       expect((await list('newMatches=1')).pagination.total).toBe(1)
-      expect((await dismissFilter({ newMatches: '1' })).dismissed).toBe(1)
+      expect((await dismissFilter('newMatches=1')).dismissed).toBe(1)
       expect((await list('newMatches=1')).pagination.total).toBe(0)
     })
 
@@ -224,8 +224,7 @@ describe('bulk actions on companion groups', () => {
       await db().insert(notes).values({ id: 'n1', billId: 'solo', userId: ada, content: '<p>mine</p>' })
       const qs = 'myBills=1&newMatches=1&status=Passed'
       expect((await list(qs)).pagination.total).toBe(2)
-      const filter = { myBills: '1', newMatches: '1', status: ['Passed'] }
-      expect((await dismissFilter(filter)).dismissed).toBe(2)
+      expect((await dismissFilter(qs)).dismissed).toBe(2)
       expect((await list(qs)).pagination.total).toBe(0)
       // Only the group with none of my bills is still a new match.
       const left = (await list('newMatches=1')).bills
@@ -247,7 +246,7 @@ describe('bulk actions on companion groups', () => {
         stmt.bind = ((...args: unknown[]) => { sizes.push(...args.map(a => (typeof a === 'string' ? a.length : 0))); return realBind(...args) }) as typeof stmt.bind
         return stmt
       })
-      const res = await dismissFilter({ state: ['NJ'] })
+      const res = await dismissFilter('state=NJ')
       spy.mockRestore()
       expect(res.dismissed).toBe(600)
       expect((await list('newMatches=1')).pagination.total).toBe(0)
@@ -258,7 +257,7 @@ describe('bulk actions on companion groups', () => {
       await seedBill({ id: 'a190', billNumber: 'A190', state: 'NJ', status: 'Introduced', matchType: null })
       await seedBill({ id: 'b1713', billNumber: 'S1713', state: 'NJ', status: 'Passed', matchType: 'keyword', newMatchAt: '2026-10-01 10:00:00' })
       await group('a190', 'b1713')
-      expect((await dismissFilter({ status: ['Introduced'] })).dismissed).toBe(1)
+      expect((await dismissFilter('status=Introduced')).dismissed).toBe(1)
       expect((await list('newMatches=1')).pagination.total).toBe(0)
     })
   })

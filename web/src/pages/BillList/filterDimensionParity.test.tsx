@@ -21,7 +21,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, fireEvent, within, cleanup, waitFor } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { FILTER_DIMENSIONS, filterDimensionLabel, type FilterDimensionContext } from '../../lib/filterDimensions'
 import { filterableCustomFields, customFieldFilterKind } from '../../lib/customFieldFilters'
@@ -29,6 +29,7 @@ import { FilterSheet } from '../../components/FilterSheet'
 import { ConfigContext, type AppConfig } from '../../context/ConfigContext'
 import type { SubjectGroup } from './FilterPanel'
 import type { CustomFieldDef } from './types'
+import { serializeBillFilter, parseBillFilter } from '../../../../shared/billFilter'
 
 // --- Desktop harness (BillList), adapted from index.test.tsx ---------------
 // Role and known states are mutable so each test can drive the two
@@ -652,5 +653,86 @@ describe('Stage dimension — hidden when every covered state is on LegiScan', (
     cleanup()
     renderConfiguredMobile(['legiscan'], ['enacted'])
     expect(screen.getByRole('button', { name: new RegExp(`^${filterDimensionLabel('stage')}`) })).toBeInTheDocument()
+  })
+})
+
+// Serialization parity. The desktop toolbar and the phone sheet are two controls over the one bill filter, so the
+// same picks on each must leave the same value in the URL, and that value is the shared serialize of the filter:
+// the same string the list, the facets, and a bulk action send. Registry-driven labels alone would let one
+// surface write a filter under another key, or in another order, and nothing would notice.
+describe('filter UI parity — both surfaces serialize the same bill filter', () => {
+  function Probe() {
+    const loc = useLocation()
+    return <div data-testid="url-search">{loc.search}</div>
+  }
+  const urlSearch = () => screen.getByTestId('url-search').textContent ?? ''
+
+  async function renderWithProbe(initialUrl = '/bills') {
+    render(
+      <Wrapper initialUrl={initialUrl}><BillList /><Probe /></Wrapper>,
+    )
+    await screen.findByText('Default bill')
+  }
+
+  // One pick on a surface: open the dimension, then choose the option.
+  // The two surfaces word a few options differently ("High Priority" and "High"), which is label parity's concern, not this one's.
+  type Pick = { dimension: Parameters<typeof filterDimensionLabel>[0]; desktop: string; phone: string }
+  const desktopPick = ({ dimension, desktop }: Pick) => {
+    // The toolbar comes before the list's column headers, which carry some of the same words.
+    fireEvent.click(screen.getAllByRole('button', { name: new RegExp(`^${filterDimensionLabel(dimension)}`) })[0])
+    fireEvent.click(screen.getByText(desktop))
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+  }
+  const phonePick = ({ dimension, phone }: Pick) => {
+    fireEvent.click(document.querySelector('.mobile-filter-btn') as HTMLElement)
+    // The sheet is the last thing BillList renders, after the toolbar and the list's column headers.
+    fireEvent.click(screen.getAllByRole('button', { name: new RegExp(`^${filterDimensionLabel(dimension)}`) }).at(-1)!)
+    fireEvent.click(screen.getAllByText(phone).at(-1)!)
+    fireEvent.click(screen.getByRole('button', { name: /back to filters/i }))
+    fireEvent.click(screen.getByRole('button', { name: /close filters/i }))
+  }
+
+  // Picks chosen so their natural order (priority first, then year) is not the shared serialize's (year first).
+  const PICKS: Pick[] = [
+    { dimension: 'priority', desktop: 'High Priority', phone: 'High' },
+    { dimension: 'session', desktop: '2026', phone: '2026' },
+  ]
+
+  it('writes the same URL from the same picks on desktop and on the phone sheet', async () => {
+    await renderWithProbe()
+    PICKS.forEach(desktopPick)
+    const desktop = urlSearch()
+    cleanup()
+
+    await renderWithProbe()
+    PICKS.forEach(phonePick)
+    expect(urlSearch()).toBe(desktop)
+  })
+
+  it('writes the shared serialize of the value, in its one key order, from either surface', async () => {
+    const expected = `?${serializeBillFilter(parseBillFilter('year=2026&priority=high'))}`
+    expect(expected).toBe('?year=2026&priority=high')
+
+    await renderWithProbe()
+    PICKS.forEach(desktopPick)
+    expect(urlSearch()).toBe(expected)
+    cleanup()
+
+    await renderWithProbe()
+    PICKS.forEach(phonePick)
+    expect(urlSearch()).toBe(expected)
+  })
+
+  it('reads a URL in any key order as the same value on both, and writes it back canonically', async () => {
+    await renderWithProbe('/bills?priority=high&year=2026')
+    // Nothing is touched, so the URL stays as given until a control writes it. A pick on either surface rewrites it.
+    desktopPick({ dimension: 'priority', desktop: 'Medium Priority', phone: 'Medium' })
+    const desktop = urlSearch()
+    expect(desktop).toBe('?year=2026&priority=high&priority=medium')
+    cleanup()
+
+    await renderWithProbe('/bills?priority=high&year=2026')
+    phonePick({ dimension: 'priority', desktop: 'Medium Priority', phone: 'Medium' })
+    expect(urlSearch()).toBe(desktop)
   })
 })

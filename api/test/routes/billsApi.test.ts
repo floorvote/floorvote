@@ -1751,7 +1751,7 @@ describe('POST /bills/bulk (admin only)', () => {
     const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids: [billId1], filter: {}, priority: 'high' }),
+      body: JSON.stringify({ ids: [billId1], filter: '', priority: 'high' }),
     })
     expect(res.status).toBe(400)
   })
@@ -1794,7 +1794,7 @@ describe('POST /bills/bulk (admin only)', () => {
     const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filter: { status: ['In Committee'] }, priority: 'medium' }),
+      body: JSON.stringify({ filter: 'status=In+Committee', priority: 'medium' }),
     })
     expect(res.status).toBe(200)
     const body = await res.json() as { updated: number }
@@ -1823,7 +1823,7 @@ describe('POST /bills/bulk (admin only)', () => {
     const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filter: { subject: ['RI:Election Law'] }, priority: 'high' }),
+      body: JSON.stringify({ filter: 'subject=RI%3AElection+Law', priority: 'high' }),
     })
     expect(res.status).toBe(200)
     const body = await res.json() as { updated: number }
@@ -2008,7 +2008,7 @@ describe('POST /bills/bulk — match=any', () => {
     const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filter: { subject: ['UT:Elections'], tag: ['Clerk'], match: 'any' }, priority: 'high' }),
+      body: JSON.stringify({ filter: 'subject=UT%3AElections&tag=Clerk&match=any', priority: 'high' }),
     })
     expect(res.status).toBe(200)
     expect((await res.json() as { updated: number }).updated).toBe(2)
@@ -2018,7 +2018,7 @@ describe('POST /bills/bulk — match=any', () => {
     const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filter: { subject: ['UT:Elections'], tag: ['Clerk'] }, priority: 'high' }),
+      body: JSON.stringify({ filter: 'subject=UT%3AElections&tag=Clerk', priority: 'high' }),
     })
     expect(res.status).toBe(200)
     expect((await res.json() as { updated: number }).updated).toBe(0)
@@ -2047,7 +2047,7 @@ describe('POST /bills/bulk-dismiss — match=any', () => {
     const res = await appFetch('http://localhost/api/bills/bulk-dismiss', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filter: { subject: ['UT:Elections'], tag: ['Clerk'], match: 'any' } }),
+      body: JSON.stringify({ filter: 'subject=UT%3AElections&tag=Clerk&match=any' }),
     })
     expect(res.status).toBe(200)
     expect((await res.json() as { dismissed: number }).dismissed).toBe(2)
@@ -2057,7 +2057,7 @@ describe('POST /bills/bulk-dismiss — match=any', () => {
     const res = await appFetch('http://localhost/api/bills/bulk-dismiss', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filter: { subject: ['UT:Elections'], tag: ['Clerk'] } }),
+      body: JSON.stringify({ filter: 'subject=UT%3AElections&tag=Clerk' }),
     })
     expect(res.status).toBe(200)
     expect((await res.json() as { dismissed: number }).dismissed).toBe(0)

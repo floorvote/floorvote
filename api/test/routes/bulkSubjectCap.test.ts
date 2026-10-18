@@ -16,6 +16,8 @@ const MATCH = '2026-06-20 00:00:00'
 const CAP_ERROR = { error: `Too many subject filters. The maximum is ${MAX_SUBJECT_FILTERS}.` }
 const subjectNames = (n: number) => Array.from({ length: n }, (_, i) => `Subject ${i + 1}`)
 const filterValues = (n: number) => subjectNames(n).map(name => `UT:${name}`)
+// A bulk request carries its filter as a query string: one `subject` key for each value.
+const subjectQuery = (values: string[]) => values.map(v => `subject=${encodeURIComponent(v)}`).join('&')
 
 describe('bulk routes reject over-cap subject filters', () => {
   let adminToken: string
@@ -56,28 +58,28 @@ describe('bulk routes reject over-cap subject filters', () => {
 
   describe('POST /bulk', () => {
     it('accepts exactly 40 subjects and edits the bill that holds all of them', async () => {
-      const res = await post('/bulk', adminToken, { filter: { subject: filterValues(40) }, priority: 'high' })
+      const res = await post('/bulk', adminToken, { filter: subjectQuery(filterValues(40)), priority: 'high' })
       expect(res.status).toBe(200)
       expect(await res.json()).toEqual({ updated: 1 })
       expect(await priority()).toBe('high')
     })
 
     it('rejects 41 subjects with the list route 400 and writes nothing', async () => {
-      const res = await post('/bulk', adminToken, { filter: { subject: filterValues(41) }, priority: 'high' })
+      const res = await post('/bulk', adminToken, { filter: subjectQuery(filterValues(41)), priority: 'high' })
       expect(res.status).toBe(400)
       expect(await res.json()).toEqual(CAP_ERROR)
       expect(await priority()).toBeNull()
     })
 
     it('rejects 41 subjects under match=any as well', async () => {
-      const res = await post('/bulk', adminToken, { filter: { subject: filterValues(41), match: 'any' }, priority: 'high' })
+      const res = await post('/bulk', adminToken, { filter: `${subjectQuery(filterValues(41))}&match=any`, priority: 'high' })
       expect(res.status).toBe(400)
       expect(await res.json()).toEqual(CAP_ERROR)
       expect(await priority()).toBeNull()
     })
 
     it('rejects 41 subjects with a custom-field edit too, before any write', async () => {
-      const res = await post('/bulk', adminToken, { filter: { subject: filterValues(41) }, position: 'support' })
+      const res = await post('/bulk', adminToken, { filter: subjectQuery(filterValues(41)), position: 'support' })
       expect(res.status).toBe(400)
       expect(await res.json()).toEqual(CAP_ERROR)
     })
@@ -85,13 +87,13 @@ describe('bulk routes reject over-cap subject filters', () => {
     it('ignores malformed values, which do not count toward the cap (39 valid and 2 malformed is accepted)', async () => {
       const values = [...filterValues(39), 'NoColon', 'AlsoNoColon']
       expect(values).toHaveLength(41)
-      const res = await post('/bulk', adminToken, { filter: { subject: values }, priority: 'high' })
+      const res = await post('/bulk', adminToken, { filter: subjectQuery(values), priority: 'high' })
       expect(res.status).toBe(200)
       expect(await res.json()).toEqual({ updated: 1 })
     })
 
     it('accepts 40 valid values with malformed ones beside them', async () => {
-      const res = await post('/bulk', adminToken, { filter: { subject: [...filterValues(40), 'NoColon', 'NoColon2', 'NoColon3'] }, priority: 'high' })
+      const res = await post('/bulk', adminToken, { filter: subjectQuery([...filterValues(40), 'NoColon', 'NoColon2', 'NoColon3']), priority: 'high' })
       expect(res.status).toBe(200)
       expect(await res.json()).toEqual({ updated: 1 })
     })
@@ -100,13 +102,13 @@ describe('bulk routes reject over-cap subject filters', () => {
       const qs = new URLSearchParams()
       for (const s of filterValues(41)) qs.append('subject', s)
       const list = await appFetch(`http://localhost/api/bills?${qs}`, { headers: { Cookie: `session=${adminToken}` } })
-      const bulk = await post('/bulk', adminToken, { filter: { subject: filterValues(41) }, priority: 'high' })
+      const bulk = await post('/bulk', adminToken, { filter: subjectQuery(filterValues(41)), priority: 'high' })
       expect(bulk.status).toBe(list.status)
       expect(await bulk.json()).toEqual(await list.json())
     })
 
     it('returns 403 to a member, even with 41 subjects', async () => {
-      const res = await post('/bulk', memberToken, { filter: { subject: filterValues(41) }, priority: 'high' })
+      const res = await post('/bulk', memberToken, { filter: subjectQuery(filterValues(41)), priority: 'high' })
       expect(res.status).toBe(403)
       expect(await priority()).toBeNull()
     })
@@ -114,34 +116,34 @@ describe('bulk routes reject over-cap subject filters', () => {
 
   describe('POST /bulk-dismiss', () => {
     it('accepts exactly 40 subjects and dismisses the bill that holds all of them', async () => {
-      const res = await post('/bulk-dismiss', adminToken, { filter: { subject: filterValues(40) } })
+      const res = await post('/bulk-dismiss', adminToken, { filter: subjectQuery(filterValues(40)) })
       expect(res.status).toBe(200)
       expect(await res.json()).toEqual({ dismissed: 1 })
       expect(await triagedAt()).not.toBeNull()
     })
 
     it('rejects 41 subjects with the list route 400 and stamps nothing as triaged', async () => {
-      const res = await post('/bulk-dismiss', adminToken, { filter: { subject: filterValues(41) } })
+      const res = await post('/bulk-dismiss', adminToken, { filter: subjectQuery(filterValues(41)) })
       expect(res.status).toBe(400)
       expect(await res.json()).toEqual(CAP_ERROR)
       expect(await triagedAt()).toBeNull()
     })
 
     it('rejects 41 subjects under match=any as well', async () => {
-      const res = await post('/bulk-dismiss', adminToken, { filter: { subject: filterValues(41), match: 'any' } })
+      const res = await post('/bulk-dismiss', adminToken, { filter: `${subjectQuery(filterValues(41))}&match=any` })
       expect(res.status).toBe(400)
       expect(await res.json()).toEqual(CAP_ERROR)
       expect(await triagedAt()).toBeNull()
     })
 
     it('ignores malformed values, which do not count toward the cap (39 valid and 2 malformed is accepted)', async () => {
-      const res = await post('/bulk-dismiss', adminToken, { filter: { subject: [...filterValues(39), 'NoColon', 'AlsoNoColon'] } })
+      const res = await post('/bulk-dismiss', adminToken, { filter: subjectQuery([...filterValues(39), 'NoColon', 'AlsoNoColon']) })
       expect(res.status).toBe(200)
       expect(await res.json()).toEqual({ dismissed: 1 })
     })
 
     it('returns 403 to a member, even with 41 subjects', async () => {
-      const res = await post('/bulk-dismiss', memberToken, { filter: { subject: filterValues(41) } })
+      const res = await post('/bulk-dismiss', memberToken, { filter: subjectQuery(filterValues(41)) })
       expect(res.status).toBe(403)
       expect(await triagedAt()).toBeNull()
     })

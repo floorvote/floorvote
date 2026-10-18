@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  BILL_FILTER_DEFS, EMPTY_BILL_FILTER, FILTER_ANY, FILTER_NONE, parseBillFilter, serializeBillFilter, type BillFilter,
+  BILL_FILTER_DEFS, EMPTY_BILL_FILTER, FILTER_ANY, FILTER_NONE, billsListPath, parseBillFilter, serializeBillFilter, withBillFilter, type BillFilter,
 } from './billFilter'
 
 // The bill filter is one typed value that travels as a query string: the URL, a saved view, a list request, a
@@ -336,5 +336,52 @@ describe('the definitions', () => {
     })).split('&').map(p => p.slice(0, p.indexOf('=')))
     // A custom field's key is `cf_<its slug or id>`, so it is the one name not written as itself.
     expect(keys.sort()).toEqual(BILL_FILTER_DEFS.map(d => d.name).filter(n => n !== 'cf').sort())
+  })
+})
+
+// Links to the Bills page. The sidebar, the feed row, the bill page, and the digest emails all link to a filtered
+// list, and each builds its URL here, so a link writes the same filter, in the same string, as the page does.
+describe('billsListPath', () => {
+  it('is /bills with nothing after it for no filter', () => {
+    expect(billsListPath()).toBe('/bills')
+    expect(billsListPath({})).toBe('/bills')
+  })
+
+  it('writes the filter it is given with serializeBillFilter, after /bills?', () => {
+    const patch = { priority: ['high', 'medium', 'low'], unvoted: true }
+    expect(billsListPath(patch)).toBe(`/bills?${serializeBillFilter(withBillFilter(patch))}`)
+    expect(billsListPath(patch)).toBe('/bills?priority=high&priority=medium&priority=low&unvoted=1')
+  })
+
+  it('reads back as the filter it was given', () => {
+    const patch = { status: ['In committee'], year: ['2026'], state: ['UT'], tag: ['Water & Power'], subject: [{ state: 'UT', name: 'Election Law: Voting' }], minRelevance: 7, newMatches: true }
+    const path = billsListPath(patch)
+    expect(parseBillFilter(new URL(path, 'https://example.test').searchParams)).toEqual(withBillFilter(patch))
+  })
+
+  it('writes keys in the serializer\'s one order, whatever order the patch gave them', () => {
+    expect(billsListPath({ state: ['UT'], year: ['2026'] })).toBe('/bills?year=2026&state=UT')
+  })
+
+  it('is the path of a bare filter for one that sets nothing', () => {
+    expect(billsListPath({ status: [], myBills: false })).toBe('/bills')
+  })
+})
+
+describe('withBillFilter', () => {
+  it('sets the parts it is given on the empty filter', () => {
+    expect(withBillFilter({ status: ['a'], match: 'any' })).toEqual({ ...EMPTY_BILL_FILTER, status: ['a'], match: 'any' })
+  })
+
+  it('sets them on the filter it is given, and leaves that filter alone', () => {
+    const base = withBillFilter({ status: ['a'], tag: ['t'] })
+    const next = withBillFilter({ status: ['b'] }, base)
+    expect(next).toEqual({ ...EMPTY_BILL_FILTER, status: ['b'], tag: ['t'] })
+    expect(base.status).toEqual(['a'])
+    expect(next).not.toBe(base)
+  })
+
+  it('returns a frozen value', () => {
+    expect(Object.isFrozen(withBillFilter({ status: ['a'] }))).toBe(true)
   })
 })

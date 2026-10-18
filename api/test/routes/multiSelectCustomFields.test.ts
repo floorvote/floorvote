@@ -305,7 +305,7 @@ describe('multi-select custom fields', () => {
     const res = await SELF.fetch('http://localhost/api/bills/bulk', {
       method: 'POST', headers: { Cookie: `session=${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        filter: { status: ['In Committee'] },
+        filter: 'status=In+Committee',
         customFields: [{ fieldId, additions: ['c'], removals: ['b'] }],
       }),
     })

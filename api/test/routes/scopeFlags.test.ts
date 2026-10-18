@@ -144,56 +144,56 @@ describe('the scope toggles read 1 and true alike', () => {
 
   describe('POST /bills/bulk-dismiss, which stamps the new matches of the selection', () => {
     // Every bill but HB 4 is not a new match, so a dismiss counts HB 4 only when the filter keeps it.
-    const dismissed = async (filter: object) => {
+    const dismissed = async (filter: string) => {
       const res = await post(adaToken, '/bulk-dismiss', { filter })
       expect(res.status).toBe(200)
       return ((await res.json()) as { dismissed: number }).dismissed
     }
     const triaged = async (id: string) => (await getDb(env.DB).select().from(bills).all()).find(x => x.id === id)!.triagedAt
 
-    it.each([['1'], ['true'], [true]])('a filter with unvoted %j selects the unvoted groups (HB 4 is one)', async (v) => {
-      expect(await dismissed({ unvoted: v })).toBe(1)
+    it.each([['1'], ['true']])('a filter with unvoted=%s selects the unvoted groups (HB 4 is one)', async (v) => {
+      expect(await dismissed(`unvoted=${v}`)).toBe(1)
       expect(await triaged(d)).not.toBeNull()
     })
 
-    it.each([['0'], ['false'], [false], [''], [null]])('a filter with unvoted %j applies no filter, and still reaches HB 4', async (v) => {
-      expect(await dismissed({ unvoted: v })).toBe(1)
+    it.each([['0'], ['false'], ['']])('a filter with unvoted=%s applies no filter, and still reaches HB 4', async (v) => {
+      expect(await dismissed(`unvoted=${v}`)).toBe(1)
     })
 
     it('a filter that unvoted excludes selects nothing: once Ada votes on HB 4, it is out of her unvoted groups', async () => {
       await getDb(env.DB).insert(memberVotes).values({ id: crypto.randomUUID(), userId: ada, billId: d, position: 'support' })
-      for (const v of ['1', 'true', true]) expect(await dismissed({ unvoted: v }), String(v)).toBe(0)
+      for (const v of ['1', 'true']) expect(await dismissed(`unvoted=${v}`), v).toBe(0)
       expect(await triaged(d)).toBeNull()
     })
   })
 
   describe('POST /bills/bulk', () => {
-    const edit = async (filter: object) => {
+    const edit = async (filter: string) => {
       const res = await post(adaToken, '/bulk', { filter, priority: 'high' })
       expect(res.status).toBe(200)
       return ((await res.json()) as { updated: number }).updated
     }
 
-    it.each([['1'], ['true'], [true]])('a filter with unvoted %j selects the same groups: 3 of the 4', async (v) => {
-      expect(await edit({ unvoted: v })).toBe(3)
+    it.each([['1'], ['true']])('a filter with unvoted=%s selects the same groups: 3 of the 4', async (v) => {
+      expect(await edit(`unvoted=${v}`)).toBe(3)
       const rows = await getDb(env.DB).select().from(bills).all()
       expect(rows.filter(r => r.priority === 'high').map(r => r.billNumber).sort()).toEqual(['HB 2', 'HB 3', 'HB 4'])
     })
 
-    it.each([['0'], ['false'], [false], ['']])('a filter with unvoted %j selects all 4 groups', async (v) => {
-      expect(await edit({ unvoted: v })).toBe(4)
+    it.each([['0'], ['false'], ['']])('a filter with unvoted=%s selects all 4 groups', async (v) => {
+      expect(await edit(`unvoted=${v}`)).toBe(4)
     })
 
-    it.each([['1'], ['true'], [true]])('a filter with myBills, newMatches, and drafts %j reads each as on', async (v) => {
-      expect(await edit({ myBills: v })).toBe(2)
-      expect(await edit({ newMatches: v })).toBe(1)
-      expect(await edit({ drafts: v })).toBe(1)
+    it.each([['1'], ['true']])('a filter with myBills, newMatches, and drafts=%s reads each as on', async (v) => {
+      expect(await edit(`myBills=${v}`)).toBe(2)
+      expect(await edit(`newMatches=${v}`)).toBe(1)
+      expect(await edit(`drafts=${v}`)).toBe(1)
     })
 
-    it.each([['0'], ['false'], [false]])('a filter with myBills, newMatches, and drafts %j selects all 4 groups', async (v) => {
-      expect(await edit({ myBills: v })).toBe(4)
-      expect(await edit({ newMatches: v })).toBe(4)
-      expect(await edit({ drafts: v })).toBe(4)
+    it.each([['0'], ['false']])('a filter with myBills, newMatches, and drafts=%s selects all 4 groups', async (v) => {
+      expect(await edit(`myBills=${v}`)).toBe(4)
+      expect(await edit(`newMatches=${v}`)).toBe(4)
+      expect(await edit(`drafts=${v}`)).toBe(4)
     })
   })
 

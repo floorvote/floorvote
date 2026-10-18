@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import { BulkActionBar, buildFilterBody, buildBulkValuesParams, type Selection } from './BulkActionBar'
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
+import { BulkActionBar, type Selection } from './BulkActionBar'
+import { EMPTY_BILL_FILTER, parseBillFilter, serializeBillFilter } from '../../../shared/billFilter'
 
 vi.mock('../lib/api', () => ({ apiFetch: vi.fn(() => Promise.resolve({ dismissed: 1 })) }))
 import { apiFetch } from '../lib/api'
@@ -13,10 +14,7 @@ vi.mock('../context/DemoContext', () => ({
   useDemo: () => ({ demoMode: false, demoLocked: demoState.demoLocked }),
 }))
 
-const noFilters = {
-  status: [], stage: [], priority: [], position: [], year: [], state: [], tag: [], subject: [],
-  q: '', minRelevance: 0, myBills: false, unvoted: false, newMatches: false, drafts: false, matchAny: false, cf: {},
-}
+const noFilters = EMPTY_BILL_FILTER
 
 function Harness({
   selectedBills = [{ id: 'bill-1', priority: null as string | null, position: null as string | null }],
@@ -137,7 +135,7 @@ describe('BulkActionBar new-match dismiss (filter mode)', () => {
         total={682}
         positionVocabulary={['Support', 'Oppose']}
         customFieldDefs={[]}
-        currentFilters={{ ...noFilters, newMatches: true }}
+        currentFilters={parseBillFilter('newMatches=1')}
         filterNewMatchCount={682}
         selectedBills={[]}
         onClearSelection={vi.fn()}
@@ -151,13 +149,13 @@ describe('BulkActionBar new-match dismiss (filter mode)', () => {
         '/bills/bulk-dismiss',
         expect.objectContaining({
           method: 'POST',
-          body: expect.stringContaining('"newMatches":"1"'),
+          body: JSON.stringify({ filter: 'newMatches=1' }),
         }),
       )
     })
   })
 
-  // CRITICAL 1 regression: buildFilterBody previously dropped `subject` entirely,
+  // CRITICAL 1 regression: the bulk filter body previously dropped `subject` entirely,
   // so a bulk action taken while a subject filter was active would silently
   // resolve against every bill matching the other filters — not just the ones
   // the admin saw and confirmed. The request body must carry the active subject
@@ -171,7 +169,7 @@ describe('BulkActionBar new-match dismiss (filter mode)', () => {
         total={12}
         positionVocabulary={['Support', 'Oppose']}
         customFieldDefs={[]}
-        currentFilters={{ ...noFilters, newMatches: true, subject: ['UT:Election Law'] }}
+        currentFilters={parseBillFilter('newMatches=1&subject=UT%3AElection+Law')}
         filterNewMatchCount={12}
         selectedBills={[]}
         onClearSelection={vi.fn()}
@@ -185,7 +183,7 @@ describe('BulkActionBar new-match dismiss (filter mode)', () => {
         '/bills/bulk-dismiss',
         expect.objectContaining({
           method: 'POST',
-          body: expect.stringContaining('"subject":["UT:Election Law"]'),
+          body: JSON.stringify({ filter: 'subject=UT%3AElection+Law&newMatches=1' }),
         }),
       )
     })
@@ -200,7 +198,7 @@ describe('BulkActionBar new-match dismiss (filter mode)', () => {
         total={1500}
         positionVocabulary={['Support', 'Oppose']}
         customFieldDefs={[]}
-        currentFilters={{ ...noFilters, newMatches: true }}
+        currentFilters={parseBillFilter('newMatches=1')}
         filterNewMatchCount={1500}
         selectedBills={[]}
         onClearSelection={vi.fn()}
@@ -441,62 +439,143 @@ describe('BulkActionBar unknown current values', () => {
   })
 })
 
-describe('BulkActionBar — match=any (Task 6b)', () => {
-  // Task 6 made the list view's group operator settable (match=any). Task 2
-  // hardcoded the bulk routes to AND-only because no client could set it then.
-  // These lock in that both bulk call paths — the write (buildFilterBody) and
-  // the read that pre-populates the bulk-edit form (buildBulkValuesParams) —
-  // now carry the operator, and that an unset operator still serialises
-  // exactly as it did before this field existed.
-  const baseFilters = noFilters
+// A bulk action sends the bill filter the way the list does: the shared serialize, a query string. The write
+// (the filter in the request body) and the read that pre-populates the bulk-edit form (GET /bills/bulk-values)
+// carry the same string, so the form never shows the values of one set of bills before a write to another.
+describe('BulkActionBar sends the serialized bill filter', () => {
+  const QS = 'status=Passed&stage=enacted&year=2026&state=UT&position=none&priority=high&tag=Water&subject=UT%3AElections&minRelevance=4&q=water&myBills=1&unvoted=1&newMatches=1&drafts=1&match=any&cf_f1=Alpha&cf_f1=__any__'
 
-  it('sends match=any in the bulk-values query when the operator is set', () => {
-    const params = buildBulkValuesParams({ ...baseFilters, matchAny: true })
-    expect(params.get('match')).toBe('any')
+  function renderFilterMode(filter: ReturnType<typeof parseBillFilter>, total = 5) {
+    vi.mocked(apiFetch).mockClear()
+    vi.mocked(apiFetch).mockImplementation((path: string) => {
+      if (path.startsWith('/bills/bulk-values')) {
+        return Promise.resolve({ count: total, priorities: {}, positions: {}, customFields: {}, multiCustomFields: {}, nullMatchCount: 0 })
+      }
+      return Promise.resolve({ dismissed: 1, updated: 1 })
+    })
+    return render(
+      <BulkActionBar
+        selection={{ mode: 'filter' }}
+        total={total}
+        positionVocabulary={['Support']}
+        customFieldDefs={[]}
+        currentFilters={filter}
+        filterNewMatchCount={total}
+        selectedBills={[]}
+        onClearSelection={vi.fn()}
+        onApplied={vi.fn()}
+      />,
+    )
+  }
+  const sent = (path: string) => {
+    const call = vi.mocked(apiFetch).mock.calls.find(c => c[0] === path)
+    return call ? JSON.parse((call[1] as { body: string }).body) as { filter?: unknown } : undefined
+  }
+
+  it('reads the bulk-edit form values with the filter as the shared serialize writes it', async () => {
+    renderFilterMode(parseBillFilter(QS))
+    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith(`/bills/bulk-values?${serializeBillFilter(parseBillFilter(QS))}`))
   })
 
-  it('omits match from the bulk-values query when the operator is not set', () => {
-    const params = buildBulkValuesParams({ ...baseFilters, matchAny: false })
-    expect(params.get('match')).toBeNull()
+  it('sends match=any in the bulk-values query when the operator is set, and not otherwise', async () => {
+    renderFilterMode(parseBillFilter('status=Passed&match=any'))
+    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith('/bills/bulk-values?status=Passed&match=any'))
+    cleanup()
+    renderFilterMode(parseBillFilter('status=Passed'))
+    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith('/bills/bulk-values?status=Passed'))
   })
 
-  it('sends match=any in the filter body when the operator is set', () => {
-    const body = buildFilterBody({ ...baseFilters, matchAny: true })
-    expect(body.match).toBe('any')
+  it('sends drafts=1 in the bulk-values query when the Drafts chip is on, and not otherwise', async () => {
+    renderFilterMode(parseBillFilter('drafts=1'))
+    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith('/bills/bulk-values?drafts=1'))
+    cleanup()
+    renderFilterMode(parseBillFilter('status=Passed'))
+    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith('/bills/bulk-values?status=Passed'))
   })
 
-  it('omits match from the filter body when the operator is not set', () => {
-    const body = buildFilterBody({ ...baseFilters, matchAny: false })
-    expect(body.match).toBeUndefined()
-  })
-})
-
-// CRITICAL regression: FilterState previously had no `drafts` member, so
-// index.tsx's f.currentFilters (which does carry it) was structurally
-// truncated the moment it passed through this type, and both builders below
-// silently omitted it from the write and the read. That let "select all
-// matching filters" with Drafts on quietly bulk-edit every bill, not just the
-// drafts the admin saw (see api/test/bills/draft-filter.test.ts for the
-// server-side half of this regression).
-describe('BulkActionBar — drafts filter', () => {
-  it('sends drafts=1 in the filter body when the Drafts chip is on', () => {
-    const body = buildFilterBody({ ...noFilters, drafts: true })
-    expect(body.drafts).toBe('1')
+  it('sends the serialized filter as a string in the bulk-dismiss body, every filter in it', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderFilterMode(parseBillFilter(QS))
+    fireEvent.click(await screen.findByRole('button', { name: /Dismiss new matches/i }))
+    await waitFor(() => expect(sent('/bills/bulk-dismiss')).toBeDefined())
+    const body = sent('/bills/bulk-dismiss')!
+    expect(typeof body.filter).toBe('string')
+    expect(body.filter).toBe(serializeBillFilter(parseBillFilter(QS)))
+    expect(parseBillFilter(body.filter as string)).toEqual(parseBillFilter(QS))
   })
 
-  it('omits drafts from the filter body when the chip is off', () => {
-    const body = buildFilterBody({ ...noFilters, drafts: false })
-    expect(body.drafts).toBeUndefined()
+  it('sends match=any in the filter when the operator is set, and omits it when not', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderFilterMode(parseBillFilter('newMatches=1&match=any'))
+    fireEvent.click(await screen.findByRole('button', { name: /Dismiss new matches/i }))
+    await waitFor(() => expect(sent('/bills/bulk-dismiss')).toBeDefined())
+    expect(sent('/bills/bulk-dismiss')!.filter).toBe('newMatches=1&match=any')
+    cleanup()
+    renderFilterMode(parseBillFilter('newMatches=1'))
+    fireEvent.click(await screen.findByRole('button', { name: /Dismiss new matches/i }))
+    await waitFor(() => expect(sent('/bills/bulk-dismiss')).toBeDefined())
+    expect(sent('/bills/bulk-dismiss')!.filter).toBe('newMatches=1')
   })
 
-  it('sends drafts=1 in the bulk-values query when the Drafts chip is on', () => {
-    const params = buildBulkValuesParams({ ...noFilters, drafts: true })
-    expect(params.get('drafts')).toBe('1')
+  // CRITICAL regression: the filter once had no `drafts` member, so "select all matching filters" with Drafts on
+  // bulk-edited every bill, not just the drafts the admin saw (api/test/bills/draft-filter.test.ts is the server half).
+  it('sends drafts=1 in the filter when the Drafts chip is on', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderFilterMode(parseBillFilter('newMatches=1&drafts=1'))
+    fireEvent.click(await screen.findByRole('button', { name: /Dismiss new matches/i }))
+    await waitFor(() => expect(sent('/bills/bulk-dismiss')).toBeDefined())
+    expect(sent('/bills/bulk-dismiss')!.filter).toBe('newMatches=1&drafts=1')
   })
 
-  it('omits drafts from the bulk-values query when the chip is off', () => {
-    const params = buildBulkValuesParams({ ...noFilters, drafts: false })
-    expect(params.get('drafts')).toBeNull()
+  it('sends the filter of a bulk edit the same way, as a string', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    vi.mocked(apiFetch).mockClear()
+    vi.mocked(apiFetch).mockImplementation((path: string) => {
+      if (path.startsWith('/bills/bulk-values')) {
+        return Promise.resolve({ count: 3, priorities: {}, positions: {}, customFields: {}, multiCustomFields: {}, nullMatchCount: 0 })
+      }
+      return Promise.resolve({ updated: 3 })
+    })
+    render(
+      <BulkActionBar
+        selection={{ mode: 'filter' }}
+        total={3}
+        positionVocabulary={['Support']}
+        customFieldDefs={[]}
+        currentFilters={parseBillFilter('status=Passed&priority=high')}
+        filterNewMatchCount={0}
+        selectedBills={[]}
+        onClearSelection={vi.fn()}
+        onApplied={vi.fn()}
+      />,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: /Priority:/i }))
+    fireEvent.click(screen.getByText('Low'))
+    fireEvent.click(screen.getByRole('button', { name: /Apply to 3 bills/i }))
+    await waitFor(() => expect(sent('/bills/bulk')).toBeDefined())
+    expect(sent('/bills/bulk')!.filter).toBe('status=Passed&priority=high')
+  })
+
+  it('sends ids, and no filter, when bills are picked one by one', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    vi.mocked(apiFetch).mockClear()
+    vi.mocked(apiFetch).mockImplementation(() => Promise.resolve({ dismissed: 1 }))
+    render(
+      <BulkActionBar
+        selection={{ mode: 'ids', ids: new Set(['a']) }}
+        total={1}
+        positionVocabulary={['Support']}
+        customFieldDefs={[]}
+        currentFilters={parseBillFilter('status=Passed')}
+        filterNewMatchCount={0}
+        selectedBills={[{ id: 'a', priority: null, position: null, matchType: 'keyword', newMatchAt: '2026-01-01 00:00:00', triagedAt: null }]}
+        onClearSelection={vi.fn()}
+        onApplied={vi.fn()}
+      />,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: /Dismiss new matches/i }))
+    await waitFor(() => expect(sent('/bills/bulk-dismiss')).toBeDefined())
+    expect(sent('/bills/bulk-dismiss')).toEqual({ ids: ['a'] })
   })
 })
 

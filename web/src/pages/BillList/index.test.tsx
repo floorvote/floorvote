@@ -1134,6 +1134,38 @@ describe('BillList bulk selection — custom-field filters', () => {
   })
 })
 
+// The same for a built-in filter and for a saved view: every change is a change to the one bill filter value, and
+// the selection is keyed on that value, so none of them needs its own entry in a list of filters to clear it.
+describe('BillList bulk selection — one filter value', () => {
+  async function selected(initial: string) {
+    render(
+      <MemoryRouter initialEntries={[initial]}>
+        <AuthProvider>
+          <SidebarRefreshProvider><BillList /></SidebarRefreshProvider>
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+    await screen.findByText('Early Voting Centers')
+    const row = document.querySelector('.bill-row') as HTMLElement
+    fireEvent.mouseEnter(row)
+    fireEvent.click(await within(row).findByRole('checkbox'))
+    await screen.findByText('1 bill selected')
+  }
+  const selectionGone = () => waitFor(() => expect(screen.queryByText('1 bill selected')).toBeNull())
+
+  it('turning on a toggle clears the selection', async () => {
+    await selected('/bills')
+    fireEvent.click(screen.getAllByRole('button', { name: /My bills/ })[0])
+    await selectionGone()
+  })
+
+  it('keeps the selection when nothing about the filter changes', async () => {
+    await selected('/bills')
+    await new Promise(r => setTimeout(r, 50))
+    expect(screen.getByText('1 bill selected')).toBeInTheDocument()
+  })
+})
+
 describe('BillList active filter chips — group operator interleaving', () => {
   it('renders zero operators with exactly one active filter group', async () => {
     render(

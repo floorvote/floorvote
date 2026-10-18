@@ -330,7 +330,7 @@ describe('bill list: one row per companion group', () => {
         await priority('a190', 'high', '2026-10-01 10:00:00')
         const res = await SELF.fetch('https://x/api/bills/bulk', {
           method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ filter: { status: ['Passed'], priority: ['high'] }, position: 'Support' }),
+          body: JSON.stringify({ filter: 'status=Passed&priority=high', position: 'Support' }),
         })
         expect(await res.json()).toEqual({ updated: 1 })
       })

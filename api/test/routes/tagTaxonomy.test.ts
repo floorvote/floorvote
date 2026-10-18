@@ -169,7 +169,7 @@ describe('tag taxonomy filtering — bulk filter', () => {
 
   it('POST /bulk with filter.tag ["__any__"] edits the same bills the list shows', async () => {
     const list = await (await bulk('?tag=__any__')).json() as { pagination: { total: number } }
-    const res = await bulk('/bulk', { method: 'POST', body: JSON.stringify({ filter: { tag: ['__any__'] }, priority: 'high' }) })
+    const res = await bulk('/bulk', { method: 'POST', body: JSON.stringify({ filter: 'tag=__any__', priority: 'high' }) })
     expect(res.status).toBe(200)
     expect((await res.json() as { updated: number }).updated).toBe(list.pagination.total)
     const rows = await getDb(env.DB).select({ n: bills.billNumber, p: bills.priority }).from(bills).all()
