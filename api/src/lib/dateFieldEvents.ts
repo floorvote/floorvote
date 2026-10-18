@@ -3,7 +3,7 @@ import { alias } from 'drizzle-orm/sqlite-core'
 import { bills, billCustomFieldValues, customFieldDefinitions } from '../db/schema'
 import { prioritizedDateFieldValue } from './calendarVisibility'
 import { isCalendarDate } from './customFieldValues'
-import { loadGroupPriorities, priorityWorn } from './teamFields'
+import { loadGroupPriorities, priorityWorn, type BillsTable } from './teamFields'
 import { billDisplayTitle } from '../../../shared/billTitle'
 import type { AppDb } from '../types'
 
@@ -52,7 +52,7 @@ export function dateFieldSequence(valueUpdatedAt: string): number {
 export async function loadDateFieldEvents(db: AppDb, { from, to }: { from: string; to: string }): Promise<DateFieldEvent[]> {
   // `p` and `me` are the aliases `prioritizedDateFieldValue` expects.
   const p = alias(billCustomFieldValues, 'p')
-  const me = alias(bills, 'me')
+  const me = alias(bills, 'me') as unknown as BillsTable
   const rows = await db
     .select({
       fieldId: customFieldDefinitions.id, fieldName: customFieldDefinitions.name,
