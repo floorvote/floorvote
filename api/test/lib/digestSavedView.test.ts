@@ -101,8 +101,8 @@ describe('renderDigestEmail: saved view sections', () => {
 
   it('lists an admin\'s and a member\'s view cards alike, with no "Set priority" link on either', () => {
     const views = [section('Transportation', { newBills: [newBill('b1', 'H 101')] })]
-    expect(render(views, { forMember: false })).not.toContain('>Set priority<')
-    expect(render(views, { forMember: true })).not.toContain('>Set priority<')
+    expect(render(views, { forMember: false })).not.toContain('Set priority')
+    expect(render(views, { forMember: true })).not.toContain('Set priority')
   })
 
   it('names the view safely in the header', () => {
@@ -347,7 +347,7 @@ describe('runDigest: saved views', () => {
     const mine = to('admin@example.com')[0]
     expect(text(mine.html)).toContain('In your Transportation view')
     expect(text(mine.html)).toContain('1 new match')
-    expect(mine.html.match(/>Set priority</g)).toHaveLength(1)
+    expect(mine.html.match(/>New · Set priority</g)).toHaveLength(1)
     expect(mine.subject).toBe('Your daily digest: 1 new match, 1 bill in your saved views')
   })
 

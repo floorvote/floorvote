@@ -6,6 +6,8 @@ import { buildBillCardModel } from '../../../web/src/lib/billCardModel'
 import { COMMENT_PREVIEW_MAX } from '../../../web/src/lib/feedUtils'
 import type { GroupedBillEvents, FeedEvent } from '../../../web/src/lib/feedUtils'
 import { SAMPLE_DIGEST_EVENTS, SAMPLE_NEW_MATCHES, SAMPLE_ASSOC_NAME } from '../../src/lib/sampleEmails'
+import { color } from '../../../shared/tokens'
+import { CARD_STYLE } from '../../../shared/billCardModel'
 import { billsListPath, parseBillFilter, withBillFilter } from '../../../shared/billFilter'
 
 const ev = (over: any = {}) => ({
@@ -316,27 +318,31 @@ describe('renderDigestEmail — untitled drafts', () => {
   })
 })
 
-// #588: the new-match card uses the priority dropdown's words. The corner chip
-// says "New match", and a "Set priority" link opens the bill page, where the
-// amber dropdown is. A member can't set priorities, so their cards have no link.
-describe('renderDigestEmail: the new-match card and its "Set priority" link', () => {
+// #588 and the polish after #748: a new-match card carries the app's amber pill in the corner, in the priority
+// dropdown's words and tokens. An admin's reads "New · Set priority" and opens the bill page, where the amber dropdown
+// is. A member can't set priorities, so theirs reads "New match" and links nowhere. Neither card has a separate
+// "Set priority" row.
+describe('renderDigestEmail: the new-match card and its amber pill', () => {
   const match = (n: number) => ({
     billId: `m${n}`, billNumber: `HB ${1000 + n}`, billTitle: `Matched bill ${n}`,
     billState: 'RI', billSession: '2026', billSessionSlug: '2026', relevanceScore: n, summary: n === 2 ? null : `Summary ${n}`,
   })
   const items = [match(1), match(2), match(3)]
-  const anchors = (html: string) => [...html.matchAll(/<a href="([^"]*)"[^>]*>\s*([^<]*?)\s*<\/a>/g)].map(m => ({ href: m[1], text: m[2] }))
-  const setPriorityLinks = (html: string) => anchors(html).filter(a => a.text === 'Set priority')
+  const anchors = (html: string) => [...html.matchAll(/<a href="([^"]*)"[^>]*>\s*(?:<span[^>]*>)?\s*([^<]*?)\s*(?:<\/span>)?\s*<\/a>/g)].map(m => ({ href: m[1], text: m[2] }))
+  const pillLinks = (html: string) => anchors(html).filter(a => a.text === 'New · Set priority')
+  // The pill's own span, with the style it carries.
+  const pills = (html: string, label: string) => [...html.matchAll(new RegExp(`<span style="([^"]*)">${label}</span>`, 'g'))].map(m => m[1])
 
-  it('puts a "Set priority" link on every new-match card for an admin', () => {
+  it('puts an amber "New · Set priority" pill on every new-match card for an admin', () => {
     const html = renderDigestEmail({ events: [], assocName: 'X', appUrl: 'https://x', newMatches: items })
-    expect(setPriorityLinks(html)).toHaveLength(3)
+    expect(pillLinks(html)).toHaveLength(3)
+    expect(pills(html, 'New · Set priority')).toHaveLength(3)
   })
 
-  it("points each link at that card's own bill page", () => {
+  it("links each admin pill to that card's own bill page", () => {
     const html = renderDigestEmail({ events: [], assocName: 'X', appUrl: 'https://x', newMatches: items })
     const titleHrefs = (title: string) => anchors(html).filter(a => a.text === title).map(a => a.href)
-    const links = setPriorityLinks(html).map(a => a.href)
+    const links = pillLinks(html).map(a => a.href)
     for (const n of [1, 2, 3]) {
       const [titleHref] = titleHrefs(`Matched bill ${n}`)
       expect(titleHref).toMatch(/^https:\/\/x\//)
@@ -345,27 +351,44 @@ describe('renderDigestEmail: the new-match card and its "Set priority" link', ()
     expect(new Set(links).size).toBe(3)
   })
 
-  it('keeps the "New match" chip in the card corner', () => {
+  it("takes the app's amber tokens, not the legacy chip text color", () => {
+    const html = renderDigestEmail({ events: [], assocName: 'X', appUrl: 'https://x', newMatches: [match(1)] })
+    const [style] = pills(html, 'New · Set priority')
+    expect(style).toContain(`background:${color.bgAmberPriority}`)
+    expect(style).toContain(`color:${color.textAmberDark}`)
+    expect(style).toContain(`border:1px solid ${color.borderAmber}`)
+  })
+
+  it('has no corner "New match" chip and no separate "Set priority" row on an admin card', () => {
     const html = renderDigestEmail({ events: [], assocName: 'X', appUrl: 'https://x', newMatches: items })
-    expect(html.match(/>New match</g)).toHaveLength(3)
+    expect(html).not.toContain('>New match<')
+    expect(html).not.toContain('>Set priority<')
+    expect(html).not.toContain(`border-top:1px solid ${CARD_STYLE.rowBorder};font-size`)
   })
 
-  it('adds the link to a card with no summary, too', () => {
+  it('gives a card with no summary the pill, too', () => {
     const html = renderDigestEmail({ events: [], assocName: 'X', appUrl: 'https://x', newMatches: [match(2)] })
-    expect(setPriorityLinks(html)).toHaveLength(1)
+    expect(pillLinks(html)).toHaveLength(1)
   })
 
-  it("leaves the link off a member's cards, since a member can't set a priority", () => {
+  it("gives a member's cards the read-only amber pill \"New match\", with no link and no Set priority", () => {
     const html = renderDigestEmail({ events: [], assocName: 'X', appUrl: 'https://x', newMatches: items, forMember: true })
     expect(html).toContain('Matched bill 1')
-    expect(html.match(/>New match</g)).toHaveLength(3)
+    const styles = pills(html, 'New match')
+    expect(styles).toHaveLength(3)
+    for (const style of styles) {
+      expect(style).toContain(`background:${color.bgAmberPriority}`)
+      expect(style).toContain(`color:${color.textAmberDark}`)
+      expect(style).toContain(`border:1px solid ${color.borderAmber}`)
+    }
+    expect(anchors(html).filter(a => a.text === 'New match')).toHaveLength(0)
     expect(html).not.toContain('Set priority')
   })
 
-  it('gives only the listed cards a link when there are more than the cap, not the "See all" line', () => {
+  it('gives only the listed cards a pill when there are more than the cap, not the "See all" line', () => {
     const many = Array.from({ length: 14 }, (_, i) => match(i + 1))
     const html = renderDigestEmail({ events: [], assocName: 'X', appUrl: 'https://x', newMatches: many })
-    expect(setPriorityLinks(html)).toHaveLength(10)
+    expect(pillLinks(html)).toHaveLength(10)
     expect(html).toContain('See all 14 new matches')
   })
 
@@ -374,8 +397,8 @@ describe('renderDigestEmail: the new-match card and its "Set priority" link', ()
     expect(html).not.toContain('Set priority')
   })
 
-  it('shows the link in the sample digest an admin previews', () => {
+  it('shows the pill in the sample digest an admin previews', () => {
     const html = renderSampleEmail('digest', 'https://x').html
-    expect(setPriorityLinks(html)).toHaveLength(3)
+    expect(pillLinks(html)).toHaveLength(3)
   })
 })
