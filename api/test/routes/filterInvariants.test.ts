@@ -41,6 +41,12 @@ const DIM_KEYS = DIMENSIONS.map(d => d.key) as DimKey[]
 
 const ids = (r: { bills: Array<{ id: string }> }) => new Set(r.bills.map(b => b.id))
 
+// Status and stage are ONE bill fact (#677): a bill matches when its status is chosen OR its stage is. So the pair is
+// not two facts the group operator joins: picked together they are the union under AND as well as OR, and neither
+// one's facet count promises the total after picking the other. Each is checked against every other dimension as usual.
+const SAME_FACT = new Set(['status', 'stage'])
+const oneFact = (a: { key: string }, b: { key: string }) => SAME_FACT.has(a.key) && SAME_FACT.has(b.key)
+
 // Run once on single bills, then again with every bill given an identical companion (#380): the two share
 // their provider facts and the team's values are stored on the original only, so the group reads them
 // through it. A group is then in a filter's result exactly when its original bill is, and the laws, and the
@@ -189,6 +195,18 @@ for (const grouped of [false, true]) describe(`filter algebra${grouped ? ' on co
         expect([...both].sort()).toEqual([...new Set([...A, ...B])].sort())
       })
 
+      if (oneFact(a, b)) {
+        it(`${a.key} AND ${b.key} is the union, since they are one fact`, async () => {
+          const A = ids(await listBills({ [a.param]: a.value }))
+          const B = ids(await listBills({ [b.param]: b.value }))
+          const both = ids(await listBills({ [a.param]: a.value, [b.param]: b.value }))
+          expect([...both].sort()).toEqual([...new Set([...A, ...B])].sort())
+          // The union is wider than either, or the fixture proves nothing about OR.
+          expect(both.size).toBeGreaterThan(Math.max(A.size, B.size))
+        })
+        continue
+      }
+
       it(`${a.key} AND ${b.key} is the intersection`, async () => {
         const A = ids(await listBills({ [a.param]: a.value }))
         const B = ids(await listBills({ [b.param]: b.value }))
@@ -203,7 +221,8 @@ for (const grouped of [false, true]) describe(`filter algebra${grouped ? ' on co
     for (const d of DIMENSIONS) {
       if (!d.promised) continue
       it(`a ${d.key} facet count equals the total after picking it (${'match' in mode ? 'OR' : 'AND'})`, async () => {
-        const anchor = { status: 'Passed', ...mode }
+        // Stage is part of the status fact, so beside a status its count is not the total after picking it: another anchor.
+        const anchor = d.key === 'stage' ? { year: '2026', ...mode } : { status: 'Passed', ...mode }
         const promised = d.promised!(await getFacets(anchor))
         // Must be present: the fixture guarantees every dimension's anchor
         // value overlaps with `status=Passed` (see the fixture-overlap test
@@ -219,7 +238,7 @@ for (const grouped of [false, true]) describe(`filter algebra${grouped ? ' on co
 
       // The same law with another dimension as the active filter, so each facet is counted beside every other filter.
       for (const other of DIMENSIONS) {
-        if (other.key === d.key) continue
+        if (other.key === d.key || oneFact(d, other)) continue
         it(`a ${d.key} facet count equals the total after picking it, beside ${other.key} (${'match' in mode ? 'OR' : 'AND'})`, async () => {
           const anchor = { [other.param]: other.value, ...mode }
           const promised = d.promised!(await getFacets(anchor))
@@ -241,4 +260,21 @@ for (const grouped of [false, true]) describe(`filter algebra${grouped ? ' on co
       })
     }
   }
+
+  // Choosing one of the pair leaves the other's own counts alone: the fact is left out of both counts.
+  for (const [chosen, other] of [['status', 'stage'], ['stage', 'status']] as const) {
+    it(`choosing a ${chosen} leaves the ${other} counts as they were with nothing chosen`, async () => {
+      const d = (k: string) => DIMENSIONS.find(x => x.key === k)!
+      const before = await getFacets({})
+      const after = await getFacets({ [d(chosen).param]: d(chosen).value })
+      expect(after[other]).toEqual(before[other])
+      expect(after[chosen]).toEqual(before[chosen])
+    })
+  }
+
+  it('lists a status for every stage a bill has, and the stage of the status the bills carry', async () => {
+    const f = await getFacets({})
+    expect(f.statusGroups?.Passed, 'statusGroups for Passed').toEqual({ stage: 'passed', rank: expect.any(Number) })
+    expect(Object.keys(f.statusGroups ?? {}).sort()).toEqual(Object.keys(f.status).sort())
+  })
 })

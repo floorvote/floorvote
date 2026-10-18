@@ -28,6 +28,12 @@ describe('the table of filters', () => {
     }
   })
 
+  it('joins the stage into the status fact: one fact key for both, so each facet leaves out the whole fact', () => {
+    // The stage's own condition is part of the status fact (#677), and says so by naming the filter it joins.
+    expect((FILTER_TABLE.stage as { joins?: string }).joins).toBe('status')
+    expect((FILTER_TABLE.status as { joins?: string }).joins).toBeUndefined()
+  })
+
   it('gives the filters with no facet count no place in the response', () => {
     // A minimum relevance, search, and the group operator are filters nobody picks a value of from a count.
     const names = BILL_FILTER_DEFS.filter(d => (FILTER_TABLE as Record<string, { facet: unknown }>)[d.name].facet === null).map(d => d.name).sort()
@@ -60,7 +66,7 @@ describe('the facets response built for a list with nothing in it', () => {
   it('counts nothing, and keeps the tenant-wide values it is given', () => {
     const empty = JSON.parse(JSON.stringify(emptyFacets({ subjectStates: ['NJ'], billStates: ['NJ', 'TX'], hasDrafts: true })))
     expect(empty).toEqual({
-      status: {}, stage: {}, priority: { none: 0, __any__: 0 }, year: {}, sessionName: {}, state: {},
+      status: {}, stage: {}, statusGroups: {}, priority: { none: 0, __any__: 0 }, year: {}, sessionName: {}, state: {},
       position: { none: 0, __any__: 0 }, tag: { __any__: 0 }, subject: {}, subjectStates: ['NJ'], billStates: ['NJ', 'TX'],
       field: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0, hasDrafts: true,
     })

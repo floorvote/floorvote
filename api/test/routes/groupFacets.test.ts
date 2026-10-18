@@ -49,6 +49,28 @@ describe('facet counts count a companion group once', () => {
       expect((await facets('status=Passed')).state).toEqual({ TX: 1 })
       expect(await total('status=Passed&state=NJ')).toBe(0)
     })
+
+    it('counts a group once when one bill meets the status and another meets the stage of the same fact (#677)', async () => {
+      await seedBill({ id: 'a190', billNumber: 'A190', status: 'Introduced', statusStage: 'introduced', statusRank: 100, state: 'NJ' })
+      await seedBill({ id: 'b1713', billNumber: 'S1713', status: 'Passed', statusStage: 'passed', statusRank: 300, state: 'NJ' })
+      await seedBill({ id: 'solo', billNumber: 'HB 1', status: 'Failed', statusStage: 'failed', statusRank: 200, state: 'NJ' })
+      await group('a190', 'b1713')
+      // The group has a bill of the status and another of the stage: it is one row of the union, not two, and not none.
+      expect(await total('status=Introduced&stage=passed')).toBe(1)
+      expect(await total('status=Introduced&stage=failed')).toBe(2)
+      // Under the fact left out of both counts, each status and stage counts the group once.
+      const f = await facets('stage=passed')
+      expect(f.status).toEqual({ Introduced: 1, Passed: 1, Failed: 1 })
+      expect(f.stage).toEqual({ introduced: 1, passed: 1, failed: 1 })
+    })
+
+    it('gives a label of a group the stage of the bills that carry it, counting each bill and not each group (#677)', async () => {
+      await seedBill({ id: 'a190', billNumber: 'A190', status: 'Pending', statusStage: 'in_committee', statusRank: 205, state: 'NJ' })
+      await seedBill({ id: 'b1713', billNumber: 'S1713', status: 'Pending', statusStage: 'in_committee', statusRank: 207, state: 'NJ' })
+      await seedBill({ id: 'c9', billNumber: 'A9', status: 'Pending', statusStage: 'passed', statusRank: 401, state: 'NJ' })
+      await group('a190', 'b1713')
+      expect((await facets()).statusGroups).toEqual({ Pending: { stage: 'in_committee', rank: 401 } })
+    })
   })
 
   describe("the group's current value of a team field", () => {

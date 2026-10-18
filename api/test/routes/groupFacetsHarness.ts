@@ -14,7 +14,7 @@ import {
 
 export type Counts = Record<string, number>
 export type Facets = {
-  status: Counts; stage: Counts; sessionName: Counts; year: Counts; state: Counts
+  status: Counts; stage: Counts; statusGroups?: Record<string, { stage: string | null; rank: number }>; sessionName: Counts; year: Counts; state: Counts
   priority: Counts; position: Counts; tag: Counts; subject: Counts
   field: Record<string, Counts>
   myBillsCount: number; newMatchesCount: number; unvotedCount: number; draftCount: number
@@ -59,22 +59,25 @@ const COUNT = 34
 
 // [the anchor's query, the dimensions it filters, whose own counts it narrows under AND]
 const AND_ANCHORS: Array<[string, string[]]> = [
-  ['', []], ['status=Passed', ['status']], ['priority=high', ['priority']], ['tag=Energy', ['tag']], ['position=Support', ['position']],
+  ['', []], ['status=Passed', ['status', 'stage']], ['priority=high', ['priority']], ['tag=Energy', ['tag']], ['position=Support', ['position']],
   ['field.cf2=x', ['field.cf2']], ['subject=NJ:Elections', ['subject']], ['minRelevance=4', []],
   ['unvoted=1', []], ['newMatches=1', []], ['myBills=1', []],
-  ['priority=none', ['priority']], ['position=none', ['position']], ['priority=__any__&status=Introduced', ['priority', 'status']],
+  ['priority=none', ['priority']], ['position=none', ['position']], ['priority=__any__&status=Introduced', ['priority', 'status', 'stage']],
 ]
+// Status and stage are one fact (#677): an anchor that sets either leaves both of their counts out of the check, since
+// neither promises the total after picking the other (the union), and it still checks every other count against the list.
 // The same, for the provider facts that were never the active filter (state, stage, year, session) and for drafts: each is
 // a dimension with a facet of its own, so each must leave itself out of its own count and no other's. Drafts is a scope,
 // which narrows every count. They run in files of their own (groupFacetsRandom4, 5): a file slows with the number of
 // requests it has made, and these anchors would carry the others' past their time limit on a busy machine.
 const PROVIDER_AND_ANCHORS: Array<[string, string[]]> = [
-  ['state=NJ', ['state']], ['stage=passed', ['stage']], ['year=2026', ['year']], ['sessionName=2025', ['sessionName']], ['drafts=1', []],
-  ['year=2026&sessionName=2025', ['year', 'sessionName']], ['state=TX&stage=introduced', ['state', 'stage']], ['drafts=1&status=Passed', ['status']],
+  ['state=NJ', ['state']], ['stage=passed', ['stage', 'status']], ['year=2026', ['year']], ['sessionName=2025', ['sessionName']], ['drafts=1', []],
+  ['year=2026&sessionName=2025', ['year', 'sessionName']], ['state=TX&stage=introduced', ['state', 'stage', 'status']], ['drafts=1&status=Passed', ['status', 'stage']],
+  ['status=Passed&stage=introduced', ['status', 'stage']],
 ]
 const PROVIDER_OR_ANCHORS = [
   'state=NJ', 'stage=passed', 'year=2026', 'sessionName=2025', 'drafts=1', 'year=2025&sessionName=2026', 'state=TX&stage=introduced&year=2026',
-  'drafts=1&priority=high', 'sessionName=2025&status=Passed',
+  'drafts=1&priority=high', 'sessionName=2025&status=Passed', 'status=Passed&stage=introduced',
 ]
 const OR_ANCHORS = [
   'status=Passed', 'priority=high', 'tag=Energy', 'position=Support', 'field.cf1=Labor', 'subject=NJ:Elections',
