@@ -228,7 +228,7 @@ type CentralBill = {
   textHash: string | null
   textR2Key: string | null
   textStatus?: 'not_checked' | 'no_texts' | 'available' | 'in_r2'
-  texts: Array<{ docId: string; note: string; date: string; links: Array<{ url: string; mediaType: string }> }>
+  texts: Array<{ docId: string; note: string; date: string; /** This document's hash. Absent from a central older than #603. */ textHash?: string | null; links: Array<{ url: string; mediaType: string }> }>
   /** `videoUrl`: a recording of the meeting, when the provider publishes one. Absent from an older central. */
   actions: Array<{ description: string; date: string; chamber: string | null; classification: string[]; order: number; videoUrl?: string | null }>
   sponsors: Array<{ name: string; party: string | null; role: string | null; primary: boolean; personId: string | null; url: string | null }>
@@ -844,6 +844,8 @@ async function applyCentralBill(
   for (const t of centralBill.texts) {
     const link = t.links[0] ?? null
     const altLink = t.links[1] ?? null
+    // '' when central sent none: an older central, or a document it has no hash for.
+    const textHash = typeof t.textHash === 'string' ? t.textHash : ''
     await db.insert(billTexts).values({
       id: crypto.randomUUID(),
       billId: billInternalId,
@@ -851,14 +853,15 @@ async function applyCentralBill(
       type: t.note,
       date: t.date,
       mime: link?.mediaType ?? 'text/html',
-      textHash: '',
+      textHash,
       stateLink: link?.url ?? null,
       altStateLink: altLink?.url ?? null,
       createdAt: now,
       updatedAt: now,
     }).onConflictDoUpdate({
       target: billTexts.docId,
-      set: { type: t.note, date: t.date, mime: link?.mediaType ?? 'text/html', stateLink: link?.url ?? null, altStateLink: altLink?.url ?? null, updatedAt: now },
+      // An empty hash never replaces a known one: it means central sent none, not that the text changed.
+      set: { type: t.note, date: t.date, mime: link?.mediaType ?? 'text/html', textHash: sql`CASE WHEN ${textHash} = '' THEN ${billTexts.textHash} ELSE ${textHash} END`, stateLink: link?.url ?? null, altStateLink: altLink?.url ?? null, updatedAt: now },
     })
   }
   // Central never drops a text except when a cutover moves the bill to another

@@ -60,6 +60,8 @@ async function hashes(): Promise<Record<string, string>> {
 }
 
 const withTexts = (texts: unknown[]) => ({ ...centralBill, texts })
+// A text change reaches an instance with a bill whose provider timestamp moved, as a new version does.
+const later = (texts: unknown[]) => ({ ...centralBill, updatedAt: '2026-01-20T12:00:00Z', texts })
 const withoutHashes = () => withTexts(centralBill.texts.map(({ textHash: _h, ...t }) => t))
 
 beforeEach(async () => {
@@ -84,7 +86,7 @@ describe('bill_texts.text_hash from a central notification', () => {
   it('stores the new hash when a document changes under the same doc id', async () => {
     central(centralBill)
     await processCentralNotification(msg, testEnv, getDb(env.DB))
-    central(withTexts([
+    central(later([
       centralBill.texts[0],
       { ...centralBill.texts[1], textHash: 'hash-6002-v2' },
     ]))
@@ -103,7 +105,7 @@ describe('bill_texts.text_hash from a central notification', () => {
   it('stores the hash of a document new to the bill, beside the ones it had', async () => {
     central(centralBill)
     await processCentralNotification(msg, testEnv, getDb(env.DB))
-    central(withTexts([
+    central(later([
       ...centralBill.texts,
       { docId: '6003', note: 'Enrolled', date: '2026-03-01', textHash: 'hash-6003-v1', links: link('6003') },
     ]))
