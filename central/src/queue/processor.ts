@@ -71,6 +71,15 @@ export async function processIngestorQueue(
   }
 }
 
+/** Fetches of a document's text for a changed hash that fail this many times in a row are left for a forced refetch. */
+const HASH_REFETCH_ATTEMPTS = 3
+
+/** The failed attempts recorded on a document's `fetch_error` for this hash, else 0. */
+function hashRefetchAttempts(fetchError: string | null, hash: string): number {
+  const m = /^hash-refetch (\S+) attempt (\d+):/.exec(fetchError ?? '')
+  return m && m[1] === hash ? Number(m[2]) : 0
+}
+
 async function processBill(msg: BillMessage, env: Env, db: Db): Promise<void> {
   const forceMetadata = msg.forceMetadata ?? false
   const forceAI = msg.forceAI ?? false
@@ -249,6 +258,8 @@ export async function ingestMeasure(
   // Documents fetched again for a changed hash, and those whose old hash stays because that failed.
   const refetchedDocs = new Set<number>()
   const keptHashes = new Map<number, string>()
+  // A refetch that failed with attempts left: the bill's stored change hash is cleared, so the next sync pass queues it again.
+  let holdBackChangeHash = false
   let calendarChanges: CalendarChange[] = []
   let priorCalendar: CalendarRow[] = []
 
@@ -256,7 +267,7 @@ export async function ingestMeasure(
     // Read before-snapshot from child tables
     const [historyRows, textRows, supplementRows, amendmentRows, voteRows, sponsorRows, priorCalRows, priorSasts] = await Promise.all([
       db.select({ seq: billHistory.seq }).from(billHistory).where(eq(billHistory.billId, bill.bill_id)).all(),
-      db.select({ docId: billTexts.docId, textHash: billTexts.textHash, r2Key: billTexts.r2Key }).from(billTexts).where(eq(billTexts.billId, bill.bill_id)).all(),
+      db.select({ docId: billTexts.docId, textHash: billTexts.textHash, r2Key: billTexts.r2Key, fetchError: billTexts.fetchError }).from(billTexts).where(eq(billTexts.billId, bill.bill_id)).all(),
       db.select({ supplementId: billSupplements.supplementId }).from(billSupplements).where(eq(billSupplements.billId, bill.bill_id)).all(),
       db.select({ amendmentId: billAmendments.amendmentId }).from(billAmendments).where(eq(billAmendments.billId, bill.bill_id)).all(),
       db.select({
@@ -310,12 +321,37 @@ export async function ingestMeasure(
     for (const t of bill.texts ?? []) {
       const was = storedByDoc.get(t.doc_id)
       if (!was?.textHash || !t.text_hash || was.textHash === t.text_hash) continue
-      if (!was.r2Key) { textHashChanged = true; continue }  // nothing stored to disagree with: the download below takes the new hash
-      if (t.state_link && await downloadTextToR2(bill.bill_id, t.doc_id, t.state_link, t.mime, provider, env, db, t.text_size ?? null, t.text_hash)) {
+      if (!was.r2Key) {
+        // Nothing stored to disagree with: the download below takes the new hash.
+        textHashChanged = true
+        continue
+      }
+      const before = hashRefetchAttempts(was.fetchError, t.text_hash)
+      if (!forceTextRefetch && before >= HASH_REFETCH_ATTEMPTS) {
+        // Gave up on this hash: the old pair stays, for a forced refetch.
+        keptHashes.set(t.doc_id, was.textHash)
+        continue
+      }
+      // The copy is stored under a key of its own, and the row takes the key and
+      // the hash in one statement, so no reader sees one without the other and
+      // the text cache (keyed on the r2 key) never serves the old body for it.
+      if (t.state_link && await downloadTextToR2(bill.bill_id, t.doc_id, t.state_link, t.mime, provider, env, db, t.text_size ?? null, t.text_hash, t.text_hash)) {
         textHashChanged = true
         refetchedDocs.add(t.doc_id)
+        const fresh = await db.select({ r2Key: billTexts.r2Key }).from(billTexts).where(eq(billTexts.docId, t.doc_id)).get()
+        if (fresh?.r2Key && fresh.r2Key !== was.r2Key) await env.BILLS_BUCKET.delete(was.r2Key).catch(() => {})
+        continue
+      }
+      keptHashes.set(t.doc_id, was.textHash)
+      const row = await db.select({ fetchError: billTexts.fetchError }).from(billTexts).where(eq(billTexts.docId, t.doc_id)).get()
+      const attempt = before + 1
+      await db.update(billTexts)
+        .set({ fetchError: `hash-refetch ${t.text_hash} attempt ${attempt}: ${row?.fetchError ?? 'no state_link'}` })
+        .where(eq(billTexts.docId, t.doc_id))
+      if (attempt >= HASH_REFETCH_ATTEMPTS) {
+        console.warn(`[processor-ls] giving up refetching doc ${t.doc_id} of bill ${bill.bill_id} for its new text hash after ${attempt} attempts; a forced text refetch retries it`)
       } else {
-        keptHashes.set(t.doc_id, was.textHash)
+        holdBackChangeHash = true
       }
     }
     companionChanges = detectCompanionChanges(priorSasts, bill, provider)
@@ -377,7 +413,7 @@ export async function ingestMeasure(
   }).onConflictDoUpdate({
     target: bills.billId,
     set: {
-      changeHash:         bill.change_hash,
+      changeHash:         holdBackChangeHash ? '' : bill.change_hash,
       // A bill first inserted from a masterlist (which carries no type) keeps the
       // column default 'B' until this runs, so write the type on every ingest.
       billType:           bill.bill_type,
@@ -397,7 +433,7 @@ export async function ingestMeasure(
       // change, so instances still see it moved and fetch it again.
       updatedAt:          detectedChanges.length > 0 || textHashChanged || carriedFrom ? now : sql`updated_at`,
       textsFetchedAt:     now,
-      detailHash:         bill.change_hash,
+      detailHash:         holdBackChangeHash ? '' : bill.change_hash,
     },
     setWhere: eq(bills.provider, provider.id),
   }).returning({ billId: bills.billId })
@@ -799,9 +835,13 @@ async function downloadTextToR2(
   db: Db,
   declaredSize: number | null = null,
   declaredHash: string | null = null,
+  /** A refetch for a changed hash: the copy goes under a key naming it, and the row takes the hash with the key. */
+  newVersion: string | null = null,
 ): Promise<boolean> {
   const ext = mime.includes('pdf') ? 'pdf' : 'html'
-  const r2Key = `bills/legiscan-${billId}/texts/${docId}.${ext}`
+  const r2Key = newVersion
+    ? `bills/legiscan-${billId}/texts/${docId}-${newVersion.replace(/[^A-Za-z0-9]/g, '').slice(0, 40)}.${ext}`
+    : `bills/legiscan-${billId}/texts/${docId}.${ext}`
   const attemptedAt = nowDb()
 
   // Attempt 1: the state's own link, with a browser UA.
@@ -877,7 +917,7 @@ async function downloadTextToR2(
     httpMetadata: { contentType },
   })
   await db.update(billTexts)
-    .set({ r2Key, fetchError: null, fetchAttemptedAt: attemptedAt })
+    .set({ r2Key, fetchError: null, fetchAttemptedAt: attemptedAt, ...(newVersion ? { textHash: newVersion } : {}) })
     .where(eq(billTexts.docId, docId))
   return true
 }
