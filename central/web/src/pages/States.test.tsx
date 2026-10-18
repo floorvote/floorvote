@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 
-const api = vi.fn()
-vi.mock('../lib/api', () => ({ api: (...a: unknown[]) => api(...a) }))
+// A plain function behind the mock: vitest reports a rejection that a vi.fn returned as unhandled.
+const calls: unknown[][] = []
+let respond: () => Promise<unknown> = async () => ({ states: [] })
+vi.mock('../lib/api', () => ({ api: (...a: unknown[]) => { calls.push(a); return respond() } }))
 
 import States from './States'
 
@@ -26,18 +28,19 @@ const row = (over: Row = {}): Row => ({
 const merge = (base: Row, over: Row) => ({ ...base, ...Object.fromEntries(Object.entries(over).map(([k, v]) => [k, { ...base[k], ...v }])) })
 
 async function show(rows: Row[]) {
-  api.mockResolvedValue({ states: rows })
+  respond = async () => ({ states: rows })
   render(<States />)
   await screen.findByRole('heading', { name: 'States' })
+  await waitFor(() => expect(screen.queryByText('Loading…')).toBeNull())
 }
 const rowEl = (state: string) => screen.getByRole('row', { name: new RegExp(`^${state}\\b`) })
 
-beforeEach(() => api.mockReset())
+beforeEach(() => { calls.length = 0 })
 
 describe('States page', () => {
   it('reads the states endpoint', async () => {
     await show([row()])
-    expect(api).toHaveBeenCalledWith('/admin/dash/states')
+    expect(calls).toEqual([['/admin/dash/states']])
   })
 
   it('says so when there are no states', async () => {
@@ -46,7 +49,7 @@ describe('States page', () => {
   })
 
   it('says so when the states cannot be loaded', async () => {
-    api.mockRejectedValue(new Error('boom'))
+    respond = () => Promise.reject(new Error('boom'))
     render(<States />)
     expect(await screen.findByText(/Couldn.t load states/)).toBeInTheDocument()
   })
