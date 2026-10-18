@@ -3,7 +3,7 @@ import { render, fireEvent, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom'
 import { BillRow } from './BillRow'
 import type { Bill } from './types'
-import { color } from '../../styles/tokens'
+import { expectAmber, expectNotAmber } from '../../test/amberStyle'
 import { PRIORITY_COLORS } from '../../lib/chipStyles'
 
 const apiFetchMock = vi.fn()
@@ -85,7 +85,7 @@ describe('BillRow: an admin sees a new match as an amber state of the priority d
     expect(selects).toHaveLength(2)
     for (const s of selects) {
       expect(s).toHaveDisplayValue('New · Set priority')
-      expect(s).toHaveStyle({ background: color.bgAmberPriority, color: color.textAmberDark, border: `1px solid ${color.borderAmber}` })
+      expectAmber(s)
     }
   })
 
@@ -129,7 +129,7 @@ describe('BillRow: an admin sees a new match as an amber state of the priority d
   ])('is not amber and offers no Dismiss when %s', (_why, over) => {
     renderRow(true, { ...NEW_MATCH, ...over })
     for (const s of prioritySelects()) {
-      expect(s).not.toHaveStyle({ background: color.bgAmberPriority })
+      expectNotAmber(s)
       expect(optionLabels(s)).not.toContain('Dismiss (reviewed, no priority)')
       expect(optionLabels(s)[0]).toBe('Set priority')
     }
@@ -171,7 +171,7 @@ describe('BillRow: a member sees the amber state, read-only', () => {
     const chips = screen.getAllByText('New match')
     expect(chips.length).toBeGreaterThan(0)
     for (const chip of chips) {
-      expect(chip).toHaveStyle({ background: color.bgAmberPriority, color: color.textAmberDark, border: `1px solid ${color.borderAmber}` })
+      expectAmber(chip)
     }
   })
 

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
+import { expectNotAmber } from '../test/amberStyle'
 import { AuthProvider } from '../context/AuthContext'
 import { ConfigProvider } from '../context/ConfigContext'
 import { SidebarRefreshProvider } from '../context/SidebarRefreshContext'
@@ -208,7 +209,7 @@ describe('Sidebar priority select', () => {
   it('is not amber', async () => {
     const { root } = renderSidebar()
     const select = await screen.findByRole('combobox', { name: /priority/i })
-    expect(select).not.toHaveStyle({ background: '#fef3c7' })
+    expectNotAmber(select)
     root.remove()
   })
 

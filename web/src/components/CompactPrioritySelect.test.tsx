@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CompactPrioritySelect } from './CompactPrioritySelect'
-import { color } from '../styles/tokens'
+import { expectAmber, expectNotAmber, expectPlainEmpty, fontSizeOf } from '../test/amberStyle'
 
 const apiFetchMock = vi.fn()
 vi.mock('../lib/api', () => ({ apiFetch: (...args: unknown[]) => apiFetchMock(...args) }))
@@ -44,7 +44,7 @@ describe('CompactPrioritySelect', () => {
 
     it('stays white with a default border, not amber', () => {
       render(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} />)
-      expect(screen.getByRole('combobox')).toHaveStyle({ background: color.white, color: color.textMuted, border: `1px solid ${color.borderDefault}` })
+      expectPlainEmpty(screen.getByRole('combobox'))
     })
 
     it('still honors a caller-supplied placeholder', () => {
@@ -85,9 +85,7 @@ describe('CompactPrioritySelect', () => {
 
     it('is amber: the amber fill, dark amber text, and amber border', () => {
       renderNew()
-      expect(screen.getByRole('combobox')).toHaveStyle({
-        background: color.bgAmberPriority, color: color.textAmberDark, border: `1px solid ${color.borderAmber}`,
-      })
+      expectAmber(screen.getByRole('combobox'))
     })
 
     it('lists the priorities, then Dismiss as the last option', () => {
@@ -179,19 +177,21 @@ describe('CompactPrioritySelect', () => {
       rerender(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} onDismiss={vi.fn()} />)
       const select = screen.getByRole('combobox')
       expect(select).toHaveDisplayValue('Set priority')
-      expect(select).toHaveStyle({ background: color.white })
+      expectNotAmber(select)
+      expectPlainEmpty(select)
       expect(optionLabels()).not.toContain('Dismiss (reviewed, no priority)')
     })
 
     it('shows the set priority, not amber, if a priority exists', () => {
       render(<CompactPrioritySelect billId="b1" current="low" onChange={vi.fn()} newMatch onDismiss={vi.fn()} />)
       expect(screen.getByRole('combobox')).toHaveDisplayValue('Low Priority')
-      expect(screen.getByRole('combobox')).not.toHaveStyle({ background: color.bgAmberPriority })
+      expectNotAmber(screen.getByRole('combobox'))
     })
 
     it('is amber in the mini size too, as in the sidebar', () => {
       render(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} newMatch onDismiss={vi.fn()} mini />)
-      expect(screen.getByRole('combobox')).toHaveStyle({ background: color.bgAmberPriority, fontSize: '10px' })
+      expectAmber(screen.getByRole('combobox'))
+      expect(fontSizeOf(screen.getByRole('combobox'))).toBe('10px')
     })
   })
 })

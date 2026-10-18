@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom'
 import { BillDetail } from './BillDetail'
 import * as api from '../lib/api'
-import { color } from '../styles/tokens'
+import { expectAmber, expectNotAmber } from '../test/amberStyle'
 import { PRIORITY_COLORS } from '../lib/chipStyles'
 
 // ── Scaffolding copied from BillDetail.test.tsx ────────────────────────────────
@@ -370,14 +370,14 @@ describe('BillDetail write controls when not demoLocked', () => {
 // #588: a new match is a state of the priority dropdown itself.
 describe('BillDetail: a new match as a state of the priority dropdown', () => {
   const NEW = { newMatchAt: '2025-01-05 00:00:00', triagedAt: null, priority: null }
-  const priorityCalls = (spy: ReturnType<typeof vi.spyOn>) => spy.mock.calls.map(c => `${c[1] && (c[1] as RequestInit).method} ${c[0]}`)
+  const paths = (spy: ReturnType<typeof makeMockApiFetch>) => spy.mock.calls.map(c => String(c[0]))
   const optionLabels = (select: HTMLElement) => within(select).getAllByRole('option').map(o => o.textContent)
 
   it('shows an admin the amber "New · Set priority" dropdown with Dismiss as its last option', async () => {
     renderBillDetail({ demoLocked: false, overrides: NEW })
     const select = await screen.findByRole('combobox', { name: /priority/i })
     expect(select).toHaveDisplayValue('New · Set priority')
-    expect(select).toHaveStyle({ background: color.bgAmberPriority, color: color.textAmberDark, border: `1px solid ${color.borderAmber}` })
+    expectAmber(select)
     expect(optionLabels(select)).toEqual(['New · Set priority', 'High Priority', 'Medium Priority', 'Low Priority', 'Dismiss (reviewed, no priority)'])
     expect(screen.queryByRole('button', { name: /dismiss/i })).toBeNull()
   })
@@ -390,7 +390,7 @@ describe('BillDetail: a new match as a state of the priority dropdown', () => {
     await waitFor(() => expect(screen.getByRole('combobox', { name: /priority/i })).toHaveDisplayValue('High Priority'))
     expect(spy).toHaveBeenCalledWith('/bills/42/priority', { method: 'PATCH', body: JSON.stringify({ priority: 'high' }) })
     expect(optionLabels(screen.getByRole('combobox', { name: /priority/i }))).not.toContain('Dismiss (reviewed, no priority)')
-    expect(screen.getByRole('combobox', { name: /priority/i })).not.toHaveStyle({ background: color.bgAmberPriority })
+    expectNotAmber(screen.getByRole('combobox', { name: /priority/i }))
   })
 
   it('choosing Dismiss triages with no priority, and the control reads "Set priority"', async () => {
@@ -400,9 +400,9 @@ describe('BillDetail: a new match as a state of the priority dropdown', () => {
     fireEvent.change(select, { target: { value: 'dismiss' } })
     await waitFor(() => expect(screen.getByRole('combobox', { name: /priority/i })).toHaveDisplayValue('Set priority'))
     expect(spy).toHaveBeenCalledWith('/bills/42/triage-dismiss', { method: 'PATCH' })
-    expect(priorityCalls(spy).filter(c => c.endsWith('/priority'))).toEqual([])
+    expect(paths(spy).filter(p => p.endsWith('/priority'))).toEqual([])
     const after = screen.getByRole('combobox', { name: /priority/i })
-    expect(after).not.toHaveStyle({ background: color.bgAmberPriority })
+    expectNotAmber(after)
     expect(optionLabels(after)).toEqual(['Set priority', 'High Priority', 'Medium Priority', 'Low Priority'])
   })
 
@@ -410,7 +410,7 @@ describe('BillDetail: a new match as a state of the priority dropdown', () => {
     renderBillDetail({ demoLocked: false, overrides: { ...NEW, triagedAt: '2025-01-06 00:00:00' } })
     const select = await screen.findByRole('combobox', { name: /priority/i })
     expect(select).toHaveDisplayValue('Set priority')
-    expect(select).not.toHaveStyle({ background: color.bgAmberPriority })
+    expectNotAmber(select)
   })
 
   it('reads "Set priority" for an admin on a bill that is not a new match', async () => {
@@ -425,7 +425,7 @@ describe('BillDetail: a new match as a state of the priority dropdown', () => {
     authState.role = 'member'
     renderBillDetail({ demoLocked: false, overrides: NEW })
     const chip = await screen.findByText('New match')
-    expect(chip).toHaveStyle({ background: color.bgAmberPriority, color: color.textAmberDark, border: `1px solid ${color.borderAmber}` })
+    expectAmber(chip)
     expect(screen.queryByRole('combobox', { name: /priority/i })).toBeNull()
     expect(screen.queryByRole('button', { name: /dismiss/i })).toBeNull()
     expect(screen.queryByText('Dismiss (reviewed, no priority)')).toBeNull()
