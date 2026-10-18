@@ -447,8 +447,9 @@ export interface ProviderContext<K extends ProviderEnvKey = ProviderEnvKey> {
    * something a person has to look at that would otherwise go unnoticed,
    * such as a record the provider has set aside because it can't read it.
    * Core sends it, with the provider's id in the subject, and it never
-   * throws. With no recipients set it only logs. A failing call needs none:
-   * whatever a provider throws already alerts. The provider keeps whatever
+   * throws. With no recipients set it only logs. A throw doesn't always
+   * alert on its own (a failed body-events month is only logged), so call
+   * this for anything a person must see. The provider keeps whatever
    * stops it alerting twice for one thing (`cache`).
    */
   alert(message: { subject: string; text: string }): Promise<void>
