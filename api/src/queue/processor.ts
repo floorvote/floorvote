@@ -2,6 +2,7 @@ import { and, eq, inArray, lt, sql } from 'drizzle-orm'
 import { processBill, type ProcessBillResult } from '../lib/llm'
 import { filterTagsToTaxonomy } from '../lib/taxonomy'
 import { centralFetch } from '../lib/centralFetch'
+import { syncTitleKey } from '../lib/companionSuggestion'
 import { recordDeliveryProbe } from '../lib/deliveryProbe'
 import { loadAnalysisInputs, loadBillTextForAi } from '../lib/analysisInputs'
 import { claimLinksEnabled, type ResolvedClaimSource } from '../lib/claimSources'
@@ -236,6 +237,10 @@ type CentralBill = {
   /** `sastBillId` is central's id for the other bill, and `kind` what the provider's vocabulary makes of the relationship. Both absent from an older central. */
   relatedBills: Array<{ identifier: string; session: string; relationType: string; sastBillId?: number | null; kind?: string }>
   subjects?: string[]
+  /** The bill's chamber as central stores it. Empty for a stub central hasn't fetched. */
+  body?: string | null
+  /** What title-matched companion suggestions match the bill by (#521), or null. Absent from an older central. */
+  titleKey?: string | null
 }
 
 /**
@@ -295,6 +300,9 @@ export async function processCentralNotification(
   const centralBill = await res.json() as CentralBill
 
   await applyCentralBill(msg, env, db, centralBill, fetchedAt)
+  // After every path too, so a state opted into or out of title-matched
+  // suggestions reaches the bill on any delivery (lib/companionSuggestion.ts).
+  await syncTitleKey(db, msg.billId, centralBill)
   // After every path above, including the ones that skip an unchanged bill:
   // a bill's identical companions can change without its provider data
   // changing (a vocabulary edit), and this is cheap when nothing did.

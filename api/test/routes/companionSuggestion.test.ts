@@ -188,6 +188,14 @@ describe('companion suggestions from matching titles', () => {
       expect(await suggestionOn('s200')).toBeNull()
     })
 
+    it('for a bill already in a group with another bill, on either page', async () => {
+      await pair()
+      await bill('s300', { number: 'SB300', chamber: 'S', key: OTHER_KEY })
+      expect((await groupWith('ada', 'h100', 's300')).status).toBe(200)
+      expect(await suggestionOn('h100')).toBeNull()
+      expect(await suggestionOn('s200')).toBeNull()
+    })
+
     it('for a pair an admin split', async () => {
       await pair()
       expect((await groupWith('ada', 'h100', 's200')).status).toBe(200)

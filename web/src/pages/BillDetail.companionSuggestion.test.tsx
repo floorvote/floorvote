@@ -6,8 +6,8 @@ import { BillDetail } from './BillDetail'
 import * as api from '../lib/api'
 
 // Companion suggestions from matching titles (#521): an admin's bill page shows
-// "Possibly the same as SB200." beside the line naming the bill's group, when
-// the server suggests a bill. "Group them" groups the two as "Group with…" does,
+// "Possibly the same as SB200." above the comments, where a grouped bill names
+// its companions, when the server suggests a bill. "Group them" groups the two as "Group with…" does,
 // with the same confirmation when it would undo splits, and "Dismiss" keeps the
 // pair from being suggested again.
 
@@ -157,7 +157,7 @@ const SUGGESTION = { billId: 's200', billNumber: 'SB200', state: 'PA', sessionSl
 const GROUPED = { companionSuggestion: null, groupBills: [{ billId: '42', billNumber: 'A190', state: 'PA', sessionSlug: '2026' }, { billId: 's200', billNumber: 'SB200', state: 'PA', sessionSlug: '2025-2026' }] }
 
 function renderBillDetail(overrides: Record<string, unknown> = {}, answers: Record<string, unknown> = {}) {
-  let bill = { ...BILL, state: 'PA', companionSuggestion: SUGGESTION, ...overrides }
+  let bill: Record<string, unknown> = { ...BILL, state: 'PA', companionSuggestion: SUGGESTION, ...overrides }
   routerMock.loaderData = bill
   const apiFetch = vi.spyOn(api, 'apiFetch').mockImplementation(async (path: string, init?: RequestInit) => {
     if (path in answers) {
@@ -218,7 +218,7 @@ describe('the companion suggestion line', () => {
     expect(line()).toBeNull()
   })
 
-  it('shows beside the line naming the bill\'s group, when the bill is in one', async () => {
+  it('sits below the line naming the bill\'s group if both arrive', async () => {
     renderBillDetail({ groupBills: [{ billId: '42', billNumber: 'A190', state: 'PA', sessionSlug: '2026' }, { billId: 'h300', billNumber: 'HB300', state: 'PA', sessionSlug: '2026' }] })
     expect(await screen.findByTestId('companion-suggestion-line')).toBeInTheDocument()
     expect(screen.getByTestId('group-shares-line')).toBeInTheDocument()

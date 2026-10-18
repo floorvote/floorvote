@@ -46,6 +46,8 @@ describe('companion suggestion query plans', () => {
     }
     return out
   }
+  // A statement that looks bills up by title key, not one that only reads the column.
+  const isLookup = (p: Planned) => /^\s*select/i.test(p.sql) && /title_key"?\s*=\s*\?/i.test(p.sql)
   // A full read of the bills table, under any alias, not of one of its indexes.
   const SCANS_BILLS = /SCAN (bills|b|o|other)\b(?! USING)/
 
@@ -77,7 +79,7 @@ describe('companion suggestion query plans', () => {
 
   it('reads the bills that hold the key through idx_bills_title_key, never the bills table', async () => {
     const plans = await plansFor(`bills/${VIEWED}`)
-    const lookups = plans.filter(p => /title_key/.test(p.sql) && /^\s*select/i.test(p.sql))
+    const lookups = plans.filter(isLookup)
     expect(lookups.length).toBeGreaterThan(0)
     for (const p of lookups) {
       expect(p.plan, p.sql).toMatch(/idx_bills_title_key/)
@@ -87,7 +89,7 @@ describe('companion suggestion query plans', () => {
 
   it('bounds the lookup by state and session, and caps the rows it reads', async () => {
     const plans = await plansFor(`bills/${VIEWED}`)
-    const lookups = plans.filter(p => /title_key/.test(p.sql) && /^\s*select/i.test(p.sql))
+    const lookups = plans.filter(isLookup)
     expect(lookups.length).toBeGreaterThan(0)
     for (const p of lookups) {
       expect(p.params, p.sql).toEqual(expect.arrayContaining(['PA', 'pa:2', keyOf(10)]))

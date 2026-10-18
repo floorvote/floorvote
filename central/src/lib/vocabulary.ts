@@ -1,5 +1,6 @@
 import type { Provider, StatusStage } from '../providers'
 import type { RelationshipKind } from '../../../shared/relationshipKinds'
+import { titleKey } from '../../../shared/titleCompanions'
 
 /**
  * Reading a provider's vocabulary (`Provider.vocabulary`): what core sends for
@@ -81,15 +82,34 @@ function lookupKind(map: Readonly<Record<string, RelationshipKind>> | undefined,
   return undefined
 }
 
-// Stubs for the red tests. Replaced in the next commit.
-export function titleCompanionConflicts(_provider: Provider): string[] {
-  return []
+/**
+ * The states a provider opts into title-matched companion suggestions
+ * (`titleCompanions`) where it also labels companions: listed in
+ * `relationships.identicalStates`, or given a state override that maps a
+ * label to identical. Two sources of grouping would compete there, so
+ * `titleCompanionsOn` keeps them off, and the vocabulary test fails on any.
+ */
+export function titleCompanionConflicts(provider: Provider): string[] {
+  const r = provider.vocabulary.relationships
+  return (provider.vocabulary.titleCompanions?.states ?? []).filter(state =>
+    (r?.identicalStates ?? []).includes(state)
+    || Object.values(r?.states?.[state] ?? {}).includes('identical'))
 }
 
-export function titleCompanionsOn(_provider: Provider, _state: string): boolean {
-  return false
+/** Whether instances suggest companions from matching titles for the provider's bills in `state` (#521). */
+export function titleCompanionsOn(provider: Provider, state: string): boolean {
+  return (provider.vocabulary.titleCompanions?.states ?? []).includes(state)
+    && !titleCompanionConflicts(provider).includes(state)
 }
 
-export function titleCompanionKey(_provider: Provider, _bill: { state: string; billType: string | null; body: string | null; title: string }): string | null {
-  return null
+/**
+ * The title key central serves for a bill (`titleKey` on GET /bills/:id), or
+ * null when no suggestion can come from it: its state isn't opted in on its
+ * provider, or the shared rule keys it no key (a resolution, a stub whose
+ * chamber isn't read yet, a short title). Computed on every read, so opting a
+ * state in or out needs nothing stored or re-ingested.
+ */
+export function titleCompanionKey(provider: Provider, bill: { state: string; billType: string | null; body: string | null; title: string }): string | null {
+  if (!titleCompanionsOn(provider, bill.state)) return null
+  return titleKey({ title: bill.title, billType: bill.billType, chamber: bill.body }, provider.vocabulary.titleCompanions!.billTypes)
 }

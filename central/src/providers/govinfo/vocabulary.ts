@@ -111,5 +111,6 @@ export const vocabulary: ProviderVocabulary = {
       'PrimaryCompanionBillBecameLaw': 'related',
       'SecondaryCompanionBillBecameLaw': 'related',
     },
+    identicalStates: ['US'],
   },
 }

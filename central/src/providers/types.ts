@@ -295,7 +295,11 @@ export interface ProviderVocabulary {
   /**
    * The states where instances suggest companions from matching titles (#521),
    * and the bill types that can be suggested. Omitted when the provider opts in
-   * no state.
+   * no state. Opt in only a state whose provider names no identical companions
+   * (never one in `relationships.identicalStates`) and whose titles are long
+   * enough to tell bills apart. Central serves each bill's title key from it on
+   * every read, so a change reaches an instance's pages at once, and its stored
+   * keys on each bill's next delivery (or a metadata refresh).
    */
   readonly titleCompanions?: VocabularyTitleCompanions
 }
@@ -332,7 +336,11 @@ export interface VocabularyRelationships {
    */
   readonly states?: Readonly<Record<string, Readonly<Record<string, RelationshipKind>>>>
   /**
-   * The states whose feeds carry a label this vocabulary maps to `identical`.
+   * The states whose feeds carry a label this vocabulary maps to `identical`,
+   * as central's stored relationships show. Read only to keep title-matched
+   * companion suggestions (`ProviderVocabulary.titleCompanions`) off there,
+   * since two sources of grouping would compete. The vocabulary test fails if
+   * one is opted in. List a state here when its feed starts naming companions.
    */
   readonly identicalStates?: readonly string[]
 }

@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useState, u
 import { useParams, Link, useNavigate, useNavigation, useLocation, useLoaderData, redirect, type LoaderFunctionArgs } from 'react-router-dom'
 import { apiFetch, ApiError } from '../lib/api'
 import { apiFetchForLoader } from '../lib/loaderFetch'
+import { groupByHand } from '../lib/groupByHand'
 import { useAuth } from '../hooks/useAuth'
 import { MarkdownSummary } from '../components/MarkdownSummary'
 import { BillBadge } from '../components/BillBadge'
@@ -543,6 +544,11 @@ type BillDetailData = {
   fieldEvents?: FieldChangeEvent[]
   /** The bills in its companion group, this one first: just this one in no group. */
   groupBills?: GroupBillLink[]
+  /**
+   * Another bill with the same title, in the other chamber of the same session, that an admin can group this
+   * one with (#521). Admins only, and null when there is none. Absent from an older server.
+   */
+  companionSuggestion?: GroupBillLink | null
   priorityMeta: { setByName: string; updatedAt: string } | null
   position: { position: string; setByName: string; updatedAt: string } | null
   voteCounts: { support: number; oppose: number; neutral: number; total: number }
@@ -794,6 +800,7 @@ export function BillDetail() {
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
   // Grouping by hand, from the overflow menu (admins).
   const [groupWithOpen, setGroupWithOpen] = useState(false)
+  const [suggestionBusy, setSuggestionBusy] = useState(false)
   const [splitting, setSplitting] = useState(false)
   const [filedOptions, setFiledOptions] = useState<BillOption[]>([])
   const [editingDraftField, setEditingDraftField] = useState<'summary' | 'text' | 'title' | 'sponsor' | 'billNumber' | 'year' | 'state' | null>(null)
@@ -2958,29 +2965,99 @@ export function BillDetail() {
         )}
       </div>
 
-      {/* Why values this page never set appear here: the group's other bills share them. */}
+      {/* Why values this page never set appear here: the group's other bills share them. And, for an admin,
+          another bill that looks like an identical companion (#521). */}
       {(() => {
         const companions = (bill.groupBills ?? []).filter(g => g.billId !== bill.id)
-        if (companions.length === 0) return null
+        const suggestion = isAdmin ? bill.companionSuggestion ?? null : null
+        if (companions.length === 0 && !suggestion) return null
+        // Indented to the section titles in the bill card above (its border and its 24px of padding), and set
+        // closer to the comments and position boxes they describe than to that card: 32px above the first line,
+        // and the columns' 24px of top padding less 8px below the last.
+        const lineStyle = (first: boolean, last: boolean): React.CSSProperties => ({
+          margin: `${first ? 32 : 4}px 0 ${last ? -8 : 0}px 25px`, fontSize: fontSize.sm, lineHeight: 1.6, color: color.textMuted,
+        })
+        const actionStyle = (disabled: boolean): React.CSSProperties => ({
+          background: 'none', border: 'none', padding: 0, font: 'inherit', color: color.linkBlue,
+          cursor: disabled ? 'not-allowed' : 'pointer', textDecoration: 'underline',
+        })
+        const actionsDisabled = suggestionBusy || demoLocked
         return (
-          // Indented to the section titles in the bill card above (its border and its 24px of padding), and set
-          // closer to the comments and position boxes it describes than to that card: 32px above, and the
-          // columns' 24px of top padding less 8px below.
-          <p data-testid="group-shares-line" style={{ margin: '32px 0 -8px 25px', fontSize: fontSize.sm, lineHeight: 1.6, color: color.textMuted }}>
-            {upperFirst(groupSharedThings(config?.orgNoun ?? DEFAULT_ORG_NOUN, customFieldDefs.length > 0))} are shared with{' '}
-            {companions.map((g, i) => (
-              <Fragment key={g.billId}>
-                {i === 0 ? null : companions.length === 2 ? ' and ' : i === companions.length - 1 ? ', and ' : ', '}
+          <>
+            {companions.length > 0 && (
+              <p data-testid="group-shares-line" style={lineStyle(true, !suggestion)}>
+                {upperFirst(groupSharedThings(config?.orgNoun ?? DEFAULT_ORG_NOUN, customFieldDefs.length > 0))} are shared with{' '}
+                {companions.map((g, i) => (
+                  <Fragment key={g.billId}>
+                    {i === 0 ? null : companions.length === 2 ? ' and ' : i === companions.length - 1 ? ', and ' : ', '}
+                    <BillBadge
+                      mini
+                      billNumber={g.billNumber}
+                      state={g.state}
+                      to={billUrl({ id: g.billId, state: g.state, sessionSlug: g.sessionSlug, billNumber: g.billNumber })}
+                    />
+                  </Fragment>
+                ))}
+                .
+              </p>
+            )}
+            {suggestion && (
+              <p data-testid="companion-suggestion-line" style={lineStyle(companions.length === 0, true)}>
+                Possibly the same as{' '}
                 <BillBadge
                   mini
-                  billNumber={g.billNumber}
-                  state={g.state}
-                  to={billUrl({ id: g.billId, state: g.state, sessionSlug: g.sessionSlug, billNumber: g.billNumber })}
+                  billNumber={suggestion.billNumber}
+                  state={suggestion.state}
+                  to={billUrl({ id: suggestion.billId, state: suggestion.state, sessionSlug: suggestion.sessionSlug, billNumber: suggestion.billNumber })}
                 />
-              </Fragment>
-            ))}
-            .
-          </p>
+                .{' '}
+                <button
+                  type="button"
+                  disabled={actionsDisabled}
+                  style={actionStyle(actionsDisabled)}
+                  title={`${bill.billNumber} and ${suggestion.billNumber} have the same title, one in each chamber. Grouping them shares ${groupSharedThings(config?.orgNoun ?? DEFAULT_ORG_NOUN, customFieldDefs.length > 0, 'and', true)}.`}
+                  onClick={async () => {
+                    if (actionsDisabled) return
+                    setSuggestionBusy(true)
+                    try {
+                      if (await groupByHand(bill.id, bill.billNumber, suggestion.billId, suggestion.billNumber)) await refetchBill()
+                    } catch (err) {
+                      // A refusal says why (two bills split apart, and how to undo the split).
+                      setCopyFeedback(err instanceof ApiError && err.status === 409 ? err.message : "Couldn't group the bills. Try again.")
+                      setTimeout(() => setCopyFeedback(null), 6000)
+                    } finally {
+                      setSuggestionBusy(false)
+                    }
+                  }}
+                >
+                  Group them
+                </button>
+                {' · '}
+                <button
+                  type="button"
+                  disabled={actionsDisabled}
+                  style={actionStyle(actionsDisabled)}
+                  title={`Don't suggest ${suggestion.billNumber} for ${bill.billNumber} again.`}
+                  onClick={async () => {
+                    if (actionsDisabled) return
+                    setSuggestionBusy(true)
+                    try {
+                      await apiFetch(`/bills/${bill.id}/companion-suggestion/dismiss`, { method: 'POST', body: JSON.stringify({ withBillId: suggestion.billId }) })
+                      setBill(b => (b ? { ...b, companionSuggestion: null } : b))
+                      void refetchBill()
+                    } catch {
+                      setCopyFeedback("Couldn't dismiss the suggestion. Try again.")
+                      setTimeout(() => setCopyFeedback(null), 4000)
+                    } finally {
+                      setSuggestionBusy(false)
+                    }
+                  }}
+                >
+                  Dismiss
+                </button>
+              </p>
+            )}
+          </>
         )
       })()}
 

@@ -22,6 +22,7 @@ import { titleOf, userTitleSql } from '../../lib/userTitle'
 import { groupMemberIds, groupVotes, inGroupOf, loadGroupBills, loadGroupNotes, mergeGroupNotes } from '../../lib/companionGroups'
 import { loadFieldDefs, loadGroupTeamValues } from '../../lib/teamFields'
 import { isReplyParticipant } from '../../lib/replies'
+import { findCompanionSuggestion } from '../../lib/companionSuggestion'
 import { claimLinksEnabled, readClaimSources } from '../../lib/claimSources'
 import type { GroupingEvent, GroupingEventMetadata, GroupingEventType } from '../../../../shared/companionGroups'
 import { FIELD_CHANGED, type FieldChangedMetadata, type FieldChangeEvent } from '../../../../shared/teamFields'
@@ -29,6 +30,8 @@ import { FIELD_CHANGED, type FieldChangedMetadata, type FieldChangeEvent } from 
 type CentralBillRich = {
   billType?: string | null
   body?: string | null
+  /** What title-matched companion suggestions match the bill by, or null (#521). */
+  titleKey?: string | null
   statusDate?: string | null
   legiscanUrl?: string | null
   sponsors?: Array<{ name: string; party: string | null; role: string | null; primary: boolean; personId: string | null; url: string | null }>
@@ -530,6 +533,12 @@ export async function buildBillDetail(
       votedAt: v.votedAt,
       roles: rolesByUser.get(v.userId) ?? [],
     }))
+
+    // Another bill with the same title, one admins can group this one with
+    // (#521). Not on a demo, where grouping by hand is denied.
+    response.companionSuggestion = env.DEMO_MODE === 'true' || bill.isDraft
+      ? null
+      : await findCompanionSuggestion(db, bill, centralRich)
   }
 
   // Custom field values, each the group's, named by who set it. A value whose
