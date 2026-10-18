@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { BillDetail } from './BillDetail'
@@ -102,7 +102,7 @@ function setup(page: Record<string, unknown> = {}, drop: string[] = []) {
   return render(<MemoryRouter><BillDetail /></MemoryRouter>)
 }
 
-const basedOn = () => screen.queryByText(/based on text/)
+const basedOn = () => screen.queryByText(/based on/i)
 const textChip = () => screen.getByTitle('Show this bill text version')
 
 beforeEach(() => {
@@ -122,8 +122,9 @@ describe("the analysis document link on a companion's page showing another membe
     setup(BORROWED)
     await screen.findByText("S200's summary.")
     expect(basedOn()).toBeInTheDocument()
+    // The chip is the analyzed member's version, and the badge beside it names that member (#712).
     const chip = textChip()
-    expect(chip).toHaveTextContent('S200')
+    expect(within(chip.parentElement as HTMLElement).getByText('S200')).toBeInTheDocument()
     expect(chip).toHaveTextContent('Engrossed')
     expect(chip).not.toHaveTextContent('Introduced')
   })
@@ -158,13 +159,17 @@ describe("the analysis document link on a companion's page showing another membe
   it("shows no link when the analyzed member's document is gone, though the page bill's own is listed", async () => {
     setup({ ...BORROWED, analysisLastAiTextDocId: '9999', analysisLastAiText: null })
     await screen.findByText("S200's summary.")
-    expect(basedOn()).toBeNull()
+    // No chip, but the badge still says whose summary it is (#712).
+    expect(screen.queryByTitle('Show this bill text version')).toBeNull()
+    expect(within((await screen.findByText('AI Summary')).parentElement as HTMLElement).getByText('S200')).toBeInTheDocument()
   })
 
   it("shows no link when the analyzed member has no recorded document, though the page bill's own is listed", async () => {
     setup({ ...BORROWED, analysisLastAiTextDocId: null, analysisLastAiText: null })
     await screen.findByText("S200's summary.")
-    expect(basedOn()).toBeNull()
+    // No chip, but the badge still says whose summary it is (#712).
+    expect(screen.queryByTitle('Show this bill text version')).toBeNull()
+    expect(within((await screen.findByText('AI Summary')).parentElement as HTMLElement).getByText('S200')).toBeInTheDocument()
   })
 })
 

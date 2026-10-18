@@ -336,6 +336,8 @@ describe("selecting in place: the header chip and a claim choose a version in it
     await waitFor(() => expect(within(rowFor('A100')).getByRole('button', { pressed: true })).toHaveTextContent('Chaptered'))
     await user.click(within(rowFor('S200')).getByRole('button', { name: /Engrossed/ }))
     expect(within(rowFor('S200')).getByRole('button', { pressed: true })).toHaveTextContent('Engrossed')
+    // The page clears its request after a moment, so a later click is a new one.
+    await new Promise(r => setTimeout(r, 150))
     await user.click(headerChip())
     await waitFor(() => expect(within(rowFor('A100')).getByRole('button', { pressed: true })).toHaveTextContent('Chaptered'))
     expect(pressed()).toHaveLength(1)

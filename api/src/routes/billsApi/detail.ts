@@ -22,7 +22,7 @@ import { titleOf, userTitleSql } from '../../lib/userTitle'
 import { groupMemberIds, groupVotes, inGroupOf, loadGroupBills, loadGroupNotes, mergeGroupNotes } from '../../lib/companionGroups'
 import { loadGroupTeamValues } from '../../lib/teamFields'
 import { claimLinksEnabled, readClaimSources } from '../../lib/claimSources'
-import type { GroupingEvent, GroupingEventMetadata, GroupingEventType } from '../../../../shared/companionGroups'
+import type { GroupBillTexts, GroupingEvent, GroupingEventMetadata, GroupingEventType } from '../../../../shared/companionGroups'
 
 type CentralBillRich = {
   billType?: string | null
@@ -172,6 +172,17 @@ export async function buildBillDetail(
       .all(),
   ])
   const billNumberOf = new Map(groupBills.map(b => [b.billId, b.billNumber]))
+  // The text versions of every bill in the group, newest first, for the page's
+  // Bill texts to list under each bill's badge (#712). A bill with none is left out.
+  const groupTextRows = await db.select().from(billTexts)
+    .where(inArray(billTexts.billId, groupBills.map(b => b.billId)))
+    .orderBy(desc(billTexts.date), desc(billTexts.docId)).all()
+  const groupTexts: GroupBillTexts[] = groupBills.flatMap(g => {
+    const texts = groupTextRows.filter(t => t.billId === g.billId).map(t => ({
+      docId: t.docId, type: t.type, date: t.date, mime: t.mime, stateLink: t.stateLink, altStateLink: t.altStateLink,
+    }))
+    return texts.length > 0 ? [{ ...g, texts }] : []
+  })
   const groupingMeta = groupingRows.map(e => JSON.parse(e.metadata) as GroupingEventMetadata)
   // Which of the bills each event joined or left had a comment posted before it. The thread shows an
   // automatic grouping or split line only for that: those comments now appear here, or no longer do.
@@ -417,6 +428,8 @@ export async function buildBillDetail(
     groupingEvents,
     // The bills in its companion group, this one first: just this one in no group.
     groupBills,
+    // Every group bill's versions, one entry per bill with any (#712). The page bill's own are `texts`.
+    groupTexts,
     texts: textRows.map(t => ({
       docId: t.docId,
       type: t.type,

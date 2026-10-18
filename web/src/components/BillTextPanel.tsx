@@ -1,10 +1,13 @@
 import { useState, useEffect, useId, useMemo, useRef } from 'react'
 import { useVerticalResize, ResizeHandle } from './ResizeHandle'
+import { BillBadge } from './BillBadge'
 import { BillTextChip } from './BillTextChip'
 import { ExternalLinkIcon } from './ExternalLinkIcon'
 import { getScrollContainer } from '../lib/scrollUtils'
 import { canRenderPdfInline } from '../lib/pdfInline'
 import { parseHandle } from '../../../shared/billHandle'
+import type { GroupBillTexts } from '../../../shared/companionGroups'
+import { orderGroupTexts } from '../lib/groupTexts'
 import { claimGlow, CLAIM_GLOW_FLASH } from '../lib/claimGlow'
 import { focusPassage, markPassage, PASSAGE_ID, type ClaimDocument, type Span } from '../lib/claimLinks'
 import { describePageTarget, looksLikePdf, pdfPageTarget } from '../lib/pdfPages'
@@ -75,13 +78,26 @@ interface BillTextPanelProps {
   requestedDocId?: string | null
   requestedDocument?: DocumentRequest | null
   passage?: PassageRequest | null
+  /**
+   * Every bill in the page bill's companion group with its versions (#712). The
+   * list is then one row per bill, and a version of any of them is selected in
+   * its own row. Absent from a server that predates it, and the list is then
+   * `texts`, with another bill's document appended when one is opened.
+   */
+  groupTexts?: GroupBillTexts[]
+  /** Head each bill's row with its badge: the page bill is in a group. */
+  groupBadges?: boolean
 }
 
-export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, requestedDocument, passage }: BillTextPanelProps) {
+export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, requestedDocument, passage, groupTexts, groupBadges = false }: BillTextPanelProps) {
   const [internalOpen, setInternalOpen] = useState(false)
   const open = externalOpen !== undefined ? externalOpen : internalOpen
+  // The group's bills as rows, in the order every page in the group shares (#712); null from a server without them.
+  const rows = useMemo(() => (groupTexts ? orderGroupTexts(groupTexts) : null), [groupTexts])
+  // The versions the list holds before another bill's document is appended.
+  const baseTexts = useMemo(() => (rows ? rows.flatMap(r => r.texts) : texts), [rows, texts])
   const [selectedDocId, setSelectedDocId] = useState<string | null>(
-    texts.length > 0 ? texts[0].docId : null
+    texts.length > 0 ? texts[0].docId : (baseTexts[0]?.docId ?? null)
   )
   const [loadedContent, setLoadedContent] = useState<Map<string, string>>(new Map())
   const [pdfBlobUrls, setPdfBlobUrls] = useState<Map<string, string>>(new Map())
@@ -101,8 +117,12 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, req
   const [foreign, setForeign] = useState<{ billId: string; billNumber: string | null; version: TextVersion } | null>(null)
   // The claim passage being shown, until the reader picks a version.
   const [activePassage, setActivePassage] = useState<PassageRequest | null>(null)
-  const allTexts = foreign && !texts.some(t => t.docId === foreign.version.docId) ? [...texts, foreign.version] : texts
-  const textBillId = (docId: string | null) => (foreign && docId === foreign.version.docId ? foreign.billId : billId)
+  const allTexts = foreign && !baseTexts.some(t => t.docId === foreign.version.docId) ? [...baseTexts, foreign.version] : baseTexts
+  const textBillId = (docId: string | null) => {
+    const listed = rows?.find(r => r.texts.some(t => t.docId === docId))
+    if (listed) return listed.billId
+    return foreign && docId === foreign.version.docId ? foreign.billId : billId
+  }
   const textUrl = (docId: string | null, from = textBillId(docId)) => `/api/bills/${from}/text/${docId}`
 
   const selectedVersion = allTexts.find(t => t.docId === selectedDocId) ?? allTexts[0] ?? null
@@ -143,20 +163,21 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, req
   useEffect(() => () => { if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current) }, [])
   useEffect(() => {
     if (!requestedDocId) return
-    const target = texts.find(t => t.docId === requestedDocId)
+    const target = baseTexts.find(t => t.docId === requestedDocId)
     if (!target) return
     void handleSelectVersion(requestedDocId)
     const rafId = reveal()
     return () => cancelAnimationFrame(rafId)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requestedDocId, texts])
+  }, [requestedDocId, baseTexts])
 
   // Another bill's document (#601): open it beside this bill's versions.
   useEffect(() => {
     if (!requestedDocument) return
     consumedDocumentRef.current = requestedDocument.key
     const doc = requestedDocument.document
-    setForeign({ billId: requestedDocument.billId, billNumber: requestedDocument.billNumber, version: doc })
+    // A version the list already holds is selected in its row; only another is appended.
+    if (!rows || !baseTexts.some(t => t.docId === doc.docId)) setForeign({ billId: requestedDocument.billId, billNumber: requestedDocument.billNumber, version: doc })
     setActivePassage(null)
     setSelectedDocId(doc.docId)
     if (doc.mime === 'application/pdf') {
@@ -176,7 +197,8 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, req
     if (!passage) return
     consumedPassageRef.current = passage.key
     const doc = passage.document
-    const own = passage.billId === billId && texts.some(t => t.docId === doc.docId)
+    // Without the group's rows the list is this bill's own, so another bill's document is appended to it.
+    const own = baseTexts.some(t => t.docId === doc.docId) && (rows !== null || passage.billId === billId)
     if (!own) setForeign({ billId: passage.billId, billNumber: passage.billNumber, version: doc })
     setActivePassage(passage)
     setSelectedDocId(doc.docId)
@@ -435,7 +457,27 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, req
 
       {open && (
         <div style={{ marginTop: 8 }}>
-          {allTexts.length > 0 && (
+          {allTexts.length > 0 && rows && groupBadges ? (
+            // One row per bill in the group, each headed once by its badge (#712).
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+              {[...rows, ...(foreign && !baseTexts.some(t => t.docId === foreign.version.docId)
+                ? [{ billId: foreign.billId, billNumber: foreign.billNumber ?? '', state: null as string | null, texts: [foreign.version] }]
+                : [])].map(row => (
+                <div key={row.billId} role="group" aria-label={`${row.billNumber} bill texts`} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{ minWidth: 52 }}><BillBadge billNumber={row.billNumber} state={row.state} mini /></span>
+                  {row.texts.map(t => (
+                    <BillTextChip
+                      key={t.docId}
+                      type={t.type}
+                      date={t.date}
+                      selected={t.docId === selectedDocId}
+                      onClick={() => handleSelectVersion(t.docId)}
+                    />
+                  ))}
+                </div>
+              ))}
+            </div>
+          ) : allTexts.length > 0 && (
             <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
               {allTexts.map(t => (
                 <BillTextChip

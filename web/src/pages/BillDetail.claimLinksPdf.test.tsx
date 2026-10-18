@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { BillDetail } from './BillDetail'
@@ -133,6 +133,8 @@ const summaryBox = async () => {
   await screen.findByText('AI Summary')
   return document.querySelector('.markdown-summary') as HTMLElement
 }
+/** The summary header names the bill a borrowed summary is from, by its badge (#712). */
+const sourceBadge = async () => within((await screen.findByText('AI Summary')).parentElement as HTMLElement).getByText('S200')
 const claimLink = (name: string) => screen.findByRole('link', { name })
 const pdfFrame = async () => {
   await waitFor(() => expect(screen.queryByTitle('Bill text')).not.toBeNull(), { timeout: 3000 })
@@ -292,23 +294,23 @@ describe('claim links on a companion\'s page showing another member\'s PDF analy
 
   it('labels the summary with the bill it is from, linking to that bill', async () => {
     setup(BORROWED)
-    const link = await screen.findByRole('link', { name: 'S200' })
-    expect(link).toHaveAttribute('href', '/bills/s200')
-    expect(link.parentElement!.textContent).toBe('Summary of S200, this bill\'s identical companion')
+    expect(await sourceBadge()).toBeInTheDocument()
+    expect(screen.queryByText(/Summary of/)).toBeNull()
   })
 
   it('renders no links when the analyzed member\'s pinned PDF is gone, and still says whose summary it is', async () => {
     setup({ ...BORROWED, claimSources: null })
     await summaryBox()
     expect(screen.queryByRole('link', { name: 'Requires a drop box in each county.' })).toBeNull()
-    expect(screen.getByRole('link', { name: 'S200' }).parentElement!.textContent).toBe('Summary of S200, this bill\'s identical companion')
+    expect(await sourceBadge()).toBeInTheDocument()
+    expect(screen.queryByText(/Summary of/)).toBeNull()
   })
 
   it('renders no links with the instance setting off, and still says whose summary it is', async () => {
     setup({ ...BORROWED, claimLinksEnabled: false })
     await summaryBox()
     expect(screen.queryByRole('link', { name: 'Requires a drop box in each county.' })).toBeNull()
-    expect(screen.getByRole('link', { name: 'S200' })).toBeInTheDocument()
+    expect(await sourceBadge()).toBeInTheDocument()
   })
 
   it('follows the analysis back to the page bill\'s own PDF once the group shows A100\'s', async () => {

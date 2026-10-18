@@ -69,7 +69,7 @@ import { CollapsibleSection } from '../components/CollapsibleSection'
 import { ProviderExtrasList } from '../components/ProviderExtras'
 import type { BillExtras } from '../../../shared/providerExtras'
 import { RELATIONSHIP_KINDS, RELATIONSHIP_KIND_LABELS, isRelationshipKind, type RelationshipKind } from '../../../shared/relationshipKinds'
-import type { GroupBill, GroupBillLink, GroupingEvent, GroupNote } from '../../../shared/companionGroups'
+import type { GroupBill, GroupBillLink, GroupBillTexts, GroupingEvent, GroupNote } from '../../../shared/companionGroups'
 import { GroupWithDialog } from '../components/GroupWithDialog'
 import { splitConfirmText } from '../lib/splitConfirm'
 import { placeGroupingLines } from '../lib/groupingLine'
@@ -548,6 +548,8 @@ type BillDetailData = {
   groupingEvents?: GroupingEvent[]
   /** The bills in its companion group, this one first: just this one in no group. */
   groupBills?: GroupBillLink[]
+  /** Every group bill's text versions, newest first, one entry per bill that has any (#712). Absent from a server that predates it. */
+  groupTexts?: GroupBillTexts[]
   priorityMeta: { setByName: string; updatedAt: string } | null
   position: { position: string; setByName: string; updatedAt: string } | null
   voteCounts: { support: number; oppose: number; neutral: number; total: number }
@@ -1418,6 +1420,8 @@ export function BillDetail() {
     ? bill.analysisLastAiText
     : (bill.texts.find(t => t.docId === bill.lastAiTextDocId) ?? null)
   const analysisTextIsOwn = !bill.analysisBillId || bill.analysisBillId === bill.id
+  // With the group's texts the analysis's document is a version in the list, so it is selected there (#712).
+  const analysisTextInGroupTexts = !!analysisText && !!bill.groupTexts?.some(g => g.texts.some(t => t.docId === analysisText.docId))
   const openClaim = (index: number, opener?: HTMLElement) => {
     const link = claimLinks.find(c => c.index === index)
     if (!link || !claimSources) return
@@ -1437,7 +1441,8 @@ export function BillDetail() {
 
   // Separators between collapsible sections — no border above the first one.
   // A claim's passage opens the bill text even where this bill has none of its own.
-  const hasBillText = (bill.texts.length > 0 && !!bill.textR2Key) || shownPassage !== null || shownDocRequest !== null
+  const groupVersionCount = (bill.groupTexts ?? []).reduce((n, g) => n + g.texts.length, 0)
+  const hasBillText = (bill.texts.length > 0 && !!bill.textR2Key) || groupVersionCount > 0 || shownPassage !== null || shownDocRequest !== null
   const hasAmendments = (bill.amendments ?? []).filter(a => a.url || a.stateLink).length > 0
   const hasActions = !!bill.lastAction
   const hasHearings = (bill.calendar ?? []).length > 0
@@ -2569,32 +2574,38 @@ export function BillDetail() {
                     </span>
                     {/* Hidden while a run is in flight: the doc it points at is the
                         previous run's input, so it would be stale mid-regenerate. */}
-                    {!regenerating && analysisText && (
+                    {!regenerating && (analysisText || borrowedFrom) && (
                           <>
                             <span style={{ fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: color.textMuted, letterSpacing: '0.06em', textTransform: 'uppercase' as const }}>
-                              <span style={{ marginRight: 6, marginLeft: 2 }}>·</span>based on text
+                              <span style={{ marginRight: 6, marginLeft: 2 }}>·</span>based on
                             </span>
-                            <BillTextChip
-                              billNumber={analysisTextIsOwn ? undefined : (bill.analysisBillNumber ?? undefined)}
-                              type={analysisText.type}
-                              date={analysisText.date}
-                              onClick={() => {
-                                setShowBillText(true)
-                                if (analysisTextIsOwn) {
-                                  setRequestedDocId(analysisText.docId)
-                                  setTimeout(() => setRequestedDocId(null), 100)
-                                } else {
-                                  setRequestBillId(bill.id)
-                                  setDocRequest({
-                                    key: ++passageKeyRef.current,
-                                    billId: bill.analysisBillId!,
-                                    billNumber: bill.analysisBillNumber ?? null,
-                                    document: analysisText,
-                                  })
-                                }
-                              }}
-                              title="Show this bill text version"
-                            />
+                            {/* A summary from another bill in the group names that bill (#712). Its chip is that bill's version, never the page bill's. */}
+                            {borrowedFrom && (
+                              <BillBadge billNumber={borrowedFrom.billNumber} state={(bill.groupBills ?? []).find(g => g.billId === borrowedFrom.billId)?.state} mini />
+                            )}
+                            {analysisText && (
+                              <BillTextChip
+                                type={analysisText.type}
+                                date={analysisText.date}
+                                onClick={() => {
+                                  setShowBillText(true)
+                                  if (analysisTextIsOwn || analysisTextInGroupTexts) {
+                                    // Selected in its own bill's row (#712).
+                                    setRequestedDocId(analysisText.docId)
+                                    setTimeout(() => setRequestedDocId(null), 100)
+                                  } else {
+                                    setRequestBillId(bill.id)
+                                    setDocRequest({
+                                      key: ++passageKeyRef.current,
+                                      billId: bill.analysisBillId!,
+                                      billNumber: bill.analysisBillNumber ?? null,
+                                      document: analysisText,
+                                    })
+                                  }
+                                }}
+                                title="Show this bill text version"
+                              />
+                            )}
                           </>
                         )}
                   </div>
@@ -2613,12 +2624,6 @@ export function BillDetail() {
                     />
                   </div>
                 </div>
-                {/* A borrowed summary says whose it is, and its claim links open that bill's text (#571). */}
-                {borrowedFrom && (
-                  <div style={{ fontSize: fontSize.sm, color: color.textMuted, marginBottom: 6 }}>
-                    Summary of <Link to={billUrl({ id: borrowedFrom.billId, billNumber: borrowedFrom.billNumber })} className="blue-link">{borrowedFrom.billNumber}</Link>, this bill's identical companion
-                  </div>
-                )}
                 <div style={regenerating ? DIMMED_WHILE_RUNNING : undefined}>
                 <MarkdownSummary fontSize={fontSize.base} color={color.textSlate} lineHeight={1.5} claimLinks={claimLinks} onClaimActivate={openClaim}>
                   {bill.tenantSummary}
@@ -2782,11 +2787,11 @@ export function BillDetail() {
         {!bill.isDraft && hasBillText && (
           <CollapsibleSection
             label="Bill texts"
-            count={bill.texts.length > 0 ? bill.texts.length : 1}
+            count={groupVersionCount > 0 ? groupVersionCount : bill.texts.length > 0 ? bill.texts.length : 1}
             open={showBillText}
             onToggle={() => setShowBillText(v => !v)}
           >
-            <BillTextPanel key={bill.id} billId={bill.id} texts={bill.texts ?? []} externalOpen={showBillText} requestedDocId={requestedDocId} requestedDocument={shownDocRequest} passage={shownPassage} />
+            <BillTextPanel key={bill.id} billId={bill.id} texts={bill.texts ?? []} groupTexts={bill.groupTexts} groupBadges={(bill.groupBills ?? []).length > 1} externalOpen={showBillText} requestedDocId={requestedDocId} requestedDocument={shownDocRequest} passage={shownPassage} />
           </CollapsibleSection>
         )}
 
