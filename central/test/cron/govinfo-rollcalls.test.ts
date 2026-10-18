@@ -279,7 +279,7 @@ describe('House votes', () => {
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ name: voter.name, party: voter.party, stateId: 52, provider: 'govinfo', role: 'Rep', roleId: 1 })
     const votes = await rollsOf('HB43', 1)
-    expect(votes[0].legislatorVotes).toContainEqual({ personId: String(rows[0].peopleId), name: voter.name, vote: expect.any(String), url: null })
+    expect(votes[0].legislatorVotes).toContainEqual({ personId: String(rows[0].peopleId), name: voter.name, vote: expect.any(String), url: null, party: expect.any(String) })
   })
 
   it('shows each voter under the name the Clerk prints, including its state when two members share a last name', async () => {
