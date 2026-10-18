@@ -14,12 +14,12 @@ import type { AppDb } from '../types'
  * every reader asks here and merges the result into the events it returns.
  * Which values qualify is `prioritizedDateFieldValue`, so the calendar, the
  * feed, the dashboard count, and the week-ahead email always agree. A value is
- * a group's (#376), so a companion group projects its current value once, from
- * the member holding it, wearing the group's priority (#639).
+ * a group's (#376), so a companion group projects its current value once, linked to
+ * the member holding it and keyed by the group, wearing the group's priority (#639).
  */
 
 export interface DateFieldEvent {
-  /** `cf-{fieldId}-{billId}`: from the field and the bill, never the date, so a changed date moves the same event. Also the feed UID. */
+  /** `cf-{fieldId}-{billId}` for a bill in no group, `cf-{fieldId}-group-{groupKey}` for a grouped one: from the field and the bill or group, never the date or the member holding the value, so a changed date or a value moving to another member moves the same event. Also the feed UID. */
   id: string
   fieldName: string
   /** YYYY-MM-DD, as stored. */
@@ -74,7 +74,7 @@ export async function loadDateFieldEvents(db: AppDb, { from, to }: { from: strin
   const groupPriorities = await loadGroupPriorities(db, rows.map(r => r.groupKey))
 
   return rows.filter(r => isCalendarDate(r.value)).map(r => ({
-    id: `cf-${r.fieldId}-${r.billId}`,
+    id: r.groupKey === null ? `cf-${r.fieldId}-${r.billId}` : `cf-${r.fieldId}-group-${r.groupKey}`,
     fieldName: r.fieldName,
     date: r.value,
     title: `${r.fieldName}: ${r.billNumber}`,
