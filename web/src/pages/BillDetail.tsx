@@ -1418,7 +1418,7 @@ export function BillDetail() {
     ? bill.analysisLastAiText
     : (bill.texts.find(t => t.docId === bill.lastAiTextDocId) ?? null)
   const analysisTextIsOwn = !bill.analysisBillId || bill.analysisBillId === bill.id
-  const openClaim = (index: number) => {
+  const openClaim = (index: number, opener?: HTMLElement) => {
     const link = claimLinks.find(c => c.index === index)
     if (!link || !claimSources) return
     setShowBillText(true)
@@ -1431,7 +1431,7 @@ export function BillDetail() {
     }
     // A PDF claim opens its page and shows its quote (#572), an HTML claim its highlighted passage (#571).
     setPassage('quote' in link
-      ? { ...base, quote: link.quote, page: link.page }
+      ? { ...base, quote: link.quote, page: link.page, opener: opener ?? null }
       : { ...base, matched: link.matched, quoteAt: link.quoteAt })
   }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MarkdownSummary } from './MarkdownSummary'
 
@@ -61,9 +61,9 @@ describe('MarkdownSummary: PDF claim links with a quote', () => {
     render(<MarkdownSummary claimLinks={CLAIMS} onClaimActivate={onClaimActivate}>{SUMMARY}</MarkdownSummary>)
     await user.tab()
     await user.keyboard('{Enter}')
-    expect(onClaimActivate).toHaveBeenLastCalledWith(0)
+    expect(onClaimActivate).toHaveBeenLastCalledWith(0, expect.any(HTMLElement))
     await user.click(screen.getByRole('link', { name: 'Boxes are emptied daily by two employees.' }))
-    expect(onClaimActivate).toHaveBeenLastCalledWith(1)
+    expect(onClaimActivate).toHaveBeenLastCalledWith(1, expect.any(HTMLElement))
   })
 
   it('does not treat a click on the quote itself as activating the claim', async () => {

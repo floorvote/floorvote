@@ -40,7 +40,7 @@ describe('MarkdownSummary claim links', () => {
     render(<MarkdownSummary claimLinks={CLAIMS} onClaimActivate={onClaimActivate}>{SUMMARY}</MarkdownSummary>)
     const before = window.location.href
     await user.click(screen.getByRole('link', { name: 'boxes are emptied daily by two employees' }))
-    expect(onClaimActivate).toHaveBeenCalledWith(2)
+    expect(onClaimActivate).toHaveBeenCalledWith(2, expect.any(HTMLElement))
     expect(window.location.href).toBe(before)
   })
 
@@ -53,7 +53,7 @@ describe('MarkdownSummary claim links', () => {
     await user.tab()
     expect(screen.getByRole('link', { name: 'Requires a drop box in each county.' })).toHaveFocus()
     await user.keyboard('{Enter}')
-    expect(onClaimActivate).toHaveBeenCalledWith(0)
+    expect(onClaimActivate).toHaveBeenCalledWith(0, expect.any(HTMLElement))
   })
 
   it('leaves the summary\'s own links alone', async () => {

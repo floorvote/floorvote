@@ -347,6 +347,15 @@ describe('a PDF bill\'s summary without claim sources', () => {
 
 // #696: the quote box closes, and focus goes back to the claim that opened it.
 describe('the PDF quote box on a PDF bill\'s claims (#696)', () => {
+  // The test setup's matchMedia reports no match for anything, so a device that can hover is stubbed in.
+  beforeEach(() => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(hover: hover)', media: query, onchange: null,
+      addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false,
+    }))
+  })
+  afterEach(() => { vi.unstubAllGlobals() })
+
   it('previews a PDF claim\'s page line and quote on hover, outside the summary box', async () => {
     const user = userEvent.setup()
     setup()

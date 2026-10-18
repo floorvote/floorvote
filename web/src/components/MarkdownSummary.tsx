@@ -13,12 +13,14 @@
  * after them is ordinary markdown and is treated as such.
  */
 
-import React, { useEffect, useId, useMemo, useRef } from 'react'
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { marked } from 'marked'
-import { color, radius } from '../styles/tokens'
+import { color, radius, fontSize as fontSizeToken, fontWeight } from '../styles/tokens'
 import { sanitizeHtml } from '../lib/sanitizeHtml'
 import { isHtml, htmlToMarkdown, normalizeInlineBullets, normalizeListIndent, separateBlocks, stripMarkdown } from '../lib/markdown'
 import { linkClaimsInHtml } from '../lib/claimLinks'
+import { claimGlow } from '../lib/claimGlow'
 
 // Re-exported for existing importers (BillList, BillHoverTooltip).
 export { stripMarkdown }
@@ -43,12 +45,60 @@ interface Props {
    * Claims whose own text becomes a link to the passage behind it (#571), by
    * their index in the bill's claim sources. None, or absent, renders the
    * summary exactly as before. A claim with a `popover` (a PDF claim's quote,
-   * #572) shows it in a tooltip beside its link, on hover and on keyboard focus,
-   * and the link is described by it for a screen reader. Escape dismisses it.
+   * #572, or an HTML claim's passage, #696) previews it on hover and on keyboard
+   * focus, in a card portaled to the body so the summary box can't clip it, and
+   * the link is described by it for a screen reader. Escape dismisses it.
    */
   claimLinks?: readonly { index: number; claim: string; popover?: string }[]
-  /** Called with a claim's index when its link is activated, by click or Enter. */
-  onClaimActivate?: (index: number) => void
+  /**
+   * Called with a claim's index, and its link, when the link is activated by
+   * click or Enter. The link is where focus returns when what it opened closes.
+   */
+  onClaimActivate?: (index: number, link: HTMLElement) => void
+}
+
+type Preview = { link: HTMLElement; text: string }
+
+/** Where a preview goes: centered above its claim, or below when there's no room, kept inside the viewport. A phone gets a card at the bottom. */
+type Place = { left: number; top: number } | 'bottom'
+
+/** The hover and focus preview of a claim's quote: portaled to the body, so no ancestor's overflow can clip it. */
+function QuotePreview({ preview }: { preview: Preview }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [place, setPlace] = useState<Place | null>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    if (window.innerWidth <= 600) { setPlace('bottom'); return }
+    const { width, height } = el.getBoundingClientRect()
+    const r = preview.link.getBoundingClientRect()
+    const left = Math.max(8, Math.min(r.left + r.width / 2 - width / 2, window.innerWidth - width - 8))
+    const above = r.top - height - 10
+    setPlace({ left, top: above >= 8 ? above : r.bottom + 10 })
+  }, [preview])
+  const box: React.CSSProperties = place === 'bottom'
+    ? { left: 16, right: 16, bottom: 16, top: 'auto', width: 'auto', maxWidth: 'none' }
+    : { left: place?.left ?? 0, top: place?.top ?? 0, width: 'max-content', maxWidth: 'min(26rem, calc(100vw - 16px))' }
+  // The quote is the link's accessible description already (the hidden `.claim-quote` beside it), so this copy is for sight only.
+  return createPortal(
+    <div
+      ref={ref}
+      aria-hidden="true"
+      data-claim-preview=""
+      style={{
+        ...claimGlow, ...box, position: 'fixed', zIndex: 9000, pointerEvents: 'none', visibility: place ? 'visible' : 'hidden',
+        borderRadius: radius.md, padding: '8px 12px', fontSize: fontSizeToken.sm, lineHeight: 1.45, color: color.textSlate,
+        fontFamily: "'Source Serif 4', serif", fontWeight: fontWeight.normal, fontStyle: 'normal', textAlign: 'left',
+      }}
+    >
+      <div style={{ fontFamily: 'system-ui, sans-serif', fontSize: fontSizeToken.xs, fontWeight: fontWeight.semibold, letterSpacing: '0.06em', textTransform: 'uppercase', color: color.textMuted, marginBottom: 3 }}>
+        From the bill text
+      </div>
+      {/* A long quote is cut at eight lines on screen; a screen reader gets all of it. */}
+      <div data-claim-preview-text="" style={{ overflow: 'hidden', display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 8 }}>{preview.text}</div>
+    </div>,
+    document.body,
+  )
 }
 
 export function MarkdownSummary({ children, fontSize, color: textColor = color.textSlate, lineHeight = 1.5, fontFamily = "'Source Serif 4', serif", claimLinks, onClaimActivate }: Props) {
@@ -81,41 +131,64 @@ export function MarkdownSummary({ children, fontSize, color: textColor = color.t
       const link = (e.target as Element | null)?.closest?.('a.claim-link[data-claim]')
       if (!link || !el.contains(link)) return
       e.preventDefault()
-      onClaimActivate(Number(link.getAttribute('data-claim')))
+      onClaimActivate(Number(link.getAttribute('data-claim')), link as HTMLElement)
     }
     el.addEventListener('click', onClick)
     return () => el.removeEventListener('click', onClick)
   }, [onClaimActivate])
 
-  // A quote tooltip is dismissed with Escape (WCAG 1.4.13) and shows again once
-  // the pointer or focus has left its claim.
+  // The quote preview (#572, #696): shown on hover and keyboard focus, dismissed
+  // with Escape (WCAG 1.4.13), and shown again once the pointer or focus has left
+  // the claim. The links are in the HTML string, so these are listeners on the box.
+  const [preview, setPreview] = useState<Preview | null>(null)
+  const previewRef = useRef<Preview | null>(null)
+  previewRef.current = preview
   useEffect(() => {
     const el = ref.current
     if (!el || !hasQuotes) return
+    let dismissed: Element | null = null
     const refOf = (n: EventTarget | null) => (n instanceof Element ? n.closest('.claim-ref') : null)
+    const show = (target: EventTarget | null) => {
+      const r = refOf(target)
+      if (!r || !el.contains(r) || r === dismissed) return
+      const link = r.querySelector('a.claim-link') as HTMLElement | null
+      const text = r.querySelector('.claim-quote')?.textContent
+      if (link && text) setPreview(prev => (prev?.link === link ? prev : { link, text }))
+    }
+    const leave = (e: MouseEvent | FocusEvent) => {
+      const r = refOf(e.target)
+      if (!r || r.contains(e.relatedTarget as Node | null)) return
+      if (r === dismissed) dismissed = null
+      setPreview(prev => (prev && r.contains(prev.link) ? null : prev))
+    }
+    // Where the device can't hover, a hover that reveals content would hold iOS's first tap, so only focus shows it.
+    const onOver = (e: MouseEvent) => { if (typeof window.matchMedia !== 'function' || window.matchMedia('(hover: hover)').matches) show(e.target) }
+    const onFocusIn = (e: FocusEvent) => show(e.target)
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
-      const open = new Set<Element>()
-      for (const n of [e.target, document.activeElement]) {
-        const r = refOf(n)
-        if (r && el.contains(r)) open.add(r)
-      }
-      for (const r of el.querySelectorAll('.claim-ref')) {
-        try { if (r.matches(':hover')) open.add(r) } catch { /* no :hover in this environment */ }
-      }
-      for (const r of open) r.setAttribute('data-dismissed', '')
+      const open = previewRef.current
+      if (!open) return
+      dismissed = refOf(open.link)
+      setPreview(null)
     }
-    const onLeave = (e: MouseEvent | FocusEvent) => {
-      const r = refOf(e.target)
-      if (r && !r.contains(e.relatedTarget as Node | null)) r.removeAttribute('data-dismissed')
-    }
+    const hide = () => setPreview(null)
+    el.addEventListener('mouseover', onOver)
+    el.addEventListener('focusin', onFocusIn)
+    el.addEventListener('mouseout', leave)
+    el.addEventListener('focusout', leave)
     document.addEventListener('keydown', onKeyDown)
-    el.addEventListener('mouseout', onLeave)
-    el.addEventListener('focusout', onLeave)
+    // A card fixed to the viewport would float off its claim, so it goes when the page moves.
+    window.addEventListener('scroll', hide, true)
+    window.addEventListener('resize', hide)
     return () => {
+      el.removeEventListener('mouseover', onOver)
+      el.removeEventListener('focusin', onFocusIn)
+      el.removeEventListener('mouseout', leave)
+      el.removeEventListener('focusout', leave)
       document.removeEventListener('keydown', onKeyDown)
-      el.removeEventListener('mouseout', onLeave)
-      el.removeEventListener('focusout', onLeave)
+      window.removeEventListener('scroll', hide, true)
+      window.removeEventListener('resize', hide)
+      setPreview(null)
     }
   }, [hasQuotes])
 
@@ -142,35 +215,31 @@ export function MarkdownSummary({ children, fontSize, color: textColor = color.t
         <style>{`
           .markdown-summary a.claim-link {
             color: inherit; cursor: pointer; border-radius: ${radius.xs}px;
-            text-decoration: underline; text-decoration-color: ${color.claimUnderline};
-            text-decoration-thickness: 2px; text-underline-offset: 3px;
+            text-decoration: underline; text-decoration-color: ${color.claimUnderlineRest};
+            text-decoration-thickness: 1px; text-underline-offset: 3px;
+            transition: text-decoration-color 120ms, background-color 120ms;
           }
-          .markdown-summary a.claim-link:hover { background: ${color.claimHoverBg}; }
+          .markdown-summary a.claim-link:hover,
           .markdown-summary a.claim-link:focus-visible {
-            background: ${color.claimHoverBg}; outline: 2px solid ${color.focusRing}; outline-offset: 2px;
+            text-decoration-thickness: 2px; text-decoration-color: ${color.claimUnderline}; background: ${color.claimHoverBg};
+          }
+          .markdown-summary a.claim-link:focus-visible { outline: 2px solid ${color.focusRing}; outline-offset: 2px; }
+          @media (prefers-reduced-motion: reduce) {
+            .markdown-summary a.claim-link[data-claim] { transition: none; }
           }
         `}</style>
       )}
       {hasQuotes && (
         <style>{`
           .markdown-summary .claim-ref { position: relative; }
+          /* The quote stays in the document, off screen, as the link's description for a screen reader. Sighted readers get the preview card. */
           .markdown-summary .claim-quote {
-            display: none; position: absolute; left: 0; top: 100%; z-index: 20;
-            width: max-content; max-width: min(26rem, 90vw); padding: 6px 8px;
-            border: 1px solid ${color.borderDefault}; border-radius: ${radius.md}px; background: ${color.white};
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15); color: ${color.textSlate};
-            font-size: 0.875em; font-weight: 400; font-style: normal; line-height: 1.4; text-align: left; white-space: normal;
-          }
-          /* Hover only where the device can: on iOS a hover that reveals content holds the first tap. */
-          @media (hover: hover) {
-            .markdown-summary .claim-ref:not([data-dismissed]):hover > .claim-quote { display: block; }
-          }
-          .markdown-summary .claim-ref:not([data-dismissed]):focus-within > .claim-quote { display: block; }
-          @media (max-width: 600px) {
-            .markdown-summary .claim-quote { position: fixed; left: 16px; right: 16px; bottom: 16px; top: auto; width: auto; max-width: none; }
+            position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
+            clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0;
           }
         `}</style>
       )}
+      {preview && <QuotePreview preview={preview} />}
       <div
         ref={ref}
         className="markdown-summary"

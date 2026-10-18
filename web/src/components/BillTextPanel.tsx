@@ -5,6 +5,7 @@ import { ExternalLinkIcon } from './ExternalLinkIcon'
 import { getScrollContainer } from '../lib/scrollUtils'
 import { canRenderPdfInline } from '../lib/pdfInline'
 import { parseHandle } from '../../../shared/billHandle'
+import { claimGlow, CLAIM_GLOW_FLASH } from '../lib/claimGlow'
 import { focusPassage, markPassage, PASSAGE_ID, type ClaimDocument, type Span } from '../lib/claimLinks'
 import { describePageTarget, looksLikePdf, pdfPageTarget } from '../lib/pdfPages'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
@@ -43,7 +44,18 @@ export type HtmlPassageRequest = RequestBase & { matched: string; quoteAt: Span;
  * anything that isn't a page number opens at page 1) and the quote to show
  * beside the PDF. The quote was never matched, so nothing is highlighted.
  */
-export type PdfPageRequest = RequestBase & { quote: string; page: number | null; matched?: undefined; quoteAt?: undefined }
+export type PdfPageRequest = RequestBase & {
+  quote: string
+  page: number | null
+  matched?: undefined
+  quoteAt?: undefined
+  /**
+   * The claim link that was activated (#696). The quote box closes by its button
+   * or Escape, and focus returns to this link, or to the one with its claim index
+   * if the summary has rendered again since.
+   */
+  opener?: HTMLElement | null
+}
 
 export type PassageRequest = HtmlPassageRequest | PdfPageRequest
 
@@ -209,6 +221,17 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, req
   const captionId = `pdf-quote${useId()}`
   const focusedRequestRef = useRef<number | null>(null)
   const pdfRequestKey = pdfRequest?.key ?? null
+  // The quote box closes (#696) until the next request, which has a new key and opens it again.
+  const [closedQuoteKey, setClosedQuoteKey] = useState<number | null>(null)
+  function closeQuote() {
+    if (!pdfRequest) return
+    setClosedQuoteKey(pdfRequest.key)
+    const { opener } = pdfRequest
+    // The summary can render again and replace its links, so a detached opener is found again by its claim.
+    const index = opener?.getAttribute('data-claim')
+    const back = opener?.isConnected ? opener : index != null ? document.querySelector<HTMLElement>(`a.claim-link[data-claim="${index}"]`) : null
+    back?.focus({ preventScroll: true })
+  }
   useEffect(() => {
     if (!open || pdfRequestKey === null || focusedRequestRef.current === pdfRequestKey) return
     const caption = captionRef.current
@@ -351,20 +374,45 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, req
   const notPdf = selectedDocId !== null && notPdfDocIds.has(selectedDocId)
 
   // The quote behind a PDF claim, above the PDF, whether or not the PDF loads.
-  const quoteCaption = pdfRequest && pdfTarget ? (
-    <div
-      ref={captionRef}
-      tabIndex={-1}
-      role="group"
-      aria-label="Quote behind the claim you opened"
-      // Focus lands here, and not every screen reader reads a group's contents
-      // on focus, so the page line and the quote are its description.
-      aria-describedby={`${captionId}-page ${captionId}-quote`}
-      style={{ border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, background: color.surfaceSubtle, padding: '8px 12px', marginBottom: 8 }}
-    >
-      <p id={`${captionId}-page`} style={{ fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: color.textSecondary, margin: 0 }}>{describePageTarget(pdfTarget)}</p>
-      <blockquote id={`${captionId}-quote`} style={{ fontSize: fontSize.sm, color: color.textSlate, margin: '4px 0 0' }}>{`“${pdfRequest.quote}”`}</blockquote>
-    </div>
+  // It wears the preview's glow, animates in (not under reduced motion), and closes (#696).
+  const quoteCaption = pdfRequest && pdfTarget && closedQuoteKey !== pdfRequest.key ? (
+    <>
+      <style>{`
+        @keyframes claim-quote-in {
+          from { opacity: 0; transform: translateY(-8px) scale(0.985); box-shadow: ${CLAIM_GLOW_FLASH}; }
+          to { opacity: 1; transform: none; }
+        }
+        .claim-quote-box { animation: claim-quote-in 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+        @media (prefers-reduced-motion: reduce) { .claim-quote-box { animation: none; } }
+        .claim-quote-close {
+          background: none; border: none; cursor: pointer; padding: 2px 8px; border-radius: ${radius.sm}px;
+          font-size: ${fontSize.base}px; line-height: 1.2; color: ${color.textSlate500};
+        }
+        .claim-quote-close:hover { background: ${color.surfaceMuted}; color: ${color.textPrimary}; }
+        .claim-quote-close:focus-visible { outline: 2px solid ${color.focusRing}; outline-offset: 1px; }
+      `}</style>
+      {/* Escape closes from anywhere inside, and focus lands on this group by script, so the group takes the key. */}
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
+      <div
+        key={pdfRequest.key}
+        ref={captionRef}
+        className="claim-quote-box"
+        tabIndex={-1}
+        role="group"
+        aria-label="Quote behind the claim you opened"
+        // Focus lands here, and not every screen reader reads a group's contents
+        // on focus, so the page line and the quote are its description.
+        aria-describedby={`${captionId}-page ${captionId}-quote`}
+        onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); closeQuote() } }}
+        style={{ ...claimGlow, borderRadius: radius.md, padding: '8px 8px 10px 12px', marginBottom: 8, display: 'flex', gap: 8, alignItems: 'flex-start' }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p id={`${captionId}-page`} style={{ fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: color.textSecondary, margin: 0 }}>{describePageTarget(pdfTarget)}</p>
+          <blockquote id={`${captionId}-quote`} style={{ fontSize: fontSize.sm, color: color.textSlate, margin: '4px 0 0' }}>{`“${pdfRequest.quote}”`}</blockquote>
+        </div>
+        <button type="button" className="claim-quote-close" aria-label="Close quote" onClick={closeQuote}>×</button>
+      </div>
+    </>
   ) : null
 
   return (

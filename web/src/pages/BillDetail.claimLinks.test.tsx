@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { BillDetail } from './BillDetail'
@@ -297,6 +297,15 @@ describe('a summary without claim sources', () => {
 
 // #696: an HTML claim previews its passage on hover and keyboard focus.
 describe('quote previews on an HTML bill\'s claims (#696)', () => {
+  // The test setup's matchMedia reports no match for anything, so a device that can hover is stubbed in.
+  beforeEach(() => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(hover: hover)', media: query, onchange: null,
+      addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false,
+    }))
+  })
+  afterEach(() => { vi.unstubAllGlobals() })
+
   it('shows the passage a claim opens when the pointer is on it, and not for a plain-text claim', async () => {
     const user = userEvent.setup()
     setup()
@@ -316,7 +325,7 @@ describe('quote previews on an HTML bill\'s claims (#696)', () => {
     const user = userEvent.setup()
     setup()
     const first = await claimLink('Requires a drop box in each county.')
-    first.focus()
+    act(() => first.focus())
     expect(document.body.querySelector('[data-claim-preview]')!.textContent).toContain('Each county shall have a drop box.')
     await user.tab()
     expect(document.body.querySelector('[data-claim-preview]')!.textContent).toContain('Boxes are emptied daily.')

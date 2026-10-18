@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MarkdownSummary } from './MarkdownSummary'
@@ -30,6 +30,14 @@ const LONG_CLAIMS = [{ index: 0, claim: 'Requires a drop box in each county.', p
 const ONE = 'Requires a drop box in each county.'
 const TWO = 'Boxes are emptied daily by two employees.'
 const THREE = 'Boxes are checked for damage weekly.'
+
+// The test setup's matchMedia reports no match for anything, so a device that can hover is stubbed in.
+const stubHover = (canHover: boolean) => vi.stubGlobal('matchMedia', (query: string) => ({
+  matches: canHover && query === '(hover: hover)', media: query, onchange: null,
+  addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false,
+}))
+beforeEach(() => stubHover(true))
+afterEach(() => { vi.unstubAllGlobals() })
 
 const renderSummary = (claims = CLAIMS, onClaimActivate: (i: number) => void = () => {}) =>
   render(<MarkdownSummary claimLinks={claims} onClaimActivate={onClaimActivate}>{SUMMARY}</MarkdownSummary>)
@@ -109,6 +117,17 @@ describe('MarkdownSummary: the quote preview', () => {
     await user.tab()
     await user.tab()
     expect(preview()).toBeNull()
+  })
+
+  it('shows nothing on hover where the device can\'t hover, so iOS opens a claim on the first tap, and still shows it on focus', async () => {
+    stubHover(false)
+    const user = userEvent.setup()
+    renderSummary()
+    await user.hover(linkNamed(ONE))
+    expect(preview()).toBeNull()
+    await user.unhover(linkNamed(ONE))
+    await user.tab()
+    expect(preview()!.textContent).toContain(HTML_QUOTE)
   })
 
   it('shows only one preview at a time, for the claim the pointer is on', async () => {
@@ -238,10 +257,11 @@ describe('MarkdownSummary: dismissing a preview with Escape (WCAG 1.4.13)', () =
     expect(preview()).toBeNull()
     expect(linkNamed(ONE)).toHaveFocus()
     await user.tab()
+    expect(linkNamed(TWO)).toHaveFocus()
     expect(preview()!.textContent).toContain(PDF_QUOTE)
-    await user.tab(); await user.tab()
     await user.tab()
     await user.tab()
+    expect(document.body).toHaveFocus()
     expect(preview()).toBeNull()
     await user.tab()
     expect(linkNamed(ONE)).toHaveFocus()

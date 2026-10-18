@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { BillTextPanel, type PassageRequest } from './BillTextPanel'
+import { BillTextPanel, type PassageRequest, type PdfPageRequest } from './BillTextPanel'
 
 // Opening a PDF claim's page in the bill text panel (#572). The PDF frame
 // can't carry a `sandbox`: Chromium's built-in viewer renders under no sandbox
@@ -351,7 +351,7 @@ describe('BillTextPanel: the PDF quote box (#696)', () => {
     document.body.appendChild(a)
     return a
   }
-  const askFrom = (key: number, opener: HTMLElement | null, page: unknown = 7): PassageRequest => ({ ...ask(key, page), opener })
+  const askFrom = (key: number, opener: HTMLElement | null, page: unknown = 7): PassageRequest => ({ ...(ask(key, page) as PdfPageRequest), opener })
   afterEach(() => { document.querySelectorAll('a.claim-link').forEach(a => a.remove()) })
 
   it('wears the glow from the glow tokens, on the card surface', async () => {

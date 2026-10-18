@@ -60,6 +60,13 @@ export const darkColor: Record<ColorToken, string> = {
   // --- Claim links ---
   claimUnderline:    '#e8a33d', // Honey, unchanged: it reads on the dark card as on the light one
   claimHoverBg:      '#3a3020', // a dark Honey wash; text on it keeps its color (textPrimary 11:1)
+  // Quieter claim links (#696). Honey over the dark card reads dimmer than over the light one, so the rest underline is a touch stronger; the glow keeps its strengths.
+  claimUnderlineRest: 'rgba(232, 163, 61, 0.65)',
+  claimGlowBorder:   'rgba(232, 163, 61, 0.6)',
+  claimGlowHalo:     'rgba(232, 163, 61, 0.112)',
+  claimGlowBlur:     'rgba(232, 163, 61, 0.24)',
+  claimFlashHalo:    'rgba(232, 163, 61, 0.32)',
+  claimFlashBlur:    'rgba(232, 163, 61, 0.48)',
 
   // --- Surface & background ---
   white:             '#182231',
