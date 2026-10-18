@@ -72,7 +72,13 @@ export type NotificationMessage = BaseMessage & { purpose: 'notification' }
 /** A digest or week-ahead email. Carries its unsubscribe header in `headers`. */
 export type BulkMessage = BaseMessage & { purpose: 'bulk' }
 
-export type PurposeMessage = SignInMessage | AccountMessage | NotificationMessage | BulkMessage
+/** Feedback, invite-bounce notices, job alerts, and sample emails: mail to an operator or admin about the system itself. */
+export type OperatorMessage = BaseMessage & { purpose: 'operator' }
+
+/** The email-health alert, which says a provider is failing. */
+export type OutageAlertMessage = BaseMessage & { purpose: 'outage-alert' }
+
+export type PurposeMessage = SignInMessage | AccountMessage | NotificationMessage | BulkMessage | OperatorMessage | OutageAlertMessage
 
 export type SendResult =
   | { ok: true; provider: ProviderName; messageId?: string; attempts: Attempt[] }
@@ -167,6 +173,9 @@ const RULES: Rules = {
   // its quota. Counts each send to the provider that sent it, goes out from the
   // bulk From, and a demo instance never sends it.
   bulk: { fallback: false, counts: true, from: 'bulk', suppressedInDemo: () => true },
+  // STUB (red): the real rules arrive with the green commit.
+  operator: { fallback: false, counts: true, from: 'bulk', suppressedInDemo: () => true },
+  'outage-alert': { fallback: false, counts: true, from: 'bulk', suppressedInDemo: () => true },
 }
 
 function ruleFor(message: PurposeMessage): Rule<PurposeMessage> {
