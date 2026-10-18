@@ -30,7 +30,7 @@ beforeEach(async () => {
 const label = (i: number) => `Body event ${String(i).padStart(3, '0')} end`
 
 // Body events in chronological order: event i is on day 1 + (i % 5), at a time that grows with i.
-async function seedBodyEvents(from: number, to: number, opts: { heavy?: boolean; priorityOf?: (i: number) => string | null } = {}) {
+async function seedBodyEvents(from: number, to: number, opts: { heavy?: boolean; priorityOf?: (i: number) => 'high' | 'medium' | 'low' | null } = {}) {
   const db = getDb(env.DB)
   for (let i = from; i < to; i++) {
     const id = `body-${i}`
