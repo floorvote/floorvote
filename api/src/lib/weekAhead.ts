@@ -116,7 +116,7 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
         ),
       ),
     )
-    .orderBy(calendarEvents.date, calendarEvents.time)
+    .orderBy(calendarEvents.date, calendarEvents.time, calendarEvents.id)
     .all()
 
   // Date custom fields on prioritized bills (#342): all-day, and projected
