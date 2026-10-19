@@ -20,17 +20,22 @@ import { parseSubjects, loadSuppressedSubjectStates, isSubjectsSuppressedForStat
 import { displayName, userDisplayNameSql } from '../../lib/displayName'
 import { titleOf, userTitleSql } from '../../lib/userTitle'
 import { groupMemberIds, groupVotes, inGroupOf, loadGroupBills, loadGroupNotes, mergeGroupNotes } from '../../lib/companionGroups'
-import { loadGroupTeamValues } from '../../lib/teamFields'
+import { loadFieldDefs, loadGroupTeamValues } from '../../lib/teamFields'
+import { isReplyParticipant } from '../../lib/replies'
+import { findCompanionSuggestion } from '../../lib/companionSuggestion'
 import { claimLinksEnabled, readClaimSources } from '../../lib/claimSources'
 import type { GroupBillTexts, GroupingEvent, GroupingEventMetadata, GroupingEventType } from '../../../../shared/companionGroups'
+import { FIELD_CHANGED, type FieldChangedMetadata, type FieldChangeEvent, type TeamField } from '../../../../shared/teamFields'
 
 type CentralBillRich = {
   billType?: string | null
   body?: string | null
+  /** What title-matched companion suggestions match the bill by, or null (#521). */
+  titleKey?: string | null
   statusDate?: string | null
   legiscanUrl?: string | null
   sponsors?: Array<{ name: string; party: string | null; role: string | null; primary: boolean; personId: string | null; url: string | null }>
-  votes?: Array<{ id: string; motionText: string; date: string; result: string; chamber: string; counts: Array<{ option: string; value: number }>; legislatorVotes?: Array<{ personId: string; name: string; vote: string; url?: string | null }> }>
+  votes?: Array<{ id: string; motionText: string; date: string; result: string; chamber: string; counts: Array<{ option: string; value: number }>; legislatorVotes?: Array<{ personId: string; name: string; vote: string; url?: string | null; party?: string | null }> }>
   relatedBills?: Array<{ identifier: string; sastBillId?: number; session: string; relationType: string; kind?: string }>
   calendar?: Array<{ eventHash: string; typeId: number; type: string; kind?: string | null; date: string; time: string | null; location: string | null; description: string | null }>
   supplements?: Array<{ supplementId: number; typeId: number; type: string; date: string | null; dateResolved: string | null; dateInferred: boolean; title: string | null; description: string | null; mime: string | null; url: string | null; stateLink: string | null }>
@@ -73,6 +78,60 @@ async function firstCommentTimes(db: ReturnType<typeof getDb>, billIds: string[]
   return first
 }
 
+/**
+ * The field changes a bill page's comment thread shows lines for, oldest first, from the `field_changed`
+ * team events of the bill's group. The thread shows only changes people made, so an event with no actor
+ * is left out, and so is a tags change, which the AI analysis once recorded (with no actor) and no longer
+ * does: older rows stay in `team_events`. An event whose metadata can't be read is skipped rather than
+ * failing the page. A bulk edit that selected two bills of a group wrote the same change on each, which the group
+ * made once, so a change identical to one already read (same time, actor, field, and values) is dropped,
+ * keeping the one made on this bill. Timestamps come in two shapes (see dbTsToEpoch), so the order is
+ * settled here, on top of the read's order, which breaks a tie by the order the events were written.
+ */
+// The fields a person sets, which the thread has lines for. A row for any other (the analysis's tags) is skipped.
+const RECORDED_FIELDS: ReadonlySet<string> = new Set<TeamField>(['position', 'priority', 'customField'])
+
+function readFieldEvents(
+  rows: ReadonlyArray<{ id: string; billId: string; actorId: string | null; actorName: string | null; createdAt: string; metadata: string }>,
+  billId: string,
+  billNumberOf: ReadonlyMap<string, string>,
+  defs: ReadonlyArray<{ id: string; type: string }>,
+): FieldChangeEvent[] {
+  const typeOf = new Map(defs.map(d => [d.id, d.type]))
+  const read: FieldChangeEvent[] = []
+  const seen = new Map<string, number>()
+  for (const row of [...rows].sort((a, b) => dbTsToEpoch(a.createdAt) - dbTsToEpoch(b.createdAt))) {
+    if (row.actorId === null || row.actorName === null) continue
+    let meta: FieldChangedMetadata
+    try { meta = JSON.parse(row.metadata) as FieldChangedMetadata } catch { continue }
+    if (!meta || typeof meta !== 'object' || typeof meta.field !== 'string') continue
+    if (!RECORDED_FIELDS.has(meta.field)) continue
+    const event: FieldChangeEvent = {
+      id: row.id,
+      createdAt: row.createdAt,
+      actorId: row.actorId,
+      actorName: row.actorName,
+      billId: row.billId,
+      billNumber: billNumberOf.get(row.billId) ?? '',
+      field: meta.field,
+      ...(meta.fieldId !== undefined ? { fieldId: meta.fieldId } : {}),
+      label: meta.label,
+      old: meta.old ?? null,
+      new: meta.new ?? null,
+      ...(meta.fieldId !== undefined && typeOf.has(meta.fieldId) ? { fieldType: typeOf.get(meta.fieldId) } : {}),
+    }
+    const key = [dbTsToEpoch(row.createdAt), row.actorId, event.field, event.fieldId, JSON.stringify(event.old), JSON.stringify(event.new)].join('|')
+    const at = seen.get(key)
+    if (at === undefined) {
+      seen.set(key, read.length)
+      read.push(event)
+    } else if (row.billId === billId && read[at].billId !== billId) {
+      read[at] = event
+    }
+  }
+  return read
+}
+
 export async function buildBillDetail(
   db: ReturnType<typeof getDb>,
   billId: string,
@@ -105,7 +164,7 @@ export async function buildBillDetail(
   // each read below resolves across the group (lib/companionGroups.ts). For an
   // ungrouped bill the group is the bill alone.
   const votes = groupVotes(db, billId)
-  const [groupBills, myVoteRow, myNotes, myMuteRow, teamValues, voteRows, commentRows, commentCountRow, textRows, priorityEventRow, groupingRows] = await Promise.all([
+  const [groupBills, myVoteRow, myNotes, myMuteRow, isParticipant, teamValues, voteRows, commentRows, commentCountRow, textRows, priorityEventRow, threadEventRows, fieldDefs] = await Promise.all([
     loadGroupBills(db, billId),
     db.select({ position: votes.position }).from(votes).where(eq(votes.userId, currentUser.id)).get(),
     loadGroupNotes(db, billId, currentUser.id),
@@ -113,6 +172,7 @@ export async function buildBillDetail(
     db.select({ userId: billMutes.userId }).from(billMutes)
       .where(and(inGroupOf(billMutes.billId, billId), eq(billMutes.userId, currentUser.id)))
       .get(),
+    isReplyParticipant(db, currentUser.id, billId),
     // The team fields (position, priority, custom fields, analysis, triage),
     // each the one set most recently on any member (lib/teamFields.ts).
     loadGroupTeamValues(db, billId),
@@ -162,16 +222,25 @@ export async function buildBillDetail(
       .orderBy(desc(feedEvents.createdAt))
       .limit(1)
       .get(),
-    // This bill's own grouping events, for the lines its comment thread shows
-    // where its group formed or split. A companion's are about the companion.
-    db.select({ id: teamEvents.id, type: teamEvents.type, createdAt: teamEvents.createdAt, metadata: teamEvents.metadata, actorName: userDisplayNameSql })
+    // The team events its comment thread shows lines for, in one ordered read. Its own grouping events
+    // say where its group formed or split (a companion's are about the companion). The field changes are
+    // the group's, made on any member: a value is shared, so a change to it is one the whole group made.
+    // A deactivated member's are hidden, as their comments are (activeUser). Only changes people made reach the
+    // thread (readFieldEvents leaves out one with no actor).
+    db.select({ id: teamEvents.id, type: teamEvents.type, billId: teamEvents.billId, actorId: teamEvents.actorUserId, createdAt: teamEvents.createdAt, metadata: teamEvents.metadata, actorName: userDisplayNameSql })
       .from(teamEvents)
       .leftJoin(users, eq(teamEvents.actorUserId, users.id))
-      .where(and(eq(teamEvents.billId, billId), inArray(teamEvents.type, ['grouped', 'split'] satisfies GroupingEventType[])))
+      .where(or(
+        and(eq(teamEvents.billId, billId), inArray(teamEvents.type, ['grouped', 'split'] satisfies GroupingEventType[])),
+        and(inGroupOf(teamEvents.billId, billId), eq(teamEvents.type, FIELD_CHANGED), activeUser),
+      ))
       .orderBy(teamEvents.createdAt, rowidOf(teamEvents))
       .all(),
+    // A custom field's type words a yes/no value in a sentence about it.
+    loadFieldDefs(db),
   ])
   const billNumberOf = new Map(groupBills.map(b => [b.billId, b.billNumber]))
+  const groupingRows = threadEventRows.filter(e => e.type !== FIELD_CHANGED)
   // The text versions of every bill in the group, newest first, for the page's
   // Bill texts to list under each bill's badge (#712). A bill with none is left out.
   const groupTextRows = await db.select().from(billTexts)
@@ -200,6 +269,8 @@ export async function buildBillDetail(
     replaced: groupingMeta[i].replaced ?? [],
     ...(groupingMeta[i].undoneSplits?.length ? { undoneSplits: groupingMeta[i].undoneSplits } : {}),
   }))
+
+  const fieldEvents = readFieldEvents(threadEventRows.filter(e => e.type === FIELD_CHANGED), billId, billNumberOf, fieldDefs)
 
   const voteCounts = { support: 0, oppose: 0, neutral: 0, total: 0 }
   for (const v of voteRows) {
@@ -443,11 +514,16 @@ export async function buildBillDetail(
     myNote: mergeGroupNotes(myNotes),
     myNotes,
     commentsMuted: !!myMuteRow,
+    // Whether the member would get reply notifications here (they commented on
+    // the bill or its group), decided by the rule the reply emails use. The page
+    // offers Mute only to a participant, and Unmute to anyone muted.
+    commentsParticipant: isParticipant,
     position: positionWithName,
     voteCounts,
     comments: formattedComments,
     commentsTotal: commentCountRow?.count ?? 0,
     groupingEvents,
+    fieldEvents,
     // The bills in its companion group, this one first: just this one in no group.
     groupBills,
     // Every group bill's versions, one entry per bill with any (#712). The page bill's own are `texts`.
@@ -470,7 +546,7 @@ export async function buildBillDetail(
       absent: v.counts.find(c => c.option === 'absent')?.value ?? 0,
       passed: v.result === 'pass' ? 1 : 0,
       // Each voter's profile link as central sent it, if it is an http(s) URL.
-      legislatorVotes: (v.legislatorVotes ?? []).map(l => ({ ...l, url: httpUrl(typeof l.url === 'string' ? l.url : null) })),
+      legislatorVotes: (v.legislatorVotes ?? []).map(l => ({ ...l, url: httpUrl(typeof l.url === 'string' ? l.url : null), party: typeof l.party === 'string' && l.party.trim() ? l.party.trim() : null })),
     })) ?? undefined,
     subjects: subjectsSuppressed ? [] : parseSubjects(bill.subjects),
     calendar: env.DEMO_MODE === 'true'
@@ -513,6 +589,12 @@ export async function buildBillDetail(
       votedAt: v.votedAt,
       roles: rolesByUser.get(v.userId) ?? [],
     }))
+
+    // Another bill with the same title, one admins can group this one with
+    // (#521). Not on a demo, where grouping by hand is denied.
+    response.companionSuggestion = env.DEMO_MODE === 'true' || bill.isDraft
+      ? null
+      : await findCompanionSuggestion(db, bill, centralRich)
   }
 
   // Custom field values, each the group's, named by who set it. A value whose

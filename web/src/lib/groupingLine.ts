@@ -1,4 +1,5 @@
 import type { GroupingEvent } from '../../../shared/companionGroups'
+import type { FieldChangeEvent } from '../../../shared/teamFields'
 import { formatLongMonthDay } from './calendarDate'
 import { dbTsToEpoch } from '../../../shared/time'
 
@@ -64,6 +65,39 @@ export function placeGroupingLines(
     else after.push(event)
   }
   return { before, after }
+}
+
+/** A line of a comment thread's activity: a grouping line or a team field change. */
+export type ThreadLine =
+  | { kind: 'grouping'; key: string; event: GroupingEvent }
+  | { kind: 'change'; key: string; event: FieldChangeEvent }
+
+/**
+ * Where each line of a bill's activity goes in a comment thread ordered by time,
+ * as `placeGroupingLines` places a grouping line: before the first comment posted
+ * after it, or after them all (a comment at the very second of one sits above
+ * it). Grouping lines and team field changes share one time order, a grouping
+ * line first on a tie. Every change is its own line, however many one person
+ * makes in a row.
+ */
+export function placeThreadLines(
+  comments: readonly { id: string; createdAt: string }[],
+  groupingEvents: readonly GroupingEvent[],
+  fieldEvents: readonly FieldChangeEvent[],
+): { before: Map<string, ThreadLine[]>; after: ThreadLine[] } {
+  const grouping = placeGroupingLines(comments, groupingEvents)
+  const gaps = new Map<string | null, Array<{ at: number; line: ThreadLine }>>()
+  const add = (gap: string | null, at: number, line: ThreadLine) => gaps.set(gap, [...(gaps.get(gap) ?? []), { at, line }])
+  for (const [gap, events] of grouping.before) for (const event of events) add(gap, dbTsToEpoch(event.createdAt), { kind: 'grouping', key: event.id, event })
+  for (const event of grouping.after) add(null, dbTsToEpoch(event.createdAt), { kind: 'grouping', key: event.id, event })
+  for (const event of fieldEvents) {
+    const at = dbTsToEpoch(event.createdAt)
+    add(comments.find(c => dbTsToEpoch(c.createdAt) > at)?.id ?? null, at, { kind: 'change', key: event.id, event })
+  }
+  const inOrder = (gap: string | null) => (gaps.get(gap) ?? []).sort((a, b) => a.at - b.at).map(item => item.line)
+  const before = new Map<string, ThreadLine[]>()
+  for (const gap of gaps.keys()) if (gap !== null) before.set(gap, inOrder(gap))
+  return { before, after: inOrder(null) }
 }
 
 // "A1", "A1 and A2", "A1, A2, and A3"

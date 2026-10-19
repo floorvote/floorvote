@@ -570,16 +570,30 @@ function description(rec: LisRecord): string {
   return latestSummary(rec)?.[1] || rec.bill.Bill_description
 }
 
-/** The extras (vocabulary.ts) for one record: the chapter, the emergency flag when set, and every summary but the latest. */
+/** A summary's text as compared for duplicates: trimmed, with runs of whitespace collapsed. Case is kept. */
+const summaryText = (text: string) => text.trim().replace(/\s+/g, ' ')
+
+/**
+ * The extras (vocabulary.ts) for one record: the chapter, the emergency flag
+ * when set, and the earlier summaries. The bill's description is already the
+ * latest summary, so an earlier summary whose text equals it, or equals an
+ * earlier one already kept, is left out (see `summaryText`). A near match
+ * stays: it usually carries a real change in wording.
+ */
 export function lisExtras(rec: LisRecord, sessionYear: number): NonNullable<CentralMeasure['extras']> {
   const extras: Record<string, string> = {}
   const chapter = /^CHAP0*(\d+)$/i.exec(rec.bill.Chapter_id.trim())
   if (chapter) extras.chapter = `Chapter ${chapter[1]} of the ${sessionYear} Acts of Assembly`
   if (yes(rec.bill.Emergency)) extras.emergency = 'Yes'
   const latest = latestSummary(rec)
+  const seen = new Set(latest ? [summaryText(latest[1])] : [])
   for (const s of rec.summaries) {
     const key = SUMMARY_EXTRAS[s[0]]
-    if (key && s !== latest) extras[key] = s[1]
+    if (!key || s === latest) continue
+    const text = summaryText(s[1])
+    if (seen.has(text)) continue
+    seen.add(text)
+    extras[key] = s[1]
   }
   return extras
 }
@@ -690,7 +704,8 @@ export interface LisIds {
 export interface LisSession { session_id: number; session_name: string; year_start: number; year_end: number }
 
 const MAJOR = /passed|reported|failed|defeated|continued|approved|vetoed|signed by governor|chapter|agreed to|incorporated|stricken|tabled/i
-const VOTE_ID: Record<string, number> = { Y: 1, N: 2, X: 3, A: 3 }
+/** LegiScan and LIMS use 1 to 4 (Yea, Nay, Not Voting, Absent), so Abstain, which they have no id for, takes 5. */
+const VOTE_ID: Record<string, number> = { Y: 1, N: 2, X: 3, A: 5 }
 
 function billType(number: string): { type: string; typeId: string } {
   if (/^(HJ|SJ)/.test(number)) return { type: 'JR', typeId: '3' }
@@ -745,6 +760,8 @@ export async function buildLisBill(
     const yea = count('Y'), nay = count('N')
     votes.push({
       roll_call_id: ids.rollCall(refid), date, desc: action,
+      // The roll_calls row has no abstain column, so this Not Voting number includes abstentions (X plus A),
+      // while the member list below shows Abstain as its own group by vote_text.
       yea, nay, nv: count('X') + count('A'), absent: 0, total: members.length,
       passed: yea > nay ? 1 : 0, chamber, chamber_id: 0, url: '', state_link: lisBillUrl(sessionCode, number),
       member_votes: members.map(([memberId, v]) => ({

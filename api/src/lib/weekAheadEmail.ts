@@ -85,7 +85,7 @@ function renderEventCard(event: WeekAheadEvent, appUrl: string): string {
     ? `<div style="font-size:${fontSize.xs}px;color:${color.textMuted};margin-top:2px;">${metaIcon('location_on', appUrl)}${escHtml(location)}</div>`
     : ''
   const linkLine = event.url
-    ? `<div style="font-size:${fontSize.xs}px;margin-top:2px;">${metaIcon('link_2', appUrl)}<a href="${escHtml(event.url)}" style="color:${color.accentBlue};text-decoration:underline;overflow-wrap:anywhere;">${escHtml(formatEventUrl(event.url))}</a></div>`
+    ? `<div style="font-size:${fontSize.xs}px;margin-top:2px;">${metaIcon('link', appUrl)}<a href="${escHtml(event.url)}" style="color:${color.accentBlue};text-decoration:underline;overflow-wrap:anywhere;">${escHtml(formatEventUrl(event.url))}</a></div>`
     : ''
   const chips = event.bills.length > 0
     ? `<div style="display:flex;flex-wrap:wrap;margin-top:3px;">${event.bills.map(renderBillChip).join('')}</div>`
@@ -105,6 +105,33 @@ function renderEventCard(event: WeekAheadEvent, appUrl: string): string {
 </div></a>`
 }
 
+/** The most body events (the legislature's own calendar) one email lists. A
+ *  busy week would otherwise pass Gmail's ~102 KB clip, which hides the footer
+ *  and the mute link (#675). */
+export const WEEK_AHEAD_BODY_EVENT_CAP = 30
+
+/**
+ * Keep the email under the clip: at most `cap` body events, the earliest first.
+ * A body event with a prioritized bill on its agenda is never cut and doesn't
+ * count toward the cap. Custom, bill-entry, and date-field events are never cut
+ * either (an instance adds few). Returns the days still holding events, and how
+ * many body events were left out.
+ */
+export function capBodyEvents(days: WeekAheadDay[], cap: number = WEEK_AHEAD_BODY_EVENT_CAP): { days: WeekAheadDay[]; omitted: number } {
+  let counted = 0
+  let omitted = 0
+  const capped = days.map(day => ({
+    ...day,
+    events: day.events.filter(e => {
+      if (e.source !== 'body' || e.bills.some(b => b.priority)) return true
+      if (counted < cap) { counted++; return true }
+      omitted++
+      return false
+    }),
+  })).filter(day => day.events.length > 0)
+  return { days: capped, omitted }
+}
+
 function formatDateRangeLabel(days: WeekAheadDay[]): string {
   if (days.length === 0) return ''
   // Extract "June 15" from "Monday, June 15"
@@ -117,23 +144,30 @@ export function renderWeekAheadEmail({
   days,
   assocName,
   appUrl,
+  omitted = 0,
 }: {
   days: WeekAheadDay[]
   assocName: string
   appUrl: string
+  /** Body events left out by capBodyEvents, counted in a closing line that links to the calendar. */
+  omitted?: number
 }): string {
   const range = formatDateRangeLabel(days)
-  const totalEvents = days.reduce((n, d) => n + d.events.length, 0)
+  const totalEvents = days.reduce((n, d) => n + d.events.length, 0) + omitted
   const dayBlocks = days.map(day => `
 <h3 style="font-size:${fontSize.base}px;font-weight:${fontWeight.bold};color:${color.textPrimary};margin:16px 0 6px 0;padding-bottom:4px;border-bottom:1px solid ${color.borderDefault};">${escHtml(day.label)}</h3>
 ${day.events.map(e => renderEventCard(e, appUrl)).join('')}`).join('')
+  const overflowHtml = omitted > 0
+    ? `
+<div style="font-size:${fontSize.sm}px;margin:8px 0 0 0;"><a href="${escHtml(appUrl)}/calendar" style="color:${color.accentBlue};text-decoration:underline;">and ${omitted} more on the calendar</a></div>`
+    : ''
 
   return renderEmailShell({
     instanceName: assocName,
     appUrl,
     signalHtml: `${totalEvents} ${totalEvents === 1 ? 'event' : 'events'} in the week ahead`,
     dateLabel: range,
-    bodyHtml: dayBlocks,
+    bodyHtml: dayBlocks + overflowHtml,
     ctaHtml: emailButton(`${escHtml(appUrl)}/calendar`, 'View calendar'),
     footerHtml: `${emailFooterLink(`${escHtml(appUrl)}/calendar#subscribe`, 'Subscribe to your calendar')} &nbsp;·&nbsp; ${emailFooterLink(`${escHtml(appUrl)}/profile#setting-week-ahead`, 'Manage email settings')}`,
   })

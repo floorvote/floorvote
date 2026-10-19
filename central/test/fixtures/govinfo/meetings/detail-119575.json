@@ -1,0 +1,49 @@
+{
+  "committeeMeeting": {
+    "chamber": "House",
+    "committees": [
+      {
+        "name": "House Ways and Means",
+        "systemCode": "hswm00",
+        "url": "https://api.congress.gov/v3/committee/house/hswm00?format=json"
+      }
+    ],
+    "congress": 119,
+    "date": "2026-10-06T13:00:00Z",
+    "eventId": "119575",
+    "location": {
+      "address": "{\"building_name\": \"Orgill Innovation Center\", \"street-address\": \"4027 Bailey Station Rd\", \"city\": \"Collierville\", \"state\": \"TN\", \"postal_code\": \"38017\"}"
+    },
+    "meetingStatus": "Scheduled",
+    "title": "The One, Big, Beautiful Bill Delivering for Small Business, Manufacturing, and Working Families",
+    "type": "Hearing",
+    "updateDate": "2026-10-06T14:41:31Z",
+    "videos": [
+      {
+        "name": "Committee Field Hearing on OBBB Delivering for Small Business, Manufacturing, and Working Families",
+        "url": "https://www.congress.gov/event/119th-Congress/house-event/119575"
+      }
+    ],
+    "witnessDocuments": [
+      {
+        "documentType": "Witness Biography",
+        "format": "PDF",
+        "url": "https://www.congress.gov/119/meeting/house/119575/witnesses/HHRG-119-WM00-Bio-MooreB-20261006.pdf"
+      }
+    ],
+    "witnesses": [
+      {
+        "name": "Mr. Boyden Moore",
+        "organization": "Orgill",
+        "position": "President & CEO"
+      }
+    ]
+  },
+  "request": {
+    "chamber": "house",
+    "congress": "119",
+    "contentType": "application/json",
+    "eventId": "119575",
+    "format": "json"
+  }
+}

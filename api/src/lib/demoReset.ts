@@ -143,6 +143,17 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
     ...(seed.stateCoverage
       ? [db.prepare(`INSERT OR REPLACE INTO association_config (key, value) VALUES ('state_coverage', ?)`).bind(JSON.stringify(seed.stateCoverage))]
       : []),
+    // A demo never reaches central, so syncBodyEvents (the only other writer of
+    // this key) never runs on it. The seed names its providers instead, which is
+    // what lets the bill list hide the Stage filter on a LegiScan-only demo (#676).
+    // Same { data, cachedAt } shape syncBodyEvents writes; readStateAttribution
+    // reads only `data`.
+    ...(seed.attribution
+      ? [db.prepare(`INSERT OR REPLACE INTO association_config (key, value) VALUES ('data_attribution', ?)`).bind(JSON.stringify({
+          data: seed.attribution,
+          cachedAt: new Date().toISOString(), // ts-write-ok: cache metadata inside a JSON config blob, never SQL-sorted
+        }))]
+      : []),
   ])
 
   await db.prepare('PRAGMA foreign_keys = ON').run()

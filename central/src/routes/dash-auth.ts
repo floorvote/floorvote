@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 import { drizzle } from 'drizzle-orm/d1'
-import { eq, and, isNull, gt, sql } from 'drizzle-orm'
+import { eq, and, isNull, sql } from 'drizzle-orm'
 import * as schema from '../db/schema'
 import {
   generateToken,
@@ -16,7 +16,7 @@ import { verifySuperadminJwt } from '../lib/superadminJwt'
 import { isSuperadminJtiRevoked } from '../lib/superadminRevocation'
 import { setSuperadminCookie } from '../lib/superadminIssuer'
 import { sendAdminMagicLink } from '../lib/adminEmail'
-import { activeProvider } from '../lib/email'
+import { hasConfiguredProvider } from '../../../shared/emailProviders'
 import { nowDb } from '../lib/dbTime'
 import { checkRateLimit } from '../../../shared/rateLimit'
 import { verifyTurnstile } from '../../../shared/turnstile'
@@ -108,11 +108,11 @@ dashAuthRoutes.post('/login', async (c) => {
   if (!isSuperAdmin(email, c.env.SUPERADMIN_EMAILS)) {
     return c.json({ data: { ok: true }, meta: { generatedAt: new Date().toISOString() } })
   }
-  // Gate on "a sender is configured" (Resend's key, or the Cloudflare binding
-  // `sendEmail` would pick), not on Resend specifically.
+  // Gate on "a sender is configured" (Resend's key, or the Cloudflare binding),
+  // as the shared sender sees it, not on Resend specifically.
   const missing: string[] = []
-  if (!c.env.RESEND_API_KEY && activeProvider(c.env) !== 'cloudflare') {
-    missing.push('an email sender (RESEND_API_KEY, or EMAIL_PROVIDER=cloudflare with an EMAIL binding)')
+  if (!hasConfiguredProvider(c.env)) {
+    missing.push('an email sender (RESEND_API_KEY, or an EMAIL binding)')
   }
   if (!c.env.ADMIN_APP_URL) missing.push('ADMIN_APP_URL')
   if (missing.length > 0) {
@@ -120,43 +120,50 @@ dashAuthRoutes.post('/login', async (c) => {
     return c.json({ data: { ok: true }, meta: { generatedAt: new Date().toISOString() } })
   }
 
-  const db = drizzle(c.env.DB, { schema })
+  // Everything past the sender check runs after the response is sent: the token, the
+  // capped insert (count and insert in one statement), and the provider round-trip. A
+  // listed address then does only what an unlisted one does (parse, allowlist, in-memory
+  // config check, 200), so neither the timing nor a database failure tells them apart.
+  // One job, one catch: a failure anywhere in it is logged, never thrown into the
+  // response, and the promise handed to waitUntil never rejects. The email goes out only
+  // after the link is stored.
+  c.executionCtx.waitUntil(
+    issueMagicLink(c.env, email).catch((err) =>
+      console.error('Admin /login: background sign-in work failed', err),
+    ),
+  )
+  return c.json({ data: { ok: true }, meta: { generatedAt: new Date().toISOString() } })
+})
 
-  // Per-address active-link cap (finding D4): refuse silently (still 200, no
-  // enumeration) once too many unused, unexpired links exist for this address,
-  // so a known superadmin email can't be email-bombed and Resend quota can't be
-  // burned. Expired/used links don't count.
-  const activeLinks = await db
-    .select({ id: schema.magicLinks.id })
-    .from(schema.magicLinks)
-    .where(and(
-      eq(schema.magicLinks.email, email),
-      isNull(schema.magicLinks.usedAt),
-      gt(sql`datetime(${schema.magicLinks.expiresAt})`, sql`datetime('now')`),
-    ))
-    .all()
-  if (activeLinks.length >= MAX_ACTIVE_ADMIN_LINKS) {
-    return c.json({ data: { ok: true }, meta: { generatedAt: new Date().toISOString() } })
-  }
+async function issueMagicLink(env: DashEnv['Bindings'], email: string): Promise<void> {
+  const db = drizzle(env.DB, { schema })
 
   const rawToken = await generateToken()
   const tokenHash = await hashToken(rawToken)
   const expiresAt = new Date(Date.now() + MAGIC_LINK_TTL_MS).toISOString()
-  await db.insert(schema.magicLinks).values({
-    id: crypto.randomUUID(),
-    email,
-    tokenHash,
-    expiresAt,
-  })
 
-  const url = `${c.env.ADMIN_APP_URL}/admin/dash/auth/callback?token=${encodeURIComponent(rawToken)}`
-  try {
-    await sendAdminMagicLink(email, url, c.env)
-  } catch (err) {
-    console.error('sendAdminMagicLink failed', err)
-  }
-  return c.json({ data: { ok: true }, meta: { generatedAt: new Date().toISOString() } })
-})
+  // Per-address active-link cap (finding D4): refuse silently (the response is already
+  // the same 200, no enumeration) once too many unused, unexpired links exist for this
+  // address, so a known superadmin email can't be email-bombed and Resend quota can't be
+  // burned. Expired/used links don't count. The count and the insert are ONE statement,
+  // so the cap holds however requests interleave: the response no longer waits for a
+  // read-then-insert, so a client's next request can arrive before this one has
+  // inserted, and a separate count would read a stale number. One D1 round trip, and the
+  // email goes out only when this statement wrote the row (`changes` is the rows the
+  // statement itself inserted; `rows_written` would also count the index writes).
+  const result = await db.run(sql`
+    INSERT INTO magic_links (id, email, token_hash, expires_at)
+    SELECT ${crypto.randomUUID()}, ${email}, ${tokenHash}, ${expiresAt}
+    WHERE (
+      SELECT COUNT(*) FROM magic_links
+      WHERE email = ${email} AND used_at IS NULL AND datetime(expires_at) > datetime('now')
+    ) < ${MAX_ACTIVE_ADMIN_LINKS}
+  `)
+  if (((result as any)?.meta?.changes ?? 0) !== 1) return
+
+  const url = `${env.ADMIN_APP_URL}/admin/dash/auth/callback?token=${encodeURIComponent(rawToken)}`
+  await sendAdminMagicLink(email, url, env)
+}
 
 // GET /admin/dash/auth/callback?token=... — two-step verify (scanner pre-fetch
 // protection, mirrors the tenant /auth/verify). This GET does NOT consume the

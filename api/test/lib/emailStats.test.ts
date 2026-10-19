@@ -3,7 +3,7 @@ import { env } from 'cloudflare:test'
 import { resetDb, applyMigrations } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { emailSendStats } from '../../src/db/schema'
-import { hourKey, isRecipientError, tally, recordSendStats } from '../../src/lib/emailStats'
+import { hourKey, tally, recordSendStats } from '../../src/lib/emailStats'
 
 const T = new Date('2026-09-23T20:17:42Z')
 
@@ -13,23 +13,24 @@ describe('hourKey', () => {
   })
 })
 
-describe('isRecipientError', () => {
-  it('is true only for E_RECIPIENT_SUPPRESSED', () => {
-    expect(isRecipientError({ error: 'E_RECIPIENT_SUPPRESSED: suppressed' })).toBe(true)
-    expect(isRecipientError({ error: 'E_RECIPIENT_NOT_ALLOWED: destination address is not a verified address' })).toBe(false)
-    expect(isRecipientError({ error: '401' })).toBe(false)
-    expect(isRecipientError({})).toBe(false)
-  })
-})
-
 describe('tally', () => {
-  it('splits results into sent, failed, and suppressed, keeping the last provider error', () => {
+  it('splits attempts into sent, failed, and suppressed, keeping the last provider error', () => {
     expect(tally([
       { ok: true, provider: 'cloudflare' },
-      { ok: false, provider: 'cloudflare', error: 'E_RECIPIENT_NOT_ALLOWED: a' },
-      { ok: false, provider: 'cloudflare', error: 'E_RECIPIENT_SUPPRESSED: b' },
-      { ok: false, provider: 'cloudflare', error: 'E_RATE_LIMIT_EXCEEDED: c' },
+      { ok: false, provider: 'cloudflare', error: 'E_RECIPIENT_NOT_ALLOWED: a', permanent: false },
+      { ok: false, provider: 'cloudflare', error: 'E_RECIPIENT_SUPPRESSED: b', permanent: true },
+      { ok: false, provider: 'cloudflare', error: 'E_RATE_LIMIT_EXCEEDED: c', permanent: false },
     ])).toEqual({ sent: 1, failed: 2, suppressed: 1, lastError: 'E_RATE_LIMIT_EXCEEDED: c' })
+  })
+
+  it('trusts the adapter\'s verdict, not the error text: a permanent failure is suppressed whatever it says', () => {
+    expect(tally([{ ok: false, provider: 'resend', error: '550 mailbox full', permanent: true }]))
+      .toEqual({ sent: 0, failed: 0, suppressed: 1, lastError: null })
+  })
+
+  it('counts an error mentioning a suppressed recipient as failed when the adapter called it temporary', () => {
+    expect(tally([{ ok: false, provider: 'cloudflare', error: 'E_RECIPIENT_SUPPRESSED: b', permanent: false }]))
+      .toEqual({ sent: 0, failed: 1, suppressed: 0, lastError: 'E_RECIPIENT_SUPPRESSED: b' })
   })
 })
 

@@ -272,6 +272,8 @@ const DENIED = new Set([
   // Grouping and splitting change the conversation every visitor sees.
   'POST /api/bills/:id/group',
   'POST /api/bills/:id/split',
+  // Dismissing a companion suggestion changes what every visiting admin is offered. A demo offers none.
+  'POST /api/bills/:id/companion-suggestion/dismiss',
   'POST /api/bills/bulk',
   'POST /api/bills/bulk-dismiss',
   'POST /api/bills/draft',
@@ -294,6 +296,7 @@ const DENIED = new Set([
   'PUT /api/admin/views/:id',
   'PUT /api/admin/views/reorder',
   'PUT /api/calendar/events/:id',
+  'PUT /api/views/:id/subscription',
 ])
 
 const registered = () => {
@@ -336,8 +339,8 @@ describe('demo write categorisation', () => {
 
   it('pins the size of each category so a silent shift is visible', () => {
     expect(DEMO_WRITE_ALLOWLIST.size).toBe(23)
-    expect(DENIED.size).toBe(58)
-    expect(registered().length).toBe(87)
+    expect(DENIED.size).toBe(60)
+    expect(registered().length).toBe(89)
   })
 
   it('refuses every denied route with the read-only message', async () => {

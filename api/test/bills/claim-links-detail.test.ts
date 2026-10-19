@@ -35,6 +35,9 @@ const item = (claim: string, status: string, at?: [number, number], matched?: st
   ...(at ? { quoteAt: { start: at[0], end: at[1] }, matched } : {}),
 })
 
+// What `seedBillText` stores as a document's hash by default, so a pin matches the stored text (#603).
+const HASH = 'hash-abc'
+
 describe('GET /api/bills/:id: claimSources', () => {
   let cookie: string
   const db = () => getDb(env.DB)
@@ -53,7 +56,7 @@ describe('GET /api/bills/:id: claimSources', () => {
     return await res.json() as Detail
   }
   const pin = (billId: string, docId: string, items: unknown[]) => db().update(bills)
-    .set({ claimSources: JSON.stringify(items), claimSourcesDocId: docId, claimSourcesTextHash: `hash-${docId}` })
+    .set({ claimSources: JSON.stringify(items), claimSourcesDocId: docId, claimSourcesTextHash: HASH })
     .where(eq(bills.id, billId))
   const setting = (value: unknown) => db().insert(associationConfig)
     .values({ key: 'claim_links_enabled', value: JSON.stringify(value) })
@@ -150,6 +153,69 @@ describe('GET /api/bills/:id: claimSources', () => {
       expect(d.claimSources?.billId).toBe('a100')
       expect(d.claimSources?.document.docId).toBe('9001')
       expect(d.claimSources?.items.map(i => i.matched)).toEqual(['A100 own passage.'])
+    })
+  })
+
+  // A document whose content changes under the same id keeps its doc id and gets
+  // a new hash (#603). The pin holds the hash the model read, so a stored hash
+  // that differs means the offsets are into a text that is gone.
+  describe('a document whose text changed under the same id', () => {
+    const setStoredHash = (docId: string, textHash: string) =>
+      env.DB.prepare('UPDATE bill_texts SET text_hash = ? WHERE doc_id = ?').bind(textHash, docId).run()
+
+    beforeEach(async () => {
+      await seedBill({ id: 'a100', billNumber: 'A100', externalId: 'legiscan:100', tenantSummary: SUMMARY_A, matchType: 'keyword', aiProcessedAt: '2026-01-01 10:00:00' })
+      await seedBillText('a100', { docId: '9001', type: 'Introduced', date: '2026-01-01', mime: 'text/html', textHash: 'hash-v1' })
+      await db().update(bills).set({
+        claimSources: JSON.stringify([item('Requires a drop box in each county.', 'exact', [10, 40], 'Each county shall have a drop box.')]),
+        claimSourcesDocId: '9001',
+        claimSourcesTextHash: 'hash-v1',
+      }).where(eq(bills.id, 'a100'))
+    })
+
+    it('still links when the stored hash is the pinned one', async () => {
+      expect((await detail('a100')).claimSources?.items).toHaveLength(1)
+    })
+
+    it('renders as plain text, with no claim sources, once the stored hash differs', async () => {
+      await setStoredHash('9001', 'hash-v2')
+      const d = await detail('a100')
+      expect(d.claimSources).toBeNull()
+      expect(d.tenantSummary).toBe(SUMMARY_A)
+    })
+
+    it('keeps the stored items, so a matching hash brings the links back', async () => {
+      await setStoredHash('9001', 'hash-v2')
+      expect((await detail('a100')).claimSources).toBeNull()
+      await setStoredHash('9001', 'hash-v1')
+      expect((await detail('a100')).claimSources?.items).toHaveLength(1)
+    })
+
+    it('links again once a re-analysis pins the new hash', async () => {
+      await setStoredHash('9001', 'hash-v2')
+      await db().update(bills).set({ claimSourcesTextHash: 'hash-v2' }).where(eq(bills.id, 'a100'))
+      expect((await detail('a100')).claimSources?.items).toHaveLength(1)
+    })
+
+    it('resolves on the doc id alone when the stored hash is empty, as rows from before this change are', async () => {
+      await setStoredHash('9001', '')
+      expect((await detail('a100')).claimSources?.items).toHaveLength(1)
+    })
+
+    it.each([['null', null], ['empty', '']])('resolves on the doc id alone when the pinned hash is %s', async (_label, pinned) => {
+      await setStoredHash('9001', 'hash-v2')
+      await db().update(bills).set({ claimSourcesTextHash: pinned }).where(eq(bills.id, 'a100'))
+      expect((await detail('a100')).claimSources?.items).toHaveLength(1)
+    })
+
+    it('judges a companion group\'s shown analysis against that member\'s document, not the page bill\'s', async () => {
+      await seedBill({ id: 'b300', billNumber: 'B300', externalId: 'legiscan:300', tenantSummary: SUMMARY_A, matchType: null, aiProcessedAt: '2026-01-01 09:00:00' })
+      await seedBillText('b300', { docId: '9003', date: '2026-01-01', textHash: 'hash-other' })
+      await db().update(bills).set({ groupKey: 'a100' }).where(inArray(bills.id, ['a100', 'b300']))
+      await setStoredHash('9001', 'hash-v2')
+      expect((await detail('b300')).claimSources).toBeNull()
+      await setStoredHash('9001', 'hash-v1')
+      expect((await detail('b300')).claimSources?.billId).toBe('a100')
     })
   })
 })

@@ -35,6 +35,9 @@ const pdfItem = (claim: string, quote: string, page?: number | null, status = 'u
   ...(page === undefined ? {} : { page }),
 })
 
+// What `seedBillText` stores as a document's hash by default, so a pin matches the stored text (#603).
+const HASH = 'hash-abc'
+
 describe('GET /api/bills/:id: claimSources on a PDF', () => {
   let cookie: string
   const db = () => getDb(env.DB)
@@ -53,7 +56,7 @@ describe('GET /api/bills/:id: claimSources on a PDF', () => {
     return await res.json() as Detail
   }
   const pin = (billId: string, docId: string, items: unknown[]) => db().update(bills)
-    .set({ claimSources: JSON.stringify(items), claimSourcesDocId: docId, claimSourcesTextHash: `hash-${docId}` })
+    .set({ claimSources: JSON.stringify(items), claimSourcesDocId: docId, claimSourcesTextHash: HASH })
     .where(eq(bills.id, billId))
   const setting = (value: unknown) => db().insert(associationConfig)
     .values({ key: 'claim_links_enabled', value: JSON.stringify(value) })

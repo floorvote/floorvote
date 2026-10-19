@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { EventLines, eventBodyModel } from './EventLines'
 import type { CalendarEvent } from '../../lib/calendarGrid'
@@ -40,18 +40,102 @@ it('hides the details hint in compact when bills are present', () => {
   expect(screen.queryByText('Through May 29')).not.toBeInTheDocument()
 })
 
-it('clamps details and toggles on click in the agenda card', () => {
-  render(<MemoryRouter><EventLines event={base} clampDetails /></MemoryRouter>)
-  const toggle = screen.getByRole('button', { name: /show more/i })
-  fireEvent.click(toggle)
-  expect(screen.getByRole('button', { name: /show less/i })).toBeInTheDocument()
+// jsdom does no layout, so scrollHeight and clientHeight are 0. The clamp's
+// overflow is the contract: the toggle shows only when the content is taller than
+// its box, so these tests set the two heights the component measures.
+const dims = { scrollHeight: 0, clientHeight: 0 }
+let scrollSpy: ReturnType<typeof vi.spyOn>
+let clientSpy: ReturnType<typeof vi.spyOn>
+beforeEach(() => {
+  dims.scrollHeight = 0
+  dims.clientHeight = 0
+  scrollSpy = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(() => dims.scrollHeight)
+  clientSpy = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(() => dims.clientHeight)
 })
+afterEach(() => { scrollSpy.mockRestore(); clientSpy.mockRestore() })
 
-it('does not show toggle for short single-line details', () => {
-  const shortEvent = { ...base, details: 'ok' }
-  render(<MemoryRouter><EventLines event={shortEvent} clampDetails /></MemoryRouter>)
-  expect(screen.getByText('ok')).toBeInTheDocument()
-  expect(screen.queryByRole('button', { name: /show more/i })).not.toBeInTheDocument()
+describe('the agenda card details toggle shows only when the clamp hides something', () => {
+  it('toggles on click when the details overflow the clamp', () => {
+    dims.scrollHeight = 60; dims.clientHeight = 36
+    render(<MemoryRouter><EventLines event={base} clampDetails /></MemoryRouter>)
+    fireEvent.click(screen.getByRole('button', { name: /show more/i }))
+    expect(screen.getByRole('button', { name: /show less/i })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /show less/i }))
+    expect(screen.getByRole('button', { name: /show more/i })).toBeInTheDocument()
+  })
+
+  it('shows no toggle for multi-line details that fit inside the clamp', () => {
+    dims.scrollHeight = 36; dims.clientHeight = 36
+    render(<MemoryRouter><EventLines event={base} clampDetails /></MemoryRouter>)
+    expect(screen.getByText(/Statute: W.S. 22-5-209/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /show (more|less)/i })).not.toBeInTheDocument()
+  })
+
+  it('shows no toggle for a long one-liner that fits (more than 80 characters, no overflow)', () => {
+    dims.scrollHeight = 18; dims.clientHeight = 18
+    render(<MemoryRouter><EventLines event={{ ...base, details: 'x'.repeat(120) }} clampDetails /></MemoryRouter>)
+    expect(screen.queryByRole('button', { name: /show (more|less)/i })).not.toBeInTheDocument()
+  })
+
+  it('does not show a toggle for short single-line details', () => {
+    render(<MemoryRouter><EventLines event={{ ...base, details: 'ok' }} clampDetails /></MemoryRouter>)
+    expect(screen.getByText('ok')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /show more/i })).not.toBeInTheDocument()
+  })
+
+  it('shows no toggle when the card is not clamped, however long the details', () => {
+    dims.scrollHeight = 120; dims.clientHeight = 36
+    render(<MemoryRouter><EventLines event={base} /></MemoryRouter>)
+    expect(screen.queryByRole('button', { name: /show (more|less)/i })).not.toBeInTheDocument()
+  })
+
+  it('adds the toggle when a resize narrows the card until the details overflow, and drops it when they fit again', () => {
+    dims.scrollHeight = 36; dims.clientHeight = 36
+    render(<MemoryRouter><EventLines event={base} clampDetails /></MemoryRouter>)
+    expect(screen.queryByRole('button', { name: /show more/i })).not.toBeInTheDocument()
+    act(() => { dims.scrollHeight = 72; window.dispatchEvent(new Event('resize')) })
+    expect(screen.getByRole('button', { name: /show more/i })).toBeInTheDocument()
+    act(() => { dims.scrollHeight = 36; window.dispatchEvent(new Event('resize')) })
+    expect(screen.queryByRole('button', { name: /show more/i })).not.toBeInTheDocument()
+  })
+
+  it('re-measures when the details box itself resizes (ResizeObserver)', () => {
+    let notify: () => void = () => {}
+    const observed: Element[] = []
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(cb: () => void) { notify = cb }
+      observe(el: Element) { observed.push(el) }
+      disconnect() {}
+      unobserve() {}
+    })
+    try {
+      dims.scrollHeight = 36; dims.clientHeight = 36
+      render(<MemoryRouter><EventLines event={base} clampDetails /></MemoryRouter>)
+      expect(observed.length).toBeGreaterThan(0)
+      expect(screen.queryByRole('button', { name: /show more/i })).not.toBeInTheDocument()
+      act(() => { dims.scrollHeight = 90; notify() })
+      expect(screen.getByRole('button', { name: /show more/i })).toBeInTheDocument()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('keeps "Show less" once expanded, though an unclamped box no longer overflows', () => {
+    dims.scrollHeight = 60; dims.clientHeight = 36
+    render(<MemoryRouter><EventLines event={base} clampDetails /></MemoryRouter>)
+    fireEvent.click(screen.getByRole('button', { name: /show more/i }))
+    act(() => { dims.scrollHeight = 60; dims.clientHeight = 60; window.dispatchEvent(new Event('resize')) })
+    expect(screen.getByRole('button', { name: /show less/i })).toBeInTheDocument()
+  })
+
+  it('measures again when the details change', () => {
+    dims.scrollHeight = 36; dims.clientHeight = 36
+    const { rerender } = render(<MemoryRouter><EventLines event={base} clampDetails /></MemoryRouter>)
+    expect(screen.queryByRole('button', { name: /show more/i })).not.toBeInTheDocument()
+    dims.scrollHeight = 90
+    rerender(<MemoryRouter><EventLines event={{ ...base, details: 'a much longer set of details' }} clampDetails /></MemoryRouter>)
+    expect(screen.getByRole('button', { name: /show more/i })).toBeInTheDocument()
+  })
 })
 
 describe('eventBodyModel', () => {
@@ -94,15 +178,16 @@ describe('EventLines — full variant stacked layout', () => {
     const tc = container.textContent ?? ''
     expect(tc.indexOf('Judiciary hearing')).toBeLessThan(tc.indexOf('schedule'))
     expect(tc.indexOf('schedule')).toBeLessThan(tc.indexOf('location_on'))
-    expect(tc.indexOf('location_on')).toBeLessThan(tc.indexOf('link_2'))
-    expect(tc.indexOf('link_2')).toBeLessThan(tc.indexOf('Agenda: testimony'))
+    expect(tc.indexOf('location_on')).toBeLessThan(tc.indexOf('link'))
+    expect(tc.indexOf('link')).toBeLessThan(tc.indexOf('Agenda: testimony'))
   })
 
-  it('renders the schedule, location_on, and link_2 meta icons', () => {
+  it('renders the schedule, location_on, and link meta icons', () => {
     full()
     expect(screen.getByText('schedule')).toBeInTheDocument()
     expect(screen.getByText('location_on')).toBeInTheDocument()
-    expect(screen.getByText('link_2')).toBeInTheDocument()
+    expect(screen.getByText('link')).toBeInTheDocument()
+    expect(screen.queryByText('link_2')).not.toBeInTheDocument()
   })
 
   it('shows the link with scheme + www stripped but links to the real URL', () => {

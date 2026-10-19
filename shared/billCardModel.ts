@@ -22,6 +22,25 @@ export const USER_EVENT_ICONS: Record<string, { name: string; color: string; fil
   position_set:   { name: 'thumbs_up_down', color: color.textSuccess, fill: 1 },
   comment_added:  { name: 'chat',           color: color.brandViolet },
   vote_milestone: { name: 'how_to_vote',    color: color.textTealSenate },
+  // A custom field change. The feed has no row for one yet, so only the bill page's comment thread draws it,
+  // in the same muted color as an amendment row (textSecondary) so the email icon set needs no new PNG.
+  custom_field_set: { name: 'edit_note',  color: color.textSecondary },
+}
+
+export type UserEventIcon = { name: string; color: string; fill: 0 | 1; square: boolean }
+
+/**
+ * The icon a person's change shows with, in one place for every surface that draws it: the feed's card rows,
+ * a bulk edit's row, and the bill page's comment thread (the digest email reads USER_EVENT_ICONS for its PNGs).
+ * A priority change is a square in the priority's color, not a glyph (`square`). A position change is a glyph
+ * in the position's color. A type or value the tables have no color for keeps the table's own.
+ */
+export function userEventIcon(type: string, metadata?: Record<string, unknown> | null): UserEventIcon {
+  const cfg = USER_EVENT_ICONS[type] ?? { name: 'circle', color: color.textMuted }
+  let iconColor = cfg.color
+  if (type === 'priority_set') iconColor = PRIORITY_COLORS[String(metadata?.priority ?? '')]?.fill ?? iconColor
+  else if (type === 'position_set') iconColor = POSITION_FEED_ICON[String(metadata?.position ?? '')] ?? iconColor
+  return { name: cfg.name, color: iconColor, fill: cfg.fill ?? 0, square: type === 'priority_set' }
 }
 const HEARING_TYPES = new Set(['hearing_added', 'hearing_changed', 'hearing_cancelled'])
 
@@ -144,16 +163,12 @@ export function buildBillCardModel(group: GroupedBillEvents): BillCardModel {
         createdAt: event.createdAt, showTime: true, userId: event.userId, ...ofBill,
       })
     } else {
-      const cfg = USER_EVENT_ICONS[event.type] ?? { name: 'circle', color: color.textMuted }
-      let iconColor = cfg.color
-      const isPriority = event.type === 'priority_set'
-      if (isPriority) iconColor = PRIORITY_COLORS[String((event.metadata as Record<string, unknown>)?.priority ?? '')]?.fill ?? iconColor
-      else if (event.type === 'position_set') iconColor = POSITION_FEED_ICON[String((event.metadata as Record<string, unknown>)?.position ?? '')] ?? iconColor
+      const icon = userEventIcon(event.type, event.metadata as Record<string, unknown>)
       rows.push({
-        key: event.id, iconName: cfg.name, iconColor, iconFill: cfg.fill ?? 0,
+        key: event.id, iconName: icon.name, iconColor: icon.color, iconFill: icon.fill,
         text: userDetailLine(event), bg: color.white, hash: userEventHash(event),
         createdAt: event.createdAt, showTime: true, userId: event.userId, ...ofBill,
-        ...(isPriority ? { square: true } : {}),
+        ...(icon.square ? { square: true } : {}),
       })
     }
   }
@@ -191,17 +206,17 @@ export function buildActivityRowModel(event: FeedEvent): ActivityRowModel {
   const base = { key: event.id, createdAt: event.createdAt, userId: event.userId, billCount: count }
   if (type === 'priority_set') {
     const priority = String(metadata.priority ?? '')
+    const icon = userEventIcon(type, metadata)
     return {
-      ...base, iconName: 'flag', iconFill: 1, square: true,
-      iconColor: PRIORITY_COLORS[priority]?.fill ?? USER_EVENT_ICONS.priority_set.color,
+      ...base, iconName: icon.name, iconFill: icon.fill, square: true, iconColor: icon.color,
       text: `${who} set priority to ${priority}${onBills}`,
     }
   }
   if (type === 'position_set') {
     const position = metadata.position == null ? null : String(metadata.position)
+    const icon = userEventIcon(type, metadata)
     return {
-      ...base, iconName: 'thumbs_up_down', iconFill: 1,
-      iconColor: (position && POSITION_FEED_ICON[position]) || USER_EVENT_ICONS.position_set.color,
+      ...base, iconName: icon.name, iconFill: icon.fill, iconColor: icon.color,
       text: position === null ? `${who} cleared the position${onBills}` : `${who} set position to ${position}${onBills}`,
     }
   }

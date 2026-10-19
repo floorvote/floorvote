@@ -245,6 +245,13 @@ export const bills = sqliteTable('bills', {
   // when it's in no group, as a JSON array (migration 0103). A tag filter tests
   // these. Written only by the triggers 0106 recreates, never by the app.
   groupTags: text('group_tags').notNull().default('[]'),
+  // The key central serves for title-matched companion suggestions (#521):
+  // the bill's type and normalized title, or null when no suggestion can come
+  // from it. With `chamber`, the bill's chamber as central sends it, written on
+  // every delivery (lib/companionSuggestion.ts). Indexed with state and session
+  // for bills that have one (migration 0110).
+  titleKey: text('title_key'),
+  chamber: text('chamber'),
 })
 
 // Identical relationships, as central's vocabulary reads them, by bill handle
@@ -273,6 +280,19 @@ export const billGroupOverrides = sqliteTable('bill_group_overrides', {
 }, (t) => [
   primaryKey({ columns: [t.billId, t.otherBillId] }),
   index('idx_bill_group_overrides_other').on(t.otherBillId),
+])
+
+// An admin's dismissal of a title-matched companion suggestion (#521), kept per
+// instance as a pair of bills, smaller id first, like a group override
+// (migration 0110). The pair is never suggested again.
+export const companionSuggestionDismissals = sqliteTable('companion_suggestion_dismissals', {
+  billId: text('bill_id').notNull().references(() => bills.id, { onDelete: 'cascade' }),
+  otherBillId: text('other_bill_id').notNull().references(() => bills.id, { onDelete: 'cascade' }),
+  actorUserId: text('actor_user_id'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+}, (t) => [
+  primaryKey({ columns: [t.billId, t.otherBillId] }),
+  index('idx_companion_suggestion_dismissals_other').on(t.otherBillId),
 ])
 
 // Structured events about a bill's team-level state, one row per bill (migration
@@ -456,6 +476,17 @@ export const savedViews = sqliteTable('saved_views', {
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
 })
+
+// A member's inclusion of a saved view in their email digest (#449). One row per
+// member and view, which a delete of either removes. The view's filter stays on
+// the view, so an edit to it carries through to everyone who included it.
+export const savedViewSubscriptions = sqliteTable('saved_view_subscriptions', {
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  viewId: text('view_id').notNull().references(() => savedViews.id, { onDelete: 'cascade' }),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.userId, t.viewId] }),
+}))
 
 export const calendarEvents = sqliteTable('calendar_events', {
   id: text('id').primaryKey(),

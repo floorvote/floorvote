@@ -1,4 +1,12 @@
-export const OUTER_GRID = 'minmax(0,1fr) 170px 120px'
+// The table's outer columns: the title column, Position, Priority. Priority is
+// 140px so the amber "New · Set priority" control (135px) fits its track. The
+// padding the header and every row share sits outside the tracks: 8px left, and
+// 28px right so the Priority control isn't against the table's edge.
+export const POSITION_COL_WIDTH = 170
+export const PRIORITY_COL_WIDTH = 140
+export const ROW_PADDING_LEFT = 8
+export const ROW_PADDING_RIGHT = 28
+export const OUTER_GRID = `minmax(0,1fr) ${POSITION_COL_WIDTH}px ${PRIORITY_COL_WIDTH}px`
 // auto for relevance so "TOPIC RELEVANCE" header fits; status/lastAction narrow, session wider
 export const CHIP_GRID = '70px 100px 90px 130px auto'
 export const CHIP_GRID_MULTISTATE = '105px 100px 90px 130px auto'

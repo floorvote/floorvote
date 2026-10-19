@@ -78,7 +78,7 @@ describe('POST /api/bills/bulk — drafts filter must scope the write', () => {
     const res = await appFetch('https://x/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filter: { drafts: '1' }, priority: 'high' }),
+      body: JSON.stringify({ filter: 'drafts=1', priority: 'high' }),
     })
     expect(res.status).toBe(200)
     const body = await res.json<{ updated: number }>()

@@ -6,7 +6,7 @@ import type { GroupBillTexts, GroupTextVersion } from '../../../shared/companion
 // function of the data alone, so the same on every page in the group.
 
 const v = (docId: string, date: string, type = 'Introduced'): GroupTextVersion => ({ docId, type, date, mime: 'text/html', stateLink: null, altStateLink: null })
-const row = (billId: string, billNumber: string, texts: GroupTextVersion[]): GroupBillTexts => ({ billId, billNumber, state: 'RI', sessionSlug: '2026', texts })
+const row = (billId: string, billNumber: string, texts: GroupTextVersion[]): GroupBillTexts => ({ billId, billNumber, state: 'RI', sessionSlug: '2026', status: 'Introduced', texts })
 const numbers = (rows: GroupBillTexts[]) => rows.map(r => r.billNumber)
 const docs = (r: GroupBillTexts) => r.texts.map(t => t.docId)
 

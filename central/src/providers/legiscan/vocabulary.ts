@@ -111,5 +111,23 @@ export const vocabulary: ProviderVocabulary = {
       // Michigan files tie-barred packages of different bills as "Same As."
       MI: { 'Same As': 'package' },
     },
+    // The states whose relationships in central carry "Same As" or
+    // "Crossfiled" as identical (October 2026). Michigan's "Same As" is a
+    // package, so it isn't one.
+    identicalStates: ['NJ', 'TX', 'US', 'WA', 'WI'],
+  },
+
+  // Companion suggestions from matching titles (#521), where LegiScan names
+  // no identical companions, for bills only. Measured against central's bills
+  // in October 2026, a pair's first texts agree in size within 5% for 98% of
+  // Rhode Island's 723 same-title pairs, 93% of Pennsylvania's 307, and 92% of
+  // Michigan's 229, none of which are its "Same As" packages. Left off: states
+  // whose titles are short subject headings (CA, IN, IL, AZ, and VA by triage,
+  // and UT and WY, whose median titles run 33 and 40 characters), states where
+  // LegiScan labels companions (identicalStates), and NV, whose titles carry
+  // a unique request number, so none is ever shared.
+  titleCompanions: {
+    states: ['MI', 'PA', 'RI'],
+    billTypes: ['B'],
   },
 }

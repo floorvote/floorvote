@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { buildBillCardModel, buildActivityRowModel } from './billCardModel'
+import { buildBillCardModel, buildActivityRowModel, userEventIcon, USER_EVENT_ICONS } from './billCardModel'
 import { PRIORITY_COLORS } from './chipStyles'
+import { POSITION_FEED_ICON } from '../../../shared/billChipColors'
 import { color } from '../styles/tokens'
 import type { GroupedBillEvents, FeedEvent } from './feedUtils'
 
@@ -187,5 +188,54 @@ describe('buildBillCardModel: companion groups', () => {
     expect(m.rows[0].billLabel).toBeNull()
     expect(m.rows[0].billId).toBe('b1')
     expect(m.bills).toBeUndefined()
+  })
+})
+
+// One rule for the icon a person's change shows with, read by the feed, the
+// digest, and the bill page's comment thread, so they can't drift.
+describe('userEventIcon', () => {
+  it('draws a priority change as the priority square in that level\'s fill color', () => {
+    for (const level of ['high', 'medium', 'low'] as const) {
+      expect(userEventIcon('priority_set', { priority: level })).toEqual({ name: 'flag', color: PRIORITY_COLORS[level].fill, fill: 1, square: true })
+    }
+  })
+
+  it('falls back to the table\'s priority color, still a square, for a cleared or unknown priority', () => {
+    expect(userEventIcon('priority_set', { priority: null })).toMatchObject({ color: USER_EVENT_ICONS.priority_set.color, square: true })
+    expect(userEventIcon('priority_set', { priority: 'urgent' })).toMatchObject({ color: USER_EVENT_ICONS.priority_set.color, square: true })
+    expect(userEventIcon('priority_set', undefined)).toMatchObject({ color: USER_EVENT_ICONS.priority_set.color, square: true })
+  })
+
+  it('draws a position as the filled thumbs-up-down glyph in the position\'s color', () => {
+    for (const [position, hex] of Object.entries(POSITION_FEED_ICON)) {
+      expect(userEventIcon('position_set', { position })).toEqual({ name: 'thumbs_up_down', color: hex, fill: 1, square: false })
+    }
+  })
+
+  it('falls back to the table\'s position color for a cleared position or one with no color', () => {
+    expect(userEventIcon('position_set', { position: null })).toMatchObject({ color: USER_EVENT_ICONS.position_set.color, square: false })
+    expect(userEventIcon('position_set', { position: 'Watching closely' })).toMatchObject({ color: USER_EVENT_ICONS.position_set.color })
+  })
+
+  it('draws a custom field change with the table\'s one custom field entry, in the same muted color as an amendment row', () => {
+    expect(USER_EVENT_ICONS.custom_field_set).toBeDefined()
+    expect(userEventIcon('custom_field_set', {})).toEqual({ name: 'edit_note', color: USER_EVENT_ICONS.custom_field_set.color, fill: 0, square: false })
+    expect(USER_EVENT_ICONS.custom_field_set.color).toBe(color.textSecondary)
+  })
+
+  it('keeps the feed\'s fallback glyph for a type with no entry', () => {
+    expect(userEventIcon('something_else', {})).toEqual({ name: 'circle', color: color.textMuted, fill: 0, square: false })
+  })
+
+  it('is what a feed card row shows for the same event, so the thread and the feed agree', () => {
+    const priority = buildBillCardModel(group([{ type: 'priority_set', metadata: { priority: 'low' } }])).rows[0]
+    expect(userEventIcon('priority_set', { priority: 'low' })).toEqual({ name: priority.iconName, color: priority.iconColor, fill: priority.iconFill, square: !!priority.square })
+    const position = buildBillCardModel(group([{ type: 'position_set', metadata: { position: 'Oppose' } }])).rows[0]
+    expect(userEventIcon('position_set', { position: 'Oppose' })).toEqual({ name: position.iconName, color: position.iconColor, fill: position.iconFill, square: !!position.square })
+  })
+
+  it('is what a bulk-edit row shows for the same event', () => {
+    const bulk = buildActivityRowModel({ ...({} as FeedEvent), id: 'x', type: 'position_set', userId: 'u', userName: 'Ada', createdAt: '2026-06-03 10:00:00', metadata: { position: 'Amend', count: 3, billIds: [] } })
+    expect(userEventIcon('position_set', { position: 'Amend' })).toMatchObject({ name: bulk.iconName, color: bulk.iconColor, fill: bulk.iconFill })
   })
 })

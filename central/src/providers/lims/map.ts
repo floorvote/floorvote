@@ -418,9 +418,10 @@ function extraDate(value: unknown): string | null {
 }
 
 /**
- * The measure's extras (vocabulary.ts): numbers, review dates, and the like
- * from the details response, with the bulk record's copies where details have
- * none.
+ * The measure's extras (vocabulary.ts): numbers, who asked for it, and the
+ * like from the details response, with the bulk record's copies where details
+ * have none. The review dates aren't here: the timeline and the calendar's
+ * deadlines (`limsDeadlines`) already show them.
  */
 export function limsExtras(rec: LimsBulkRecord, details: LimsLegislationDetails | null): Record<string, string | null> {
   const mayor = details?.mayoralReview
@@ -433,18 +434,8 @@ export function limsExtras(rec: LimsBulkRecord, details: LimsLegislationDetails 
     resolutionNumber: /^R\d/i.test(actRes) ? actRes : null,
     requestedBy: extraText(details?.atTheRequestOf),
     commentCommittees: comments.length > 0 ? comments.join(', ') : null,
-    sentToMayor: extraDate(mayor?.transmittedDate),
-    mayorDeadline: extraDate(mayor?.responseDueDate),
-    signedByMayor: extraDate(mayor?.signedDate),
-    vetoedByMayor: extraDate(mayor?.vetoDate),
-    enacted: extraDate(mayor?.enactedDate),
-    actExpires: extraDate(mayor?.expirationDate),
-    sentToCongress: extraDate(congress?.transmittedDate),
-    projectedLawDate: extraDate(congress?.lawProjectedDate) ?? extraDate(rec.projectedLawDate),
     lawEffective: extraDate(congress?.effectiveDate),
-    lawExpires: extraDate(congress?.expirationDate),
     withdrawnBy: extraText(details?.withdrawnBy),
-    withdrawnOn: extraDate(details?.withdrawnDate),
   }
 }
 

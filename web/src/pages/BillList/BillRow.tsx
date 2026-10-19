@@ -13,24 +13,26 @@ import { SessionChip } from '../../components/SessionChip'
 import { LastActionChip } from '../../components/LastActionChip'
 import { CompactPositionSelect } from '../../components/CompactPositionSelect'
 import { CompactPrioritySelect } from '../../components/CompactPrioritySelect'
-import { NewMatchTriageControl } from '../../components/NewMatchTriageControl'
+import { isUntriagedNewMatch } from '../../lib/newMatch'
+import { NewMatchChip } from '../../components/NewMatchChip'
 import { HoverTooltip } from '../../components/HoverTooltip'
 import { TAG_CHIP, TAG_CHIP_HOVERED, TAG_CHIP_ACTIVE } from '../../lib/tagChipStyle'
 import { TOOLTIP_STYLE, chipOutline } from '../../lib/chipStyles'
-import { SECTION_LABEL, CHROME_TEXT } from '../../lib/textStyles'
+import { SECTION_LABEL, CHROME_TEXT, BILL_TITLE_TEXT } from '../../lib/textStyles'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { billDisplayTitle } from '../../../../shared/billTitle'
 import { voteButtonStyle, type VoteKey } from '../../lib/voteButtonStyle'
-import { useConfig } from '../../context/ConfigContext'
-import { DEFAULT_ORG_NOUN } from '../../lib/orgNoun'
-import { CHIP_GRID, CHIP_GRID_MULTISTATE, CHIP_GAP, OUTER_GRID } from './constants'
+import { CHIP_GRID, CHIP_GRID_MULTISTATE, CHIP_GAP, OUTER_GRID, ROW_PADDING_LEFT, ROW_PADDING_RIGHT } from './constants'
+import { groupPlacement, groupGridStyle, groupItemStyle, subgridCellStyle, GROUP_ROW_GAP } from './groupRows'
 import type { Bill, GroupMember } from './types'
 
 // A companion group's bills stack in the cells the row already has (bill number
 // and status), so the pairing reads by position and no column is wider. A group
 // larger than two shows the furthest-along bill, one other, and "+N".
 const GROUP_SHOWN = 2
-const STACK: CSSProperties = { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }
+// The phone row has no columns to share, so a group's numbers and statuses are
+// two columns of one grid, a status on its bill's row (see groupRows.ts).
+const PAIRS: CSSProperties = { display: 'inline-grid', gridTemplateColumns: 'auto auto', columnGap: 6, rowGap: GROUP_ROW_GAP, alignItems: 'center' }
 const MATCHED: CSSProperties = { ...chipOutline(true, false, false), display: 'inline-flex', borderRadius: radius.sm }
 
 export const memberPath = (m: GroupMember) => billUrl({ id: m.id, state: m.state, sessionSlug: m.sessionSlug, billNumber: m.billNumber })
@@ -110,16 +112,26 @@ function MiniBar({ count, total, barColor, label, isActive, onVote }: {
   )
 }
 
+/** What a row needs of the list's filter: the values it marks on its own chips. A year is a number, as the row holds it. */
+export type RowFilter = {
+  status: readonly string[]
+  priority: readonly string[]
+  position: readonly string[]
+  year: readonly number[]
+  minRelevance: number
+  tag: readonly string[]
+}
+
 export const BillRow = memo(function BillRow({
-  bill, index, selectedTags, onTagClick,
+  bill, index, onTagClick,
   isAdmin, positionVocabulary,
   onStatusClick, onPriorityClick, onPositionClick, onYearClick, onRelevanceClick,
   onPriorityChange, onPositionChange, onTriageDismiss, onVote,
-  filterStatuses, filterPriorities, filterPositions, filterYears, filterMinRelevance,
+  filter,
   sortedPaths, isMultiState, onNavigate,
   isSelectionMode, isSelected, onToggleSelect,
 }: {
-  bill: Bill; index: number; selectedTags: string[]
+  bill: Bill; index: number
   onTagClick: (tag: string) => void
   isAdmin: boolean
   positionVocabulary: string[]
@@ -132,11 +144,8 @@ export const BillRow = memo(function BillRow({
   onPositionChange: (billId: string, position: string | null) => void
   onTriageDismiss?: (billId: string) => void
   onVote: ((billId: string, pos: 'support' | 'neutral' | 'oppose') => void) | undefined
-  filterStatuses: string[]
-  filterPriorities: string[]
-  filterPositions: string[]
-  filterYears: number[]
-  filterMinRelevance: number
+  /** The list's filter, by each filter's one name, for highlighting the chips that match it. */
+  filter: RowFilter
   sortedPaths: string[]
   isMultiState: boolean
   onNavigate?: (billId: string, path: string, state: { billPaths: string[]; currentIndex: number }) => void
@@ -152,30 +161,22 @@ export const BillRow = memo(function BillRow({
   const { support, oppose, neutral } = bill.voteCounts
   const totalVotes = support + oppose + neutral
 
-  // Un-triaged keyword match → show the segmented set-priority/dismiss control in
-  // place of the plain priority select. Once resolved (priority set or dismissed),
-  // this predicate flips false and the row reverts to CompactPrioritySelect.
-  const isNewMatch = isAdmin && bill.matchType === 'keyword' && !!bill.newMatchAt && !bill.priority && !bill.triagedAt
-  const renderPriorityControl = () => isNewMatch
-    ? (
-      <NewMatchTriageControl
-        billId={bill.id}
-        current={bill.priority}
-        onChange={(p) => onPriorityChange(bill.id, p)}
-        onDismiss={() => onTriageDismiss?.(bill.id)}
-      />
-    )
-    : (
-      <CompactPrioritySelect
-        billId={bill.id}
-        current={bill.priority}
-        onChange={(p) => onPriorityChange(bill.id, p)}
-        isFiltered={bill.priority != null && filterPriorities.includes(bill.priority)}
-      />
-    )
+  // An un-triaged keyword match is an amber state of the priority dropdown: an
+  // admin picks a priority or Dismiss from it, a member sees the same state
+  // read-only. Once resolved (priority set or dismissed), this predicate flips
+  // false and the row shows the plain priority control.
+  const isNewMatch = isUntriagedNewMatch(bill)
+  const renderPriorityControl = () => (
+    <CompactPrioritySelect
+      billId={bill.id}
+      current={bill.priority}
+      onChange={(p) => onPriorityChange(bill.id, p)}
+      newMatch={isNewMatch}
+      onDismiss={() => onTriageDismiss?.(bill.id)}
+      isFiltered={bill.priority != null && filter.priority.includes(bill.priority)}
+    />
+  )
   const billPath = billUrl({ id: bill.id, state: bill.state, sessionSlug: bill.sessionSlug, billNumber: bill.billNumber })
-  const org = useConfig().config?.orgNoun ?? DEFAULT_ORG_NOUN
-  const positionTooltip = `Your ${org}'s official position on this bill`
 
   // Navigate to the bill detail page (optionally to a #section-* anchor).
   // Honors ⌘/Ctrl open-in-new-tab and routes through the prefetch path when
@@ -199,52 +200,54 @@ export const BillRow = memo(function BillRow({
   const group = bill.group
   const { shown, hidden, statuses: shownStatuses } = group ? groupDisplay(group) : { shown: [], hidden: [], statuses: [] }
   const emphasize = !!group && group.some(m => m.matched === true) && group.some(m => m.matched === false)
-  const renderNumbers = () => !group
-    ? <BillBadge billNumber={bill.billNumber} state={bill.state} isDraft={bill.isDraft} />
-    : (
-      <div data-group-stack style={STACK}>
-        {shown.map(m => {
-          const path = memberPath(m)
-          const number = (
-            <BillBadge
-              billNumber={m.billNumber} state={m.state} to={path}
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); goTo(e, path) }}
-            />
-          )
-          return emphasize && m.matched
-            ? <HoverTooltip key={m.id} text="Matches your filters"><span data-matched="true" style={MATCHED}>{number}</span></HoverTooltip>
-            : <span key={m.id} style={{ display: 'inline-flex' }}>{number}</span>
-        })}
-        {hidden.length > 0 && (
-          <HoverTooltip text={`Also ${hidden.map(m => m.billNumber).join(', ')}`} describe>
-            <span style={{ ...CHROME_TEXT, fontWeight: fontWeight.semibold }}>+{hidden.length}</span>
-          </HoverTooltip>
-        )}
+  const placement = group ? groupPlacement({ shown, hidden, statuses: shownStatuses }) : null
+  // A group's pieces are placed on rows of a shared grid (groupRows.ts): `column`
+  // is given only where the grid has two columns (the phone row).
+  const renderGroupNumbers = (column?: number) => placement && [
+    ...shown.map((m, i) => {
+      const path = memberPath(m)
+      const number = (
+        <BillBadge
+          billNumber={m.billNumber} state={m.state} to={path}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); goTo(e, path) }}
+        />
+      )
+      return (
+        <div key={m.id} data-group-item="number" style={groupItemStyle(placement.numberRows[i], column)}>
+          {emphasize && m.matched
+            ? <HoverTooltip text="Matches your filters"><span data-matched="true" style={MATCHED}>{number}</span></HoverTooltip>
+            : <span style={{ display: 'inline-flex' }}>{number}</span>}
+        </div>
+      )
+    }),
+    ...(placement.moreRow !== null ? [(
+      <div key="more" data-group-item="more" style={groupItemStyle(placement.moreRow, column)}>
+        <HoverTooltip text={`Also ${hidden.map(m => m.billNumber).join(', ')}`} describe>
+          <span style={{ ...CHROME_TEXT, fontWeight: fontWeight.semibold }}>+{hidden.length}</span>
+        </HoverTooltip>
       </div>
-    )
+    )] : []),
+  ]
   // The status column's chips filter by their status when clicked. The phone row's don't.
-  const renderStatuses = (interactive: boolean) => !group
-    ? (bill.isDraft
-        ? <DraftChip />
-        : <StatusChip
-            capWidth
-            status={decodeStatus(bill.status)}
-            onClick={interactive ? () => onStatusClick(bill.status) : undefined}
-            isActive={interactive ? filterStatuses.includes(bill.status) : undefined}
-          />)
-    : (
-      <div style={STACK}>
-        {shownStatuses.map(status => (
-          <StatusChip
-            capWidth
-            key={status}
-            status={decodeStatus(status)}
-            onClick={interactive ? () => onStatusClick(status) : undefined}
-            isActive={interactive ? filterStatuses.includes(status) : undefined}
-          />
-        ))}
-      </div>
-    )
+  const renderGroupStatuses = (interactive: boolean, column?: number) => placement && shownStatuses.map((status, i) => (
+    <div key={status} data-group-item="status" style={groupItemStyle(placement.statusRows[i], column)}>
+      <StatusChip
+        capWidth
+        status={decodeStatus(status)}
+        onClick={interactive ? () => onStatusClick(status) : undefined}
+        isActive={interactive ? filter.status.includes(status) : undefined}
+      />
+    </div>
+  ))
+  const renderLoneNumber = () => <BillBadge billNumber={bill.billNumber} state={bill.state} isDraft={bill.isDraft} />
+  const renderLoneStatus = (interactive: boolean) => bill.isDraft
+    ? <DraftChip />
+    : <StatusChip
+        capWidth
+        status={decodeStatus(bill.status)}
+        onClick={interactive ? () => onStatusClick(bill.status) : undefined}
+        isActive={interactive ? filter.status.includes(bill.status) : undefined}
+      />
 
   return (
     <div
@@ -281,7 +284,7 @@ export const BillRow = memo(function BillRow({
         boxShadow: hovered && !isSelected ? '0 7px 16px -3px rgba(15,23,42,0.20), 0 -3px 9px -3px rgba(15,23,42,0.15)' : 'none',
         position: 'relative',
         zIndex: hovered && !isSelected ? 2 : 1,
-        padding: '12px 16px 12px 8px',
+        padding: `12px ${ROW_PADDING_RIGHT}px 12px ${ROW_PADDING_LEFT}px`,
         cursor: 'pointer',
         color: 'inherit',
       }}
@@ -300,12 +303,21 @@ export const BillRow = memo(function BillRow({
       ) : <div className="bill-row-checkbox" />}
       {/* Left: chip strip + title + summary + tags */}
       <div>
-        <div className="bill-row-chips-cell" style={{ display: 'grid', gridTemplateColumns: isMultiState ? CHIP_GRID_MULTISTATE : CHIP_GRID, ['--bill-col-w' as string]: isMultiState ? '105px' : '70px', gap: CHIP_GAP, marginBottom: 8, alignItems: 'center', minWidth: 0, overflow: 'visible' } as React.CSSProperties}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            {renderNumbers()}
-          </div>
-          <span className="bill-col-status" style={{ display: 'flex', alignItems: 'center' }}>
-            {renderStatuses(true)}
+        <div
+          className="bill-row-chips-cell"
+          data-group-rows={placement?.rows}
+          style={{
+            display: 'grid', gridTemplateColumns: isMultiState ? CHIP_GRID_MULTISTATE : CHIP_GRID, ['--bill-col-w' as string]: isMultiState ? '105px' : '70px',
+            // A group's chips sit on a grid of rows, closer together than the columns (groupRows.ts).
+            ...(placement ? { columnGap: CHIP_GAP, ...groupGridStyle(placement.rows) } : { gap: CHIP_GAP }),
+            marginBottom: 8, alignItems: 'center', minWidth: 0, overflow: 'visible',
+          } as React.CSSProperties}
+        >
+          {placement
+            ? <div data-group-stack style={subgridCellStyle}>{renderGroupNumbers()}</div>
+            : <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{renderLoneNumber()}</div>}
+          <span className="bill-col-status" style={placement ? subgridCellStyle : { display: 'flex', alignItems: 'center' }}>
+            {placement ? renderGroupStatuses(true) : renderLoneStatus(true)}
           </span>
           <span className="bill-col-year" style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
             {(() => {
@@ -315,7 +327,7 @@ export const BillRow = memo(function BillRow({
                 <SessionChip
                   session={chip}
                   onClick={onYearClick ? () => onYearClick(bill.yearStart!) : undefined}
-                  isActive={bill.yearStart != null && filterYears.includes(bill.yearStart)}
+                  isActive={bill.yearStart != null && filter.year.includes(bill.yearStart)}
                 />
               )
             })()}
@@ -324,18 +336,19 @@ export const BillRow = memo(function BillRow({
           <RelevanceChip
             score={bill.relevanceScore}
             onClick={bill.relevanceScore != null ? () => onRelevanceClick(bill.relevanceScore!) : undefined}
-            isActive={bill.relevanceScore != null && filterMinRelevance > 0 && bill.relevanceScore >= filterMinRelevance}
+            isActive={bill.relevanceScore != null && filter.minRelevance > 0 && bill.relevanceScore >= filter.minRelevance}
           />
         </div>
         {/* Mobile-only: bill number, status, relevance — priority pinned to right edge */}
         <div className="bill-row-mobile-meta">
-          {renderNumbers()}
-          {renderStatuses(false)}
+          {placement
+            ? <div data-group-pairs style={PAIRS}>{renderGroupNumbers(1)}{renderGroupStatuses(false, 2)}</div>
+            : <>{renderLoneNumber()}{renderLoneStatus(false)}</>}
           {bill.relevanceScore != null && (
             <RelevanceChip
               score={bill.relevanceScore}
               onClick={() => onRelevanceClick(bill.relevanceScore!)}
-              isActive={filterMinRelevance > 0 && bill.relevanceScore >= filterMinRelevance}
+              isActive={filter.minRelevance > 0 && bill.relevanceScore >= filter.minRelevance}
             />
           )}
           <span style={{ flex: 1 }} />
@@ -350,10 +363,10 @@ export const BillRow = memo(function BillRow({
                   <PriorityBadge priority={bill.priority} />
                 </button>
               )
-              : null
+              : isNewMatch ? <NewMatchChip /> : null
           }
         </div>
-        <div style={{ fontSize: fontSize.base, fontWeight: fontWeight.bold, color: color.textPrimary, marginBottom: 3, lineHeight: 1.35, fontFamily: "'Source Serif 4', serif", display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}>
+        <div style={{ ...BILL_TITLE_TEXT, fontSize: fontSize.base, color: color.textPrimary, marginBottom: 3, lineHeight: 1.35, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}>
           {/* Mid-width fallback for the Draft marker — hidden by default (see
               mobile.css .bill-title-draft-marker). The title's own box is the
               full-width flexible column (unlike the fixed-pixel chip-grid
@@ -381,7 +394,7 @@ export const BillRow = memo(function BillRow({
                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); onTagClick(tag) }}
                 onMouseEnter={() => setHoveredChip(`tag-${tag}`)}
                 onMouseLeave={() => setHoveredChip(null)}
-                style={selectedTags.includes(tag) ? TAG_CHIP_ACTIVE : hoveredChip === `tag-${tag}` ? TAG_CHIP_HOVERED : TAG_CHIP}
+                style={filter.tag.includes(tag) ? TAG_CHIP_ACTIVE : hoveredChip === `tag-${tag}` ? TAG_CHIP_HOVERED : TAG_CHIP}
               >
                 {tag}
               </button>
@@ -396,33 +409,29 @@ export const BillRow = memo(function BillRow({
           <span style={{ ...SECTION_LABEL, flexShrink: 0 }}>Position</span>
           {isAdmin
             ? (
-              <HoverTooltip text={positionTooltip}>
-                <CompactPositionSelect
-                  billId={bill.id}
-                  current={bill.position}
-                  options={positionVocabulary}
-                  onChange={(p) => onPositionChange(bill.id, p)}
-                  isFiltered={bill.position != null && filterPositions.includes(bill.position)}
-                  size="lg"
-                />
-              </HoverTooltip>
+              <CompactPositionSelect
+                billId={bill.id}
+                current={bill.position}
+                options={positionVocabulary}
+                onChange={(p) => onPositionChange(bill.id, p)}
+                isFiltered={bill.position != null && filter.position.includes(bill.position)}
+                size="lg"
+              />
             )
             : bill.position
               ? (
-                <HoverTooltip text={positionTooltip}>
-                  <button
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPositionClick(bill.position!) }}
-                    onMouseEnter={() => setHoveredChip('position')}
-                    onMouseLeave={() => setHoveredChip(null)}
-                    style={{
-                      background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'inline-flex',
-                      outline: filterPositions.includes(bill.position!) ? `2px solid ${color.accentBlue}` : hoveredChip === 'position' ? `2px solid ${color.accentBlueMuted}` : 'none',
-                      outlineOffset: 3, borderRadius: radius.sm,
-                    }}
-                  >
-                    <PositionBadge position={bill.position} />
-                  </button>
-                </HoverTooltip>
+                <button
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPositionClick(bill.position!) }}
+                  onMouseEnter={() => setHoveredChip('position')}
+                  onMouseLeave={() => setHoveredChip(null)}
+                  style={{
+                    background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'inline-flex',
+                    outline: filter.position.includes(bill.position!) ? `2px solid ${color.accentBlue}` : hoveredChip === 'position' ? `2px solid ${color.accentBlueMuted}` : 'none',
+                    outlineOffset: 3, borderRadius: radius.sm,
+                  }}
+                >
+                  <PositionBadge position={bill.position} />
+                </button>
               )
               : <span style={{ fontSize: fontSize.sm, color: color.borderStrong }}>— Not set</span>
           }
@@ -500,28 +509,29 @@ export const BillRow = memo(function BillRow({
       <div className="bill-col-priority">
         {isAdmin
           ? (
-            <HoverTooltip text={isNewMatch ? 'New keyword match — set a priority or dismiss' : "This bill's priority level"}>
-              {renderPriorityControl()}
-            </HoverTooltip>
+            // Only a new match's control needs a word: its label alone does not say what to do.
+            isNewMatch
+              ? <HoverTooltip text="New keyword match — set a priority or dismiss">{renderPriorityControl()}</HoverTooltip>
+              : renderPriorityControl()
           )
           : bill.priority
             ? (
-              <HoverTooltip text="This bill's priority level">
-                <button
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPriorityClick(bill.priority!) }}
-                  onMouseEnter={() => setHoveredChip('priority')}
-                  onMouseLeave={() => setHoveredChip(null)}
-                  style={{
-                    background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'inline-flex',
-                    outline: filterPriorities.includes(bill.priority!) ? `2px solid ${color.accentBlue}` : hoveredChip === 'priority' ? `2px solid ${color.accentBlueMuted}` : 'none',
-                    outlineOffset: 2, borderRadius: radius.sm,
-                  }}
-                >
-                  <PriorityBadge priority={bill.priority} />
-                </button>
-              </HoverTooltip>
+              <button
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPriorityClick(bill.priority!) }}
+                onMouseEnter={() => setHoveredChip('priority')}
+                onMouseLeave={() => setHoveredChip(null)}
+                style={{
+                  background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'inline-flex',
+                  outline: filter.priority.includes(bill.priority!) ? `2px solid ${color.accentBlue}` : hoveredChip === 'priority' ? `2px solid ${color.accentBlueMuted}` : 'none',
+                  outlineOffset: 2, borderRadius: radius.sm,
+                }}
+              >
+                <PriorityBadge priority={bill.priority} />
+              </button>
             )
-            : <span style={{ fontSize: fontSize.sm, color: color.borderStrong }}>—</span>
+            : isNewMatch
+              ? <NewMatchChip />
+              : <span style={{ fontSize: fontSize.sm, color: color.borderStrong }}>—</span>
         }
       </div>
     </div>

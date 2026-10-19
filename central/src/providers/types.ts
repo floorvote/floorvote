@@ -1,6 +1,6 @@
 import type { Env } from '../types'
 import type { StatusStage } from '../../../shared/statusStages'
-import type { ExtraDisplay } from '../../../shared/providerExtras'
+import type { ExtraDisplay, ExtraPlacement } from '../../../shared/providerExtras'
 import type { CalendarKind } from '../../../shared/calendarKinds'
 import type { RelationshipKind } from '../../../shared/relationshipKinds'
 import type { DataAttribution } from '../../../shared/dataAttribution'
@@ -292,6 +292,24 @@ export interface ProviderVocabulary {
    * more than a link.
    */
   readonly relationships?: VocabularyRelationships
+  /**
+   * The states where instances suggest companions from matching titles (#521),
+   * and the bill types that can be suggested. Omitted when the provider opts in
+   * no state. Opt in only a state whose provider names no identical companions
+   * (never one in `relationships.identicalStates`) and whose titles are long
+   * enough to tell bills apart. Central serves each bill's title key from it on
+   * every read, so a change reaches an instance's pages at once, and its stored
+   * keys on each bill's next delivery (or a metadata refresh).
+   */
+  readonly titleCompanions?: VocabularyTitleCompanions
+}
+
+/** Title-matched companion suggestions (`ProviderVocabulary.titleCompanions`). */
+export interface VocabularyTitleCompanions {
+  /** The states opted in, by two-letter abbreviation. */
+  readonly states: readonly string[]
+  /** The bill types that can be suggested, by the value the provider writes to `bills.bill_type`. Never a resolution. */
+  readonly billTypes: readonly string[]
 }
 
 /**
@@ -317,6 +335,14 @@ export interface VocabularyRelationships {
    * labels it lists, and the rest fall through to `default`.
    */
   readonly states?: Readonly<Record<string, Readonly<Record<string, RelationshipKind>>>>
+  /**
+   * The states whose feeds carry a label this vocabulary maps to `identical`,
+   * as central's stored relationships show. Read only to keep title-matched
+   * companion suggestions (`ProviderVocabulary.titleCompanions`) off there,
+   * since two sources of grouping would compete. The vocabulary test fails if
+   * one is opted in. List a state here when its feed starts naming companions.
+   */
+  readonly identicalStates?: readonly string[]
 }
 
 /**
@@ -365,6 +391,8 @@ export interface VocabularyExtra {
   readonly explainer?: string
   /** How the bill page shows its value. */
   readonly display: ExtraDisplay
+  /** Where the bill page shows it. `panel` (the "Additional information" fold-out) when missing. */
+  readonly placement?: ExtraPlacement
 }
 
 /**
@@ -387,7 +415,7 @@ export type FieldInventory = Readonly<Record<string, FieldUse>>
 /** What a provider does with one feed field (`FieldInventory`). */
 export type FieldUse = 'mapped' | { readonly extra: string } | { readonly ignored: string }
 
-export type { StatusStage, ExtraDisplay, CalendarKind, RelationshipKind }
+export type { StatusStage, ExtraDisplay, ExtraPlacement, CalendarKind, RelationshipKind }
 
 /** One session's vote dataset, as `listVoteDatasets` lists it. */
 export interface VoteDataset {
@@ -423,6 +451,22 @@ export interface ProviderContext<K extends ProviderEnvKey = ProviderEnvKey> {
    */
   ids(kind: string, nativeKeys: readonly string[]): Promise<Map<string, number>>
   /**
+   * What the provider keeps between runs: small text entries under keys it
+   * names, for what it fetched once and shouldn't fetch again (a feed that
+   * answers one request per record, and allows few requests, is the case it
+   * exists for). Durable, and the provider's own: no provider reads
+   * another's. Nothing expires, so a provider drops what it no longer needs.
+   * An entry is text, so the provider serializes what it keeps.
+   */
+  cache: {
+    /** Every entry whose key starts with `prefix` (the empty prefix lists them all), by key. */
+    list(prefix: string): Promise<Map<string, string>>
+    /** Add these entries, replacing any with the same key. */
+    put(entries: Readonly<Record<string, string>>): Promise<void>
+    /** Remove these keys. A key that isn't there is ignored. */
+    drop(keys: readonly string[]): Promise<void>
+  }
+  /**
    * The central ids already minted for these keys, without minting any: a key
    * central has never seen is left out. For linking to a record the provider
    * isn't sure exists, such as the earlier session's copy of a carried-over
@@ -430,12 +474,29 @@ export interface ProviderContext<K extends ProviderEnvKey = ProviderEnvKey> {
    */
   knownIds(kind: string, nativeKeys: readonly string[]): Promise<Map<string, number>>
   /**
+   * Whether core has stored a record of this provider's for the session whose
+   * native key matches `glob` (SQLite GLOB). For a provider that must tell a
+   * feed that has nothing yet from one that lost what it had.
+   */
+  hasStored(sessionId: number, glob: string): Promise<boolean>
+  /**
    * The people core has stored for this provider, by central id ascending, for
    * resolving the names its records use. People a cutover carried over from
    * another provider come after the rest, so where two share a name, the
    * last one listed is the person instances already know.
    */
   people(): Promise<{ peopleId: number; name: string; role: string | null }[]>
+  /**
+   * Email the operators an ops alert (the `ALERT_EMAILS` recipients), for
+   * something a person has to look at that would otherwise go unnoticed,
+   * such as a record the provider has set aside because it can't read it.
+   * Core sends it, with the provider's id in the subject, and it never
+   * throws. With no recipients set it only logs. A throw doesn't always
+   * alert on its own (a failed body-events month is only logged), so call
+   * this for anything a person must see. The provider keeps whatever
+   * stops it alerting twice for one thing (`cache`).
+   */
+  alert(message: { subject: string; text: string }): Promise<void>
 }
 
 /** A session as central stores it, handed to the list methods. */
@@ -674,7 +735,8 @@ export interface MeasurePerson {
   opensecrets_id?: string
   knowwho_pid?: number
   ballotpedia?: string
-  bioguide_id?: string
+  /** The member's Bioguide id. Absent leaves a stored one alone on ingest, and null clears it. */
+  bioguide_id?: string | null
   bio?: {
     social?: {
       biography?: string
@@ -726,7 +788,7 @@ interface MeasureVote {
    * Per-member votes. getBill never returns these (LegiScan needs a getRollCall
    * per vote); providers that include them inline, such as DC LIMS, set this and
    * the ingestor writes roll_call_votes. vote_id follows LegiScan: 1 Yea, 2 Nay,
-   * 3 NV, 4 Absent.
+   * 3 NV, 4 Absent. Virginia's Abstain, which LegiScan has no id for, is 5.
    */
   member_votes?: { people_id: number | null; vote_id: number; vote_text: string }[]
 }
