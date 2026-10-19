@@ -6,6 +6,7 @@ import { setupLsDb } from '../helpers/setupLsDb'
 import { CALL_LOG_RETENTION_DAYS, pruneCallLogs } from '../../src/lib/pruneCallLogs'
 import { legiscanCallsThisMonth } from '../../src/lib/legiscanBudget'
 import { loadStateRows } from '../../src/lib/stateRows'
+import { app } from '../../src/index-legiscan'
 
 // 2026-10-14 15:30:00 UTC. The cutoff is that moment CALL_LOG_RETENTION_DAYS back.
 const NOW = new Date('2026-10-14T15:30:00Z')
@@ -182,5 +183,51 @@ describe('pruneCallLogs: what readers see inside the window', () => {
     expect(before.length).toBeGreaterThan(0)
     await pruneCallLogs(db(), NOW)
     expect(await series()).toEqual(before)
+  })
+})
+
+describe('pruneCallLogs: a session\'s newest pass is kept', () => {
+  const sessionRow = (sessionId: number, state: string) => env.DB.prepare(
+    `INSERT INTO sessions (session_id, state_id, state, year_start, year_end, session_tag, session_title, session_name, provider)
+     VALUES (?, 1, ?, 2026, 2026, '', 'Regular', ?, 'legiscan')`).bind(sessionId, state, `${state} 2026`).run()
+  const syncStates = async () => {
+    const res = await app.fetch(new Request('http://central/admin/dash/sync/states', { headers: { Authorization: 'Bearer sek' } }), { ...env, ADMIN_SECRET: 'sek' } as any)
+    return (await res.json() as any).data.states as { state: string; lastSyncedAt: string | null }[]
+  }
+
+  it('keeps the only pass of a state whose last pass is 200 days old, on the States page and the Sync page', async () => {
+    await sessionRow(1, 'RI')
+    await ticks([['RI', 1, daysAgo(200)]])
+    const r = await pruneCallLogs(db(), NOW)
+    expect(r.sessionSyncLog).toBe(0)
+    expect(await tickTimes()).toEqual([daysAgo(200)])
+    const ri = (await loadStateRows(db(), { ...env, LIMS_API_KEY: 'k' } as any, NOW)).find(x => x.state === 'RI')!
+    expect(ri.schedule.lastPass).toMatchObject({ billsChecked: 3 })
+    expect((await syncStates()).find(x => x.state === 'RI')!.lastSyncedAt).toBe(daysAgo(200))
+  })
+
+  it('with an old and a new pass of one session, deletes only the old one', async () => {
+    await ticks([['RI', 1, daysAgo(300)], ['RI', 1, daysAgo(200)], ['RI', 1, daysAgo(1)]])
+    expect(await pruneCallLogs(db(), NOW)).toMatchObject({ sessionSyncLog: 2 })
+    expect(await tickTimes()).toEqual([daysAgo(1)])
+  })
+
+  it('keeps each session\'s newest pass independently, and a tie goes to the later row', async () => {
+    await ticks([['RI', 1, daysAgo(300)], ['RI', 1, daysAgo(250)], ['NJ', 2, daysAgo(400)],
+      ['NJ', 3, daysAgo(210)], ['NJ', 3, daysAgo(210)]])
+    await pruneCallLogs(db(), NOW)
+    const rows = (await db().select().from(schema.sessionSyncLog).all()).sort((a, b) => a.id - b.id)
+    expect(rows.map(r => [r.sessionId, r.syncedAt])).toEqual([[1, daysAgo(250)], [2, daysAgo(400)], [3, daysAgo(210)]])
+    expect(rows[2].id).toBe(Math.max(...rows.map(r => r.id)))
+  })
+
+  it('still prunes past a batch made only of kept rows', async () => {
+    // Four stale sessions each hold their one newest pass, older than all the deletable rows' batch boundary.
+    await ticks([['A', 10, daysAgo(900)], ['A', 11, daysAgo(899)], ['A', 12, daysAgo(898)], ['A', 13, daysAgo(897)]])
+    await env.DB.batch(Array.from({ length: 30 }, (_, i) => env.DB.prepare(
+      `INSERT INTO session_sync_log (synced_at, state, session_id, session_name) VALUES (?, 'RI', 1, 'RI 2026')`).bind(oldSecond(i))))
+    await ticks([['RI', 1, daysAgo(1)]])
+    expect(await pruneCallLogs(db(), NOW, { batchSize: 4 })).toMatchObject({ sessionSyncLog: 30 })
+    expect((await tickTimes()).length).toBe(5)
   })
 })

@@ -95,6 +95,9 @@ describe('call-log indexes: the queries the States page runs', () => {
       expect(p).toMatch(/INDEX idx_(api_call_log|session_sync_log)_/)
       expect(p).not.toMatch(NOT_FULL_SCAN)
     }
+    // The check that a pass is its session's newest looks up the session's rows by index.
+    const syncDelete = await planOf(deletes.find(c => c.sql.includes('DELETE FROM session_sync_log'))!)
+    expect(syncDelete).toMatch(/SEARCH \w+ USING (COVERING )?INDEX idx_session_sync_log_session_synced/)
   })
 })
 
