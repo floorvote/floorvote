@@ -23,6 +23,7 @@ vi.stubGlobal('fetch', fetchMock)
 
 import worker from '../../src/index-legiscan'
 import { runSnapshotSync } from '../../src/cron/sync-snapshots'
+import { checkVoteDatasets } from '../../src/cron/vote-datasets'
 import { mga } from '../../src/providers/mga'
 import { lis } from '../../src/providers/lis'
 import { LIS_FILES, LIS_FILES_BASE, type LisFile, type LisFiles } from '../../src/providers/lis/client'
@@ -323,5 +324,259 @@ describe('LegiScan ingest', () => {
       expect(legiscan.getBill).toHaveBeenCalledOnce()
       expect(m.retry).toHaveBeenCalledOnce()
     }
+  })
+})
+
+// Every other producer of an ingest sends a bill to the queue its provider owns
+// too (#673), not to the shared queue behind LegiScan's work. Each producer runs
+// through its real route (or cron, or consumer) against a central whose queues
+// are all mocks, and the test reads which queue each bill landed on.
+describe('where every other producer queues a bill', () => {
+  type QueueName = 'shared' | 'mga' | 'lis' | 'lims'
+  type Fixture = { label: string; provider: string; billId: number; sessionId: number; state: string; own: QueueName }
+  const FIXTURES: Fixture[] = [
+    { label: 'MGA', provider: 'mga', billId: 9101, sessionId: 101, state: 'MD', own: 'mga' },
+    { label: 'LIS', provider: 'lis', billId: 9102, sessionId: 102, state: 'VA', own: 'lis' },
+    { label: 'LIMS', provider: 'lims', billId: 9103, sessionId: 103, state: 'DC', own: 'lims' },
+    { label: 'LegiScan', provider: 'legiscan', billId: 9104, sessionId: 104, state: 'RI', own: 'shared' },
+  ]
+  const ALL = { mga: true, lis: true, lims: true }
+  const QUEUE_NAMES: QueueName[] = ['shared', 'mga', 'lis', 'lims']
+
+  let seq = 0
+  /** A tenant, and one bill of each provider (each in a session its provider owns). Returns the tenant. */
+  async function seedWorld(): Promise<string> {
+    const d = db()
+    const tenantId = `pt${++seq}`
+    await d.insert(schema.tenants).values({ tenantId, name: tenantId, stateCoverage: '[]', active: true })
+    await d.insert(schema.keywordRegistry).values({ tenantId, keyword: 'tax' })
+    if (seq === 1 || !(await d.select().from(schema.stateProviders).where(eq(schema.stateProviders.state, 'DC')).all()).length) {
+      await d.insert(schema.stateProviders).values({ state: 'DC', provider: 'lims', previousProvider: 'legiscan' })
+    }
+    for (const f of FIXTURES) {
+      if (!(await d.select().from(schema.sessions).where(eq(schema.sessions.sessionId, f.sessionId)).all()).length) {
+        await d.insert(schema.sessions).values({
+          sessionId: f.sessionId, state: f.state, stateId: 0, yearStart: 2026, yearEnd: 2026,
+          sessionName: `${f.state} 2026`, sessionTitle: `${f.state} 2026`, provider: f.provider,
+        })
+      }
+      if (!(await d.select().from(schema.bills).where(eq(schema.bills.billId, f.billId)).all()).length) {
+        await d.insert(schema.bills).values({
+          billId: f.billId, sessionId: f.sessionId, state: f.state, stateId: 0, billNumber: 'HB1',
+          title: 'A sales tax act', changeHash: 'h', status: 1, provider: f.provider,
+        })
+      }
+    }
+    return tenantId
+  }
+  const link = (tenantId: string, billId: number, matchType: 'keyword' | 'manual' | null) =>
+    db().insert(schema.billTenants).values({ billId, tenantId, matchType })
+  const textRow = (docId: number, billId: number, over: Partial<typeof schema.billTexts.$inferInsert> = {}) =>
+    db().insert(schema.billTexts).values({ docId, billId, date: '2026-01-01', type: 'Introduced', ...over })
+
+  const request = (e: Record<string, any>, method: string, path: string, body?: unknown) =>
+    worker.fetch(new Request(`http://central/api${path}`, {
+      method,
+      headers: { 'x-admin-secret': ADMIN_SECRET, 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }), e as any, {} as any)
+
+  /** Which queues a bill's message reached, and how many times each. */
+  function landed(q: Record<QueueName, MockQueue>, billId: number): Partial<Record<QueueName, number>> {
+    const out: Partial<Record<QueueName, number>> = {}
+    for (const name of QUEUE_NAMES) {
+      const n = bodies(q[name]).filter(b => b.billId === billId).length
+      if (n > 0) out[name] = n
+    }
+    return out
+  }
+
+  type Producer = {
+    name: string
+    /** Whether the producer sends several bills in one request. */
+    batch: boolean
+    /** Sets up the rows the route reads for these bills. */
+    prepare: (tenantId: string, fixtures: Fixture[]) => Promise<void>
+    run: (e: Record<string, any>, tenantId: string, fixtures: Fixture[]) => Promise<Response>
+  }
+  const PRODUCERS: Producer[] = [
+    {
+      name: 'a tenant seed', batch: false,
+      prepare: async () => {},
+      run: (e, t, [f]) => request(e, 'POST', `/tenants/seed-session/${t}?sessionId=${f.sessionId}`),
+    },
+    {
+      name: 'a texts re-download', batch: true,
+      prepare: async (t, fs) => { for (const f of fs) { await link(t, f.billId, 'keyword'); await textRow(f.billId + 1000, f.billId) } },
+      run: (e, t) => request(e, 'POST', `/tenants/redownload-texts/${t}`),
+    },
+    {
+      name: 'a single bill promotion', batch: false,
+      prepare: async () => {},
+      run: (e, t, [f]) => request(e, 'POST', `/tenants/promote-bill/${t}/${f.billId}`, {}),
+    },
+    {
+      name: 'a bulk bill promotion', batch: true,
+      prepare: async () => {},
+      run: (e, t, fs) => request(e, 'POST', `/tenants/promote-bills/${t}`, { billIds: fs.map(f => f.billId) }),
+    },
+    {
+      name: 'a tenant\'s fetch of bills without tracking them', batch: true,
+      prepare: async (t, fs) => { for (const f of fs) await link(t, f.billId, null) },
+      run: (e, t, fs) => request(e, 'POST', `/tenants/fetch-bills/${t}`, { billIds: fs.map(f => f.billId) }),
+    },
+    {
+      name: 'a keyword re-run', batch: true,
+      prepare: async (t, fs) => { for (const f of fs) await link(t, f.billId, null) },
+      run: (e, t) => request(e, 'POST', `/admin/sync-keywords/${t}`),
+    },
+    {
+      name: 'an operator\'s fetch of missing texts', batch: true,
+      prepare: async (t, fs) => { for (const f of fs) await link(t, f.billId, 'keyword') },
+      run: (e, t) => request(e, 'POST', `/admin/fetch-missing-texts/${t}`),
+    },
+    {
+      name: 'an operator\'s refetch of fragment texts', batch: true,
+      prepare: async (_t, fs) => { for (const f of fs) await textRow(f.billId + 2000, f.billId, { r2Key: `texts/${f.billId}`, stateLink: 'https://example.test/doc#v2' }) },
+      run: (e) => request(e, 'POST', '/admin/refetch-fragment-texts'),
+    },
+    {
+      name: 'an operator\'s single-bill re-ingest', batch: false,
+      prepare: async () => {},
+      run: (e, _t, [f]) => request(e, 'POST', `/admin/reingest-bill/${f.billId}`),
+    },
+  ]
+
+  describe.each(PRODUCERS)('$name', (producer) => {
+    it.each(FIXTURES)('sends a $label bill to its own queue when every provider queue is bound', async (f) => {
+      const tenantId = await seedWorld()
+      await producer.prepare(tenantId, [f])
+      const { env: e, q } = makeEnv(ALL)
+      const res = await producer.run(e, tenantId, [f])
+      expect(res.status).toBe(200)
+      expect(landed(q, f.billId)).toEqual({ [f.own]: 1 })
+    })
+
+    it.each(FIXTURES.filter(f => f.own !== 'shared'))('sends a $label bill to the shared queue when its queue is not bound', async (f) => {
+      const tenantId = await seedWorld()
+      await producer.prepare(tenantId, [f])
+      const { env: e, q } = makeEnv({ ...ALL, [f.own]: false })
+      const res = await producer.run(e, tenantId, [f])
+      expect(res.status).toBe(200)
+      expect(landed(q, f.billId)).toEqual({ shared: 1 })
+      expect(bodies(q[f.own])).toEqual([])
+    })
+
+    it('sends a bill of a provider central does not know to the shared queue', async () => {
+      const tenantId = await seedWorld()
+      const ghost: Fixture = { label: 'unknown', provider: 'nosuch', billId: 9105, sessionId: 104, state: 'RI', own: 'shared' }
+      await db().insert(schema.bills).values({
+        billId: ghost.billId, sessionId: ghost.sessionId, state: ghost.state, stateId: 0, billNumber: 'HB1',
+        title: 'A sales tax act', changeHash: 'h', status: 1, provider: ghost.provider,
+      })
+      await producer.prepare(tenantId, [ghost])
+      const { env: e, q } = makeEnv(ALL)
+      const res = await producer.run(e, tenantId, [ghost])
+      expect(res.status).toBe(200)
+      expect(landed(q, ghost.billId)).toEqual({ shared: 1 })
+    })
+  })
+
+  // Seed and the keyword re-run read the bill's row to find it, so only the rest can be handed a bill with none.
+  describe.each(PRODUCERS.filter(p => !['a tenant seed', 'a keyword re-run'].includes(p.name)))('$name, for a bill with no row', (producer) => {
+    it('sends it to the shared queue and does not drop it', async () => {
+      const tenantId = await seedWorld()
+      const rowless: Fixture = { label: 'rowless', provider: 'legiscan', billId: 987001, sessionId: 104, state: 'RI', own: 'shared' }
+      await producer.prepare(tenantId, [rowless])
+      const { env: e, q } = makeEnv(ALL)
+      const res = await producer.run(e, tenantId, [rowless])
+      expect(res.status).toBe(200)
+      expect(landed(q, rowless.billId)).toEqual({ shared: 1 })
+    })
+  })
+
+  describe.each(PRODUCERS.filter(p => p.batch))('$name, with bills of every provider in one request', (producer) => {
+    it('splits the batch so each bill lands once, on its own provider\'s queue', async () => {
+      const tenantId = await seedWorld()
+      await producer.prepare(tenantId, FIXTURES)
+      const { env: e, q } = makeEnv(ALL)
+      const res = await producer.run(e, tenantId, FIXTURES)
+      expect(res.status).toBe(200)
+      for (const f of FIXTURES) expect(landed(q, f.billId)).toEqual({ [f.own]: 1 })
+    })
+
+    it('sends the providers without a bound queue to the shared queue with LegiScan\'s, and the rest to their own', async () => {
+      const tenantId = await seedWorld()
+      await producer.prepare(tenantId, FIXTURES)
+      const { env: e, q } = makeEnv({ mga: true })
+      const res = await producer.run(e, tenantId, FIXTURES)
+      expect(res.status).toBe(200)
+      expect(landed(q, 9101)).toEqual({ mga: 1 })
+      for (const id of [9102, 9103, 9104]) expect(landed(q, id)).toEqual({ shared: 1 })
+    })
+  })
+
+  describe('a batch of more than one send\'s worth', () => {
+    it('keeps every bill of a provider together on its queue, in batches of at most 100', async () => {
+      const tenantId = await seedWorld()
+      const ids = Array.from({ length: 150 }, (_, i) => 50000 + i)
+      // One statement each, with the ids as one JSON parameter (D1 binds at most 100).
+      const list = JSON.stringify(ids)
+      await env.DB.prepare(`INSERT INTO bills (bill_id, session_id, state, state_id, bill_number, title, change_hash, status, provider)
+        SELECT value, 101, 'MD', 0, 'HB' || value, 'A sales tax act', 'h', 1, 'mga' FROM json_each(?1)`).bind(list).run()
+      await env.DB.prepare(`INSERT INTO bill_tenants (bill_id, tenant_id, match_type) SELECT value, ?2, NULL FROM json_each(?1)`).bind(list, tenantId).run()
+      const { env: e, q } = makeEnv(ALL)
+      const res = await request(e, 'POST', `/tenants/fetch-bills/${tenantId}`, { billIds: ids })
+      expect(res.status).toBe(200)
+      expect(billIds(q.mga).sort((a, b) => a - b)).toEqual(ids)
+      expect(bodies(q.shared)).toEqual([])
+      expect(q.mga.sendBatch.mock.calls.map(c => c[0].length)).toEqual([90, 60])
+    })
+  })
+
+  describe('vote datasets', () => {
+    const deferred = (q: MockQueue) => q.send.mock.calls.filter(c => c[1]?.delaySeconds !== undefined)
+
+    it.each([['mga', 'mga'], ['lis', 'lis'], ['lims', 'lims'], ['legiscan', 'shared']] as const)(
+      'defers a %s load behind another in the batch onto that provider\'s queue',
+      async (providerId, own) => {
+        const { env: e, q } = makeEnv(ALL)
+        const load = (sessionId: number) => ({ kind: 'vote-dataset' as const, providerId, sessionId, key: 'test-key', hash: 'h' })
+        // The first load runs here and fails (no fetch is stubbed for it), which still counts as the batch's one load.
+        fetchMock.mockImplementation(async () => { throw new Error('no network in this test') })
+        const messages = [load(1), load(2)].map(body => ({ body, ack: vi.fn(), retry: vi.fn() }))
+        await worker.queue({ queue: SHARED_NAME, messages } as any, e)
+        expect(messages[1].ack).toHaveBeenCalledOnce()
+        expect(deferred(q[own]).map(c => c[0])).toEqual([load(2)])
+        for (const other of QUEUE_NAMES.filter(n => n !== own)) expect(deferred(q[other])).toEqual([])
+      })
+
+    it('defers a load to the shared queue when its provider\'s queue is not bound', async () => {
+      const { env: e, q } = makeEnv()
+      fetchMock.mockImplementation(async () => { throw new Error('no network in this test') })
+      const load = (sessionId: number) => ({ kind: 'vote-dataset' as const, providerId: 'mga', sessionId, key: 'test-key', hash: 'h' })
+      const messages = [load(1), load(2)].map(body => ({ body, ack: vi.fn(), retry: vi.fn() }))
+      await worker.queue({ queue: SHARED_NAME, messages } as any, e)
+      expect(deferred(q.shared).map(c => c[0])).toEqual([load(2)])
+    })
+
+    it('queues LegiScan\'s changed dataset on the shared queue when every provider queue is bound', async () => {
+      const d = db()
+      await d.insert(schema.tenants).values({ tenantId: 'ri-team', name: 'RI team', stateCoverage: '["RI"]', active: true })
+      await d.insert(schema.sessions).values({
+        sessionId: 104, state: 'RI', stateId: 39, yearStart: 2026, yearEnd: 2026, sessionName: 'RI 2026', sessionTitle: 'RI 2026',
+      })
+      fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+        const url = new URL(String(input instanceof Request ? input.url : input))
+        if (url.searchParams.get('op') === 'getDatasetList') {
+          return new Response(JSON.stringify({ status: 'OK', datasetlist: [{ session_id: 104, state_id: 39, dataset_hash: 'new-hash', dataset_size: 10, access_key: 'test-key' }] }))
+        }
+        throw new Error(`no network in this test: ${url}`)
+      })
+      const { env: e, q } = makeEnv(ALL)
+      await checkVoteDatasets({ ...e, LEGISCAN_API_KEY: 'test-api-key' } as any, db())
+      expect(q.shared.send).toHaveBeenCalledWith({ kind: 'vote-dataset', providerId: 'legiscan', sessionId: 104, key: 'test-key', hash: 'new-hash' })
+      for (const own of [q.mga, q.lis, q.lims]) expect(bodies(own)).toEqual([])
+    })
   })
 })

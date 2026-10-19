@@ -1,5 +1,6 @@
 import type { DemoSeedModule, DemoSeedSession } from '../types'
 import type { TaxonomyItem } from '../../taxonomy'
+import { LEGISCAN_ATTRIBUTION } from '../../../../../shared/dataAttribution'
 
 /** Eight themes, each represented by at least two of the seed's 20 bills. */
 const TAXONOMY: TaxonomyItem[] = [
@@ -73,4 +74,6 @@ Describe what the bill does, not whether it is good policy. The organization rec
   modules: MODULES,
   sessions: { data: SESSIONS },
   stateCoverage: ['MI', 'WI', 'IL', 'IN', 'US'] as string[],
+  // Every state and Congress here is on LegiScan. A live instance learns this from central; the demo never calls it.
+  attribution: { providers: [{ id: 'legiscan', ...LEGISCAN_ATTRIBUTION }] },
 }

@@ -1,13 +1,13 @@
 import { env } from 'cloudflare:test'
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink } from '../helpers'
+import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink, stubFetch } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { users, sessions, authEvents, emailChanges, emailChangeReports } from '../../src/db/schema'
+import { users, sessions, authEvents, emailChanges, emailChangeReports, emailSendStats } from '../../src/db/schema'
 import { _resetSuperadminAllowlistCache } from '../../src/lib/superadminCentral'
 import { hashToken } from '../../src/lib/crypto'
-import { issueNotMeToken } from '../../src/lib/emailChangeReport'
+import { issueNotMeToken, reportNotMe } from '../../src/lib/emailChangeReport'
 
 // "This wasn't me" from the old address of an email change (#415). The old
 // address's notices carry a link whose button, once pressed, signs the member
@@ -416,6 +416,8 @@ describe('pressing the button', () => {
   })
 
   it('still signs the member out, and says so, when no alert could be sent', async () => {
+    // Both providers are down: the binding throws, and the fallback (Resend) answers 500.
+    stubFetch(() => new Response('upstream error', { status: 500 }))
     sendFails = true
     const r = await press(token)
     expect(r).toMatchObject({ status: 200, body: { ok: true, alerted: false } })
@@ -515,5 +517,84 @@ describe('demo', () => {
     expect(sent).toHaveLength(0)
     const r = await call('/api/auth/email-change/not-me/status', { method: 'POST', body: JSON.stringify({ token }) }, demo)
     expect(r).toMatchObject({ status: 200, body: { status: 'valid' } })
+  })
+})
+
+// The report to the admins goes out by the account purpose (#707): each alert
+// is its own send, so a batch of them can end differently, and each falls back
+// to the second provider and counts to the provider that sent it.
+describe('the report to the admins, by purpose', () => {
+  const cfError = (code: string) => Object.assign(new Error(code.toLowerCase()), { code })
+  function binding(fails: (to: string) => string | null) {
+    return {
+      send: vi.fn(async (m: Sent) => {
+        const code = fails(m.to[0])
+        if (code) throw cfError(code)
+        sent.push(m)
+        return { messageId: `cf-${sent.length}` }
+      }),
+    }
+  }
+  const withResend = { RESEND_API_KEY: 'test-api-key' }
+  type ResendBody = { to: string[]; subject: string; text: string }
+  const resendBodies = (spy: ReturnType<typeof stubFetch>) => spy.mock.calls.map(c => JSON.parse(String((c[1] as RequestInit).body)) as ResendBody)
+  async function stats() {
+    return Object.fromEntries((await getDb(env.DB).select().from(emailSendStats).all()).map(r => [r.provider, r]))
+  }
+  let token: string
+
+  beforeEach(async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await request(janeCookie, 'jane@newjob.org')
+    token = notMeTokenSentTo('jane@oldjob.org')
+    sent = []
+    await env.DB.prepare('DELETE FROM email_send_stats').run()
+  })
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
+
+  it('sends every alert through Resend when Cloudflare is down, and counts each attempt to its own provider', async () => {
+    const fetch = stubFetch(() => new Response(JSON.stringify({ id: 'rs-1' }), { status: 200 }))
+    const r = await press(token, { EMAIL: binding(() => 'E_INTERNAL_SERVER_ERROR'), ...withResend })
+    expect(r.body).toEqual({ ok: true, alerted: true, cancelled: true })
+    const bodies = resendBodies(fetch)
+    expect(bodies.map(b => b.to[0]).sort()).toEqual(['ada@org.org', 'olive@org.org'])
+    expect(bodies.every(b => b.subject.includes("didn't change their sign-in email"))).toBe(true)
+    const by = await stats()
+    expect(by.cloudflare).toMatchObject({ sent: 0, failed: 2, suppressed: 0 })
+    expect(by.resend).toMatchObject({ sent: 2, failed: 0 })
+  })
+
+  it('reports a mixed batch per alert: one rescued, one undeliverable, and the report still counts as alerted', async () => {
+    const fetch = stubFetch(() => new Response(JSON.stringify({ id: 'rs-1' }), { status: 200 }))
+    const EMAIL = binding(to => (to === 'olive@org.org' ? 'E_RECIPIENT_SUPPRESSED' : to === 'ada@org.org' ? 'E_INTERNAL_SERVER_ERROR' : null))
+    const r = await press(token, { EMAIL, ...withResend })
+    expect(r.body).toEqual({ ok: true, alerted: true, cancelled: true })
+    // The suppressed owner is not retried through Resend. The admin's alert is.
+    expect(resendBodies(fetch).map(b => b.to[0])).toEqual(['ada@org.org'])
+    const by = await stats()
+    expect(by.cloudflare).toMatchObject({ sent: 0, failed: 1, suppressed: 1 })
+    expect(by.resend).toMatchObject({ sent: 1, failed: 0 })
+  })
+
+  it('still signs the member out, and says nobody was alerted, when both providers are down for every alert', async () => {
+    const fetch = stubFetch(() => new Response('upstream error', { status: 500 }))
+    const r = await press(token, { EMAIL: binding(() => 'E_INTERNAL_SERVER_ERROR'), ...withResend })
+    expect(r).toMatchObject({ status: 200, body: { ok: true, alerted: false } })
+    expect(await sessionCount(jane)).toBe(0)
+    expect(fetch).toHaveBeenCalledTimes(2)
+    const by = await stats()
+    expect(by.cloudflare).toMatchObject({ failed: 2 })
+    expect(by.resend).toMatchObject({ failed: 2 })
+  })
+
+  it('sends no alert from a demo instance, by the purpose\'s rule alone', async () => {
+    const fetch = stubFetch()
+    const EMAIL = binding(() => null)
+    const r = await reportNotMe(testEnv({ EMAIL, DEMO_MODE: 'true', ...withResend }) as never, getDb(env.DB), token, { userAgent: null, ipCountry: null })
+    expect(r).toMatchObject({ ok: true, alerted: false })
+    expect(EMAIL.send).not.toHaveBeenCalled()
+    expect(fetch).not.toHaveBeenCalled()
+    expect(await getDb(env.DB).select().from(emailSendStats).all()).toHaveLength(0)
   })
 })

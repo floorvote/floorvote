@@ -7,7 +7,8 @@ import { isPreviouslyBounced } from './bouncedAddresses'
 import { superadminEmailStatus } from './superadminCentral'
 import { claimSend, releaseSend, adminSendChecks, type SendCheck, type SendLimit } from './adminSendLimits'
 import { recordAuthEvent } from './authEvents'
-import { sendBatch, resolveAssocName, type EmailMessage } from './email'
+import { senderFor, resolveAssocName } from './email'
+import type { SendResult } from '../../../shared/emailSender'
 import { renderEmailChangeConfirmEmail, renderEmailChangeNoticeEmail } from './emailChangeEmail'
 import { issueNotMeToken, notMeUrl } from './emailChangeReport'
 
@@ -54,6 +55,7 @@ export const EMAIL_CHANGE_ERRORS = {
   limit: "You've asked to change your email three times in the past day. Please try again tomorrow.",
   adminPending: 'An admin has an email change pending for your account.',
   sendFailed: "We couldn't send the confirmation email. Please try again in a little while.",
+  cannotReceive: "That address can't receive email. Check it for a typo, or use a different address.",
   centralUnavailable: "Can't check this address right now. Try again in a few minutes.",
   // Confirming
   invalidLink: 'This link is no longer valid. It may have been used already, or replaced by a newer request.',
@@ -142,14 +144,16 @@ export async function checkNewAddress(
 
 type RequestContext = { userAgent: string | null; ipCountry: string | null }
 
-/** Send through the demo-muted bulk path: a demo instance never sends these. */
-async function send(env: Env, db: AppDb, message: EmailMessage, tag: string): Promise<boolean> {
-  if (env.DEMO_MODE === 'true') {
-    console.log(`[${tag}] demo mode — suppressing`)
-    return false
-  }
-  const { sent } = await sendBatch(env, [message], tag, db)
-  return sent === 1
+/**
+ * Send by the account purpose: it falls back to the second provider, counts
+ * toward email health, and a demo instance never sends it (the purpose's rule
+ * says so, so there is no check here). A permanent failure means the address
+ * can't receive mail, and anything else is an outage worth trying again.
+ */
+async function send(env: Env, db: AppDb, message: { to: string[]; subject: string; html: string; text?: string }, tag: string): Promise<SendResult> {
+  const r = await senderFor(env, db).send({ purpose: 'account', ...message })
+  if (!r.ok) console.error(`[${tag}] not sent (${r.permanent ? 'permanent' : 'temporary'}): ${r.error}`)
+  return r
 }
 
 /**
@@ -171,7 +175,7 @@ async function noticeToOldAddress(
       stage, byAdmin, appUrl: env.APP_URL, instanceName: (await resolveAssocName(env, db)) ?? '', newEmail: change.newEmail,
       notMeUrl: notMeUrl(env.APP_URL, rawToken),
     })
-    if (!(await send(env, db, { to: [change.oldEmail], subject, html, text }, `email-change-notice-${stage}`))) {
+    if (!(await send(env, db, { to: [change.oldEmail], subject, html, text }, `email-change-notice-${stage}`)).ok) {
       console.error(`[email-change] the ${stage} notice to the old address did not go out`)
     }
   } catch (e) {
@@ -287,11 +291,16 @@ export async function requestEmailChange(
 
   const instanceName = (await resolveAssocName(env, db)) ?? ''
   const confirmation = renderEmailChangeConfirmEmail({ appUrl: env.APP_URL, instanceName, confirmUrl: confirmUrl(env.APP_URL, rawToken) })
-  if (!(await send(env, db, { to: [newEmail], ...confirmation }, 'email-change-confirm'))) {
+  const sentConfirmation = await send(env, db, { to: [newEmail], ...confirmation }, 'email-change-confirm')
+  if (!sentConfirmation.ok) {
     // Nobody can confirm a change whose link never went out, so it goes. The
     // claim stays and still counts: a failed send may have reached the inbox.
     await db.delete(emailChanges).where(eq(emailChanges.id, id))
-    return { ok: false, status: 502, error: EMAIL_CHANGE_ERRORS.sendFailed }
+    // A permanent failure is about the address, which retrying can't fix: say
+    // so. Anything else is an outage on both providers: say to try again.
+    return sentConfirmation.permanent
+      ? { ok: false, status: 400, error: EMAIL_CHANGE_ERRORS.cannotReceive }
+      : { ok: false, status: 502, error: EMAIL_CHANGE_ERRORS.sendFailed }
   }
 
   await noticeToOldAddress(env, db, 'requested', {

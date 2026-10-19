@@ -62,7 +62,7 @@ describe('GET /bills', () => {
   })
 
   it('filters by text search (q)', async () => {
-    const res = await appFetch('http://localhost/api/bills?q=Voter', {
+    const res = await appFetch('http://localhost/api/bills?search=Voter', {
       headers: { Cookie: `session=${memberToken}` },
     })
     const body = await res.json() as { bills: unknown[]; pagination: { total: number } }
@@ -71,7 +71,7 @@ describe('GET /bills', () => {
   })
 
   it('searches by bill number with space (q="HB 1")', async () => {
-    const res = await appFetch('http://localhost/api/bills?q=HB+1', {
+    const res = await appFetch('http://localhost/api/bills?search=HB+1', {
       headers: { Cookie: `session=${memberToken}` },
     })
     const body = await res.json() as { bills: unknown[] }
@@ -80,7 +80,7 @@ describe('GET /bills', () => {
   })
 
   it('searches by bare bill number (q="1")', async () => {
-    const res = await appFetch('http://localhost/api/bills?q=1', {
+    const res = await appFetch('http://localhost/api/bills?search=1', {
       headers: { Cookie: `session=${memberToken}` },
     })
     const body = await res.json() as { bills: unknown[] }
@@ -89,7 +89,7 @@ describe('GET /bills', () => {
   })
 
   it('searches by compact bill number without space (q="HB1")', async () => {
-    const res = await appFetch('http://localhost/api/bills?q=HB1', {
+    const res = await appFetch('http://localhost/api/bills?search=HB1', {
       headers: { Cookie: `session=${memberToken}` },
     })
     const body = await res.json() as { bills: unknown[] }
@@ -259,7 +259,7 @@ describe('GET /bills — comma multi-search', () => {
 
   // Returns sorted bill numbers for a search query.
   async function search(q: string): Promise<string[]> {
-    const res = await appFetch(`http://localhost/api/bills?q=${encodeURIComponent(q)}`, {
+    const res = await appFetch(`http://localhost/api/bills?search=${encodeURIComponent(q)}`, {
       headers: { Cookie: `session=${memberToken}` },
     })
     expect(res.status).toBe(200)
@@ -305,7 +305,7 @@ describe('GET /bills — comma multi-search', () => {
 
   it('composes with the state filter on multi-state data', async () => {
     await seedBill({ billNumber: 'H 7377', title: 'Utah Mail Ballots', state: 'UT' })
-    const res = await appFetch(`http://localhost/api/bills?q=7377&state=UT`, {
+    const res = await appFetch(`http://localhost/api/bills?search=7377&state=UT`, {
       headers: { Cookie: `session=${memberToken}` },
     })
     expect(res.status).toBe(200)
@@ -316,7 +316,7 @@ describe('GET /bills — comma multi-search', () => {
 
   it('caps segments instead of erroring on absurd comma counts', async () => {
     const q = Array.from({ length: 200 }, (_, i) => String(9000 + i)).join(',')
-    const res = await appFetch(`http://localhost/api/bills?q=${encodeURIComponent(q)}`, {
+    const res = await appFetch(`http://localhost/api/bills?search=${encodeURIComponent(q)}`, {
       headers: { Cookie: `session=${memberToken}` },
     })
     expect(res.status).toBe(200)
@@ -334,7 +334,7 @@ describe('GET /bills — long search terms (D1 LIKE 50-byte limit)', () => {
     await seedBill({ billNumber: 'SB 2', title: 'Unrelated transportation act' })
   })
   const get = (q: string) =>
-    appFetch(`http://localhost/api/bills?q=${encodeURIComponent(q)}`, { headers: { Cookie: `session=${token}` } })
+    appFetch(`http://localhost/api/bills?search=${encodeURIComponent(q)}`, { headers: { Cookie: `session=${token}` } })
 
   it('does not 500 on a single over-long token', async () => {
     expect((await get('a'.repeat(60))).status).toBe(200)
@@ -1420,7 +1420,7 @@ describe('GET /bills — multi-value filters', () => {
   })
 
   it('filters by two sessions (OR)', async () => {
-    const res = await appFetch('http://localhost/api/bills?session=2025&session=2024', {
+    const res = await appFetch('http://localhost/api/bills?sessionName=2025&sessionName=2024', {
       headers: { Cookie: `session=${token}` },
     })
     const body = await res.json() as { bills: Array<{ billNumber: string }> }
@@ -1463,8 +1463,8 @@ describe('GET /bills — tag filter with long tag names', () => {
     })
     expect(res.status).toBe(200)
     // The tag facet excludes its own filter, so the long tag still reports its count.
-    const body = await res.json() as { tags: Record<string, number> }
-    expect(body.tags[LONG_TAG]).toBe(1)
+    const body = await res.json() as { tag: Record<string, number> }
+    expect(body.tag[LONG_TAG]).toBe(1)
   })
 })
 
@@ -1500,7 +1500,7 @@ describe('GET /bills/facets', () => {
       status: Record<string, number>
       priority: Record<string, number>
       session: Record<string, number>
-      tags: Record<string, number>
+      tag: Record<string, number>
       position: Record<string, number>
       myBillsCount: number
     }
@@ -1509,23 +1509,23 @@ describe('GET /bills/facets', () => {
     expect(body.priority['high']).toBe(1)
     expect(body.priority['low']).toBe(1)
     expect(body.priority['medium']).toBe(1)
-    expect(body.session['2025']).toBe(2)
-    expect(body.session['2024']).toBe(1)
-    expect(body.tags['Voting']).toBe(2)
-    expect(body.tags['Election Admin']).toBe(1)
+    expect(body.sessionName['2025']).toBe(2)
+    expect(body.sessionName['2024']).toBe(1)
+    expect(body.tag['Voting']).toBe(2)
+    expect(body.tag['Election Admin']).toBe(1)
     expect(body.position['none']).toBe(3)
     expect(body.myBillsCount).toBe(0)
   })
 
   it('facet counts respect active filters', async () => {
     // Filter to session=2025; tag counts should only include 2025 bills
-    const res = await appFetch('http://localhost/api/bills/facets?session=2025', {
+    const res = await appFetch('http://localhost/api/bills/facets?sessionName=2025', {
       headers: { Cookie: `session=${token}` },
     })
-    const body = await res.json() as { tags: Record<string, number>; status: Record<string, number> }
+    const body = await res.json() as { tag: Record<string, number>; status: Record<string, number> }
     // Only HB 1 (session 2025, tags: Voting, Election Admin) and AB 3 (session 2025, no tags)
-    expect(body.tags['Voting']).toBe(1) // only HB 1 contributes; SB 2 is session 2024
-    expect(body.tags['Election Admin']).toBe(1)
+    expect(body.tag['Voting']).toBe(1) // only HB 1 contributes; SB 2 is session 2024
+    expect(body.tag['Election Admin']).toBe(1)
     expect(body.status['In Committee']).toBe(2)
     expect(body.status['Passed House']).toBeUndefined()
   })
@@ -1575,7 +1575,7 @@ describe('GET /bills/facets', () => {
   })
 
   it('applies comma multi-search to facet counts', async () => {
-    const res = await appFetch(`http://localhost/api/bills/facets?q=${encodeURIComponent('HB1, SB 2')}`, {
+    const res = await appFetch(`http://localhost/api/bills/facets?search=${encodeURIComponent('HB1, SB 2')}`, {
       headers: { Cookie: `session=${token}` },
     })
     expect(res.status).toBe(200)
@@ -1751,7 +1751,7 @@ describe('POST /bills/bulk (admin only)', () => {
     const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids: [billId1], filter: {}, priority: 'high' }),
+      body: JSON.stringify({ ids: [billId1], filter: '', priority: 'high' }),
     })
     expect(res.status).toBe(400)
   })
@@ -1794,7 +1794,7 @@ describe('POST /bills/bulk (admin only)', () => {
     const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filter: { status: ['In Committee'] }, priority: 'medium' }),
+      body: JSON.stringify({ filter: 'status=In+Committee', priority: 'medium' }),
     })
     expect(res.status).toBe(200)
     const body = await res.json() as { updated: number }
@@ -1823,7 +1823,7 @@ describe('POST /bills/bulk (admin only)', () => {
     const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filter: { subject: ['RI:Election Law'] }, priority: 'high' }),
+      body: JSON.stringify({ filter: 'subject=RI%3AElection+Law', priority: 'high' }),
     })
     expect(res.status).toBe(200)
     const body = await res.json() as { updated: number }
@@ -2008,7 +2008,7 @@ describe('POST /bills/bulk — match=any', () => {
     const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filter: { subject: ['UT:Elections'], tag: ['Clerk'], match: 'any' }, priority: 'high' }),
+      body: JSON.stringify({ filter: 'subject=UT%3AElections&tag=Clerk&match=any', priority: 'high' }),
     })
     expect(res.status).toBe(200)
     expect((await res.json() as { updated: number }).updated).toBe(2)
@@ -2018,7 +2018,7 @@ describe('POST /bills/bulk — match=any', () => {
     const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filter: { subject: ['UT:Elections'], tag: ['Clerk'] }, priority: 'high' }),
+      body: JSON.stringify({ filter: 'subject=UT%3AElections&tag=Clerk', priority: 'high' }),
     })
     expect(res.status).toBe(200)
     expect((await res.json() as { updated: number }).updated).toBe(0)
@@ -2047,7 +2047,7 @@ describe('POST /bills/bulk-dismiss — match=any', () => {
     const res = await appFetch('http://localhost/api/bills/bulk-dismiss', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filter: { subject: ['UT:Elections'], tag: ['Clerk'], match: 'any' } }),
+      body: JSON.stringify({ filter: 'subject=UT%3AElections&tag=Clerk&match=any' }),
     })
     expect(res.status).toBe(200)
     expect((await res.json() as { dismissed: number }).dismissed).toBe(2)
@@ -2057,7 +2057,7 @@ describe('POST /bills/bulk-dismiss — match=any', () => {
     const res = await appFetch('http://localhost/api/bills/bulk-dismiss', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filter: { subject: ['UT:Elections'], tag: ['Clerk'] } }),
+      body: JSON.stringify({ filter: 'subject=UT%3AElections&tag=Clerk' }),
     })
     expect(res.status).toBe(200)
     expect((await res.json() as { dismissed: number }).dismissed).toBe(0)
@@ -2382,7 +2382,7 @@ describe('GET /bills — broadened search fields', () => {
   })
 
   async function search(q: string): Promise<string[]> {
-    const res = await appFetch(`http://localhost/api/bills?q=${encodeURIComponent(q)}`, {
+    const res = await appFetch(`http://localhost/api/bills?search=${encodeURIComponent(q)}`, {
       headers: { Cookie: `session=${memberToken}` },
     })
     expect(res.status).toBe(200)
@@ -2423,7 +2423,7 @@ describe('GET /bills — bill-number ranking', () => {
 
   // Order-PRESERVING search helper (the comma-search helper sorts; this keeps rank order).
   async function searchOrdered(q: string, extra = ''): Promise<string[]> {
-    const res = await appFetch(`http://localhost/api/bills?q=${encodeURIComponent(q)}${extra}`, {
+    const res = await appFetch(`http://localhost/api/bills?search=${encodeURIComponent(q)}${extra}`, {
       headers: { Cookie: `session=${memberToken}` },
     })
     expect(res.status).toBe(200)

@@ -10,12 +10,14 @@ import {
 } from '../../../../shared/searchLimits'
 import { loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../../lib/billSubjects'
 import { newMatchWhere } from '../../lib/newMatch'
+import { loadTaxonomyTagNameSet } from '../../lib/taxonomy'
 import { LEGISCAN_CODE_WORDS } from '../../../../shared/legacyStatusOrder'
 import {
   groupHasNoPosition, groupHasNoPriority, heldCustomFieldOf, heldPositionOf,
   holdsGroupPriority, inGroupOfHeld, type BillsTable,
 } from '../../lib/teamFields'
 import { inGroupsOf, loadVotedInGroups } from '../../lib/companionGroups'
+import { FILTER_ANY, FILTER_NONE, type BillFilter, type SubjectValue } from '../../../../shared/billFilter'
 
 /** A second reference to `bills` in one query, with the table's own columns: `billsAs('m').status` renders `"m"."status"`. */
 export function billsAs(name: string): BillsTable {
@@ -24,10 +26,6 @@ export function billsAs(name: string): BillsTable {
 
 /** Any filter, applied to one reference to `bills` (the table, or an alias of it). */
 export type BillsFilter = (t: BillsTable) => SQL | undefined
-
-// Sentinel filter value: "has any value in this dimension" (position, custom-field
-// dropdowns). Mirrors FILTER_ANY in web/src/pages/BillList/FilterPanel.tsx.
-export const FILTER_ANY = '__any__'
 
 // Membership test: the bill's group tags (the JSON array of its companion
 // group's current analysis's tags, its own when it's in no group: migration
@@ -38,7 +36,7 @@ export const FILTER_ANY = '__any__'
 // json_each also matches array elements exactly, avoiding accidental substring
 // hits. Shared by the list filter (buildBillsFilter) and the facets WHERE so the
 // two can't drift. Caller must pass a non-empty array.
-export function tagMembership(tagValues: string[], t: BillsTable = bills): SQL {
+export function tagMembership(tagValues: readonly string[], t: BillsTable = bills): SQL {
   // One JSON parameter, however many tags are picked.
   return sql`EXISTS (SELECT 1 FROM json_each(${t.groupTags}) je WHERE je.value IN (SELECT value FROM json_each(${JSON.stringify(tagValues)})))`
 }
@@ -63,21 +61,21 @@ export function hasGroupTags(t: BillsTable = bills): SQL {
  * operator turned off — rather than making such a value match zero bills
  * (which would read to a caller as "that subject truly has no bills," a
  * confusing and avoidable claim), it is simply ignored, same as a malformed
- * value from decodeSubjectFilters. If every requested value is suppressed the
+ * value from the bill filter's parse. If every requested value is suppressed the
  * remaining list is empty and the caller adds no subject condition at all —
  * equivalent to the param never having been sent. Shared by buildBillsFilter
  * and the /bills/facets route so the list, filter, and facet-count paths
  * can't drift on this decision.
  */
 export function filterSuppressedSubjects(
-  values: Array<{ state: string; name: string }>,
+  values: readonly SubjectValue[],
   suppressed: ReadonlySet<string>,
-): Array<{ state: string; name: string }> {
+): readonly SubjectValue[] {
   if (suppressed.size === 0) return values
   return values.filter(v => !isSubjectsSuppressedForState(suppressed, v.state))
 }
 
-export function subjectMembership(values: Array<{ state: string; name: string }>, t: BillsTable = bills): SQL {
+export function subjectMembership(values: readonly SubjectValue[], t: BillsTable = bills): SQL {
   const pairs = sql.join(
     values.map(v => sql`(${v.state}, ${v.name})`),
     sql`, `,
@@ -94,15 +92,15 @@ export function subjectMembership(values: Array<{ state: string; name: string }>
  * migration 0076 rewrote them, and saved views and links can still name them.
  * Shared by the list filter and the facets so the two can't drift.
  */
-export function statusFilterValues(statuses: string[]): string[] {
+export function statusFilterValues(statuses: readonly string[]): string[] {
   return [...new Set(statuses.flatMap(s => LEGISCAN_CODE_WORDS[s] ? [s, LEGISCAN_CODE_WORDS[s]] : [s]))]
 }
 
 // Helper: single-value eq or multi-value inArray
-export function multiFilter(column: Parameters<typeof eq>[0], values: string[]): SQL | undefined {
+export function multiFilter(column: Parameters<typeof eq>[0], values: readonly string[]): SQL | undefined {
   if (values.length === 0) return undefined
   if (values.length === 1) return eq(column, values[0])
-  return inArray(column, values)
+  return inArray(column, [...values])
 }
 
 // ── Search query parsing ─────────────────────────────────────────────────
@@ -220,28 +218,16 @@ export function canOptimize(sort: string, dir: 'asc' | 'desc'): boolean {
   return false
 }
 
-export type BillFilterParams = {
-  statuses: string[]
-  stages: string[]
-  priorities: string[]
-  positionValues: string[]
-  sessions: string[]
-  years: string[]
-  states: string[]
-  tagFilters: string[]
-  subjectFilters: Array<{ state: string; name: string }>
-  q: string | undefined
-  minRelevance: string | undefined
-  myBillsParam: string | undefined
+/**
+ * What building the list's filter takes besides the bill filter itself: the viewer, whose votes and bills the
+ * scopes read, and the values a route reads for the filter.
+ */
+export type BillFilterContext = {
+  userId: string
+  /** The new matches' minimum relevance (`getNewMatchMinRelevance`). Read only when the filter asks for new matches. */
+  newMatchMinRelevance: number
   /** The member's bills (`loadMyBillsInGroups`) when the caller has read them already, so a request reads them once. */
   myBillIds?: readonly string[]
-  unvoted: string | undefined
-  newMatches: string | undefined
-  drafts: string | undefined
-  newMatchMinRelevance: number
-  cfParamMap: Record<string, string[]>
-  userId: string
-  matchAny: boolean
 }
 
 /** A condition on one reference to `bills`: the table itself, or an alias of it. */
@@ -255,11 +241,11 @@ export type BillsCondition = (t: BillsTable) => SQL
  * companion replaced (see lib/teamFields.ts). Shared by the list filter and
  * the facets so the two can't drift.
  */
-export function priorityCondition(priorities: string[]): BillsCondition | undefined {
+export function priorityCondition(priorities: readonly string[]): BillsCondition | undefined {
   if (priorities.length === 0) return undefined
   const hasAny = priorities.includes(FILTER_ANY)
-  const hasNone = priorities.includes('none')
-  const real = priorities.filter(v => v !== FILTER_ANY && v !== 'none') as ('high' | 'medium' | 'low')[]
+  const hasNone = priorities.includes(FILTER_NONE)
+  const real = priorities.filter(v => v !== FILTER_ANY && v !== FILTER_NONE) as ('high' | 'medium' | 'low')[]
   const h = billsAs('h')
   // The holder meets it itself. Every other bill in its group meets it through the group key.
   const held = (t: BillsTable, levels: boolean) => or(
@@ -280,11 +266,11 @@ export function priorityCondition(priorities: string[]): BillsCondition | undefi
  * bill, met by every bill in a group whose current position does, as
  * `priorityCondition` is.
  */
-export function positionCondition(positionValues: string[]): BillsCondition | undefined {
+export function positionCondition(positionValues: readonly string[]): BillsCondition | undefined {
   if (positionValues.length === 0) return undefined
-  const hasNone = positionValues.includes('none')
+  const hasNone = positionValues.includes(FILTER_NONE)
   const hasAny = positionValues.includes(FILTER_ANY)
-  const real = positionValues.filter(pos => pos !== 'none' && pos !== FILTER_ANY)
+  const real = positionValues.filter(pos => pos !== FILTER_NONE && pos !== FILTER_ANY)
   return t => {
     const parts: SQL[] = []
     if (real.length > 0) parts.push(inGroupOfHeld(t, heldPositionOf(real)))
@@ -300,28 +286,33 @@ export function positionCondition(positionValues: string[]): BillsCondition | un
  * the filter when the group's current analysis does, and none through an
  * older one. Each bill stores its group's current tags (its group tags), so
  * this tests one column, as the filter did before groups.
+ *
+ * "Any" means a tag in `taxonomyTags`, the tenant's current taxonomy, as the
+ * chips and the options do: a tag an operator removed stays on the bill but no
+ * longer counts. A named tag matches whether or not it is still in the taxonomy.
+ * The tag facet's "Any tag" count uses this same condition (listRoutes.ts).
  */
-export function tagCondition(tagFilters: string[]): BillsCondition | undefined {
+export function tagCondition(tagFilters: readonly string[], taxonomyTags: ReadonlySet<string>): BillsCondition | undefined {
   if (tagFilters.length === 0) return undefined
   const hasAny = tagFilters.includes(FILTER_ANY)
   const realTags = tagFilters.filter(t => t !== FILTER_ANY)
   return t => {
     const parts: SQL[] = []
-    if (hasAny) parts.push(sql`json_array_length(${t.groupTags}) > 0`) // "Any" = has any tag
+    if (hasAny) parts.push(tagMembership([...taxonomyTags], t))
     if (realTags.length > 0) parts.push(tagMembership(realTags, t))
     return and(hasGroupTags(t), parts.length === 1 ? parts[0] : or(...parts)!)!
   }
 }
 
 /**
- * One condition per custom field named by `cf_` params, keyed by the field's id.
+ * One condition per custom field named by `field.<slug or id>` params, keyed by the field's id.
  * Shared by the list filter (buildBillsFilter) and the /bills/facets WHERE so the
  * two match stored values the same way and can't drift: a multi-select field
  * stores a JSON array and matches on its elements, every other field matches the
  * stored value exactly. A bill meets one through its group's current value, never
  * one a newer value on a companion replaced (see lib/teamFields.ts).
  *
- * `cf_` keys arrive as either the field's id or its slug: the URL (and every
+ * Custom field keys arrive as either the field's id or its slug: the URL (and every
  * stored view's query, since views persist the URL's own search string) always
  * uses the slug for readability, but bill_custom_field_values is keyed by id
  * only. Resolve against both columns here so a slug-form key still reaches the
@@ -333,7 +324,7 @@ export function tagCondition(tagFilters: string[]): BillsCondition | undefined {
  */
 export async function buildCustomFieldFilters(
   db: ReturnType<typeof getDb>,
-  cfParamMap: Record<string, string[]>,
+  cfParamMap: Readonly<Record<string, readonly string[]>>,
 ): Promise<Record<string, BillsCondition>> {
   const cfKeys = Object.keys(cfParamMap)
   if (cfKeys.length === 0) return {}
@@ -414,145 +405,14 @@ export const unvotedCondition = (voted: readonly string[]): BillsCondition =>
   t => sql`${t.id} NOT IN (SELECT value FROM json_each(${JSON.stringify(voted)}))`
 
 /**
- * The parts of the list's filters, each a condition on one bill, before they are
- * joined into one filter (`composeFilter`). The facets count a dimension with
- * that dimension's own part left out, so they take the parts by name.
- */
-export type FilterParts = {
-  /** The bill facts, which the group operator joins: each dimension's name (`cf:<field id>` for a custom field) and its condition. */
-  facts: Array<{ key: string; condition: BillsCondition }>
-  /** The viewer-relative predicates and search, which always narrow. */
-  scopes: BillsCondition[]
-  /** "My bills" was asked for by a member with none, so nothing matches whatever else is set. */
-  noMatch: boolean
-  matchAny: boolean
-}
-
-/**
- * The list's filters as parts, each a condition on the bill it tests. Filter
- * predicates stay per bill: the bill list asks of each bill in a companion
- * group whether it meets the filter and shows the group if any does (see
- * groupList.ts), and the team's own fields are read through the group's
- * current value (above).
- */
-export async function buildFilterParts(
-  db: ReturnType<typeof getDb>,
-  p: BillFilterParams,
-): Promise<FilterParts> {
-  // Bill facts render as chip-row groups and are joined by the group operator.
-  // Scope conditions (the viewer-relative predicates and search) always
-  // AND on top: `(fact1 OP fact2 OP … ) AND search AND myBills AND unvoted …`.
-  // See docs/superpowers/specs/2026-09-07-filter-group-operator-design.md.
-  const facts: FilterParts['facts'] = []
-  const scopes: BillsCondition[] = []
-
-  const statusValues = statusFilterValues(p.statuses)
-  if (statusValues.length > 0) facts.push({ key: 'status', condition: t => multiFilter(t.status, statusValues)! })
-  if (p.stages.length > 0) facts.push({ key: 'stage', condition: t => multiFilter(t.statusStage, p.stages)! })
-
-  // Priority is sparse (bills can have none): "Any" = has a priority, "none" = no priority.
-  const priority = priorityCondition(p.priorities)
-  if (priority) facts.push({ key: 'priority', condition: priority })
-
-  if (p.sessions.length > 0) facts.push({ key: 'session', condition: t => multiFilter(t.session, p.sessions)! })
-
-  if (p.years.length > 0) {
-    facts.push({
-      key: 'year',
-      condition: t => p.years.length === 1
-        ? eq(t.yearStart, Number(p.years[0]))
-        : inArray(t.yearStart, p.years.map(Number)),
-    })
-  }
-
-  if (p.states.length > 0) facts.push({ key: 'state', condition: t => multiFilter(t.state, p.states)! })
-
-  if (p.q && buildSearchCondition(p.q)) scopes.push(t => buildSearchCondition(p.q!, t)!)
-  if (p.minRelevance) {
-    const min = parseInt(p.minRelevance, 10)
-    facts.push({ key: 'relevance', condition: t => sql`${t.relevanceScore} >= ${min}` })
-  }
-
-  // One condition per custom field; each is a bill fact, so each joins the group operator.
-  for (const [fieldId, condition] of Object.entries(await buildCustomFieldFilters(db, p.cfParamMap))) {
-    facts.push({ key: `cf:${fieldId}`, condition })
-  }
-
-  const tag = tagCondition(p.tagFilters)
-  if (tag) facts.push({ key: 'tag', condition: tag })
-
-  if (p.subjectFilters.length > 0) {
-    const suppressed = await loadSuppressedSubjectStates(db)
-    const allowed = filterSuppressedSubjects(p.subjectFilters, suppressed)
-    if (allowed.length > 0) facts.push({ key: 'subject', condition: t => subjectMembership(allowed, t) })
-  }
-
-  const position = positionCondition(p.positionValues)
-  if (position) facts.push({ key: 'position', condition: position })
-
-  // A member's votes are the group's: unvoted means no vote on any bill in it. One JSON parameter of the bills to leave out.
-  if (p.unvoted === '1') scopes.push(unvotedCondition(await loadVotedInGroups(db, p.userId)))
-
-  if (p.newMatches === '1' || p.newMatches === 'true') {
-    scopes.push(t => newMatchWhere(p.newMatchMinRelevance, t))
-  }
-
-  if (p.drafts === '1' || p.drafts === 'true') {
-    scopes.push(t => eq(t.isDraft, true))
-  }
-
-  let noMatch = false
-  if (p.myBillsParam === '1' || p.myBillsParam === 'true') {
-    // A member's engagement is with the group, as unvoted's votes are: a group is mine when any bill of it is.
-    const myIds = p.myBillIds ?? await loadMyBillsInGroups(db, p.userId)
-    // Scope, not a bill fact: an empty set means no rows regardless of the group operator.
-    if (myIds.length === 0) noMatch = true
-    else scopes.push(myBillsCondition(myIds))
-  }
-
-  return { facts, scopes, noMatch, matchAny: p.matchAny }
-}
-
-/**
- * The parts joined into one filter on a bill. `omit` leaves out the named
- * facts, as a facet does for its own dimension, and `facts: false` leaves out
- * every one, keeping the scopes alone.
- */
-export function composeFilter(parts: FilterParts, opts: { omit?: ReadonlySet<string>; facts?: boolean } = {}): BillsFilter {
-  if (parts.noMatch) return () => sql`1 = 0`
-  const kept = opts.facts === false ? [] : parts.facts.filter(f => !opts.omit?.has(f.key))
-  return t => {
-    const facts = kept.map(f => f.condition(t))
-    const factCond = facts.length === 0
-      ? undefined
-      : facts.length === 1
-        ? facts[0]
-        : (parts.matchAny ? or(...facts)! : and(...facts)!)
-
-    const all = [...(factCond ? [factCond] : []), ...parts.scopes.map(f => f(t))]
-    if (all.length === 0) return undefined
-    return all.length === 1 ? all[0] : and(...all)!
-  }
-}
-
-/** The list's filters as a function of the bill they test, built once and applied to as many references to `bills` as a query needs. */
-export async function buildBillsFilter(
-  db: ReturnType<typeof getDb>,
-  p: BillFilterParams,
-): Promise<BillsFilter> {
-  return composeFilter(await buildFilterParts(db, p))
-}
-
-/**
  * Whether the filter is cheap to test on a bill: it reads only the bill's own
  * columns that an index carries (status, stage, state, session, year, and
  * relevance) or its id (unvoted), and never a scope or one of the team's values,
  * which are read from other rows. The list tests such a filter on both parts of
  * the full path (groupList.ts, `pageOfGroups`), where a dearer one is tested once.
  */
-export function isCheapFilter(p: BillFilterParams): boolean {
-  const on = (v: string | undefined) => v === '1' || v === 'true'
-  return p.priorities.length === 0 && p.positionValues.length === 0 && p.tagFilters.length === 0 && p.subjectFilters.length === 0
-    && !p.q && Object.keys(p.cfParamMap).length === 0
-    && !on(p.myBillsParam) && !on(p.newMatches) && !on(p.drafts)
+export function isCheapFilter(f: BillFilter): boolean {
+  return f.priority.length === 0 && f.position.length === 0 && f.tag.length === 0 && f.subject.length === 0
+    && !f.search && Object.keys(f.field).length === 0
+    && !f.myBills && !f.newMatches && !f.drafts
 }

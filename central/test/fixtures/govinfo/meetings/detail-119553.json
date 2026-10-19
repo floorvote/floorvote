@@ -1,0 +1,59 @@
+{
+  "committeeMeeting": {
+    "chamber": "House",
+    "committees": [
+      {
+        "name": "House Oversight and Government Reform Subcommittee on Delivering on Government Efficiency",
+        "systemCode": "hsgo16",
+        "url": "https://api.congress.gov/v3/committee/house/hsgo16?format=json"
+      }
+    ],
+    "congress": 119,
+    "date": "2026-09-15T18:00:00Z",
+    "eventId": "119553",
+    "location": {
+      "building": "Rayburn House Office Building",
+      "room": "2154"
+    },
+    "meetingDocuments": [
+      {
+        "description": "Notice",
+        "documentType": "Support Document",
+        "format": "PDF",
+        "name": "Notice",
+        "url": "https://www.congress.gov/119/meeting/house/119553/documents/HHRG-119-GO16-20260915-SD001.pdf"
+      }
+    ],
+    "meetingStatus": "Scheduled",
+    "title": "“Fixing Fraud and Failure in Federally Funded Homelessness Services”",
+    "type": "Hearing",
+    "updateDate": "2026-10-06T18:41:30Z",
+    "videos": [
+      {
+        "name": "Fixing Fraud and Failure in Federally Funded Homelessness Services",
+        "url": "https://www.congress.gov/event/119th-Congress/house-event/119553"
+      }
+    ],
+    "witnessDocuments": [
+      {
+        "documentType": "Witness Biography",
+        "format": "PDF",
+        "url": "https://www.congress.gov/119/meeting/house/119553/witnesses/HHRG-119-GO16-Bio-WebsterP-20260915.pdf"
+      }
+    ],
+    "witnesses": [
+      {
+        "name": "Mr. Paul Webster",
+        "organization": "Los Angeles Alliance for Human Rights",
+        "position": "Executive Director"
+      }
+    ]
+  },
+  "request": {
+    "chamber": "house",
+    "congress": "119",
+    "contentType": "application/json",
+    "eventId": "119553",
+    "format": "json"
+  }
+}
