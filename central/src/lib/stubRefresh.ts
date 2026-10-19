@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm'
 import { bills } from '../db/schema'
 import { DEFAULT_PROVIDER_ID } from '../providers'
 import { getSettingNumber } from './settings'
+import { dbTimeAgo, toDb } from './dbTime'
 import { legiscanCallsOnly, monthStartDb } from './legiscanBudget'
 import { apiCallLog } from '../db/schema'
 import type { BillMessage, Db } from '../types'
@@ -51,8 +52,7 @@ export function isDetailStale(bill: Pick<StubRefreshRow, 'changeHash' | 'detailH
   return bill.detailHash !== bill.changeHash
 }
 
-const dbTime = (d: Date) => d.toISOString().slice(0, 19).replace('T', ' ') // ts-write-ok: compared to stored times, written only through nowDb's format
-const retryCutoff = (now: Date) => dbTime(new Date(now.getTime() - STUB_REFRESH_RETRY_HOURS * 3600_000))
+const retryCutoff = (now: Date) => dbTimeAgo(STUB_REFRESH_RETRY_HOURS * 3600_000, now)
 
 /**
  * Whether a view may queue a refresh of the bill: a LegiScan bill whose detail
@@ -104,7 +104,7 @@ export async function refreshStaleStub(db: Db, queue: Queue, bill: StubRefreshRo
   const maxUsed = stubRefreshMaxUsed(await getSettingNumber(db, 'legiscan_monthly_limit', 10000))
   if (maxUsed < 0) return false
 
-  const at = dbTime(now)
+  const at = toDb(now)
   const cutoff = retryCutoff(now)
   const claimed = await db.update(bills)
     .set({ detailRequestedHash: sql`${bills.changeHash}`, detailRequestedAt: at })

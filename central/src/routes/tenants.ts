@@ -5,7 +5,7 @@ import { eq, and, isNull, isNotNull, inArray, asc, desc, count, exists, sql } fr
 import { matchesUnion, billMatchText } from '../lib/keywords'
 import * as schema from '../db/schema'
 import { secretsMatch } from '../lib/auth'
-import { nowDb } from '../lib/dbTime'
+import { dbTimeAgo, nowDb } from '../lib/dbTime'
 import type { BillMessage, Db, Env } from '../types'
 import { calendarBlockEvents, calendarKind, type CalendarRow } from '../lib/billCalendar'
 import { bodyEventDetails, bodyEventOptions, calendarCoverage, type BodyEventDetail, type BodyEventOptions } from '../lib/bodyEvents'
@@ -572,7 +572,7 @@ tenantsRoutes.post('/fetch-bills/:tenantId', guardCallerTenantParam(), async (c)
     return c.json({ error: `too many billIds (max ${REPROCESS_LIMIT})` }, 400)
   }
 
-  const hoursAgo = (h: number) => new Date(Date.now() - h * 3600_000).toISOString().slice(0, 19).replace('T', ' ')
+  const hoursAgo = (h: number) => dbTimeAgo(h * 3600_000)
   const fetchedCutoff = hoursAgo(FETCH_COOLDOWN_HOURS)
   const requestedCutoff = hoursAgo(REQUEST_COOLDOWN_HOURS)
   const now = nowDb()

@@ -365,6 +365,7 @@ export const keywordRegistry = sqliteTable('keyword_registry', {
   keyword:  text('keyword').notNull(),
 }, (t) => [primaryKey({ columns: [t.tenantId, t.keyword] })])
 
+// A new column must also go in insertLinkWhileOwner's positional INSERT…SELECT (lib/stateProviders.ts).
 export const billTenants = sqliteTable('bill_tenants', {
   billId:     integer('bill_id').notNull(),
   tenantId:   text('tenant_id').notNull(),

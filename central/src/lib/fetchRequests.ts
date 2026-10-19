@@ -1,6 +1,7 @@
 import { inArray } from 'drizzle-orm'
 import { bills } from '../db/schema'
 import { refreshStaleStub } from './stubRefresh'
+import { dbTimeAgo } from './dbTime'
 import type { Db } from '../types'
 
 /**
@@ -24,7 +25,7 @@ export const FETCH_REQUEST_DAYS = 90
 
 /** The oldest `fetch_requested_at` still in effect at `now`, in the stored format. */
 export function fetchRequestCutoff(now: Date = new Date()): string {
-  return new Date(now.getTime() - FETCH_REQUEST_DAYS * 86400_000).toISOString().slice(0, 19).replace('T', ' ') // ts-write-ok: compared to stored times, never written
+  return dbTimeAgo(FETCH_REQUEST_DAYS * 86400_000, now)
 }
 
 /**
