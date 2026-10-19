@@ -46,7 +46,10 @@ describe('Profile: switch focus ring', () => {
     render(<MemoryRouter><Profile /></MemoryRouter>)
     const sw = await screen.findByRole('switch', { name })
     expect(sw).toHaveClass('fv-switch-input')
-    expect(sw.nextElementSibling).not.toBeNull()
+    const track = sw.nextElementSibling as HTMLElement
+    expect(track.tagName).toBe('SPAN')
+    expect(track.style.inset).toBe('0px')
+    expect(track.style.borderRadius).not.toBe('')
   })
 
   it('draws the ring on the track only for keyboard focus', () => {
