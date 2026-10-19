@@ -90,6 +90,18 @@ describe('Profile: change your email', () => {
     expect(screen.getByLabelText('New email')).toHaveValue('bob@shared.org')
   })
 
+  it.each([
+    [400, "That address can't receive email. Check it for a typo, or use a different address."],
+    [502, "We couldn't send the confirmation email. Please try again in a little while."],
+  ])("shows the server's answer when the confirmation can't be delivered (%i), and keeps the form open", async (status, message) => {
+    mockApi({ '/users/me/email-change': () => { throw new ApiError(status, message) } })
+    renderProfile()
+    fireEvent.change(await openForm(), { target: { value: 'jane@newjob.org' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send confirmation' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(message)
+    expect(screen.getByLabelText('New email')).toHaveValue('jane@newjob.org')
+  })
+
   it('waits for Turnstile when it is configured, and sends its token', async () => {
     const spy = mockApi({ '/users/me/email-change': () => ({ ok: true, email: 'jane@newjob.org' }) }, 'site-key')
     renderProfile()

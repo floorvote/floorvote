@@ -6,6 +6,7 @@ import { color, radius, fontSize, fontWeight, shadow } from '../styles/tokens'
 import { promotableCount, bulkConfirmMessage, describeMultiDelta } from './bulkConfirm'
 import { useDemo } from '../context/DemoContext'
 import { parseStoredMulti } from '../../../shared/customFieldValues'
+import { serializeBillFilter, type BillFilter } from '../../../shared/billFilter'
 
 type Priority = 'high' | 'medium' | 'low'
 
@@ -23,84 +24,6 @@ export type CustomFieldDef = {
 }
 
 type MultiStagedDelta = { additions: string[]; removals: string[] }
-
-export type FilterState = {
-  status: string[]
-  stage: string[]
-  priority: string[]
-  position: string[]
-  year: string[]
-  state: string[]
-  tag: string[]
-  subject: string[]
-  q: string
-  minRelevance: number
-  myBills: boolean
-  unvoted: boolean
-  newMatches: boolean
-  drafts: boolean
-  matchAny: boolean
-  cf: Record<string, string[]>
-}
-
-// Builds the `filter` request body from the active filter state (shared by the
-// bulk-edit apply and bulk-dismiss flows so the two stay byte-identical).
-//
-// `match` is emitted only when the operator is set to OR — omitted otherwise,
-// so an unset operator serialises byte-identically to before this field
-// existed. The server (bulkRoutes.ts) reads it with the same `=== 'any'` test
-// GET /bills and GET /bills/facets use, so the surfaces cannot drift on what
-// the param means.
-export function buildFilterBody(f: FilterState): Record<string, unknown> {
-  return {
-    ...(f.status.length > 0 && { status: f.status }),
-    ...(f.stage.length > 0 && { stage: f.stage }),
-    ...(f.priority.length > 0 && { priority: f.priority }),
-    ...(f.position.length > 0 && { position: f.position }),
-    ...(f.year.length > 0 && { year: f.year }),
-    ...(f.state.length > 0 && { state: f.state }),
-    ...(f.tag.length > 0 && { tag: f.tag }),
-    ...(f.subject.length > 0 && { subject: f.subject }),
-    ...(f.q && { q: f.q }),
-    ...(f.minRelevance > 0 && { minRelevance: String(f.minRelevance) }),
-    ...(f.myBills && { myBills: '1' }),
-    ...(f.unvoted && { unvoted: '1' }),
-    ...(f.newMatches && { newMatches: '1' }),
-    ...(f.drafts && { drafts: '1' }),
-    ...(f.matchAny && { match: 'any' }),
-    ...(Object.keys(f.cf).length > 0 && { cf: f.cf }),
-  }
-}
-
-// Builds the query string for GET /bills/bulk-values — the read that
-// pre-populates the bulk-edit form's initial values ("Not set", "mixed", the
-// null-match count). Kept alongside buildFilterBody (rather than reusing it)
-// because this is a URLSearchParams for a GET, not a JSON POST body, but the
-// two must agree on every field, `match` included: a wrong read here would
-// show initial values for the AND set immediately before a write to the OR
-// set, with no error.
-export function buildBulkValuesParams(f: FilterState): URLSearchParams {
-  const params = new URLSearchParams()
-  f.status.forEach(s => params.append('status', s))
-  f.stage.forEach(s => params.append('stage', s))
-  f.priority.forEach(p => params.append('priority', p))
-  f.position.forEach(p => params.append('position', p))
-  f.year.forEach(y => params.append('year', y))
-  f.state.forEach(s => params.append('state', s))
-  f.tag.forEach(t => params.append('tag', t))
-  f.subject.forEach(s => params.append('subject', s))
-  if (f.q) params.set('q', f.q)
-  if (f.minRelevance > 0) params.set('minRelevance', String(f.minRelevance))
-  if (f.myBills) params.set('myBills', '1')
-  if (f.unvoted) params.set('unvoted', '1')
-  if (f.newMatches) params.set('newMatches', '1')
-  if (f.drafts) params.set('drafts', '1')
-  if (f.matchAny) params.set('match', 'any')
-  for (const [fieldId, values] of Object.entries(f.cf)) {
-    values.forEach(v => params.append(`cf_${fieldId}`, v))
-  }
-  return params
-}
 
 // 'mixed' means selected bills have different values for this field
 type FieldValue = string | null | 'mixed'
@@ -131,7 +54,8 @@ interface BulkActionBarProps {
   total: number
   positionVocabulary: string[]
   customFieldDefs: CustomFieldDef[]
-  currentFilters: FilterState
+  /** The bill filter the list is showing: what a select-all-matching action acts on. */
+  currentFilters: BillFilter
   /** Accurate new-match queue size for the current filters (from /bills/facets). Used for the
       filter-mode Dismiss count so it is correct and visible at any queue size. */
   filterNewMatchCount: number
@@ -320,7 +244,7 @@ export function BulkActionBar({
     setInitialValues(null)
     setValuesStatus('loading')
 
-    const params = buildBulkValuesParams(currentFilters)
+    const params = serializeBillFilter(currentFilters)
 
     apiFetch<{ count: number; priorities: Record<string, number>; positions: Record<string, number>; customFields: Record<string, Record<string, number>>; multiCustomFields: Record<string, Record<string, number>>; nullMatchCount: number }>(
       `/bills/bulk-values?${params}`
@@ -455,7 +379,7 @@ export function BulkActionBar({
       if (selection.mode === 'ids') {
         body.ids = [...selection.ids]
       } else {
-        body.filter = buildFilterBody(currentFilters)
+        body.filter = serializeBillFilter(currentFilters)
       }
       if (staged.priority !== undefined) body.priority = staged.priority
       if (staged.position !== undefined) body.position = staged.position
@@ -499,7 +423,7 @@ export function BulkActionBar({
       if (selection.mode === 'ids') {
         body.ids = [...selection.ids]
       } else {
-        body.filter = buildFilterBody(currentFilters)
+        body.filter = serializeBillFilter(currentFilters)
       }
       await apiFetch<{ dismissed: number }>('/bills/bulk-dismiss', { method: 'POST', body: JSON.stringify(body) })
       if (selection.mode === 'ids') {

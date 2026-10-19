@@ -23,7 +23,7 @@ import { govinfo } from '../../src/providers/govinfo'
 import { clearRollCallCaches } from '../../src/providers/govinfo/client'
 import { toHandle } from '../../src/lib/billHandle'
 import { mainSeam, resetCentral } from '../helpers/mainSeam'
-import { buildZip, fileType, fixtureFiles, serveZip } from '../helpers/govinfoZip'
+import { buildZip, fileType, fixtureFiles, listingResponse, serveZip } from '../helpers/govinfoZip'
 import {
   CVC_URL, HISTORICAL_URL, cvcFile, historicalFile, houseUrl, isRollCallHost, rollCallBillFiles, rollCallFiles, rollCallNetwork, senateUrl,
 } from '../helpers/govinfoRollCalls'
@@ -93,6 +93,9 @@ beforeEach(async () => {
     redirects.set(url, init?.redirect)
     const zip = ZIP_URL.exec(url)
     if (zip && zip[2] === zip[3]) return serveZips()(zip[2])
+    // Every file listed as it was when the zips, built from the same files, were built (#616).
+    const listing = listingResponse(url, files, () => '2026-07-18T23:27:00Z')
+    if (listing) return listing
     const f = FILE_URL.exec(url)
     if (f) {
       const data = files.get(f[3])
