@@ -252,6 +252,12 @@ describe('the header of a grouped bill', () => {
     expect(row.getByText('A190').compareDocumentPosition(row.getByText('Introduced')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it('names the "Grouped with" line as a group for screen readers', async () => {
+    renderBillDetail({ ...GROUPED, groupBills: [THIS, COMPANION] })
+    await screen.findByText('c1 text')
+    expect(screen.getByRole('group', { name: 'Grouped with' })).toBe(groupedWith())
+  })
+
   it('puts a "Grouped with" line below the first row, above the title', async () => {
     renderBillDetail({ ...GROUPED, groupBills: [THIS, COMPANION] })
     await screen.findByText('c1 text')

@@ -1620,8 +1620,8 @@ export function BillDetail() {
 
         {/* The group's other bills, each with its own status, in the order the group lists them. */}
         {headerCompanions.length > 0 && (
-          <div data-testid="grouped-with-line" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 12px', margin: '0 0 12px', fontSize: fontSize.sm, color: color.textMuted }}>
-            <span>Grouped with</span>
+          <div data-testid="grouped-with-line" role="group" aria-labelledby="grouped-with-label" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 12px', margin: '0 0 12px', fontSize: fontSize.sm, color: color.textMuted }}>
+            <span id="grouped-with-label">Grouped with</span>
             {headerCompanions.map(g => (
               <span key={g.billId} data-testid="grouped-with-member" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
                 <BillBadge
