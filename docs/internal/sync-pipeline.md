@@ -614,7 +614,7 @@ Only `ai_processed_at` is ever set successfully; `ai_skip_reason` is never set i
 ### Message flag behavior
 
 - **`stubOnly: true`** — only from cron's full pass. Upserts bill metadata from central's masterlist-derived data. Skips text fetch and AI. Refuses to overwrite a bill that already has `aiProcessedAt` set or `match_type = 'manual'` (race protection), except a bill with no match type that is in a companion group, which was analyzed through it (#378).
-- **`metadataOnly: true`** — only from tenant's own `/admin/refresh-metadata` route. Upserts bill metadata. Skips text fetch and AI.
+- **`metadataOnly: true`** — only from tenant's own `/admin/refresh-metadata` route. Upserts bill metadata. Skips text fetch and AI. Leaves the stored `providerUpdatedAt` as it was (empty for a bill it creates), so the bill's next regular delivery still sees it as changed and runs the full path. Otherwise a refresh that reached a bill whose text just changed would hide the new text from the early skip below.
 - **`groupAnalysis: true`** — only from `pullCompanions`, the heal, and Regenerate, for a bill that didn't match and is pulled in by its companion group. Runs AI like `forceAI` does, but the bill's match type is never derived from the local keywords, and the bill never counts as a new match.
 - **Normal** — proceeds to text fetch and AI:
   - Fetches text from central if `text_status ∈ {'available', 'in_r2'}`.
