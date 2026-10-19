@@ -97,7 +97,7 @@ describe('Profile: change your email', () => {
     mockApi({ '/users/me/email-change': () => { throw new ApiError(status, message) } })
     renderProfile()
     fireEvent.change(await openForm(), { target: { value: 'jane@newjob.org' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Send confirmation' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send link' }))
     expect(await screen.findByRole('alert')).toHaveTextContent(message)
     expect(screen.getByLabelText('New email')).toHaveValue('jane@newjob.org')
   })
