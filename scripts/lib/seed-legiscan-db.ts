@@ -90,9 +90,10 @@ ON CONFLICT (session_id) DO UPDATE SET
  * that existed before the seed: it has no marker, so its sync setting stays.
  */
 export function sessionSyncOnSql(sessionId: number): string {
+  const key = esc(seedPendingKey(sessionId))
   return `UPDATE sessions SET sync_enabled = 1
-WHERE session_id = ${num(sessionId)} AND EXISTS (SELECT 1 FROM settings WHERE key = ${esc(seedPendingKey(sessionId))});
-DELETE FROM settings WHERE key = ${esc(seedPendingKey(sessionId))};`
+WHERE session_id = ${num(sessionId)} AND EXISTS (SELECT 1 FROM settings WHERE key = ${key});
+DELETE FROM settings WHERE key = ${key};`
 }
 
 export function isTransientD1Error(msg: string): boolean {

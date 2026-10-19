@@ -478,12 +478,14 @@ The `--tenant` flag links the bills and updates the team's `state_coverage` — 
 > [!NOTE]
 > **Central's sync waits for the seed.** When the seeder creates a session, it creates it with sync off, so central's hourly sync doesn't spend LegiScan calls on bills the seeder is about to load. It turns sync on only after the bills have loaded and, with `--tenant`, the link step has finished. A seed that stops partway, or that skips bill files it can't read, leaves the session's sync off. Re-run the same command and sync comes on when that run completes. A session central already had keeps its sync setting.
 >
-> If you give up on a seed and want central to sync the session anyway, tick **sync enabled** on the session's row under **Sync schedules** on central's admin dashboard **Settings** page, or run:
+> If you give up on a seed and want central to sync the session anyway, run this command, which turns sync on and clears the seeder's marker for the session:
 >
 > ```bash
 > npx wrangler d1 execute <central-db> --remote --env legiscan \
 >   --command "UPDATE sessions SET sync_enabled = 1 WHERE session_id = [sessionId]; DELETE FROM settings WHERE key = 'seed_pending_session:[sessionId]'"
 > ```
+>
+> You can also tick **sync enabled** on the session's row under **Sync schedules** on central's admin dashboard **Settings** page and click **Save**. That leaves the seeder's `seed_pending_session:` marker in place, though. If you later turn sync off for the session and then a seed of it completes, the seed turns sync back on. The command above avoids that.
 
 > [!TIP]
 > **Watching a long seed.** The seeder prints a running count. On a terminal that's an in-place counter; when stdout isn't a terminal (backgrounded, or piped to `tee`) it switches to one line per batch so a log file shows real progress. To check from another shell, count the rows in central directly:
