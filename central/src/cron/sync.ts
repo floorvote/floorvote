@@ -12,6 +12,7 @@ import { deliverBatchToTenant } from '../lib/tenantDelivery'
 import { assignSessionSlugs } from '../lib/sessionSlugs'
 import { insertLinkWhileOwner, loadStateOwners, ownerOf, ownerOfState } from '../lib/stateProviders'
 import { queueCalendarRechecks } from '../lib/billCalendar'
+import { fetchRequestCutoff, refreshRequestedBills } from '../lib/fetchRequests'
 
 const BATCH = 80
 const FLUSH_BATCH = 500
@@ -327,6 +328,9 @@ export async function applyMasterList(
    * them. A state an instance never followed is seeded by its first pass.
    */
   const seeded = new Set<string>()
+  /** Live fetch-bills requests (lib/fetchRequests.ts), as `${billId}:${tenantId}`. */
+  const requested = new Set<string>()
+  const requestCutoff = fetchRequestCutoff()
   for (let i = 0; i < billIds.length; i += BATCH) {
     const chunk = billIds.slice(i, i + BATCH)
     const rows = await db.select({ billId: bills.billId, changeHash: bills.changeHash, carriedFrom: bills.carriedFrom })
@@ -337,10 +341,12 @@ export async function applyMasterList(
       billId: billTenants.billId,
       tenantId: billTenants.tenantId,
       matchType: billTenants.matchType,
+      fetchRequestedAt: billTenants.fetchRequestedAt,
     }).from(billTenants).where(inArray(billTenants.billId, chunk)).all()
     for (const r of links) {
       existingLinks.set(`${r.billId}:${r.tenantId}`, r.matchType ?? null)
       seeded.add(r.tenantId)
+      if (r.fetchRequestedAt && r.fetchRequestedAt > requestCutoff) requested.add(`${r.billId}:${r.tenantId}`)
     }
   }
   // An instance with no link in this list may still follow the state through
@@ -370,6 +376,8 @@ export async function applyMasterList(
   const billStmts: any[] = []
   const billTenantStmts: any[] = []
   const toQueue = new Set<number>()
+  /** Changed bills an instance asked for and doesn't track, fetched within the untracked-bill budget (lib/fetchRequests.ts). */
+  const toRefresh = new Set<number>()
   /** The new keyword matches each queued bill brings, by tenant (BillMessage.matchProvenance). */
   const provenanceByBill = new Map<number, Record<string, MatchProvenance>>()
   /** Bills a cutover moved here that are still waiting for their first ingest. */
@@ -472,6 +480,13 @@ export async function applyMasterList(
       const trackedCompanion = newMatchType === null && billChanged && !!companionTracked.get(entry.bill_id)?.has(t.tenantId)
       if (justMatched || alreadyMatchedAndChanged || carriedAndTracked || trackedCompanion) {
         toQueue.add(entry.bill_id)
+      }
+      // A bill the instance asked for through fetch-bills without tracking it gets its new texts too
+      // (lib/fetchRequests.ts). A LegiScan fetch spends the untracked-bill budget, after this loop;
+      // another provider's is unmetered, so it is queued as a companion's is.
+      if (newMatchType === null && billChanged && requested.has(linkKey)) {
+        if (session.provider === DEFAULT_PROVIDER_ID) toRefresh.add(entry.bill_id)
+        else toQueue.add(entry.bill_id)
       }
 
       // A new keyword match is routine only when this pass links a bill
@@ -586,6 +601,9 @@ export async function applyMasterList(
         })
     )
   }
+  // After the bill rows took the list's change hash, so each reads as behind its detail.
+  const refreshed = await refreshRequestedBills(db, ingestorQueue, [...toRefresh].filter(billId => !toQueue.has(billId)))
+  queueIds.push(...refreshed)
   // An unchanged bill is a second pull of its calendar (lib/billCalendar.ts).
   await queueCalendarRechecks(db, ingestorQueue, unchanged)
 

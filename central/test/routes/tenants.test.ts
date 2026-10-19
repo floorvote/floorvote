@@ -531,10 +531,75 @@ describe('POST /tenants/fetch-bills/:tenantId — fetch bills without tracking t
   it('sends a bill whose texts central already holds on without a provider call', async () => {
     await seedLinked()
     const db = drizzle(env.DB, { schema })
+    // Its detail, texts included, was fetched at the change the bill is at.
+    await db.update(schema.bills).set({ detailHash: 'h1' }).where(eq(schema.bills.billId, 601))
     await db.insert(schema.billTexts).values({ docId: 9001, billId: 601, date: '2026-01-01', type: 'Introduced' })
     const { env2, sent } = ingestorEnv()
     await post(env2, [601, 602])
     expect(sent).toEqual([{ billId: 601, skipFetch: true }, { billId: 602 }])
+  })
+
+  // #801: a bill central holds texts for, whose change hash moved past its last fetch, may have a newer text.
+  describe('a held bill the provider has a newer version of', () => {
+    async function seedMoved() {
+      await seedLinked()
+      const db = drizzle(env.DB, { schema })
+      await db.insert(schema.billTexts).values({ docId: 9001, billId: 601, date: '2026-01-01', type: 'Introduced' })
+      // The sync moved the bill to h1; its detail, texts included, was fetched at h0.
+      await db.update(schema.bills).set({ detailHash: 'h0' }).where(eq(schema.bills.billId, 601))
+      return db
+    }
+    async function setBudget(limit: number, used: number) {
+      await env.DB.prepare(`INSERT INTO settings (key, value) VALUES ('legiscan_monthly_limit', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value`).bind(String(limit)).run()
+      const at = new Date().toISOString().slice(0, 19).replace('T', ' ')
+      for (let i = 0; i < used; i++) {
+        await drizzle(env.DB, { schema }).insert(schema.apiCallLog).values({ callType: 'getBill', params: `{"id":${i}}`, loggedAt: at })
+      }
+    }
+
+    it('is fetched from the provider rather than sent on with the texts central holds', async () => {
+      await seedMoved()
+      const { env2, sent } = ingestorEnv()
+      const res = await post(env2, [601])
+      expect((await res.json() as any).queued).toBe(1)
+      expect(sent).toEqual([{ billId: 601, queuedBy: 'legiscan' }])
+    })
+
+    it('is still held off for a day after its last fetch', async () => {
+      const db = await seedMoved()
+      await db.update(schema.bills).set({ textsFetchedAt: FRESH() }).where(eq(schema.bills.billId, 601))
+      const { env2, sent } = ingestorEnv()
+      await post(env2, [601])
+      expect(sent).toEqual([])
+      await db.update(schema.bills).set({ textsFetchedAt: STALE() }).where(eq(schema.bills.billId, 601))
+      await post(env2, [601])
+      expect(sent).toEqual([{ billId: 601, queuedBy: 'legiscan' }])
+    })
+
+    it('spends only the budget untracked bills share, sending the rest on with the texts central holds', async () => {
+      const db = await seedMoved()
+      await db.insert(schema.bills).values({ billId: 604, sessionId: 1, state: 'RI', stateId: 44, billNumber: 'H604', title: 'D', changeHash: 'h4', detailHash: 'h0', status: 1 })
+      await db.insert(schema.billTenants).values({ billId: 604, tenantId: 'ri', matchType: null })
+      await db.insert(schema.billTexts).values({ docId: 9004, billId: 604, date: '2026-01-01', type: 'Introduced' })
+      // A limit of 4 leaves a floor of 1 call, and a fetch spends 1, so at most 2 may be used: 2 are, so one more fetch fits.
+      // The first fetch queued counts against the budget until it lands, so the second finds none left.
+      await setBudget(4, 2)
+      const { env2, sent } = ingestorEnv()
+      await post(env2, [601, 604])
+      expect(sent).toEqual([{ billId: 601, queuedBy: 'legiscan' }, { billId: 604, skipFetch: true }])
+    })
+  })
+
+  it('records each ask on the asking instance\'s link, so the sync keeps the bill\'s texts current', async () => {
+    await seedLinked()
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.billTenants).values({ billId: 601, tenantId: 'nj', matchType: null })
+    const { env2 } = ingestorEnv()
+    await post(env2, [601])
+    const links = await db.select({ tenantId: schema.billTenants.tenantId, at: schema.billTenants.fetchRequestedAt })
+      .from(schema.billTenants).where(eq(schema.billTenants.billId, 601)).all()
+    expect(Object.fromEntries(links.map(l => [l.tenantId, l.at !== null]))).toEqual({ ri: true, nj: false })
   })
 
   it('ends the cycle of two instances each tracking one bill of a pair, after one round', async () => {
@@ -762,6 +827,8 @@ describe('POST /tenants/fetch-bills/:tenantId — fetch bills without tracking t
   it('sends a bill whose texts central already holds on without a provider call', async () => {
     await seedLinked()
     const db = drizzle(env.DB, { schema })
+    // Its detail, texts included, was fetched at the change the bill is at.
+    await db.update(schema.bills).set({ detailHash: 'h1' }).where(eq(schema.bills.billId, 601))
     await db.insert(schema.billTexts).values({ docId: 9001, billId: 601, date: '2026-01-01', type: 'Introduced' })
     const { env2, sent } = ingestorEnv()
     await post(env2, [601, 602])

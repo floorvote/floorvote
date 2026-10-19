@@ -78,9 +78,9 @@ export function insertLinkWhileOwner(
 ) {
   // A query builder rather than db.run, so it can go in a db.batch. Drizzle
   // inserts every bill_tenants column in schema order: bill_id, tenant_id,
-  // notified_at, match_type.
+  // notified_at, match_type, fetch_requested_at.
   return db.insert(billTenants).select(sql`
-    SELECT ${link.billId}, ${link.tenantId}, NULL, ${link.matchType}
+    SELECT ${link.billId}, ${link.tenantId}, NULL, ${link.matchType}, NULL
     WHERE COALESCE((SELECT provider FROM state_providers WHERE state = ${state}), ${DEFAULT_PROVIDER_ID}) = ${provider}`)
     .onConflictDoNothing()
 }

@@ -370,6 +370,8 @@ export const billTenants = sqliteTable('bill_tenants', {
   tenantId:   text('tenant_id').notNull(),
   notifiedAt: text('notified_at'),
   matchType:  text('match_type'),
+  /** When the instance last asked for the bill through POST /tenants/fetch-bills (0046, lib/fetchRequests.ts). */
+  fetchRequestedAt: text('fetch_requested_at'),
 }, (t) => [primaryKey({ columns: [t.billId, t.tenantId] })])
 
 export const apiCallLog = sqliteTable('api_call_log', {
