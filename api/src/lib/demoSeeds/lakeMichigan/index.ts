@@ -69,6 +69,7 @@ export const LAKE_MICHIGAN_SEED: DemoSeed = {
   ],
   customFieldValues: LM_CUSTOM_FIELD_VALUES, notes: LM_NOTES,
   calendarEvents: LM_CALENDAR_EVENTS,
+  teamFieldChanges: [],
   // Written for a basin-wide water team. Each view combines filters the way a team
   // would, and they lean on what this seed writes (working group, position, priority)
   // so they return bills whatever the AI tagged. None uses a subject, since a demo
