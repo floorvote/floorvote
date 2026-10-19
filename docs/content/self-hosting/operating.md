@@ -1,5 +1,5 @@
 ---
-description: "Day-to-day operation of a running FloorVote deployment: the optional superadmin dashboard, adding states, adding teams, upgrading, monitoring, and claim links."
+description: "Day-to-day operation of a running FloorVote deployment: the optional superadmin dashboard, adding states, adding teams, upgrading, monitoring, and summary citations."
 ---
 
 # Operating your deployment
@@ -103,15 +103,15 @@ cd ../api && npm run deploy:tenant -- org-nj
 
 Each tenant Worker exposes `GET /api/health`. On the LegiScan central, the health check is also `GET /api/health` (the bare `/health` path is served by the admin dashboard). The central worker pulls aggregate engagement stats from each tenant once a day, at 06:00 UTC.
 
-## Claim links
+## Summary citations
 
-A claim link takes a reader from a claim in an AI summary to the bill text behind it. When an instance analyzes a bill, it asks the model, in the same call, for a short quote from the bill that supports each claim in the summary. The instance then looks for each quote in the text the reader sees, and records how it matched. On an HTML bill, clicking a claim opens the bill text at that passage, highlighted. On a PDF, it opens the cited page, with the quote shown beside the link. A claim whose quote can't be found is shown as plain text, with no link.
+A summary citation takes a reader from a statement in an AI summary to the bill text behind it. (Underneath, each statement is a "claim" and its citation a "claim link", the terms the instance's settings route and central's dashboard use.) When an instance analyzes a bill, it asks the model, in the same call, for a short quote from the bill that supports each claim in the summary. The instance then looks for each quote in the text the reader sees, and records how it matched. On an HTML bill, clicking a statement opens the bill text at that passage, highlighted. On a PDF, it opens the cited page, with the quote shown beside the link. A statement whose quote can't be found is shown as plain text, with no link.
 
 Links arrive with a bill's next analysis. Summaries already written are not backfilled, and a bill with no claim sources reads exactly as it did before.
 
 ### The setting
 
-Claim links are a per-instance setting, on by default. An admin can turn them off in the instance's AI settings. With the setting off, new analyses don't ask for claim sources and store none, and existing links show as plain text. Turning it back on shows the stored links again, and new analyses ask again.
+**Summary citations** is a per-instance setting, on by default. An admin can turn it off under **Settings → Config → AI instructions**. With the setting off, new analyses don't ask for claim sources and store none, and existing links show as plain text. Turning it back on shows the stored links again, and new analyses ask again.
 
 ### What it costs
 
@@ -123,7 +123,7 @@ Any change to the analysis call moves relevance scores slightly, and this one do
 
 ### Reading the counts
 
-Central's dashboard shows, for each instance, how its stored claim sources resolved. Open **Tenants**, choose the instance, and find **Claim links**, beside the instance's AI instructions status. Central asks the instance, which scans its bills at most every 30 minutes and reuses the answer in between. The section says how old the counts are, and the cut-off count is always current. When central can't ask, because it has no binding for the instance or the instance hasn't been upgraded to this release, the section says "unavailable" with the reason.
+Central's dashboard shows, for each instance, how its stored claim sources resolved. Open **Tenants**, choose the instance, and find **Claim links** (the dashboard keeps the earlier name), beside the instance's AI instructions status. Central asks the instance, which scans its bills at most every 30 minutes and reuses the answer in between. The section says how old the counts are, and the cut-off count is always current. When central can't ask, because it has no binding for the instance or the instance hasn't been upgraded to this release, the section says "unavailable" with the reason.
 
 Each claim source is counted once, by how its quote matched:
 
@@ -139,7 +139,7 @@ Each claim source is counted once, by how its quote matched:
 Two more signals sit beside the table:
 
 - **Asked, none stored** counts analyses that asked for claim sources and got nothing usable back. Each stored `[]`.
-- **Cut off, retried without claim sources** counts analyses whose response ran out of output inside the claim sources. The instance asks once more without them and stores the summary, so the bill is fine but has no links. These retries also leave no list on the bill, so they are counted under **No list stored** along with bills analyzed before claim links, bills analyzed with the setting off, and bills analyzed on their title and abstract alone. The retry count starts from the release that added it. Each retry also logs `did not parse with claim sources asked; retrying without them`.
+- **Cut off, retried without claim sources** counts analyses whose response ran out of output inside the claim sources. The instance asks once more without them and stores the summary, so the bill is fine but has no links. These retries also leave no list on the bill, so they are counted under **No list stored** along with bills analyzed before summary citations, bills analyzed with the setting off, and bills analyzed on their title and abstract alone. The retry count starts from the release that added it. Each retry also logs `did not parse with claim sources asked; retrying without them`.
 
 For a healthy HTML instance, most quotes resolve as exact, normalized, or fuzzy. The research behind the feature located 91 to 93 percent of quotes in the bill text. A much lower share, with a large ungrounded count, is worth a look. Very long bills resolve fewer quotes, because the instance caps the matching work it spends on one bill. A quote that matches exactly or after normalizing is never affected, so the quotes that go ungrounded first are the ones that would have needed a close match.
 

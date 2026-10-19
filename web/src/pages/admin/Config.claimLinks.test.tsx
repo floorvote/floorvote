@@ -3,7 +3,7 @@ import { render, screen, waitFor, within, act } from '@testing-library/react'
 import React from 'react'
 import userEvent from '@testing-library/user-event'
 
-// The claim links switch in Settings (#570), in the AI instructions card, right under the bill summary instructions.
+// The summary citations switch in Settings (#570, internally "claim links"), in the AI instructions card, right under the bill summary instructions, in a box like the notification switches.
 
 vi.mock('react-router-dom', () => ({
   useNavigate: () => vi.fn(),
@@ -41,6 +41,7 @@ vi.mock('../../lib/exportData', () => ({ exportAllData: vi.fn() }))
 import { apiFetch } from '../../lib/api'
 import { Config } from './Config'
 import { createUnsavedRegistry, UnsavedTextContext } from '../../lib/unsavedText'
+import { settingBox, SETTING_BOX_HEADER, SETTING_BOX_TITLE, SETTING_BOX_DESC } from '../../lib/settingBoxStyle'
 
 const mockFetch = vi.mocked(apiFetch)
 
@@ -71,11 +72,12 @@ function renderConfig() {
   render(<UnsavedTextContext.Provider value={createUnsavedRegistry()}><Config /></UnsavedTextContext.Provider>)
 }
 
-const COPY = "Links claims in a bill's summary to the associated passage in the bill. This will increase AI costs slightly."
-const toggle = () => screen.findByRole('switch', { name: /claim links/i })
+const COPY = 'Each statement in a bill summary cites and links to the associated passage in the bill. This will increase AI costs slightly.'
+const INTRO = 'New bill summaries will include citations. Existing summaries get them only when the AI is re-run on them. Do you want to re-run it on existing bills?'
+const toggle = () => screen.findByRole('switch', { name: /summary citations/i })
 const putsToClaimLinks = () => mockFetch.mock.calls.filter(([p, init]) => p === '/admin/claim-links' && (init as RequestInit | undefined)?.method === 'PUT')
 const reprocessPosts = () => mockFetch.mock.calls.filter(([p, init]) => String(p).startsWith('/admin/reprocess-llm-all') && (init as RequestInit | undefined)?.method === 'POST')
-const scopeDialog = () => screen.findByRole('dialog', { name: /claim links turned on/i })
+const scopeDialog = () => screen.findByRole('dialog', { name: /summary citations turned on/i })
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -83,7 +85,7 @@ beforeEach(() => {
   mockConfig()
 })
 
-describe('Config: the claim links switch', () => {
+describe('Config: the summary citations switch', () => {
   it('sits in the AI instructions card', async () => {
     renderConfig()
     const box = await toggle()
@@ -135,7 +137,55 @@ describe('Config: the claim links switch', () => {
   it('has a short label', async () => {
     renderConfig()
     await toggle()
-    expect(screen.getByTestId('claim-links-label').textContent).toBe('Claim links')
+    expect(screen.getByTestId('claim-links-label').textContent).toBe('Summary citations')
+  })
+
+  it('names the switch for assistive technology "Summary citations"', async () => {
+    renderConfig()
+    expect(await screen.findByRole('switch', { name: 'Summary citations' })).toBeInTheDocument()
+  })
+
+  it('no longer shows the old name "claim links" anywhere on the page', async () => {
+    renderConfig()
+    await toggle()
+    expect(screen.queryByText(/claim links?/i)).toBeNull()
+    expect(screen.queryByRole('switch', { name: /claim links?/i })).toBeNull()
+  })
+
+  it('puts the label, description, switch, and status in one box', async () => {
+    renderConfig()
+    const box = await toggle()
+    const boxEl = screen.getByTestId('claim-links-box')
+    expect(boxEl).toContainElement(box)
+    expect(boxEl).toContainElement(screen.getByTestId('claim-links-label'))
+    expect(boxEl).toContainElement(screen.getByTestId('claim-links-copy'))
+    expect(boxEl).toContainElement(screen.getByTestId('claim-links-status'))
+    // Not a box inside the Bill summary field's hint or textarea.
+    expect(boxEl).not.toContainElement(screen.getByLabelText('Bill summary'))
+  })
+
+  it('styles the box, title, and description with the shared setting-box styles the notification switches use', async () => {
+    renderConfig()
+    await toggle()
+    const styleOf = (el: React.ReactElement) => render(el).container.firstElementChild!.getAttribute('style')
+    const boxEl = screen.getByTestId('claim-links-box')
+    expect(boxEl.getAttribute('style')).toBe(styleOf(<div style={settingBox(false)} />))
+    expect(screen.getByTestId('claim-links-label').getAttribute('style')).toBe(styleOf(<div style={SETTING_BOX_TITLE} />))
+    expect(screen.getByTestId('claim-links-copy').getAttribute('style')).toBe(styleOf(<div style={SETTING_BOX_DESC} />))
+    expect(screen.getByTestId('claim-links-header').getAttribute('style')).toBe(styleOf(<div style={SETTING_BOX_HEADER} />))
+  })
+
+  it('dims the box on a locked demo, as the notification boxes do', async () => {
+    demo.demoLocked = true
+    renderConfig()
+    await toggle()
+    expect(screen.getByTestId('claim-links-box').style.opacity).toBe('0.55')
+  })
+
+  it('leaves the box at full strength otherwise', async () => {
+    renderConfig()
+    await toggle()
+    expect(screen.getByTestId('claim-links-box').style.opacity).toBe('1')
   })
 
   it('saves off right away through the claim links route, not the AI instructions save', async () => {
@@ -206,17 +256,19 @@ describe('Config: the claim links switch', () => {
   })
 })
 
-describe('Config: turning claim links on offers a re-run', () => {
+describe('Config: turning summary citations on offers a re-run', () => {
   async function turnOn() {
     mockConfig({ claim_links_enabled: false }, () => ({ enabled: true }))
     renderConfig()
     await userEvent.click(await toggle())
   }
 
-  it('opens the reprocess dialog with the claim links intro', async () => {
+  it('opens the reprocess dialog with the summary citations intro', async () => {
     await turnOn()
     const dialog = await scopeDialog()
-    expect(within(dialog).getByText(/existing summaries get claim links only when/i)).toBeInTheDocument()
+    expect(dialog).toHaveAccessibleName('Summary citations turned on')
+    expect(within(dialog).getByText(INTRO)).toBeInTheDocument()
+    expect(within(dialog).queryByText(/claim links?/i)).toBeNull()
     expect(within(dialog).queryByText(/instructions you just saved/i)).toBeNull()
     expect(screen.queryByRole('dialog', { name: 'Instructions saved' })).toBeNull()
   })
@@ -309,11 +361,11 @@ describe('Config: turning claim links on offers a re-run', () => {
     })
     await userEvent.click(screen.getByRole('button', { name: 'Save AI instructions' }))
     expect(await screen.findByRole('dialog', { name: 'Instructions saved' })).toBeInTheDocument()
-    expect(screen.queryByRole('dialog', { name: /claim links turned on/i })).toBeNull()
+    expect(screen.queryByRole('dialog', { name: /summary citations turned on/i })).toBeNull()
   })
 })
 
-describe('Config: the claim links switch, for keyboard and screen reader users', () => {
+describe('Config: the summary citations switch, for keyboard and screen reader users', () => {
   /** A save that stays in flight until the test settles it. */
   function pendingSave() {
     let settle!: (v: unknown) => void
@@ -374,14 +426,14 @@ describe('Config: the claim links switch, for keyboard and screen reader users',
     const status = screen.getByTestId('claim-links-status')
     expect(status).toHaveAttribute('role', 'status')
     expect(status).toHaveAttribute('aria-live', 'polite')
-    await waitFor(() => expect(status).toHaveTextContent(/claim links turned off/i))
+    await waitFor(() => expect(status).toHaveTextContent('Summary citations turned off.'))
   })
 
-  it('announces that claim links are back on after turning them on', async () => {
+  it('announces that summary citations are on after turning them on', async () => {
     mockConfig({ claim_links_enabled: false }, () => ({ enabled: true }))
     renderConfig()
     await userEvent.click(await toggle())
-    await waitFor(() => expect(screen.getByTestId('claim-links-status')).toHaveTextContent(/claim links turned on/i))
+    await waitFor(() => expect(screen.getByTestId('claim-links-status')).toHaveTextContent('Summary citations turned on.'))
   })
 
   it('announces a failed save in the live region', async () => {
