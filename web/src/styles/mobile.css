@@ -318,8 +318,8 @@ body.nav-pending * { cursor: wait !important; }
   }
   .bill-list-header-row,
   .bill-row-grid {
-    /* Priority keeps its full 120px so the dropdown isn't clipped when Team drops. */
-    grid-template-columns: 12px minmax(0, 1fr) 120px !important;
+    /* Priority keeps its full width (PRIORITY_COL_WIDTH in constants.ts, 140px) so the dropdown isn't clipped when Team drops. */
+    grid-template-columns: 12px minmax(0, 1fr) 140px !important;
   }
   .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) auto !important;
@@ -384,11 +384,20 @@ body.nav-pending * { cursor: wait !important; }
   }
   .bill-list-header-row.bill-list-ms,
   .bill-row-grid.bill-list-ms {
-    grid-template-columns: 12px minmax(0, 1fr) 120px !important;
+    grid-template-columns: 12px minmax(0, 1fr) 140px !important;
   }
   .bill-list-ms .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) auto !important;
   }
+}
+
+/* A companion group's chips cell (BillRow, data-group-rows) is a grid of rows:
+   one per shown bill, plus one for "+N" (groupRows.ts). Its number and status
+   cells are subgrids that place each bill and its status on a shared row; every
+   other cell (year, last action, relevance) spans all the rows, so it stays
+   centered on the whole group. -1 is the last line of the explicit rows. */
+.bill-row-chips-cell[data-group-rows] > * {
+  grid-row: 1 / -1;
 }
 
 /* Fallback for browsers WITHOUT container-query support. Gated behind @supports

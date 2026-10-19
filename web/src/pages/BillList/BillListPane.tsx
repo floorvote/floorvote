@@ -19,6 +19,7 @@ import { buildListSummary } from './listSummary'
 import { BillListPaneSummary } from './BillListPaneSummary'
 import { peekBillsListCache, peekCustomFieldDefs } from './index'
 import { groupDisplay, memberPath, formatYearChip } from './BillRow'
+import { groupPlacement, groupGridStyle, groupItemStyle, subgridCellStyle, GROUP_ROW_GAP } from './groupRows'
 import { PANE_MIN_WIDTH, paneGridTemplate, visiblePaneColumns, type PaneColumn } from './paneWidth'
 import { PaneResizeHandle, useBillListPaneWidth } from './BillListPaneResize'
 import type { Bill } from './types'
@@ -71,7 +72,10 @@ function isOpenBill(bill: Bill, path: string, here: string, legacyId: string | u
   return !!bill.group?.some(m => memberPath(m) === here || (legacyId !== undefined && m.id === legacyId))
 }
 
-const STACK: CSSProperties = { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, minWidth: 0 }
+// A narrow pane has no status column: a group's numbers and statuses are the
+// two columns of one grid, a status on its bill's row, the statuses at the
+// row's right edge (see groupRows.ts).
+const PAIRS: CSSProperties = { display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr)', columnGap: 8, rowGap: GROUP_ROW_GAP, alignItems: 'center', width: '100%' }
 
 // The header the columns sit under: sticky at the top of the scrolling list, on
 // the same grid as every row so each header is over its cells.
@@ -108,27 +112,34 @@ const PaneRow = memo(function PaneRow({ bill, path, isCurrent, billPaths, index,
   const companions = bill.group ? bill.group.slice(1) : []
   const wide = columns.length > 0
 
-  const numbers = group ? (
-    <div style={STACK}>
-      {group.shown.map((m, n) => (
-        // The priority is the group's, drawn once, on the lead's number.
-        <BillBadge key={m.id} mini billNumber={m.billNumber} state={m.state} priority={n === 0 ? bill.priority : null} />
-      ))}
-      {group.hidden.length > 0 && (
+  const placement = group ? groupPlacement(group) : null
+  // The priority is the group's, so every one of its numbers carries the square.
+  // Where the pieces go: groupRows.ts. `column` is given only for the narrow pane's
+  // two-column grid, where a number or status has no cell of its own.
+  const groupNumbers = (column?: number) => group && placement && [
+    ...group.shown.map((m, i) => (
+      <div key={m.id} data-group-item="number" style={groupItemStyle(placement.numberRows[i], column)}>
+        <BillBadge mini billNumber={m.billNumber} state={m.state} priority={bill.priority} />
+      </div>
+    )),
+    ...(placement.moreRow !== null ? [(
+      <div key="more" data-group-item="more" style={groupItemStyle(placement.moreRow, column)}>
         <span aria-hidden style={{ ...CHROME_TEXT, fontWeight: fontWeight.semibold }}>+{group.hidden.length}</span>
-      )}
+      </div>
+    )] : []),
+  ]
+  const groupStatuses = (column?: number, atEnd = false) => group && placement && group.statuses.map((status, i) => (
+    <div key={status} data-group-item="status" style={{ ...groupItemStyle(placement.statusRows[i], column), ...(atEnd ? { justifySelf: 'end' } : {}) }}>
+      <StatusChip capWidth status={decodeStatus(status)} />
     </div>
-  ) : (
-    <BillBadge mini billNumber={bill.billNumber} state={bill.state} isDraft={bill.isDraft} priority={bill.priority} />
-  )
+  ))
+  const numbers = <BillBadge mini billNumber={bill.billNumber} state={bill.state} isDraft={bill.isDraft} priority={bill.priority} />
   const priorityForReaders = bill.priority && <span style={SR_ONLY}>, {bill.priority} priority</span>
 
   // What each column holds: the Bills page's own chips, drawn read-only (the
   // row is a link, and the pane filters nothing).
   const cells: Record<PaneColumn['key'], ReactNode> = {
-    status: group
-      ? <div style={{ ...STACK, alignItems: 'flex-start' }}>{group.statuses.map(status => <StatusChip capWidth key={status} status={decodeStatus(status)} />)}</div>
-      : bill.isDraft ? <DraftChip /> : <StatusChip capWidth status={decodeStatus(bill.status)} />,
+    status: group ? groupStatuses() : bill.isDraft ? <DraftChip /> : <StatusChip capWidth status={decodeStatus(bill.status)} />,
     year: <SessionChip session={formatYearChip(bill.yearStart, bill.yearEnd)} />,
     lastAction: <LastActionChip date={bill.lastActionDate} />,
     relevance: <RelevanceChip score={bill.relevanceScore} />,
@@ -157,23 +168,46 @@ const PaneRow = memo(function PaneRow({ bill, path, isCurrent, billPaths, index,
     >
       {wide ? (
         // Wide: the status moves into its column, so it is not also drawn at
-        // the row's top right.
-        <div data-pane-grid style={{ display: 'grid', gridTemplateColumns: paneGridTemplate(columns, multiState), columnGap: 8, alignItems: group ? 'start' : 'center', marginBottom: 4 }}>
-          <div>{numbers}{priorityForReaders}</div>
+        // the row's top right. A group's number and status cells are subgrids
+        // of a grid with a row per bill, so each status is level with its bill.
+        <div
+          data-pane-grid
+          data-group-rows={placement?.rows}
+          style={{
+            display: 'grid', gridTemplateColumns: paneGridTemplate(columns, multiState), columnGap: 8,
+            alignItems: group ? 'start' : 'center', marginBottom: 4,
+            ...(placement ? groupGridStyle(placement.rows) : {}),
+          }}
+        >
+          {group
+            ? <div style={subgridCellStyle}>{groupNumbers()}{priorityForReaders}</div>
+            : <div>{numbers}{priorityForReaders}</div>}
           {columns.map(c => (
-            <div key={c.key} data-pane-col={c.key} style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>{cells[c.key]}</div>
+            <div
+              key={c.key}
+              data-pane-col={c.key}
+              style={{
+                display: 'flex', alignItems: 'center', minWidth: 0,
+                // The status column of a group is a subgrid; the other columns span every row.
+                ...(group ? (c.key === 'status' ? subgridCellStyle : { gridRow: '1 / -1' }) : {}),
+              }}
+            >{cells[c.key]}</div>
           ))}
         </div>
+      ) : group && placement ? (
+        <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 4 }}>
+          <div data-group-pairs style={PAIRS}>
+            {groupNumbers(1)}
+            {groupStatuses(2, true)}
+            {priorityForReaders}
+          </div>
+        </div>
       ) : (
-        <div style={{ display: 'flex', alignItems: group ? 'flex-start' : 'center', gap: 8, marginBottom: 4 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
           {numbers}
           {priorityForReaders}
           <span style={{ marginLeft: 'auto', display: 'flex', minWidth: 0 }}>
-            {group ? (
-              <span style={{ ...STACK, alignItems: 'flex-end' }}>
-                {group.statuses.map(status => <StatusChip capWidth key={status} status={decodeStatus(status)} />)}
-              </span>
-            ) : bill.isDraft ? <DraftChip mini /> : <StatusChip capWidth status={decodeStatus(bill.status)} />}
+            {bill.isDraft ? <DraftChip mini /> : <StatusChip capWidth status={decodeStatus(bill.status)} />}
           </span>
         </div>
       )}

@@ -21,7 +21,7 @@ import { billUrl } from '../../lib/sessionSlug'
 import { orgPositionLabel, DEFAULT_ORG_NOUN } from '../../lib/orgNoun'
 import { BillRow } from './BillRow'
 import { FilterDropdown, SortHeader, sortDescription, SubjectFilterDropdown } from './FilterPanel'
-import { PAGE_SIZE, OUTER_GRID, CHIP_GRID, CHIP_GRID_MULTISTATE, CHIP_GAP } from './constants'
+import { PAGE_SIZE, OUTER_GRID, CHIP_GRID, CHIP_GRID_MULTISTATE, CHIP_GAP, ROW_PADDING_LEFT, ROW_PADDING_RIGHT } from './constants'
 import type { Bill, CustomFieldDef, FacetCounts, NormalizedSession } from './types'
 import { useBillSort } from '../../hooks/useBillSort'
 import { useBillFilters } from '../../hooks/useBillFilters'
@@ -1154,7 +1154,7 @@ export function BillList() {
       </div>
       {/* Column headers at bottom of sticky block — containerType for @container responsive queries */}
       <div className="bill-list-header-wrapper" style={{ maxWidth: 1100, margin: '0 auto', padding: '0 24px', containerType: 'inline-size' } as React.CSSProperties}>
-        <div style={{ padding: '6px 16px 6px 8px', background: color.surfaceSubtle, border: `1px solid ${color.borderDefault}`, borderBottom: `1px solid ${color.borderDefault}`, borderRadius: `${radius.lg}px ${radius.lg}px 0 0`, boxShadow: headerScrolled ? '0 5px 6px -4px rgba(0,0,0,0.18)' : 'none', transition: 'box-shadow 0.2s ease' }}>
+        <div style={{ padding: `6px ${ROW_PADDING_RIGHT}px 6px ${ROW_PADDING_LEFT}px`, background: color.surfaceSubtle, border: `1px solid ${color.borderDefault}`, borderBottom: `1px solid ${color.borderDefault}`, borderRadius: `${radius.lg}px ${radius.lg}px 0 0`, boxShadow: headerScrolled ? '0 5px 6px -4px rgba(0,0,0,0.18)' : 'none', transition: 'box-shadow 0.2s ease' }}>
           <div className={`bill-list-header-row${f.isMultiState ? ' bill-list-ms' : ''}`} style={{ display: 'grid', gridTemplateColumns: `12px ${OUTER_GRID}`, gap: 8, alignItems: 'center' }}>
             <div className="bill-list-header-checkbox" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               {isAdmin && (
