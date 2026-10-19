@@ -196,6 +196,17 @@ describe('Export API', () => {
     }
   })
 
+  it('exports comment attachments', async () => {
+    expect(EXPORT_TABLES).toContain('commentAttachments')
+    await env.DB.prepare(
+      "INSERT INTO comment_attachments (id, uploader_id, r2_key, name, content_type, size) VALUES ('att-1', ?, 'bpc-test/k', 'Testimony.pdf', 'application/pdf', 42)",
+    ).bind(memberId).run()
+    const res = await app.request('/api/admin/export/commentAttachments', { headers: { Cookie: adminCookie } }, env)
+    expect(res.status).toBe(200)
+    const body = await res.json() as { rows: { name: string; size: number }[] }
+    expect(body.rows).toMatchObject([{ name: 'Testimony.pdf', size: 42 }])
+  })
+
   it('exports calendar_event_bills rows (composite-key table)', async () => {
     const billId = await seedBill({ billNumber: 'HB 50', title: 'Calendar Bill', state: 'RI' })
     const db = env.DB

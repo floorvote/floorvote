@@ -360,6 +360,24 @@ export const commentReactions = sqliteTable('comment_reactions', {
   uniqReaction: uniqueIndex('comment_reactions_comment_user_emoji_unique').on(t.commentId, t.userId, t.emoji),
 }))
 
+/** A file attached to a comment (#465). See migration 0115 and lib/attachments.ts. */
+export const commentAttachments = sqliteTable('comment_attachments', {
+  id: text('id').primaryKey(),
+  commentId: text('comment_id'),
+  uploaderId: text('uploader_id').notNull(),
+  r2Key: text('r2_key').notNull().unique(),
+  name: text('name').notNull(),
+  contentType: text('content_type').notNull(),
+  size: integer('size').notNull(),
+  checksum: text('checksum'),
+  confirmedAt: text('confirmed_at'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  deletedAt: text('deleted_at'),
+}, (t) => ({
+  commentIdx: index('idx_comment_attachments_comment').on(t.commentId),
+  uploaderIdx: index('idx_comment_attachments_uploader').on(t.uploaderId, t.createdAt),
+}))
+
 export const notes = sqliteTable('notes', {
   id: text('id').primaryKey(),
   billId: text('bill_id').notNull(),

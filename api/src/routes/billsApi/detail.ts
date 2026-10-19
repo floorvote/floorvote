@@ -15,6 +15,7 @@ import { dbTsToEpoch } from '../../../../shared/time'
 import { billSlug, filedSlug } from '../../lib/sessionSlug'
 import { loadDemoBillCalendar } from '../../lib/demoCalendar'
 import { activeUser } from '../../lib/accountDeletion'
+import { loadCommentAttachments } from '../../lib/attachments'
 import { loadTaxonomyTagNameSet, filterTagsToTaxonomy } from '../../lib/taxonomy'
 import { parseSubjects, loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../../lib/billSubjects'
 import { displayName, userDisplayNameSql } from '../../lib/displayName'
@@ -286,6 +287,7 @@ export async function buildBillDetail(
         .where(and(inArray(commentReactions.commentId, commentIds), isNull(commentReactions.deletedAt), activeUser))
         .all()
     : []
+  const attachmentsByComment = await loadCommentAttachments(db, commentIds)
 
   const reactionsByComment = new Map<string, Map<string, { count: number; userReacted: boolean; reactors: { name: string; title: string | null; subtitle: string | null }[] }>>()
   for (const { reaction: r, user: reactor } of reactionRows) {
@@ -314,6 +316,7 @@ export async function buildBillDetail(
     reactions: Array.from(reactionsByComment.get(comment.id)?.entries() ?? []).map(
       ([emoji, data]) => ({ emoji, count: data.count, userReacted: data.userReacted, reactors: data.reactors }),
     ),
+    attachments: attachmentsByComment.get(comment.id) ?? [],
   }))
 
   const positionRow = teamValues.position

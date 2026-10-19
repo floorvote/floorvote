@@ -13,6 +13,7 @@ import { muteBill, unmuteBill } from '../../lib/billMutes'
 import { stripHtml } from '../../lib/stripHtml'
 import { COMMENT_PREVIEW_MAX, truncateWithEllipsis } from '../../../../shared/feedUtils'
 import { sanitizeCommentHtml } from '../../lib/sanitizeHtml'
+import { attachToComment, checkAttachable, loadCommentAttachments } from '../../lib/attachments'
 import type { AppEnv } from '../../types'
 import { nowDb } from '../../lib/dbTime'
 import { activeUser } from '../../lib/accountDeletion'
@@ -195,6 +196,7 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
           .where(and(inArray(commentReactions.commentId, commentIds), isNull(commentReactions.deletedAt), activeUser))
           .all()
       : []
+    const attachmentsByComment = await loadCommentAttachments(db, commentIds)
 
     const reactionsByComment = new Map<string, Map<string, { count: number; userReacted: boolean; reactors: { name: string; title: string | null; subtitle: string | null }[] }>>()
     for (const { reaction: r, user: reactor } of reactionRows) {
@@ -223,6 +225,7 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
         reactions: Array.from(reactionsByComment.get(comment.id)?.entries() ?? []).map(
           ([emoji, data]) => ({ emoji, count: data.count, userReacted: data.userReacted, reactors: data.reactors }),
         ),
+        attachments: attachmentsByComment.get(comment.id) ?? [],
       })),
     )
   })
@@ -234,11 +237,15 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
     const currentUser = c.get('user')
     const bill = await db.select({ id: bills.id }).from(bills).where(eq(bills.id, id)).get()
     if (!bill) return c.json({ error: 'Not found' }, 404)
-    const body = await c.req.json<{ content?: string }>().catch(() => ({} as { content?: string }))
+    const body = await c.req.json<{ content?: string; attachmentIds?: unknown }>().catch(() => ({} as { content?: string; attachmentIds?: unknown }))
     if (!body.content?.trim()) return c.json({ error: 'content is required' }, 400)
     if (new TextEncoder().encode(body.content.trim()).length > 10_240) {
       return c.json({ error: 'Comment too long (max 10 KB)' }, 400)
     }
+    // Files the composer uploaded and confirmed (#465), checked before the
+    // comment is written so a refused file posts nothing.
+    const attachable = await checkAttachable(c.env, db, currentUser.id, body.attachmentIds)
+    if (!attachable.ok) return c.json({ error: attachable.error }, attachable.status)
     if (c.env.DEMO_MODE === 'true') {
       const live = await db
         .select({ n: sql<number>`count(*)` })
@@ -265,6 +272,7 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
       content,
       createdAt: now,
     })
+    await attachToComment(db, commentId, attachable.ids)
 
     const mentionedUserIds = await extractAndNotifyMentions(commentId, content, currentUser.id, currentUser.role, id, c.env, c.executionCtx.waitUntil.bind(c.executionCtx))
     // Everyone else who has commented here hears about it too, except the people

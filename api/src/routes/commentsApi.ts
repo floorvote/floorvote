@@ -7,6 +7,7 @@ import { syncMentionsOnEdit } from '../lib/mentions'
 import { notifyAuthorOfReaction } from '../lib/reactions'
 import { sanitizeCommentHtml } from '../lib/sanitizeHtml'
 import { nowDb } from '../lib/dbTime'
+import { softDeleteCommentAttachments } from '../lib/attachments'
 import { isReactionEmoji } from '../../../shared/reactionEmojis'
 import { COMMENT_PREVIEW_MAX, stripHtml, truncateWithEllipsis } from '../../../shared/feedUtils'
 import type { AppEnv } from '../types'
@@ -97,6 +98,8 @@ commentsApiRouter.delete('/:id', async (c) => {
   const now = nowDb()
   await db.update(comments).set({ deletedAt: now, deletedBy: currentUser.id }).where(eq(comments.id, id))
   await db.update(commentReactions).set({ deletedAt: now }).where(eq(commentReactions.commentId, id))
+  // Its files stop downloading now and are purged 30 days on (lib/attachments.ts).
+  await softDeleteCommentAttachments(db, id)
   await db.update(feedEvents)
     .set({ suppressed: true })
     .where(and(

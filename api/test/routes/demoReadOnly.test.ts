@@ -228,6 +228,10 @@ describe('demo write rate limit', () => {
 // destructive one — can ship silently.
 const DENIED = new Set([
   'DELETE /api/admin/custom-fields/:id',
+  // Comment attachments are off on a demo (lib/attachments.ts), and these refuse there too.
+  'DELETE /api/attachments/:id',
+  'POST /api/attachments',
+  'POST /api/attachments/:id/confirm',
   'DELETE /api/admin/members/:id',
   'DELETE /api/admin/roles/:id',
   'DELETE /api/admin/views/:id',
@@ -336,8 +340,8 @@ describe('demo write categorisation', () => {
 
   it('pins the size of each category so a silent shift is visible', () => {
     expect(DEMO_WRITE_ALLOWLIST.size).toBe(23)
-    expect(DENIED.size).toBe(60)
-    expect(registered().length).toBe(89)
+    expect(DENIED.size).toBe(63)
+    expect(registered().length).toBe(92)
   })
 
   it('refuses every denied route with the read-only message', async () => {

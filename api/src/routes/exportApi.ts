@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { getDb } from '../db/client'
 import {
   users, bills, billTexts,
-  memberVotes, officialPositions, comments, commentReactions, notes,
+  memberVotes, officialPositions, comments, commentReactions, commentAttachments, notes,
   feedEvents, publicReports, associationConfig,
   customFieldDefinitions, billCustomFieldValues,
   calendarEvents, calendarEventBills,
@@ -23,6 +23,7 @@ const tableMap = {
   officialPositions,
   comments,
   commentReactions,
+  commentAttachments,
   notes,
   feedEvents,
   publicReports,

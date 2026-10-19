@@ -20,6 +20,8 @@
 
 **Role**: a named group of members that an admin defines, which can be @-mentioned together. Avoid: "group"; "team" when meaning a subset of members.
 
+**Attachment**: a file a member attached to a comment (#465), kept in the instance's private R2 bucket with a `comment_attachments` row. It is uploaded and checked before the comment posts, goes with the comment (it can't be added, removed, or deleted on its own once posted, and deleting the comment deletes it), and downloads only for a signed-in member while its comment shows. Off until an operator binds the bucket, and always off on a demo. Avoid: "upload" for a posted file (an upload is one not yet posted); "document," which is a bill text.
+
 **@admins**: a built-in mention, open to every member, that notifies everyone who is an Admin or Owner when the comment is posted, in the app and by email, skipping the author and deactivated members. A person also mentioned directly or through a role is notified once, attributed to the direct mention, then the role, then @admins. Unlike a role, nobody creates or maintains it. Avoid: "admin role" (a role is a named group).
 
 **Invite**: the email that brings a new member into an instance. Avoid: "invitation link" as the name of the email.

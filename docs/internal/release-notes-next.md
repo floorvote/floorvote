@@ -29,3 +29,18 @@ Statements in an AI summary can now link to the bill text behind them, as summar
 - **Operators can see how well links resolve.** Central's dashboard shows, for each instance, its stored claim sources counted as exact, normalized, fuzzy, anchored, ungrounded, or unverified (PDF quotes the instance can't check), plus how many analyses asked for claim sources and stored none, and how many responses were cut off inside them and retried without them. See "Summary citations" in the operating guide.
 
 **Deploying.** Deploy central before the instances. An instance on an older central keeps working and simply doesn't ask for claim sources. An instance that hasn't been upgraded shows its claim source counts as unavailable in central's dashboard until it is. The instance migration only adds nullable columns.
+
+## Comment attachments (server side)
+
+The API can now hold files attached to comments: upload, check, download, and cleanup (#465). The app doesn't offer attaching yet, so members see no change in this release. The feature stays off, and nothing needs doing, until you set it up.
+
+**To turn it on for an instance** (optional, and never on a demo instance, where it stays off regardless):
+
+1. Create a private R2 bucket (no public access, no `r2.dev` URL). Several instances may share one, since each stores its files under its `TENANT_ID`.
+2. Add a CORS rule to the bucket allowing `PUT` from the instance's `APP_URL` with the `Content-Type` header. Browsers upload straight to the bucket.
+3. Create an R2 API token with Object Read & Write on that bucket, and set its S3 credentials as the instance's `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` secrets.
+4. Bind the bucket as `ATTACHMENTS_BUCKET`, set `ATTACHMENTS_BUCKET_NAME` to its name, and make sure `CF_ACCOUNT_ID` is set (`api/wrangler.example.toml` has the block), then deploy as usual.
+
+**Limits.** 25 MB a file, 10 files a comment, 30 uploads a member an hour, and 5 GB for the instance. Programs, scripts, web pages (HTML, SVG, JavaScript), macro-enabled Office files, and archives are refused, by name and by the file's first bytes. Files download only for a signed-in member of the instance, while their comment shows. Uploads never posted are deleted after a day, and a deleted comment's files 30 days after the delete, by the hourly cron. The admin data export lists the files (not their contents).
+
+**Deploying.** Migration `0115` adds the `comment_attachments` table and touches no existing table.
