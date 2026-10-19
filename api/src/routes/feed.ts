@@ -7,7 +7,7 @@ import { feedEvents, bills, users } from '../db/schema'
 import { PASSIVE_EVENT_TYPES } from '../../../shared/feedUtils'
 import { nowDb } from '../lib/dbTime'
 import { activeUser } from '../lib/accountDeletion'
-import type { AppEnv } from '../types'
+import type { AppDb, AppEnv } from '../types'
 import { userTitleSql } from '../lib/userTitle'
 import { groupHasPriority, loadGroupPriorities, priorityWorn } from '../lib/teamFields'
 
@@ -153,6 +153,10 @@ feedRouter.get('/', async (c) => {
   // A companion group's events wear the group's priority, whichever member holds it.
   const groupPriorities = await loadGroupPriorities(db, rows.map((r) => r.billGroupKey))
 
+  // The day's new-matches row names every matched bill, but a companion group is
+  // one policy (#638), so it counts once: the row's `count` is its distinct cards.
+  const matchCounts = await newMatchCounts(db, rows.filter((r) => r.type === 'new_matches'))
+
   return c.json({
     events: rows.map((r) => ({
       id: r.id,
@@ -174,7 +178,7 @@ feedRouter.get('/', async (c) => {
       userTitle: r.userTitle,
       // `subtitle` is the old name for `title`. Remove in the release after this one.
       userSubtitle: r.userTitle,
-      metadata: JSON.parse(r.metadata) as unknown,
+      metadata: matchCounts.has(r.id) ? { ...(JSON.parse(r.metadata) as object), count: matchCounts.get(r.id) } : JSON.parse(r.metadata) as unknown,
       createdAt: r.createdAt,
     })),
     total: countRow?.total ?? 0,
@@ -184,6 +188,25 @@ feedRouter.get('/', async (c) => {
     lastSeenFeed: seenRow?.lastSeenFeed ?? null,
   })
 })
+
+// Each new-matches row's count of new matches: its bills, with the members of one
+// companion group counted once. An id with no bill row (deleted since) counts as
+// one, as it did before groups.
+async function newMatchCounts(db: AppDb, rows: Array<{ id: string; metadata: string }>): Promise<Map<string, number>> {
+  const named = new Map(rows.map((r) => {
+    const ids = (JSON.parse(r.metadata) as { billIds?: unknown }).billIds
+    return [r.id, Array.isArray(ids) ? ids.filter((x): x is string => typeof x === 'string') : []] as const
+  }))
+  const allIds = [...new Set([...named.values()].flat())]
+  const groupOf = new Map<string, string | null>()
+  // D1 rejects more than 100 bound parameters per statement.
+  for (let i = 0; i < allIds.length; i += 90) {
+    for (const b of await db.select({ id: bills.id, groupKey: bills.groupKey }).from(bills).where(inArray(bills.id, allIds.slice(i, i + 90))).all()) {
+      groupOf.set(b.id, b.groupKey)
+    }
+  }
+  return new Map([...named].map(([id, ids]) => [id, new Set(ids.map((b) => groupOf.get(b) ? `group:${groupOf.get(b)}` : b)).size]))
+}
 
 feedRouter.post('/seen', async (c) => {
   const user = c.get('user')
@@ -214,14 +237,14 @@ feedRouter.get('/events/:id/bills', async (c) => {
   const byId = new Map<string, typeof found[number]>()
   const found: Array<{
     id: string; billNumber: string; title: string; abstract: string | null
-    state: string; session: string | null; sessionSlug: string | null; isDraft: boolean
+    state: string; session: string | null; sessionSlug: string | null; isDraft: boolean; groupKey: string | null
   }> = []
   // D1 rejects more than 100 bound parameters per statement.
   for (let i = 0; i < ids.length; i += 90) {
     found.push(...await db
       .select({
         id: bills.id, billNumber: bills.billNumber, title: bills.title, abstract: bills.abstract,
-        state: bills.state, session: bills.session, sessionSlug: bills.sessionSlug, isDraft: bills.isDraft,
+        state: bills.state, session: bills.session, sessionSlug: bills.sessionSlug, isDraft: bills.isDraft, groupKey: bills.groupKey,
       })
       .from(bills)
       .where(inArray(bills.id, ids.slice(i, i + 90)))
@@ -239,6 +262,7 @@ feedRouter.get('/events/:id/bills', async (c) => {
         state: b.state ?? null,
         sessionSlug: filedSlug(b),
         isDraft: b.isDraft ?? false,
+        groupKey: b.groupKey ?? null,
       }] : []
     }),
   })

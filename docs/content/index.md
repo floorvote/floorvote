@@ -1,12 +1,13 @@
 ---
-description: "Documentation for FloorVote, the open source bill tracker: what it does, what it runs on, how to deploy it, and how it works inside."
+title: "Open source legislative tracking docs"
+description: "Documentation for FloorVote, free, open source legislative tracking software: what it does, what it runs on, how to deploy it, and how it works inside."
 layout: home
 hero:
   # No `name`: VitePress renders it as flat brand-coloured text, which puts the
   # product name in a non-wordmark treatment directly under the real lockup in
   # the nav. The lockup is the only place the name should be set.
   # text:
-  tagline: FloorVote is a self-hosted bill tracker for your team. Here's how to understand, deploy, and operate it.
+  tagline: FloorVote is free, open source legislative tracking software for your team. Here's how to understand, deploy, and operate it.
   # actions:
   #   - theme: brand
   #     text: Self-hosting guide
@@ -16,7 +17,7 @@ hero:
   #     link: /overview/what-can-it-do
 features:
   - title: Is FloorVote for me?
-    details: What it does, what it costs, and how hard it is to set up.
+    details: What it does, what it costs, how hard it is to set up, and how to use it.
     link: /overview/what-can-it-do
     # linkText: Learn more
   - title: Set up

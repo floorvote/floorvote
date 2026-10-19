@@ -100,23 +100,23 @@ export const vocabulary: ProviderVocabulary = {
 
   extras: {
     chapter: {
-      label: 'Chapter', display: 'identifier',
+      label: 'Chapter', display: 'identifier', placement: 'meta',
       explainer: 'Where the act is printed in the session laws (the Laws of Maryland) for its year, or the joint resolution\'s number.',
     },
     statutes: {
-      label: 'Statutes affected', display: 'text',
+      label: 'Statutes affected', display: 'text', placement: 'detail',
       explainer: 'The articles and sections of the Annotated Code of Maryland the bill adds, amends, or repeals.',
     },
     emergency: {
-      label: 'Emergency bill', display: 'text',
+      label: 'Emergency bill', display: 'text', placement: 'flag',
       explainer: 'Takes effect as soon as the Governor signs it, rather than on a later date. Passing it takes three-fifths of each chamber.',
     },
     constitutionalAmendment: {
-      label: 'Constitutional amendment', display: 'text',
+      label: 'Constitutional amendment', display: 'text', placement: 'flag',
       explainer: 'Proposes an amendment to the Maryland Constitution. It needs three-fifths of each chamber, skips the Governor, and goes to the voters at the next general election.',
     },
     chamberInteraction: {
-      label: 'Between the chambers', display: 'text',
+      label: 'Between the chambers', display: 'text', placement: 'meta',
       explainer: 'The latest step in settling differences between the House and Senate versions, such as a conference committee.',
     },
   },

@@ -296,6 +296,7 @@ const DENIED = new Set([
   'PUT /api/admin/views/:id',
   'PUT /api/admin/views/reorder',
   'PUT /api/calendar/events/:id',
+  'PUT /api/views/:id/subscription',
 ])
 
 const registered = () => {

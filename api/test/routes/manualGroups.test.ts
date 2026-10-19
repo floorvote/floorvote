@@ -19,7 +19,7 @@ import { centralFetch } from '../../src/lib/centralFetch'
 vi.mock('../../src/lib/centralFetch', () => ({ centralFetch: vi.fn() }))
 
 type Detail = {
-  groupBills: Array<{ billId: string; billNumber: string; state: string; sessionSlug: string }>
+  groupBills: Array<{ billId: string; billNumber: string; state: string; sessionSlug: string; status: string }>
   comments: Array<{ id: string }>
   position: { position: string } | null
   groupingEvents: Array<{ type: string; actorName: string | null; with: Array<{ billNumber: string }>; undoneSplits?: Array<Array<{ billNumber: string }>>; commentBills?: Array<{ billId: string; billNumber: string }> }>
@@ -120,8 +120,8 @@ describe('grouping and splitting bills by hand', () => {
       await db().update(bills).set({ sessionSlug: '2025-2026' }).where(eq(bills.id, 'd2000'))
       expect((await groupWith('ada', 'c1714', 'd2000')).status).toBe(200)
       expect((await detail('c1714')).groupBills).toEqual([
-        { billId: 'c1714', billNumber: 'S1714', state: 'RI', sessionSlug: '2026' },
-        { billId: 'd2000', billNumber: 'H2000', state: 'RI', sessionSlug: '2025-2026' },
+        { billId: 'c1714', billNumber: 'S1714', state: 'RI', sessionSlug: '2026', status: '' },
+        { billId: 'd2000', billNumber: 'H2000', state: 'RI', sessionSlug: '2025-2026', status: '' },
       ])
       expect((await detail('d2000')).groupBills.map(b => [b.billNumber, b.state, b.sessionSlug])).toEqual([['H2000', 'RI', '2025-2026'], ['S1714', 'RI', '2026']])
     })

@@ -477,6 +477,17 @@ export const savedViews = sqliteTable('saved_views', {
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
 })
 
+// A member's inclusion of a saved view in their email digest (#449). One row per
+// member and view, which a delete of either removes. The view's filter stays on
+// the view, so an edit to it carries through to everyone who included it.
+export const savedViewSubscriptions = sqliteTable('saved_view_subscriptions', {
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  viewId: text('view_id').notNull().references(() => savedViews.id, { onDelete: 'cascade' }),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.userId, t.viewId] }),
+}))
+
 export const calendarEvents = sqliteTable('calendar_events', {
   id: text('id').primaryKey(),
   uid: text('uid').notNull().unique(),

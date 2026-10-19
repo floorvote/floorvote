@@ -4,7 +4,7 @@ import { eq, and, desc, inArray, isNull } from 'drizzle-orm'
 import * as schema from '../db/schema'
 import { secretsMatch } from '../lib/auth'
 import { textCacheKey, getCachedText, putCachedText } from '../lib/billTextCache'
-import { pdfStreamOrNull } from '../lib/storedPdf'
+import { pdfStreamOrNull, startsWithPdfMagic } from '../lib/storedPdf'
 import { decodeStoredHtml } from '../lib/decodeHtml'
 import { resolveItemDate } from '../lib/itemDate'
 import { parseHandle, toHandle } from '../lib/billHandle'
@@ -228,6 +228,7 @@ billsRoutes.get('/:id', async (c) => {
       peopleId: schema.rollCallVotes.peopleId,
       name: schema.people.name,
       vote: schema.rollCallVotes.voteText,
+      party: schema.people.party,
       bioJson: schema.people.bioJson,
       ballotpedia: schema.people.ballotpedia,
       personProvider: schema.people.provider,
@@ -243,12 +244,12 @@ billsRoutes.get('/:id', async (c) => {
     billReferralDetails(db, numeric),
   ])
   const coverage = await calendarCoverage(db, provider, numeric, calendarEntries)
-  const legislatorVotesByRc = new Map<number, { personId: string; name: string; vote: string; url: string | null }[]>()
+  const legislatorVotesByRc = new Map<number, { personId: string; name: string; vote: string; url: string | null; party: string | null }[]>()
   for (const r of memberVoteRows) {
     if (r.peopleId == null || !r.vote) continue
     const list = legislatorVotesByRc.get(r.rollCallId) ?? []
     // Same fallback as sponsors: a person with no people row still counts. A voter links only to the provider's profile page, never to its last-resort sponsor page.
-    list.push({ personId: String(r.peopleId), name: r.name ?? String(r.peopleId), vote: r.vote, url: profileUrlOf(r) })
+    list.push({ personId: String(r.peopleId), name: r.name ?? String(r.peopleId), vote: r.vote, url: profileUrlOf(r), party: r.party ?? null })
     legislatorVotesByRc.set(r.rollCallId, list)
   }
   for (const list of legislatorVotesByRc.values()) list.sort((a, b) => a.name.localeCompare(b.name))
@@ -301,6 +302,10 @@ billsRoutes.get('/:id', async (c) => {
     docId: String(t.docId),
     note: t.type,
     date: t.date,
+    // This document's own hash, the value `GET /:id/text` serves when it is the
+    // one read. Instances compare it with a claim source's pin (#603). Null when
+    // central has none.
+    textHash: t.textHash ?? null,
     links: [
       ...(t.stateLink ? [{ url: t.stateLink, mediaType: t.mime }] : []),
       ...(t.altStateLink ? [{ url: t.altStateLink, mediaType: t.altMime ?? 'application/pdf' }] : []),
@@ -522,7 +527,10 @@ billsRoutes.get('/:id/text', async (c) => {
     // Use Buffer.from for base64 (~250-350x faster than a char-by-char btoa
     // loop on multi-MB PDFs, and avoids ~200 MB of transient heap allocation).
     // Requires nodejs_compat — set in wrangler.toml.
+    // Only bytes that are a PDF: a provider's error page under a `.pdf` key would
+    // otherwise reach a client that decodes `content` as a PDF. The refusal isn't cached.
     const buf = await obj.arrayBuffer()
+    if (!startsWithPdfMagic(new Uint8Array(buf))) return c.json({ error: 'stored document is not a valid PDF' }, 502)
     res = c.json({ type: 'pdf', content: Buffer.from(buf).toString('base64'), ...served })
   } else {
     res = c.json({ type: 'html', content: decodeStoredHtml(await obj.arrayBuffer(), obj.httpMetadata?.contentType), ...served })

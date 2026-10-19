@@ -140,7 +140,7 @@ const BILL = {
   memberVotes: [],
   comments: [],
   commentsTotal: 0,
-  groupBills: [{ billId: '42', billNumber: 'A190', state: 'RI', sessionSlug: '2026' }],
+  groupBills: [{ billId: '42', billNumber: 'A190', state: 'RI', sessionSlug: '2026', status: 'Introduced' }],
 }
 
 const CONFIG = {
@@ -163,7 +163,7 @@ const BILL_OPTIONS = [
 // What splitting A190 would leave: S1713 and S1714, which only A190 linked.
 const SPLIT_PREVIEW = { billNumber: 'A190', parts: [[{ billId: 'b1713', billNumber: 'S1713' }], [{ billId: 'c1714', billNumber: 'S1714' }]] }
 
-const GROUPED = { groupBills: [{ billId: '42', billNumber: 'A190', state: 'RI', sessionSlug: '2026' }, { billId: 'b1713', billNumber: 'S1713', state: 'RI', sessionSlug: '2026' }] }
+const GROUPED = { groupBills: [{ billId: '42', billNumber: 'A190', state: 'RI', sessionSlug: '2026', status: 'Introduced' }, { billId: 'b1713', billNumber: 'S1713', state: 'RI', sessionSlug: '2026', status: 'Passed' }] }
 
 function renderBillDetail(overrides: Record<string, unknown> = {}) {
   const bill = { ...BILL, ...overrides }
@@ -401,9 +401,9 @@ describe('grouping and splitting from the overflow menu', () => {
 describe('the header of a bill an admin grouped by hand', () => {
   it("shows the companion's badge, linking to its page, though the bill names no relationship to it", async () => {
     renderBillDetail({ ...GROUPED, relatedBillIds: [] })
-    const header = await screen.findByTestId('bill-group-badges')
-    expect(within(header).getByRole('link', { name: 'S1713' })).toHaveAttribute('href', '/RI/2026/S1713')
-    expect(within(header).getByText('A190').closest('a')).toBeNull()
+    const line = await screen.findByTestId('grouped-with-line')
+    expect(within(line).getByRole('link', { name: 'S1713' })).toHaveAttribute('href', '/RI/2026/S1713')
+    expect(within(screen.getByTestId('bill-header-badge')).getByText('A190').closest('a')).toBeNull()
     expect(screen.queryByText('Identical to:')).toBeNull()
   })
 
@@ -432,7 +432,7 @@ describe('the line saying what a group made by hand shares', () => {
   })
 
   it('shows no line once the group splits and the bill stands alone again', async () => {
-    renderBillDetail({ groupBills: [{ billId: '42', billNumber: 'A190', state: 'RI', sessionSlug: '2026' }] })
+    renderBillDetail({ groupBills: [{ billId: '42', billNumber: 'A190', state: 'RI', sessionSlug: '2026', status: 'Introduced' }] })
     await screen.findByText('Test Bill')
     expect(screen.queryByText(/are shared with/)).toBeNull()
   })

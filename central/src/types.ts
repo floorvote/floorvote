@@ -25,6 +25,14 @@ export type Env = {
    */
   LIS_API_KEY?: string
   /**
+   * Congress.gov API key, an api.data.gov key (src/providers/govinfo). Optional:
+   * with it, GovInfo reads Congress's committee meetings, and shows them on the
+   * body calendar and on the calendars of the bills they take up. Without it,
+   * those calendars are empty, and nothing else changes. Sent only in the
+   * `X-Api-Key` header of a request to api.congress.gov.
+   */
+  CONGRESS_API_KEY?: string
+  /**
    * Comma-separated LIMS category ids to sync (GET LegislationCategories).
    * Default "1,6,13,14,18": bills, resolutions, grant budget modifications,
    * reprogrammings, and oversight hearing/roundtable notices.
@@ -54,7 +62,7 @@ export type Env = {
   ADMIN_SECRET: string
   OPERATOR_NAME: string
   RESEND_API_KEY?: string
-  EMAIL?: import('./lib/email').CloudflareEmailBinding
+  EMAIL?: import('../../shared/emailProviders').CloudflareEmailBinding
   EMAIL_PROVIDER?: string
   EMAIL_FROM?: string       // full sender address; defaults to notifications@example.com
   EMAIL_REPLY_TO?: string   // reply-to; defaults to EMAIL_FROM

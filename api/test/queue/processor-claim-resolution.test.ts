@@ -404,13 +404,14 @@ describe('reading stored claim sources', () => {
     }
   })
 
-  it('does not compare the text hash, which instances do not store, so it reads whatever is listed', async () => {
+  it('reads on the doc id alone while the stored hash is empty, and reads nothing once it differs from the pin (#603)', async () => {
     const id = await analyzed()
+    // This central's text list carries no per-document hash, so an empty one is stored.
     const listed = await env.DB.prepare('SELECT text_hash FROM bill_texts WHERE doc_id = ?').bind('5001').first<{ text_hash: string }>()
     expect(listed!.text_hash).toBe('')
     expect(await readClaimSources(getDb(env.DB), id)).not.toBeNull()
     await env.DB.prepare('UPDATE bill_texts SET text_hash = ? WHERE doc_id = ?').bind('some-other-hash', '5001').run()
-    expect(await readClaimSources(getDb(env.DB), id)).not.toBeNull()
+    expect(await readClaimSources(getDb(env.DB), id)).toBeNull()
   })
 
   it('reads nothing when a pin has no document id', async () => {

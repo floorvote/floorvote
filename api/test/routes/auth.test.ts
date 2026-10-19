@@ -1,12 +1,13 @@
 import { env, SELF } from 'cloudflare:test'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, appFetch, stubFetch, seedUser, seedSession, seedMagicLink } from '../helpers'
+import { resetDb, applyMigrations, appFetch, seedUser, seedSession, seedMagicLink } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { users, authEvents, sessions } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
 import { signSuperadminJwt } from '../../../shared/superadminJwt'
 import { _resetSuperadminAllowlistCache } from '../../src/lib/superadminCentral'
+import { stubResend } from '../../../shared/emailTestKit'
 
 // Throwaway ES256 test keypair (no production value); its public half is set as
 // SUPERADMIN_JWT_PUBLIC_KEY in vitest.config.mts so signed tokens verify in tests.
@@ -44,7 +45,7 @@ function centralMockFor(opts: { superadminEmails?: string[] }): { fetch: (req: R
 }
 
 beforeEach(async () => {
-  stubFetch() // the sign-in email goes out through fetch
+  stubResend() // the sign-in email goes out through Resend
   await resetDb()
   await applyMigrations()
   // In-isolate superadmin allowlist cache (D3) persists across tests in the same

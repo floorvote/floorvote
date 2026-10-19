@@ -73,7 +73,27 @@ export const vocabulary: ProviderVocabulary = {
     CR: { label: 'Concurrent Resolution', explainer: 'A concurrent resolution (H. Con. Res. or S. Con. Res.): a matter of both chambers, such as the budget resolution. It doesn\'t make law and doesn\'t go to the President.' },
   },
 
-  eventTypes: {},
+  // The kinds of a committee meeting (meetings.ts, meetingType). The Congress.gov API's own type is
+  // wordier than these ("Open Hearing", "Closed Markup Session", "Open Business Meeting"), and
+  // the Senate types most of its hearings "Meeting". Each entry and body event keeps the API's own
+  // word as its type and takes its kind from the words in it: a markup, else a hearing, else a meeting.
+  eventTypes: {
+    1: {
+      label: 'Hearing', kind: 'hearing',
+      explainer: 'A committee or subcommittee hearing, where members hear testimony from witnesses on a bill or an issue. A hearing doesn\'t decide a bill.',
+    },
+    2: {
+      label: 'Markup', kind: 'markup',
+      explainer: 'A markup, where a committee amends a bill and votes on whether to report it to the full chamber. A bill is usually reported out of committee at one.',
+    },
+    3: {
+      label: 'Meeting', kind: 'meeting',
+      explainer: 'A committee meeting that isn\'t a hearing or a markup: a business meeting, a briefing, or any other kind the Library of Congress lists as a meeting. It lists many Senate hearings as meetings, and they appear here.',
+    },
+  },
+
+  // The name of the calendar the committee meetings make, when the provider has a key to read them.
+  calendarName: 'Congress committee meetings',
 
   // The fields Congress publishes that no other provider does. A later ticket
   // (the bill detail ingest) fills them; the keys are fixed here.

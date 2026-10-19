@@ -24,6 +24,7 @@ import { dashUnknownLoginsRoutes } from './routes/dash-unknown-logins'
 import { runJob } from './lib/jobAlert'
 import { runAnomalyWatch } from './lib/anomalyWatch'
 import { pruneRevokedSuperadminJtis } from './lib/superadminRevocation'
+import { pruneCallLogs } from './lib/pruneCallLogs'
 import type { Env, IngestorMessage } from './types'
 import { errorHandler } from './lib/errorHandler'
 import { checkEmailSuppression, checkEmailSuppressions } from './lib/emailSuppression'
@@ -117,6 +118,8 @@ export default {
       ctx.waitUntil(runJob(env, 'engagement-pull', () => pullEngagementStats(env, db)))
       ctx.waitUntil(runJob(env, 'd1-anomaly-watch', () => runAnomalyWatch(env)))
       ctx.waitUntil(runJob(env, 'prune-revoked-jtis', () => pruneRevokedSuperadminJtis(db)))
+      // Its own job, so a failure here never stops the others. See CALL_LOG_RETENTION_DAYS.
+      ctx.waitUntil(runJob(env, 'prune-call-logs', () => pruneCallLogs(db)))
     }
   },
 }

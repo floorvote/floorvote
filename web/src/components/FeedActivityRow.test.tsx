@@ -129,6 +129,40 @@ describe('FeedActivityRow', () => {
       expect(screen.getByRole('link', { name: /see all new matches/i })).toHaveAttribute('href', '/bills?newMatches=1')
     })
 
+    // #638: a companion group is one policy, so it is one new match.
+    it('reads a group of two matched members as one new bill, using the count the feed stored', () => {
+      renderRow(makeEvent({ id: 'evt-g', type: 'new_matches', userId: 'system', userName: '', metadata: { billIds: ['b1', 'b2'], count: 1 } }))
+      expect(screen.getByText('1 new bill matched your keywords')).toBeInTheDocument()
+    })
+
+    it('lists a group\'s members as one entry, with a badge link for each member bill', async () => {
+      apiFetchMock.mockResolvedValue({
+        bills: [
+          { id: 'b1', billNumber: 'HB101', title: 'Election Security Act', state: 'RI', sessionSlug: '2026', isDraft: false, groupKey: 'b1' },
+          { id: 'b2', billNumber: 'SB202', title: 'Election Security Act', state: 'RI', sessionSlug: '2026', isDraft: false, groupKey: 'b1' },
+          { id: 'b3', billNumber: 'HB303', title: 'Ballot Access Act', state: 'RI', sessionSlug: '2026', isDraft: false, groupKey: null },
+        ],
+      })
+      const { container } = renderRow(makeEvent({ id: 'evt-g', type: 'new_matches', userId: 'system', userName: '', metadata: { billIds: ['b1', 'b2', 'b3'], count: 2 } }))
+      await userEvent.click(screen.getByRole('button', { name: /2 new bills matched/ }))
+
+      expect(await screen.findByRole('link', { name: /HB101/ })).toHaveAttribute('href', '/RI/2026/HB101')
+      expect(screen.getByRole('link', { name: /SB202/ })).toHaveAttribute('href', '/RI/2026/SB202')
+      expect(container.querySelectorAll('[data-bill-entry]')).toHaveLength(2)
+      expect(screen.getAllByText('Election Security Act')).toHaveLength(1)
+      const entry = screen.getByRole('link', { name: /SB202/ }).closest('[data-bill-entry]')!
+      expect(entry).toContainElement(screen.getByRole('link', { name: /HB101/ }))
+      expect(entry).not.toContainElement(screen.getByRole('link', { name: /HB303/ }))
+    })
+
+    it('lists bills with no group key one entry each, as before', async () => {
+      apiFetchMock.mockResolvedValue(BILLS)
+      const { container } = renderRow(matches())
+      await userEvent.click(screen.getByRole('button', { name: /2 new bills matched/ }))
+      await screen.findByRole('link', { name: /HB101/ })
+      expect(container.querySelectorAll('[data-bill-entry]')).toHaveLength(2)
+    })
+
     it('offers no list of all new matches on any other row', async () => {
       apiFetchMock.mockResolvedValue(BILLS)
       renderRow(makeEvent())
