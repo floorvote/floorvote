@@ -53,6 +53,16 @@ describe('purgeAttachments', () => {
     expect(await env.ATTACHMENTS_BUCKET!.head(gone)).toBeNull()
   })
 
+  it('purges at once the files of a comment that no longer exists', async () => {
+    const orphan = await seed('orphan', { commentId, createdAt: '2026-10-19 11:00:00' })
+    await env.DB.prepare('DELETE FROM comments WHERE id = ?').bind(commentId).run()
+
+    await purgeAttachments(env, getDb(env.DB), NOW)
+
+    expect(await names()).toEqual([])
+    expect(await env.ATTACHMENTS_BUCKET!.head(orphan)).toBeNull()
+  })
+
   it('leaves the rows alone until a bucket is bound to delete the bytes from', async () => {
     await seed('old-loose', { createdAt: '2026-10-01 00:00:00' })
     await purgeAttachments({ ...env, ATTACHMENTS_BUCKET: undefined }, getDb(env.DB), NOW)

@@ -28,7 +28,14 @@ describe('checkAttachmentName', () => {
     expect(checkAttachmentName('notes.eml')).toMatchObject({ ok: true, contentType: 'application/octet-stream' })
   })
 
-  it.each(['setup.exe', 'run.sh', 'page.html', 'page.HTM', 'logo.svg', 'app.js', 'budget.xlsm', 'memo.docm', 'files.zip', 'backup.tar.gz', 'archive.7z'])(
+  it.each([
+    'setup.exe', 'run.sh', 'page.html', 'page.HTM', 'logo.svg', 'app.js', 'budget.xlsm', 'memo.docm', 'files.zip', 'backup.tar.gz', 'archive.7z',
+    'help.chm', 'run.jse', 'disk.vhdx', 'notebook.one',
+    // Windows drops trailing dots and spaces when it saves a file.
+    'run.bat.', 'run.bat . ',
+    // A right-to-left override would show this as "reporttab.pdf".
+    'report‮fdp.bat',
+  ])(
     'blocks %s',
     (name) => {
       const r = checkAttachmentName(name)
@@ -39,6 +46,15 @@ describe('checkAttachmentName', () => {
 
   it('keeps only the last path segment and strips control characters', () => {
     expect(checkAttachmentName('C:\\Users\\x\\..\\re\u0000port.pdf')).toMatchObject({ ok: true, name: 'report.pdf' })
+  })
+
+  it('strips bidi controls from the name it keeps', () => {
+    expect(checkAttachmentName('a‮b⁦.pdf')).toMatchObject({ ok: true, name: 'ab.pdf' })
+  })
+
+  it('treats an extension named like an object property as unknown', () => {
+    expect(checkAttachmentName('x.constructor')).toMatchObject({ ok: true, contentType: 'application/octet-stream' })
+    expect(checkAttachmentBytes('x.__proto__', new TextEncoder().encode('plain'))).toMatchObject({ ok: true, contentType: 'application/octet-stream' })
   })
 
   it('refuses an empty name', () => {

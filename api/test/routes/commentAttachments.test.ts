@@ -1,25 +1,19 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { eq } from 'drizzle-orm'
+import { eq, isNull } from 'drizzle-orm'
 import { clearDb, appFetch, stubFetch, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { commentAttachments } from '../../src/db/schema'
 
-// The feature is on only with the bucket bound and the S3 credentials that sign
-// upload URLs. The test config binds the bucket; these add the rest.
-const ON = () => ({
-  ...env,
-  ATTACHMENTS_BUCKET_NAME: 'fv-files',
-  R2_ACCESS_KEY_ID: 'AK',
-  R2_SECRET_ACCESS_KEY: 'SK',
-})
+// The test config binds ATTACHMENTS_BUCKET, which is all the feature needs.
+const OFF = () => ({ ...env, ATTACHMENTS_BUCKET: undefined })
 const bucket = () => env.ATTACHMENTS_BUCKET!
 
 const PDF = new TextEncoder().encode('%PDF-1.7\nhello pdf')
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])
 const DOCX = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 9, 9, 9, 9])
 
-type Started = { id: string; uploadUrl: string; uploadHeaders: Record<string, string>; expiresAt: string }
+type Uploaded = { id: string; name: string; contentType: string; size: number }
 
 function json(token: string | null, method: string, body?: unknown): RequestInit {
   return {
@@ -29,41 +23,53 @@ function json(token: string | null, method: string, body?: unknown): RequestInit
   }
 }
 
-function startUpload(token: string | null, name: string, size: number, bindings: object = ON()) {
-  return appFetch('http://localhost/api/attachments', json(token, 'POST', { name, size }), bindings)
+// The body in chunks, as a browser's upload arrives.
+function chunked(data: Uint8Array, size = 1000): ReadableStream<Uint8Array> {
+  let at = 0
+  return new ReadableStream({
+    pull(controller) {
+      if (at >= data.length) return controller.close()
+      controller.enqueue(data.slice(at, at + size))
+      at += size
+    },
+  })
 }
 
-function keyOf(uploadUrl: string) {
-  // /<bucket>/<key...>
-  return new URL(uploadUrl).pathname.split('/').slice(2).map(decodeURIComponent).join('/')
+function upload(
+  token: string | null, name: string, data: Uint8Array,
+  opts: { bindings?: object; contentLength?: number } = {},
+) {
+  return appFetch(`http://localhost/api/attachments?name=${encodeURIComponent(name)}`, {
+    method: 'POST',
+    headers: {
+      ...(token ? { Cookie: `session=${token}` } : {}),
+      'Content-Type': 'application/octet-stream',
+      'Content-Length': String(opts.contentLength ?? data.length),
+    },
+    body: chunked(data),
+  }, opts.bindings ?? env)
 }
 
-// Stand in for the browser's PUT to the presigned URL, then confirm.
-async function uploadFile(token: string, name: string, data: Uint8Array, opts: { declaredSize?: number } = {}) {
-  const res = await startUpload(token, name, opts.declaredSize ?? data.length)
+async function storedCount() {
+  return (await bucket().list({ prefix: 'bpc-test/' })).objects.length
+}
+
+async function attached(token: string, name: string, data: Uint8Array): Promise<Uploaded> {
+  const res = await upload(token, name, data)
   expect(res.status).toBe(201)
-  const started = await res.json() as Started
-  await bucket().put(keyOf(started.uploadUrl), data)
-  return started
+  return res.json() as Promise<Uploaded>
 }
 
-function confirm(token: string, id: string, bindings: object = ON()) {
-  return appFetch(`http://localhost/api/attachments/${id}/confirm`, json(token, 'POST'), bindings)
-}
-
-async function attached(token: string, name: string, data: Uint8Array) {
-  const started = await uploadFile(token, name, data)
-  const res = await confirm(token, started.id)
-  expect(res.status).toBe(200)
-  return started
-}
-
-function postComment(token: string, billId: string, attachmentIds: string[], bindings: object = ON()) {
+function postComment(token: string, billId: string, attachmentIds: string[], bindings: object = env) {
   return appFetch(`http://localhost/api/bills/${billId}/comments`, json(token, 'POST', { content: '<p>See attached</p>', attachmentIds }), bindings)
 }
 
-function download(token: string | null, id: string, bindings: object = ON()) {
+function download(token: string | null, id: string, bindings: object = env) {
   return appFetch(`http://localhost/api/attachments/${id}`, { headers: token ? { Cookie: `session=${token}` } : {} }, bindings)
+}
+
+async function errorOf(res: Response) {
+  return (await res.json() as { error: string }).error
 }
 
 describe('comment attachments', () => {
@@ -83,56 +89,91 @@ describe('comment attachments', () => {
     billId = await seedBill()
   })
 
-  describe('starting an upload', () => {
-    it('returns a short-lived upload URL scoped to one key, size, and type', async () => {
-      const res = await startUpload(member, 'Testimony.pdf', 1234)
+  describe('uploading', () => {
+    it('streams the file into the bucket and returns it', async () => {
+      const res = await upload(member, 'Testimony.pdf', PDF)
       expect(res.status).toBe(201)
-      const body = await res.json() as Started
-      const url = new URL(body.uploadUrl)
-      expect(url.host).toBe('test-account-id.r2.cloudflarestorage.com')
-      expect(url.pathname).toMatch(/^\/fv-files\/bpc-test\/[0-9a-f-]{36}$/)
-      expect(url.searchParams.get('X-Amz-SignedHeaders')).toBe('content-length;content-type;host')
-      expect(Number(url.searchParams.get('X-Amz-Expires'))).toBeLessThanOrEqual(900)
-      expect(body.uploadHeaders).toEqual({ 'Content-Type': 'application/pdf' })
-
-      const again = await (await startUpload(member, 'Testimony.pdf', 1234)).json() as Started
-      expect(keyOf(again.uploadUrl)).not.toBe(keyOf(body.uploadUrl))
+      const body = await res.json() as Uploaded
+      expect(body).toMatchObject({ name: 'Testimony.pdf', contentType: 'application/pdf', size: PDF.length })
+      const row = await getDb(env.DB).select().from(commentAttachments).where(eq(commentAttachments.id, body.id)).get()
+      expect(row!.r2Key).toMatch(/^bpc-test\/[0-9a-f-]{36}$/)
+      const object = await bucket().get(row!.r2Key)
+      expect(new Uint8Array(await object!.arrayBuffer())).toEqual(PDF)
+      expect(object!.httpMetadata?.contentType).toBe('application/pdf')
     })
 
-    it('refuses a blocked type with a clear message', async () => {
-      const res = await startUpload(member, 'invite.html', 100)
-      expect(res.status).toBe(400)
-      expect((await res.json() as { error: string }).error).toMatch(/"invite.html" can't be attached/)
+    it('keeps every byte of a file larger than the sniffed head', async () => {
+      const big = new Uint8Array(100_000)
+      big.set(PDF)
+      for (let i = PDF.length; i < big.length; i++) big[i] = i % 251
+      const { id } = await attached(member, 'Long.pdf', big)
+      await postComment(member, billId, [id])
+      expect(new Uint8Array(await (await download(other, id)).arrayBuffer())).toEqual(big)
     })
 
-    it('refuses a file over 25 MB', async () => {
-      const res = await startUpload(member, 'big.pdf', 25 * 1024 * 1024 + 1)
+    it('refuses a blocked type without storing anything', async () => {
+      const before = await storedCount()
+      const res = await upload(member, 'invite.html', new TextEncoder().encode('hello'))
       expect(res.status).toBe(400)
-      expect((await res.json() as { error: string }).error).toMatch(/larger than 25 MB/)
+      expect(await errorOf(res)).toMatch(/"invite.html" can't be attached/)
+      expect(await storedCount()).toBe(before)
+    })
+
+    it('refuses a file over 25 MB from its declared length, before reading it', async () => {
+      const res = await upload(member, 'big.pdf', PDF, { contentLength: 25 * 1024 * 1024 + 1 })
+      expect(res.status).toBe(400)
+      expect(await errorOf(res)).toMatch(/larger than 25 MB/)
+    })
+
+    it('refuses bytes that do not match the stated type without storing them', async () => {
+      const before = await storedCount()
+      const res = await upload(member, 'Testimony.pdf', PNG)
+      expect(res.status).toBe(400)
+      expect(await errorOf(res)).toMatch(/doesn't match its file type/)
+      expect(await storedCount()).toBe(before)
+    })
+
+    it('refuses a body longer than its declared length, and keeps none of it', async () => {
+      const before = await storedCount()
+      const res = await upload(member, 'Testimony.pdf', PDF, { contentLength: 10 })
+      expect(res.status).toBe(400)
+      expect(await storedCount()).toBe(before)
+    })
+
+    it('refuses a body shorter than its declared length, and keeps none of it', async () => {
+      const big = new Uint8Array(20_000)
+      big.set(PDF)
+      const before = await storedCount()
+      const res = await upload(member, 'Testimony.pdf', big, { contentLength: 30_000 })
+      expect(res.status).toBe(400)
+      expect(await storedCount()).toBe(before)
+      const live = await getDb(env.DB).select().from(commentAttachments).where(isNull(commentAttachments.deletedAt)).all()
+      expect(live).toEqual([])
     })
 
     it('refuses a caller without a session', async () => {
-      expect((await startUpload(null, 'a.pdf', 10)).status).toBe(401)
+      expect((await upload(null, 'a.pdf', PDF)).status).toBe(401)
     })
 
     it('is off when no bucket is bound', async () => {
-      const res = await startUpload(member, 'a.pdf', 10, { ...ON(), ATTACHMENTS_BUCKET: undefined })
+      const res = await upload(member, 'a.pdf', PDF, { bindings: OFF() })
       expect(res.status).toBe(503)
-      expect((await res.json() as { error: string }).error).toMatch(/not set up/)
-    })
-
-    it('is off when the upload credentials are missing', async () => {
-      expect((await startUpload(member, 'a.pdf', 10, env)).status).toBe(503)
+      expect(await errorOf(res)).toMatch(/not set up/)
     })
 
     it('is refused on a demo instance', async () => {
-      expect((await startUpload(member, 'a.pdf', 10, { ...ON(), DEMO_MODE: 'true' })).status).toBe(403)
+      expect((await upload(member, 'a.pdf', PDF, { bindings: { ...env, DEMO_MODE: 'true' } })).status).toBe(403)
     })
 
-    it('limits how many uploads one member can start in an hour', async () => {
-      for (let i = 0; i < 30; i++) expect((await startUpload(member, `f${i}.pdf`, 10)).status).toBe(201)
-      expect((await startUpload(member, 'one-more.pdf', 10)).status).toBe(429)
-      expect((await startUpload(other, 'theirs.pdf', 10)).status).toBe(201)
+    it('limits how many uploads one member can make in an hour', async () => {
+      for (let i = 0; i < 30; i++) expect((await upload(member, `f${i}.pdf`, PDF)).status).toBe(201)
+      expect((await upload(member, 'one-more.pdf', PDF)).status).toBe(429)
+      expect((await upload(other, 'theirs.pdf', PDF)).status).toBe(201)
+    })
+
+    it('holds the hourly limit when uploads arrive at once', async () => {
+      const results = await Promise.all(Array.from({ length: 36 }, (_, i) => upload(member, `p${i}.pdf`, PDF)))
+      expect(results.filter(r => r.status === 201)).toHaveLength(30)
     })
 
     it('refuses an upload that would pass the instance quota', async () => {
@@ -140,63 +181,27 @@ describe('comment attachments', () => {
         id: crypto.randomUUID(), uploaderId: memberId, r2Key: 'bpc-test/existing', name: 'x.pdf',
         contentType: 'application/pdf', size: 5 * 1024 ** 3 - 5, confirmedAt: '2026-10-01 00:00:00',
       })
-      const res = await startUpload(other, 'a.pdf', 10)
+      const res = await upload(other, 'a.pdf', PDF)
       expect(res.status).toBe(400)
-      expect((await res.json() as { error: string }).error).toMatch(/storage/)
-    })
-  })
-
-  describe('confirming an upload', () => {
-    it('accepts a file whose bytes match its type', async () => {
-      const started = await uploadFile(member, 'Testimony.pdf', PDF)
-      const res = await confirm(member, started.id)
-      expect(res.status).toBe(200)
-      expect(await res.json()).toMatchObject({ id: started.id, name: 'Testimony.pdf', contentType: 'application/pdf', size: PDF.length })
-    })
-
-    it('refuses bytes that do not match the stated type, and deletes them', async () => {
-      const started = await uploadFile(member, 'Testimony.pdf', PNG)
-      const res = await confirm(member, started.id)
-      expect(res.status).toBe(400)
-      expect((await res.json() as { error: string }).error).toMatch(/doesn't match its file type/)
-      expect(await bucket().head(keyOf(started.uploadUrl))).toBeNull()
-    })
-
-    it('refuses an upload whose size differs from the one it was signed for', async () => {
-      const started = await uploadFile(member, 'Testimony.pdf', PDF, { declaredSize: 5 })
-      expect((await confirm(member, started.id)).status).toBe(400)
-      expect(await bucket().head(keyOf(started.uploadUrl))).toBeNull()
-    })
-
-    it('refuses before the file has arrived', async () => {
-      const res = await startUpload(member, 'a.pdf', 10)
-      expect(res.status).toBe(201)
-      const { id } = await res.json() as Started
-      const c = await confirm(member, id)
-      expect(c.status).toBe(400)
-      expect((await c.json() as { error: string }).error).toMatch(/hasn't finished uploading/)
-    })
-
-    it("does not let another member confirm someone else's upload", async () => {
-      const started = await uploadFile(member, 'a.pdf', PDF)
-      expect((await confirm(other, started.id)).status).toBe(404)
+      expect(await errorOf(res)).toMatch(/storage/)
     })
   })
 
   describe('posting with attachments', () => {
-    it('attaches confirmed files to the comment and lists them with it', async () => {
+    it('attaches uploaded files to the comment and lists them with it', async () => {
       const a = await attached(member, 'Testimony.pdf', PDF)
       const b = await attached(member, 'Budget.docx', DOCX)
       const res = await postComment(member, billId, [a.id, b.id])
       expect(res.status).toBe(201)
+      expect((await res.json() as { attachments: { id: string }[] }).attachments.map(x => x.id)).toEqual([a.id, b.id])
 
-      const list = await (await appFetch(`http://localhost/api/bills/${billId}/comments`, { headers: { Cookie: `session=${other}` } }, ON())).json() as { attachments: unknown[] }[]
+      const list = await (await appFetch(`http://localhost/api/bills/${billId}/comments`, { headers: { Cookie: `session=${other}` } })).json() as { attachments: unknown[] }[]
       expect(list[0].attachments).toEqual([
         { id: a.id, name: 'Testimony.pdf', contentType: 'application/pdf', size: PDF.length },
         { id: b.id, name: 'Budget.docx', contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size: DOCX.length },
       ])
 
-      const detail = await (await appFetch(`http://localhost/api/bills/${billId}`, { headers: { Cookie: `session=${other}` } }, ON())).json() as { comments: { attachments: { id: string }[] }[] }
+      const detail = await (await appFetch(`http://localhost/api/bills/${billId}`, { headers: { Cookie: `session=${other}` } })).json() as { comments: { attachments: { id: string }[] }[] }
       expect(detail.comments[0].attachments.map(x => x.id)).toEqual([a.id, b.id])
     })
 
@@ -205,12 +210,7 @@ describe('comment attachments', () => {
       for (let i = 0; i < 11; i++) ids.push((await attached(member, `f${i}.pdf`, PDF)).id)
       const res = await postComment(member, billId, ids)
       expect(res.status).toBe(400)
-      expect((await res.json() as { error: string }).error).toMatch(/10 files/)
-    })
-
-    it('refuses a file that was never confirmed', async () => {
-      const started = await uploadFile(member, 'a.pdf', PDF)
-      expect((await postComment(member, billId, [started.id])).status).toBe(400)
+      expect(await errorOf(res)).toMatch(/10 files/)
     })
 
     it("refuses another member's file", async () => {
@@ -259,11 +259,11 @@ describe('comment attachments', () => {
     })
 
     it("refuses a file from another instance's storage", async () => {
-      expect((await download(other, pdfId, { ...ON(), TENANT_ID: 'another-instance' })).status).toBe(404)
+      expect((await download(other, pdfId, { ...env, TENANT_ID: 'another-instance' })).status).toBe(404)
     })
 
     it('refuses once the comment is deleted, and soft-deletes its files', async () => {
-      const del = await appFetch(`http://localhost/api/comments/${commentId}`, json(member, 'DELETE'), ON())
+      const del = await appFetch(`http://localhost/api/comments/${commentId}`, json(member, 'DELETE'))
       expect(del.status).toBe(204)
       expect((await download(other, pdfId)).status).toBe(404)
       const rows = await getDb(env.DB).select().from(commentAttachments).where(eq(commentAttachments.commentId, commentId)).all()
@@ -278,45 +278,54 @@ describe('comment attachments', () => {
 
   describe('removing a file before posting', () => {
     it('lets the uploader remove an unattached file, deleting it from storage', async () => {
-      const started = await uploadFile(member, 'a.pdf', PDF)
-      const res = await appFetch(`http://localhost/api/attachments/${started.id}`, json(member, 'DELETE'), ON())
+      const a = await attached(member, 'a.pdf', PDF)
+      const before = await storedCount()
+      const res = await appFetch(`http://localhost/api/attachments/${a.id}`, json(member, 'DELETE'))
       expect(res.status).toBe(204)
-      expect(await bucket().head(keyOf(started.uploadUrl))).toBeNull()
+      expect(await storedCount()).toBe(before - 1)
     })
 
     it('does not remove a file that is on a posted comment', async () => {
       const a = await attached(member, 'a.pdf', PDF)
       await postComment(member, billId, [a.id])
-      expect((await appFetch(`http://localhost/api/attachments/${a.id}`, json(member, 'DELETE'), ON())).status).toBe(404)
+      expect((await appFetch(`http://localhost/api/attachments/${a.id}`, json(member, 'DELETE'))).status).toBe(404)
     })
 
     it("does not let another member remove someone's upload", async () => {
-      const started = await uploadFile(member, 'a.pdf', PDF)
-      expect((await appFetch(`http://localhost/api/attachments/${started.id}`, json(other, 'DELETE'), ON())).status).toBe(404)
+      const a = await attached(member, 'a.pdf', PDF)
+      expect((await appFetch(`http://localhost/api/attachments/${a.id}`, json(other, 'DELETE'))).status).toBe(404)
     })
   })
 
   describe('usage', () => {
     it('shows admins the storage used against the quota', async () => {
       await attached(member, 'a.pdf', PDF)
-      const res = await appFetch('http://localhost/api/attachments/usage', { headers: { Cookie: `session=${admin}` } }, ON())
+      const res = await appFetch('http://localhost/api/attachments/usage', { headers: { Cookie: `session=${admin}` } })
       expect(res.status).toBe(200)
       expect(await res.json()).toEqual({ enabled: true, usedBytes: PDF.length, quotaBytes: 5 * 1024 ** 3 })
     })
 
+    it("does not count a file whose comment no longer exists", async () => {
+      const a = await attached(member, 'a.pdf', PDF)
+      const { id: commentId } = await (await postComment(member, billId, [a.id])).json() as { id: string }
+      await env.DB.prepare('DELETE FROM comments WHERE id = ?').bind(commentId).run()
+      const res = await appFetch('http://localhost/api/attachments/usage', { headers: { Cookie: `session=${admin}` } })
+      expect((await res.json() as { usedBytes: number }).usedBytes).toBe(0)
+    })
+
     it('is not shown to members', async () => {
-      expect((await appFetch('http://localhost/api/attachments/usage', { headers: { Cookie: `session=${member}` } }, ON())).status).toBe(403)
+      expect((await appFetch('http://localhost/api/attachments/usage', { headers: { Cookie: `session=${member}` } })).status).toBe(403)
     })
   })
 
   describe('config', () => {
     it('tells the app the limits when attachments are on', async () => {
-      const body = await (await appFetch('http://localhost/api/config', { headers: { Cookie: `session=${member}` } }, ON())).json() as { attachments: unknown }
+      const body = await (await appFetch('http://localhost/api/config', { headers: { Cookie: `session=${member}` } })).json() as { attachments: unknown }
       expect(body.attachments).toEqual({ maxBytes: 25 * 1024 * 1024, maxPerComment: 10 })
     })
 
     it('says attachments are off when no bucket is bound', async () => {
-      const body = await (await appFetch('http://localhost/api/config', { headers: { Cookie: `session=${member}` } }, { ...ON(), ATTACHMENTS_BUCKET: undefined })).json() as { attachments: unknown }
+      const body = await (await appFetch('http://localhost/api/config', { headers: { Cookie: `session=${member}` } }, OFF())).json() as { attachments: unknown }
       expect(body.attachments).toBeNull()
     })
   })

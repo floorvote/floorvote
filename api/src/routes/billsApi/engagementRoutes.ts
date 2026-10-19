@@ -272,7 +272,7 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
       content,
       createdAt: now,
     })
-    await attachToComment(db, commentId, attachable.ids)
+    const attachments = await attachToComment(db, commentId, attachable.ids)
 
     const mentionedUserIds = await extractAndNotifyMentions(commentId, content, currentUser.id, currentUser.role, id, c.env, c.executionCtx.waitUntil.bind(c.executionCtx))
     // Everyone else who has commented here hears about it too, except the people
@@ -292,7 +292,7 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
       createdAt: now,
     })
 
-    return c.json({ id: commentId, content, createdAt: now }, 201)
+    return c.json({ id: commentId, content, createdAt: now, attachments }, 201)
   })
 
   // PUT /bills/:id/mute: mute this bill's comments for the member (#355). No

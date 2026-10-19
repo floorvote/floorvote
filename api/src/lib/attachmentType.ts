@@ -25,11 +25,18 @@ const MAX_NAME_LENGTH = 200
 const BLOCKED_EXTENSIONS = new Set([
   // Programs and installers
   'exe', 'msi', 'msix', 'appx', 'com', 'scr', 'dll', 'sys', 'cpl', 'app', 'dmg', 'pkg', 'deb', 'rpm', 'apk', 'ipa', 'jar', 'bin', 'iso', 'img',
+  'msp', 'mst', 'gadget', 'application', 'appref-ms', 'vhd', 'vhdx',
   // Scripts and shortcuts
-  'bat', 'cmd', 'ps1', 'psm1', 'vbs', 'vbe', 'wsf', 'wsh', 'hta', 'sh', 'bash', 'zsh', 'command', 'py', 'pyc', 'rb', 'pl', 'php', 'lnk', 'reg', 'url', 'webloc', 'desktop', 'inf', 'scf',
+  'bat', 'cmd', 'ps1', 'psm1', 'psd1', 'ps1xml', 'psc1', 'vbs', 'vbe', 'jse', 'ws', 'wsc', 'wsf', 'wsh', 'sct', 'hta', 'msc', 'settingcontent-ms',
+  'sh', 'bash', 'zsh', 'command', 'py', 'pyc', 'rb', 'pl', 'php', 'lnk', 'reg', 'url', 'webloc', 'desktop', 'inf', 'scf',
+  // Compiled help, which runs script
+  'chm', 'hlp',
+  // OneNote notebooks, a common carrier for embedded programs
+  'one',
   // Pages a browser renders
-  'html', 'htm', 'xhtml', 'shtml', 'mht', 'mhtml', 'svg', 'svgz', 'xml', 'xsl', 'xslt', 'js', 'mjs', 'cjs', 'swf',
-  // Macro-enabled Office files
+  'html', 'htm', 'xhtml', 'xht', 'shtml', 'mht', 'mhtml', 'svg', 'svgz', 'xml', 'xsl', 'xslt', 'js', 'mjs', 'cjs', 'swf',
+  // Macro-enabled Office files, and the legacy templates and add-ins that carry macros
+  'xla', 'xlt', 'dot', 'pot', 'pps',
   'docm', 'dotm', 'xlsm', 'xltm', 'xlam', 'pptm', 'potm', 'ppsm', 'ppam', 'sldm',
   // Archives
   'zip', 'zipx', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'tbz2', 'xz', 'txz', 'lz', 'lzma', 'zst', 'cab', 'arj', 'z',
@@ -73,9 +80,20 @@ function blockedMessage(name: string): string {
   return `"${name}" can't be attached: programs, scripts, web pages, macro-enabled Office files, and archives aren't allowed.`
 }
 
+// Control characters, and the bidi controls that can make "rtf.exe" read as
+// "exe.ftr" on screen.
+const INVISIBLE = /[\u0000-\u001f\u007f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g
+
 function cleanName(raw: string): string {
   const last = raw.split(/[/\\]/).pop() ?? ''
-  return last.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, MAX_NAME_LENGTH)
+  // Trailing dots and spaces go too: Windows drops them when it saves the file,
+  // so "run.bat." would land as "run.bat".
+  const strip = (s: string) => s.trim().replace(/[. ]+$/, '')
+  return strip(strip(last.replace(INVISIBLE, '')).slice(0, MAX_NAME_LENGTH))
+}
+
+function knownType(ext: string) {
+  return Object.hasOwn(KNOWN, ext) ? KNOWN[ext] : undefined
 }
 
 export function checkAttachmentName(raw: string): NameResult {
@@ -83,7 +101,7 @@ export function checkAttachmentName(raw: string): NameResult {
   if (!name) return { ok: false, error: 'The file needs a name.' }
   const ext = extensionOf(name)
   if (BLOCKED_EXTENSIONS.has(ext)) return { ok: false, error: blockedMessage(name) }
-  return { ok: true, name, contentType: KNOWN[ext]?.type ?? OCTET_STREAM }
+  return { ok: true, name, contentType: knownType(ext)?.type ?? OCTET_STREAM }
 }
 
 const startsWith = (b: Uint8Array, sig: number[], at = 0) => sig.every((v, i) => b[at + i] === v)
@@ -139,7 +157,7 @@ export function checkAttachmentBytes(name: string, head: Uint8Array): BytesResul
   const found = sniff(head)
   if (found === 'program' || found === 'archive' || found === 'page') return { ok: false, error: blockedMessage(name) }
 
-  const known = KNOWN[ext]
+  const known = knownType(ext)
   if (!known) {
     // An unknown extension may hold anything but a known type: zip bytes here
     // are an archive, and a PDF named .bin is a mismatch.

@@ -13,13 +13,9 @@ export type Env = {
   DB: D1Database
   BILLS_BUCKET?: R2Bucket
   BILL_QUEUE?: Queue
-  // Comment attachments (#465). The feature is on only with the bucket bound,
-  // its name set, and the R2 S3 credentials that sign upload URLs (plus
-  // CF_ACCOUNT_ID, for the R2 endpoint), and never on a DEMO_MODE instance.
+  // Comment attachments (#465): on once this bucket is bound, never on a
+  // DEMO_MODE instance.
   ATTACHMENTS_BUCKET?: R2Bucket
-  ATTACHMENTS_BUCKET_NAME?: string
-  R2_ACCESS_KEY_ID?: string
-  R2_SECRET_ACCESS_KEY?: string
   RESEND_API_KEY: string
   // AI Gateway (unified billing) — gateway-routed path
   CF_AIG_TOKEN?: string        // Account-level CF token with AI Gateway Run scope

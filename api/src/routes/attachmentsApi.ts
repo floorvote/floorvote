@@ -1,10 +1,9 @@
 // Comment attachments over HTTP (#465). See lib/attachments.ts for the flow.
 //
-//   POST   /api/attachments              start an upload: { name, size } -> a presigned PUT URL
-//   POST   /api/attachments/:id/confirm  check what arrived, before it can be posted
-//   DELETE /api/attachments/:id          remove an upload not yet posted (uploader only)
-//   GET    /api/attachments/usage        storage used against the quota (admins)
-//   GET    /api/attachments/:id          download a posted file
+//   POST   /api/attachments?name=<file name>  upload: the body is the file, streamed into the bucket
+//   DELETE /api/attachments/:id               remove an upload not yet posted (uploader only)
+//   GET    /api/attachments/usage             storage used against the quota (admins)
+//   GET    /api/attachments/:id               download a posted file
 import { Hono } from 'hono'
 import { and, eq, isNull } from 'drizzle-orm'
 import { requireAuth, requireAdmin } from '../middleware/auth'
@@ -12,7 +11,7 @@ import { getDb } from '../db/client'
 import { commentAttachments, comments, users } from '../db/schema'
 import { activeUser } from '../lib/accountDeletion'
 import {
-  ATTACHMENT_QUOTA_BYTES, attachmentsEnabled, confirmUpload, isOwnKey, removePendingUpload, startUpload, usedBytes,
+  ATTACHMENT_QUOTA_BYTES, attachmentsEnabled, isOwnKey, removePendingUpload, uploadAttachment, usedBytes,
 } from '../lib/attachments'
 import type { AppEnv } from '../types'
 
@@ -20,17 +19,16 @@ export const attachmentsRouter = new Hono<AppEnv>()
 
 attachmentsRouter.use('*', requireAuth)
 
+// The name rides in the query string so the body can be the file itself,
+// streamed, with its Content-Length as the declared size.
 attachmentsRouter.post('/', async (c) => {
-  const body = await c.req.json<{ name?: unknown; size?: unknown }>().catch(() => ({}))
-  const r = await startUpload(c.env, getDb(c.env.DB), c.get('user').id, body)
+  const r = await uploadAttachment(c.env, getDb(c.env.DB), c.get('user').id, {
+    name: c.req.query('name'),
+    contentLength: c.req.header('content-length'),
+    body: c.req.raw.body,
+  })
   if (!r.ok) return c.json({ error: r.error }, r.status)
-  return c.json({ id: r.id, uploadUrl: r.uploadUrl, uploadHeaders: r.uploadHeaders, expiresAt: r.expiresAt }, 201)
-})
-
-attachmentsRouter.post('/:id/confirm', async (c) => {
-  const r = await confirmUpload(c.env, getDb(c.env.DB), c.get('user').id, c.req.param('id'))
-  if (!r.ok) return c.json({ error: r.error }, r.status)
-  return c.json(r.attachment)
+  return c.json(r.attachment, 201)
 })
 
 attachmentsRouter.delete('/:id', async (c) => {

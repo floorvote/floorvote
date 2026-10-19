@@ -81,7 +81,6 @@ See [`docs/content/self-hosting/index.md`](docs/content/self-hosting/index.md) f
 | `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile login protection (optional; unset → gate fails open) |
 | `RESEND_API_KEY` | Optional second email provider. The `EMAIL` binding goes first only with `EMAIL_PROVIDER=cloudflare`; otherwise Resend goes first and needs `RESEND_API_KEY`, and a bound binding is the fallback. With both configured, the other is the fallback for sign-in, account, notification, and operator email. Digests and week-ahead mail never fall back |
 | `GEMINI_API_KEY` | Optional fallback AI key (only when `AI_GATEWAY_ENABLED` is unset/false) |
-| `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Optional. An R2 API token's S3 credentials, which sign comment attachment upload URLs. Attachments are off without them, the `ATTACHMENTS_BUCKET` binding, and `ATTACHMENTS_BUCKET_NAME` (see `api/wrangler.example.toml`) |
 
 **Tenant vars** (in `[env.<tenant>.vars]` in `api/wrangler.toml`):
 
@@ -96,7 +95,6 @@ See [`docs/content/self-hosting/index.md`](docs/content/self-hosting/index.md) f
 | `CF_AIG_GATEWAY` | AI Gateway slug (required for AI Gateway) |
 | `TURNSTILE_SITE_KEY` | Public Turnstile sitekey (optional; unset → no widget) |
 | `SUPERADMIN_JWT_PUBLIC_KEY` | ES256 public JWK for verifying central-issued superadmin tokens (optional) |
-| `ATTACHMENTS_BUCKET_NAME` | Name of the R2 bucket bound as `ATTACHMENTS_BUCKET`, for comment attachments (optional) |
 
 **Central worker — LegiScan env** (`wrangler secret put <NAME> --env legiscan` from `central/`):
 

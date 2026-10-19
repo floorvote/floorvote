@@ -4,27 +4,28 @@
 // `<TENANT_ID>/<random UUID>`, so instances can share one bucket, and each file
 // has a row in comment_attachments (migration 0115). The flow:
 //
-//   1. startUpload: the browser names the file and its size. The server checks
-//      the name, the size, the member's hourly limit, and the instance quota,
-//      writes a row with no comment, and returns a presigned PUT URL for that
-//      one key, signed for that exact size and content type, good for ten
-//      minutes. The bytes go straight to R2, never through the Worker.
-//   2. confirmUpload: the server reads what arrived (its size and first bytes)
-//      and refuses anything that isn't what was signed for. A refused upload's
-//      bytes are deleted at once.
-//   3. Posting the comment attaches the confirmed files (attachToComment).
-//   4. Downloads go through GET /api/attachments/:id (routes/attachmentsApi.ts),
+//   1. uploadAttachment: the browser sends the file as the body of one request
+//      to the API, which streams it into the bucket through the binding. Before
+//      a byte is read, the server checks the name, the declared length (the
+//      Content-Length, at most 25 MB), and, in one conditional insert, the
+//      member's hourly limit and the instance quota. It then reads the first
+//      4 KB and checks them against the name's type, refusing before anything
+//      is stored. The rest streams through a FixedLengthStream, so a body that
+//      runs longer or shorter than declared fails the write, and whatever
+//      landed is deleted at once. The file is never held whole in memory.
+//   2. Posting the comment attaches the uploaded files (attachToComment).
+//   3. Downloads go through GET /api/attachments/:id (routes/attachmentsApi.ts),
 //      only for a file on a comment that still shows.
 //
 // Deleting the comment marks its files deleted, and purgeAttachments, hourly,
-// removes them 30 days later, along with uploads never posted, after a day.
+// removes them 30 days later, along with uploads never posted (after a day)
+// and files whose comment row is gone (at once).
 //
-// The feature is off until an operator binds the bucket and sets the R2 S3
-// credentials the upload URLs are signed with, and always off on a demo.
+// The feature is off until an operator binds the bucket, and always off on a
+// demo.
 
 import { and, eq, inArray, isNull, isNotNull, lt, sql, or } from 'drizzle-orm'
 import { commentAttachments } from '../db/schema'
-import { presignUrl } from './presign'
 import { checkAttachmentBytes, checkAttachmentName, SNIFF_BYTES } from './attachmentType'
 import { nowDb, toDbTs } from './dbTime'
 import type { AppDb, Env } from '../types'
@@ -33,26 +34,20 @@ export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 export const MAX_ATTACHMENTS_PER_COMMENT = 10
 /** Bytes one instance may hold in live and in-progress uploads. */
 export const ATTACHMENT_QUOTA_BYTES = 5 * 1024 ** 3
-/** Uploads one member may start in an hour, refused or not. */
+/** Uploads one member may make in an hour, refused or not. */
 export const UPLOADS_PER_HOUR = 30
-const UPLOAD_URL_TTL_SECONDS = 600
 const UNATTACHED_TTL_MS = 24 * 60 * 60 * 1000
 const DELETED_TTL_MS = 30 * 24 * 60 * 60 * 1000
 
 export type AttachmentSummary = { id: string; name: string; contentType: string; size: number }
 
-type Fail = { ok: false; status: 400 | 403 | 404 | 429 | 503; error: string }
+type Fail = { ok: false; status: 400 | 403 | 404 | 411 | 429 | 503; error: string }
 
 export const NOT_SET_UP = 'File attachments are not set up on this instance.'
 
-/** Whether uploads can work here: the bucket and credentials are set, and it isn't a demo. */
+/** Whether uploads can work here: the bucket is bound, and it isn't a demo. */
 export function attachmentsEnabled(env: Env): boolean {
-  return env.DEMO_MODE !== 'true'
-    && !!env.ATTACHMENTS_BUCKET
-    && !!env.ATTACHMENTS_BUCKET_NAME
-    && !!env.R2_ACCESS_KEY_ID
-    && !!env.R2_SECRET_ACCESS_KEY
-    && !!env.CF_ACCOUNT_ID
+  return env.DEMO_MODE !== 'true' && !!env.ATTACHMENTS_BUCKET
 }
 
 function keyPrefix(env: Env): string {
@@ -64,111 +59,166 @@ export function isOwnKey(env: Env, key: string): boolean {
   return key.startsWith(keyPrefix(env))
 }
 
+// A row whose bytes still count: not deleted, and either not yet posted or on
+// a comment that still exists. A hard-deleted comment (account deletion,
+// clear-interactions) leaves its rows behind, and the purge takes those.
+const LIVE = sql`${commentAttachments.deletedAt} IS NULL AND (${commentAttachments.commentId} IS NULL OR EXISTS (SELECT 1 FROM comments WHERE comments.id = ${commentAttachments.commentId}))`
+const ORPHANED = sql`${commentAttachments.commentId} IS NOT NULL AND NOT EXISTS (SELECT 1 FROM comments WHERE comments.id = ${commentAttachments.commentId})`
+
 export async function usedBytes(db: AppDb): Promise<number> {
   const row = await db.select({ n: sql<number>`coalesce(sum(${commentAttachments.size}), 0)` })
-    .from(commentAttachments).where(isNull(commentAttachments.deletedAt)).get()
+    .from(commentAttachments).where(LIVE).get()
   return row?.n ?? 0
 }
 
-export async function startUpload(
-  env: Env, db: AppDb, uploaderId: string, input: { name?: unknown; size?: unknown }, now = new Date(),
-): Promise<{ ok: true; id: string; uploadUrl: string; uploadHeaders: Record<string, string>; expiresAt: string } | Fail> {
+function hex(bytes: ArrayBuffer): string {
+  return [...new Uint8Array(bytes)].map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * Read from the body until `want` bytes have arrived or it ends. Returns what
+ * was read, unjoined, so it can be written on as it came.
+ */
+async function readHead(reader: ReadableStreamDefaultReader<Uint8Array>, want: number) {
+  const chunks: Uint8Array[] = []
+  let total = 0
+  let done = false
+  while (total < want) {
+    const next = await reader.read()
+    if (next.done) { done = true; break }
+    chunks.push(next.value)
+    total += next.value.length
+  }
+  const joined = new Uint8Array(Math.min(total, want))
+  let at = 0
+  for (const c of chunks) {
+    if (at >= joined.length) break
+    const part = c.subarray(0, joined.length - at)
+    joined.set(part, at)
+    at += part.length
+  }
+  return { chunks, total, done, head: joined }
+}
+
+export async function uploadAttachment(
+  env: Env, db: AppDb, uploaderId: string,
+  input: { name: string | undefined; contentLength: string | undefined; body: ReadableStream<Uint8Array> | null },
+  now = new Date(),
+): Promise<{ ok: true; attachment: AttachmentSummary } | Fail> {
   if (env.DEMO_MODE === 'true') return { ok: false, status: 403, error: 'File attachments are off on the demo.' }
   if (!attachmentsEnabled(env)) return { ok: false, status: 503, error: NOT_SET_UP }
 
-  const checked = checkAttachmentName(typeof input.name === 'string' ? input.name : '')
+  // Everything that can be decided from the request line and headers is,
+  // before a byte of the body is read.
+  const checked = checkAttachmentName(input.name ?? '')
   if (!checked.ok) return { ok: false, status: 400, error: checked.error }
-  const size = input.size
-  if (typeof size !== 'number' || !Number.isInteger(size) || size <= 0) {
-    return { ok: false, status: 400, error: `"${checked.name}" is empty.` }
+  const { name } = checked
+  if (!input.contentLength || !/^\d+$/.test(input.contentLength)) {
+    return { ok: false, status: 411, error: 'The upload needs a Content-Length.' }
   }
-  if (size > MAX_ATTACHMENT_BYTES) return { ok: false, status: 400, error: `"${checked.name}" is larger than 25 MB.` }
+  const size = Number(input.contentLength)
+  if (size === 0 || !input.body) return { ok: false, status: 400, error: `"${name}" is empty.` }
+  if (size > MAX_ATTACHMENT_BYTES) return { ok: false, status: 400, error: `"${name}" is larger than 25 MB.` }
 
+  // The hourly limit and the quota, checked and claimed in one statement so
+  // uploads arriving at once can't all pass on the same count.
+  const id = crypto.randomUUID()
+  const r2Key = `${keyPrefix(env)}${crypto.randomUUID()}`
   const since = toDbTs(new Date(now.getTime() - 60 * 60 * 1000))
-  const recent = await db.select({ n: sql<number>`count(*)` }).from(commentAttachments)
-    .where(and(eq(commentAttachments.uploaderId, uploaderId), sql`${commentAttachments.createdAt} > ${since}`)).get()
-  if ((recent?.n ?? 0) >= UPLOADS_PER_HOUR) {
-    return { ok: false, status: 429, error: 'Too many uploads in the last hour. Try again later.' }
-  }
-  if (await usedBytes(db) + size > ATTACHMENT_QUOTA_BYTES) {
+  const claimed = await db.run(sql`
+    INSERT INTO comment_attachments (id, uploader_id, r2_key, name, content_type, size, created_at)
+    SELECT ${id}, ${uploaderId}, ${r2Key}, ${name}, ${checked.contentType}, ${size}, ${toDbTs(now)}
+    WHERE (SELECT count(*) FROM comment_attachments WHERE uploader_id = ${uploaderId} AND created_at > ${since}) < ${UPLOADS_PER_HOUR}
+      AND (SELECT coalesce(sum(size), 0) FROM comment_attachments WHERE ${LIVE}) + ${size} <= ${ATTACHMENT_QUOTA_BYTES}`)
+  if (claimed.meta.changes !== 1) {
+    await input.body.cancel().catch(() => {})
+    const recent = await db.select({ n: sql<number>`count(*)` }).from(commentAttachments)
+      .where(and(eq(commentAttachments.uploaderId, uploaderId), sql`${commentAttachments.createdAt} > ${since}`)).get()
+    if ((recent?.n ?? 0) >= UPLOADS_PER_HOUR) {
+      return { ok: false, status: 429, error: 'Too many uploads in the last hour. Try again later.' }
+    }
     return { ok: false, status: 400, error: "This instance's file storage is full. An admin can free space by deleting comments with files." }
   }
 
-  const id = crypto.randomUUID()
-  const r2Key = `${keyPrefix(env)}${crypto.randomUUID()}`
-  await db.insert(commentAttachments).values({
-    id, uploaderId, r2Key, name: checked.name, contentType: checked.contentType, size, createdAt: toDbTs(now),
-  })
-  const uploadHeaders = { 'Content-Type': checked.contentType }
-  const uploadUrl = await presignUrl({
-    method: 'PUT',
-    url: `https://${env.CF_ACCOUNT_ID}.r2.cloudflarestorage.com/${env.ATTACHMENTS_BUCKET_NAME}/${r2Key}`,
-    region: 'auto',
-    accessKeyId: env.R2_ACCESS_KEY_ID!,
-    secretAccessKey: env.R2_SECRET_ACCESS_KEY!,
-    date: now,
-    expiresSeconds: UPLOAD_URL_TTL_SECONDS,
-    headers: { ...uploadHeaders, 'Content-Length': String(size) },
-  })
-  return { ok: true, id, uploadUrl, uploadHeaders, expiresAt: new Date(now.getTime() + UPLOAD_URL_TTL_SECONDS * 1000).toISOString() }
+  // From here a refusal marks the row deleted: it keeps counting toward the
+  // hourly limit until the purge, and stops counting toward the quota.
+  const bucket = env.ATTACHMENTS_BUCKET!
+  const refuse = async (error: string, stored: boolean): Promise<Fail> => {
+    if (stored) await bucket.delete(r2Key)
+    await db.update(commentAttachments).set({ deletedAt: nowDb() }).where(eq(commentAttachments.id, id))
+    return { ok: false, status: 400, error }
+  }
+  const incomplete = `"${name}" didn't upload completely. Try attaching it again.`
+
+  const reader = input.body.getReader()
+  const first = await readHead(reader, Math.min(SNIFF_BYTES, size + 1))
+  if (first.total > size || (first.done && first.total !== size)) {
+    await reader.cancel().catch(() => {})
+    return refuse(incomplete, false)
+  }
+  const verdict = checkAttachmentBytes(name, first.head)
+  if (!verdict.ok) {
+    await reader.cancel().catch(() => {})
+    return refuse(verdict.error, false)
+  }
+
+  // R2 needs a stream of known length. A FixedLengthStream of the declared
+  // size fails the write if the body runs short, and the pump stops it
+  // running long.
+  const { readable, writable } = new FixedLengthStream(size)
+  const writer = writable.getWriter()
+  const pump = (async () => {
+    let total = first.total
+    try {
+      for (const c of first.chunks) await writer.write(c)
+      for (;;) {
+        const next = await reader.read()
+        if (next.done) break
+        total += next.value.length
+        if (total > size) throw new Error('body longer than its Content-Length')
+        await writer.write(next.value)
+      }
+      await writer.close()
+    } catch (err) {
+      await writer.abort(err).catch(() => {})
+      await reader.cancel().catch(() => {})
+      throw err
+    }
+  })()
+  const [put, pumped] = await Promise.allSettled([
+    bucket.put(r2Key, readable, { httpMetadata: { contentType: verdict.contentType } }),
+    pump,
+  ])
+  if (put.status === 'rejected' || pumped.status === 'rejected' || !put.value || put.value.size !== size) {
+    return refuse(incomplete, true)
+  }
+
+  const md5 = put.value.checksums?.md5
+  await db.update(commentAttachments)
+    .set({ confirmedAt: nowDb(), checksum: md5 ? `md5:${hex(md5)}` : `etag:${put.value.etag}`, contentType: verdict.contentType })
+    .where(eq(commentAttachments.id, id))
+  return { ok: true, attachment: { id, name, contentType: verdict.contentType, size } }
 }
 
-/** The uploader's own row, still unposted and not deleted. */
-async function ownPending(db: AppDb, id: string, uploaderId: string) {
-  return db.select().from(commentAttachments).where(and(
+/** Remove an upload before it is posted: the composer's ×. */
+export async function removePendingUpload(env: Env, db: AppDb, uploaderId: string, id: string): Promise<boolean> {
+  const row = await db.select().from(commentAttachments).where(and(
     eq(commentAttachments.id, id),
     eq(commentAttachments.uploaderId, uploaderId),
     isNull(commentAttachments.commentId),
     isNull(commentAttachments.deletedAt),
   )).get()
-}
-
-export async function confirmUpload(env: Env, db: AppDb, uploaderId: string, id: string): Promise<{ ok: true; attachment: AttachmentSummary } | Fail> {
-  if (!attachmentsEnabled(env)) return { ok: false, status: 503, error: NOT_SET_UP }
-  const row = await ownPending(db, id, uploaderId)
-  if (!row) return { ok: false, status: 404, error: 'Not found' }
-  const summary = { id: row.id, name: row.name, contentType: row.contentType, size: row.size }
-  if (row.confirmedAt) return { ok: true, attachment: summary }
-
-  const bucket = env.ATTACHMENTS_BUCKET!
-  const head = await bucket.head(row.r2Key)
-  if (!head) return { ok: false, status: 400, error: `"${row.name}" hasn't finished uploading.` }
-
-  const refuse = async (error: string): Promise<Fail> => {
-    await bucket.delete(row.r2Key)
-    await db.update(commentAttachments).set({ deletedAt: nowDb() }).where(eq(commentAttachments.id, row.id))
-    return { ok: false, status: 400, error }
-  }
-  if (head.size !== row.size || head.size > MAX_ATTACHMENT_BYTES) {
-    return refuse(`"${row.name}" didn't upload completely. Try attaching it again.`)
-  }
-  const sample = await bucket.get(row.r2Key, { range: { offset: 0, length: SNIFF_BYTES } })
-  const bytes = sample ? new Uint8Array(await sample.arrayBuffer()) : new Uint8Array()
-  const verdict = checkAttachmentBytes(row.name, bytes)
-  if (!verdict.ok) return refuse(verdict.error)
-
-  const md5 = head.checksums?.md5
-  const checksum = md5 ? `md5:${[...new Uint8Array(md5)].map(b => b.toString(16).padStart(2, '0')).join('')}` : `etag:${head.etag}`
-  await db.update(commentAttachments)
-    .set({ confirmedAt: nowDb(), checksum, contentType: verdict.contentType })
-    .where(eq(commentAttachments.id, row.id))
-  return { ok: true, attachment: { ...summary, contentType: verdict.contentType } }
-}
-
-/** Remove an upload before it is posted: the composer's ×. */
-export async function removePendingUpload(env: Env, db: AppDb, uploaderId: string, id: string): Promise<boolean> {
-  const row = await ownPending(db, id, uploaderId)
   if (!row) return false
   if (env.ATTACHMENTS_BUCKET) await env.ATTACHMENTS_BUCKET.delete(row.r2Key)
   // The row stays, marked deleted, until the purge: it still counts toward the
-  // hourly limit, so starting and removing uploads can't get around it.
+  // hourly limit, so uploading and removing can't get around it.
   await db.update(commentAttachments).set({ deletedAt: nowDb() }).where(eq(commentAttachments.id, row.id))
   return true
 }
 
 /**
  * Check the files a new comment names, before the comment is written: each
- * must be the author's own confirmed upload, not yet on a comment.
+ * must be the author's own finished upload, not yet on a comment.
  */
 export async function checkAttachable(env: Env, db: AppDb, uploaderId: string, ids: unknown): Promise<{ ok: true; ids: string[] } | Fail> {
   if (ids === undefined || ids === null) return { ok: true, ids: [] }
@@ -192,10 +242,18 @@ export async function checkAttachable(env: Env, db: AppDb, uploaderId: string, i
   return { ok: true, ids: unique }
 }
 
-export async function attachToComment(db: AppDb, commentId: string, ids: string[]): Promise<void> {
-  if (ids.length === 0) return
-  await db.update(commentAttachments).set({ commentId })
-    .where(and(inArray(commentAttachments.id, ids), isNull(commentAttachments.commentId)))
+/**
+ * Put the files on the comment, and return the ones it got. Two posts naming
+ * the same upload at once both pass checkAttachable, and only one claims it:
+ * the other comment gets the files that are left, and says so in its 201.
+ */
+export async function attachToComment(db: AppDb, commentId: string, ids: string[]): Promise<AttachmentSummary[]> {
+  if (ids.length === 0) return []
+  const rows = await db.update(commentAttachments).set({ commentId })
+    .where(and(inArray(commentAttachments.id, ids), isNull(commentAttachments.commentId), isNull(commentAttachments.deletedAt)))
+    .returning({ id: commentAttachments.id, name: commentAttachments.name, contentType: commentAttachments.contentType, size: commentAttachments.size })
+  const order = new Map(ids.map((id, i) => [id, i]))
+  return rows.sort((a, b) => order.get(a.id)! - order.get(b.id)!)
 }
 
 /** A deleted comment's files, kept 30 days and then purged. */
@@ -224,9 +282,10 @@ export async function loadCommentAttachments(db: AppDb, commentIds: string[]): P
 }
 
 /**
- * Hourly: delete the bytes and rows of uploads never posted (after a day) and
- * of deleted comments' files (30 days after the delete). Without a bucket
- * there are no bytes to reach, so the rows wait.
+ * Hourly: delete the bytes and rows of uploads never posted (after a day), of
+ * deleted comments' files (30 days after the delete), and of files whose
+ * comment row is gone (at once). Without a bucket there are no bytes to reach,
+ * so the rows wait.
  */
 export async function purgeAttachments(env: Env, db: AppDb, now = new Date()): Promise<number> {
   const bucket = env.ATTACHMENTS_BUCKET
@@ -239,6 +298,7 @@ export async function purgeAttachments(env: Env, db: AppDb, now = new Date()): P
       .where(or(
         and(isNull(commentAttachments.commentId), lt(commentAttachments.createdAt, loose)),
         lt(commentAttachments.deletedAt, gone),
+        ORPHANED,
       ))
       .limit(500)
       .all()
