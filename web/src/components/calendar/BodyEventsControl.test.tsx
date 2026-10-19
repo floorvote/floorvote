@@ -74,7 +74,7 @@ const puts = (spy: ReturnType<typeof mockApi>) =>
 const getsOf = (spy: ReturnType<typeof mockApi>) =>
   spy.mock.calls.filter(([p, init]) => p === '/admin/event-rules' && !init?.method)
 
-const button = () => screen.findByRole('button', { name: 'Committee events settings' })
+const button = () => screen.findByRole('button', { name: 'Event filters' })
 /** The section summary ("All events", "2 of 3 committees"), opening the menu first when it is closed. */
 async function summary() {
   if (!screen.queryByRole('dialog')) await userEvent.setup().click(await button())
@@ -111,7 +111,7 @@ describe('the Calendar page\'s committee events control', () => {
     const spy = mockApi(null)
     renderControl({ capabilities: { MD: { bodyEvents: false, deadlines: true } } })
     await act(async () => { await Promise.resolve() })
-    expect(screen.queryByRole('button', { name: 'Committee events settings' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Event filters' })).not.toBeInTheDocument()
     expect(spy).not.toHaveBeenCalled()
   })
 
@@ -253,7 +253,7 @@ describe('the Calendar page\'s committee events control', () => {
   it('says it could not load, instead of a button naming the wrong choice, when the rules do not load', async () => {
     vi.spyOn(api, 'apiFetch').mockRejectedValue(new Error('boom'))
     renderControl()
-    expect(await screen.findByRole('button', { name: 'Committee events settings' })).toBeDisabled()
+    expect(await screen.findByRole('button', { name: 'Event filters' })).toBeDisabled()
     expect(screen.queryByTestId('state-summary-DC')).not.toBeInTheDocument()
   })
 

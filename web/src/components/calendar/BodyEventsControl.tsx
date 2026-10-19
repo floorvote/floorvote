@@ -179,7 +179,6 @@ export function BodyEventsControl({ onChanged }: { onChanged?: () => void }) {
         type="button"
         onClick={ready ? toggleMenu : undefined}
         disabled={!ready}
-        aria-label="Committee events settings"
         aria-haspopup="dialog"
         aria-expanded={!!pos}
         aria-describedby={filtered ? noteId : undefined}
@@ -187,8 +186,8 @@ export function BodyEventsControl({ onChanged }: { onChanged?: () => void }) {
         style={trigger}
       >
         Event filters
-        {filtered && <span id={noteId} style={visuallyHidden}>Some committee events are filtered.</span>}
       </button>
+      {filtered && <span id={noteId} style={visuallyHidden}>Some committee events are filtered.</span>}
       {pos && ready && (
         <PopPanel
           ref={panelRef}

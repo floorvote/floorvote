@@ -70,7 +70,7 @@ function renderGear(capabilities: AppConfig['capabilities'] = ONE_STATE) {
     </ConfigContext>,
   )
 }
-const gear = () => screen.findByRole('button', { name: 'Committee events settings' })
+const gear = () => screen.findByRole('button', { name: 'Event filters' })
 async function open() {
   const user = userEvent.setup()
   await user.click(await gear())
@@ -81,7 +81,7 @@ const section = (menu: HTMLElement, name: RegExp | string) => within(menu).getBy
 beforeEach(() => { vi.restoreAllMocks() })
 
 describe('the Event filters button', () => {
-  it('is a text button reading "Event filters", still named "Committee events settings", with no gear icon', async () => {
+  it('is a text button whose accessible name is its visible text, with no gear icon', async () => {
     mockApi(null)
     renderGear()
     const btn = await gear()
@@ -96,7 +96,7 @@ describe('the Event filters button', () => {
     const spy = mockApi(null)
     renderGear(NO_BODY)
     await act(async () => { await Promise.resolve() })
-    expect(screen.queryByRole('button', { name: 'Committee events settings' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Event filters' })).not.toBeInTheDocument()
     expect(spy).not.toHaveBeenCalled()
   })
 
