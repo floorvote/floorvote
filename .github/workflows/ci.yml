@@ -91,7 +91,13 @@ jobs:
   # sum. Each job repeats the root `npm ci` (its only shared cost), which also
   # provides the eslint + @typescript-eslint toolchain that central's lint/tsc
   # resolve against.
-  check-api:
+  #
+  # api's suite is the longest step in the run, so it is split: tsc and lint in
+  # one job, the tests in three shards (`vitest --shard` distributes files
+  # across them), and `check-api` as the fan-in that carries the required
+  # context name. The repository is public, so the extra runners are free; the
+  # split costs only the repeated 30-second setup.
+  check-api-static:
     needs: changes
     if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
@@ -106,8 +112,47 @@ jobs:
         working-directory: api
       - run: npm run lint
         working-directory: api
-      - run: npm test
+
+  check-api-tests:
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    name: check-api-tests (${{ matrix.shard }}/3)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run --shard=${{ matrix.shard }}/3
         working-directory: api
+
+  # The required context. Passes when every api job passed, or when all were
+  # skipped because the change does not touch api (a skipped job reports
+  # Success, but a fan-in that `needs` skipped jobs would itself be skipped
+  # without `always()`, and must then decide for itself). A failed `changes`
+  # job skips everything downstream too, which must not read as green.
+  check-api:
+    needs: [changes, check-api-static, check-api-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          CHANGES: ${{ needs.changes.result }}
+          STATIC: ${{ needs.check-api-static.result }}
+          TESTS: ${{ needs.check-api-tests.result }}
+        run: |
+          echo "changes=$CHANGES static=$STATIC tests=$TESTS"
+          [ "$CHANGES" = success ] || { echo "::error::the changes job did not succeed"; exit 1; }
+          case "$STATIC/$TESTS" in
+            success/success|skipped/skipped) exit 0 ;;
+            *) echo "::error::an api job failed or was cancelled"; exit 1 ;;
+          esac
 
   check-central:
     needs: changes
@@ -131,7 +176,9 @@ jobs:
       - run: npm test
         working-directory: central
 
-  check-web:
+  # web is split the same way: tsc, lint and build in one job, the jsdom
+  # suite in two shards, and `check-web` as the fan-in.
+  check-web-static:
     needs: changes
     if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
@@ -146,10 +193,44 @@ jobs:
         working-directory: web
       - run: npm run lint
         working-directory: web
-      - run: npm test
-        working-directory: web
       - run: npm run build
         working-directory: web
+
+  check-web-tests:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    name: check-web-tests (${{ matrix.shard }}/2)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run --shard=${{ matrix.shard }}/2
+        working-directory: web
+
+  check-web:
+    needs: [changes, check-web-static, check-web-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          CHANGES: ${{ needs.changes.result }}
+          STATIC: ${{ needs.check-web-static.result }}
+          TESTS: ${{ needs.check-web-tests.result }}
+        run: |
+          echo "changes=$CHANGES static=$STATIC tests=$TESTS"
+          [ "$CHANGES" = success ] || { echo "::error::the changes job did not succeed"; exit 1; }
+          case "$STATIC/$TESTS" in
+            success/success|skipped/skipped) exit 0 ;;
+            *) echo "::error::a web job failed or was cancelled"; exit 1 ;;
+          esac
 
   # The repo-tooling suite (scripts/lib): bill-statement builders, the seeder's
   # D1 helpers, and the drift guards. It had no CI job, so 71 tests could rot
