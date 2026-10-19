@@ -277,7 +277,7 @@ describe('Config: turning summary citations on offers a re-run', () => {
     await turnOn()
     const dialog = await scopeDialog()
     expect(within(dialog).getByRole('button', { name: /all 3 prioritized bills/i })).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: /all 7 fully analyzed bills/i })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: /all 7 analyzed bills/i })).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: /no, just future bill texts/i })).toBeInTheDocument()
   })
 
@@ -293,7 +293,7 @@ describe('Config: turning summary citations on offers a re-run', () => {
   it('posts the all scope when that is chosen', async () => {
     await turnOn()
     const dialog = await scopeDialog()
-    await userEvent.click(within(dialog).getByRole('button', { name: /fully analyzed bills/i }))
+    await userEvent.click(within(dialog).getByRole('button', { name: /analyzed bills/i }))
     await waitFor(() => expect(reprocessPosts()).toHaveLength(1))
     expect(reprocessPosts()[0][0]).toBe('/admin/reprocess-llm-all?scope=all')
   })
@@ -339,7 +339,7 @@ describe('Config: turning summary citations on offers a re-run', () => {
     expect(await scopeDialog()).toBeInTheDocument()
   })
 
-  it('has nothing to re-run on an instance with no fully analyzed bills, so opens nothing', async () => {
+  it('has nothing to re-run on an instance with no analyzed bills, so opens nothing', async () => {
     mockConfig({ claim_links_enabled: false, matched_bills_count: 0, prioritized_bills_count: 0 }, () => ({ enabled: true }))
     renderConfig()
     const box = await toggle()

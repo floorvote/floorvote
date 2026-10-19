@@ -31,6 +31,14 @@ describe('getNoAnalysisMessage', () => {
       expect(msg).toContain('Sponsors, full action history, and bill text are not')
     })
 
+    it('says "analyzed", never "fully analyzed"', () => {
+      for (const ts of ['available', 'no_texts'] as const) {
+        const msg = getNoAnalysisMessage({ matchType: null, textStatus: ts })
+        expect(msg).toContain("so it isn't being analyzed.")
+        expect(msg).not.toMatch(/fully analyzed/i)
+      }
+    })
+
     it('with text_status=in_r2: same copy as available', () => {
       expect(getNoAnalysisMessage({ matchType: null, textStatus: 'in_r2' }))
         .toBe(getNoAnalysisMessage({ matchType: null, textStatus: 'available' }))

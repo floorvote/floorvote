@@ -34,9 +34,9 @@ export function getNoAnalysisMessage(args: {
 
   if (isLightweight) {
     if (noTexts) {
-      return "This bill doesn't match your keywords, so it isn't being fully analyzed. Status and the latest action are kept current. No bill text published yet."
+      return "This bill doesn't match your keywords, so it isn't being analyzed. Status and the latest action are kept current. No bill text published yet."
     }
-    return "This bill doesn't match your keywords, so it isn't being fully analyzed. Status and the latest action are kept current. Sponsors, full action history, and bill text are not."
+    return "This bill doesn't match your keywords, so it isn't being analyzed. Status and the latest action are kept current. Sponsors, full action history, and bill text are not."
   }
 
   // Tracked bill (keyword/manual) with text confirmed present but no AI output.

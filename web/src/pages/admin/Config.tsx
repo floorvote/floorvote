@@ -394,7 +394,7 @@ export function Config() {
       // call and go straight to copy that describes what actually happens.
       // This is the most consequential action on the page — it turns off
       // future bill capture entirely — so it must not read as a no-op.
-      confirmMsg = 'Save an empty keyword list?\n\nNo new bills will be captured for full analysis from now on. Bills already analyzed keep their summaries and stay in the tracker. Nothing will be downgraded.'
+      confirmMsg = 'Save an empty keyword list?\n\nNo new bills will be captured for analysis from now on. Bills already analyzed keep their summaries and stay in the tracker. Nothing will be downgraded.'
     } else {
       try {
         const preview = await apiFetch<{ wouldAdd: number; wouldDemote: number; wouldProtect: number }>(
@@ -407,7 +407,7 @@ export function Config() {
           parts.push(`Every bill in your tracked sessions will be queued for AI analysis (~${preview.wouldAdd.toLocaleString()} ${preview.wouldAdd === 1 ? 'bill' : 'bills'}).`)
         } else if (preview.wouldAdd > 0) {
           const b = preview.wouldAdd === 1 ? '1 additional bill' : `${preview.wouldAdd} additional bills`
-          parts.push(`${b} will be fully analyzed`)
+          parts.push(`${b} will be analyzed`)
         }
         if (preview.wouldDemote > 0) {
           const b = preview.wouldDemote === 1 ? '1 bill' : `${preview.wouldDemote} bills`
@@ -825,7 +825,7 @@ export function Config() {
       <div style={sectionCard}>
         <h2 style={sectionTitle}>Bill keywords</h2>
         <div style={sectionIntro}>
-          All bills from particular legislative sessions are <em>monitored</em>: title, status, and the most recent action are refreshed multiple times daily from LegiScan. Bills that match the below keywords are <em>fully analyzed</em>, which adds full bill text, sponsors, complete action history, hearings, amendments, and supplementary documents — processed through AI for a summary, tags, and relevance score. (Admins can also manually select bills to be fully analyzed, even if those bills don't match keywords.)
+          All bills from the sessions you follow are monitored and searchable, with their status and latest action kept current. Bills that match the keywords below are analyzed: they have full bill text available — processed through AI for a summary, tags, and relevance score. (Admins can also manually select bills to be analyzed even if those bills don't match keywords.)
         </div>
 
         {loading ? (
@@ -862,13 +862,13 @@ export function Config() {
                 {savingKeywords ? 'Saving…' : 'Save keywords and sync'}
               </button>
               <span style={{ fontSize: fontSize.sm, color: color.textMuted, flexShrink: 1 }}>
-                Saves keywords, queues new matches for <em>full analysis</em>, and downgrades bills that no longer match to <em>monitoring</em>. (Bills with existing interactions, positions, or that admins have manually selected for analysis are not downgraded.)
+                Saves keywords, queues new matches for <em>analysis</em>, and downgrades bills that no longer match to <em>monitoring</em>. (Bills with existing interactions, positions, or that admins have manually selected for analysis are not downgraded.)
               </span>
               {savedKeywords && (
                 <span style={{ fontSize: fontSize.sm, color: color.textSuccess, flexShrink: 0 }}>
                   {syncKeywordsResult && (syncKeywordsResult.queued > 0 || syncKeywordsResult.demoted > 0)
                     ? `Saved — ${[
-                        syncKeywordsResult.queued > 0 ? `${syncKeywordsResult.queued} bill${syncKeywordsResult.queued !== 1 ? 's' : ''} queued for full analysis` : '',
+                        syncKeywordsResult.queued > 0 ? `${syncKeywordsResult.queued} bill${syncKeywordsResult.queued !== 1 ? 's' : ''} queued for analysis` : '',
                         syncKeywordsResult.demoted > 0 ? `${syncKeywordsResult.demoted} downgraded to status monitoring` : '',
                       ].filter(Boolean).join(', ')}`
                     : 'Saved'}
@@ -889,7 +889,7 @@ export function Config() {
       <div style={sectionCard}>
         <h2 style={sectionTitle}>AI instructions</h2>
         <div style={sectionIntro}>
-          When a bill is fully analyzed, the AI reads its full text and assigns it a summary, a relevance score, and a set of tags. The instructions below control how it does that.
+          When a bill is analyzed, the AI reads its full text and assigns it a summary, a relevance score, and a set of tags. The instructions below control how it does that.
         </div>
 
         {loading ? (
