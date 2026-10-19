@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { BillTextPanel, type PassageRequest } from './BillTextPanel'
+import { BillTextPanel, type PassageRequest, type PdfPageRequest } from './BillTextPanel'
 
 // Opening a PDF claim's page in the bill text panel (#572). The PDF frame
 // can't carry a `sandbox`: Chromium's built-in viewer renders under no sandbox
@@ -334,5 +334,170 @@ describe('BillTextPanel: a PDF claim\'s page in a companion\'s file', () => {
     await waitFor(() => expect(fetched).toContain('/api/bills/a100/text/9101'))
     await waitFor(() => expect(frame().getAttribute('src')).toBe('blob:test/2'))
     expect(screen.queryByRole('group', { name: /quote behind the claim/i })).toBeNull()
+  })
+})
+
+// #696: the quote box above a PDF wears the preview's glow, animates in (not
+// under reduced motion), and closes by button and by Escape, returning focus to
+// the claim that opened it.
+describe('BillTextPanel: the PDF quote box (#696)', () => {
+  const closeButton = () => screen.getByRole('button', { name: /close quote/i })
+  const claimLink = (n: number) => {
+    const a = document.createElement('a')
+    a.href = '#fv-claim-passage'
+    a.className = 'claim-link'
+    a.setAttribute('data-claim', String(n))
+    a.textContent = `Claim ${n}`
+    document.body.appendChild(a)
+    return a
+  }
+  const askFrom = (key: number, opener: HTMLElement | null, page: unknown = 7): PassageRequest => ({ ...(ask(key, page) as PdfPageRequest), opener })
+  afterEach(() => { document.querySelectorAll('a.claim-link').forEach(a => a.remove()) })
+
+  it('wears the glow from the glow tokens, on the card surface', async () => {
+    render(<BillTextPanel billId="a100" texts={[PDF_A]} externalOpen passage={ask(1, 7)} />)
+    await loadedFrame()
+    const cap = caption()
+    expect(cap.style.border).toContain('var(--fv-claim-glow-border)')
+    expect(cap.style.boxShadow).toContain('var(--fv-claim-glow-halo)')
+    expect(cap.style.boxShadow).toContain('var(--fv-claim-glow-blur)')
+    expect(cap.style.background).toContain('var(--fv-white)')
+  })
+
+  it('animates in with a class whose keyframes flash the glow tokens, and sets no motion under reduced motion', async () => {
+    render(<BillTextPanel billId="a100" texts={[PDF_A]} externalOpen passage={ask(1, 7)} />)
+    await loadedFrame()
+    expect(caption()).toHaveClass('claim-quote-box')
+    const css = [...document.querySelectorAll('style')].map(s => s.textContent ?? '').join('\n')
+    expect(css).toMatch(/@keyframes claim-quote-in\s*\{[^]*var\(--fv-claim-flash-halo\)[^]*var\(--fv-claim-flash-blur\)/)
+    expect(css).toMatch(/\.claim-quote-box\s*\{[^}]*animation:\s*claim-quote-in/)
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{[^@]*\.claim-quote-box\s*\{[^}]*animation:\s*none/)
+  })
+
+  it('has a close button, named for a screen reader, that Tab reaches from the focused box', async () => {
+    const user = userEvent.setup()
+    render(<BillTextPanel billId="a100" texts={[PDF_A]} externalOpen passage={ask(1, 7)} />)
+    await waitFor(() => expect(caption()).toHaveFocus())
+    expect(closeButton()).toHaveAttribute('type', 'button')
+    await user.tab()
+    expect(closeButton()).toHaveFocus()
+  })
+
+  it('closes the box with its button, and leaves the PDF where it was', async () => {
+    const user = userEvent.setup()
+    render(<BillTextPanel billId="a100" texts={[PDF_A]} externalOpen passage={ask(1, 7)} />)
+    const f = await loadedFrame()
+    await user.click(closeButton())
+    expect(screen.queryByRole('group', { name: /quote behind the claim/i })).toBeNull()
+    expect(frame()).toBe(f)
+    expect(f.getAttribute('src')).toBe('blob:test/1#page=7')
+  })
+
+  it('closes the box with Escape from the box itself', async () => {
+    const user = userEvent.setup()
+    render(<BillTextPanel billId="a100" texts={[PDF_A]} externalOpen passage={ask(1, 7)} />)
+    await waitFor(() => expect(caption()).toHaveFocus())
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('group', { name: /quote behind the claim/i })).toBeNull()
+  })
+
+  it('closes the box with Escape from its close button', async () => {
+    const user = userEvent.setup()
+    render(<BillTextPanel billId="a100" texts={[PDF_A]} externalOpen passage={ask(1, 7)} />)
+    await waitFor(() => expect(caption()).toHaveFocus())
+    await user.tab()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('group', { name: /quote behind the claim/i })).toBeNull()
+  })
+
+  it('does not close on Escape pressed elsewhere on the page', async () => {
+    render(<BillTextPanel billId="a100" texts={[PDF_A]} externalOpen passage={ask(1, 7)} />)
+    await loadedFrame()
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    expect(caption()).toBeInTheDocument()
+  })
+
+  it('returns focus to the claim that opened it when the button closes the box', async () => {
+    const user = userEvent.setup()
+    const link = claimLink(3)
+    render(<BillTextPanel billId="a100" texts={[PDF_A]} externalOpen passage={askFrom(1, link)} />)
+    await waitFor(() => expect(caption()).toHaveFocus())
+    await user.click(closeButton())
+    expect(link).toHaveFocus()
+  })
+
+  it('returns focus to the claim when Escape closes the box', async () => {
+    const user = userEvent.setup()
+    const link = claimLink(3)
+    render(<BillTextPanel billId="a100" texts={[PDF_A]} externalOpen passage={askFrom(1, link)} />)
+    await waitFor(() => expect(caption()).toHaveFocus())
+    await user.keyboard('{Escape}')
+    expect(link).toHaveFocus()
+  })
+
+  it('finds the claim again by its index when the summary re-rendered and the opener left the document', async () => {
+    const user = userEvent.setup()
+    const stale = claimLink(3)
+    render(<BillTextPanel billId="a100" texts={[PDF_A]} externalOpen passage={askFrom(1, stale)} />)
+    await waitFor(() => expect(caption()).toHaveFocus())
+    stale.remove()
+    const fresh = claimLink(3)
+    const other = claimLink(4)
+    await user.click(closeButton())
+    expect(fresh).toHaveFocus()
+    expect(other).not.toHaveFocus()
+  })
+
+  it('closes cleanly, with focus off the removed box, when there is no claim to return to', async () => {
+    const user = userEvent.setup()
+    render(<BillTextPanel billId="a100" texts={[PDF_A]} externalOpen passage={askFrom(1, null)} />)
+    await waitFor(() => expect(caption()).toHaveFocus())
+    await user.click(closeButton())
+    expect(screen.queryByRole('group', { name: /quote behind the claim/i })).toBeNull()
+    expect(document.activeElement === null || document.activeElement === document.body || document.activeElement.isConnected).toBe(true)
+  })
+
+  it('opens the box again when the claim is clicked again, and takes focus to it', async () => {
+    const user = userEvent.setup()
+    const link = claimLink(3)
+    const { rerender } = render(<BillTextPanel billId="a100" texts={[PDF_A]} externalOpen passage={askFrom(1, link)} />)
+    await waitFor(() => expect(caption()).toHaveFocus())
+    await user.click(closeButton())
+    expect(screen.queryByRole('group', { name: /quote behind the claim/i })).toBeNull()
+    rerender(<BillTextPanel billId="a100" texts={[PDF_A]} externalOpen passage={askFrom(2, link)} />)
+    await waitFor(() => expect(caption()).toBeInTheDocument())
+    await waitFor(() => expect(caption()).toHaveFocus())
+    expect(caption().querySelector('blockquote')!.textContent).toBe(`\u201c${QUOTE}\u201d`)
+  })
+
+  it('keeps the box closed through a re-render of the same request', async () => {
+    const user = userEvent.setup()
+    const link = claimLink(3)
+    const { rerender } = render(<BillTextPanel billId="a100" texts={[PDF_A]} externalOpen passage={askFrom(1, link)} />)
+    await waitFor(() => expect(caption()).toHaveFocus())
+    await user.click(closeButton())
+    rerender(<BillTextPanel billId="a100" texts={[PDF_A]} externalOpen passage={askFrom(1, link)} />)
+    expect(screen.queryByRole('group', { name: /quote behind the claim/i })).toBeNull()
+  })
+
+  it('closes a long quote\'s box the same way, and shows the whole quote while open', async () => {
+    const user = userEvent.setup()
+    const long = 'The board shall review every drop box location and report each finding. '.repeat(30).trim()
+    render(<BillTextPanel billId="a100" texts={[PDF_A]} externalOpen passage={ask(1, 2, long)} />)
+    await loadedFrame()
+    expect(caption().querySelector('blockquote')!.textContent).toBe(`\u201c${long}\u201d`)
+    await user.click(closeButton())
+    expect(screen.queryByRole('group', { name: /quote behind the claim/i })).toBeNull()
+  })
+
+  it('drops the box when the reader picks a version, and the claim opens it again', async () => {
+    const user = userEvent.setup()
+    const link = claimLink(3)
+    const { rerender } = render(<BillTextPanel billId="a100" texts={[PDF_A2, PDF_A]} externalOpen passage={askFrom(1, link)} />)
+    await loadedFrame()
+    await user.click(screen.getByRole('button', { name: /Amended/ }))
+    expect(screen.queryByRole('group', { name: /quote behind the claim/i })).toBeNull()
+    rerender(<BillTextPanel billId="a100" texts={[PDF_A2, PDF_A]} externalOpen passage={askFrom(2, link)} />)
+    await waitFor(() => expect(caption()).toBeInTheDocument())
   })
 })

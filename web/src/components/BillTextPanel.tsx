@@ -1,10 +1,14 @@
 import { useState, useEffect, useId, useMemo, useRef } from 'react'
 import { useVerticalResize, ResizeHandle } from './ResizeHandle'
+import { BillBadge } from './BillBadge'
 import { BillTextChip } from './BillTextChip'
 import { ExternalLinkIcon } from './ExternalLinkIcon'
 import { getScrollContainer } from '../lib/scrollUtils'
 import { canRenderPdfInline } from '../lib/pdfInline'
 import { parseHandle } from '../../../shared/billHandle'
+import type { GroupBillTexts } from '../../../shared/companionGroups'
+import { orderGroupTexts } from '../lib/groupTexts'
+import { claimGlow, CLAIM_GLOW_FLASH } from '../lib/claimGlow'
 import { focusPassage, markPassage, PASSAGE_ID, type ClaimDocument, type Span } from '../lib/claimLinks'
 import { describePageTarget, looksLikePdf, pdfPageTarget } from '../lib/pdfPages'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
@@ -43,25 +47,57 @@ export type HtmlPassageRequest = RequestBase & { matched: string; quoteAt: Span;
  * anything that isn't a page number opens at page 1) and the quote to show
  * beside the PDF. The quote was never matched, so nothing is highlighted.
  */
-export type PdfPageRequest = RequestBase & { quote: string; page: number | null; matched?: undefined; quoteAt?: undefined }
+export type PdfPageRequest = RequestBase & {
+  quote: string
+  page: number | null
+  matched?: undefined
+  quoteAt?: undefined
+  /**
+   * The claim link that was activated (#696). The quote box closes by its button
+   * or Escape, and focus returns to this link, or to the one with its claim index
+   * if the summary has rendered again since.
+   */
+  opener?: HTMLElement | null
+}
 
 export type PassageRequest = HtmlPassageRequest | PdfPageRequest
 
 const isPdfRequest = (r: PassageRequest): r is PdfPageRequest => r.quote !== undefined
+
+/**
+ * A request to open another bill's document (#601): the one the summary was
+ * based on, when the page shows a companion's analysis. It opens beside this
+ * bill's own versions, as a claim's passage does. Each request has a new `key`.
+ */
+export type DocumentRequest = { key: number; billId: string; billNumber: string | null; document: ClaimDocument }
 
 interface BillTextPanelProps {
   billId: string
   texts: TextVersion[]
   externalOpen?: boolean
   requestedDocId?: string | null
+  requestedDocument?: DocumentRequest | null
   passage?: PassageRequest | null
+  /**
+   * Every bill in the page bill's companion group with its versions (#712). The
+   * list is then one row per bill, and a version of any of them is selected in
+   * its own row. Absent from a server that predates it, and the list is then
+   * `texts`, with another bill's document appended when one is opened.
+   */
+  groupTexts?: GroupBillTexts[]
+  /** Head each bill's row with its badge: the page bill is in a group. */
+  groupBadges?: boolean
 }
 
-export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, passage }: BillTextPanelProps) {
+export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, requestedDocument, passage, groupTexts, groupBadges = false }: BillTextPanelProps) {
   const [internalOpen, setInternalOpen] = useState(false)
   const open = externalOpen !== undefined ? externalOpen : internalOpen
+  // The group's bills as rows, in the order every page in the group shares (#712); null from a server without them.
+  const rows = useMemo(() => (groupTexts ? orderGroupTexts(groupTexts) : null), [groupTexts])
+  // The versions the list holds before another bill's document is appended.
+  const baseTexts = useMemo(() => (rows ? rows.flatMap(r => r.texts) : texts), [rows, texts])
   const [selectedDocId, setSelectedDocId] = useState<string | null>(
-    texts.length > 0 ? texts[0].docId : null
+    texts.length > 0 ? texts[0].docId : (baseTexts[0]?.docId ?? null)
   )
   const [loadedContent, setLoadedContent] = useState<Map<string, string>>(new Map())
   const [pdfBlobUrls, setPdfBlobUrls] = useState<Map<string, string>>(new Map())
@@ -74,14 +110,19 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, pas
   const [highlight, setHighlight] = useState(false)
   const pendingRef = useRef<Set<string>>(new Set())
   const consumedPassageRef = useRef<number | null>(null)
+  const consumedDocumentRef = useRef<number | null>(null)
 
   // Another bill's version: the analyzed member's document a claim on a
   // companion's page opens, which is never in this bill's list (#571).
   const [foreign, setForeign] = useState<{ billId: string; billNumber: string | null; version: TextVersion } | null>(null)
   // The claim passage being shown, until the reader picks a version.
   const [activePassage, setActivePassage] = useState<PassageRequest | null>(null)
-  const allTexts = foreign && !texts.some(t => t.docId === foreign.version.docId) ? [...texts, foreign.version] : texts
-  const textBillId = (docId: string | null) => (foreign && docId === foreign.version.docId ? foreign.billId : billId)
+  const allTexts = foreign && !baseTexts.some(t => t.docId === foreign.version.docId) ? [...baseTexts, foreign.version] : baseTexts
+  const textBillId = (docId: string | null) => {
+    const listed = rows?.find(r => r.texts.some(t => t.docId === docId))
+    if (listed) return listed.billId
+    return foreign && docId === foreign.version.docId ? foreign.billId : billId
+  }
   const textUrl = (docId: string | null, from = textBillId(docId)) => `/api/bills/${from}/text/${docId}`
 
   const selectedVersion = allTexts.find(t => t.docId === selectedDocId) ?? allTexts[0] ?? null
@@ -103,6 +144,7 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, pas
   useEffect(() => {
     if (!open || selectedDocId === null) return
     if (passage && consumedPassageRef.current !== passage.key) return
+    if (requestedDocument && consumedDocumentRef.current !== requestedDocument.key) return
     const version = allTexts.find(t => t.docId === selectedDocId)
     if (!version) return
     if (version.mime === 'application/pdf') {
@@ -121,13 +163,32 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, pas
   useEffect(() => () => { if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current) }, [])
   useEffect(() => {
     if (!requestedDocId) return
-    const target = texts.find(t => t.docId === requestedDocId)
+    const target = baseTexts.find(t => t.docId === requestedDocId)
     if (!target) return
     void handleSelectVersion(requestedDocId)
     const rafId = reveal()
     return () => cancelAnimationFrame(rafId)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requestedDocId, texts])
+  }, [requestedDocId, baseTexts])
+
+  // Another bill's document (#601): open it beside this bill's versions.
+  useEffect(() => {
+    if (!requestedDocument) return
+    consumedDocumentRef.current = requestedDocument.key
+    const doc = requestedDocument.document
+    // A version the list already holds is selected in its row; only another is appended.
+    if (!rows || !baseTexts.some(t => t.docId === doc.docId)) setForeign({ billId: requestedDocument.billId, billNumber: requestedDocument.billNumber, version: doc })
+    setActivePassage(null)
+    setSelectedDocId(doc.docId)
+    if (doc.mime === 'application/pdf') {
+      if (!blobUrlsRef.current.has(doc.docId)) void loadPdf(doc.docId, requestedDocument.billId)
+    } else if (!loadedContent.has(doc.docId)) {
+      void loadText(doc.docId, requestedDocument.billId)
+    }
+    const rafId = reveal()
+    return () => cancelAnimationFrame(rafId)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedDocument?.key])
 
   // A claim's passage (#571): open its document, beside this bill's versions
   // when it is another bill's, and show it highlighted. The frame takes focus
@@ -136,7 +197,8 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, pas
     if (!passage) return
     consumedPassageRef.current = passage.key
     const doc = passage.document
-    const own = passage.billId === billId && texts.some(t => t.docId === doc.docId)
+    // Without the group's rows the list is this bill's own, so another bill's document is appended to it.
+    const own = baseTexts.some(t => t.docId === doc.docId) && (rows !== null || passage.billId === billId)
     if (!own) setForeign({ billId: passage.billId, billNumber: passage.billNumber, version: doc })
     setActivePassage(passage)
     setSelectedDocId(doc.docId)
@@ -181,6 +243,17 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, pas
   const captionId = `pdf-quote${useId()}`
   const focusedRequestRef = useRef<number | null>(null)
   const pdfRequestKey = pdfRequest?.key ?? null
+  // The quote box closes (#696) until the next request, which has a new key and opens it again.
+  const [closedQuoteKey, setClosedQuoteKey] = useState<number | null>(null)
+  function closeQuote() {
+    if (!pdfRequest) return
+    setClosedQuoteKey(pdfRequest.key)
+    const { opener } = pdfRequest
+    // The summary can render again and replace its links, so a detached opener is found again by its claim.
+    const index = opener?.getAttribute('data-claim')
+    const back = opener?.isConnected ? opener : index != null ? document.querySelector<HTMLElement>(`a.claim-link[data-claim="${index}"]`) : null
+    back?.focus({ preventScroll: true })
+  }
   useEffect(() => {
     if (!open || pdfRequestKey === null || focusedRequestRef.current === pdfRequestKey) return
     const caption = captionRef.current
@@ -323,20 +396,45 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, pas
   const notPdf = selectedDocId !== null && notPdfDocIds.has(selectedDocId)
 
   // The quote behind a PDF claim, above the PDF, whether or not the PDF loads.
-  const quoteCaption = pdfRequest && pdfTarget ? (
-    <div
-      ref={captionRef}
-      tabIndex={-1}
-      role="group"
-      aria-label="Quote behind the claim you opened"
-      // Focus lands here, and not every screen reader reads a group's contents
-      // on focus, so the page line and the quote are its description.
-      aria-describedby={`${captionId}-page ${captionId}-quote`}
-      style={{ border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, background: color.surfaceSubtle, padding: '8px 12px', marginBottom: 8 }}
-    >
-      <p id={`${captionId}-page`} style={{ fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: color.textSecondary, margin: 0 }}>{describePageTarget(pdfTarget)}</p>
-      <blockquote id={`${captionId}-quote`} style={{ fontSize: fontSize.sm, color: color.textSlate, margin: '4px 0 0' }}>{`“${pdfRequest.quote}”`}</blockquote>
-    </div>
+  // It wears the preview's glow, animates in (not under reduced motion), and closes (#696).
+  const quoteCaption = pdfRequest && pdfTarget && closedQuoteKey !== pdfRequest.key ? (
+    <>
+      <style>{`
+        @keyframes claim-quote-in {
+          from { opacity: 0; transform: translateY(-8px) scale(0.985); box-shadow: ${CLAIM_GLOW_FLASH}; }
+          to { opacity: 1; transform: none; }
+        }
+        .claim-quote-box { animation: claim-quote-in 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+        @media (prefers-reduced-motion: reduce) { .claim-quote-box { animation: none; } }
+        .claim-quote-close {
+          background: none; border: none; cursor: pointer; padding: 2px 8px; border-radius: ${radius.sm}px;
+          font-size: ${fontSize.base}px; line-height: 1.2; color: ${color.textSlate500};
+        }
+        .claim-quote-close:hover { background: ${color.surfaceMuted}; color: ${color.textPrimary}; }
+        .claim-quote-close:focus-visible { outline: 2px solid ${color.focusRing}; outline-offset: 1px; }
+      `}</style>
+      {/* Escape closes from anywhere inside, and focus lands on this group by script, so the group takes the key. */}
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
+      <div
+        key={pdfRequest.key}
+        ref={captionRef}
+        className="claim-quote-box"
+        tabIndex={-1}
+        role="group"
+        aria-label="Quote behind the claim you opened"
+        // Focus lands here, and not every screen reader reads a group's contents
+        // on focus, so the page line and the quote are its description.
+        aria-describedby={`${captionId}-page ${captionId}-quote`}
+        onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); closeQuote() } }}
+        style={{ ...claimGlow, borderRadius: radius.md, padding: '8px 8px 10px 12px', marginBottom: 8, display: 'flex', gap: 8, alignItems: 'flex-start' }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p id={`${captionId}-page`} style={{ fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: color.textSecondary, margin: 0 }}>{describePageTarget(pdfTarget)}</p>
+          <blockquote id={`${captionId}-quote`} style={{ fontSize: fontSize.sm, color: color.textSlate, margin: '4px 0 0' }}>{`“${pdfRequest.quote}”`}</blockquote>
+        </div>
+        <button type="button" className="claim-quote-close" aria-label="Close quote" onClick={closeQuote}>×</button>
+      </div>
+    </>
   ) : null
 
   return (
@@ -359,7 +457,28 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, pas
 
       {open && (
         <div style={{ marginTop: 8 }}>
-          {allTexts.length > 0 && (
+          {allTexts.length > 0 && rows && groupBadges ? (
+            // One row per bill in the group, each headed once by its badge (#712).
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+              {[...rows, ...(foreign && !baseTexts.some(t => t.docId === foreign.version.docId)
+                ? [{ billId: foreign.billId, billNumber: foreign.billNumber ?? '', state: null as string | null, texts: [foreign.version] }]
+                : [])].map(row => (
+                <div key={row.billId} role="group" aria-label={`${row.billNumber} bill texts`} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                  {/* A flex slot, so no text baseline sets the badge lower than the chips. */}
+                  <span style={{ minWidth: 52, display: 'inline-flex', alignItems: 'center' }}><BillBadge billNumber={row.billNumber} state={row.state} mini /></span>
+                  {row.texts.map(t => (
+                    <BillTextChip
+                      key={t.docId}
+                      type={t.type}
+                      date={t.date}
+                      selected={t.docId === selectedDocId}
+                      onClick={() => handleSelectVersion(t.docId)}
+                    />
+                  ))}
+                </div>
+              ))}
+            </div>
+          ) : allTexts.length > 0 && (
             <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
               {allTexts.map(t => (
                 <BillTextChip

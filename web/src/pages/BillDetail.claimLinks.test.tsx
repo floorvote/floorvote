@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, act, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { BillDetail } from './BillDetail'
@@ -137,6 +137,8 @@ const summaryBox = async () => {
   await screen.findByText('AI Summary')
   return document.querySelector('.markdown-summary') as HTMLElement
 }
+/** The summary header names the bill a borrowed summary is from, by its badge (#712). */
+const sourceBadge = async () => within((await screen.findByText('AI Summary')).parentElement as HTMLElement).getByText('S200')
 const claimLink = (name: string) => screen.findByRole('link', { name })
 const passageFrame = async () => {
   await waitFor(() => expect((screen.getByTitle(/^Bill text/) as HTMLIFrameElement).getAttribute('src') ?? '').toMatch(/^blob:/), { timeout: 3000 })
@@ -247,9 +249,8 @@ describe('claim links on a companion\'s page showing another member\'s analysis'
 
   it('labels the summary with the bill it is from, linking to that bill', async () => {
     setup(BORROWED)
-    const link = await screen.findByRole('link', { name: 'S200' })
-    expect(link).toHaveAttribute('href', '/bills/s200')
-    expect(link.parentElement!.textContent).toBe('Summary of S200, this bill\'s identical companion')
+    expect(await sourceBadge()).toBeInTheDocument()
+    expect(screen.queryByText(/Summary of/)).toBeNull()
   })
 
   it('opens the analyzed member\'s document even when the page bill has no texts of its own', async () => {
@@ -265,20 +266,22 @@ describe('claim links on a companion\'s page showing another member\'s analysis'
     setup({ ...BORROWED, claimSources: null })
     await summaryBox()
     expect(screen.queryByRole('link', { name: 'Requires a drop box in each county.' })).toBeNull()
-    expect(screen.getByRole('link', { name: 'S200' }).parentElement!.textContent).toBe('Summary of S200, this bill\'s identical companion')
+    expect(await sourceBadge()).toBeInTheDocument()
+    expect(screen.queryByText(/Summary of/)).toBeNull()
   })
 
   it('labels a borrowed summary that has no claim sources at all', async () => {
     setup({ ...BORROWED, claimSources: undefined, claimLinksEnabled: undefined })
     await summaryBox()
-    expect(screen.getByRole('link', { name: 'S200' })).toHaveAttribute('href', '/bills/s200')
+    expect(await sourceBadge()).toBeInTheDocument()
   })
 
   it('renders no links with the instance setting off, and still says whose summary it is', async () => {
     setup({ ...BORROWED, claimLinksEnabled: false })
     await summaryBox()
     expect(screen.queryByRole('link', { name: 'Requires a drop box in each county.' })).toBeNull()
-    expect(screen.getByRole('link', { name: 'S200' }).parentElement!.textContent).toBe('Summary of S200, this bill\'s identical companion')
+    expect(await sourceBadge()).toBeInTheDocument()
+    expect(screen.queryByText(/Summary of/)).toBeNull()
   })
 })
 
@@ -292,5 +295,42 @@ describe('a summary without claim sources', () => {
     const plain = render(<MarkdownSummary fontSize={fontSize.base} color={color.textSlate} lineHeight={1.5}>{SUMMARY}</MarkdownSummary>)
     expect(plain.container.querySelector('.markdown-summary')!.innerHTML).toBe((await summaryBox()).innerHTML)
     expect(document.querySelectorAll('a[data-claim]')).toHaveLength(0)
+  })
+})
+
+// #696: an HTML claim previews its passage on hover and keyboard focus.
+describe('quote previews on an HTML bill\'s claims (#696)', () => {
+  // The test setup's matchMedia reports no match for anything, so a device that can hover is stubbed in.
+  beforeEach(() => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(hover: hover)', media: query, onchange: null,
+      addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false,
+    }))
+  })
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('shows the passage a claim opens when the pointer is on it, and not for a plain-text claim', async () => {
+    const user = userEvent.setup()
+    setup()
+    await user.hover(await claimLink('Requires a drop box in each county.'))
+    const p = document.body.querySelector('[data-claim-preview]')
+    expect(p).not.toBeNull()
+    expect(p!.textContent).toContain('“Each county shall have a drop box.”')
+    expect(document.querySelector('.markdown-summary')!.contains(p)).toBe(false)
+  })
+
+  it('describes the link by that passage for a screen reader', async () => {
+    setup()
+    expect(await claimLink('Requires a drop box in each county.')).toHaveAccessibleDescription('“Each county shall have a drop box.”')
+  })
+
+  it('shows each claim its own passage as keyboard focus moves between them', async () => {
+    const user = userEvent.setup()
+    setup()
+    const first = await claimLink('Requires a drop box in each county.')
+    act(() => first.focus())
+    expect(document.body.querySelector('[data-claim-preview]')!.textContent).toContain('Each county shall have a drop box.')
+    await user.tab()
+    expect(document.body.querySelector('[data-claim-preview]')!.textContent).toContain('Boxes are emptied daily.')
   })
 })

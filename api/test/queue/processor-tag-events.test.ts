@@ -86,7 +86,7 @@ describe('processor: tags are not recorded as team events', () => {
       await analyze(['Energy'])
       const own = await db().select({ id: bills.id, groupKey: bills.groupKey }).from(bills).where(eq(bills.externalId, BILL_ID)).get()
       expect(own!.groupKey).not.toBeNull()
-      // The tracked companion is analyzed later, so the group shows its tags.
+      // A4242 leads (it is further along), but its analysis is gone, so the group shows the tracked companion's tags.
       await db().update(bills).set({ tags: JSON.stringify(['Labor']), tenantSummary: 'S77 summary', aiProcessedAt: '2026-01-01 00:00:00' }).where(eq(bills.id, 'comp'))
       await db().update(bills).set({ aiProcessedAt: '2025-12-01 00:00:00' }).where(eq(bills.id, own!.id))
       await analyze(['Energy'])

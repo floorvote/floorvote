@@ -8,6 +8,7 @@ import { filterTagsToTaxonomy } from '../../lib/taxonomy'
 import type { AppDb } from '../../types'
 import { billsAs, buildBillNumberBoost, type BillsFilter } from './query'
 import { newMatchWhere } from '../../lib/newMatch'
+import { billNum, billPrefix, compareLead, groupedNewestTextDate, leadOrder } from '../../lib/groupLead'
 
 /**
  * The bill list's companion groups (see **Companion group** in CONTEXT.md).
@@ -124,23 +125,12 @@ const aggregate = (own: SQL, over: SQL): SQL =>
 const priorityRank = (priority: SQL) => sql`CASE ${priority} WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 ELSE 0 END`
 const positionRank = (position: SQL) => sql`CASE ${position} WHEN 'Support' THEN 5 WHEN 'Oppose' THEN 4 WHEN 'Amend' THEN 3 WHEN 'Monitor' THEN 2 WHEN 'No Position' THEN 1 ELSE 0 END`
 
-// Natural bill-number order: split into the text before the first digit and the
-// number after it, so "HB 9" sorts before "HB 10".
-// The digits are inlined, not bound, so the ORDER BY stays well under D1's 100-parameter limit.
-const firstDigitPos = (n: SQL) => sql`min(${sql.join(
-  Array.from({ length: 10 }, (_, d) => sql`CASE WHEN instr(${n}, ${sql.raw(`'${d}'`)}) = 0 THEN 99999 ELSE instr(${n}, ${sql.raw(`'${d}'`)}) END`),
-  sql`, `,
-)})`
-const billPrefix = (n: SQL) => sql`substr(${n}, 1, ${firstDigitPos(n)} - 1)`
-const billNum = (n: SQL) => sql`CAST(substr(${n}, ${firstDigitPos(n)}) AS INTEGER)`
-
 /**
- * The bill number a group is known by: the furthest-along bill's, the first
- * of the group's bills the row shows (see `compareMembers`).
+ * The bill number a group is known by: its lead's, the first of the group's
+ * bills the row shows (see `compareMembers` and lib/groupLead.ts).
  */
 const leadNumber = (): SQL => sql`CASE WHEN ${c.groupKey} IS NULL THEN ${c.billNumber} ELSE
-  (SELECT g.bill_number FROM bills g WHERE g.group_key = ${c.groupKey}
-   ORDER BY g.status_rank DESC, ${billPrefix(sql`g.bill_number`)} ASC, ${billNum(sql`g.bill_number`)} ASC, g.id ASC LIMIT 1) END`
+  (SELECT g.bill_number FROM bills g WHERE g.group_key = ${c.groupKey} ORDER BY ${leadOrder('g')} LIMIT 1) END`
 
 type KeyName = 'year' | 'yearend' | 'priority' | 'position' | 'relevance' | 'last' | 'status' | 'state' | 'lead' | 'boost'
 
@@ -339,26 +329,17 @@ const memberColumns = {
   triagedAt: bills.triagedAt, triagedBy: bills.triagedBy, lastAiTextDocId: bills.lastAiTextDocId,
   createdAt: bills.createdAt, updatedAt: bills.updatedAt, groupKey: bills.groupKey,
 }
-type BillRow = Pick<typeof bills.$inferSelect, keyof typeof memberColumns>
+type BillRow = Pick<typeof bills.$inferSelect, keyof typeof memberColumns> & { newestTextDate: string | null }
 
 /** A bill in a group, as the list row names it. */
 export type GroupMemberSummary = { id: string; billNumber: string; state: string; status: string; sessionSlug: string; matched?: boolean }
 
-/** The bills of a group, the furthest along first, then by bill number. The first is the group's lead, the bill the row is about. */
-export function compareMembers(a: Pick<BillRow, 'id' | 'billNumber' | 'statusRank'>, b: Pick<BillRow, 'id' | 'billNumber' | 'statusRank'>): number {
-  if (a.statusRank !== b.statusRank) return b.statusRank - a.statusRank
-  const [x, y] = [naturalParts(a.billNumber), naturalParts(b.billNumber)]
-  if (x.prefix !== y.prefix) return x.prefix < y.prefix ? -1 : 1
-  if (x.num !== y.num) return x.num - y.num
-  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
-}
-
-// The same split as `billPrefix` and `billNum` above, so the row's first bill is the one the sort used.
-function naturalParts(number: string): { prefix: string; num: number } {
-  const digit = /\d/.exec(number)
-  if (!digit) return { prefix: number, num: 0 }
-  return { prefix: number.slice(0, digit.index), num: Number.parseInt(number.slice(digit.index), 10) || 0 }
-}
+/**
+ * The bills of a group in lead order (lib/groupLead.ts): the furthest along
+ * first, then the newest text, then the bill number. The first is the group's
+ * lead, the bill the row is about and whose analysis the group shows.
+ */
+export const compareMembers = compareLead
 
 /** A row of the page's one read of everything the team and the viewer have on its bills: its kind, then up to six values. */
 type Extra = { kind: string; a: string; b: unknown; c: unknown; d: unknown; e: unknown; f: unknown }
@@ -391,7 +372,7 @@ export async function loadGroupRows(db: AppDb, groupKeys: readonly string[], ctx
   // is why votes and comments each carry the viewer's own in a column. Whether each bill met the filter is one
   // more column of the first.
   const [memberRows, extras] = await Promise.all([
-    db.select({ ...memberColumns, met: ctx.filter ? sql<number>`CASE WHEN ${ctx.filter(bills)!} THEN 1 ELSE 0 END` : sql<number>`0` })
+    db.select({ ...memberColumns, newestTextDate: groupedNewestTextDate(bills), met: ctx.filter ? sql<number>`CASE WHEN ${ctx.filter(bills)!} THEN 1 ELSE 0 END` : sql<number>`0` })
       .from(bills).where(sql`${bills.id} IN ${pageBills}`).all(),
     db.all(sql`WITH pb AS MATERIALIZED (SELECT value AS id FROM json_each(${keys}) UNION SELECT g.id FROM bills g WHERE g.group_key IN (SELECT value FROM json_each(${keys})))
       SELECT 'position' AS kind, ${officialPositions.billId} AS a, ${officialPositions.position} AS b, ${officialPositions.setBy} AS c, ${officialPositions.updatedAt} AS d, NULL AS e, NULL AS f
@@ -422,7 +403,7 @@ export async function loadGroupRows(db: AppDb, groupKeys: readonly string[], ctx
   for (const row of memberRows) membersOf.set(row.groupKey ?? row.id, [...(membersOf.get(row.groupKey ?? row.id) ?? []), row])
   const matched = ctx.filter ? new Set(memberRows.filter(r => Number(r.met) === 1).map(r => r.id)) : null
   const teamRows = {
-    bills: memberRows.map(r => ({ id: r.id, matchType: r.matchType, priority: r.priority, prioritySetAt: r.prioritySetAt, tenantSummary: r.tenantSummary, tags: r.tags, aiProcessedAt: r.aiProcessedAt, triagedAt: r.triagedAt, triagedBy: r.triagedBy })),
+    bills: memberRows.map(r => ({ id: r.id, billNumber: r.billNumber, statusRank: r.statusRank, newestTextDate: r.newestTextDate, matchType: r.matchType, priority: r.priority, prioritySetAt: r.prioritySetAt, tenantSummary: r.tenantSummary, tags: r.tags, aiProcessedAt: r.aiProcessedAt, triagedAt: r.triagedAt, triagedBy: r.triagedBy })),
     positions,
     customFields,
   }

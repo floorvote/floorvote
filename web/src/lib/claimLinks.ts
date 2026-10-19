@@ -44,8 +44,12 @@ export type ClaimDocument = { docId: string; type: string; date: string; mime: s
  */
 export type ClaimSourcesDetail = { billId: string; document: ClaimDocument; items: ClaimSourceItem[] }
 
-/** An HTML claim that renders as a link, with the passage it opens. `index` is its place in the items. */
-export type PassageLink = { index: number; claim: string; quoteAt: Span; matched: string }
+/**
+ * An HTML claim that renders as a link, with the passage it opens. `index` is
+ * its place in the items. The `popover` is that passage in quotation marks, which
+ * the link previews on hover and focus (#696), as a PDF claim does its quote.
+ */
+export type PassageLink = { index: number; claim: string; quoteAt: Span; matched: string; popover: string }
 
 /**
  * A PDF claim that renders as a link (#572): it opens the PDF at `page`, which
@@ -81,7 +85,7 @@ export function linkableClaims(cs: ClaimSourcesDetail | null | undefined, enable
   }
   return cs.items.flatMap((item, index): PassageLink[] =>
     LINKED.has(item.status) && item.quoteAt && typeof item.matched === 'string' && item.matched.trim() !== ''
-      ? [{ index, claim: item.claim, quoteAt: item.quoteAt, matched: item.matched }]
+      ? [{ index, claim: item.claim, quoteAt: item.quoteAt, matched: item.matched, popover: `\u201c${item.matched}\u201d` }]
       : [])
 }
 
@@ -105,7 +109,8 @@ const collapse = (s: string) => s.replace(/\s+/g, ' ').trim()
  * with Enter. It carries a fixed href, a class, and its claim's index, nothing
  * taken from the claim.
  *
- * A claim with a `popover` (a PDF's quote, #572) is wrapped with it:
+ * A claim with a `popover` (a PDF's quote, #572, or an HTML claim's passage,
+ * #696) is wrapped with it:
  * `span.claim-ref` holds the link and a `span.claim-quote` tooltip, and the link
  * is described by the tooltip's id (`idPrefix` and the index), so a screen reader
  * announces the quote on focus. The quote is set as text only, and its text is
@@ -263,9 +268,11 @@ export const PASSAGE_FRAME = {
 const PASSAGE_CSS = `mark[data-fv-passage]{background:${PASSAGE_FRAME.fill} !important;color:${PASSAGE_FRAME.text} !important;`
   + `box-shadow:inset 0 -2px 0 ${PASSAGE_FRAME.line} !important}`
   + `#${PASSAGE_ID}{scroll-margin-top:40px !important}`
-  + `#${PASSAGE_ID}:focus{outline:2px solid ${PASSAGE_FRAME.ring} !important;outline-offset:2px}`
+  // The ring is drawn inside the mark (a negative offset). A ring outside it was cut off by the frame's edge
+  // wherever the bill's text runs to that edge, as it does on the right (#696).
+  + `#${PASSAGE_ID}:focus{outline:2px solid ${PASSAGE_FRAME.ring} !important;outline-offset:-2px}`
   // The passage can span several marks: ring them all while the first has focus.
-  + `:root:has(#${PASSAGE_ID}:focus) mark[data-fv-passage]{outline:2px solid ${PASSAGE_FRAME.ring} !important;outline-offset:2px}`
+  + `:root:has(#${PASSAGE_ID}:focus) mark[data-fv-passage]{outline:2px solid ${PASSAGE_FRAME.ring} !important;outline-offset:-2px}`
 
 const ENTITY = /&[A-Za-z][A-Za-z0-9]{0,31};/g
 const ENTITY_CACHE = new Map<string, string>()

@@ -6,8 +6,9 @@ import { processCentralNotification } from '../../src/queue/processor'
 import { associationConfig } from '../../src/db/schema'
 
 // A tag filter tests each bill's group tags (migration 0103): the tags of its
-// companion group's current analysis (the most recently analyzed tracked bill's,
-// migration 0106), or its own for a bill in no group. Stored on every bill, they must follow each
+// companion group's current analysis (its lead bill's, migration 0113), or its
+// own for a bill in no group. Here each bill analyzed more recently is also
+// further along, so the most recently analyzed bill in a group leads. Stored on every bill, they must follow each
 // change to an analysis or to a group: a new analysis, a join, a split, and a
 // recompute that rekeys several bills at once.
 
@@ -33,6 +34,7 @@ function centralBill(handle: string) {
     title: `${b.number} title`,
     abstract: null,
     status: 'Introduced',
+    statusRank: RANK[handle] ?? 0,
     statusDate: null,
     updatedAt: b.updatedAt ?? '2026-10-01T00:00:00Z',
     stateUrl: null,
@@ -45,6 +47,9 @@ function centralBill(handle: string) {
     relatedBills: b.relatedBills.map(r => ({ ...r, session: '1', relationType: 'same-as' })),
   }
 }
+
+// How far along each bill is, so a group's lead is its most recently analyzed bill.
+const RANK: Record<string, number> = { 'legiscan:190': 100, 'legiscan:1713': 200, 'legiscan:1714': 300 }
 
 const identical = (identifier: string, sastBillId: number): Related => ({ identifier, sastBillId, kind: 'identical' })
 
@@ -76,9 +81,9 @@ describe('group tags follow analyses and groups', () => {
       return { ok: true, json: async () => centralBill(handle) }
     }))
     // Analyzed bills the instance already tracks, by handle: A190 longest ago, S1714 most recently.
-    await seedBill({ id: 'a190', billNumber: 'A190', state: 'NJ', externalId: 'legiscan:190', tags: ['Labor'], tenantSummary: 'x', aiProcessedAt: '2026-09-01 00:00:00' })
-    await seedBill({ id: 'b1713', billNumber: 'S1713', state: 'NJ', externalId: 'legiscan:1713', tags: ['Energy'], tenantSummary: 'x', aiProcessedAt: '2026-09-02 00:00:00' })
-    await seedBill({ id: 'c1714', billNumber: 'S1714', state: 'NJ', externalId: 'legiscan:1714', tags: ['Housing'], tenantSummary: 'x', aiProcessedAt: '2026-09-03 00:00:00' })
+    await seedBill({ id: 'a190', billNumber: 'A190', state: 'NJ', externalId: 'legiscan:190', tags: ['Labor'], tenantSummary: 'x', aiProcessedAt: '2026-09-01 00:00:00', statusRank: 100 })
+    await seedBill({ id: 'b1713', billNumber: 'S1713', state: 'NJ', externalId: 'legiscan:1713', tags: ['Energy'], tenantSummary: 'x', aiProcessedAt: '2026-09-02 00:00:00', statusRank: 200 })
+    await seedBill({ id: 'c1714', billNumber: 'S1714', state: 'NJ', externalId: 'legiscan:1714', tags: ['Housing'], tenantSummary: 'x', aiProcessedAt: '2026-09-03 00:00:00', statusRank: 300 })
   })
 
   it("gives both bills the newer analysis's tags when they join", async () => {
@@ -131,7 +136,7 @@ describe('group tags follow analyses and groups', () => {
     central.set('legiscan:1714', { number: 'S1714', relatedBills: [identical('S1713', 1713)] })
     await deliver('legiscan:190')
     await deliver('legiscan:1714')
-    // S1714, the most recently analyzed, leaves. A190 and S1713 keep their key, so only S1714's row is written.
+    // S1714, the lead, leaves. A190 and S1713 keep their key, so only S1714's row is written.
     central.set('legiscan:1714', { number: 'S1714', relatedBills: [], updatedAt: '2026-10-02T00:00:00Z' })
     await deliver('legiscan:1714')
     const tags = await groupTags()

@@ -12,8 +12,9 @@ vi.mock('../../src/lib/centralFetch', () => ({
   centralFetch: vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }),
 }))
 
-vi.mock('../../src/lib/email', async (importOriginal) =>
-  (await import('../mail')).withFakeSender(await importOriginal<typeof import('../../src/lib/email')>()))
+vi.mock('../../src/lib/email', () => ({
+  sendMagicLink: vi.fn().mockResolvedValue(undefined),
+}))
 
 vi.mock('../../src/cron/sync', () => ({
   registerWithCentral: vi.fn().mockResolvedValue(undefined),
@@ -1725,7 +1726,14 @@ describe('POST /admin/keyword-resync', () => {
 
     async function member(id: string, o: { title?: string; tags: string[]; at: string; matchType?: 'keyword' | 'manual' | null; group?: string; priority?: 'high' }) {
       await seedBill({ id, externalId: `legiscan:${id}`, billNumber: id.toUpperCase(), state: 'NJ', title: o.title ?? STALE, matchType: o.matchType === undefined ? 'keyword' : o.matchType, priority: o.priority, ...analyzed(o.tags, o.at) })
-      if (o.group) await db().update(bills).set({ groupKey: o.group }).where(eq(bills.id, id))
+      if (o.group) {
+        await db().update(bills).set({ groupKey: o.group }).where(eq(bills.id, id))
+        const leadId = `lead-${o.group}`
+        if (!await db().select({ id: bills.id }).from(bills).where(eq(bills.id, leadId)).get()) {
+          await seedBill({ id: leadId, externalId: `legiscan:${leadId}`, billNumber: 'Z1', state: 'NJ', title: MATCHING, matchType: 'keyword', statusRank: 900 })
+          await db().update(bills).set({ groupKey: o.group }).where(eq(bills.id, leadId))
+        }
+      }
     }
     async function cleanup() {
       await db().delete(associationConfig)

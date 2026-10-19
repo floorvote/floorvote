@@ -125,11 +125,12 @@ describe('GET /api/bills/:id: claimSources on a PDF', () => {
   })
 
   describe('a companion group whose members\' files differ, analyzed at different times', () => {
-    // S200 is tracked, so the group shows its analysis, though A100, a pulled
-    // companion, was analyzed later. S200's file is a PDF; A100's is HTML.
+    // S200 is further along, so it leads and the group shows its analysis,
+    // though A100, a pulled companion, was analyzed later. S200's file is a PDF;
+    // A100's is HTML.
     beforeEach(async () => {
       await seedBill({ id: 'a100', billNumber: 'A100', externalId: 'legiscan:100', tenantSummary: SUMMARY_A, matchType: null, aiProcessedAt: '2026-01-03 10:00:00' })
-      await seedBill({ id: 's200', billNumber: 'S200', externalId: 'legiscan:200', tenantSummary: SUMMARY_S, matchType: 'keyword', aiProcessedAt: '2026-01-02 10:00:00' })
+      await seedBill({ id: 's200', billNumber: 'S200', externalId: 'legiscan:200', tenantSummary: SUMMARY_S, matchType: 'keyword', aiProcessedAt: '2026-01-02 10:00:00', statusRank: 200 })
       await seedBillText('a100', { docId: '9001', type: 'Introduced', date: '2026-01-01', mime: 'text/html' })
       await seedBillText('s200', { docId: '9102', type: 'Amended', date: '2026-01-02', mime: 'application/pdf' })
       await pin('a100', '9001', [{ claim: 'Requires a drop box in each county.', quote: 'A100 own passage.', status: 'exact', claimAt: { start: 2, end: 36 }, quoteAt: { start: 5, end: 30 }, matched: 'A100 own passage.' }])
@@ -151,8 +152,8 @@ describe('GET /api/bills/:id: claimSources on a PDF', () => {
       expect((await detail('a100')).claimSources).toBeNull()
     })
 
-    it('follows the analysis back to A100\'s own HTML items once the group shows A100\'s', async () => {
-      await db().update(bills).set({ matchType: 'keyword' }).where(eq(bills.id, 'a100'))
+    it('follows the analysis back to A100\'s own HTML items once A100 leads', async () => {
+      await db().update(bills).set({ statusRank: 300 }).where(eq(bills.id, 'a100'))
       const d = await detail('s200')
       expect(d.claimSources?.billId).toBe('a100')
       expect(d.claimSources?.items).toEqual([{ claim: 'Requires a drop box in each county.', status: 'exact', quoteAt: { start: 5, end: 30 }, matched: 'A100 own passage.' }])

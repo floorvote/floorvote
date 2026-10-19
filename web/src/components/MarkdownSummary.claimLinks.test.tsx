@@ -40,7 +40,7 @@ describe('MarkdownSummary claim links', () => {
     render(<MarkdownSummary claimLinks={CLAIMS} onClaimActivate={onClaimActivate}>{SUMMARY}</MarkdownSummary>)
     const before = window.location.href
     await user.click(screen.getByRole('link', { name: 'boxes are emptied daily by two employees' }))
-    expect(onClaimActivate).toHaveBeenCalledWith(2)
+    expect(onClaimActivate).toHaveBeenCalledWith(2, expect.any(HTMLElement))
     expect(window.location.href).toBe(before)
   })
 
@@ -53,7 +53,7 @@ describe('MarkdownSummary claim links', () => {
     await user.tab()
     expect(screen.getByRole('link', { name: 'Requires a drop box in each county.' })).toHaveFocus()
     await user.keyboard('{Enter}')
-    expect(onClaimActivate).toHaveBeenCalledWith(0)
+    expect(onClaimActivate).toHaveBeenCalledWith(0, expect.any(HTMLElement))
   })
 
   it('leaves the summary\'s own links alone', async () => {
@@ -103,12 +103,12 @@ describe('MarkdownSummary claim links', () => {
     }
     const styled = () => rules(render(<MarkdownSummary claimLinks={CLAIMS} onClaimActivate={() => {}}>{SUMMARY}</MarkdownSummary>).container)
 
-    it('underlines at rest in Honey, 2px thick, 3px off the text, keeping the text color', () => {
+    it('underlines at rest in reduced Honey, 1px thick, 3px off the text, keeping the text color (#696)', () => {
       const rest = styled().get('.markdown-summary a.claim-link') ?? ''
       expect(rest).toMatch(/color:\s*inherit/)
       expect(rest).toMatch(/text-decoration-line:\s*underline|text-decoration:\s*underline/)
-      expect(rest).toContain('text-decoration-color: var(--fv-claim-underline)')
-      expect(rest).toContain('text-decoration-thickness: 2px')
+      expect(rest).toContain('text-decoration-color: var(--fv-claim-underline-rest)')
+      expect(rest).toContain('text-decoration-thickness: 1px')
       expect(rest).toContain('text-underline-offset: 3px')
       expect(rest).toMatch(/border-radius:\s*\d+px/)
     })
@@ -117,9 +117,11 @@ describe('MarkdownSummary claim links', () => {
       expect(styled().get('.markdown-summary a.claim-link')).not.toContain('--fv-border-strong')
     })
 
-    it('washes the background in faint Honey on hover, and leaves the text color and the underline alone', () => {
-      const hover = styled().get('.markdown-summary a.claim-link:hover') ?? ''
+    it('goes to full Honey, 2px, with the faint wash on hover and focus, and leaves the text color alone', () => {
+      const hover = styled().get('.markdown-summary a.claim-link:hover, .markdown-summary a.claim-link:focus-visible') ?? ''
       expect(hover).toContain('background: var(--fv-claim-hover-bg)')
+      expect(hover).toContain('text-decoration-thickness: 2px')
+      expect(hover).toContain('text-decoration-color: var(--fv-claim-underline)')
       expect(hover).not.toMatch(/(^|[;\s])color:/)
       expect(hover).not.toContain('--fv-link-blue')
       expect(hover).not.toContain('currentColor')
@@ -129,7 +131,6 @@ describe('MarkdownSummary claim links', () => {
       const focus = styled().get('.markdown-summary a.claim-link:focus-visible') ?? ''
       expect(focus).toContain('outline: 2px solid var(--fv-focus-ring)')
       expect(focus).toContain('outline-offset: 2px')
-      expect(focus).toContain('background: var(--fv-claim-hover-bg)')
     })
 
     it('writes no color literals, so the look follows the color mode', () => {

@@ -7,12 +7,13 @@ type Props = {
   billNumber?: string
   type: string | null | undefined
   date: string | null | undefined
+  /** Whether this version is the one shown, for a chip in the Bill texts list. Left out, the chip isn't a toggle (the summary's "based on" chip). */
   selected?: boolean
   onClick?: () => void
   title?: string
 }
 
-export function BillTextChip({ billNumber, type, date, selected = false, onClick, title }: Props) {
+export function BillTextChip({ billNumber, type, date, selected, onClick, title }: Props) {
   const label = normalizeVersionNote(type)
   const safe = safeDate(date)
   return (
@@ -20,6 +21,7 @@ export function BillTextChip({ billNumber, type, date, selected = false, onClick
       type="button"
       onClick={onClick}
       title={title}
+      aria-pressed={selected}
       style={{
         fontSize: fontSize.sm,
         padding: '3px 10px',

@@ -386,6 +386,54 @@ describe("Regenerate on a pulled companion's page", () => {
   })
 })
 
+// While the group's lead has no analysis, the page shows another member's, and
+// the detail names the lead as `regenerateBill`. Regenerate analyzes the lead,
+// and the run lands once the lead's analysis is the one the page shows (review C1).
+describe("Regenerate while the group's lead has no analysis", () => {
+  const LEAD = { id: 's20', externalId: 'legiscan:20', billNumber: 'SB20', aiProcessedAt: null, aiSkipReason: null, textStatus: 'in_r2' }
+  const WAITING = { ...COMPANION, regenerateBill: LEAD }
+  const LANDED = { ...COMPANION, analysisBillId: 's20', analysisBillExternalId: 'legiscan:20', analysisBillNumber: 'SB20', analysisAiProcessedAt: '2026-10-15 12:00:00', regenerateBill: null }
+
+  it('analyzes the lead, not the member whose analysis shows', async () => {
+    const { posts } = setup(WAITING, [WAITING])
+    await regenerate(user)
+    await waitFor(() => expect(posts()).toHaveLength(1))
+    expect(posts()[0]).toBe('/api/admin/reprocess-bill/legiscan%3A20')
+  })
+
+  it("keeps polling while the other member's analysis still shows, and lands once the lead's does", async () => {
+    setup(WAITING, [WAITING, LANDED])
+    await regenerate(user)
+    expect(await screen.findByText('Regenerating SB20…')).toBeInTheDocument()
+    await tick()
+    expect(chip()).toBeInTheDocument()
+    await tick()
+    expect(await screen.findByText("Re-analyzed SB20, the bill this page's summary comes from.")).toBeInTheDocument()
+  })
+
+  it("reads a skip from the lead's own fields", async () => {
+    setup(WAITING, [{ ...WAITING, regenerateBill: { ...LEAD, aiSkipReason: 'pdf_too_large' } }])
+    await regenerate(user)
+    await tick()
+    expect(await screen.findByText(/AI couldn't analyze the text of SB20/)).toBeInTheDocument()
+  })
+
+  it('ends as moved when the group changes so neither the lead nor its analysis is named', async () => {
+    setup(WAITING, [{ ...COMPANION, analysisBillId: 'x9', analysisBillNumber: 'X9', regenerateBill: null }])
+    await regenerate(user)
+    await tick()
+    expect(await screen.findByText(/group changed while SB20 was being re-analyzed/)).toBeInTheDocument()
+  })
+
+  it("analyzes the lead from its own page, though it is untracked and unanalyzed, instead of promoting it", async () => {
+    const own = { ...COMPANION, matchType: null, aiProcessedAt: null, regenerateBill: { ...LEAD, id: '42', externalId: 'legiscan:42', billNumber: 'HB 1' } }
+    const { posts } = setup(own, [own])
+    await regenerate(user)
+    await waitFor(() => expect(posts()).toHaveLength(1))
+    expect(posts()[0]).toBe('/api/admin/reprocess-bill/legiscan%3A42')
+  })
+})
+
 describe('Regenerate where the page shows its own bill\'s analysis', () => {
   it("re-analyzes a bill in no group, polls its time, and says nothing when it lands", async () => {
     const { posts, refetched } = setup({}, [{ analysisAiProcessedAt: '2026-10-15 12:00:00', aiProcessedAt: '2026-10-15 12:00:00' }])
@@ -584,6 +632,81 @@ describe('a run that is still going when the admin moves to another bill', () =>
     await screen.findByText('Regenerating…')
     await tick() // the first run's poll ends here
     expect(screen.getByText('Regenerating…')).toBeInTheDocument()
+  })
+})
+
+describe("a run that lands after the admin moved to the analyzed bill's page", () => {
+  const TRACKED = { id: 'a190', externalId: 'legiscan:190', billNumber: 'A190', matchType: 'keyword' as const, analysisBillId: 'a190', analysisBillExternalId: 'legiscan:190', analysisBillNumber: 'A190', tenantSummary: "A190's old summary." }
+  const LANDED = { ...COMPANION, analysisAiProcessedAt: '2026-10-15 12:00:00' }
+  const refetchedPath = (path: string) => vi.mocked(api.apiFetch).mock.calls.filter(c => c[0] === path).length
+
+  it("refreshes the summary on that page without a reload", async () => {
+    const { goTo } = setup(COMPANION, [LANDED])
+    await regenerate(user)
+    await screen.findByText(/Regenerating/)
+    act(() => goTo('a190', TRACKED))
+    await screen.findByText("A190's old summary.")
+    // The server now has the new analysis on A190's page.
+    routerMock.loaderData = { ...BILL, ...TRACKED, tenantSummary: "A190's new summary." }
+    await tick()
+    expect(await screen.findByText("A190's new summary.")).toBeInTheDocument()
+    expect(refetchedPath('/bills/a190')).toBeGreaterThan(0)
+    // The page the run was started on is not touched again.
+    expect(refetchedPath('/bills/42')).toBe(0)
+  })
+
+  it("puts no outcome notice or chip on that page while refreshing it", async () => {
+    const { goTo } = setup(COMPANION, [LANDED])
+    await regenerate(user)
+    await screen.findByText(/Regenerating/)
+    act(() => goTo('a190', TRACKED))
+    routerMock.loaderData = { ...BILL, ...TRACKED, tenantSummary: "A190's new summary." }
+    await tick()
+    await screen.findByText("A190's new summary.")
+    expect(screen.queryByText(/Re-analyzed A190/)).not.toBeInTheDocument()
+    expect(chip()).not.toBeInTheDocument()
+  })
+
+  it("refreshes another companion's page that shows the same analysis", async () => {
+    const { goTo } = setup(COMPANION, [LANDED])
+    await regenerate(user)
+    await screen.findByText(/Regenerating/)
+    const sibling = { id: 'c1714', externalId: 'legiscan:1714', billNumber: 'S1714', matchType: null, analysisBillId: 'a190', analysisBillExternalId: 'legiscan:190', analysisBillNumber: 'A190', tenantSummary: "A190's old summary." }
+    act(() => goTo('c1714', sibling))
+    await screen.findByText("A190's old summary.")
+    routerMock.loaderData = { ...BILL, ...sibling, tenantSummary: "A190's new summary." }
+    await tick()
+    expect(await screen.findByText("A190's new summary.")).toBeInTheDocument()
+  })
+
+  it("leaves a page that does not show the analyzed bill's analysis alone", async () => {
+    const { goTo } = setup(COMPANION, [LANDED])
+    await regenerate(user)
+    await screen.findByText(/Regenerating/)
+    const other = { id: 'z9', externalId: 'legiscan:9', billNumber: 'Z9', analysisBillId: 'z9', analysisBillExternalId: 'legiscan:9', analysisBillNumber: 'Z9', tenantSummary: "Z9's summary." }
+    act(() => goTo('z9', other))
+    await screen.findByText("Z9's summary.")
+    await tick()
+    await tick()
+    expect(refetchedPath('/bills/z9')).toBe(0)
+    expect(refetchedPath('/bills/42')).toBe(0)
+  })
+
+  it("does not refresh the page it moved to when the run timed out", async () => {
+    const { goTo } = setup(COMPANION, [COMPANION])
+    await regenerate(user)
+    await screen.findByText(/Regenerating/)
+    act(() => goTo('a190', TRACKED))
+    await screen.findByText("A190's old summary.")
+    await tick(4 * 60 * 1000)
+    expect(refetchedPath('/bills/a190')).toBe(0)
+  })
+
+  it("still refreshes the page the run started on when the admin stays", async () => {
+    const { refetched } = setup(COMPANION, [LANDED])
+    await regenerate(user)
+    await tick()
+    await waitFor(() => expect(refetched()).toBeGreaterThan(0))
   })
 })
 

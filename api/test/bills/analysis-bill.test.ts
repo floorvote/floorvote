@@ -1,15 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
 import { eq, inArray } from 'drizzle-orm'
-import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill, seedBillText } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills } from '../../src/db/schema'
 import { centralFetch } from '../../src/lib/centralFetch'
 
 vi.mock('../../src/lib/centralFetch', () => ({ centralFetch: vi.fn() }))
 
-// A bill's page shows the analysis of one bill (#554): its own, or the one a
-// tracked member of its companion group has. Regenerate re-analyzes that bill
+// A bill's page shows the analysis of one bill: its own, or its companion
+// group's lead bill's (groupSummaryLead.test.ts), or while the lead has none,
+// the one a tracked member of the group has (#554). In these groups A190 leads
+// (equally far along, no texts, and its number comes first) unless a test says
+// otherwise. Regenerate re-analyzes that bill
 // and polls it (#563), so the detail says which bill it is and when and how it
 // was last analyzed.
 
@@ -132,11 +135,173 @@ describe('GET /api/bills/:id: the bill the shown analysis comes from', () => {
     expect(await detail('a190')).toMatchObject({ analysisBillId: 'a190' })
   })
 
-  it('moves to the companion once it matches on its own', async () => {
+  it('stays the lead\'s when the companion starts matching on its own', async () => {
     await seedBill({ id: 'a190', billNumber: 'A190', externalId: 'legiscan:190', matchType: 'keyword', tenantSummary: 'Tracked summary.', aiProcessedAt: '2026-09-01 00:00:00' })
     await seedBill({ id: 'b1713', billNumber: 'S1713', externalId: 'legiscan:1713', matchType: null, tenantSummary: 'Companion summary.', aiProcessedAt: '2026-09-05 00:00:00' })
     await group('a190', 'b1713')
     await db().update(bills).set({ matchType: 'keyword' }).where(eq(bills.id, 'b1713'))
-    expect(await detail('a190')).toMatchObject({ analysisBillId: 'b1713', analysisBillExternalId: 'legiscan:1713' })
+    expect(await detail('a190')).toMatchObject({ analysisBillId: 'a190', analysisBillExternalId: 'legiscan:190' })
+  })
+
+  it('moves to the companion when it moves further along', async () => {
+    await seedBill({ id: 'a190', billNumber: 'A190', externalId: 'legiscan:190', matchType: 'keyword', tenantSummary: 'Tracked summary.', aiProcessedAt: '2026-09-05 00:00:00' })
+    await seedBill({ id: 'b1713', billNumber: 'S1713', externalId: 'legiscan:1713', matchType: null, tenantSummary: 'Companion summary.', aiProcessedAt: '2026-09-01 00:00:00' })
+    await group('a190', 'b1713')
+    await db().update(bills).set({ statusRank: 300 }).where(eq(bills.id, 'b1713'))
+    expect(await detail('a190')).toMatchObject({ analysisBillId: 'b1713', analysisBillExternalId: 'legiscan:1713', tenantSummary: 'Companion summary.' })
+  })
+})
+
+// Regenerate analyzes the group's lead. While the lead has no analysis, the page
+// shows another member's, so the detail names the lead separately for
+// Regenerate to analyze and poll (review C1).
+describe('GET /api/bills/:id: the bill Regenerate analyzes', () => {
+  let cookie: string
+  const db = () => getDb(env.DB)
+  type RegenDetail = { analysisBillId: string; regenerateBill: { id: string; externalId: string | null; billNumber: string; aiProcessedAt: string | null; aiSkipReason: string | null; textStatus: string | null } | null }
+
+  beforeEach(async () => {
+    await clearDb()
+    cookie = `session=${await seedSession(await seedUser({ email: 'member@example.com', role: 'member' }))}`
+    vi.mocked(centralFetch).mockReset()
+    vi.mocked(centralFetch).mockResolvedValue(new Response('{}', { status: 200 }))
+  })
+
+  async function detail(billId: string): Promise<RegenDetail> {
+    const res = await SELF.fetch(`https://x/api/bills/${billId}`, { headers: { Cookie: cookie } })
+    expect(res.status).toBe(200)
+    return await res.json() as RegenDetail
+  }
+
+  it('is the lead, on every member\'s page, while the lead has no analysis and another member\'s shows', async () => {
+    await seedBill({ id: 'a190', billNumber: 'A190', externalId: 'legiscan:190', matchType: 'keyword', tenantSummary: 'Tracked summary.', aiProcessedAt: '2026-09-01 00:00:00' })
+    await seedBill({ id: 'b1713', billNumber: 'S1713', externalId: 'legiscan:1713', matchType: null, statusRank: 300, textStatus: 'in_r2' })
+    await db().update(bills).set({ groupKey: 'a190' }).where(inArray(bills.id, ['a190', 'b1713']))
+    for (const id of ['a190', 'b1713']) {
+      expect(await detail(id)).toMatchObject({
+        analysisBillId: 'a190',
+        regenerateBill: { id: 'b1713', externalId: 'legiscan:1713', billNumber: 'S1713', aiProcessedAt: null, aiSkipReason: null, textStatus: 'in_r2' },
+      })
+    }
+  })
+
+  it('is no other bill when the lead\'s analysis is the one shown', async () => {
+    await seedBill({ id: 'a190', billNumber: 'A190', externalId: 'legiscan:190', matchType: 'keyword', tenantSummary: 'Tracked summary.', aiProcessedAt: '2026-09-01 00:00:00' })
+    await seedBill({ id: 'b1713', billNumber: 'S1713', externalId: 'legiscan:1713', matchType: null, statusRank: 300, tenantSummary: 'Lead summary.', aiProcessedAt: '2026-08-01 00:00:00' })
+    await db().update(bills).set({ groupKey: 'a190' }).where(inArray(bills.id, ['a190', 'b1713']))
+    expect(await detail('a190')).toMatchObject({ analysisBillId: 'b1713', regenerateBill: null })
+  })
+
+  it('is no other bill for a bill in no group', async () => {
+    await seedBill({ id: 'solo', billNumber: 'HB 1', externalId: 'legiscan:1' })
+    expect((await detail('solo')).regenerateBill).toBeNull()
+  })
+})
+
+// The "based on text" link names the document the shown analysis read, so on a
+// companion's page it is the analyzed member's, never the companion's own (#601).
+describe('GET /api/bills/:id: the document the shown analysis was based on', () => {
+  let cookie: string
+  const db = () => getDb(env.DB)
+
+  type DocDetail = {
+    lastAiTextDocId: string | null
+    analysisLastAiTextDocId?: string | null
+    analysisLastAiText?: { docId: string; type: string; date: string; mime: string; stateLink: string | null; altStateLink: string | null } | null
+  }
+
+  beforeEach(async () => {
+    await clearDb()
+    cookie = `session=${await seedSession(await seedUser({ email: 'member@example.com', role: 'member' }))}`
+    vi.mocked(centralFetch).mockReset()
+    vi.mocked(centralFetch).mockResolvedValue(new Response('{}', { status: 200 }))
+  })
+
+  async function detail(billId: string): Promise<DocDetail> {
+    const res = await SELF.fetch(`https://x/api/bills/${billId}`, { headers: { Cookie: cookie } })
+    expect(res.status).toBe(200)
+    return await res.json() as DocDetail
+  }
+
+  async function analyzedFrom(billId: string, docId: string) {
+    await db().update(bills).set({ lastAiTextDocId: docId }).where(eq(bills.id, billId))
+  }
+
+  // A190 is further along, so it leads, though the companion's text is newer.
+  async function companionPair() {
+    await seedBill({ id: 'a190', billNumber: 'A190', externalId: 'legiscan:190', matchType: 'keyword', tenantSummary: 'Tracked summary.', aiProcessedAt: '2026-09-01 00:00:00', statusRank: 200 })
+    await seedBill({ id: 'b1713', billNumber: 'S1713', externalId: 'legiscan:1713', matchType: null, tenantSummary: 'Companion summary.', aiProcessedAt: '2026-09-05 00:00:00' })
+    await db().update(bills).set({ groupKey: 'a190' }).where(inArray(bills.id, ['a190', 'b1713']))
+    await seedBillText('a190', { docId: '7001', type: 'Introduced', date: '2026-01-01', mime: 'text/html' })
+    await seedBillText('b1713', { docId: '7002', type: 'Engrossed', date: '2026-02-01', mime: 'application/pdf' })
+    await analyzedFrom('a190', '7001')
+    await analyzedFrom('b1713', '7002')
+  }
+
+  it("is the analyzed member's document on a companion's page, not the companion's own", async () => {
+    await companionPair()
+    const d = await detail('b1713')
+    // The page bill's own field is unchanged: it describes the companion's own last analysis.
+    expect(d.lastAiTextDocId).toBe('7002')
+    expect(d.analysisLastAiTextDocId).toBe('7001')
+    expect(d.analysisLastAiText).toEqual({ docId: '7001', type: 'Introduced', date: '2026-01-01', mime: 'text/html', stateLink: null, altStateLink: null })
+  })
+
+  it("carries what names and opens the analyzed member's document, whatever its type", async () => {
+    await companionPair()
+    await db().update(bills).set({ statusRank: 300 }).where(eq(bills.id, 'b1713'))
+    // Now the companion leads, and the other member's page shows its PDF.
+    const d = await detail('a190')
+    expect(d.analysisLastAiText).toMatchObject({ docId: '7002', type: 'Engrossed', mime: 'application/pdf' })
+  })
+
+  it("is the tracked bill's own document on its own page, as the page's own field is", async () => {
+    await companionPair()
+    const d = await detail('a190')
+    expect(d.lastAiTextDocId).toBe('7001')
+    expect(d.analysisLastAiTextDocId).toBe('7001')
+    expect(d.analysisLastAiText).toMatchObject({ docId: '7001', type: 'Introduced' })
+  })
+
+  it("is the bill's own document for a bill in no group", async () => {
+    await seedBill({ id: 'solo', billNumber: 'HB 1', externalId: 'legiscan:1', tenantSummary: 'Solo summary.', aiProcessedAt: '2026-09-01 00:00:00' })
+    await seedBillText('solo', { docId: '7010', type: 'Introduced', date: '2026-01-01' })
+    await analyzedFrom('solo', '7010')
+    const d = await detail('solo')
+    expect(d.lastAiTextDocId).toBe('7010')
+    expect(d.analysisLastAiTextDocId).toBe('7010')
+    expect(d.analysisLastAiText).toMatchObject({ docId: '7010', type: 'Introduced', date: '2026-01-01' })
+  })
+
+  it('is null for a bill with no analysis at all', async () => {
+    await seedBill({ id: 'stub', billNumber: 'HB 2', externalId: 'legiscan:2', matchType: null })
+    const d = await detail('stub')
+    expect(d.analysisLastAiTextDocId).toBeNull()
+    expect(d.analysisLastAiText).toBeNull()
+  })
+
+  it("is null when the analyzed bill's last document is no longer in its texts, and the id stays", async () => {
+    await companionPair()
+    await analyzedFrom('a190', '7999')
+    const d = await detail('b1713')
+    expect(d.analysisLastAiTextDocId).toBe('7999')
+    expect(d.analysisLastAiText).toBeNull()
+  })
+
+  it("is null on a companion's page when the analyzed member has no recorded document, never the companion's own", async () => {
+    await companionPair()
+    await db().update(bills).set({ lastAiTextDocId: null }).where(eq(bills.id, 'a190'))
+    const d = await detail('b1713')
+    expect(d.lastAiTextDocId).toBe('7002')
+    expect(d.analysisLastAiTextDocId).toBeNull()
+    expect(d.analysisLastAiText).toBeNull()
+  })
+
+  it("follows the analysis to each bill after the group is split", async () => {
+    await companionPair()
+    expect((await detail('b1713')).analysisLastAiText?.docId).toBe('7001')
+    await db().update(bills).set({ groupKey: null }).where(inArray(bills.id, ['a190', 'b1713']))
+    expect((await detail('b1713')).analysisLastAiText?.docId).toBe('7002')
+    expect((await detail('a190')).analysisLastAiText?.docId).toBe('7001')
   })
 })

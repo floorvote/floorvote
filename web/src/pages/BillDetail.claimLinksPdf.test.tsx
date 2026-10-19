@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { BillDetail } from './BillDetail'
@@ -133,6 +133,8 @@ const summaryBox = async () => {
   await screen.findByText('AI Summary')
   return document.querySelector('.markdown-summary') as HTMLElement
 }
+/** The summary header names the bill a borrowed summary is from, by its badge (#712). */
+const sourceBadge = async () => within((await screen.findByText('AI Summary')).parentElement as HTMLElement).getByText('S200')
 const claimLink = (name: string) => screen.findByRole('link', { name })
 const pdfFrame = async () => {
   await waitFor(() => expect(screen.queryByTitle('Bill text')).not.toBeNull(), { timeout: 3000 })
@@ -292,23 +294,23 @@ describe('claim links on a companion\'s page showing another member\'s PDF analy
 
   it('labels the summary with the bill it is from, linking to that bill', async () => {
     setup(BORROWED)
-    const link = await screen.findByRole('link', { name: 'S200' })
-    expect(link).toHaveAttribute('href', '/bills/s200')
-    expect(link.parentElement!.textContent).toBe('Summary of S200, this bill\'s identical companion')
+    expect(await sourceBadge()).toBeInTheDocument()
+    expect(screen.queryByText(/Summary of/)).toBeNull()
   })
 
   it('renders no links when the analyzed member\'s pinned PDF is gone, and still says whose summary it is', async () => {
     setup({ ...BORROWED, claimSources: null })
     await summaryBox()
     expect(screen.queryByRole('link', { name: 'Requires a drop box in each county.' })).toBeNull()
-    expect(screen.getByRole('link', { name: 'S200' }).parentElement!.textContent).toBe('Summary of S200, this bill\'s identical companion')
+    expect(await sourceBadge()).toBeInTheDocument()
+    expect(screen.queryByText(/Summary of/)).toBeNull()
   })
 
   it('renders no links with the instance setting off, and still says whose summary it is', async () => {
     setup({ ...BORROWED, claimLinksEnabled: false })
     await summaryBox()
     expect(screen.queryByRole('link', { name: 'Requires a drop box in each county.' })).toBeNull()
-    expect(screen.getByRole('link', { name: 'S200' })).toBeInTheDocument()
+    expect(await sourceBadge()).toBeInTheDocument()
   })
 
   it('follows the analysis back to the page bill\'s own PDF once the group shows A100\'s', async () => {
@@ -342,5 +344,61 @@ describe('a PDF bill\'s summary without claim sources', () => {
     const f = await pdfFrame()
     expect(f.getAttribute('src')).toBe('blob:test/1')
     expect(screen.queryByRole('group', { name: /quote behind the claim/i })).toBeNull()
+  })
+})
+
+// #696: the quote box closes, and focus goes back to the claim that opened it.
+describe('the PDF quote box on a PDF bill\'s claims (#696)', () => {
+  // The test setup's matchMedia reports no match for anything, so a device that can hover is stubbed in.
+  beforeEach(() => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(hover: hover)', media: query, onchange: null,
+      addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false,
+    }))
+  })
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('previews a PDF claim\'s page line and quote on hover, outside the summary box', async () => {
+    const user = userEvent.setup()
+    setup()
+    await user.hover(await claimLink('Requires a drop box in each county.'))
+    const p = document.body.querySelector('[data-claim-preview]')
+    expect(p!.textContent).toContain(`Page 7: “${Q1}”`)
+    expect((await summaryBox()).contains(p)).toBe(false)
+  })
+
+  it('closes the box with its button and puts focus back on the claim that was clicked', async () => {
+    const user = userEvent.setup()
+    setup()
+    const link = await claimLink('Requires a drop box in each county.')
+    await user.click(link)
+    await pdfFrame()
+    await waitFor(() => expect(caption()).toHaveFocus())
+    await user.click(screen.getByRole('button', { name: /close quote/i }))
+    expect(screen.queryByRole('group', { name: /quote behind the claim/i })).toBeNull()
+    expect(screen.getByRole('link', { name: 'Requires a drop box in each county.' })).toHaveFocus()
+  })
+
+  it('closes the box with Escape and returns focus to the second claim when that one opened it', async () => {
+    const user = userEvent.setup()
+    setup()
+    await user.click(await claimLink('Boxes are emptied by two employees.'))
+    await pdfFrame()
+    await waitFor(() => expect(caption()).toHaveFocus())
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('group', { name: /quote behind the claim/i })).toBeNull()
+    expect(screen.getByRole('link', { name: 'Boxes are emptied by two employees.' })).toHaveFocus()
+  })
+
+  it('opens the box again when the same claim is clicked after closing it', async () => {
+    const user = userEvent.setup()
+    setup()
+    await user.click(await claimLink('Requires a drop box in each county.'))
+    await pdfFrame()
+    await waitFor(() => expect(caption()).toHaveFocus())
+    await user.click(screen.getByRole('button', { name: /close quote/i }))
+    await user.click(screen.getByRole('link', { name: 'Requires a drop box in each county.' }))
+    await waitFor(() => expect(caption()).toHaveFocus())
+    expect(caption().querySelector('blockquote')!.textContent).toBe(`“${Q1}”`)
   })
 })

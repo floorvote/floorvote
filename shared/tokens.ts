@@ -61,6 +61,14 @@ export const color = {
   // --- Claim links (#571) ---
   claimUnderline:    '#e8a33d', // Honey: the underline of a claim in the summary, and the line under its highlighted passage. The same in both modes
   claimHoverBg:      '#fbecd5', // faint Honey wash behind a claim link on hover and keyboard focus; body text stays the same color on it
+  // Quieter claim links (#696). Honey at set strengths. The glow marks a claim's quote preview and the PDF quote box; its strengths and
+  // spreads (lib/claimGlow.ts) are the mockup's scaled down by a fifth (14, 30, 40 and 60 percent became 11.2, 24, 32 and 48).
+  claimUnderlineRest: 'rgba(232, 163, 61, 0.55)', // the 1px underline of a claim at rest; hover and focus go to full claimUnderline
+  claimGlowBorder:   'rgba(232, 163, 61, 0.6)',   // border of a quote preview and the quote box
+  claimGlowHalo:     'rgba(232, 163, 61, 0.112)', // the faint ring just outside that border
+  claimGlowBlur:     'rgba(232, 163, 61, 0.24)',  // the soft glow beyond the ring
+  claimFlashHalo:    'rgba(232, 163, 61, 0.32)',  // the ring as the quote box arrives, before it settles to claimGlowHalo
+  claimFlashBlur:    'rgba(232, 163, 61, 0.48)',  // the glow as the quote box arrives, before it settles to claimGlowBlur
 
   // --- Surface & background ---
   white:             '#fff',    // card / panel surface (absorbs #ffffff, #fafafa). Dark in dark mode; for text on a fill use textOnFill

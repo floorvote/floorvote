@@ -306,6 +306,7 @@ export async function processCentralNotification(
   // a bill's identical companions can change without its provider data
   // changing (a vocabulary edit), and this is cheap when nothing did.
   await syncIdenticalCompanions(db, msg.billId, centralBill.relatedBills)
+  if (msg.stubOnly || msg.metadataOnly) await syncGroupedBillTexts(db, msg.billId, centralBill, fetchedAt)
   await pullCompanions(env, db, msg)
 }
 
@@ -491,7 +492,11 @@ async function applyCentralBill(
   // is news even when its provider data hasn't: central says so with the match type alone, and nothing here
   // stored it.
   const newlyMatched = !!msg.matchType && !existing?.matchType
-  if (!msg.forceMetadata && !msg.forceAI && !msg.stubOnly && !msg.metadataOnly && !centralHasNewR2Key && !newlyMatched && existing?.providerUpdatedAt === centralBill.updatedAt && (existing?.aiProcessedAt != null || existing?.aiSkipReason != null)) {
+  // A group analysis asks for the analysis of a bill that didn't match (lib/companionAnalysis.ts), such as a
+  // group's lead whose newest text isn't the one its analysis read. Its own delivery already stored that
+  // version without analyzing it, so the version alone can't say whether the analysis is current: the text
+  // hash dedup below does.
+  if (!msg.forceMetadata && !msg.forceAI && !msg.groupAnalysis && !msg.stubOnly && !msg.metadataOnly && !centralHasNewR2Key && !newlyMatched && existing?.providerUpdatedAt === centralBill.updatedAt && (existing?.aiProcessedAt != null || existing?.aiSkipReason != null)) {
     // Calendar reconciliation must still run even when the bill itself hasn't changed,
     // since hearings are updated independently of bill metadata.
     if (msg.calendar && existing && (existing.matchType !== null || existing.priority !== null || existing.groupKey !== null)) {
@@ -578,6 +583,8 @@ async function applyCentralBill(
   // whose match text (title, abstract, bill number) doesn't satisfy the tenant's current keywords would
   // never re-run AI on text changes, freezing its summary at promote-time.
   let shouldRunAi = msg.forceAI || msg.groupAnalysis || derivedMatchType !== null
+  // A group analysis declined for want of a text hash, for the bill a lead analysis is queued for.
+  const groupAnalysisNoHash = !!msg.groupAnalysis && !hasFullText && (centralBill.texts?.length ?? 0) > 0
   if (shouldRunAi && !hasFullText) {
     const textCount = centralBill.texts?.length ?? 0
     const why = textCount === 0
@@ -728,6 +735,8 @@ async function applyCentralBill(
   }
 
   const aiTextDocId = pickLatestTextDocId(centralBill)
+  const leadCaughtUp = !!msg.groupAnalysis && (existing?.aiProcessedAt != null || existing?.aiSkipReason != null)
+    && ((shouldRunAi && !!aiDedup) || groupAnalysisNoHash)
   const queueChanges = msg.changes ?? []
 
   // New-match signal: the first time a bill becomes a fully-analyzed KEYWORD match
@@ -800,6 +809,17 @@ async function applyCentralBill(
       // next pass retries rather than deduping itself into permanent silence.
       aiAttemptedAt: now,
       aiError,
+    } : leadCaughtUp ? {
+      // A group analysis of an analyzed (or skipped) bill, queued because its
+      // newest text isn't the one its analysis read (lib/companionAnalysis.ts),
+      // that ran no model: the text hash says the analysis already read this
+      // text, or central sent no hash to analyze by. Record the newest text as
+      // read and release the claim, or the bill stays stale and is queued
+      // again once a floor, forever. Claim sources stay pinned to their own
+      // document.
+      lastAiTextDocId: aiTextDocId,
+      aiAttemptedAt: null,
+      aiHealAttempts: 0,
     } : msg.forceAI && !shouldRunAi ? {
       // A forceAI pass that declined to run AI — no full text in central, or a
       // demo tenant. It produced no result, no skip reason and no error, so
@@ -828,39 +848,7 @@ async function applyCentralBill(
   const { id: billInternalId, isNew } = await upsertBill(db, msg.billId, upsertData)
   await syncBillSubjects(db, billInternalId, centralBill.state, centralBill.subjects ?? [])
 
-  // bill_texts: upsert from normalized versions
-  for (const t of centralBill.texts) {
-    const link = t.links[0] ?? null
-    const altLink = t.links[1] ?? null
-    // '' when central sent none: an older central, or a document it has no hash for.
-    const textHash = typeof t.textHash === 'string' ? t.textHash : ''
-    await db.insert(billTexts).values({
-      id: crypto.randomUUID(),
-      billId: billInternalId,
-      docId: t.docId,
-      type: t.note,
-      date: t.date,
-      mime: link?.mediaType ?? 'text/html',
-      textHash,
-      stateLink: link?.url ?? null,
-      altStateLink: altLink?.url ?? null,
-      createdAt: now,
-      updatedAt: now,
-    }).onConflictDoUpdate({
-      target: billTexts.docId,
-      // An empty hash never replaces a known one: it means central sent none, not that the text changed.
-      set: { type: t.note, date: t.date, mime: link?.mediaType ?? 'text/html', textHash: sql`CASE WHEN ${textHash} = '' THEN ${billTexts.textHash} ELSE ${textHash} END`, stateLink: link?.url ?? null, altStateLink: altLink?.url ?? null, updatedAt: now },
-    })
-  }
-  // Central never drops a text except when a cutover moves the bill to another
-  // provider, which clears the old provider's. A text it no longer lists would
-  // only fail to open, so it goes here too. A text another run stored from a
-  // newer copy than this one is left alone.
-  await db.delete(billTexts).where(and(
-    eq(billTexts.billId, billInternalId),
-    sql`${billTexts.docId} NOT IN (SELECT value FROM json_each(${JSON.stringify(centralBill.texts.map(t => t.docId))}))`,
-    lt(billTexts.updatedAt, fetchedAt),
-  ))
+  await syncBillTexts(db, billInternalId, centralBill.texts, fetchedAt, now)
 
   // Feed events: only for tracked bills (keyword or manual) and members of a companion group (a companion pulled
   // in through its group has no match type, and its actions belong in the group's card, #381) with AI data and
@@ -1008,6 +996,61 @@ function resolveSessionLabel(sessionId: string | null | undefined): string {
   // Legacy "ri:2026"-style session ids (from the removed OpenStates central), kept for older data and tests
   if (/^[a-z]{2}:\d{4}/.test(sessionId)) return sessionId.split(':').pop() ?? sessionId
   return sessionId
+}
+
+/**
+ * Store the bill's texts as central lists them: upsert each, and drop one it
+ * no longer lists unless another run stored it from a newer copy than this
+ * one. Central never drops a text except when a cutover moves the bill to
+ * another provider, which clears the old provider's, and a text it no longer
+ * lists would only fail to open.
+ */
+async function syncBillTexts(db: AppDb, billId: string, texts: CentralBill['texts'], fetchedAt: string, now: string): Promise<void> {
+  for (const t of texts) {
+    const link = t.links[0] ?? null
+    const altLink = t.links[1] ?? null
+    // '' when central sent none: an older central, or a document it has no hash for.
+    const textHash = typeof t.textHash === 'string' ? t.textHash : ''
+    await db.insert(billTexts).values({
+      id: crypto.randomUUID(),
+      billId,
+      docId: t.docId,
+      type: t.note,
+      date: t.date,
+      mime: link?.mediaType ?? 'text/html',
+      textHash,
+      stateLink: link?.url ?? null,
+      altStateLink: altLink?.url ?? null,
+      createdAt: now,
+      updatedAt: now,
+    }).onConflictDoUpdate({
+      target: billTexts.docId,
+      // An empty hash never replaces a known one: it means central sent none, not that the text changed.
+      set: { type: t.note, date: t.date, mime: link?.mediaType ?? 'text/html', textHash: sql`CASE WHEN ${textHash} = '' THEN ${billTexts.textHash} ELSE ${textHash} END`, stateLink: link?.url ?? null, altStateLink: altLink?.url ?? null, updatedAt: now },
+    })
+  }
+  await db.delete(billTexts).where(and(
+    eq(billTexts.billId, billId),
+    sql`${billTexts.docId} NOT IN (SELECT value FROM json_each(${JSON.stringify(texts.map(t => t.docId))}))`,
+    lt(billTexts.updatedAt, fetchedAt),
+  ))
+}
+
+/**
+ * A stub or metadata-only delivery of a bill in a companion group stores its
+ * texts too. Central sends a bill that didn't match only stubs when it
+ * changes, and a group's lead and a pulled lead's staleness are read from
+ * the instance's texts (lib/groupLead.ts, lib/companionAnalysis.ts). Only a
+ * grouped bill, after this delivery's regrouping, and only when central lists
+ * texts, so a stub never clears a bill's texts. It runs after the stub and
+ * metadata paths, whose provider-version handling it leaves alone.
+ */
+async function syncGroupedBillTexts(db: AppDb, externalId: string, centralBill: CentralBill, fetchedAt: string): Promise<void> {
+  const texts = centralBill.texts ?? []
+  if (texts.length === 0) return
+  const row = await db.select({ id: bills.id, groupKey: bills.groupKey }).from(bills).where(eq(bills.externalId, externalId)).get()
+  if (!row || row.groupKey === null) return
+  await syncBillTexts(db, row.id, texts, fetchedAt, nowDb())
 }
 
 /** Upsert a bill from central. */

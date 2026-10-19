@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { inArray } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import { clearDb, stubFetch, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { processCentralNotification } from '../../src/queue/processor'
@@ -252,13 +252,14 @@ describe('a companion group whose members\' texts differ', () => {
 
   beforeEach(async () => {
     centralPair()
-    // A100 is analyzed first, then S200 a day later, so the group shows S200's.
+    // A100 is analyzed first, then S200 a day later. S200 is further along, so it leads and the group shows S200's.
     idA = await analyze(A, summaryA, [{ claim: summaryA, quote: QUOTE }], '2026-01-01 10:00:00')
     idS = await analyze(S, summaryS, [
       { claim: summaryA, quote: QUOTE },
       { claim: 'Boxes are emptied by two employees.', quote: ONLY_IN_S },
     ], '2026-01-02 10:00:00')
     await getDb(env.DB).update(bills).set({ groupKey: [idA, idS].sort()[0] }).where(inArray(bills.id, [idA, idS]))
+    await getDb(env.DB).update(bills).set({ statusRank: 300 }).where(eq(bills.id, idS))
   })
 
   const shownAnalysis = async (pageId: string) => (await loadTeamValuesOf(getDb(env.DB), [pageId])).get(pageId)!.analysis!
@@ -309,8 +310,13 @@ describe('a companion group whose members\' texts differ', () => {
     expect((await readClaimSources(getDb(env.DB), shown.billId))!.docId).toBe(S.docId)
   })
 
-  it('follows the analysis when A100 is analyzed again, later', async () => {
+  it('stays on S200 when A100 is analyzed again, later, since S200 still leads', async () => {
     await env.DB.prepare('UPDATE bills SET ai_processed_at = ? WHERE id = ?').bind('2026-01-03 10:00:00', idA).run()
+    expect((await shownAnalysis(idA)).billId).toBe(idS)
+  })
+
+  it('follows the analysis when A100 moves further along and leads', async () => {
+    await env.DB.prepare('UPDATE bills SET status_rank = 400 WHERE id = ?').bind(idA).run()
     const shown = await shownAnalysis(idS)
     expect(shown.billId).toBe(idA)
     const read = (await readClaimSources(getDb(env.DB), shown.billId))!

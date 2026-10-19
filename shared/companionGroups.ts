@@ -14,6 +14,23 @@ export type GroupBill = { billId: string; billNumber: string }
  */
 export type GroupBillLink = GroupBill & { state: string; sessionSlug: string; status: string }
 
+/** One version of a bill's text, as the bill page's text list has it. */
+export type GroupTextVersion = {
+  docId: string
+  type: string
+  date: string
+  mime: string
+  stateLink: string | null
+  altStateLink: string | null
+}
+
+/**
+ * A bill in the group a bill page shows, with its text versions newest first:
+ * what the page's Bill texts needs to list every member's versions under the
+ * member's badge (#712).
+ */
+export type GroupBillTexts = GroupBillLink & { texts: GroupTextVersion[] }
+
 /** The `team_events.type` of a group forming around a bill, or splitting from it. */
 export type GroupingEventType = 'grouped' | 'split'
 
