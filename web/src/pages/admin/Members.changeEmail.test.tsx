@@ -406,6 +406,8 @@ describe('Members "Change email…" action', () => {
       [new ApiError(403, "Only owners can change an admin's address"), "Only owners can change an admin's address"],
       [new ApiError(403, "This account's address is managed centrally, so it can't be changed here."), "This account's address is managed centrally, so it can't be changed here."],
       [new ApiError(429, 'A change to this member\'s email was requested three times in the past day. Please try again tomorrow.'), 'A change to this member\'s email was requested three times in the past day. Please try again tomorrow.'],
+      [new ApiError(400, "That address can't receive email. Check it for a typo, or use a different address."), "That address can't receive email. Check it for a typo, or use a different address."],
+      [new ApiError(502, "We couldn't send the confirmation email. Please try again in a little while."), "We couldn't send the confirmation email. Please try again in a little while."],
     ])('shows the refusal "%s" inside the dialog', async (err, message) => {
       mockApi([OWNER, ACTIVE], { '/admin/members/in-1/change-email': () => { throw err } })
       renderMembers()

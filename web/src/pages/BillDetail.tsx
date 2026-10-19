@@ -9,7 +9,8 @@ import { DraftChip } from '../components/DraftChip'
 import { PositionBadge } from '../components/PositionBadge'
 import { PriorityBadge } from '../components/PriorityBadge'
 import { CompactPrioritySelect } from '../components/CompactPrioritySelect'
-import { NewMatchTriageControl } from '../components/NewMatchTriageControl'
+import { NewMatchChip } from '../components/NewMatchChip'
+import { isUntriagedNewMatch } from '../lib/newMatch'
 import { CompactPositionSelect } from '../components/CompactPositionSelect'
 import { StatusChip } from '../components/StatusChip'
 import { decodeStatus } from '../lib/legislativeStatus'
@@ -79,6 +80,7 @@ import { AnalysisBox, AnalysisProgressChip, DIMMED_WHILE_RUNNING } from '../comp
 import { pollForAnalysis, analysisOutcomeMessage, regenerateOutcomeMessage, type AnalysisSnapshot } from '../lib/analysisPoll'
 import { MissingRequiredReason, requiredName, useRequiredSubmit } from '../components/RequiredField'
 import { useCommentsMute, CommentsMuteButton, CommentsMutedNote } from '../components/CommentsMuteToggle'
+import { billsListPath } from '../../../shared/billFilter'
 
 function PartyBadge({ party }: { party: string }) {
   const bg = party === 'D' ? color.bgBlueChip : party === 'R' ? color.bgRedPriority : color.surfaceMuted
@@ -1404,6 +1406,9 @@ export function BillDetail() {
   const hasActions = !!bill.lastAction
   const hasHearings = (bill.calendar ?? []).length > 0
   const hasDocuments = (bill.supplements ?? []).filter(s => s.stateLink || s.url).length > 0
+  // An untriaged new match is an amber state of the priority control. This page
+  // keeps its own priority and dismissed state, so it can show the change at once.
+  const isNewMatch = isUntriagedNewMatch({ ...bill, priority }) && !triageDismissed
   return (
     <div className="bill-detail-outer" style={{ padding: '24px 32px', maxWidth: 1100, margin: '0 auto' }}>
       <style>{`
@@ -1419,7 +1424,7 @@ export function BillDetail() {
       <div style={{ ...CARD, padding: '20px 24px' }}>
 
         {/* Chip strip */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: (priorityMeta || (isAdmin && bill.matchType === 'keyword' && !!bill.newMatchAt && !priority && !bill.triagedAt && !triageDismissed)) ? 20 : 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: priorityMeta ? 20 : 12 }}>
           {/* A badge for each bill in the group, this page's bill first, as the
               bill list's group row shows them. Each companion links to its page. */}
           <div data-testid="bill-group-badges" style={{ display: 'contents' }}>
@@ -1445,20 +1450,17 @@ export function BillDetail() {
             ))}
           </div>
           {bill.isDraft ? <DraftChip /> : (() => {
-            const chip = <StatusChip status={decodeStatus(bill.status)} describedBy={statusExplainer ? 'bill-status-explainer' : undefined} onClick={() => navigate(`/bills?status=${encodeURIComponent(bill.status)}`)} />
+            const chip = <StatusChip status={decodeStatus(bill.status)} describedBy={statusExplainer ? 'bill-status-explainer' : undefined} onClick={() => navigate(billsListPath({ status: [bill.status] }))} />
             // The chip is already a focusable button, so HoverTooltip adds no tab stop; the chip points at its hidden copy.
             return <HoverTooltip text={statusExplainer} describe={{ id: 'bill-status-explainer', interactive: true }}>{chip}</HoverTooltip>
           })()}
           {bill.session && (
             <SessionChip
               session={bill.session}
-              onClick={() => {
-                if (bill.yearStart) {
-                  navigate(`/bills?year=${bill.yearStart}${bill.state ? `&state=${bill.state}` : ''}`)
-                } else {
-                  navigate(`/bills?session=${encodeURIComponent(bill.session)}`)
-                }
-              }}
+              // The Bills page filters by year only. Without a usable yearStart (null or 0) the chip is plain text.
+              onClick={bill.yearStart
+                ? () => navigate(billsListPath({ year: [String(bill.yearStart)], ...(bill.state ? { state: [bill.state] } : {}) }))
+                : undefined}
             />
           )}
           <ChangeHistoryTooltip
@@ -1470,32 +1472,20 @@ export function BillDetail() {
             {isAdmin
               ? (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', position: 'relative' }}>
-                  {bill.matchType === 'keyword' && !!bill.newMatchAt && !priority && !bill.triagedAt && !triageDismissed
-                    ? (
-                      <HoverTooltip text="New keyword match — set a priority or dismiss">
-                        <NewMatchTriageControl
-                          billId={bill.id}
-                          current={priority}
-                          onChange={(p, result) => {
-                            setPriority(p)
-                            setPriorityMeta(p ? { setByName: displayName(user!), updatedAt: new Date().toISOString() } : null)
-                            refreshSidebar()
-                            if (result?.promoted) startAnalyzingPoll()
-                          }}
-                          onDismiss={() => { setTriageDismissed(true); refreshSidebar() }}
-                        />
-                      </HoverTooltip>
-                    )
-                    : (
-                  <HoverTooltip text="This bill's priority level">
-                    <CompactPrioritySelect billId={bill.id} current={priority} onChange={(p, result) => {
-                      setPriority(p)
-                      setPriorityMeta(p ? { setByName: displayName(user!), updatedAt: new Date().toISOString() } : null)
-                      refreshSidebar()
-                      if (result?.promoted) startAnalyzingPoll()
-                    }} placeholder="Priority not set" />
+                  <HoverTooltip text={isNewMatch ? 'New keyword match — set a priority or dismiss' : "This bill's priority level"}>
+                    <CompactPrioritySelect
+                      billId={bill.id}
+                      current={priority}
+                      onChange={(p, result) => {
+                        setPriority(p)
+                        setPriorityMeta(p ? { setByName: displayName(user!), updatedAt: new Date().toISOString() } : null)
+                        refreshSidebar()
+                        if (result?.promoted) startAnalyzingPoll()
+                      }}
+                      newMatch={isNewMatch}
+                      onDismiss={() => { setTriageDismissed(true); refreshSidebar() }}
+                    />
                   </HoverTooltip>
-                    )}
                   {priorityMeta && (
                     <div title={absoluteTime(priorityMeta.updatedAt)} style={{ ...CHROME_TEXT, marginTop: 3, cursor: 'default', position: 'absolute', top: '100%', left: 0, whiteSpace: 'nowrap' }}>
                       Set by {priorityMeta.setByName} · {relativeTime(priorityMeta.updatedAt)}
@@ -1507,7 +1497,7 @@ export function BillDetail() {
                 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', position: 'relative' }}>
                     <HoverTooltip text="This bill's priority level">
-                      <PriorityBadge priority={priority} onClick={() => navigate(`/bills?priority=${priority}`)} />
+                      <PriorityBadge priority={priority} onClick={() => navigate(billsListPath({ priority: [priority] }))} />
                     </HoverTooltip>
                     {priorityMeta && (
                       <div title={absoluteTime(priorityMeta.updatedAt)} style={{ ...CHROME_TEXT, marginTop: 3, cursor: 'default', position: 'absolute', top: '100%', left: 0, whiteSpace: 'nowrap' }}>
@@ -1516,7 +1506,7 @@ export function BillDetail() {
                     )}
                   </div>
                 )
-                : null
+                : isNewMatch ? <NewMatchChip /> : null
             }
             {(prevPath || nextPath) && (
               <>
@@ -1880,7 +1870,7 @@ export function BillDetail() {
             subjects={bill.subjects ?? []}
             open={subjectsOpen}
             onSubjectClick={name =>
-              navigate(`/bills?subject=${encodeURIComponent(`${bill.state}:${name}`)}`)}
+              navigate(billsListPath({ subject: [{ state: bill.state, name }] }))}
           />
         )}
 
@@ -2559,7 +2549,7 @@ export function BillDetail() {
                         <span style={SECTION_LABEL}>
                           {orgRelevanceLabel(config?.orgNoun ?? DEFAULT_ORG_NOUN)}
                         </span>
-                        <RelevanceChip score={bill.relevanceScore} onClick={() => navigate(`/bills?minRelevance=${bill.relevanceScore}`)} />
+                        <RelevanceChip score={bill.relevanceScore} onClick={() => navigate(billsListPath({ minRelevance: bill.relevanceScore }))} />
                       </div>
                     )}
                     <InfoTooltip
@@ -2583,7 +2573,7 @@ export function BillDetail() {
             )}
             {!bill.tenantSummary && bill.relevanceScore != null && (
               <div style={{ display: 'flex', justifyContent: 'flex-end', ...(regenerating ? DIMMED_WHILE_RUNNING : {}) }}>
-                <RelevanceChip score={bill.relevanceScore} showLabel onClick={() => navigate(`/bills?minRelevance=${bill.relevanceScore}`)} />
+                <RelevanceChip score={bill.relevanceScore} showLabel onClick={() => navigate(billsListPath({ minRelevance: bill.relevanceScore }))} />
               </div>
             )}
             {bill.tags.length > 0 && (
@@ -2592,7 +2582,7 @@ export function BillDetail() {
                   {bill.tags.map((tag) => (
                     <button
                       key={tag}
-                      onClick={() => navigate(`/bills?tag=${encodeURIComponent(tag)}`)}
+                      onClick={() => navigate(billsListPath({ tag: [tag] }))}
                       onMouseEnter={() => setHoveredTag(tag)}
                       onMouseLeave={() => setHoveredTag(null)}
                       style={hoveredTag === tag ? TAG_CHIP_HOVERED : TAG_CHIP}
