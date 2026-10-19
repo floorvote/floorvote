@@ -241,3 +241,13 @@ describe('ChangeHistoryTooltip toggletip', () => {
     expect(log()).toBeNull()
   })
 })
+
+describe('ChangeHistoryTooltip placement', () => {
+  it('opens its change log above the trigger by default (flipping below only without room above)', async () => {
+    const user = userEvent.setup()
+    render(<ChangeHistoryTooltip changes={[statusChange]} lastActionDate={null} relativeTime={() => '2 days ago'} />)
+    await user.click(screen.getByRole('button', { name: /Updated 2 days ago/ }))
+    const bubble = screen.getByRole('tooltip')
+    expect(bubble.style.transform).toContain('translateY(calc(-100% - 6px))')
+  })
+})

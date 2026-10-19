@@ -78,6 +78,16 @@ namespace_id = "2099"
   limit = 10
   period = 60
 
+# One-click mute link: its own, higher limit, because mail providers send many
+# members' unsubscribes from a few IPs. Without this binding the mute link falls
+# back to LOGIN_RATE_LIMITER above.
+[[env.dev.ratelimits]]
+name = "MUTE_LINK_RATE_LIMITER"
+namespace_id = "2098"
+  [env.dev.ratelimits.simple]
+  limit = 120
+  period = 60
+
 # ── Example production tenant ────────────────────────────────────────────────
 # Copy this block, replace "example" with your org slug, and fill in IDs.
 
@@ -168,6 +178,16 @@ name = "LOGIN_RATE_LIMITER"
 namespace_id = "3001"               # unique per env
   [env.example.ratelimits.simple]
   limit = 10
+  period = 60
+
+# One-click mute link (POST /api/mute-link): 120 requests per 60s per IP, since
+# mail providers send many members' unsubscribes from a few IPs. Optional: when
+# absent the mute link falls back to LOGIN_RATE_LIMITER (10/60s).
+[[env.example.ratelimits]]
+name = "MUTE_LINK_RATE_LIMITER"
+namespace_id = "3003"               # unique per env, and not LOGIN's
+  [env.example.ratelimits.simple]
+  limit = 120
   period = 60
 
 # Only needed on a DEMO_MODE tenant. Demo auto-login gives any caller a session

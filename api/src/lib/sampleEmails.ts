@@ -1,12 +1,12 @@
 // Sample email payloads + a targeted sender, for QA of the email templates.
 // Renders each email type from representative fixed data and sends to ONE
-// address via the real send path (sendEmail / sendMagicLink) — used by the
+// address via the real send path (the shared sender) — used by the
 // admin-gated POST /api/internal/send-sample-email endpoint and by the
 // scripts/render-*-sample.ts preview generators (so the committed samples and
 // the emails QA receives stay identical).
 
 import type { AppDb, Env } from '../types'
-import { sendEmail, renderMagicLinkEmail } from './email'
+import { senderFor, renderMagicLinkEmail } from './email'
 import { renderWeekAheadEmail, type WeekAheadDay } from './weekAheadEmail'
 import { renderDigestEmail, digestSubject, countUpdatedBills, type DigestEvent, type NewMatchDigestItem } from './digestEmail'
 import { renderMentionEmail } from './mentions'
@@ -102,7 +102,7 @@ export function isSampleEmailType(t: string): t is SampleEmailType {
   return (ALL_SAMPLE_EMAIL_TYPES as string[]).includes(t)
 }
 
-export interface SampleSendResult { ok: boolean; provider?: string; error?: string }
+export interface SampleSendResult { ok: boolean; provider?: string | null; error?: string }
 
 /**
  * Pure render of one sample email type → { subject, html }. THE single source for
@@ -200,12 +200,14 @@ export function renderSampleEmail(type: SampleEmailType, appUrl: string): { subj
 }
 
 /** Render a sample email and send it to a single address via the real send path.
- *  Never throws — returns a normalized result. */
+ *  Never throws. Returns the sender's result as it is, for the operator who asked:
+ *  whether it went out, which provider sent it, the error when it did not, and
+ *  every attempt made. */
 export async function sendSampleEmail(env: Env, _db: AppDb, to: string, type: SampleEmailType): Promise<SampleSendResult> {
   const { subject, html } = renderSampleEmail(type, env.APP_URL)
-  // No db: operator mail stays out of email_send_stats, like the health alert,
-  // so a sample's success cannot make a failing provider look recovered.
-  return sendEmail(env, { to: [to], subject, html })
+  // The operator purpose never counts toward email health, so a sample's
+  // success cannot make a failing provider look recovered.
+  return senderFor(env).send({ purpose: 'operator', to: [to], subject, html })
 }
 
 /** Every sample email type — drives the conformance test's iteration. */

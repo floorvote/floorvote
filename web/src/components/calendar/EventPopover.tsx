@@ -89,14 +89,14 @@ export function EventPopoverContent({ event, isAdmin, expanded = false, onEdit, 
               {g.bills.map((b, i) => (
                 <span key={b.id}>
                   {i > 0 && ', '}
-                  <Link to={billUrl({ id: b.id, state: b.state, sessionSlug: b.sessionSlug, billNumber: b.billNumber })} style={{ color: color.accentBlue, textDecoration: 'underline' }}>{b.billNumber}</Link>
+                  <Link to={billUrl({ id: b.id, state: b.state, sessionSlug: b.sessionSlug, billNumber: b.billNumber })} style={{ color: color.linkBlue, textDecoration: 'underline' }}>{b.billNumber}</Link>
                 </span>
               ))}
             </div>
           ))}
           {setFrom && (
             <div style={{ ...EVENT_META_STYLE, marginTop: 6 }}>
-              <Link to={billUrl(setFrom.bill)} style={{ color: color.accentBlue, textDecoration: 'underline' }}>{setFrom.text}</Link>
+              <Link to={billUrl(setFrom.bill)} style={{ color: color.linkBlue, textDecoration: 'underline' }}>{setFrom.text}</Link>
             </div>
           )}
         </div>

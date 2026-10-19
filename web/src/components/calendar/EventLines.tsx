@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react'
+import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { color, fontSize } from '../../styles/tokens'
 import type { CalendarEvent } from '../../lib/calendarGrid'
 import { BillBadge } from '../BillBadge'
@@ -24,12 +24,14 @@ const META_ICON_STYLE: CSSProperties = { fontSize: fontSize.sm, lineHeight: 1 }
  * `linkChips` makes the chips deep-link to the bill (agenda/popover); off in the
  * month cell where the whole card is the click target.
  */
-export function EventLines({ event, compact = false, linkChips = false, suppressHover = false, clampDetails = false }: {
+export function EventLines({ event, compact = false, linkChips = false, suppressHover = false, clampDetails = false, pastTitle = false }: {
   event: CalendarEvent
   compact?: boolean
   linkChips?: boolean
   suppressHover?: boolean
   clampDetails?: boolean
+  /** A past event's title wears the secondary text color (cancelled titles keep their own). */
+  pastTitle?: boolean
 }) {
   const [showAll, setShowAll] = useState(false)
   const { time, text, location, cancelled } = eventBodyModel(event, compact)
@@ -46,12 +48,30 @@ export function EventLines({ event, compact = false, linkChips = false, suppress
     : null
   const isCompactNoBills = compact && event.bills.length === 0
   const lineFont = compact ? fontSize.xs : fontSize.sm
-  const showToggle = !!event.details && (event.details.includes('\n') || event.details.length > 80)
+  // The toggle shows only where the clamp hides something: the details box is taller than it
+  // is visible. Measured, not guessed from the text, and again when the box resizes. Once
+  // expanded nothing overflows, so "Show less" stays while the details are open.
+  const detailsRef = useRef<HTMLDivElement>(null)
+  const [overflows, setOverflows] = useState(false)
+  const measuring = clampDetails && !!event.details && !showAll
+  useLayoutEffect(() => {
+    const el = detailsRef.current
+    if (!measuring || !el) return
+    const measure = () => setOverflows(el.scrollHeight > el.clientHeight)
+    measure()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    observer?.observe(el)
+    window.addEventListener('resize', measure)
+    return () => { observer?.disconnect(); window.removeEventListener('resize', measure) }
+  }, [measuring, event.details])
+  const showToggle = clampDetails && !!event.details && (showAll || overflows)
   const detailStyle: CSSProperties = {
     ...EVENT_META_STYLE, marginTop: 4, whiteSpace: 'pre-line', lineHeight: 1.5,
     ...(clampDetails && !showAll ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } as CSSProperties : {}),
   }
-  const cancelStyle: CSSProperties = cancelled ? { color: color.textMuted, textDecoration: 'line-through' } : {}
+  const cancelStyle: CSSProperties = cancelled
+    ? { color: color.textMuted, textDecoration: 'line-through' }
+    : pastTitle ? { color: color.textSecondary } : {}
 
   const billChips = (wrap: boolean) => (
     <div style={{
@@ -152,7 +172,7 @@ export function EventLines({ event, compact = false, linkChips = false, suppress
             href={event.url}
             target="_blank"
             rel="noopener noreferrer"
-            style={{ fontSize: fontSize.xs, color: color.accentBlue, textDecoration: 'underline', overflowWrap: 'anywhere' }}
+            style={{ fontSize: fontSize.xs, color: color.linkBlue, textDecoration: 'underline', overflowWrap: 'anywhere' }}
           >
             {formatEventUrl(event.url)}
           </a>
@@ -161,12 +181,12 @@ export function EventLines({ event, compact = false, linkChips = false, suppress
       {event.bills.length > 0 && billChips(true)}
       {event.details && (
         <>
-          <div style={detailStyle}>{event.details}</div>
-          {clampDetails && showToggle && (
+          <div ref={detailsRef} style={detailStyle}>{event.details}</div>
+          {showToggle && (
             <button
               type="button"
               onClick={() => setShowAll(v => !v)}
-              style={{ marginTop: 2, padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontSize: fontSize.xs, color: color.accentBlue }}
+              style={{ marginTop: 2, padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontSize: fontSize.xs, color: color.linkBlue }}
             >
               {showAll ? 'Show less' : 'Show more'}
             </button>

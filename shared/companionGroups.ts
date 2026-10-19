@@ -9,9 +9,10 @@ export type GroupBill = { billId: string; billNumber: string }
 
 /**
  * A bill in the group a bill page shows: what a badge's link needs, with the
- * state and session slug that make the bill's canonical URL.
+ * state and session slug that make the bill's canonical URL, and the bill's own
+ * status as stored (the page decodes it), so the header can label each member.
  */
-export type GroupBillLink = GroupBill & { state: string; sessionSlug: string }
+export type GroupBillLink = GroupBill & { state: string; sessionSlug: string; status: string }
 
 /** One version of a bill's text, as the bill page's text list has it. */
 export type GroupTextVersion = {

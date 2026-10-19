@@ -1,3 +1,4 @@
+import { color } from '../styles/tokens'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -210,14 +211,12 @@ describe('BillDetail org noun labels', () => {
     expect(await screen.findByText('Association relevance')).toBeInTheDocument()
   })
 
-  it('renders the position badge tooltip using orgNoun possessive', async () => {
+  it('gives the position badge no hover bubble, which only restated the "position" label', async () => {
     makeMockApiFetch()
     render(<MemoryRouter><BillDetail /></MemoryRouter>)
-    // Wait for bill to load and position section to appear
     await screen.findByText('Association position')
-    // PositionBadge is mocked to expose the tooltip prop as data-tooltip
-    const badge = document.querySelector('[data-tooltip]')
-    expect(badge?.getAttribute('data-tooltip')).toBe("Your association's official position on this bill")
+    // PositionBadge is mocked to expose a tooltip prop as data-tooltip; none is passed.
+    expect(document.querySelector('[data-tooltip]')).toBeNull()
   })
 })
 
@@ -672,6 +671,27 @@ describe('BillDetail sponsors row', () => {
     render(<MemoryRouter><BillDetail /></MemoryRouter>)
     expect(await screen.findByText('Prime Sponsor')).toBeInTheDocument()
     expect(screen.getByText('Cosponsor 9')).toBeInTheDocument()
+  })
+})
+
+describe('BillDetail sponsor party chips', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  it('keeps the sponsor chip look: default size, party colors, no underline', async () => {
+    makeMockApiFetch({
+      sponsor: 'Prime Sponsor', sponsorParty: 'R', sponsorUrl: 'https://legislature.example/prime',
+      coSponsors: [{ name: 'Cosponsor One', party: 'D', url: null, primary: false }, { name: 'Cosponsor Two', party: 'I', url: null, primary: false }],
+    })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    expect(await screen.findByText('Prime Sponsor', { exact: false })).toBeInTheDocument()
+    const d = screen.getByText('D')
+    expect(d.style.fontSize).toBe('10px')
+    expect(d.style.padding).toBe('1px 4px')
+    expect(d.style.marginLeft).toBe('3px')
+    expect(d.style.display).toBe('inline-block')
+    expect(d.style.textDecoration).toBe('none')
+    expect(d.style.color).toBe(color.linkBlue)
+    expect(screen.getByText('I').style.color).toBe(color.textSlate500)
   })
 })
 

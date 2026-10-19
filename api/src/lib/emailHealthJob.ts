@@ -1,21 +1,23 @@
 import { and, eq, gte } from 'drizzle-orm'
 import type { Env, AppDb } from '../types'
 import { emailSendStats, emailAlertState } from '../db/schema'
-import { sendEmail, activeProvider, otherProvider, type ProviderName } from './email'
+import { senderFor } from './email'
+import { primaryProviderName, fallbackProviderName, type ProviderName } from '../../../shared/emailProviders'
 import { decideEmailHealth, windowStartHour, OK_STATE, type HealthDecision, type HealthState, type HourStat } from './emailHealth'
 import { toDbTs } from './dbTime'
-import { parseEmailList } from '../../../shared/operator'
+import { validEmailList } from '../../../shared/operator'
 import { PRODUCT_NAME } from '../../../shared/brand'
 
 /**
  * Hourly: decide whether the primary email provider is failing, and tell
- * ALERT_EMAILS through the OTHER provider. reportJobFailure can't do this job:
- * it sends through the active provider, so during the 2026-09-23 outage its
- * alert would have failed along with everything else.
+ * ALERT_EMAILS through the OTHER provider first (the outage-alert purpose's
+ * order). reportJobFailure can't do this job: it tries the active provider
+ * first, so during the 2026-09-23 outage its alert would have gone to the
+ * failing one before the healthy one.
  */
 export async function runEmailHealth(env: Env, db: AppDb, now: Date = new Date()): Promise<HealthDecision> {
-  const primary = activeProvider(env)
-  const alternate = otherProvider(env, primary)
+  const primary = primaryProviderName(env)
+  const alternate = fallbackProviderName(env, primary)
   const windowStart = windowStartHour(now)
 
   const rows: HourStat[] = await db.select().from(emailSendStats)
@@ -61,9 +63,9 @@ type AlertInput = {
 
 /** Returns whether the alert was sent. Never throws. */
 async function sendHealthAlert(env: Env, a: AlertInput): Promise<boolean> {
-  const recipients = parseEmailList(env.ALERT_EMAILS)
+  const recipients = validEmailList(env.ALERT_EMAILS, 'ALERT_EMAILS')
   if (recipients.length === 0) {
-    console.error(`[email-health] ${a.primary} ${a.decision} but ALERT_EMAILS is unset — no alert sent`)
+    console.error(`[email-health] ${a.primary} ${a.decision} but ALERT_EMAILS is unset or has no valid address — no alert sent`)
     return false
   }
   if (!a.alternate) {
@@ -71,12 +73,13 @@ async function sendHealthAlert(env: Env, a: AlertInput): Promise<boolean> {
   }
   const { subject, text, html } = renderHealthAlert(env, a)
   try {
-    // No db on purpose: operator mail keeps arriving during a verified-only
-    // outage, so counting it as a primary success could fake a recovery.
-    // Try the alternate first, then the primary: a stale RESEND_API_KEY or an
-    // EMAIL_FROM not verified on Resend must not swallow the alert.
-    const r = await sendEmail(env, { to: recipients, subject, html, text }, undefined, { provider: a.alternate ?? a.primary, fallback: true })
-    if (!r.ok) console.error(`[email-health] alert send failed (${r.provider}): ${r.error}`)
+    // The outage-alert purpose decides the rest: the healthy provider first,
+    // then the failing one (a stale RESEND_API_KEY or an EMAIL_FROM not verified
+    // on Resend must not swallow the alert), and never counted (operator mail
+    // keeps arriving during a verified-only outage, so counting it as a primary
+    // success could fake a recovery), so no db.
+    const r = await senderFor(env).send({ purpose: 'outage-alert', to: recipients, subject, html, text })
+    if (!r.ok) console.error(`[email-health] alert send failed (${r.provider ?? 'no provider'}): ${r.error}`)
     return r.ok
   } catch (err) {
     console.error('[email-health] alert send threw', err)
@@ -107,9 +110,11 @@ export function renderHealthAlert(env: Pick<Env, 'APP_URL'>, a: AlertInput): { s
     recover: `${a.primary} is sending email for ${host} again.`,
   }[a.decision]
 
+  // Which emails fall back is the purposes' rule (shared/emailSender.ts). Say it
+  // exactly: the docs and AGENTS.md say the same, and a test pins this wording.
   const rescue = a.alternate
-    ? `Login and invite links fall back to ${a.alternate}: ${a.rescued ?? 0} sent through ${a.alternate} in the last 24 hours.`
-    : `No fallback provider is configured, so login and invite links are failing too.`
+    ? `Sign-in, account, notification, and operator email fall back to ${a.alternate}: ${a.rescued ?? 0} sent through ${a.alternate} in the last 24 hours.`
+    : `No fallback provider is configured, so sign-in, account, notification, and operator email are failing too.`
 
   const lines = [
     lead,
@@ -117,7 +122,7 @@ export function renderHealthAlert(env: Pick<Env, 'APP_URL'>, a: AlertInput): { s
     `Last 24 hours through ${a.primary}: ${sent} sent, ${failed} failed, ${suppressed} suppressed.`,
     ...(lastError ? [`Last error: ${lastError}`] : []),
     '',
-    ...(a.decision === 'recover' ? [] : [rescue, 'Digests and week-ahead mail do not fall back and are not being delivered.']),
+    ...(a.decision === 'recover' ? [] : [rescue, 'Digests and week-ahead mail never fall back, so they are not being delivered.']),
     '',
     `This alert was sent through ${a.alternate ?? a.primary}.`,
   ]

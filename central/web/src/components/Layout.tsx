@@ -5,6 +5,7 @@ import { Wordmark } from '../../../../shared/Wordmark'
 const NAV = [
   { to: '/', label: 'Overview' },
   { to: '/sync', label: 'Sync' },
+  { to: '/states', label: 'States' },
   { to: '/adoption', label: 'Adoption' },
   { to: '/tenants', label: 'Tenants' },
   { to: '/settings', label: 'Settings' },

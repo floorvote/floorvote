@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CHIP_BASE, STATUS_CHIP_MAX_WIDTH, chipOutline } from '../lib/chipStyles'
+import { CHIP_BASE, CHIP_MINI, STATUS_CHIP_MAX_WIDTH, chipOutline } from '../lib/chipStyles'
 
 interface StatusChipProps {
   status: string | null
@@ -11,6 +11,8 @@ interface StatusChipProps {
   // ellipsis, and show the full label as hover text. The bill table and the
   // split pane pass it; the bill page and other callers show the label whole.
   capWidth?: boolean
+  // Opt-in: the small chip (CHIP_MINI), for a status shown beside a mini bill badge.
+  mini?: boolean
 }
 
 // The cap needs the chip to be a block: text-overflow does not apply to the
@@ -23,7 +25,7 @@ const CAPPED = {
   textOverflow: 'ellipsis',
 } as const
 
-export function StatusChip({ status, onClick, isActive, describedBy, capWidth }: StatusChipProps) {
+export function StatusChip({ status, onClick, isActive, describedBy, capWidth, mini }: StatusChipProps) {
   const [hovered, setHovered] = useState(false)
   if (!status) return null
 
@@ -31,7 +33,7 @@ export function StatusChip({ status, onClick, isActive, describedBy, capWidth }:
     <span
       aria-describedby={onClick ? undefined : describedBy}
       title={capWidth ? status : undefined}
-      style={{ ...CHIP_BASE, whiteSpace: 'nowrap', ...(capWidth ? CAPPED : {}), ...chipOutline(!!isActive, hovered, !!onClick) }}
+      style={{ ...(mini ? CHIP_MINI : CHIP_BASE), whiteSpace: 'nowrap', ...(capWidth ? CAPPED : {}), ...chipOutline(!!isActive, hovered, !!onClick) }}
     >
       {status}
     </span>

@@ -1,0 +1,45 @@
+{
+  "committeeMeeting": {
+    "chamber": "House",
+    "committees": [
+      {
+        "name": "House Education and Workforce",
+        "systemCode": "hsed00",
+        "url": "https://api.congress.gov/v3/committee/house/hsed00?format=json"
+      }
+    ],
+    "congress": 119,
+    "date": "2026-10-23T14:00:00Z",
+    "eventId": "119583",
+    "isManuallyCurated": true,
+    "location": {
+      "address": "{\"building_name\": \"Northampton Community College, Fowler Family Southside Center\", \"street-address\": \"511 East Third Street\", \"city\": \"Bethlehem\", \"state\": \"PA\", \"postal_code\": \"18015\"}"
+    },
+    "meetingDocuments": [
+      {
+        "description": "Hearing Notice",
+        "documentType": "Support Document",
+        "format": "PDF",
+        "name": "Hearing Notice",
+        "url": "https://www.congress.gov/119/meeting/house/119583/documents/HHRG-119-ED00-20261023-SD001.pdf"
+      }
+    ],
+    "meetingStatus": "Scheduled",
+    "title": "“More Choices, Brighter Futures: Expanding Education Freedom”",
+    "type": "Hearing",
+    "updateDate": "2026-10-15T10:41:10Z",
+    "videos": [
+      {
+        "name": "More Choices, Brighter Futures: Expanding Education Freedom",
+        "url": "https://www.congress.gov/event/119th-Congress/house-event/119583"
+      }
+    ]
+  },
+  "request": {
+    "chamber": "house",
+    "congress": "119",
+    "contentType": "application/json",
+    "eventId": "119583",
+    "format": "json"
+  }
+}
