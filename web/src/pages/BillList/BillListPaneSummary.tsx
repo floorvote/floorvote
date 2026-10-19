@@ -11,7 +11,7 @@ const MAX_LISTED = 15
 
 /**
  * The line under the split pane's "Bills" header: what the list is filtered by
- * and how it is sorted, with a link back to the Bills page to change either.
+ * and how it is sorted, with a link, right after it, back to the Bills page to change either.
  * Read-only by design — the pane never edits or clears a filter.
  *
  * With filters, the text is a HoverTooltip term: a button (so a tab stop) that
@@ -29,12 +29,12 @@ export function BillListPaneSummary({ summary, listUrl }: { summary: ListSummary
   )
   return (
     <div data-pane-summary style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0, padding: '0 12px 10px 15px' }}>
-      <span style={{ ...CHROME_TEXT, flex: '1 1 auto', minWidth: 0 }}>
+      <span style={{ ...CHROME_TEXT, flex: '0 1 auto', minWidth: 0 }}>
         <HoverTooltip text={list} describe placement="bottom" maxWidth={260}>
           <span style={{ overflowWrap: 'anywhere' }}>{summary.text}</span>
         </HoverTooltip>
       </span>
-      <Link to={listUrl} style={{ ...CHROME_TEXT, color: color.linkBlue, textDecoration: 'none', flexShrink: 0, whiteSpace: 'nowrap' }}>Edit</Link>
+      <Link to={listUrl} style={{ ...CHROME_TEXT, color: color.linkBlue, textDecoration: 'none', flexShrink: 0, whiteSpace: 'nowrap' }}>Edit filters</Link>
     </div>
   )
 }

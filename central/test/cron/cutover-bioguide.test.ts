@@ -125,6 +125,20 @@ describe('a cutover of legislators with Bioguide ids', () => {
     ])
   })
 
+  it('sends no ops alert from a dry run, whatever the provider raises while it is read', async () => {
+    const original = example.snapshot!.bind(example)
+    const spy = vi.spyOn(example, 'snapshot').mockImplementation(async (session, ctx) => {
+      await ctx.alert({ subject: 'a type vanished', text: 'detail' })
+      return original(session, ctx)
+    })
+    const sent = vi.spyOn(await import('../../src/lib/jobAlert'), 'sendOpsAlert')
+    try {
+      await dryRun()
+      expect(spy).toHaveBeenCalled()
+      expect(sent).not.toHaveBeenCalled()
+    } finally { spy.mockRestore(); sent.mockRestore() }
+  })
+
   it('reports in the dry run which legislators match by Bioguide id, and writes nothing', async () => {
     const before = await snapshotTables()
     const body = await dryRun()

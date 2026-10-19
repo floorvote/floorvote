@@ -1,0 +1,70 @@
+{
+  "committeeMeeting": {
+    "chamber": "Senate",
+    "committees": [
+      {
+        "name": "Senate Banking, Housing, and Urban Affairs",
+        "systemCode": "ssbk00",
+        "url": "https://api.congress.gov/v3/committee/senate/ssbk00?format=json"
+      }
+    ],
+    "congress": 119,
+    "date": "2026-10-01T14:00:00Z",
+    "eventId": "338793",
+    "location": {
+      "building": "Dirksen Senate Office Building",
+      "room": "538"
+    },
+    "meetingDocuments": [
+      {
+        "description": "Jeremy Wiggins, of the District of Columbia, to be an Assistant Secretary of the Treasury, vice Francis Brooke, resigned.",
+        "documentType": "Generic Document"
+      }
+    ],
+    "meetingStatus": "Scheduled",
+    "relatedItems": {
+      "nominations": [
+        {
+          "congress": 119,
+          "number": 1180,
+          "part": "02",
+          "url": "https://api.congress.gov/v3/nomination/119/1180?format=json"
+        },
+        {
+          "congress": 119,
+          "number": 1255,
+          "part": "17",
+          "url": "https://api.congress.gov/v3/nomination/119/1255?format=json"
+        },
+        {
+          "congress": 119,
+          "number": 1273,
+          "part": "12",
+          "url": "https://api.congress.gov/v3/nomination/119/1273?format=json"
+        },
+        {
+          "congress": 119,
+          "number": 1273,
+          "part": "25",
+          "url": "https://api.congress.gov/v3/nomination/119/1273?format=json"
+        }
+      ]
+    },
+    "title": "Hearings to examine the nominations of Jeremy Wiggins, of the District of Columbia, to be an Assistant Secretary of the Treasury, Matthew Jones, of Virginia, to be an Assistant Secretary of Housing and Urban Development, and David Slade, of Florida, to be First Vice President, and Michael Rigas, of Virginia, to be a Member of the Board of Directors, both of the Export-Import Bank of the United States.",
+    "type": "Open Hearing",
+    "updateDate": "2026-09-26T02:08:23Z",
+    "videos": [
+      {
+        "name": "Hearings to examine the nominations of Jeremy Wiggins, of the District of Columbia, to be an Assistant Secretary of the Treasury, Matthew Jones, of Virginia, to be an Assistant Secretary of Housing and Urban Development, and David Slade, of Florida, to be First Vice President, and Michael Rigas, of Virginia, to be a Member of the Board of Directors, both of the Export-Import Bank of the United States.",
+        "url": "https://www.congress.gov/event/119th-Congress/senate-event/338793"
+      }
+    ]
+  },
+  "request": {
+    "chamber": "senate",
+    "congress": "119",
+    "contentType": "application/json",
+    "eventId": "338793",
+    "format": "json"
+  }
+}
