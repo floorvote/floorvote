@@ -1,17 +1,21 @@
 name: CI
 
+# Runs on every pull request and every push to main. The package jobs below
+# are conditional on what the change touches (see `changes`); the cheap jobs
+# always run.
+#
+# Why no `paths-ignore` here: the `main` ruleset requires secret-scan,
+# check-api, check-central, check-web and check-scripts. A workflow that path
+# filtering skips never reports those contexts, and an unreported required
+# check blocks the merge just as a failing one does — which is what the old
+# ci-docs.yml worked around by declaring echo jobs of the same names over the
+# complementary paths. A JOB skipped by its `if:` is different: GitHub reports
+# it as Success, so a docs-only PR gets its required contexts from this one
+# workflow with nothing to keep in sync.
 on:
   pull_request:
-    paths-ignore:
-      - 'docs/**'
-      - 'research/**'
-      - '**/*.md'
   push:
     branches: [main]
-    paths-ignore:
-      - 'docs/**'
-      - 'research/**'
-      - '**/*.md'
 
 # Cancel in-progress CI when a new push arrives on the same branch
 concurrency:
@@ -22,11 +26,48 @@ permissions:
   contents: read
 
 jobs:
+  # Which packages this change touches. On a pull request the filters compare
+  # against the base branch, so a PR in a stack sees only its own commits. On a
+  # push to main every output is true: main runs everything, as the safety net
+  # for PRs that were tested against an older main (the ruleset's required
+  # checks are not strict).
+  #
+  # Each package's inputs are its own tree, shared/ (imported by api, web and
+  # central), and the root manifest + lockfile that install every job's
+  # toolchain. A change to this file reruns everything.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ github.event_name == 'push' || steps.filter.outputs.api == 'true' }}
+      central: ${{ github.event_name == 'push' || steps.filter.outputs.central == 'true' }}
+      web: ${{ github.event_name == 'push' || steps.filter.outputs.web == 'true' }}
+    steps:
+      # Reads the PR's changed files through the API: no checkout needed. On a
+      # push there is no PR to diff, and the outputs above are true regardless.
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        if: github.event_name == 'pull_request'
+        id: filter
+        with:
+          filters: |
+            common: &common
+              - 'shared/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/ci.yml'
+            api:
+              - *common
+              - 'api/**'
+            central:
+              - *common
+              - 'central/**'
+            web:
+              - *common
+              - 'web/**'
+
   # Secret scanning. Runs the gitleaks BINARY (MIT, free) rather
   # than gitleaks-action, which requires a paid GITLEAKS_LICENSE for ORG repos.
   # Pinned to a specific release + sha256-verified. Config + allowlist: .gitleaks.toml.
-  # Operator: make this a REQUIRED status check via branch protection once the
-  # first run is reviewed (see docs/security-ci.md).
+  # Always runs: a secret can land in any file, prose included.
   secret-scan:
     runs-on: ubuntu-latest
     steps:
@@ -51,6 +92,8 @@ jobs:
   # provides the eslint + @typescript-eslint toolchain that central's lint/tsc
   # resolve against.
   check-api:
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -67,6 +110,8 @@ jobs:
         working-directory: api
 
   check-central:
+    needs: changes
+    if: needs.changes.outputs.central == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -87,6 +132,8 @@ jobs:
         working-directory: central
 
   check-web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -110,6 +157,10 @@ jobs:
   # Invoked per-package like the jobs above rather than through the root
   # vitest.config.ts, so it doesn't depend on central's separately-installed
   # dependencies.
+  #
+  # Always runs: it is under a minute, and its inputs reach across the repo —
+  # the docs link tests read docs/, the CODEOWNERS and provider tests read
+  # central/src/providers, and verify:timestamps reads api/src and central/src.
   check-scripts:
     runs-on: ubuntu-latest
     steps:
@@ -124,6 +175,7 @@ jobs:
       # Stored-timestamp guard over api/src + central/src (docs/internal/dates.md).
       - run: npm run verify:timestamps
 
+  # Under a minute; not worth a filter.
   check-root:
     runs-on: ubuntu-latest
     steps:
