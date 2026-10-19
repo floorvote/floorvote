@@ -89,4 +89,11 @@ describe('a monitored bill (matchType null) with a full ingest', () => {
     await processCentralNotification({ tenantId: 'dc', billId: BILL_ID, stubOnly: true } as any, testEnv as any, db)
     expect((await get())?.fullyIngestedAt).toBeTruthy()
   })
+
+  it('keeps a bill fully ingested when a later metadataOnly message refreshes it', async () => {
+    const db = getDb(env.DB)
+    await processCentralNotification({ tenantId: 'dc', billId: BILL_ID, matchType: null } as any, testEnv as any, db)
+    await processCentralNotification({ tenantId: 'dc', billId: BILL_ID, metadataOnly: true } as any, testEnv as any, db)
+    expect((await get())?.fullyIngestedAt).toBeTruthy()
+  })
 })
