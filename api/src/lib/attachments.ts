@@ -18,8 +18,9 @@
 //      only for a file on a comment that still shows.
 //
 // Deleting the comment marks its files deleted, and purgeAttachments, hourly,
-// removes them 30 days later, along with uploads never posted (after a day)
-// and files whose comment row is gone (at once).
+// removes them 30 days later, along with uploads that never finished (after an
+// hour, and they stop counting toward the quota then too), uploads never
+// posted (after a day), and files whose comment row is gone (at once).
 //
 // The feature is off until an operator binds the bucket, and always off on a
 // demo.
@@ -59,15 +60,26 @@ export function isOwnKey(env: Env, key: string): boolean {
   return key.startsWith(keyPrefix(env))
 }
 
-// A row whose bytes still count: not deleted, and either not yet posted or on
-// a comment that still exists. A hard-deleted comment (account deletion,
+// How long an upload that never finished counts toward the quota, and is kept.
+// An upload is one request, so a row still unconfirmed after this is dead: its
+// client disconnected or stalled.
+const UNFINISHED_TTL_MS = 60 * 60 * 1000
+
+// A row whose bytes count toward the quota: not deleted, finished or still
+// recent (see UNFINISHED_TTL_MS), and either not yet posted or on a comment
+// that still exists. A hard-deleted comment (account deletion,
 // clear-interactions) leaves its rows behind, and the purge takes those.
-const LIVE = sql`${commentAttachments.deletedAt} IS NULL AND (${commentAttachments.commentId} IS NULL OR EXISTS (SELECT 1 FROM comments WHERE comments.id = ${commentAttachments.commentId}))`
+function live(now: Date) {
+  const recent = toDbTs(new Date(now.getTime() - UNFINISHED_TTL_MS))
+  return sql`${commentAttachments.deletedAt} IS NULL
+    AND (${commentAttachments.confirmedAt} IS NOT NULL OR ${commentAttachments.createdAt} > ${recent})
+    AND (${commentAttachments.commentId} IS NULL OR EXISTS (SELECT 1 FROM comments WHERE comments.id = ${commentAttachments.commentId}))`
+}
 const ORPHANED = sql`${commentAttachments.commentId} IS NOT NULL AND NOT EXISTS (SELECT 1 FROM comments WHERE comments.id = ${commentAttachments.commentId})`
 
-export async function usedBytes(db: AppDb): Promise<number> {
+export async function usedBytes(db: AppDb, now = new Date()): Promise<number> {
   const row = await db.select({ n: sql<number>`coalesce(sum(${commentAttachments.size}), 0)` })
-    .from(commentAttachments).where(LIVE).get()
+    .from(commentAttachments).where(live(now)).get()
   return row?.n ?? 0
 }
 
@@ -129,7 +141,7 @@ export async function uploadAttachment(
     INSERT INTO comment_attachments (id, uploader_id, r2_key, name, content_type, size, created_at)
     SELECT ${id}, ${uploaderId}, ${r2Key}, ${name}, ${checked.contentType}, ${size}, ${toDbTs(now)}
     WHERE (SELECT count(*) FROM comment_attachments WHERE uploader_id = ${uploaderId} AND created_at > ${since}) < ${UPLOADS_PER_HOUR}
-      AND (SELECT coalesce(sum(size), 0) FROM comment_attachments WHERE ${LIVE}) + ${size} <= ${ATTACHMENT_QUOTA_BYTES}`)
+      AND (SELECT coalesce(sum(size), 0) FROM comment_attachments WHERE ${live(now)}) + ${size} <= ${ATTACHMENT_QUOTA_BYTES}`)
   if (claimed.meta.changes !== 1) {
     await input.body.cancel().catch(() => {})
     const recent = await db.select({ n: sql<number>`count(*)` }).from(commentAttachments)
@@ -149,55 +161,61 @@ export async function uploadAttachment(
     return { ok: false, status: 400, error }
   }
   const incomplete = `"${name}" didn't upload completely. Try attaching it again.`
+  let contentType = checked.contentType
 
-  const reader = input.body.getReader()
-  const first = await readHead(reader, Math.min(SNIFF_BYTES, size + 1))
-  if (first.total > size || (first.done && first.total !== size)) {
-    await reader.cancel().catch(() => {})
-    return refuse(incomplete, false)
-  }
-  const verdict = checkAttachmentBytes(name, first.head)
-  if (!verdict.ok) {
-    await reader.cancel().catch(() => {})
-    return refuse(verdict.error, false)
-  }
-
-  // R2 needs a stream of known length. A FixedLengthStream of the declared
-  // size fails the write if the body runs short, and the pump stops it
-  // running long.
-  const { readable, writable } = new FixedLengthStream(size)
-  const writer = writable.getWriter()
-  const pump = (async () => {
-    let total = first.total
-    try {
-      for (const c of first.chunks) await writer.write(c)
-      for (;;) {
-        const next = await reader.read()
-        if (next.done) break
-        total += next.value.length
-        if (total > size) throw new Error('body longer than its Content-Length')
-        await writer.write(next.value)
-      }
-      await writer.close()
-    } catch (err) {
-      await writer.abort(err).catch(() => {})
+  // Any throw from here on (a body that errors, a dropped connection, R2
+  // refusing the write) refuses the upload and deletes whatever landed.
+  const body = input.body
+  let put: R2Object | null
+  try {
+    const reader = body.getReader()
+    const first = await readHead(reader, Math.min(SNIFF_BYTES, size + 1))
+    if (first.total > size || (first.done && first.total !== size)) {
       await reader.cancel().catch(() => {})
-      throw err
+      return refuse(incomplete, false)
     }
-  })()
-  const [put, pumped] = await Promise.allSettled([
-    bucket.put(r2Key, readable, { httpMetadata: { contentType: verdict.contentType } }),
-    pump,
-  ])
-  if (put.status === 'rejected' || pumped.status === 'rejected' || !put.value || put.value.size !== size) {
+    const verdict = checkAttachmentBytes(name, first.head)
+    if (!verdict.ok) {
+      await reader.cancel().catch(() => {})
+      return refuse(verdict.error, false)
+    }
+    contentType = verdict.contentType
+
+    // R2 needs a stream of known length. A FixedLengthStream of the declared
+    // size errors if the body runs long or short, which fails the put. The
+    // head chunks already read go in through a writer. Then the rest of the
+    // body is piped by the runtime, natively, with no JavaScript per chunk.
+    const { readable, writable } = new FixedLengthStream(size)
+    const stop = new AbortController()
+    let writer: WritableStreamDefaultWriter<Uint8Array> | null = writable.getWriter()
+    // If R2 refuses the write, stop feeding the stream, or the writes below
+    // would wait forever for a reader that has gone.
+    const putting = bucket.put(r2Key, readable, { httpMetadata: { contentType } }).catch((err: unknown) => {
+      stop.abort(err)
+      writer?.abort(err).catch(() => {})
+      throw err
+    })
+    const feeding = (async () => {
+      for (const c of first.chunks) await writer!.write(c)
+      writer!.releaseLock()
+      writer = null
+      reader.releaseLock()
+      await body.pipeTo(writable, { signal: stop.signal })
+    })()
+    const [stored, fed] = await Promise.allSettled([putting, feeding])
+    if (stored.status === 'rejected' || fed.status === 'rejected') return refuse(incomplete, true)
+    put = stored.value
+  } catch {
+    await body.cancel().catch(() => {})
     return refuse(incomplete, true)
   }
+  if (!put || put.size !== size) return refuse(incomplete, true)
 
-  const md5 = put.value.checksums?.md5
+  const md5 = put.checksums?.md5
   await db.update(commentAttachments)
-    .set({ confirmedAt: nowDb(), checksum: md5 ? `md5:${hex(md5)}` : `etag:${put.value.etag}`, contentType: verdict.contentType })
+    .set({ confirmedAt: nowDb(), checksum: md5 ? `md5:${hex(md5)}` : `etag:${put.etag}`, contentType })
     .where(eq(commentAttachments.id, id))
-  return { ok: true, attachment: { id, name, contentType: verdict.contentType, size } }
+  return { ok: true, attachment: { id, name, contentType, size } }
 }
 
 /** Remove an upload before it is posted: the composer's ×. */
@@ -282,7 +300,8 @@ export async function loadCommentAttachments(db: AppDb, commentIds: string[]): P
 }
 
 /**
- * Hourly: delete the bytes and rows of uploads never posted (after a day), of
+ * Hourly: delete the bytes and rows of uploads that never finished (after an
+ * hour), of uploads never posted (after a day), of
  * deleted comments' files (30 days after the delete), and of files whose
  * comment row is gone (at once). Without a bucket there are no bytes to reach,
  * so the rows wait.
@@ -291,12 +310,14 @@ export async function purgeAttachments(env: Env, db: AppDb, now = new Date()): P
   const bucket = env.ATTACHMENTS_BUCKET
   if (!bucket) return 0
   const loose = toDbTs(new Date(now.getTime() - UNATTACHED_TTL_MS))
+  const unfinished = toDbTs(new Date(now.getTime() - UNFINISHED_TTL_MS))
   const gone = toDbTs(new Date(now.getTime() - DELETED_TTL_MS))
   let purged = 0
   for (;;) {
     const rows = await db.select({ id: commentAttachments.id, r2Key: commentAttachments.r2Key }).from(commentAttachments)
       .where(or(
         and(isNull(commentAttachments.commentId), lt(commentAttachments.createdAt, loose)),
+        and(isNull(commentAttachments.confirmedAt), lt(commentAttachments.createdAt, unfinished)),
         lt(commentAttachments.deletedAt, gone),
         ORPHANED,
       ))

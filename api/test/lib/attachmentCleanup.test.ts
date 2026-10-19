@@ -17,15 +17,27 @@ describe('purgeAttachments', () => {
     commentId = await seedComment(await seedBill(), userId)
   })
 
-  async function seed(name: string, fields: { commentId?: string | null; createdAt: string; deletedAt?: string | null }) {
+  // A finished upload unless `confirmedAt: null` says the upload never completed.
+  async function seed(name: string, fields: { commentId?: string | null; createdAt: string; deletedAt?: string | null; confirmedAt?: string | null }) {
     const key = `bpc-test/${crypto.randomUUID()}`
     await env.ATTACHMENTS_BUCKET!.put(key, 'x')
     await getDb(env.DB).insert(commentAttachments).values({
       id: crypto.randomUUID(), uploaderId: userId, r2Key: key, name, contentType: 'application/pdf', size: 1,
       commentId: fields.commentId ?? null, createdAt: fields.createdAt, deletedAt: fields.deletedAt ?? null,
+      confirmedAt: fields.confirmedAt === undefined ? fields.createdAt : fields.confirmedAt,
     })
     return key
   }
+
+  it('removes an upload that never finished after an hour', async () => {
+    const dead = await seed('dead', { createdAt: '2026-10-19 10:30:00', confirmedAt: null })
+    await seed('in-progress', { createdAt: '2026-10-19 11:30:00', confirmedAt: null })
+
+    await purgeAttachments(env, getDb(env.DB), NOW)
+
+    expect(await names()).toEqual(['in-progress'])
+    expect(await env.ATTACHMENTS_BUCKET!.head(dead)).toBeNull()
+  })
 
   async function names() {
     return (await getDb(env.DB).select({ name: commentAttachments.name }).from(commentAttachments).all()).map(r => r.name).sort()

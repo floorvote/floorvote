@@ -111,6 +111,33 @@ describe('comment attachments', () => {
       expect(new Uint8Array(await (await download(other, id)).arrayBuffer())).toEqual(big)
     })
 
+    // The first 4 KB are read ahead and checked, then written before the rest.
+    it.each([100, 4095, 4096, 4097, 9000])('stores a %i-byte file byte for byte across the sniffed head', async (n) => {
+      const data = new Uint8Array(n)
+      data.set(PDF)
+      for (let i = PDF.length; i < n; i++) data[i] = (i * 7) % 256
+      const res = await appFetch(`http://localhost/api/attachments?name=f.pdf`, {
+        method: 'POST',
+        headers: { Cookie: `session=${member}`, 'Content-Length': String(n) },
+        body: chunked(data, 1024),
+      })
+      expect(res.status).toBe(201)
+      const { id } = await res.json() as Uploaded
+      const row = await getDb(env.DB).select().from(commentAttachments).where(eq(commentAttachments.id, id)).get()
+      expect(new Uint8Array(await (await bucket().get(row!.r2Key))!.arrayBuffer())).toEqual(data)
+    })
+
+    it('refuses a body that runs past its declared length after the head, and keeps none of it', async () => {
+      const data = new Uint8Array(20_000)
+      data.set(PDF)
+      const before = await storedCount()
+      const res = await upload(member, 'Testimony.pdf', data, { contentLength: 10_000 })
+      expect(res.status).toBe(400)
+      expect(await storedCount()).toBe(before)
+      const live = await getDb(env.DB).select().from(commentAttachments).where(isNull(commentAttachments.deletedAt)).all()
+      expect(live).toEqual([])
+    })
+
     it('refuses a blocked type without storing anything', async () => {
       const before = await storedCount()
       const res = await upload(member, 'invite.html', new TextEncoder().encode('hello'))
@@ -174,6 +201,21 @@ describe('comment attachments', () => {
     it('holds the hourly limit when uploads arrive at once', async () => {
       const results = await Promise.all(Array.from({ length: 36 }, (_, i) => upload(member, `p${i}.pdf`, PDF)))
       expect(results.filter(r => r.status === 201)).toHaveLength(30)
+    })
+
+    it('stops counting an upload that never finished toward the quota after an hour', async () => {
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19)
+      await getDb(env.DB).insert(commentAttachments).values([
+        {
+          id: crypto.randomUUID(), uploaderId: memberId, r2Key: 'bpc-test/nearly-full', name: 'x.pdf',
+          contentType: 'application/pdf', size: 5 * 1024 ** 3 - 25 * 1024 * 1024, confirmedAt: '2026-10-01 00:00:00',
+        },
+        {
+          id: crypto.randomUUID(), uploaderId: memberId, r2Key: 'bpc-test/abandoned', name: 'y.pdf',
+          contentType: 'application/pdf', size: 25 * 1024 * 1024, createdAt: twoHoursAgo,
+        },
+      ])
+      expect((await upload(other, 'a.pdf', PDF)).status).toBe(201)
     })
 
     it('refuses an upload that would pass the instance quota', async () => {

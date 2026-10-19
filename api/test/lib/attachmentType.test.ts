@@ -33,6 +33,8 @@ describe('checkAttachmentName', () => {
     'help.chm', 'run.jse', 'disk.vhdx', 'notebook.one',
     // Windows drops trailing dots and spaces when it saves a file.
     'run.bat.', 'run.bat . ',
+    // Dots alternating with Unicode spaces (NBSP, ideographic space).
+    'run.bat. .　. ',
     // A right-to-left override would show this as "reporttab.pdf".
     'report‮fdp.bat',
   ])(

@@ -86,10 +86,11 @@ const INVISIBLE = /[\u0000-\u001f\u007f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g
 
 function cleanName(raw: string): string {
   const last = raw.split(/[/\\]/).pop() ?? ''
-  // Trailing dots and spaces go too: Windows drops them when it saves the file,
-  // so "run.bat." would land as "run.bat".
-  const strip = (s: string) => s.trim().replace(/[. ]+$/, '')
-  return strip(strip(last.replace(INVISIBLE, '')).slice(0, MAX_NAME_LENGTH))
+  // Trailing dots and whitespace (any, NBSP and U+3000 included) go too:
+  // Windows drops them when it saves the file, so "run.bat." would land as
+  // "run.bat". Again after the cut, which can end on a dot.
+  const tail = /[\s.]+$/u
+  return last.replace(INVISIBLE, '').replace(tail, '').trimStart().slice(0, MAX_NAME_LENGTH).replace(tail, '')
 }
 
 function knownType(ext: string) {
