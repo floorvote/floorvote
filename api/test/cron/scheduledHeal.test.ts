@@ -18,7 +18,7 @@ import { healStalledAiBills } from '../../src/lib/healStalledAi'
 import { registerWithCentral } from '../../src/cron/sync'
 import { runEmailHealth } from '../../src/lib/emailHealthJob'
 import { runInviteBounceCheck } from '../../src/lib/inviteBounces'
-import { mail } from '../mail'
+import { mail, resetMail } from '../mail'
 
 async function runScheduled(cron: string, scheduledTime?: number) {
   const ctx = createExecutionContext()
@@ -30,6 +30,7 @@ async function runScheduled(cron: string, scheduledTime?: number) {
 describe('scheduled() heal branch', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetMail()
   })
 
   it('runs the email-health check on the hourly cron only', async () => {

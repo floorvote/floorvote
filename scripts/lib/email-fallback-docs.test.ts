@@ -50,10 +50,32 @@ describe('what the docs say falls back', () => {
     expect(newInstance).not.toContain('is only used if EMAIL_PROVIDER=resend')
   })
 
-  it('every place that frames Cloudflare Email says a bound binding counts as a sender, and EMAIL_PROVIDER only picks the first tried', () => {
-    expect(tenants).toContain('`EMAIL_PROVIDER` only picks which one is tried first')
+  // Tenants and central order their providers differently. A tenant's sender
+  // (`providersFromEnv`) puts the binding first only with EMAIL_PROVIDER="cloudflare",
+  // and otherwise Resend first, even with no key. Central's (`configuredProviders`)
+  // drops a Resend with no key, so there a bound binding counts as a sender on its own.
+  it('the tenant docs say the binding goes first only with EMAIL_PROVIDER="cloudflare", and otherwise Resend goes first and needs a key', () => {
+    expect(tenants).toContain('goes first only with `EMAIL_PROVIDER="cloudflare"`')
+    expect(tenants).toContain('Otherwise Resend goes first and needs `RESEND_API_KEY`')
+    const line = agents.split('\n').find(l => l.startsWith('| `RESEND_API_KEY` | Optional'))
+    expect(line).toContain('goes first only with `EMAIL_PROVIDER=cloudflare`')
+    expect(line).toContain('otherwise Resend goes first and needs `RESEND_API_KEY`')
+  })
+
+  it('the tenant docs never say a binding counts as a sender on its own: that is true of central only', () => {
+    expect(tenants).not.toContain('count as a sender')
+    expect(tenants).not.toContain('counts as a sender')
+    const line = agents.split('\n').find(l => l.startsWith('| `RESEND_API_KEY` | Optional'))
+    expect(line).not.toContain('as a sender on their own')
+    expect(line).not.toContain('only picks which is tried first')
+    expect(newInstance).not.toContain('counts as a sender')
+  })
+
+  it('the central docs say a bound binding counts as a sender on its own, and EMAIL_PROVIDER only picks which is tried first', () => {
     expect(operating).toContain('a bound EMAIL binding counts as a sender')
     expect(operating).toContain('EMAIL_PROVIDER only picks which one is tried first')
-    expect(agents).toContain('`EMAIL_PROVIDER` only picks which is tried first')
+    expect(operating).toContain('which counts as a sender on its own')
+    const central = agents.split('\n').find(l => l.startsWith('| `RESEND_API_KEY` | Admin dashboard'))
+    expect(central).toContain('the binding alone counts as a sender')
   })
 })

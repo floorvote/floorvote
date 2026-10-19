@@ -80,7 +80,7 @@ See [`docs/content/self-hosting/index.md`](docs/content/self-hosting/index.md) f
 | `CF_AIG_TOKEN` | Cloudflare AI Gateway auth token (required) |
 | `CENTRAL_ADMIN_SECRET` | Must match central's `ADMIN_SECRET`; removable after adding a CentralApi service binding |
 | `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile login protection (optional; unset → gate fails open) |
-| `RESEND_API_KEY` | Optional second email provider. A key and a bound `EMAIL` binding each count as a sender on their own, and `EMAIL_PROVIDER` only picks which is tried first (`resend` makes Resend first; anything else makes the binding first when it is bound). With both, the other is the fallback for sign-in, account, notification, and operator email. Digests and week-ahead mail never fall back |
+| `RESEND_API_KEY` | Optional second email provider. The `EMAIL` binding goes first only with `EMAIL_PROVIDER=cloudflare`; otherwise Resend goes first and needs `RESEND_API_KEY`, and a bound binding is the fallback. With both configured, the other is the fallback for sign-in, account, notification, and operator email. Digests and week-ahead mail never fall back |
 | `GEMINI_API_KEY` | Optional fallback AI key (only when `AI_GATEWAY_ENABLED` is unset/false) |
 
 **Tenant vars** (in `[env.<tenant>.vars]` in `api/wrangler.toml`):

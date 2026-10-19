@@ -4,6 +4,7 @@ import { eq, inArray } from 'drizzle-orm'
 import { appFetch, resetDb, applyMigrations, seedUser, seedSession, seedBill, seedComment } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, bills, feedEvents } from '../../src/db/schema'
+import { stubResend } from '../../../shared/emailTestKit'
 import { runDigest } from '../../src/lib/digest'
 import * as filterTable from '../../src/routes/billsApi/filterTable'
 import { renderDigestEmail, digestSubject, type DigestEvent, type NewMatchDigestItem, type ViewDigestSection } from '../../src/lib/digestEmail'
@@ -153,13 +154,14 @@ describe('digestSubject: saved view bills', () => {
 })
 
 describe('runDigest: saved views', () => {
-  let emails: Array<{ to: string[]; subject: string; html: string }>
+  let resend: ReturnType<typeof stubResend>
+  const sentEmails = (): Array<{ to: string[]; subject: string; html: string }> => resend.calls.map(c => c.body)
   let adminCookie: string
   let ada: { id: string; cookie: string }
   let ben: { id: string; cookie: string }
   let admin: string
   const db = () => getDb(env.DB)
-  const to = (addr: string) => emails.filter(e => e.to[0] === addr)
+  const to = (addr: string) => sentEmails().filter(e => e.to[0] === addr)
   const ago = (h: number) => new Date(Date.now() - h * 3600_000).toISOString().slice(0, 19).replace('T', ' ')
   const old = () => ago(24 * 30)
 
@@ -184,15 +186,14 @@ describe('runDigest: saved views', () => {
 
   beforeEach(async () => {
     await resetDb(); await applyMigrations()
-    emails = []
-    vi.stubGlobal('fetch', vi.fn(async (_u: string, init: { body: string }) => { emails.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
+    resend = stubResend()
     await db().insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'email-digest': true }) })
     const a = await person('admin@example.com', 'admin'); admin = a.id; adminCookie = a.cookie
     ada = await person('ada@example.com', 'member', { matches: false })
     ben = await person('ben@example.com', 'member', { matches: false })
     await makeView('v-ri', 'Transportation', 'state=RI')
   })
-  afterEach(() => { vi.unstubAllGlobals() })
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
   it('sends a subscribed view\'s news to that member and to nobody else', async () => {
     await seedBill({ billNumber: 'H 101', state: 'RI', session: '2026' })
@@ -201,12 +202,12 @@ describe('runDigest: saved views', () => {
 
     await runDigest(env as never, db())
 
-    expect(emails).toHaveLength(1)
-    expect(emails[0].to).toEqual(['ada@example.com'])
-    expect(text(emails[0].html)).toContain('In your Transportation view')
-    expect(text(emails[0].html)).toContain('H 101')
-    expect(text(emails[0].html)).not.toContain('H 202')
-    expect(emails[0].subject).toBe('Your daily digest: 1 bill in your saved views')
+    expect(sentEmails()).toHaveLength(1)
+    expect(sentEmails()[0].to).toEqual(['ada@example.com'])
+    expect(text(sentEmails()[0].html)).toContain('In your Transportation view')
+    expect(text(sentEmails()[0].html)).toContain('H 101')
+    expect(text(sentEmails()[0].html)).not.toContain('H 202')
+    expect(sentEmails()[0].subject).toBe('Your daily digest: 1 bill in your saved views')
   })
 
   it('sends a member who did not subscribe nothing, whatever the view holds', async () => {
@@ -221,7 +222,7 @@ describe('runDigest: saved views', () => {
     await seedBill({ billNumber: 'H 202', state: 'UT', session: '2026' })
     await subscribe(ada.cookie, 'v-ri')
     const result = await runDigest(env as never, db())
-    expect(emails).toHaveLength(0)
+    expect(sentEmails()).toHaveLength(0)
     expect(result).toEqual({ ok: true, recipients: 0, sent: 0, failed: 0 })
   })
 
@@ -229,7 +230,7 @@ describe('runDigest: saved views', () => {
     await settled({ billNumber: 'H 101', state: 'RI', session: '2026' })
     await subscribe(ada.cookie, 'v-ri')
     await runDigest(env as never, db())
-    expect(emails).toHaveLength(0)
+    expect(sentEmails()).toHaveLength(0)
   })
 
   it('lists activity on a bill already in the view, without a priority', async () => {
@@ -239,9 +240,9 @@ describe('runDigest: saved views', () => {
 
     await runDigest(env as never, db())
 
-    expect(emails).toHaveLength(1)
-    expect(text(emails[0].html)).toContain('In your Transportation view')
-    expect(text(emails[0].html)).toContain('Action: Passed House committee')
+    expect(sentEmails()).toHaveLength(1)
+    expect(text(sentEmails()[0].html)).toContain('In your Transportation view')
+    expect(text(sentEmails()[0].html)).toContain('Action: Passed House committee')
   })
 
   it('ignores an event outside the window and a suppressed one', async () => {
@@ -250,7 +251,7 @@ describe('runDigest: saved views', () => {
     await db().insert(feedEvents).values({ id: crypto.randomUUID(), type: 'bill_updated' as never, billId: id, userId: 'system', metadata: action('Hidden'), createdAt: ago(2), suppressed: true })
     await subscribe(ada.cookie, 'v-ri')
     await runDigest(env as never, db())
-    expect(emails).toHaveLength(0)
+    expect(sentEmails()).toHaveLength(0)
   })
 
   it('shows a priority bill once, under priority bills, and not again in the view', async () => {
@@ -293,10 +294,10 @@ describe('runDigest: saved views', () => {
 
     await runDigest(env as never, db())
 
-    expect(cards(emails[0].html)).toBe(5)
-    expect(text(emails[0].html)).toContain('and 3 more')
-    expect(emails[0].subject).toBe('Your daily digest: 8 bills in your saved views')
-    expect(emails[0].html).toContain('/bills?view=transportation')
+    expect(cards(sentEmails()[0].html)).toBe(5)
+    expect(text(sentEmails()[0].html)).toContain('and 3 more')
+    expect(sentEmails()[0].subject).toBe('Your daily digest: 8 bills in your saved views')
+    expect(sentEmails()[0].html).toContain('/bills?view=transportation')
   })
 
   it('counts a companion group once, in the cards and in the subject', async () => {
@@ -308,8 +309,8 @@ describe('runDigest: saved views', () => {
 
     await runDigest(env as never, db())
 
-    expect(cards(emails[0].html)).toBe(2)
-    expect(emails[0].subject).toBe('Your daily digest: 2 bills in your saved views')
+    expect(cards(sentEmails()[0].html)).toBe(2)
+    expect(sentEmails()[0].subject).toBe('Your daily digest: 2 bills in your saved views')
   })
 
   it('keeps the subject and headline consistent with the priority and new-match counts', async () => {
@@ -377,7 +378,7 @@ describe('runDigest: saved views', () => {
     await seedBill({ billNumber: 'V 1', state: 'RI', session: '2026' })
     await subscribe(ada.cookie, 'v-ri')
     await runDigest(env as never, db())
-    expect(emails).toHaveLength(0)
+    expect(sentEmails()).toHaveLength(0)
   })
 
   it('follows an edit to the view: the filter it has now decides what is listed', async () => {
@@ -388,8 +389,8 @@ describe('runDigest: saved views', () => {
 
     await runDigest(env as never, db())
 
-    expect(text(emails[0].html)).toContain('H 202')
-    expect(text(emails[0].html)).not.toContain('H 101')
+    expect(text(sentEmails()[0].html)).toContain('H 202')
+    expect(text(sentEmails()[0].html)).not.toContain('H 101')
   })
 
   it('drops a deleted view out of the member\'s digest, with its subscription gone', async () => {
@@ -399,7 +400,7 @@ describe('runDigest: saved views', () => {
 
     await runDigest(env as never, db())
 
-    expect(emails).toHaveLength(0)
+    expect(sentEmails()).toHaveLength(0)
     expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM saved_view_subscriptions').first<{ n: number }>())!.n).toBe(0)
   })
 
@@ -426,8 +427,8 @@ describe('runDigest: saved views', () => {
 
     await runDigest(env as never, db())
 
-    expect(text(emails[0].html)).toContain('In your Transportation view')
-    expect(text(emails[0].html)).not.toContain('In your Broken view')
+    expect(text(sentEmails()[0].html)).toContain('In your Transportation view')
+    expect(text(sentEmails()[0].html)).not.toContain('In your Broken view')
   })
 
   it('lists activity on a companion whose group meets the view, as the list shows the group', async () => {
@@ -492,8 +493,8 @@ describe('runDigest: saved views', () => {
     await seedBill({ billNumber: 'H 101', state: 'RI', session: '2026' })
     await subscribe(ada.cookie, 'v-ri')
     await runDigest(env as never, db())
-    expect(emails).toHaveLength(1)
+    expect(sentEmails()).toHaveLength(1)
     await runDigest(env as never, db())
-    expect(emails).toHaveLength(1)
+    expect(sentEmails()).toHaveLength(1)
   })
 })

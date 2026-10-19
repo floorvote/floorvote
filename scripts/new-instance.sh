@@ -195,9 +195,9 @@ if [[ $FROM_STEP -le 5 && $PREFLIGHT_ONLY -eq 0 ]]; then
   echo "  The next two are OPTIONAL. Leave blank to skip."
   echo "  GEMINI_API_KEY is only read if AI_GATEWAY_ENABLED is flipped to false."
   read -rsp "GEMINI_API_KEY (optional): " GEMINI_API_KEY; echo
-  echo "  RESEND_API_KEY is a second email sender: the first tried when EMAIL_PROVIDER=resend (or"
-  echo "  there is no EMAIL binding), and otherwise the fallback for sign-in, account, notification,"
-  echo "  and operator email when the EMAIL binding fails. Digests and week-ahead mail never fall back."
+  echo "  RESEND_API_KEY is a second email sender. Resend goes first unless EMAIL_PROVIDER=cloudflare with"
+  echo "  an EMAIL binding; with that, it is the fallback for sign-in, account, notification, and operator"
+  echo "  email when the binding fails. Digests and week-ahead mail never fall back."
   read -rsp "RESEND_API_KEY (optional): " RESEND_API_KEY; echo
 fi
 

@@ -10,9 +10,11 @@
  *  - `memoryProvider` and `memoryRecorder`: the sender's tests. They go into
  *    `createSender` through `SenderOptions`, so a purpose's fallback, counting,
  *    From, and demo-mode rules run for real with no network.
- *  - `fakeBinding` and `stubResend`: the few tests that run a real adapter, or
+ *  - `fakeBinding` and `stubResend`: the tests that run a real adapter, or
  *    a caller end to end through the real sender. They fake the transport
  *    itself: the `send_email` binding, and Resend's HTTP API over `fetch`.
+ *    `stubResend` stands where the API's `stubFetch` would (AGENTS.md Rule 12),
+ *    because central has no `stubFetch` and the two suites share this kit.
  */
 import { vi } from 'vitest'
 import type { Attempt, EmailProvider, OutgoingEmail, ProviderName } from './emailProviders'
@@ -82,30 +84,43 @@ export function fakeSender() {
   return fake satisfies EmailSender & { sent(): PurposeMessage[]; reset(): void }
 }
 
-export type BindingMessage = { to: string | string[]; from: string; subject: string; html?: string; text?: string; replyTo?: string | string[] }
+export type BindingMessage = { to: string | string[]; from: string; subject: string; html?: string; text?: string; replyTo?: string | string[]; headers?: Record<string, string> }
 
 export type BindingMode = 'ok' | 'down' | 'suppressed' | 'throw-sync'
 
+/** Which mode the binding answers in: one for every send, a list walked in order (the last repeated), or a function of the message and the call number (from 1). */
+export type BindingOutcomes = BindingMode | BindingMode[] | ((message: BindingMessage, call: number) => BindingMode)
+
 /**
  * A stand-in for the `send_email` binding. `sent` records every message it was
- * handed, down or not. A down binding rejects with `failure`, or with a generic
- * outage when a test doesn't care what it says.
+ * handed, down or not, and `delivered` only those it accepted. A down binding
+ * rejects with `failure`, or with a generic outage when a test doesn't care
+ * what it says. A test that needs a different answer per call passes a list of
+ * modes, as `memoryProvider` takes a list of outcomes, or a function that picks
+ * the mode from the message (a different answer per recipient) and the call number.
  */
-export function fakeBinding(mode: BindingMode = 'ok', failure?: { message: string; code: string }) {
+export function fakeBinding(outcomes: BindingOutcomes = 'ok', failure?: { message: string; code: string }) {
   const sent: BindingMessage[] = []
+  const delivered: BindingMessage[] = []
+  const modeFor = (m: BindingMessage, call: number): BindingMode =>
+    typeof outcomes === 'function' ? outcomes(m, call)
+      : Array.isArray(outcomes) ? outcomes[Math.min(call - 1, outcomes.length - 1)]
+        : outcomes
   const binding = {
     send(m: BindingMessage) {
       sent.push(m)
+      const mode = modeFor(m, sent.length)
       if (mode === 'throw-sync') throw new Error('binding threw synchronously')
       if (mode === 'down') {
         const { message, code } = failure ?? { message: 'binding is down', code: 'E_INTERNAL_SERVER_ERROR' }
         return Promise.reject(Object.assign(new Error(message), { code }))
       }
       if (mode === 'suppressed') return Promise.reject(Object.assign(new Error('recipient suppressed'), { code: 'E_RECIPIENT_SUPPRESSED' }))
-      return Promise.resolve({ messageId: `cf-${sent.length}` })
+      delivered.push(m)
+      return Promise.resolve({ messageId: `cf-${delivered.length}` })
     },
   }
-  return { sent, binding }
+  return { sent, delivered, binding }
 }
 
 export type ResendMode = 'ok' | 'down' | 'throw'

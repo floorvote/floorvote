@@ -4,7 +4,7 @@ import {
   type SignInMessage, type SignInEvent, type AccountMessage, type NotificationMessage, type BulkMessage, type OperatorMessage, type OutageAlertMessage,
   type HealthRecorder, type SenderEnv,
 } from './emailSender'
-import { memoryProvider, memoryRecorder } from './emailTestKit'
+import { memoryProvider, memoryRecorder, fakeBinding, stubResend } from './emailTestKit'
 import type { EmailProvider } from './emailProviders'
 
 // The sender against in-memory providers: no fetch, no binding. The adapters'
@@ -304,19 +304,18 @@ describe('default providers from env', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('falls back from the Cloudflare binding to Resend over fetch when both are configured', async () => {
-    const fetchStub = vi.fn(async () => new Response(JSON.stringify({ id: 'rs-9' }), { status: 200 }))
-    vi.stubGlobal('fetch', fetchStub)
-    const EMAIL = { send: vi.fn(async () => { throw Object.assign(new Error('down'), { code: 'E_INTERNAL_SERVER_ERROR' }) }) }
-    const r = await createSender({ ...env, EMAIL_PROVIDER: 'cloudflare', EMAIL, RESEND_API_KEY: 'test-api-key' }).send(signIn())
-    expect(r).toMatchObject({ ok: true, provider: 'resend', messageId: 'rs-9' })
-    expect(EMAIL.send).toHaveBeenCalledOnce()
-    expect(fetchStub).toHaveBeenCalledOnce()
+    const resend = stubResend()
+    const cf = fakeBinding('down')
+    const r = await createSender({ ...env, EMAIL_PROVIDER: 'cloudflare', EMAIL: cf.binding, RESEND_API_KEY: 'test-api-key' }).send(signIn())
+    expect(r).toMatchObject({ ok: true, provider: 'resend', messageId: 're-1' })
+    expect(cf.sent).toHaveLength(1)
+    expect(resend.calls).toHaveLength(1)
   })
 
   it('falls back from Resend to the binding when the Resend fetch throws, keeping why in the first attempt', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('network down') }))
-    const EMAIL = { send: vi.fn(async () => ({ messageId: 'cf-1' })) }
-    const r = await createSender({ ...env, EMAIL_PROVIDER: 'resend', EMAIL, RESEND_API_KEY: 'test-api-key' }).send(signIn())
+    stubResend('throw')
+    const cf = fakeBinding('ok')
+    const r = await createSender({ ...env, EMAIL_PROVIDER: 'resend', EMAIL: cf.binding, RESEND_API_KEY: 'test-api-key' }).send(signIn())
     expect(r).toMatchObject({ ok: true, provider: 'cloudflare', messageId: 'cf-1' })
     expect(r.attempts.map(a => `${a.provider}:${a.ok}`)).toEqual(['resend:false', 'cloudflare:true'])
     expect(r.attempts[0]).toMatchObject({ ok: false, permanent: false })
@@ -324,21 +323,19 @@ describe('default providers from env', () => {
   })
 
   it('reports a Resend fetch that throws, with nothing else configured, as one temporary failure that says why', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('network down') }))
+    stubResend('throw')
     const r = await createSender({ ...env, RESEND_API_KEY: 'test-api-key' }).send(signIn())
     expect(r).toMatchObject({ ok: false, provider: 'resend', permanent: false })
     expect((r as { error: string }).error).toContain('fetch failed')
-    expect((r as { error: string }).error).toContain('network down')
+    expect((r as { error: string }).error).toContain('network unreachable')
     expect(r.attempts).toHaveLength(1)
   })
 
   it('makes a single attempt when only the binding is configured', async () => {
-    const fetchStub = vi.fn()
-    vi.stubGlobal('fetch', fetchStub)
-    const EMAIL = { send: vi.fn(async () => { throw Object.assign(new Error('down'), { code: 'E_INTERNAL_SERVER_ERROR' }) }) }
-    const r = await createSender({ ...env, EMAIL_PROVIDER: 'cloudflare', EMAIL }).send(signIn())
+    const resend = stubResend()
+    const r = await createSender({ ...env, EMAIL_PROVIDER: 'cloudflare', EMAIL: fakeBinding('down').binding }).send(signIn())
     expect(r).toMatchObject({ ok: false, provider: 'cloudflare', permanent: false })
-    expect(fetchStub).not.toHaveBeenCalled()
+    expect(resend.calls).toHaveLength(0)
   })
 })
 

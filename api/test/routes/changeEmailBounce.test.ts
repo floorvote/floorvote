@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
 import { resetDb, applyMigrations, seedUser, seedSession, seedAuthEvent } from '../helpers'
+import { fakeBinding } from '../../../shared/emailTestKit'
 
 vi.mock('../../src/lib/centralFetch', () => ({
   centralFetch: vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }),
@@ -13,19 +14,19 @@ type MemberRow = { id: string; email: string; emailBounce: { reason: string | nu
 const T1 = '2026-09-20 10:00:00'
 const T2 = '2026-09-20 10:05:00'
 
-// The real send path, through a stubbed Cloudflare binding, so the new
+// The real send path, through a fake Cloudflare binding, so the new
 // invite's `email_sent` row is what the members list reads.
 describe('change-email clears a bounced invite', () => {
   let adminId: string
   let cookie: string
   let pendingId: string
-  let send: ReturnType<typeof vi.fn>
+  let cf: ReturnType<typeof fakeBinding>
 
   function testEnv() {
     return {
       ...env,
       EMAIL_PROVIDER: 'cloudflare',
-      EMAIL: { send },
+      EMAIL: cf.binding,
       CENTRAL: { emailSuppression: vi.fn(async () => ({ suppressed: false })) } as unknown as Fetcher,
     }
   }
@@ -40,7 +41,7 @@ describe('change-email clears a bounced invite', () => {
 
   beforeEach(async () => {
     await resetDb(); await applyMigrations()
-    send = vi.fn(async () => ({ messageId: 'm-new' }))
+    cf = fakeBinding()
     adminId = await seedUser({ role: 'admin', email: 'admin@example.test' })
     cookie = `session=${await seedSession(adminId)}`
     pendingId = await seedUser({ email: 'jane@exmaple.test', invitedBy: adminId })
@@ -63,11 +64,11 @@ describe('change-email clears a bounced invite', () => {
     // The send runs after the response (waitUntil); wait for it to land.
     await vi.waitFor(async () => {
       const row = await env.DB.prepare(
-        "SELECT 1 FROM auth_events WHERE user_id = ? AND event = 'email_sent' AND message_id = 'm-new'",
+        "SELECT 1 FROM auth_events WHERE user_id = ? AND event = 'email_sent' AND message_id = 'cf-1'",
       ).bind(pendingId).first()
       expect(row).not.toBeNull()
     })
-    expect(send).toHaveBeenCalledWith(expect.objectContaining({ to: ['jane@example.test'] }))
+    expect(cf.sent).toContainEqual(expect.objectContaining({ to: ['jane@example.test'] }))
 
     const row = await memberRow(pendingId)
     expect(row.email).toBe('jane@example.test')

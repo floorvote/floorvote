@@ -126,6 +126,54 @@ describe('fakeBinding', () => {
   })
 })
 
+describe('fakeBinding: what it accepted, and different answers per call', () => {
+  const msg = (to: string) => ({ to, from: 'f@example.com', subject: 's', html: '<p>h</p>' })
+
+  it('keeps the messages it accepted apart from every message it was handed', async () => {
+    const { sent, delivered, binding } = fakeBinding(['down', 'ok', 'suppressed', 'ok'])
+    await binding.send(msg('a@example.com')).catch(() => {})
+    await binding.send(msg('b@example.com'))
+    await binding.send(msg('c@example.com')).catch(() => {})
+    await binding.send(msg('d@example.com'))
+    expect(sent.map(m => m.to)).toEqual(['a@example.com', 'b@example.com', 'c@example.com', 'd@example.com'])
+    expect(delivered.map(m => m.to)).toEqual(['b@example.com', 'd@example.com'])
+  })
+
+  it('numbers the message ids of the messages it accepted, so a rescued send does not skip one', async () => {
+    const { binding } = fakeBinding(['down', 'ok', 'ok'])
+    await binding.send(msg('a@example.com')).catch(() => {})
+    expect(await binding.send(msg('b@example.com'))).toEqual({ messageId: 'cf-1' })
+    expect(await binding.send(msg('c@example.com'))).toEqual({ messageId: 'cf-2' })
+  })
+
+  it('walks a list of modes in order and repeats the last, as memoryProvider walks its outcomes', async () => {
+    const { binding } = fakeBinding(['down', 'ok'])
+    await expect(binding.send(msg('a@example.com'))).rejects.toMatchObject({ code: 'E_INTERNAL_SERVER_ERROR' })
+    await expect(binding.send(msg('b@example.com'))).resolves.toBeDefined()
+    await expect(binding.send(msg('c@example.com'))).resolves.toBeDefined()
+  })
+
+  it('lets a function pick the mode from the message and the call number, for a different answer per recipient', async () => {
+    const { binding, delivered } = fakeBinding((m, n) => (m.to === 'bad@example.com' ? 'suppressed' : n === 1 ? 'down' : 'ok'))
+    await expect(binding.send(msg('x@example.com'))).rejects.toMatchObject({ code: 'E_INTERNAL_SERVER_ERROR' })
+    await expect(binding.send(msg('bad@example.com'))).rejects.toMatchObject({ code: 'E_RECIPIENT_SUPPRESSED' })
+    await expect(binding.send(msg('y@example.com'))).resolves.toBeDefined()
+    expect(delivered.map(m => m.to)).toEqual(['y@example.com'])
+  })
+
+  it('throws synchronously for a throw-sync entry in a list, and delivers nothing', () => {
+    const { binding, delivered } = fakeBinding(['throw-sync'])
+    expect(() => binding.send(msg('a@example.com'))).toThrow('binding threw synchronously')
+    expect(delivered).toHaveLength(0)
+  })
+
+  it('uses the failure a test supplies for every down entry', async () => {
+    const { binding } = fakeBinding(['ok', 'down'], { message: 'nope', code: 'E_RATE_LIMIT_EXCEEDED' })
+    await binding.send(msg('a@example.com'))
+    await expect(binding.send(msg('b@example.com'))).rejects.toMatchObject({ message: 'nope', code: 'E_RATE_LIMIT_EXCEEDED' })
+  })
+})
+
 describe('stubResend', () => {
   const post = () => fetch('https://api.resend.com/emails', {
     method: 'POST', headers: { Authorization: `Bearer ${RESEND_KEY}` },

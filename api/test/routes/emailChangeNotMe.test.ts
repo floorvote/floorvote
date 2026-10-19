@@ -2,7 +2,8 @@ import { env } from 'cloudflare:test'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink, stubFetch } from '../helpers'
+import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink } from '../helpers'
+import { fakeBinding, stubResend } from '../../../shared/emailTestKit'
 import { getDb } from '../../src/db/client'
 import { users, sessions, authEvents, emailChanges, emailChangeReports, emailSendStats } from '../../src/db/schema'
 import { _resetSuperadminAllowlistCache } from '../../src/lib/superadminCentral'
@@ -18,18 +19,21 @@ type Sent = { to: string[]; subject: string; html: string; text: string }
 
 let sent: Sent[]
 let sendFails: boolean
+// The binding every request sends through, and the messages it accepted. It is
+// down while `sendFails` is set. A test that needs another answer calls
+// `useBinding`, which makes it the one `sent` reads.
+let cf: ReturnType<typeof fakeBinding>
+function useBinding(outcomes: Parameters<typeof fakeBinding>[0] = () => (sendFails ? 'down' : 'ok')) {
+  cf = fakeBinding(outcomes)
+  sent = cf.delivered as unknown as Sent[]
+  return cf
+}
 
 function testEnv(extra: Record<string, unknown> = {}) {
   return {
     ...env,
     EMAIL_PROVIDER: 'cloudflare',
-    EMAIL: {
-      send: async (m: Sent) => {
-        if (sendFails) throw new Error('mail is down')
-        sent.push(m)
-        return { messageId: `m-${sent.length}` }
-      },
-    },
+    EMAIL: cf.binding,
     CENTRAL: {
       fetch: async () => new Response(JSON.stringify({ hashes: [] })),
       emailSuppressionMany: async (emails: string[]) => Object.fromEntries(emails.map(e => [e, { suppressed: false }])),
@@ -89,7 +93,7 @@ beforeEach(async () => {
   await resetDb()
   await applyMigrations()
   _resetSuperadminAllowlistCache()
-  sent = []
+  useBinding()
   sendFails = false
   jane = await seedUser({ email: 'jane@oldjob.org', name: 'Jane Doe' })
   janeSession = await seedSession(jane)
@@ -139,7 +143,7 @@ describe('loading the link', () => {
   beforeEach(async () => {
     await request(janeCookie, 'jane@newjob.org')
     token = notMeTokenSentTo('jane@oldjob.org')
-    sent = []
+    useBinding()
   })
 
   it('changes nothing', async () => {
@@ -181,7 +185,7 @@ describe('pressing the button', () => {
     await request(janeCookie, 'jane@newjob.org')
     token = notMeTokenSentTo('jane@oldjob.org')
     confirmToken = sent.find(m => m.to.includes('jane@newjob.org'))!.text.match(CONFIRM_LINK)![1]
-    sent = []
+    useBinding()
   })
 
   it("ends every one of the member's sessions, and nobody else's", async () => {
@@ -264,7 +268,7 @@ describe('pressing the button', () => {
     const atCommit = notMeTokenSentTo('jane@oldjob.org')
     // The member (now at jane@newjob.org) asks to move on. The notices for this go to jane@newjob.org.
     expect((await request(janeCookie, 'jane@newer.org')).status).toBe(200)
-    sent = []
+    useBinding()
     expect((await press(atCommit)).status).toBe(200)
     const left = await getDb(env.DB).select().from(emailChanges).all()
     expect(left.map(c => [c.oldEmail, c.newEmail])).toEqual([['jane@newjob.org', 'jane@newer.org']])
@@ -278,7 +282,7 @@ describe('pressing the button', () => {
     await request(janeCookie, 'jane@newer.org')
     await confirm(sent.filter(m => m.to.includes('jane@newer.org')).pop()!.text.match(CONFIRM_LINK)![1])
     expect((await member(jane)).email).toBe('jane@newer.org')
-    sent = []
+    useBinding()
     await press(atCommit)
     const text = alerts()[0].text
     expect(text).toContain('The change had already taken effect, and their sign-in email has since changed again, to jane@newer.org')
@@ -290,7 +294,7 @@ describe('pressing the button', () => {
     await confirm(confirmToken)
     const atCommit = notMeTokenSentTo('jane@oldjob.org')
     await getDb(env.DB).update(users).set({ email: 'jane@oldjob.org' }).where(eq(users.id, jane))
-    sent = []
+    useBinding()
     await press(atCommit)
     const text = alerts()[0].text
     expect(text).toContain('The change had taken effect, and their sign-in email has since been restored to the old address')
@@ -309,7 +313,7 @@ describe('pressing the button', () => {
     // The member's request to jane@newjob.org was replaced from the same mailbox
     // by one to jane@third.org. Pressing the first notice's link cancels the second.
     await request(janeCookie, 'jane@third.org')
-    sent = []
+    useBinding()
     await press(token)
     expect(await getDb(env.DB).select().from(emailChanges).all()).toHaveLength(0)
     const text = alerts()[0].text
@@ -321,7 +325,7 @@ describe('pressing the button', () => {
     // Confirm from the new address, then report from the commit notice.
     await confirm(confirmToken)
     const atCommit = notMeTokenSentTo('jane@oldjob.org')
-    sent = []
+    useBinding()
     const r = await press(atCommit)
     expect(r.status).toBe(200)
     expect(r.body.cancelled).toBe(false)
@@ -351,7 +355,7 @@ describe('pressing the button', () => {
 
   it('works once: a second press does nothing, and leaves later sign-ins alone', async () => {
     expect((await press(token)).status).toBe(200)
-    sent = []
+    useBinding()
     const signedBackIn = await seedSession(jane)
     expect(signedBackIn).toBeTruthy()
     const again = await press(token)
@@ -375,7 +379,7 @@ describe('pressing the button', () => {
     const atRequest = token
     const atCommit = notMeTokenSentTo('jane@oldjob.org')
     expect((await press(atRequest)).status).toBe(200)
-    sent = []
+    useBinding()
     expect((await press(atCommit)).status).toBe(404)
     expect(sent).toHaveLength(0)
   })
@@ -417,7 +421,7 @@ describe('pressing the button', () => {
 
   it('still signs the member out, and says so, when no alert could be sent', async () => {
     // Both providers are down: the binding throws, and the fallback (Resend) answers 500.
-    stubFetch(() => new Response('upstream error', { status: 500 }))
+    stubResend('down', { status: 500, body: 'upstream error' })
     sendFails = true
     const r = await press(token)
     expect(r).toMatchObject({ status: 200, body: { ok: true, alerted: false } })
@@ -440,7 +444,7 @@ describe('an expired or unknown link', () => {
     await request(janeCookie, 'jane@newjob.org')
     const token = notMeTokenSentTo('jane@oldjob.org')
     await env.DB.prepare("UPDATE email_change_reports SET expires_at = datetime('now', '-1 minute')").run()
-    sent = []
+    useBinding()
 
     expect((await status(token)).body).toEqual({ status: 'expired' })
     const r = await press(token)
@@ -453,7 +457,7 @@ describe('an expired or unknown link', () => {
 
   it('does nothing for a made-up or missing token', async () => {
     await request(janeCookie, 'jane@newjob.org')
-    sent = []
+    useBinding()
     for (const body of [{ token: 'deadbeef' }, { token: '' }, {}, { token: 42 }]) {
       const r = await call('/api/auth/email-change/not-me', { method: 'POST', body: JSON.stringify(body) })
       expect(r.status).toBe(404)
@@ -510,7 +514,7 @@ describe('demo', () => {
   it('blocks the press on a demo instance, but still answers the read-only status call', async () => {
     await request(janeCookie, 'jane@newjob.org')
     const token = notMeTokenSentTo('jane@oldjob.org')
-    sent = []
+    useBinding()
     const demo = { DEMO_MODE: 'true' }
     expect((await press(token, demo)).status).toBe(403)
     expect(await sessionCount(jane)).toBe(1)
@@ -524,20 +528,15 @@ describe('demo', () => {
 // is its own send, so a batch of them can end differently, and each falls back
 // to the second provider and counts to the provider that sent it.
 describe('the report to the admins, by purpose', () => {
-  const cfError = (code: string) => Object.assign(new Error(code.toLowerCase()), { code })
+  /** A Cloudflare binding that fails for the addresses `fails` names (a suppression code is permanent, any other code is an outage), and delivers the rest. It becomes the binding `sent` reads. */
   function binding(fails: (to: string) => string | null) {
-    return {
-      send: vi.fn(async (m: Sent) => {
-        const code = fails(m.to[0])
-        if (code) throw cfError(code)
-        sent.push(m)
-        return { messageId: `cf-${sent.length}` }
-      }),
-    }
+    return useBinding((m) => {
+      const code = fails([m.to].flat()[0])
+      return code === 'E_RECIPIENT_SUPPRESSED' ? 'suppressed' : code ? 'down' : 'ok'
+    })
   }
   const withResend = { RESEND_API_KEY: 'test-api-key' }
-  type ResendBody = { to: string[]; subject: string; text: string }
-  const resendBodies = (spy: ReturnType<typeof stubFetch>) => spy.mock.calls.map(c => JSON.parse(String((c[1] as RequestInit).body)) as ResendBody)
+  const resendBodies = (resend: ReturnType<typeof stubResend>) => resend.calls.map(c => c.body)
   async function stats() {
     return Object.fromEntries((await getDb(env.DB).select().from(emailSendStats).all()).map(r => [r.provider, r]))
   }
@@ -548,16 +547,16 @@ describe('the report to the admins, by purpose', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     await request(janeCookie, 'jane@newjob.org')
     token = notMeTokenSentTo('jane@oldjob.org')
-    sent = []
+    useBinding()
     await env.DB.prepare('DELETE FROM email_send_stats').run()
   })
   afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
   it('sends every alert through Resend when Cloudflare is down, and counts each attempt to its own provider', async () => {
-    const fetch = stubFetch(() => new Response(JSON.stringify({ id: 'rs-1' }), { status: 200 }))
-    const r = await press(token, { EMAIL: binding(() => 'E_INTERNAL_SERVER_ERROR'), ...withResend })
+    const resend = stubResend()
+    const r = await press(token, { EMAIL: binding(() => 'E_INTERNAL_SERVER_ERROR').binding, ...withResend })
     expect(r.body).toEqual({ ok: true, alerted: true, cancelled: true })
-    const bodies = resendBodies(fetch)
+    const bodies = resendBodies(resend)
     expect(bodies.map(b => b.to[0]).sort()).toEqual(['ada@org.org', 'olive@org.org'])
     expect(bodies.every(b => b.subject.includes("didn't change their sign-in email"))).toBe(true)
     const by = await stats()
@@ -566,35 +565,35 @@ describe('the report to the admins, by purpose', () => {
   })
 
   it('reports a mixed batch per alert: one rescued, one undeliverable, and the report still counts as alerted', async () => {
-    const fetch = stubFetch(() => new Response(JSON.stringify({ id: 'rs-1' }), { status: 200 }))
-    const EMAIL = binding(to => (to === 'olive@org.org' ? 'E_RECIPIENT_SUPPRESSED' : to === 'ada@org.org' ? 'E_INTERNAL_SERVER_ERROR' : null))
-    const r = await press(token, { EMAIL, ...withResend })
+    const resend = stubResend()
+    const mail = binding(to => (to === 'olive@org.org' ? 'E_RECIPIENT_SUPPRESSED' : to === 'ada@org.org' ? 'E_INTERNAL_SERVER_ERROR' : null))
+    const r = await press(token, { EMAIL: mail.binding, ...withResend })
     expect(r.body).toEqual({ ok: true, alerted: true, cancelled: true })
     // The suppressed owner is not retried through Resend. The admin's alert is.
-    expect(resendBodies(fetch).map(b => b.to[0])).toEqual(['ada@org.org'])
+    expect(resendBodies(resend).map(b => b.to[0])).toEqual(['ada@org.org'])
     const by = await stats()
     expect(by.cloudflare).toMatchObject({ sent: 0, failed: 1, suppressed: 1 })
     expect(by.resend).toMatchObject({ sent: 1, failed: 0 })
   })
 
   it('still signs the member out, and says nobody was alerted, when both providers are down for every alert', async () => {
-    const fetch = stubFetch(() => new Response('upstream error', { status: 500 }))
-    const r = await press(token, { EMAIL: binding(() => 'E_INTERNAL_SERVER_ERROR'), ...withResend })
+    const resend = stubResend('down', { status: 500, body: 'upstream error' })
+    const r = await press(token, { EMAIL: binding(() => 'E_INTERNAL_SERVER_ERROR').binding, ...withResend })
     expect(r).toMatchObject({ status: 200, body: { ok: true, alerted: false } })
     expect(await sessionCount(jane)).toBe(0)
-    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(resend.calls).toHaveLength(2)
     const by = await stats()
     expect(by.cloudflare).toMatchObject({ failed: 2 })
     expect(by.resend).toMatchObject({ failed: 2 })
   })
 
   it('sends no alert from a demo instance, by the purpose\'s rule alone', async () => {
-    const fetch = stubFetch()
-    const EMAIL = binding(() => null)
-    const r = await reportNotMe(testEnv({ EMAIL, DEMO_MODE: 'true', ...withResend }) as never, getDb(env.DB), token, { userAgent: null, ipCountry: null })
+    const resend = stubResend()
+    const mail = binding(() => null)
+    const r = await reportNotMe(testEnv({ EMAIL: mail.binding, DEMO_MODE: 'true', ...withResend }) as never, getDb(env.DB), token, { userAgent: null, ipCountry: null })
     expect(r).toMatchObject({ ok: true, alerted: false })
-    expect(EMAIL.send).not.toHaveBeenCalled()
-    expect(fetch).not.toHaveBeenCalled()
+    expect(mail.sent).toHaveLength(0)
+    expect(resend.calls).toHaveLength(0)
     expect(await getDb(env.DB).select().from(emailSendStats).all()).toHaveLength(0)
   })
 })

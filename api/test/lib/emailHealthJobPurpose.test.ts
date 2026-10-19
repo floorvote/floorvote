@@ -13,12 +13,13 @@ vi.mock('../../src/lib/email', async (importOriginal) =>
 
 import { runEmailHealth } from '../../src/lib/emailHealthJob'
 import { mail, senderFor, resetMail } from '../mail'
+import { fakeBinding } from '../../../shared/emailTestKit'
 
 const NOW = new Date('2026-09-23T21:00:00Z')
 const LAST_HOUR = new Date('2026-09-23T20:30:00Z')
 const ERR = 'E_INTERNAL_SERVER_ERROR: down'
 const jobEnv = (over: Record<string, unknown> = {}) => ({
-  ...env, EMAIL_PROVIDER: 'cloudflare', RESEND_API_KEY: 'test-api-key', EMAIL: { send: vi.fn() },
+  ...env, EMAIL_PROVIDER: 'cloudflare', RESEND_API_KEY: 'test-api-key', EMAIL: fakeBinding().binding,
   ALERT_EMAILS: 'ops@example.test, ops2@example.test', APP_URL: 'https://ut.example.test',
   ...over,
 }) as never
@@ -27,7 +28,6 @@ beforeEach(async () => {
   await resetDb(); await applyMigrations()
   resetMail()
   vi.spyOn(console, 'error').mockImplementation(() => {})
-  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ id: 'rs-1' }), { status: 200 })))
 })
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 

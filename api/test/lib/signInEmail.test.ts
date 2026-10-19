@@ -180,8 +180,7 @@ describe('demo mode', () => {
 
 describe('what it reads from config', () => {
   it('records Resend usage from a Resend send', async () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
-      new Response(JSON.stringify({ id: 'rs-1' }), { status: 200, headers: { 'x-resend-monthly-quota': '41' } }))
+    stubResend('ok', { headers: { 'x-resend-monthly-quota': '41' } })
     await sendSignInLink(baseEnv({ RESEND_API_KEY: 'test-api-key' }), getDb(env.DB), { to: 'jane@example.com', link: 'login', url: URL_, userId: 'user-1' })
     const rows = await getDb(env.DB).select().from(associationConfig).all()
     expect(rows.find(r => r.key === 'resend_monthly_used')?.value).toBe('41')
