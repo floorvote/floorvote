@@ -740,7 +740,7 @@ async function applyCentralBill(
     && ((shouldRunAi && !!aiDedup) || groupAnalysisNoHash)
   const queueChanges = msg.changes ?? []
 
-  // New-match signal: the first time a bill becomes a fully-analyzed KEYWORD match
+  // New-match signal: the first time a bill becomes an analyzed KEYWORD match
   // (manual adds are excluded — the adding admin already knows). Set once; later
   // re-analysis / status changes / keyword-resync re-promotes won't re-surface it.
   //
@@ -866,7 +866,7 @@ async function applyCentralBill(
   }
 
   // New keyword-match feed event: passive, system actor, written once per bill. Shows
-  // in the "All fully analyzed bills" feed scope, and — once someone prioritizes the
+  // in the "All analyzed bills" feed scope, and — once someone prioritizes the
   // bill — in the default feed and nav-dot too, since those admit passive events on
   // prioritized bills (see feed.ts / PASSIVE_EVENT_TYPES). Drives the new-match
   // worklist/digest as well.
