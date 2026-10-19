@@ -20,9 +20,11 @@ const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
 
 import { processIngestorQueue, validateTextPayload, ingestMeasure, isVersionAddressable } from '../../src/queue/processor'
+import { startsWithPdfMagic } from '../../src/lib/storedPdf'
 import { getProvider } from '../../src/providers'
 import { limsBillId, limsDocId, limsSessionId } from '../../src/providers/lims/ids'
 import * as legiscan from '../../src/providers/legiscan/client'
+import { app } from '../../src/index-legiscan'
 import { setupLsDb } from '../helpers/setupLsDb'
 import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
 import ilTooLargeRaw from '../fixtures/il/too-large-to-display.html?raw'
@@ -472,6 +474,24 @@ describe('validateTextPayload', () => {
 
   it('accepts real PDF bytes', () => {
     expect(validateTextPayload(abuf(REAL_PDF), 'application/pdf', null)).toBeNull()
+  })
+
+  it('rejects a PDF-mime body that is shorter than the magic, or has it only after a byte order mark or whitespace', () => {
+    for (const body of ['%PDF', '%', '\ufeff%PDF-1.7', ' %PDF-1.7', '%pdf-1.7']) {
+      expect(validateTextPayload(abuf(body), 'application/pdf', null), JSON.stringify(body)).toMatch(/expected a PDF/)
+    }
+  })
+
+  it('accepts a PDF-mime body that is exactly the magic', () => {
+    expect(validateTextPayload(abuf('%PDF-'), 'application/pdf', null)).toBeNull()
+  })
+
+  it('agrees with the byte check the serving routes make, for every body in a shared list', () => {
+    for (const body of ['%PDF-1.7', '%PDF-', '%PDF', '', '<html>', '%pdf-1', ' %PDF-1']) {
+      const bytes = Uint8Array.from(body, ch => ch.charCodeAt(0))
+      const accepted = body.length > 0 && validateTextPayload(bytes.buffer as ArrayBuffer, 'application/pdf', null) === null
+      expect(accepted, JSON.stringify(body)).toBe(startsWithPdfMagic(bytes))
+    }
   })
 
   it('rejects an empty body', () => {
@@ -959,5 +979,354 @@ describe('match provenance fan-out', () => {
 
     expect(a.send.mock.calls[0][0].matchProvenance).toBe('bulk')
     expect(b.send.mock.calls[0][0].matchProvenance).toBe('routine')
+  })
+})
+
+
+// A document whose provider hash changed under the same doc id (#603). The
+// hash is what instances compare a claim source's pin with, and an instance
+// refetches a bill only when its `updated_at` moved, so a hash change alone
+// must move it, with no change record, since nothing user-facing changed.
+describe('processBill: a text whose hash changed under the same doc id', () => {
+  const STALE = '2026-01-01 00:00:00'
+  const text = (docId: number, hash: string) => ({
+    ...buildFixtureBill().texts[0], doc_id: docId, text_hash: hash,
+    state_link: `https://docs.legis.wi.gov/ab99-${docId}.html`,
+  })
+  const ctx = () => ({ waitUntil: () => {}, passThroughOnException: () => {} }) as unknown as ExecutionContext
+  const db = () => drizzle(env.DB, { schema })
+
+  async function ingest(texts: unknown[]) {
+    vi.mocked(legiscan.getBill).mockResolvedValue(buildFixtureBill({ texts }))
+    await processIngestorQueue(makeBatch(9001), makeEnv(), db())
+  }
+  // Back-dates the bill, so a later ingest that moves it shows.
+  const backdate = () => env.DB.prepare('UPDATE bills SET updated_at = ? WHERE bill_id = 9001').bind(STALE).run()
+  const updatedAt = async () => (await env.DB.prepare('SELECT updated_at FROM bills WHERE bill_id = 9001').first<{ updated_at: string }>())!.updated_at
+  const changeLog = async () => (await env.DB.prepare('SELECT change_type FROM bill_change_log WHERE bill_id = 9001').all()).results.map(r => r.change_type)
+  async function sentHashes() {
+    const res = await app.request('/api/bills/9001', { headers: { 'x-admin-secret': 'test-secret' } }, env, ctx())
+    const body = await res.json() as { texts: { docId: string; textHash: string | null }[] }
+    return Object.fromEntries(body.texts.map(t => [t.docId, t.textHash]))
+  }
+
+  beforeEach(async () => {
+    await db().insert(schema.sessions).values({
+      sessionId: 2154, state: 'WI', stateId: 50, yearStart: 2025, yearEnd: 2026,
+      sessionName: '2025-2026 Regular', sessionTitle: '2025-2026 Regular', sessionTag: '',
+      prefile: 0, sineDie: 0, prior: 0, special: 0,
+    })
+    await ingest([text(1000, 'v1-a'), text(1001, 'v1-b')])
+    await backdate()
+  })
+
+  it('moves updated_at and sends the new hash when only one document\'s hash changed', async () => {
+    await ingest([text(1000, 'v1-a'), text(1001, 'v2-b')])
+    expect(await updatedAt()).not.toBe(STALE)
+    expect(await sentHashes()).toEqual({ '1000': 'v1-a', '1001': 'v2-b' })
+  })
+
+  it('writes no change record for it', async () => {
+    const before = await changeLog()
+    await ingest([text(1000, 'v1-a'), text(1001, 'v2-b')])
+    expect(await changeLog()).toEqual(before)
+  })
+
+  it('leaves updated_at alone when no hash changed', async () => {
+    await ingest([text(1000, 'v1-a'), text(1001, 'v1-b')])
+    expect(await updatedAt()).toBe(STALE)
+  })
+
+  it.each([['empty', ''], ['missing', undefined as unknown as string]])('leaves updated_at alone when the new hash is %s, which is no signal', async (_l, hash) => {
+    await ingest([text(1000, 'v1-a'), text(1001, hash)])
+    expect(await updatedAt()).toBe(STALE)
+  })
+
+  it('leaves updated_at alone when the stored hash was empty and one arrives', async () => {
+    await env.DB.prepare('UPDATE bill_texts SET text_hash = NULL WHERE doc_id = 1001').run()
+    await ingest([text(1000, 'v1-a'), text(1001, 'v2-b')])
+    expect(await updatedAt()).toBe(STALE)
+  })
+
+  describe('refetching the changed document, so the hash describes the bytes served', () => {
+    const html = (body: string) => new Response(`<html>${body}</html>`, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } })
+    const link = (docId: number) => `https://docs.legis.wi.gov/ab99-${docId}.html`
+    const served = async () => {
+      const res = await app.request('/api/bills/9001/text', { headers: { 'x-admin-secret': 'test-secret' } }, env, ctx())
+      return await res.json() as { content: string; docId: string; textHash: string }
+    }
+    const row = (docId: number) => env.DB.prepare('SELECT text_hash, fetch_error FROM bill_texts WHERE doc_id = ?').bind(docId).first<{ text_hash: string; fetch_error: string | null }>()
+
+    beforeEach(async () => {
+      // The first ingest stored v1's bytes for both documents.
+      fetchMock.mockReset()
+      fetchMock.mockImplementation(async () => html('old bytes'))
+      await env.DB.prepare('DELETE FROM bills WHERE bill_id = 9001').run()
+      await env.DB.prepare('DELETE FROM bill_texts').run()
+      await ingest([text(1000, 'v1-a'), text(1001, 'v1-b')])
+      await backdate()
+      fetchMock.mockClear()
+    })
+
+    it('refetches exactly the changed document, and /text serves the new bytes under the new hash', async () => {
+      fetchMock.mockImplementation(async () => html('new bytes'))
+      await ingest([text(1000, 'v1-a'), text(1001, 'v2-b')])
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(fetchMock.mock.calls[0][0]).toBe(link(1001))
+      expect(await served()).toMatchObject({ docId: '1001', textHash: 'v2-b', content: '<html>new bytes</html>' })
+      expect(await updatedAt()).not.toBe(STALE)
+    })
+
+    it('refetches nothing when no hash changed', async () => {
+      await ingest([text(1000, 'v1-a'), text(1001, 'v1-b')])
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(await served()).toMatchObject({ textHash: 'v1-b', content: '<html>old bytes</html>' })
+    })
+
+    it('refetches nothing for an empty new hash', async () => {
+      await ingest([text(1000, 'v1-a'), text(1001, '')])
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+
+    it('keeps the old hash and old bytes together, and does not move updated_at, when the refetch fails', async () => {
+      fetchMock.mockImplementation(async () => new Response('nope', { status: 500 }))
+      vi.mocked(legiscan.getBillText).mockRejectedValue(new Error('quota'))
+      await ingest([text(1000, 'v1-a'), text(1001, 'v2-b')])
+      expect(await served()).toMatchObject({ docId: '1001', textHash: 'v1-b', content: '<html>old bytes</html>' })
+      expect((await row(1001))!.fetch_error).toContain('state_link HTTP 500')
+      expect(await updatedAt()).toBe(STALE)
+      expect(await sentHashes()).toEqual({ '1000': 'v1-a', '1001': 'v1-b' })
+    })
+
+    it('retries on the next ingest, and lands the new pair once it succeeds', async () => {
+      fetchMock.mockImplementation(async () => new Response('nope', { status: 500 }))
+      vi.mocked(legiscan.getBillText).mockRejectedValue(new Error('quota'))
+      await ingest([text(1000, 'v1-a'), text(1001, 'v2-b')])
+      fetchMock.mockImplementation(async () => html('new bytes'))
+      await ingest([text(1000, 'v1-a'), text(1001, 'v2-b')])
+      expect(await served()).toMatchObject({ textHash: 'v2-b', content: '<html>new bytes</html>' })
+      expect(await updatedAt()).not.toBe(STALE)
+    })
+
+    it('never serves a cached body from before the change: the pair /text returns is the new one', async () => {
+      // A request in the cache's five minutes warmed the old pair.
+      expect(await served()).toMatchObject({ textHash: 'v1-b', content: '<html>old bytes</html>' })
+      fetchMock.mockImplementation(async () => html('new bytes'))
+      await ingest([text(1000, 'v1-a'), text(1001, 'v2-b')])
+      expect(await served()).toMatchObject({ docId: '1001', textHash: 'v2-b', content: '<html>new bytes</html>' })
+    })
+
+    it('the stored r2_key points at the new bytes, beside the new hash', async () => {
+      fetchMock.mockImplementation(async () => html('new bytes'))
+      await ingest([text(1000, 'v1-a'), text(1001, 'v2-b')])
+      const r = await env.DB.prepare('SELECT r2_key, text_hash FROM bill_texts WHERE doc_id = 1001').first<{ r2_key: string; text_hash: string }>()
+      expect(r!.text_hash).toBe('v2-b')
+      const obj = await env.BILLS_BUCKET.get(r!.r2_key)
+      expect(await obj!.text()).toBe('<html>new bytes</html>')
+    })
+
+    it('deletes the old copy once the new one is stored', async () => {
+      const oldKey = (await row(1001) && (await env.DB.prepare('SELECT r2_key FROM bill_texts WHERE doc_id = 1001').first<{ r2_key: string }>())!.r2_key)
+      expect(await env.BILLS_BUCKET.get(oldKey as string)).not.toBeNull()
+      fetchMock.mockImplementation(async () => html('new bytes'))
+      await ingest([text(1000, 'v1-a'), text(1001, 'v2-b')])
+      const newKey = (await env.DB.prepare('SELECT r2_key FROM bill_texts WHERE doc_id = 1001').first<{ r2_key: string }>())!.r2_key
+      expect(newKey).not.toBe(oldKey)
+      expect(await env.BILLS_BUCKET.get(oldKey as string)).toBeNull()
+      expect(await env.BILLS_BUCKET.get(newKey)).not.toBeNull()
+    })
+
+    it('under forceTextRefetch, does not try a failed refetch again in the text loop, which would store new bytes under the old hash', async () => {
+      // The changed document's first fetch fails, and any later one would succeed.
+      let calls = 0
+      fetchMock.mockImplementation(async (url: string) => (url === link(1001) && calls++ === 0) ? new Response('nope', { status: 500 }) : html('new bytes'))
+      vi.mocked(legiscan.getBillText).mockRejectedValue(new Error('quota'))
+      vi.mocked(legiscan.getBill).mockResolvedValue(buildFixtureBill({ texts: [text(1000, 'v1-a'), text(1001, 'v2-b')] }))
+      await processIngestorQueue(makeBatch(9001, { forceTextRefetch: true }), makeEnv(), db())
+      expect(fetchMock.mock.calls.filter(c => c[0] === link(1001))).toHaveLength(1)
+      expect(await served()).toMatchObject({ textHash: 'v1-b', content: '<html>old bytes</html>' })
+    })
+
+    describe('a refetch that keeps failing', () => {
+      const changeHash = async () => (await env.DB.prepare('SELECT change_hash, detail_hash FROM bills WHERE bill_id = 9001').first<{ change_hash: string; detail_hash: string }>())!
+      const failing = () => {
+        fetchMock.mockImplementation(async () => new Response('nope', { status: 500 }))
+        vi.mocked(legiscan.getBillText).mockRejectedValue(new Error('quota'))
+      }
+      const changed = () => ingest([text(1000, 'v1-a'), text(1001, 'v2-b')])
+
+      it('leaves the bill\'s change hash behind, so the next sync pass queues it again', async () => {
+        failing()
+        await changed()
+        expect((await changeHash()).change_hash).toBe('')
+      })
+
+      it('counts its attempts, and stops after three: the hash moves on and it is logged once', async () => {
+        failing()
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        await changed(); await changed()
+        expect((await changeHash()).change_hash).toBe('')
+        fetchMock.mockClear()
+        await changed()
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        expect((await changeHash()).change_hash).toBe('hash-v1')
+        expect(warn.mock.calls.filter(c => String(c[0]).includes('giving up refetching doc 1001'))).toHaveLength(1)
+        // Past the cap it does not try again, and does not log again.
+        fetchMock.mockClear()
+        await changed()
+        expect(fetchMock).not.toHaveBeenCalled()
+        expect((await changeHash()).change_hash).toBe('hash-v1')
+        expect(warn.mock.calls.filter(c => String(c[0]).includes('giving up refetching doc 1001'))).toHaveLength(1)
+        expect(await sentHashes()).toEqual({ '1000': 'v1-a', '1001': 'v1-b' })
+        warn.mockRestore()
+      })
+
+      it('is still tried by forceTextRefetch after the cap, and lands the new pair', async () => {
+        failing()
+        await changed(); await changed(); await changed()
+        fetchMock.mockImplementation(async () => html('new bytes'))
+        vi.mocked(legiscan.getBill).mockResolvedValue(buildFixtureBill({ texts: [text(1000, 'v1-a'), text(1001, 'v2-b')] }))
+        await processIngestorQueue(makeBatch(9001, { forceTextRefetch: true }), makeEnv(), db())
+        expect(await served()).toMatchObject({ textHash: 'v2-b', content: '<html>new bytes</html>' })
+      })
+
+      it('starts the count over for a newer hash', async () => {
+        failing()
+        await changed(); await changed(); await changed()
+        fetchMock.mockClear()
+        await ingest([text(1000, 'v1-a'), text(1001, 'v3-b')])
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        expect((await changeHash()).change_hash).toBe('')
+      })
+
+      it('keeps the real change hash once a retry succeeds', async () => {
+        failing()
+        await changed()
+        fetchMock.mockImplementation(async () => html('new bytes'))
+        await changed()
+        expect((await changeHash()).change_hash).toBe('hash-v1')
+      })
+    })
+
+    it('does not fetch twice under forceTextRefetch', async () => {
+      fetchMock.mockImplementation(async () => html('new bytes'))
+      vi.mocked(legiscan.getBill).mockResolvedValue(buildFixtureBill({ texts: [text(1000, 'v1-a'), text(1001, 'v2-b')] }))
+      await processIngestorQueue(makeBatch(9001, { forceTextRefetch: true }), makeEnv(), db())
+      const urls = fetchMock.mock.calls.map(c => c[0])
+      expect(urls.filter(u => u === link(1001))).toHaveLength(1)
+    })
+  })
+
+  it('still moves updated_at for a new doc id, as before', async () => {
+    await ingest([text(1000, 'v1-a'), text(1001, 'v1-b'), text(1002, 'v1-c')])
+    expect(await updatedAt()).not.toBe(STALE)
+  })
+})
+
+// #637: a bill an instance didn't match (a companion it pulled in through its group) is delivered
+// the same full message as a tracked one, with its changes and its calendar, and no stub-only flag.
+describe('full ingest of a bill an instance did not match', () => {
+  it('sends the instance the changes and calendar of the ingest, with a null match type', async () => {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.sessions).values({
+      sessionId: 2154, state: 'WI', stateId: 50,
+      yearStart: 2025, yearEnd: 2026,
+      sessionName: '2025-2026 Regular', sessionTitle: '2025-2026 Regular', sessionTag: '',
+      prefile: 0, sineDie: 0, prior: 0, special: 0,
+    })
+    await db.insert(schema.bills).values({
+      billId: 9001, changeHash: 'hash-v0', sessionId: 2154, state: 'WI', stateId: 50,
+      billNumber: 'AB99', title: 'Original title', status: 1,
+    })
+    await db.insert(schema.tenants).values({ tenantId: 'prov-a', name: 'prov-a', stateCoverage: '["WI"]', active: true })
+    await db.insert(schema.billTenants).values({ billId: 9001, tenantId: 'prov-a', matchType: null })
+    vi.mocked(legiscan.getBill).mockResolvedValue(buildFixtureBill({ change_hash: 'hash-v1', title: 'Updated title' }))
+    const a = { send: vi.fn().mockResolvedValue(undefined), sendBatch: vi.fn() }
+
+    await processIngestorQueue(makeBatch(9001), { ...makeEnv(), [tenantQueueBindingName('prov-a')]: a }, db)
+
+    const msg = a.send.mock.calls[0][0]
+    expect(msg.stubOnly).toBeUndefined()
+    expect(msg.matchType).toBeNull()
+    expect(msg.changes.map((c: { changeType: string }) => c.changeType)).toContain('title_changed')
+    expect(msg.calendar.events).toHaveLength(1)
+    expect(msg.calendar.changes[0].changeType).toBe('hearing_added')
+  })
+})
+
+describe('a sponsor record and the stored Bioguide id', () => {
+  const opts = { forceMetadata: false, forceAI: false, interactive: false }
+  const sponsorOf = (extra: Record<string, unknown>) => buildFixtureBill({
+    sponsors: [{ people_id: 5001, name: 'Sen Alpha', party: 'R', role: 'Senator', role_id: 2, district: '01', sponsor_type_id: 1, sponsor_order: 1, ...extra }],
+  })
+  const personRowOf = async (db: ReturnType<typeof drizzle>) =>
+    db.select().from(schema.people).where(eq(schema.people.peopleId, 5001)).get()
+
+  it('keeps a stored id when the sponsor record carries none', async () => {
+    const db = drizzle(env.DB, { schema })
+    await ingestMeasure(sponsorOf({ bioguide_id: 'T000001' }), getProvider('legiscan'), makeEnv(), db, opts)
+    await ingestMeasure(sponsorOf({}), getProvider('legiscan'), makeEnv(), db, opts)
+    expect((await personRowOf(db))?.bioguideId).toBe('T000001')
+  })
+
+  it('keeps an id a snapshot provider stored when a later sponsor record carries none', async () => {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.people).values({ peopleId: 5001, name: 'Sen Alpha', bioguideId: 'T000002', provider: 'govinfo' })
+    await ingestMeasure(sponsorOf({}), getProvider('legiscan'), makeEnv(), db, opts)
+    const row = await personRowOf(db)
+    expect(row?.bioguideId).toBe('T000002')
+    expect(row?.provider).toBe('govinfo')
+  })
+
+  it('clears a stored id when the sponsor record says null', async () => {
+    const db = drizzle(env.DB, { schema })
+    await ingestMeasure(sponsorOf({ bioguide_id: 'T000001' }), getProvider('legiscan'), makeEnv(), db, opts)
+    await ingestMeasure(sponsorOf({ bioguide_id: null }), getProvider('legiscan'), makeEnv(), db, opts)
+    expect((await personRowOf(db))?.bioguideId).toBeNull()
+  })
+
+  it('replaces a stored id with the new one', async () => {
+    const db = drizzle(env.DB, { schema })
+    await ingestMeasure(sponsorOf({ bioguide_id: 'T000001' }), getProvider('legiscan'), makeEnv(), db, opts)
+    await ingestMeasure(sponsorOf({ bioguide_id: 'T000009' }), getProvider('legiscan'), makeEnv(), db, opts)
+    expect((await personRowOf(db))?.bioguideId).toBe('T000009')
+  })
+
+  it('stores the id of a person it has no row for, and null when there is none', async () => {
+    const db = drizzle(env.DB, { schema })
+    await ingestMeasure(sponsorOf({ bioguide_id: 'T000003' }), getProvider('legiscan'), makeEnv(), db, opts)
+    expect((await personRowOf(db))?.bioguideId).toBe('T000003')
+    await db.delete(schema.people).where(eq(schema.people.peopleId, 5001))
+    await ingestMeasure(sponsorOf({}), getProvider('legiscan'), makeEnv(), db, opts)
+    expect((await personRowOf(db))?.bioguideId).toBeNull()
+  })
+
+  it('inserts people the measure names in one batch whether or not each carries an id, and never writes over a row', async () => {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.people).values({ peopleId: 5003, name: 'Kept', bioguideId: 'T000005' })
+    await ingestMeasure(buildFixtureBill({ people: [
+      { people_id: 5002, name: 'With Id', bioguide_id: 'T000006' },
+      { people_id: 5003, name: 'Rewritten' },
+      { people_id: 5004, name: 'Without Id' },
+    ] }), getProvider('legiscan'), makeEnv(), db, opts)
+    const rows = await db.select().from(schema.people).all()
+    const byId = Object.fromEntries(rows.map(r => [r.peopleId, r]))
+    expect(byId[5002]?.bioguideId).toBe('T000006')
+    expect(byId[5003]).toMatchObject({ name: 'Kept', bioguideId: 'T000005' })
+    expect(byId[5004]?.bioguideId).toBeNull()
+  })
+
+  it('still replaces every other column from the sponsor record, and leaves bio_json alone', async () => {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.people).values({
+      peopleId: 5001, name: 'Old Name', party: 'D', role: 'Representative', district: '09', nickname: 'Al',
+      ballotpedia: 'Old_Page', bioJson: '{"social":{"biography":"https://example.test/bio"}}',
+    })
+    await ingestMeasure(sponsorOf({ name: 'Sen Alpha', party: 'R', role: 'Senator', district: '01' }), getProvider('legiscan'), makeEnv(), db, opts)
+    expect(await personRowOf(db)).toMatchObject({
+      name: 'Sen Alpha', party: 'R', role: 'Senator', district: '01',
+      nickname: null, ballotpedia: null,
+      bioJson: '{"social":{"biography":"https://example.test/bio"}}',
+    })
   })
 })

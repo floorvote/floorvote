@@ -39,13 +39,12 @@ function makeBill(over: Partial<Bill> = {}): Bill {
   }
 }
 
-function renderRow(bill: Partial<Bill>, props: { onStatusClick?: (s: string) => void; filterStatuses?: string[] } = {}) {
+function renderRow(bill: Partial<Bill>, props: { onStatusClick?: (s: string) => void; status?: string[] } = {}) {
   return render(
     <MemoryRouter>
       <BillRow
         bill={makeBill(bill)}
         index={0}
-        selectedTags={[]}
         onTagClick={vi.fn()}
         isAdmin={false}
         positionVocabulary={['Support', 'Oppose']}
@@ -56,11 +55,7 @@ function renderRow(bill: Partial<Bill>, props: { onStatusClick?: (s: string) => 
         onPriorityChange={vi.fn()}
         onPositionChange={vi.fn()}
         onVote={vi.fn()}
-        filterStatuses={props.filterStatuses ?? []}
-        filterPriorities={[]}
-        filterPositions={[]}
-        filterYears={[]}
-        filterMinRelevance={0}
+        filter={{ status: props.status ?? [], priority: [], position: [], year: [], minRelevance: 0, tag: [] }}
         sortedPaths={[]}
         isMultiState={false}
         isSelectionMode={false}
@@ -143,7 +138,7 @@ describe('the bill table\'s status filter', () => {
   })
 
   it('marks a capped chip active when the filter names its status', () => {
-    const { container } = renderRow({ status: VERY_LONG_STATUS }, { filterStatuses: [VERY_LONG_STATUS] })
+    const { container } = renderRow({ status: VERY_LONG_STATUS }, { status: [VERY_LONG_STATUS] })
     expect(chipIn(tableStatus(container), VERY_LONG_STATUS).style.outline).toContain('solid')
   })
 

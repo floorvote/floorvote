@@ -3,6 +3,7 @@ import { color, fontSize, radius } from '../styles/tokens'
 import { COUNT_BADGE } from '../lib/chipStyles'
 import { useStickyGroupedVirtualList, getRowWrapperStyle } from './stickyGroupedVirtualList'
 import { StickyGroupHeader } from './ui/StickyGroupHeader'
+import { isSubjectCapReached, subjectCapHint } from '../lib/subjectCap'
 
 // A dimension's options, optionally grouped under a heading. Pass a single
 // group with no `heading` for a flat dimension (Tags); pass one group per
@@ -37,14 +38,18 @@ const LIST_HEIGHT = 340
  * that module for why virtualized rows need a hand-rolled push-out at all.
  */
 export function FilterSheetVirtualList({
-  groups, selected, onToggle, searchPlaceholder, ariaLabel,
+  groups, selected, onToggle, searchPlaceholder, ariaLabel, limitSubjects = false,
 }: {
   groups: FilterSheetVirtualGroup[]
   selected: string[]
   onToggle: (value: string) => void
   searchPlaceholder: string
   ariaLabel: string
+  // Subjects only: at the subject cap the unchecked options are disabled (the
+  // API answers 400 past it), and a hint says why. Tags have no such limit.
+  limitSubjects?: boolean
 }) {
+  const capReached = limitSubjects && isSubjectCapReached(selected.length)
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
   const normalizedGroups = useMemo(
@@ -72,6 +77,11 @@ export function FilterSheetVirtualList({
             border: `1px solid ${color.borderDefault}`, borderRadius: radius.md,
           }}
         />
+        {capReached && (
+          <div style={{ paddingTop: 6, fontSize: fontSize.sm, color: color.textMuted }}>
+            {subjectCapHint(selected.length)}
+          </div>
+        )}
       </div>
       {rows.length === 0 ? (
         <div style={{ padding: '16px 0', fontSize: fontSize.sm, color: color.textMuted }}>
@@ -94,13 +104,16 @@ export function FilterSheetVirtualList({
                     <label style={{
                       height: OPTION_ROW_HEIGHT, boxSizing: 'border-box',
                       display: 'flex', alignItems: 'center', gap: 10,
-                      cursor: 'pointer', fontSize: fontSize.sm,
+                      cursor: capReached && !selected.includes(row.value) ? 'not-allowed' : 'pointer',
+                      opacity: capReached && !selected.includes(row.value) ? 0.5 : 1,
+                      fontSize: fontSize.sm,
                       color: selected.includes(row.value) ? color.linkBlue : color.textSlate,
                       background: selected.includes(row.value) ? color.bgInfo : color.white,
                     }}>
                       <input
                         type="checkbox"
                         checked={selected.includes(row.value)}
+                        disabled={capReached && !selected.includes(row.value)}
                         onChange={() => onToggle(row.value)}
                         style={{ margin: 0, accentColor: color.accentBlue, flexShrink: 0 }}
                       />

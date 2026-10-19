@@ -1,3 +1,4 @@
+import { newOptionRow, optionsFromRows, rowsFromOptions, type OptionRow } from './optionRows'
 import { useEffect, useRef, useState } from 'react'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { actionRowStyle, actionRowStyleFirst, actionBtnBlue, actionBtnRed } from '../../styles/actionRow'
@@ -201,9 +202,19 @@ export function Config() {
   const [cfAdding, setCfAdding] = useState(false)
   const [cfEditing, setCfEditing] = useState<string | null>(null)
   const [cfEditName, setCfEditName] = useState('')
-  const [cfEditOptions, setCfEditOptions] = useState('')
+  const [cfEditOptions, setCfEditOptions] = useState<OptionRow[]>([])
   const [cfEditMultiple, setCfEditMultiple] = useState(false)
+  // Where focus goes once the option rows next render: a row's id, or the Add option button.
+  const [cfOptionFocus, setCfOptionFocus] = useState<number | 'add' | null>(null)
+  const cfOptionInputs = useRef(new Map<number, HTMLInputElement>())
+  const cfAddOptionButton = useRef<HTMLButtonElement | null>(null)
   const [cfEditError, setCfEditError] = useState<string | null>(null)
+  useEffect(() => {
+    if (cfOptionFocus === null) return
+    if (cfOptionFocus === 'add') cfAddOptionButton.current?.focus()
+    else cfOptionInputs.current.get(cfOptionFocus)?.focus()
+    setCfOptionFocus(null)
+  }, [cfOptionFocus, cfEditOptions])
   // Drag- and keyboard-reorder, shared with the tag table
   // (TagTaxonomyTable.tsx) and saved views (BillList/ViewSwitcher.tsx) — see
   // components/dragReorder.tsx. Persistence stays here, because it is this
@@ -683,14 +694,16 @@ export function Config() {
     setCfEditError(null)
     try {
       const body: Record<string, unknown> = {}
+      let edited: ReturnType<typeof optionsFromRows> | null = null
       const newName = cfEditName.trim()
       if (newName && newName !== field.name) body.name = newName
       if (field.type === 'dropdown') {
-        const opts = cfEditOptions.split(',').map(s => s.trim()).filter(Boolean)
-        body.options = opts
+        edited = optionsFromRows(cfEditOptions)
+        body.options = edited.options
+        if (edited.renames.length > 0) body.renames = edited.renames
         if (cfEditMultiple !== (field.multiple ?? false)) body.multiple = cfEditMultiple
       }
-      const newOpts = field.type === 'dropdown' ? cfEditOptions.split(',').map(s => s.trim()).filter(Boolean) : field.options
+      const newOpts = edited ? edited.options : field.options
       await apiFetch(`/admin/custom-fields/${id}`, {
         method: 'PUT',
         body: JSON.stringify(body),
@@ -1121,13 +1134,39 @@ export function Config() {
                       </div>
                       {field.type === 'dropdown' && (
                         <>
-                          <input
-                            type="text"
-                            value={cfEditOptions}
-                            onChange={e => setCfEditOptions(e.target.value)}
-                            placeholder="Option 1, Option 2, Option 3"
-                            style={{ fontSize: fontSize.sm, padding: '5px 10px', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, fontFamily: 'inherit' }}
-                          />
+                          {cfEditOptions.map((row, n) => (
+                            <div key={row.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <input
+                                type="text"
+                                aria-label={`Option ${n + 1}`}
+                                ref={el => { if (el) cfOptionInputs.current.set(row.id, el); else cfOptionInputs.current.delete(row.id) }}
+                                value={row.text}
+                                onChange={e => setCfEditOptions(prev => prev.map((r, j) => j === n ? { ...r, text: e.target.value } : r))}
+                                style={{ flex: 1, minWidth: 0, fontSize: fontSize.sm, padding: '5px 10px', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, fontFamily: 'inherit' }}
+                              />
+                              <button
+                                type="button"
+                                aria-label={`Remove option ${n + 1}`}
+                                onClick={() => {
+                                  // Focus the row that takes this one's place, else the one before it, else Add option.
+                                  const after = cfEditOptions[n + 1] ?? cfEditOptions[n - 1]
+                                  setCfOptionFocus(after ? after.id : 'add')
+                                  setCfEditOptions(prev => prev.filter((_, j) => j !== n))
+                                }}
+                                style={inlineEditCancelStyle()}
+                              >Remove</button>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            ref={cfAddOptionButton}
+                            onClick={() => {
+                              const row = newOptionRow()
+                              setCfOptionFocus(row.id)
+                              setCfEditOptions(prev => [...prev, row])
+                            }}
+                            style={{ ...inlineEditCancelStyle(), alignSelf: 'flex-start' }}
+                          >Add option</button>
                           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: fontSize.sm, color: color.textSlate, cursor: 'pointer' }}>
                             <input
                               type="checkbox"
@@ -1165,7 +1204,7 @@ export function Config() {
                           onClick={demoLocked ? undefined : () => {
                             setCfEditing(field.id)
                             setCfEditName(field.name)
-                            setCfEditOptions(field.type === 'dropdown' && field.options ? field.options.join(', ') : '')
+                            setCfEditOptions(field.type === 'dropdown' ? rowsFromOptions(field.options) : [])
                             setCfEditMultiple(field.multiple ?? false)
                             setCfEditError(null)
                           }}

@@ -1,0 +1,58 @@
+{
+  "committeeMeeting": {
+    "chamber": "House",
+    "committees": [
+      {
+        "systemCode": "hlzs00",
+        "url": "https://api.congress.gov/v3/committee/house/hlzs00?format=json"
+      }
+    ],
+    "congress": 119,
+    "date": "2026-09-16T14:00:00Z",
+    "eventId": "119538",
+    "location": {
+      "building": "Cannon House Office Building",
+      "room": "390"
+    },
+    "meetingDocuments": [
+      {
+        "description": "The Honorable Zachary Nunn",
+        "documentType": "Member Statements",
+        "format": "PDF",
+        "name": "The Honorable Zachary Nunn",
+        "url": "https://www.congress.gov/119/meeting/house/119538/documents/HHRG-119-ZS00-MState-N000193-20260916.pdf"
+      }
+    ],
+    "meetingStatus": "Scheduled",
+    "title": "Import Controls: Tools to Counter the CCP’s Industrial Policy and Supply Chain Threats",
+    "type": "Hearing",
+    "updateDate": "2026-10-13T15:41:24Z",
+    "videos": [
+      {
+        "name": "Import Controls: Tools to Counter the CCP's Industrial Policy and Supply Chain Threats",
+        "url": "https://www.congress.gov/event/119th-Congress/house-event/119538"
+      }
+    ],
+    "witnessDocuments": [
+      {
+        "documentType": "Witness Statement",
+        "format": "PDF",
+        "url": "https://www.congress.gov/119/meeting/house/119538/witnesses/HHRG-119-ZS00-Wstate-SingletonC-20260916.pdf"
+      }
+    ],
+    "witnesses": [
+      {
+        "name": "Craig Singleton",
+        "organization": "Foundation for Defense of Democracies",
+        "position": "China Program Senior Director"
+      }
+    ]
+  },
+  "request": {
+    "chamber": "house",
+    "congress": "119",
+    "contentType": "application/json",
+    "eventId": "119538",
+    "format": "json"
+  }
+}

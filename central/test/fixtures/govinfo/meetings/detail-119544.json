@@ -1,0 +1,59 @@
+{
+  "committeeMeeting": {
+    "chamber": "House",
+    "committees": [
+      {
+        "name": "House Education and Workforce Subcommittee on Health, Employment, Labor, and Pensions",
+        "systemCode": "hsed02",
+        "url": "https://api.congress.gov/v3/committee/house/hsed02?format=json"
+      }
+    ],
+    "congress": 119,
+    "date": "2026-09-15T14:15:00Z",
+    "eventId": "119544",
+    "location": {
+      "building": "Rayburn House Office Building",
+      "room": "2175"
+    },
+    "meetingDocuments": [
+      {
+        "description": "Hearing Notice",
+        "documentType": "Support Document",
+        "format": "PDF",
+        "name": "Hearing Notice",
+        "url": "https://www.congress.gov/119/meeting/house/119544/documents/HHRG-119-ED02-20260915-SD001.pdf"
+      }
+    ],
+    "meetingStatus": "Scheduled",
+    "title": "\"Out of Touch: When Union Politics Leave Workers Behind\"",
+    "type": "Hearing",
+    "updateDate": "2026-10-07T13:33:31Z",
+    "videos": [
+      {
+        "name": "Out of Touch: When Union Politics Leave Workers Behind",
+        "url": "https://www.congress.gov/event/119th-Congress/house-event/119544"
+      }
+    ],
+    "witnessDocuments": [
+      {
+        "documentType": "Witness Biography",
+        "format": "PDF",
+        "url": "https://www.congress.gov/119/meeting/house/119544/witnesses/HHRG-119-ED02-Bio-DeanA-20260915.pdf"
+      }
+    ],
+    "witnesses": [
+      {
+        "name": "Dr. Adam Dean",
+        "organization": "The George Washington University",
+        "position": "Associate Professor of Political Science"
+      }
+    ]
+  },
+  "request": {
+    "chamber": "house",
+    "congress": "119",
+    "contentType": "application/json",
+    "eventId": "119544",
+    "format": "json"
+  }
+}
