@@ -6,11 +6,18 @@ import { useStickyGroupedVirtualList, getRowWrapperStyle } from '../../component
 import { StickyGroupHeader } from '../../components/ui/StickyGroupHeader'
 import { filterDimensionLabel } from '../../lib/filterDimensions'
 import { useMenuAlign } from '../../hooks/useMenuAlign'
+import { isSubjectCapReached, subjectCapHint } from '../../lib/subjectCap'
 import type { SortColumn, SortDir } from './types'
+import { FILTER_ANY } from '../../../../shared/billFilter'
+import { stageCheckState, toggleStageSelection, type StatusStageGroup } from '../../lib/statusGroups'
+import { TriStateCheckbox } from '../../components/TriStateCheckbox'
 
-// Sentinel filter value: "has any value in this dimension" (sparse dimensions only —
-// position, custom-field dropdowns). Distinct from "no filter" (empty selection).
-export const FILTER_ANY = '__any__'
+/** What a heading of the grouped Status control says on hover: it selects the whole stage. */
+export const STAGE_HEADING_HINT = 'All statuses in this stage.'
+
+/** A control the menu's arrow keys visit: an option's input, which a stage heading has too. */
+const MENU_ITEM = 'input[type="radio"], input[type="checkbox"]'
+const isChosen = (el: HTMLElement) => (el as HTMLInputElement).checked === true
 
 export function sortDescription(col: SortColumn, posLabel: string, relLabel: string): ReactNode {
   // Hierarchy slots in display order, matching SORT_HIERARCHY in the API
@@ -102,6 +109,9 @@ export function FilterDropdown({
   counts,
   anyIsFilter = false,
   anyLabel = 'Any',
+  groups,
+  selectedGroups = [],
+  onGroupsChange,
 }: {
   placeholder: string
   options: { value: string; label?: string }[]
@@ -109,6 +119,13 @@ export function FilterDropdown({
   onChange: (v: string[]) => void
   multi?: boolean
   counts?: Record<string, number>
+  /** The options under stage headings, in place of `options` (the Status control grouped by stage). A heading is a
+   *  button that selects its whole stage through `onGroupsChange`, and a status under it a checkbox that selects
+   *  through `onChange`, so the two are written as the stage and the status. A group with no stage (Other) is a label. */
+  groups?: StatusStageGroup[]
+  /** The stages chosen, by key. */
+  selectedGroups?: string[]
+  onGroupsChange?: (v: string[]) => void
   /** When true, the top "Any" row is a real "has any value" filter (sparse dimensions)
    *  with its own honest count. When false, it's an unchecked "clear" affordance. */
   anyIsFilter?: boolean
@@ -144,9 +161,9 @@ export function FilterDropdown({
     if (!open) return
     const menu = menuRef.current
     if (!menu) return
-    const items = Array.from(menu.querySelectorAll<HTMLInputElement>('input[type="radio"], input[type="checkbox"]'))
+    const items = Array.from(menu.querySelectorAll<HTMLElement>(MENU_ITEM))
     if (items.length === 0) return
-    const checked = items.find(el => el.checked)
+    const checked = items.find(isChosen)
     ;(checked ?? items[0]).focus()
   }, [open])
 
@@ -155,10 +172,10 @@ export function FilterDropdown({
     triggerRef.current?.focus()
   }
 
-  function getOptionEls(): HTMLInputElement[] {
+  function getOptionEls(): HTMLElement[] {
     const menu = menuRef.current
     if (!menu) return []
-    return Array.from(menu.querySelectorAll<HTMLInputElement>('input[type="radio"], input[type="checkbox"]'))
+    return Array.from(menu.querySelectorAll<HTMLElement>(MENU_ITEM))
   }
 
   function handleMenuKeyDown(e: KeyboardEvent<HTMLDivElement>) {
@@ -171,7 +188,7 @@ export function FilterDropdown({
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Home' && e.key !== 'End') return
     const items = getOptionEls()
     if (items.length === 0) return
-    const activeIndex = items.indexOf(document.activeElement as HTMLInputElement)
+    const activeIndex = items.indexOf(document.activeElement as HTMLElement)
     e.preventDefault()
     let nextIndex: number
     if (e.key === 'Home') nextIndex = 0
@@ -183,15 +200,17 @@ export function FilterDropdown({
   }
 
   const anyActive = selected.includes(FILTER_ANY)
-  const buttonLabel = selected.length === 0
+  // Under stage headings the stages chosen count beside the statuses, one control with one number.
+  const chosenCount = selected.length + (groups ? selectedGroups.length : 0)
+  const buttonLabel = chosenCount === 0
     ? placeholder
     : anyActive
       ? `${placeholder}: ${anyLabel}`
       : multi
-        ? `${placeholder} (${selected.length})`
+        ? `${placeholder} (${chosenCount})`
         : (options.find(o => o.value === selected[0])?.label ?? selected[0])
 
-  const hasSelection = selected.length > 0
+  const hasSelection = chosenCount > 0
 
   // "Any" = "has any value in this dimension" — shown only for sparse dimensions
   // (position, priority, tag, custom-field dropdowns). Always-present dimensions have
@@ -207,6 +226,13 @@ export function FilterDropdown({
     } else {
       onChange(base.includes(value) ? [] : [value])
     }
+  }
+  // A heading's checkbox toggles its whole stage. It writes the stage, and also the statuses when unchecking has to
+  // clear ones chosen one by one, so each callback runs only for the part that changed.
+  function toggleGroup(group: StatusStageGroup) {
+    const next = toggleStageSelection(group, selected, selectedGroups)
+    if (next.stage.length !== selectedGroups.length) onGroupsChange?.(next.stage)
+    if (next.status.length !== selected.length) onChange(next.status)
   }
 
   return (
@@ -239,6 +265,7 @@ export function FilterDropdown({
             ...(menuAlign === 'right' ? { right: 0 } : { left: 0 }),
             background: color.white, border: `1px solid ${color.borderDefault}`, borderRadius: radius.lg,
             padding: '4px 0', minWidth: 180, maxHeight: 300, overflowY: 'auto',
+            ...(groups ? { maxWidth: 'min(360px, 90vw)' } : {}),
             boxShadow: shadow.md,
           }}
         >
@@ -259,7 +286,53 @@ export function FilterDropdown({
               {counts && <CountBadge count={counts[FILTER_ANY] ?? 0} />}
             </label>
           )}
-          {options.map(opt => {
+          {groups ? groups.map(group => {
+            const check = stageCheckState(group, selected, selectedGroups)
+            const lit = check !== 'off'
+            return (
+              <div key={group.stage ?? 'other'}>
+                {group.stage !== null ? (
+                  <label
+                    title={STAGE_HEADING_HINT}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 12px', boxSizing: 'border-box',
+                      cursor: 'pointer', textAlign: 'left', fontSize: fontSize.sm, fontWeight: fontWeight.semibold,
+                      color: lit ? color.linkBlue : color.textPrimary,
+                      background: check === 'on' ? color.bgInfo : color.surfaceMuted,
+                    }}
+                  >
+                    <TriStateCheckbox state={check} onToggle={() => toggleGroup(group)} />
+                    {group.label}
+                    {group.count !== null && <CountBadge count={group.count} />}
+                  </label>
+                ) : (
+                  <div style={{ padding: '7px 12px', fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: color.textMuted, background: color.surfaceMuted }}>
+                    {group.label}
+                  </div>
+                )}
+                {group.options.map(opt => {
+                  const checked = selected.includes(opt.value)
+                  return (
+                    <label key={opt.value} style={{
+                      display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px 7px 24px', minWidth: 0,
+                      cursor: 'pointer', fontSize: fontSize.sm, overflowWrap: 'anywhere',
+                      color: checked ? color.linkBlue : color.textSlate,
+                      background: checked ? color.bgInfo : 'transparent',
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggle(opt.value)}
+                        style={{ margin: 0, accentColor: color.accentBlue, flexShrink: 0 }}
+                      />
+                      {opt.label ?? opt.value}
+                      {counts && <CountBadge count={counts[opt.value] ?? 0} />}
+                    </label>
+                  )
+                })}
+              </div>
+            )
+          }) : options.map(opt => {
             const checked = selected.includes(opt.value)
             return (
               <label key={opt.value} style={{
@@ -439,16 +512,20 @@ export function SubjectFilterDropdown({
 
   if (subjectGroups.length === 0) return null
 
+  // At the cap the unchecked options are disabled, so a 41st subject (which the
+  // API would answer with a 400) cannot be picked. Unchecking one re-enables them.
+  const capReached = isSubjectCapReached(selectedSubjects.length)
+
   function toggle(value: string) {
-    onSubjectChange(
-      selectedSubjects.includes(value)
-        ? selectedSubjects.filter(v => v !== value)
-        : [...selectedSubjects, value],
-    )
+    if (selectedSubjects.includes(value)) {
+      onSubjectChange(selectedSubjects.filter(v => v !== value))
+    } else if (!capReached) {
+      onSubjectChange([...selectedSubjects, value])
+    }
   }
 
   const hasSelection = selectedSubjects.length > 0
-  const subjectLabel = filterDimensionLabel('subjects')
+  const subjectLabel = filterDimensionLabel('subject')
   const buttonLabel = hasSelection ? `${subjectLabel} (${selectedSubjects.length})` : subjectLabel
 
   return (
@@ -559,6 +636,11 @@ export function SubjectFilterDropdown({
                   border: `1px solid ${color.borderDefault}`, borderRadius: radius.md,
                 }}
               />
+              {capReached && (
+                <div style={{ paddingTop: 6, fontSize: fontSize.sm, color: color.textMuted }}>
+                  {subjectCapHint(selectedSubjects.length)}
+                </div>
+              )}
             </div>
             {rows.length === 0 ? (
               <div style={{ padding: '16px 12px', fontSize: fontSize.sm, color: color.textMuted }}>
@@ -581,13 +663,16 @@ export function SubjectFilterDropdown({
                           <label style={{
                             height: SUBJECT_OPTION_ROW_HEIGHT, boxSizing: 'border-box',
                             display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px',
-                            cursor: 'pointer', fontSize: fontSize.sm,
+                            cursor: capReached && !selectedSubjects.includes(row.value) ? 'not-allowed' : 'pointer',
+                            fontSize: fontSize.sm,
+                            opacity: capReached && !selectedSubjects.includes(row.value) ? 0.5 : 1,
                             color: selectedSubjects.includes(row.value) ? color.linkBlue : color.textSlate,
                             background: selectedSubjects.includes(row.value) ? color.bgInfo : color.white,
                           }}>
                             <input
                               type="checkbox"
                               checked={selectedSubjects.includes(row.value)}
+                              disabled={capReached && !selectedSubjects.includes(row.value)}
                               onChange={() => toggle(row.value)}
                               style={{ margin: 0, accentColor: color.accentBlue, flexShrink: 0 }}
                             />

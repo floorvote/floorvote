@@ -195,12 +195,12 @@ const HIERARCHY: Array<{
 type Order = { tiers: SQL[]; keys: Set<KeyName> }
 
 /** The ORDER BY tiers of a sort, and the sort keys they read, before the final tiebreak (the group key). */
-function orderOf(col: string, dir: 'asc' | 'desc', q: string | undefined): Order {
+function orderOf(col: string, dir: 'asc' | 'desc', search: string | undefined): Order {
   const keys = new Set<KeyName>()
   const tiers: SQL[] = []
   // When searching, float exact bill-number matches to the very top, above the
   // active sort (which still orders within each group and governs the rest).
-  if (buildBillNumberBoost(q)) { keys.add('boost'); tiers.push(sql`k_boost ASC`) }
+  if (buildBillNumberBoost(search)) { keys.add('boost'); tiers.push(sql`k_boost ASC`) }
   // The tiers of every slot but `skip`, best-first.
   const secondary = (skip: number): SQL[] => HIERARCHY.flatMap((h, i) => {
     if (i === skip) return []
@@ -257,7 +257,7 @@ export type PageOptions = {
   tracked: boolean
   col: string
   dir: 'asc' | 'desc'
-  q: string | undefined
+  search: string | undefined
   limit: number
   offset: number
 }
@@ -286,11 +286,11 @@ function trackedStanding(filter: SQL | undefined, filterOnC?: SQL): SQL {
 
 /** The keys of the groups on a page, in order. */
 export async function pageOfGroups(db: AppDb, o: PageOptions): Promise<string[]> {
-  const order = orderOf(o.col, o.dir, o.q)
+  const order = orderOf(o.col, o.dir, o.search)
   const select = sql.join([
     sql`COALESCE(${c.groupKey}, ${c.id}) AS gk`,
     ...[...order.keys].map(k => k === 'boost'
-      ? sql`${buildBillNumberBoost(o.q, c)!} AS k_boost`
+      ? sql`${buildBillNumberBoost(o.search, c)!} AS k_boost`
       : sql`${KEYS[k]()} AS ${sql.raw(`k_${k}`)}`),
   ], sql`, `)
   const tail = sql`ORDER BY ${sql.join([...order.tiers, sql`gk ASC`], sql`, `)} LIMIT ${o.limit} OFFSET ${o.offset}`

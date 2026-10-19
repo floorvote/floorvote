@@ -9,6 +9,7 @@ import { nowDb } from '../lib/dbTime'
 import { fetchAiUsage } from '../lib/aiGatewayAnalytics'
 import { legiscanCallsOnly, legiscanCallsThisMonth, monthStartDb } from '../lib/legiscanBudget'
 import { resolveTenantRpc } from '../lib/tenantRpc'
+import { loadStateRows } from '../lib/stateRows'
 
 // Every dashboard query of api_call_log uses legiscanCallsOnly
 // (lib/legiscanBudget.ts), so the dashboard shows only LegiScan calls and other
@@ -68,9 +69,11 @@ dashRoutes.get('/overview', async (c) => {
   const apiUsed = await legiscanCallsThisMonth(db)
 
   // Last sync (per-state syncs; we pick the most recent)
+  // A pass that failed is a row in the log and not a sync.
   const lastSync = await db
     .select()
     .from(schema.sessionSyncLog)
+    .where(eq(schema.sessionSyncLog.status, 'ok'))
     .orderBy(desc(schema.sessionSyncLog.syncedAt))
     .limit(1)
     .get()
@@ -271,7 +274,7 @@ dashRoutes.get('/sync/states', async (c) => {
     const lastSync = await db
       .select({ at: schema.sessionSyncLog.syncedAt })
       .from(schema.sessionSyncLog)
-      .where(eq(schema.sessionSyncLog.state, state))
+      .where(and(eq(schema.sessionSyncLog.state, state), eq(schema.sessionSyncLog.status, 'ok')))
       .orderBy(desc(schema.sessionSyncLog.syncedAt))
       .limit(1)
       .get()
@@ -299,6 +302,13 @@ dashRoutes.get('/sync/states', async (c) => {
   result.sort((a, b) => a.state.localeCompare(b.state))
 
   return c.json({ data: { states: result }, meta: { generatedAt: new Date().toISOString() } })
+})
+
+// One row per state central covers: its provider and health (lib/stateRows.ts).
+// Read only, behind the same requireAdmin as the rest of the dashboard.
+dashRoutes.get('/states', async (c) => {
+  const db = drizzle(c.env.DB, { schema })
+  return c.json({ data: { states: await loadStateRows(db, c.env) }, meta: { generatedAt: new Date().toISOString() } })
 })
 
 dashRoutes.get('/sync/api-budget', async (c) => {
@@ -406,6 +416,8 @@ dashRoutes.get('/sync/ticks', async (c) => {
       billsChecked: schema.sessionSyncLog.billsChecked,
       billsChanged: schema.sessionSyncLog.billsChanged,
       billsQueued: schema.sessionSyncLog.billsQueued,
+      status: schema.sessionSyncLog.status,
+      error: schema.sessionSyncLog.error,
     })
     .from(schema.sessionSyncLog)
     .orderBy(desc(schema.sessionSyncLog.syncedAt))
@@ -653,7 +665,7 @@ dashRoutes.get('/tenants/:id/claim-sources', async (c) => {
   const tenant = await db.select({ id: schema.tenants.tenantId }).from(schema.tenants).where(eq(schema.tenants.tenantId, id)).get()
   if (!tenant) return c.json({ error: { code: 'not_found', message: 'Tenant not found' } }, 404)
   const rpc = resolveTenantRpc(c.env, id)
-  if (!rpc) return c.json({ error: { code: 'not_bound', message: 'Tenant is not bound to central, so its claim link counts cannot be read' } }, 501)
+  if (!rpc) return c.json({ error: { code: 'not_bound', message: 'Tenant is not bound to central, so its summary citation counts cannot be read' } }, 501)
   try {
     return c.json({ data: await rpc.claimSourceCounts(), meta: { generatedAt: new Date().toISOString() } })
   } catch (err) {
@@ -851,6 +863,8 @@ dashRoutes.get('/sync/ticks/:id/changes', async (c) => {
     .from(schema.sessionSyncLog)
     .where(and(
       eq(schema.sessionSyncLog.sessionId, tick.sessionId),
+      // A failed pass queued nothing, so it doesn't end the window the ok pass's changes land in.
+      eq(schema.sessionSyncLog.status, 'ok'),
       gte(schema.sessionSyncLog.syncedAt, tick.syncedAt),
       sql`${schema.sessionSyncLog.id} != ${id}`,
     ))

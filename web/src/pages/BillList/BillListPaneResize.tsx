@@ -116,6 +116,8 @@ export function PaneResizeHandle({ width, max, pane }: { width: number; max: num
   return (
     <div
       role="separator"
+      // The keyboard ring is the global :focus-visible rule (mobile.css), inset by .pane-resize-handle.
+      className="pane-resize-handle"
       aria-orientation="vertical"
       aria-label="Resize bill list"
       aria-valuenow={width}
@@ -135,7 +137,7 @@ export function PaneResizeHandle({ width, max, pane }: { width: number; max: num
         cursor: 'col-resize', touchAction: 'none', zIndex: 5,
       }}
     >
-      <span data-resize-line aria-hidden style={{ width: 3, height: '100%', background: lit ? color.accentAmber : 'transparent', transition: 'background 0.15s' }} />
+      <span data-resize-line aria-hidden style={{ width: 3, height: '100%', background: lit ? color.borderStrong : 'transparent', transition: 'background 0.15s' }} />
     </div>
   )
   /* eslint-enable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */

@@ -1,6 +1,6 @@
 import { generateToken, hashToken } from '../lib/crypto'
-import { sendMagicLink } from '../lib/email'
-import { PermanentSendError } from '../lib/emailErrors'
+import { sendSignInLink } from '../lib/signInLink'
+import { describeSendFailure } from '../lib/emailErrors'
 import { recordAuthEvent } from '../lib/authEvents'
 import { magicLinks } from '../db/schema'
 import type { AppDb, Env, InviteEmailMessage } from '../types'
@@ -35,17 +35,19 @@ export async function processInviteEmails(
       const url = `${env.APP_URL}/auth/verify?token=${encodeURIComponent(rawToken)}`
       // Record the invite the same way the single-invite path does (adminApi.ts),
       // attributed to the member's id so it surfaces in their Login activity. The
-      // bulk path used to skip this and call sendMagicLink without the id, leaving
+      // bulk path used to skip this and send without the member's id, leaving
       // the email_sent row with a null user_id — invisible in the per-member view.
       await recordAuthEvent(db, { event: 'link_requested', email, userId, linkType: 'invite' })
-      await sendMagicLink(email, url, env, 'invite', db, userId)
-      message.ack()
-    } catch (err) {
-      console.error('[invite-email] send failed for', email, err)
+      const r = await sendSignInLink(env, db, { to: email, link: 'invite', url, userId })
+      if (r.ok) { message.ack(); continue }
+      console.error('[invite-email] send failed for', email, describeSendFailure(r))
       // Retrying cannot fix a bad or suppressed address; the failure is already
       // in auth_events, and the member stays "Invite pending" for a manual resend.
-      if (err instanceof PermanentSendError) message.ack()
+      if (r.permanent) message.ack()
       else message.retry({ delaySeconds: INVITE_RETRY_DELAY_SECONDS })
+    } catch (err) {
+      console.error('[invite-email] send failed for', email, err)
+      message.retry({ delaySeconds: INVITE_RETRY_DELAY_SECONDS })
     }
   }
 }

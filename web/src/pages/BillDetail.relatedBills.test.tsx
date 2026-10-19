@@ -215,8 +215,8 @@ describe('the related bills on a bill page', () => {
 
 describe('the identical bills on the page of a grouped bill', () => {
   const inGroup = (...ids: Array<[string, string]>) => [
-    { billId: '42', billNumber: 'HB 1', state: 'NJ', sessionSlug: '2026' },
-    ...ids.map(([billId, billNumber]) => ({ billId, billNumber, state: 'NJ', sessionSlug: '2026' })),
+    { billId: '42', billNumber: 'HB 1', state: 'NJ', sessionSlug: '2026', status: 'Introduced' },
+    ...ids.map(([billId, billNumber]) => ({ billId, billNumber, state: 'NJ', sessionSlug: '2026', status: 'Introduced' })),
   ]
 
   it('lists only the identical bills outside the group', async () => {
@@ -251,7 +251,7 @@ describe('the identical bills on the page of a grouped bill', () => {
   })
 
   it('keeps every identical bill for a bill in no group', async () => {
-    renderBillDetail({ state: 'NJ', relatedBillIds: RELATED, groupBills: [{ billId: '42', billNumber: 'HB 1', state: 'NJ', sessionSlug: '2026' }] })
+    renderBillDetail({ state: 'NJ', relatedBillIds: RELATED, groupBills: [{ billId: '42', billNumber: 'HB 1', state: 'NJ', sessionSlug: '2026', status: 'Introduced' }] })
     const identical = await screen.findByText('Identical to:')
     expect(identical.parentElement).toHaveTextContent('S1713')
     expect(identical.parentElement).toHaveTextContent('S1714')

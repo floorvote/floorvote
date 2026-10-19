@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest'
 import { CHIP_BASE, CHIP_MINI, COUNT_BADGE } from './chipStyles'
 import { CARD } from './cardStyle'
+import { SETTING_BOX, SETTING_BOX_HEADER, SETTING_BOX_TITLE, SETTING_BOX_DESC, settingBox } from './settingBoxStyle'
 import { SECTION_LABEL, CHROME_TEXT } from './textStyles'
 import { color } from '../styles/tokens'
 
@@ -22,6 +23,16 @@ describe('lib helper resolved values', () => {
   })
   it('CARD', () => {
     expect(CARD).toMatchObject({ background: color.white, border: `1px solid ${color.borderDefault}`, borderRadius: 8 })
+  })
+  it('SETTING_BOX, the boxed toggles on the admin settings pages', () => {
+    expect(SETTING_BOX).toMatchObject({ padding: '12px 14px', border: `1px solid ${color.borderDefault}`, borderRadius: 8, background: color.white })
+    expect(SETTING_BOX_HEADER).toMatchObject({ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 })
+    expect(SETTING_BOX_TITLE).toMatchObject({ fontSize: 12, fontWeight: 700, color: color.textPrimary })
+    expect(SETTING_BOX_DESC).toMatchObject({ fontSize: 12, color: color.textSlate, lineHeight: 1.5, marginTop: 2 })
+  })
+  it('settingBox dims the box to 0.55 when locked and leaves it at full strength otherwise', () => {
+    expect(settingBox(true)).toMatchObject({ ...SETTING_BOX, opacity: 0.55 })
+    expect(settingBox(false)).toMatchObject({ ...SETTING_BOX, opacity: 1 })
   })
   it('COUNT_BADGE', () => {
     expect(COUNT_BADGE).toMatchObject({ fontSize: 10, color: color.countChipText, background: color.countChipBg, borderRadius: 8 }) // textMuted/count-chip fill darkened to AA floor (2026-06-26)

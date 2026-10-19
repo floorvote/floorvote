@@ -104,6 +104,17 @@ describe('MonthGrid', () => {
     expect(screen.getByText('+3 more')).toBeInTheDocument()
   })
 
+  it('shows no "more" link when every event fits the cell, even with long multi-line details', () => {
+    const fits: CalendarEvent[] = Array.from({ length: 2 }, (_, i) => ({
+      id: String(i), uid: String(i), source: 'custom', billId: null, bills: [],
+      date: '2026-06-15', time: null, location: null, description: `Event ${i}`,
+      details: 'First line of details\nSecond line of details that runs well past the cell width ' + 'x'.repeat(120), url: null, status: 'confirmed',
+    }))
+    render(<MemoryRouter><MonthGrid events={fits} initialYear={2026} initialMonth={5} onSelect={vi.fn()} /></MemoryRouter>)
+    expect(screen.queryByText(/\+\d+ more/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /show (more|less)/i })).not.toBeInTheDocument()
+  })
+
   it('calls onSelectDay with the full day list when "+N more" is clicked', () => {
     const many: CalendarEvent[] = Array.from({ length: 4 }, (_, i) => ({
       id: String(i), uid: String(i), source: 'custom', billId: null, bills: [],
@@ -208,5 +219,25 @@ describe('MonthGrid', () => {
     const { container } = render(<MemoryRouter><MonthGrid events={evs} initialYear={2026} initialMonth={5} onSelect={vi.fn()} activeDateIso={null} /></MemoryRouter>)
     const cells = Array.from(container.querySelectorAll('[data-daycell]')) as HTMLElement[]
     expect(cells.some(c => c.style.border.startsWith('2px'))).toBe(false)
+  })
+
+  describe('row heights (#695)', () => {
+    const rows = () => (document.querySelector('[data-calgrid]') as HTMLElement).style.gridTemplateRows
+    const body = (id: string, date: string, committee: string | null): CalendarEvent => ({
+      id, uid: id, source: 'body', billId: null, bills: [], date, time: null, location: null, description: `Body ${id}`, details: null, url: null,
+      status: 'confirmed', committee, committeeId: committee ? 'c1' : null, bodyState: 'DC',
+    })
+
+    it('keeps every row at its usual height with no committee on any event', () => {
+      render(<MemoryRouter><MonthGrid events={[...evs, body('x', '2026-06-16', null)]} initialYear={2026} initialMonth={5} onSelect={vi.fn()} /></MemoryRouter>)
+      expect(rows()).toBe('auto 138px 138px 138px 138px 138px 138px')
+    })
+
+    it('makes room only in the week that has an event with a committee', () => {
+      render(<MemoryRouter><MonthGrid events={[...evs, body('y', '2026-06-24', 'Committee on Health')]} initialYear={2026} initialMonth={5} onSelect={vi.fn()} /></MemoryRouter>)
+      const heights = rows().replace('auto ', '').split(' ').map(h => parseFloat(h))
+      expect(heights.filter(h => h > 138)).toHaveLength(1)
+      expect(heights.filter(h => h === 138)).toHaveLength(5)
+    })
   })
 })

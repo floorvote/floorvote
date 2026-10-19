@@ -1,75 +1,31 @@
 import { eq, inArray } from 'drizzle-orm'
 import type { Env, AppDb } from '../types'
 import { associationConfig } from '../db/schema'
-import { recordResendUsage, recordResendThrottle } from './resendUsage'
-import { recordAuthEvent } from './authEvents'
-import { htmlToText } from '../../../shared/htmlToText'
+import { createSender, type EmailSender, type SenderEnv, type SignInMessage } from '../../../shared/emailSender'
+import type { ProviderName, CloudflareEmailBinding } from '../../../shared/emailProviders'
+import { emailHealthRecorder } from './emailHealthRecorder'
 import { resolveOrgNoun as _resolveOrgNoun } from '../../../shared/orgNoun'
 import { PRODUCT_NAME } from '../../../shared/brand'
-import { parseEmailList } from '../../../shared/operator'
 import { color, fontSize } from '../../../shared/tokens'
 import { renderEmailShell, emailButton, emailFooterLink } from './emailShell'
-import { isRecipientError, tally, recordSendStats } from './emailStats'
-import { PermanentSendError } from './emailErrors'
-import { isValidEmail } from '../../../shared/email'
 
-export type ProviderName = 'resend' | 'cloudflare'
-
-export type EmailMessage = {
-  to: string[]
-  subject: string
-  html: string
-  text?: string       // optional; auto-derived from html when omitted
-  from?: string       // defaults to EMAIL_FROM env (else notifications@example.com)
-  replyTo?: string    // defaults to EMAIL_REPLY_TO, then EMAIL_FROM (else notifications@example.com)
-  headers?: Record<string, string>  // custom headers (e.g. List-Unsubscribe)
-}
-
-export type EmailSendResult = {
-  ok: boolean
-  provider: ProviderName
-  error?: string
-  messageId?: string
-  /** Every attempt, in order, when sendEmail made them. This result's own fields are the last attempt's. */
-  attempts?: EmailSendResult[]
-}
-
-export type SendOptions = {
-  /**
-   * Retry once through the other provider when the first attempt fails for a
-   * reason that is not specific to the recipient. Magic links only: a login
-   * link that does not arrive locks someone out, and a digest that does not
-   * arrive does not.
-   */
-  fallback?: boolean
-  /** Send through this provider instead of the active one. The outage alert uses it. */
-  provider?: ProviderName
-}
-
-// Single fallback when no EMAIL_FROM is configured.
-const FALLBACK_EMAIL = 'notifications@example.com'
-
-/** Sender line, e.g. "FloorVote <notifications@example.com>", from EMAIL_FROM (falls back to example.com). */
-export function resolveFrom(env: Pick<Env, 'EMAIL_FROM'>): string {
-  return `${PRODUCT_NAME} <${env.EMAIL_FROM ?? FALLBACK_EMAIL}>`
-}
+// Every email the API sends goes through the shared purpose-level sender
+// (shared/emailSender.ts, #705): a caller names the email's purpose and the
+// sender decides fallback, health counting, the From address, and demo mode.
+// `senderFor` is the one way in. This module also holds what is specific to the
+// API's mail: the shared shell and wordmark, the org name and noun read from
+// config, and the sign-in message.
 
 /**
- * Sender line for BULK mail (daily digest, week-ahead). Uses EMAIL_FROM_BULK when
- * set — a dedicated sending subdomain (e.g. `notifications@mail.floor.vote`) that
- * segments bulk-mail reputation away from transactional login mail, so a spam
- * complaint on a digest can't degrade magic-link deliverability. Falls back to
- * EMAIL_FROM (then the example.com fallback) when unset, so this is inert until an
- * operator verifies the subdomain and sets the var.
+ * The shared sender for the API. With a `db`, every attempt of a purpose that
+ * counts goes to email health (`email_send_stats` and the Resend usage
+ * readout). Without one, nothing is counted.
  */
-export function resolveFromBulk(env: Pick<Env, 'EMAIL_FROM' | 'EMAIL_FROM_BULK'>): string {
-  return `${PRODUCT_NAME} <${env.EMAIL_FROM_BULK ?? env.EMAIL_FROM ?? FALLBACK_EMAIL}>`
+export function senderFor(env: SenderEnv, db?: AppDb): EmailSender {
+  return createSender(env, { recorder: db ? emailHealthRecorder(db) : undefined })
 }
 
-/** Reply-To, from EMAIL_REPLY_TO, else EMAIL_FROM, else the example.com fallback. */
-export function resolveReplyTo(env: Pick<Env, 'EMAIL_FROM' | 'EMAIL_REPLY_TO'>): string {
-  return env.EMAIL_REPLY_TO ?? env.EMAIL_FROM ?? FALLBACK_EMAIL
-}
+export type { ProviderName, CloudflareEmailBinding }
 
 /**
  * RFC-2369 List-Unsubscribe header for recurring mail (digest, week-ahead),
@@ -79,154 +35,6 @@ export function resolveReplyTo(env: Pick<Env, 'EMAIL_FROM' | 'EMAIL_REPLY_TO'>):
 export function unsubscribeHeaders(appUrl: string, anchor: string): Record<string, string> {
   return { 'List-Unsubscribe': `<${appUrl}/profile#${anchor}>` }
 }
-
-// Minimal shape of the Cloudflare Email Service `[[send_email]]` binding (beta).
-// Defined locally to avoid depending on an unstable @cloudflare/workers-types export.
-export interface CloudflareEmailBinding {
-  send(message: {
-    to: string | string[]
-    from: string
-    subject: string
-    html?: string
-    text?: string
-    replyTo?: string | string[]
-    headers?: Record<string, string>
-  }): Promise<{ messageId?: string }>
-}
-
-
-// `text` is always resolved (derived from html when not supplied).
-type ResolvedMessage = EmailMessage & { from: string; replyTo: string; text: string }
-
-type SendEnv = Pick<Env, 'RESEND_API_KEY' | 'EMAIL_PROVIDER' | 'EMAIL' | 'DEMO_MODE' | 'EMAIL_FROM' | 'EMAIL_FROM_BULK' | 'EMAIL_REPLY_TO'>
-
-export function activeProvider(env: Pick<Env, 'EMAIL_PROVIDER' | 'EMAIL'>): ProviderName {
-  if (env.EMAIL_PROVIDER === 'cloudflare' && env.EMAIL) return 'cloudflare'
-  return 'resend' // fail-safe default to the proven path
-}
-
-/** The provider that is not `primary`, if it is configured. */
-export function otherProvider(env: Pick<Env, 'RESEND_API_KEY' | 'EMAIL'>, primary: ProviderName): ProviderName | null {
-  if (primary === 'cloudflare') return env.RESEND_API_KEY ? 'resend' : null
-  return env.EMAIL ? 'cloudflare' : null
-}
-
-async function resendSend(env: Pick<Env, 'RESEND_API_KEY'>, msg: ResolvedMessage, db?: AppDb): Promise<EmailSendResult> {
-  const body: Record<string, unknown> = { from: msg.from, to: msg.to, subject: msg.subject, html: msg.html, text: msg.text, reply_to: msg.replyTo }
-  if (msg.headers) body.headers = msg.headers
-  let res: Response
-  try {
-    res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-  } catch (err) {
-    // A connection-level failure must come back as a failed result, not a throw:
-    // a throw would skip fallback and counting, and lose sendBatch's whole tally.
-    console.error('[email:resend]', err)
-    return { ok: false, provider: 'resend', error: `fetch failed: ${err instanceof Error ? err.message : String(err)}` }
-  }
-  if (db) {
-    try { await recordResendUsage(db, res); await recordResendThrottle(db, res) }
-    catch (e) { console.error('[resend-record]', e) }
-  }
-  if (!res.ok) {
-    console.error(`[email:resend] ${res.status} ${await res.text()}`)
-    return { ok: false, provider: 'resend', error: String(res.status) }
-  }
-  const json = await res.json().catch(() => ({})) as { id?: string }
-  return { ok: true, provider: 'resend', messageId: json.id }
-}
-
-async function cloudflareSend(env: Pick<Env, 'EMAIL'>, msg: ResolvedMessage): Promise<EmailSendResult> {
-  try {
-    const resp = await env.EMAIL!.send({ to: msg.to, from: msg.from, subject: msg.subject, html: msg.html, text: msg.text, replyTo: msg.replyTo, headers: msg.headers })
-    return { ok: true, provider: 'cloudflare', messageId: resp?.messageId }
-  } catch (e: unknown) {
-    // The binding throws a standard Error with a `.code` (e.g. E_RECIPIENT_SUPPRESSED,
-    // E_RATE_LIMIT_EXCEEDED). Surface the code so a bounced/suppressed send is diagnosable.
-    const message = e instanceof Error ? e.message : String(e)
-    const code = (e as { code?: string })?.code
-    const detail = code ? `${code}: ${message}` : message
-    console.error('[email:cloudflare]', detail)
-    return { ok: false, provider: 'cloudflare', error: detail }
-  }
-}
-
-function resolveMessage(env: SendEnv, message: EmailMessage): ResolvedMessage {
-  return {
-    ...message,
-    from: message.from ?? resolveFrom(env),
-    replyTo: message.replyTo ?? resolveReplyTo(env),
-    text: message.text ?? htmlToText(message.html),
-  }
-}
-
-function sendVia(env: SendEnv, msg: ResolvedMessage, provider: ProviderName, db?: AppDb): Promise<EmailSendResult> {
-  return provider === 'cloudflare' ? cloudflareSend(env, msg) : resendSend(env, msg, db)
-}
-
-/**
- * Send one message. Applies From/Reply-To defaults. Never throws.
- *
- * With a `db`, every attempt is counted in email_send_stats for the email-health
- * job, including the failed primary attempt of a send that fallback rescued. That
- * is deliberate: fallback hides an outage from users, so the detector has to see
- * the primary failing even when nobody else can.
- */
-export async function sendEmail(env: SendEnv, message: EmailMessage, db?: AppDb, opts: SendOptions = {}): Promise<EmailSendResult> {
-  const msg = resolveMessage(env, message)
-  const first = opts.provider ?? activeProvider(env)
-  const attempts = [await sendVia(env, msg, first, db)]
-  const second = otherProvider(env, first)
-  if (opts.fallback && !attempts[0].ok && !isRecipientError(attempts[0]) && second) {
-    console.warn(`[email] ${first} failed (${attempts[0].error}) — retrying via ${second}`)
-    attempts.push(await sendVia(env, msg, second, db))
-  }
-  if (db) for (const a of attempts) await recordSendStats(db, a.provider, tally([a]))
-  return { ...attempts[attempts.length - 1], attempts }
-}
-
-/**
- * Max emails in flight at once during a bulk send. Bounds the burst so we don't
- * trip provider rate limits or widen the resend usage-tracking race window,
- * while still collapsing the wall-clock of large fan-outs (a 650-recipient
- * digest sent one-at-a-time takes minutes inside a single cron invocation).
- */
-const BATCH_CONCURRENCY = 8
-
-/**
- * Bulk send: provider-agnostic, bounded-concurrency fan-out. Suppressed entirely
- * in DEMO_MODE. Returns {sent, failed}.
- *
- * Pass `{ bulk: true }` for recurring mass mail (digest, week-ahead): messages
- * that don't set their own `from` inherit the bulk sender (EMAIL_FROM_BULK), so
- * bulk reputation can be segmented onto a dedicated sending subdomain.
- */
-export async function sendBatch(env: SendEnv, messages: EmailMessage[], tag = 'email', db?: AppDb, opts?: { bulk?: boolean }): Promise<{ sent: number; failed: number }> {
-  if (messages.length === 0) return { sent: 0, failed: 0 }
-  if (env.DEMO_MODE === 'true') {
-    console.log(`[${tag}] demo mode — suppressing ${messages.length} email(s)`)
-    return { sent: 0, failed: 0 }
-  }
-  const bulkFrom = opts?.bulk ? resolveFromBulk(env) : undefined
-  const provider = activeProvider(env)
-  const results: EmailSendResult[] = []
-  for (let i = 0; i < messages.length; i += BATCH_CONCURRENCY) {
-    const chunk = messages.slice(i, i + BATCH_CONCURRENCY)
-    results.push(...await Promise.all(chunk.map(m =>
-      sendVia(env, resolveMessage(env, bulkFrom && !m.from ? { ...m, from: bulkFrom } : m), provider, db))))
-  }
-  // One write for the whole run rather than one per recipient: a 650-recipient
-  // digest would otherwise cost 650 upserts.
-  if (db) await recordSendStats(db, provider, tally(results))
-  const sent = results.filter(r => r.ok).length
-  const failed = results.length - sent
-  console.log(`[${tag}] sent ${sent}, failed ${failed}`)
-  return { sent, failed }
-}
-
 
 export function wordmarkHtml(appUrl: string): string {
   // The full lockup (mark + "FloorVote" in Archivo) ships as a hosted PNG. Email
@@ -268,7 +76,7 @@ export async function resolveAssocName(
 // Resolve the org noun ("team" / "association" / "coalition" / etc.) for use in
 // copy. Reads `org_noun` and `position_label` from association_config (mirrors
 // resolveAssocName's query pattern), then delegates to shared resolveOrgNoun.
-async function resolveOrgNounFromDb(db?: AppDb): Promise<string> {
+export async function resolveOrgNounFromDb(db?: AppDb): Promise<string> {
   if (db) {
     const rows = await db
       .select()
@@ -286,88 +94,35 @@ async function resolveOrgNounFromDb(db?: AppDb): Promise<string> {
   return _resolveOrgNoun()
 }
 
-export async function sendMagicLink(
-  to: string,
-  magicLinkUrl: string,
-  env: Pick<Env, 'RESEND_API_KEY' | 'APP_URL' | 'EMAIL_PROVIDER' | 'EMAIL' | 'DEMO_MODE' | 'ASSOCIATION_NAME' | 'EMAIL_FROM' | 'EMAIL_REPLY_TO'>,
-  type: 'login' | 'invite' = 'login',
-  db?: AppDb,
-  userId?: string,
-): Promise<void> {
-  const isInvite = type === 'invite'
-
-  // Invites are the one magic link that goes to an address supplied in a request
-  // body rather than to an already-stored member address, so on a demo they are
-  // the path by which an anonymous visitor could mail a stranger from the
-  // operator's production sender (`demo-lakemi` has a live send_email binding and
-  // the same EMAIL_FROM as real tenants). Suppressed here.
-  //
-  // LOGIN links are deliberately NOT suppressed — see the "auth/transactional
-  // must not be suppressed" case in email.test.ts. Superadmin access to a demo
-  // tenant is `/login?manual=1` (.ops.md), and that link arrives by email; muting
-  // it would lock the operator out of their own demo.
-  //
-  // Returns rather than throwing: sendMagicLink throws on a failed send, and the
-  // invite queue consumer converts a throw into message.retry(), so a suppression
-  // that threw would become an unbounded retry loop.
-  //
-  // Nothing reaches here today — every invite route is outside
-  // DEMO_WRITE_ALLOWLIST and 403s (see demoWriteAllowlist.email.test.ts, which
-  // fails if one is ever added). This is the second lock on that door.
-  if (isInvite && env.DEMO_MODE === 'true') {
-    console.log('[email] demo mode — suppressing invite send')
-    return
-  }
-
-  // An address that fails the shared check is never sent. Neither provider
-  // can deliver it, so sending would only burn a retry cycle on each provider
-  // and count as provider failures toward the outage alert (a pasted roster
-  // with `jane@county.gov;` once produced 88 failures for 11 members). Logged
-  // without a provider: nothing was attempted.
-  if (!isValidEmail(to)) {
-    if (db) {
-      await recordAuthEvent(db, {
-        event: 'email_send_failed', email: to, userId: userId ?? null,
-        reason: 'invalid recipient address; not sent', linkType: type,
-      })
-    }
-    throw new PermanentSendError(`Invalid recipient address: ${to}`)
-  }
-
-  const assocName = await resolveAssocName(env, db)
-  const noun = isInvite ? await resolveOrgNounFromDb(db) : undefined
-  const orgPhrase = assocName ? escHtml(assocName) : `your ${escHtml(noun ?? '')}`
+/**
+ * A sign-in purpose message (shared/emailSender.ts) for a login or invite
+ * link. Pure: the association name and org noun are inputs, and so is the
+ * sign-in event writer, rather than side effects of passing a database.
+ */
+export function buildSignInMessage(input: {
+  to: string
+  link: 'login' | 'invite'
+  magicLinkUrl: string
+  appUrl: string
+  /** The org's display name, when it has one. */
+  assocName?: string
+  /** "team", "association", and so on. Used by an invite when there is no display name. */
+  orgNoun?: string
+  recordEvent?: SignInMessage['recordEvent']
+}): SignInMessage {
+  const { link, magicLinkUrl, appUrl, assocName, orgNoun } = input
+  const isInvite = link === 'invite'
+  const orgPhrase = assocName ? escHtml(assocName) : `your ${escHtml(orgNoun ?? '')}`
 
   // Hand-written plain-text part (the html auto-derive would say "click the
-  // button below" — wrong with no button). This is the login path, so keep the
-  // URL prominent for text-only clients.
+  // button below", which is wrong with no button). This is the login path, so
+  // keep the URL prominent for text-only clients.
   const text = isInvite
-    ? `You've been added to ${assocName ?? `your ${noun}`} on ${PRODUCT_NAME}, a legislative tracking tool. Set up your account:\n\n${magicLinkUrl}\n\nThis link expires in 7 days and can only be used once. You can also request a new sign-in link anytime using this email address:\n\n${env.APP_URL}\n\nIf you didn't expect this email, you can safely ignore it.`
+    ? `You've been added to ${assocName ?? `your ${orgNoun}`} on ${PRODUCT_NAME}, a legislative tracking tool. Set up your account:\n\n${magicLinkUrl}\n\nThis link expires in 7 days and can only be used once. You can also request a new sign-in link anytime using this email address:\n\n${appUrl}\n\nIf you didn't expect this email, you can safely ignore it.`
     : `You requested a sign-in link for ${PRODUCT_NAME}. Open this link to access your account:\n\n${magicLinkUrl}\n\nThis link expires in 1 hour and can only be used once. If you didn't expect this email, you can safely ignore it.`
 
-  const { subject, html } = renderMagicLinkEmail({ type, magicLinkUrl, appUrl: env.APP_URL, instanceName: assocName ?? '', orgPhrase })
-
-  const r = await sendEmail(env, { to: [to], subject, html, text }, db, { fallback: true })
-  if (db) {
-    // One row per attempt, so a send that fallback rescued shows both halves:
-    // the primary's failure (with its reason) and the other provider's success.
-    for (const a of r.attempts ?? [r]) {
-      // E_RECIPIENT_SUPPRESSED = address previously hard-bounced or was reported as
-      // spam, so it's effectively a bounce; everything else is a send failure.
-      // Resend's error is just an HTTP status string and never classifies as a
-      // bounce (Resend doesn't surface suppression synchronously).
-      const event = a.ok ? 'email_sent' : isRecipientError(a) ? 'email_bounced' : 'email_send_failed'
-      await recordAuthEvent(db, {
-        event, email: to, userId: userId ?? null, reason: a.error ?? null,
-        linkType: type, provider: a.provider, messageId: a.messageId ?? null,
-      })
-    }
-  }
-  if (!r.ok) {
-    // A suppressed recipient stays suppressed; only a provider failure is worth retrying.
-    const msg = `Email send failed (${r.provider}): ${r.error}`
-    throw isRecipientError(r) ? new PermanentSendError(msg) : new Error(msg)
-  }
+  const { subject, html } = renderMagicLinkEmail({ type: link, magicLinkUrl, appUrl, instanceName: assocName ?? '', orgPhrase })
+  return { purpose: 'sign-in', link, to: [input.to], subject, html, text, ...(input.recordEvent && { recordEvent: input.recordEvent }) }
 }
 
 function escHtml(s: string): string {
@@ -375,7 +130,7 @@ function escHtml(s: string): string {
 }
 
 /**
- * Pure renderer for the magic-link (login/invite) email. Shared by sendMagicLink
+ * Pure renderer for the magic-link (login/invite) email. Shared by buildSignInMessage
  * and the sample registry (renderSampleEmail) so the real and sample emails can't
  * drift. `orgPhrase` is pre-escaped by the caller (invite body only).
  */
@@ -401,33 +156,4 @@ export function renderMagicLinkEmail(input: {
     footerHtml: `If you didn't expect this email, you can safely ignore it.<br>${emailFooterLink(escHtml(input.appUrl), PRODUCT_NAME)}`,
   })
   return { subject, html }
-}
-
-export async function sendFeedback(
-  from: { email: string },
-  message: string,
-  pageUrl: string | undefined,
-  env: Pick<Env, 'RESEND_API_KEY' | 'EMAIL_PROVIDER' | 'EMAIL' | 'DEMO_MODE' | 'OPERATOR_CONTACT_EMAILS' | 'ASSOCIATION_NAME' | 'APP_URL'>,
-  db?: AppDb,
-): Promise<void> {
-  const html = renderEmailShell({
-    instanceName: (await resolveAssocName(env, db)) ?? '',
-    appUrl: env.APP_URL,
-    signalHtml: 'New feedback',
-    bodyHtml: `
-        <p style="margin:0 0 8px;font-size:${fontSize.sm}px;color:${color.textMuted};">From: ${escHtml(from.email)}</p>
-        ${pageUrl ? `<p style="margin:0 0 16px;font-size:${fontSize.sm}px;color:${color.textMuted};">Page: ${escHtml(pageUrl)}</p>` : ''}
-        <p style="margin:0;font-size:${fontSize.base}px;line-height:1.6;color:${color.textSlate};white-space:pre-wrap;">${escHtml(message)}</p>`,
-    footerHtml: '',
-  })
-  const recipients = parseEmailList(env.OPERATOR_CONTACT_EMAILS)
-  if (recipients.length === 0) {
-    throw new Error('Feedback not configured — OPERATOR_CONTACT_EMAILS is empty')
-  }
-  const r = await sendEmail(env, { to: recipients, subject: `Feedback from ${from.email}`, html }, db)
-  if (!r.ok) {
-    // A suppressed recipient stays suppressed; only a provider failure is worth retrying.
-    const msg = `Email send failed (${r.provider}): ${r.error}`
-    throw isRecipientError(r) ? new PermanentSendError(msg) : new Error(msg)
-  }
 }
