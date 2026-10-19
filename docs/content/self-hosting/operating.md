@@ -25,7 +25,7 @@ wrangler secret put SUPERADMIN_EMAILS --env legiscan
 Generate the keypair with `node scripts/gen-superadmin-keys.mjs` from the repository root, which prints both halves as JWK JSON. Central holds the private half; each tenant verifies with the matching **public** JWK, which is not a secret — it goes in each tenant's `[env.*.vars]` as `SUPERADMIN_JWT_PUBLIC_KEY` (see the tenant env block in [Adding tenants](/self-hosting/tenants)).
 
 > [!WARNING]
-> The dashboard login needs an email sender and `ADMIN_APP_URL`. Either sender is enough: Cloudflare Email (`EMAIL_PROVIDER = "cloudflare"` with the `EMAIL` binding) or `RESEND_API_KEY`. If there is no sender or `ADMIN_APP_URL` is unset, signing in as a listed superadmin still answers "ok" but sends no email (central logs a warning naming what's missing), so it looks like the link never arrives.
+> The dashboard login needs an email sender and `ADMIN_APP_URL`. Either sender is enough: Cloudflare Email (the `EMAIL` binding, which counts as a sender on its own; `EMAIL_PROVIDER = "cloudflare"` only makes it the first one tried) or `RESEND_API_KEY`. With both configured, the sign-in link falls back to the second when the first is down. If there is no sender or `ADMIN_APP_URL` is unset, signing in as a listed superadmin still answers "ok" but sends no email (central logs a warning naming what's missing), so it looks like the link never arrives.
 
 ### Superadmin profile
 

@@ -10,6 +10,9 @@ const tests = import.meta.glob(['../**/*.ts', '!../**/centralEmailCopy.test.ts']
 // An import or re-export, or a vi.mock, whose specifier ends in `lib/email` or is `./email`.
 const IMPORTS_COPY = /(?:from\s+|import\(\s*|vi\.mock\(\s*|require\(\s*)['"](?:(?:\.\.?\/)+(?:[\w./-]*\/)?lib\/email|\.\/email)(?:\.ts)?['"]/
 
+// A direct call on the `EMAIL` binding, with or without a non-null or optional access.
+const SEND_CALL = /\bEMAIL[!?]?\.send\(/
+
 describe("central's own email copy", () => {
   it('read every source and test file as a string', () => {
     for (const [file, text] of [...Object.entries(sources), ...Object.entries(tests)]) expect(typeof text, file).toBe('string')
@@ -43,7 +46,7 @@ describe("central's own email copy", () => {
 
   it('has no src file that sends mail through anything but the shared sender', () => {
     const rawProviders = Object.entries(sources)
-      .filter(([, text]) => text.includes('api.resend.com/emails') || /\bEMAIL[!?]?\.send\(/.test(text))
+      .filter(([, text]) => text.includes('api.resend.com/emails') || SEND_CALL.test(text))
       .map(([file]) => file)
     expect(rawProviders).toEqual([])
   })
@@ -63,5 +66,10 @@ describe("central's own email copy", () => {
       `import { x } from './emailDelivery'`,
       `import { x } from '../lib/emailSuppression'`,
     ]) expect(IMPORTS_COPY.test(fine), fine).toBe(false)
+  })
+
+  it('detects the binding send shapes it is meant to catch', () => {
+    for (const bad of [`EMAIL.send(msg)`, `EMAIL?.send(msg)`, `env.EMAIL!.send(msg)`]) expect(SEND_CALL.test(bad), bad).toBe(true)
+    for (const fine of [`EMAIL_LOG.send(msg)`, `emailSender.send(msg)`, `sendEmail(env, msg)`]) expect(SEND_CALL.test(fine), fine).toBe(false)
   })
 })
