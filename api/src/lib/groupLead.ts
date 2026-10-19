@@ -61,7 +61,7 @@ const firstDigitPos = (n: SQL) => sql`min(${sql.join(
 export const billPrefix = (n: SQL) => sql`substr(${n}, 1, ${firstDigitPos(n)} - 1)`
 export const billNum = (n: SQL) => sql`CAST(substr(${n}, ${firstDigitPos(n)}) AS INTEGER)`
 
-/** The newest text date of the bill whose id is `billId`, or NULL when it has no texts. Read through idx_bill_texts_bill_id. */
+/** The newest text date of the bill whose id is `billId`, or NULL when it has no texts. Read through idx_bill_texts_bill_date (migration 0113). */
 export const newestTextDate = (billId: SQL) =>
   sql`(SELECT MAX(NULLIF(t.date, '')) FROM bill_texts t WHERE t.bill_id = ${billId})`
 

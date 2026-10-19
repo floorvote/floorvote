@@ -93,9 +93,10 @@ describe('migration 0113: a group\'s tags follow its lead bill', () => {
     // instance with thousands of groups. The backfill must read each bill's
     // newest text with one index lookup and look up nothing inside another
     // lookup, so its work grows with the number of grouped bills, not faster.
-    it('nests no lookup inside another', async () => {
+    it('nests no lookup inside another, reading the index 0113 itself creates', async () => {
       await resetDb()
-      await applyMigrations()
+      // Up to 0113 only, so 0114's copy of the index can't stand in for 0113's.
+      await applyMigrations({ before: '0114_bill_texts_bill_date_index' })
       const backfill = parseMigration(migration0113, '0113_group_lead_analysis').queries.at(-1)!
       expect(backfill).toMatch(/^\s*(--[^\n]*\n\s*)*WITH members AS/)
       const { results } = await env.DB.prepare(`EXPLAIN QUERY PLAN ${backfill}`).all<{ id: number; parent: number; detail: string }>()
