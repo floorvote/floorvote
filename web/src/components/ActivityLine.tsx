@@ -1,11 +1,13 @@
-import { useId, useState, type CSSProperties, type ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
+import { userEventIcon, type UserEventIcon } from '../../../shared/billCardModel'
 import type { FieldChangeEvent } from '../../../shared/teamFields'
 import { dbTsToEpoch } from '../../../shared/time'
-import { fieldChangeText, foldText } from '../lib/activityLine'
+import { fieldChangeText } from '../lib/activityLine'
 import { formatShortMonthDay } from '../lib/calendarDate'
 import type { ThreadLine } from '../lib/groupingLine'
 import { color, fontSize, fontWeight } from '../styles/tokens'
 import { GroupingLine, THREAD_LINE_STYLE } from './GroupingLine'
+import { PrioritySquare } from './PrioritySquare'
 
 type Options = {
   /** What the page calls the position, in a sentence about it ("association position"). */
@@ -14,31 +16,45 @@ type Options = {
   renderBill?: (event: FieldChangeEvent) => ReactNode
 }
 
-const FIELD_ICONS: Record<FieldChangeEvent['field'], string> = {
-  priority: 'flag',
-  position: 'thumbs_up_down',
-  customField: 'edit_note',
-  tags: 'list',
+// The feed's and the digest's own rules for the icon a person's change shows with: priority is a square in the
+// priority's color, a position is a glyph in the position's color, and a custom field has the table's one entry.
+const ICON_TYPE: Record<FieldChangeEvent['field'], string> = {
+  priority: 'priority_set',
+  position: 'position_set',
+  customField: 'custom_field_set',
 }
 
-const Icon = ({ name }: { name: string }) => (
-  <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: fontSize.lg }}>{name}</span>
-)
+/** The metadata `userEventIcon` reads for a change: the value it left the field with, when that picks a color. */
+function iconMetadata(event: FieldChangeEvent): Record<string, unknown> {
+  return event.field === 'priority' ? { priority: event.new } : event.field === 'position' ? { position: event.new } : {}
+}
+
+function ChangeIcon({ icon }: { icon: UserEventIcon }) {
+  // A priority square sits at the glyph's size, so the line's text keeps its place.
+  if (icon.square) return <PrioritySquare size={11} color={icon.color} style={{ marginInline: 3.5 }} data-testid="priority-square" />
+  return (
+    <span
+      className="material-symbols-outlined"
+      aria-hidden="true"
+      style={{ fontSize: fontSize.lg, color: icon.color, fontVariationSettings: `'FILL' ${icon.fill}, 'wght' 400, 'GRAD' 0, 'opsz' 24` }}
+    >{icon.name}</span>
+  )
+}
 
 /**
- * A line in a bill's comment thread for one change to a team field, set
- * between the comments posted before and after: a muted note with the field's
- * icon, who changed what, and the date.
+ * A line in a bill's comment thread for one change a person made to a team
+ * field, set between the comments posted before and after: a muted note with
+ * the icon the feed gives the change, who changed what, and the date.
  */
 export function ActivityLine({ event, positionLabel, renderBill, style }: { event: FieldChangeEvent; style?: CSSProperties } & Options) {
   const date = formatShortMonthDay(event.createdAt)
   const bill = renderBill?.(event)
   // The sentence opens with who made the change, set in the heavier weight a comment's author name has.
-  const who = event.actorName ?? 'FloorVote'
+  const who = event.actorName
   const sentence = fieldChangeText(event, { positionLabel })
   return (
     <div role="note" style={{ ...THREAD_LINE_STYLE, ...style }}>
-      <Icon name={FIELD_ICONS[event.field] ?? 'edit_note'} />
+      <ChangeIcon icon={userEventIcon(ICON_TYPE[event.field], iconMetadata(event))} />
       <span>
         {sentence.startsWith(who)
           ? <><span style={{ fontWeight: fontWeight.semibold, color: color.textSecondary }}>{who}</span>{sentence.slice(who.length)}</>
@@ -50,41 +66,8 @@ export function ActivityLine({ event, positionLabel, renderBill, style }: { even
   )
 }
 
-/**
- * Several consecutive changes by one person, folded into one line that opens in
- * place to show each as its own line. A button, so the keyboard and a screen
- * reader open it, with its state in `aria-expanded`.
- */
-export function ActivityFold({ actorName, events, positionLabel, renderBill }: { actorName: string | null; events: FieldChangeEvent[] } & Options) {
-  const [open, setOpen] = useState(false)
-  const listId = useId()
-  return (
-    <div>
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={open ? listId : undefined}
-        onClick={() => setOpen(o => !o)}
-        style={{ ...THREAD_LINE_STYLE, margin: open ? '0 0 8px' : THREAD_LINE_STYLE.margin, padding: 0, border: 'none', background: 'none', cursor: 'pointer', font: 'inherit', fontSize: fontSize.sm, textAlign: 'left' }}
-      >
-        <Icon name="edit_note" />
-        <span>{foldText(actorName, events.length)}</span>
-        <span aria-hidden="true" style={{ color: color.textMuted }}>{open ? '▾' : '▸'}</span>
-      </button>
-      {open && (
-        <ul id={listId} style={{ listStyle: 'none', margin: 0, padding: '0 0 0 4px' }}>
-          {events.map(event => (
-            <li key={event.id}><ActivityLine event={event} positionLabel={positionLabel} renderBill={renderBill} /></li>
-          ))}
-        </ul>
-      )}
-    </div>
-  )
-}
-
 /** One line of a comment thread's activity, whichever kind it is. */
 export function ThreadLineView({ line, positionLabel, renderBill }: { line: ThreadLine } & Options) {
   if (line.kind === 'grouping') return <GroupingLine event={line.event} />
-  if (line.kind === 'change') return <ActivityLine event={line.event} positionLabel={positionLabel} renderBill={renderBill} />
-  return <ActivityFold actorName={line.actorName} events={line.events} positionLabel={positionLabel} renderBill={renderBill} />
+  return <ActivityLine event={line.event} positionLabel={positionLabel} renderBill={renderBill} />
 }

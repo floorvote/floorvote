@@ -4,6 +4,8 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { BillDetail } from './BillDetail'
 import * as api from '../lib/api'
+import { POSITION_FEED_ICON, PRIORITY_COLORS } from '../../../shared/billChipColors'
+import { USER_EVENT_ICONS } from '../../../shared/billCardModel'
 
 // ── Scaffolding copied from BillDetail.statusExplainer.test.tsx ───────────────
 
@@ -56,7 +58,7 @@ vi.mock('../context/DemoContext', () => ({
 const authState = vi.hoisted(() => ({ role: 'admin' as 'member' | 'admin' | 'owner', canVote: true }))
 vi.mock('../hooks/useAuth', () => ({
   useAuth: () => ({
-    user: { id: 'u1', email: 'a@b.c', name: 'Alice', role: authState.role, subtitle: null, canVote: authState.canVote },
+    user: { id: 'u1', email: 'a@b.c', name: 'Alice', role: authState.role, subtitle: null, canVote: authState.canVote, emailRepliesEnabled: true },
     loading: false,
   }),
 }))
@@ -193,16 +195,12 @@ const C3 = comment('c3', '42', 'HB 1', '2026-10-14 12:00:00', 'Ann')
 
 const thread = () => document.getElementById('section-comments') as HTMLElement
 const heading = () => within(thread()).getAllByText(/^Comments/)[0]
-// The icon names a line's glyph adds to its text.
-const ICON = /^(flag|thumbs_up_down|edit_note|list|link_2|link_off)/
+// The icon names a line's glyph adds to its text. A priority line has a colored square instead, so no name.
+const ICON = /^(thumbs_up_down|edit_note|link|link_off)/
 const notes = () => within(thread()).queryAllByRole('note').map(n => n.textContent)
 // The thread's comments and activity in page order, by what each says.
-const order = () => Array.from(thread().querySelectorAll('[id^="comment-"], [role="note"], button[aria-expanded]'))
-  .map(el => el.id
-    ? el.id.replace('comment-', '')
-    : el.getAttribute('role') === 'note'
-      ? (el.textContent ?? '').replace(ICON, '')
-      : `fold:${(el.textContent ?? '').replace(ICON, '').replace(/[▸▾]/g, '').trim()}`)
+const order = () => Array.from(thread().querySelectorAll('[id^="comment-"], [role="note"]'))
+  .map(el => el.id ? el.id.replace('comment-', '') : (el.textContent ?? '').replace(ICON, ''))
 const follows = (a: Node, b: Node) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
 
 describe('the heading of the comments card', () => {
@@ -259,7 +257,7 @@ describe('the thread of a bill with only comments, only activity, or both', () =
     ] })
     await screen.findByText('Test Bill')
     expect(notes()).toEqual([
-      'flag' + 'David Park set priority to Medium · Oct 11',
+      'David Park set priority to Medium · Oct 11',
       'thumbs_up_down' + 'Ann set the association position to Support · Oct 13',
     ])
     expect(document.querySelectorAll('[id^="comment-"]')).toHaveLength(0)
@@ -305,16 +303,28 @@ describe('the thread of a bill with only comments, only activity, or both', () =
     expect(screen.getByText(/set the alliance position to Support/)).toBeInTheDocument()
   })
 
-  it('words a custom field by the name it had and FloorVote\'s tags by FloorVote', async () => {
+  it('words a custom field by the name it had', async () => {
     renderBillDetail({ comments: [], commentsTotal: 0, fieldEvents: [
       change('e1', '2026-10-11 12:00:00', { field: 'customField', fieldId: 'cf1', label: 'Lead staffer', old: null, new: 'Policy team', fieldType: 'text' }),
-      change('e2', '2026-10-12 12:00:00', { actorId: null, actorName: null, field: 'tags', label: 'tags', old: [], new: ['Energy', 'Labor'] }),
     ] })
     await screen.findByText('Test Bill')
-    expect(notes()).toEqual([
-      'edit_note' + 'David Park set Lead staffer to "Policy team" · Oct 11',
-      'list' + 'FloorVote added the tags Energy and Labor · Oct 12',
-    ])
+    expect(notes()).toEqual(['edit_note' + 'David Park set Lead staffer to "Policy team" · Oct 11'])
+  })
+
+  // The icon and color rules are the feed's and the digest's (shared/billCardModel, billChipColors).
+  it('draws each kind of change with the icon and color the feed gives it', async () => {
+    renderBillDetail({ comments: [], commentsTotal: 0, fieldEvents: [
+      change('e1', '2026-10-11 12:00:00', { old: null, new: 'high' }),
+      change('e2', '2026-10-12 12:00:00', { field: 'position', label: 'position', old: null, new: 'Oppose' }),
+      change('e3', '2026-10-13 12:00:00', { field: 'customField', fieldId: 'cf1', label: 'Lead staffer', old: null, new: 'Policy team', fieldType: 'text' }),
+    ] })
+    await screen.findByText('Test Bill')
+    const [priority, position, custom] = within(thread()).getAllByRole('note')
+    expect(priority.querySelector('[data-testid="priority-square"]')).toHaveStyle({ background: PRIORITY_COLORS.high.fill })
+    expect(priority.querySelector('.material-symbols-outlined')).toBeNull()
+    expect(position.querySelector('.material-symbols-outlined')).toHaveTextContent(USER_EVENT_ICONS.position_set.name)
+    expect(position.querySelector('.material-symbols-outlined')).toHaveStyle({ color: POSITION_FEED_ICON.Oppose })
+    expect(custom.querySelector('.material-symbols-outlined')).toHaveTextContent(USER_EVENT_ICONS.custom_field_set.name)
   })
 
   it('shows the same lines to a member as to an admin', async () => {
@@ -326,7 +336,7 @@ describe('the thread of a bill with only comments, only activity, or both', () =
     authState.role = 'admin'
     renderBillDetail({ comments: [C1], commentsTotal: 1, fieldEvents: [change('e1', '2026-10-11 12:00:00')] })
     await screen.findByText('c1 text')
-    expect(asMember).toEqual(['flag' + 'David Park changed priority from Medium to High · Oct 11'])
+    expect(asMember).toEqual(['David Park changed priority from Medium to High · Oct 11'])
     expect(notes()).toEqual(asMember)
   })
 
@@ -339,80 +349,54 @@ describe('the thread of a bill with only comments, only activity, or both', () =
   })
 })
 
-describe('folding a run of changes in the thread', () => {
+describe('every change in the thread is its own line', () => {
   const run = [
     change('e1', '2026-10-11 10:00:00', { old: null, new: 'low' }),
     change('e2', '2026-10-11 11:00:00', { old: 'low', new: 'medium' }),
     change('e3', '2026-10-11 12:00:00', { old: 'medium', new: 'high' }),
   ]
-  const foldButton = () => screen.getByRole('button', { name: '3 changes by David Park' })
 
-  it('folds three changes by one person between two comments into one closed line', async () => {
+  it('shows three changes by one person between two comments as three lines, with no fold to open', async () => {
     renderBillDetail({ comments: [C1, C2], commentsTotal: 2, fieldEvents: run })
     await screen.findByText('c2 text')
-    expect(foldButton()).toHaveAttribute('aria-expanded', 'false')
-    expect(notes()).toEqual([])
-    expect(follows(document.getElementById('comment-c1')!, foldButton())).toBe(true)
-    expect(follows(foldButton(), document.getElementById('comment-c2')!)).toBe(true)
-  })
-
-  it('opens in place, between the same two comments, and closes again', async () => {
-    const user = userEvent.setup()
-    renderBillDetail({ comments: [C1, C2], commentsTotal: 2, fieldEvents: run })
-    await screen.findByText('c2 text')
-    await user.click(foldButton())
     expect(order()).toEqual([
       'c1',
-      'fold:3 changes by David Park',
       'David Park set priority to Low · Oct 11',
       'David Park changed priority from Low to Medium · Oct 11',
       'David Park changed priority from Medium to High · Oct 11',
       'c2',
     ])
-    await user.click(foldButton())
-    expect(notes()).toEqual([])
+    expect(within(thread()).queryByRole('button', { name: /changes by/ })).toBeNull()
+    expect(within(thread()).queryByRole('list')).toBeNull()
   })
 
-  it('folds a run by FloorVote and a run by a person apart', async () => {
-    renderBillDetail({ comments: [C1], commentsTotal: 1, fieldEvents: [
-      change('r1', '2026-10-11 10:00:00', { actorId: null, actorName: null, field: 'tags', label: 'tags', old: [], new: ['Energy'] }),
-      change('r2', '2026-10-11 11:00:00', { actorId: null, actorName: null, field: 'tags', label: 'tags', old: ['Energy'], new: ['Energy', 'Labor'] }),
-      change('a1', '2026-10-11 12:00:00', ann), change('a2', '2026-10-11 13:00:00', ann),
-    ] })
-    await screen.findByText('Test Bill')
-    expect(screen.getByRole('button', { name: '2 changes by FloorVote' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '2 changes by Ann' })).toBeInTheDocument()
-  })
-
-  it('does not fold changes a comment sits between', async () => {
-    renderBillDetail({ comments: [C1, C2], commentsTotal: 2, fieldEvents: [change('e1', '2026-10-09 12:00:00'), change('e2', '2026-10-11 12:00:00')] })
-    await screen.findByText('c2 text')
-    expect(screen.queryByRole('button', { name: /changes by/ })).toBeNull()
+  it('shows two changes by one person with nothing between them as two lines', async () => {
+    renderBillDetail({ comments: [C1], commentsTotal: 1, fieldEvents: [change('a1', '2026-10-11 12:00:00', ann), change('a2', '2026-10-11 13:00:00', ann)] })
+    await screen.findByText('c1 text')
     expect(notes()).toHaveLength(2)
+    expect(screen.queryByText(/changes by/)).toBeNull()
   })
 
-  it('folds the changes made on a companion in with the bill\'s, each line still marked with its bill when opened', async () => {
-    const user = userEvent.setup()
+  it('shows the changes made on a companion with the bill\'s, each line marked with its bill', async () => {
     renderBillDetail({ comments: [C1], commentsTotal: 1,
       groupBills: [{ billId: '42', billNumber: 'HB 1', state: 'NJ', sessionSlug: '2026' }, { billId: 'b1713', billNumber: 'S1713', state: 'NJ', sessionSlug: '2025-2026' }],
       fieldEvents: [change('e1', '2026-10-11 10:00:00'), change('e2', '2026-10-11 11:00:00', { billId: 'b1713', billNumber: 'S1713' })] })
     await screen.findByText('Test Bill')
-    await user.click(screen.getByRole('button', { name: '2 changes by David Park' }))
     const [own, other] = within(thread()).getAllByRole('note')
     expect(within(own).queryByRole('link')).toBeNull()
     expect(within(other).getByRole('link', { name: 'S1713' })).toHaveAttribute('href', '/NJ/2025-2026/S1713')
   })
 
-  it('follows a deleted comment: its two sides fold together once it is gone', async () => {
+  it('keeps each line where it was when a comment is deleted: the two lines it separated stay two lines', async () => {
     const user = userEvent.setup()
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     renderBillDetail({ comments: [C1, C2, C3], commentsTotal: 3, fieldEvents: [change('e1', '2026-10-11 12:00:00'), change('e2', '2026-10-13 12:00:00')] })
     await screen.findByText('c3 text')
-    expect(screen.queryByRole('button', { name: /changes by/ })).toBeNull()
     expect(notes()).toHaveLength(2)
     await user.click(within(document.getElementById('comment-c2')!).getByRole('button', { name: 'Delete' }))
     await waitFor(() => expect(document.getElementById('comment-c2')).toBeNull())
-    expect(await screen.findByRole('button', { name: '2 changes by David Park' })).toBeInTheDocument()
+    expect(notes()).toHaveLength(2)
+    expect(within(thread()).queryByRole('button', { name: /changes by/ })).toBeNull()
     expect(heading()).toHaveTextContent('Comments and activity2')
   })
 
@@ -423,7 +407,7 @@ describe('folding a run of changes in the thread', () => {
     await screen.findByText('c1 text')
     await user.click(within(document.getElementById('comment-c1')!).getByRole('button', { name: 'Delete' }))
     await waitFor(() => expect(document.getElementById('comment-c1')).toBeNull())
-    expect(notes()).toEqual(['flag' + 'David Park changed priority from Medium to High · Oct 9'])
+    expect(notes()).toEqual(['David Park changed priority from Medium to High · Oct 9'])
     expect(heading()).toHaveTextContent(/^Comments and activity$/)
   })
 
@@ -510,7 +494,6 @@ describe('the mute control beside the new heading', () => {
     await user.click(mute)
     expect(spy.mock.calls.filter(([p]) => p === '/bills/42/mute').map(([, i]) => (i as RequestInit).method)).toEqual(['PUT'])
     expect(await within(thread()).findByRole('button', { name: 'Unmute comments' })).toBeInTheDocument()
-    expect(within(thread()).getByText(/mentions still reach you/i)).toBeInTheDocument()
     expect(heading()).toHaveTextContent('Comments and activity')
   })
 
@@ -528,43 +511,35 @@ describe('the mute control beside the new heading', () => {
 })
 
 describe('reading the thread by keyboard and screen reader', () => {
-  it('tabs from the mute button past the first comment\'s controls to the fold, then on to the next comment\'s, not into the fold\'s lines', async () => {
+  it('tabs from the mute button through the first comment\'s controls straight to the next comment\'s: activity lines are not tab stops', async () => {
     const user = userEvent.setup()
     renderBillDetail({ comments: [C1, C2], commentsTotal: 2, commentsParticipant: true, fieldEvents: [
       change('e1', '2026-10-11 10:00:00'), change('e2', '2026-10-11 11:00:00'),
     ] })
     await screen.findByText('c2 text')
-    const label = (el: Element | null) => el?.getAttribute('aria-label') ?? (el?.textContent ?? '').replace(ICON, '').replace(/[▸▾]/g, '').trim()
     const mute = within(thread()).getByRole('button', { name: 'Mute comments' })
     for (let i = 0; i < 200 && document.activeElement !== mute; i++) await user.tab()
     expect(mute).toHaveFocus()
-    const seen: string[] = []
-    for (let i = 0; i < 10 && !label(document.activeElement).startsWith('2 changes by'); i++) {
+    const second = document.getElementById('comment-c2')!
+    const first = document.getElementById('comment-c1')!
+    let reachedSecond = false
+    for (let i = 0; i < 15 && !reachedSecond; i++) {
       await user.tab()
-      seen.push(label(document.activeElement))
+      const el = document.activeElement
+      expect(el?.closest('[role="note"]')).toBeNull()
+      reachedSecond = second.contains(el)
+      if (!reachedSecond) expect(first.contains(el)).toBe(true)
     }
-    expect(seen[seen.length - 1]).toMatch(/^2 changes by David Park/)
-    // Everything on the way is the first comment's.
-    expect(seen.slice(0, -1).length).toBeGreaterThan(0)
-    for (const el of Array.from(thread().querySelectorAll('button'))) {
-      if (document.getElementById('comment-c1')!.contains(el)) expect(follows(el, screen.getByRole('button', { name: /2 changes by/ }))).toBe(true)
-    }
-    await user.keyboard('{Enter}')
-    expect(screen.getAllByRole('note')).toHaveLength(2)
-    await user.tab()
-    expect(document.getElementById('comment-c2')!.contains(document.activeElement)).toBe(true)
+    expect(reachedSecond).toBe(true)
   })
 
-  it('keeps an open fold\'s lines in the DOM right after its button, before the next comment', async () => {
-    const user = userEvent.setup()
+  it('keeps the lines between the comments they sit between, in the DOM', async () => {
     renderBillDetail({ comments: [C1, C2], commentsTotal: 2, fieldEvents: [change('e1', '2026-10-11 10:00:00'), change('e2', '2026-10-11 11:00:00')] })
     await screen.findByText('c2 text')
-    const button = screen.getByRole('button', { name: '2 changes by David Park' })
-    await user.click(button)
-    const list = screen.getByRole('list')
-    expect(follows(button, list)).toBe(true)
-    expect(follows(list, document.getElementById('comment-c2')!)).toBe(true)
-    expect(follows(document.getElementById('comment-c1')!, button)).toBe(true)
+    const [one, two] = within(thread()).getAllByRole('note')
+    expect(follows(document.getElementById('comment-c1')!, one)).toBe(true)
+    expect(follows(one, two)).toBe(true)
+    expect(follows(two, document.getElementById('comment-c2')!)).toBe(true)
   })
 
   it('announces a lone change as a note, in the thread\'s order, and not as a control', async () => {

@@ -692,7 +692,7 @@ export function BillDetail() {
   // keeps the button in place after a non-participant unmutes.
   const canMuteComments = !!bill && !!user?.emailRepliesEnabled && (bill.commentsParticipant || bill.commentsMuted || commentsMute.muted || comments.some(c => c.userId === user?.id))
   // The lines of the bill's activity (where its companion group formed or split, and changes to its team
-  // fields), placed among the comments by time, runs of changes by one person folded.
+  // fields), placed among the comments by time, each change its own line.
   const thread = useMemo(() => placeThreadLines(comments, bill?.groupingEvents ?? [], bill?.fieldEvents ?? []), [comments, bill?.groupingEvents, bill?.fieldEvents])
   const hasActivity = thread.before.size > 0 || thread.after.length > 0
   // The badge of a companion bill in this bill's group, saying on hover or focus what was done on it. One for a
