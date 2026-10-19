@@ -4,6 +4,7 @@ import { eq, isNull } from 'drizzle-orm'
 import { clearDb, appFetch, stubFetch, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { commentAttachments } from '../../src/db/schema'
+import { purgeAttachments, uploadAttachment, UPLOAD_DEADLINE_MS } from '../../src/lib/attachments'
 
 // The test config binds ATTACHMENTS_BUCKET, which is all the feature needs.
 const OFF = () => ({ ...env, ATTACHMENTS_BUCKET: undefined })
@@ -226,6 +227,72 @@ describe('comment attachments', () => {
       const res = await upload(other, 'a.pdf', PDF)
       expect(res.status).toBe(400)
       expect(await errorOf(res)).toMatch(/storage/)
+    })
+  })
+
+  describe('an upload that stalls', () => {
+    // A PDF body that sends its first 5,000 bytes, then waits until the test
+    // releases the rest.
+    function stalling(total: number) {
+      const data = new Uint8Array(total)
+      data.set(PDF)
+      let release!: () => void
+      const gate = new Promise<void>(r => { release = r })
+      let sent = false
+      const stream = new ReadableStream<Uint8Array>({
+        async pull(controller) {
+          if (!sent) { sent = true; controller.enqueue(data.slice(0, 5000)); return }
+          await gate
+          controller.enqueue(data.slice(5000))
+          controller.close()
+        },
+      })
+      return { stream, release }
+    }
+
+    async function waitForRow() {
+      for (let i = 0; i < 200; i++) {
+        const row = await getDb(env.DB).select().from(commentAttachments).get()
+        if (row) return row
+        await new Promise(r => setTimeout(r, 10))
+      }
+      throw new Error('the upload never wrote its row')
+    }
+
+    it('is refused, leaving nothing behind, when the purge takes its row mid-upload', async () => {
+      const { stream, release } = stalling(10_000)
+      const pending = appFetch('http://localhost/api/attachments?name=slow.pdf', {
+        method: 'POST',
+        headers: { Cookie: `session=${member}`, 'Content-Length': '10000' },
+        body: stream,
+      })
+      const row = await waitForRow()
+      await purgeAttachments(env, getDb(env.DB), new Date(Date.now() + 2 * 60 * 60 * 1000))
+      release()
+
+      const res = await pending
+      expect(res.status).toBe(400)
+      expect(await bucket().head(row.r2Key)).toBeNull()
+      expect(await getDb(env.DB).select().from(commentAttachments).all()).toEqual([])
+    })
+
+    it('is refused at its deadline, keeping nothing and no live row', async () => {
+      const { stream } = stalling(10_000)
+      const before = await storedCount()
+      const r = await uploadAttachment(env, getDb(env.DB), memberId, { name: 'slow.pdf', contentLength: '10000', body: stream }, new Date(), { deadlineMs: 50 })
+      expect(r).toMatchObject({ ok: false, status: 400 })
+      expect(await storedCount()).toBe(before)
+      expect(await getDb(env.DB).select().from(commentAttachments).where(isNull(commentAttachments.deletedAt)).all()).toEqual([])
+    })
+
+    it('is refused at its deadline while still sending its first bytes', async () => {
+      const stream = new ReadableStream<Uint8Array>({ pull: () => new Promise(() => {}) })
+      const r = await uploadAttachment(env, getDb(env.DB), memberId, { name: 'slow.pdf', contentLength: '10000', body: stream }, new Date(), { deadlineMs: 50 })
+      expect(r).toMatchObject({ ok: false, status: 400 })
+    })
+
+    it('gives an upload 15 minutes', () => {
+      expect(UPLOAD_DEADLINE_MS).toBe(15 * 60 * 1000)
     })
   })
 

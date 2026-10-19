@@ -37,6 +37,10 @@ export const MAX_ATTACHMENTS_PER_COMMENT = 10
 export const ATTACHMENT_QUOTA_BYTES = 5 * 1024 ** 3
 /** Uploads one member may make in an hour, refused or not. */
 export const UPLOADS_PER_HOUR = 30
+/** The window the hourly upload limit counts over. */
+const HOURLY_WINDOW_MS = 60 * 60 * 1000
+/** How long one upload request may take, well inside UNFINISHED_TTL_MS, so no upload outlives its row. */
+export const UPLOAD_DEADLINE_MS = 15 * 60 * 1000
 const UNATTACHED_TTL_MS = 24 * 60 * 60 * 1000
 const DELETED_TTL_MS = 30 * 24 * 60 * 60 * 1000
 
@@ -63,6 +67,8 @@ export function isOwnKey(env: Env, key: string): boolean {
 // How long an upload that never finished counts toward the quota, and is kept.
 // An upload is one request, so a row still unconfirmed after this is dead: its
 // client disconnected or stalled.
+// The purge drops refused rows (also unconfirmed) after this, so it must be
+// no shorter than HOURLY_WINDOW_MS or purging them would loosen the limit.
 const UNFINISHED_TTL_MS = 60 * 60 * 1000
 
 // A row whose bytes count toward the quota: not deleted, finished or still
@@ -116,6 +122,7 @@ export async function uploadAttachment(
   env: Env, db: AppDb, uploaderId: string,
   input: { name: string | undefined; contentLength: string | undefined; body: ReadableStream<Uint8Array> | null },
   now = new Date(),
+  opts: { deadlineMs?: number } = {},
 ): Promise<{ ok: true; attachment: AttachmentSummary } | Fail> {
   if (env.DEMO_MODE === 'true') return { ok: false, status: 403, error: 'File attachments are off on the demo.' }
   if (!attachmentsEnabled(env)) return { ok: false, status: 503, error: NOT_SET_UP }
@@ -136,7 +143,7 @@ export async function uploadAttachment(
   // uploads arriving at once can't all pass on the same count.
   const id = crypto.randomUUID()
   const r2Key = `${keyPrefix(env)}${crypto.randomUUID()}`
-  const since = toDbTs(new Date(now.getTime() - 60 * 60 * 1000))
+  const since = toDbTs(new Date(now.getTime() - HOURLY_WINDOW_MS))
   const claimed = await db.run(sql`
     INSERT INTO comment_attachments (id, uploader_id, r2_key, name, content_type, size, created_at)
     SELECT ${id}, ${uploaderId}, ${r2Key}, ${name}, ${checked.contentType}, ${size}, ${toDbTs(now)}
@@ -167,8 +174,18 @@ export async function uploadAttachment(
   // refusing the write) refuses the upload and deletes whatever landed.
   const body = input.body
   let put: R2Object | null
+  // The deadline: past it, a body still arriving is cancelled (while its head
+  // is read) or its pipe aborted (after), and the upload is refused.
+  const stop = new AbortController()
+  const deadline = AbortSignal.timeout(opts.deadlineMs ?? UPLOAD_DEADLINE_MS)
+  let reader: ReadableStreamDefaultReader<Uint8Array> | null = null
+  const onDeadline = () => {
+    stop.abort(deadline.reason)
+    reader?.cancel(deadline.reason).catch(() => {})
+  }
+  deadline.addEventListener('abort', onDeadline, { once: true })
   try {
-    const reader = body.getReader()
+    reader = body.getReader()
     const first = await readHead(reader, Math.min(SNIFF_BYTES, size + 1))
     if (first.total > size || (first.done && first.total !== size)) {
       await reader.cancel().catch(() => {})
@@ -186,7 +203,6 @@ export async function uploadAttachment(
     // head chunks already read go in through a writer. Then the rest of the
     // body is piped by the runtime, natively, with no JavaScript per chunk.
     const { readable, writable } = new FixedLengthStream(size)
-    const stop = new AbortController()
     let writer: WritableStreamDefaultWriter<Uint8Array> | null = writable.getWriter()
     // If R2 refuses the write, stop feeding the stream, or the writes below
     // would wait forever for a reader that has gone.
@@ -199,22 +215,41 @@ export async function uploadAttachment(
       for (const c of first.chunks) await writer!.write(c)
       writer!.releaseLock()
       writer = null
-      reader.releaseLock()
+      reader!.releaseLock()
+      reader = null
       await body.pipeTo(writable, { signal: stop.signal })
     })()
-    const [stored, fed] = await Promise.allSettled([putting, feeding])
+    // An aborted pipe doesn't settle while the body's pending read waits (seen
+    // in workerd), so the deadline is also raced here. Past it the request
+    // returns, which ends the invocation and the put with it. The refused row
+    // stays until the purge, which deletes the key in case any bytes landed.
+    const timedOut = new Promise<'timeout'>(resolve => {
+      if (deadline.aborted) resolve('timeout')
+      deadline.addEventListener('abort', () => resolve('timeout'), { once: true })
+    })
+    const outcome = await Promise.race([Promise.allSettled([putting, feeding]), timedOut])
+    if (outcome === 'timeout') return refuse(incomplete, true)
+    const [stored, fed] = outcome
     if (stored.status === 'rejected' || fed.status === 'rejected') return refuse(incomplete, true)
     put = stored.value
   } catch {
-    await body.cancel().catch(() => {})
+    // The reader may still hold the body's lock.
+    await (reader ? reader.cancel() : body.cancel()).catch(() => {})
     return refuse(incomplete, true)
+  } finally {
+    deadline.removeEventListener('abort', onDeadline)
   }
   if (!put || put.size !== size) return refuse(incomplete, true)
 
+  // Only a row still live is confirmed. If the purge took it while the body
+  // was arriving, the stored bytes have no row to count or purge them, so they
+  // go now, and the upload is refused rather than answered with a dead id.
   const md5 = put.checksums?.md5
-  await db.update(commentAttachments)
+  const confirmed = await db.update(commentAttachments)
     .set({ confirmedAt: nowDb(), checksum: md5 ? `md5:${hex(md5)}` : `etag:${put.etag}`, contentType })
-    .where(eq(commentAttachments.id, id))
+    .where(and(eq(commentAttachments.id, id), isNull(commentAttachments.deletedAt)))
+    .returning({ id: commentAttachments.id })
+  if (confirmed.length !== 1) return refuse(incomplete, true)
   return { ok: true, attachment: { id, name, contentType, size } }
 }
 
