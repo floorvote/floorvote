@@ -1,4 +1,4 @@
-import { sha256Hex, type CentralMeasure, type SyncEntry } from '../sdk'
+import { sha256Hex, type CentralMeasure, type MeasureCalendarEntry, type SyncEntry } from '../sdk'
 import { child, childText, deriveStatus } from './status'
 import type { ResolvedDetail } from './detail'
 import type { ResolvedVotes } from './votes'
@@ -66,9 +66,18 @@ export interface GovInfoRecord {
    * When GovInfo built the zip the record came from, from its Last-Modified
    * header, or null when it sent none. GovInfo stamps every file in a zip with
    * the time it built the zip, so a file's own last change is only in the bulk
-   * listing, and a pass between full reads takes it from there.
+   * listing, and a record a pass between full reads downloaded has that time
+   * instead. Not in the hash, and not the watermark (changes.ts).
    */
   modified: string | null
+  /**
+   * With a Congress.gov key, the calendar entry for each committee meeting that
+   * takes the bill up (meetings.ts), by date, or absent when none does or the
+   * deployment has no key. They are in the record, and in its hash, so a
+   * meeting that is added, moved, or cancelled changes the bill's record and
+   * the bill is ingested again, and the ingest needs no request to the API.
+   */
+  meetings?: MeasureCalendarEntry[]
 }
 
 /** The elements left out of a record's hash: a regenerated file restamps them with no change to the bill. */

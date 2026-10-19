@@ -1,0 +1,59 @@
+{
+  "committeeMeeting": {
+    "chamber": "House",
+    "committees": [
+      {
+        "name": "House Energy and Commerce Subcommittee on Environment",
+        "systemCode": "hsif18",
+        "url": "https://api.congress.gov/v3/committee/house/hsif18?format=json"
+      }
+    ],
+    "congress": 119,
+    "date": "2026-09-03T13:00:00Z",
+    "eventId": "119528",
+    "location": {
+      "building": "Rayburn House Office Building",
+      "room": "2123"
+    },
+    "meetingDocuments": [
+      {
+        "description": "H.R. ____, [Safe Drinking Water Infrastructure Improvement Act of 2026]",
+        "documentType": "Bills and Resolutions",
+        "format": "PDF",
+        "name": "H.R. ____, [Safe Drinking Water Infrastructure Improvement Act of 2026]",
+        "url": "https://www.congress.gov/119/meeting/house/119528/documents/BILLS-119pih-HR____SafeDrinkingWaterInfrastructureImprovementActof2026.pdf"
+      }
+    ],
+    "meetingStatus": "Scheduled",
+    "title": "Reliable Water in the Digital Age: Examining Legislation to Strengthen Drinking Water Systems and Protect Ratepayers.",
+    "type": "Meeting",
+    "updateDate": "2026-10-14T15:33:22Z",
+    "videos": [
+      {
+        "name": "Examining Legislation To Strengthen Drinking Water Systems And Protect Ratepayer",
+        "url": "https://www.congress.gov/event/119th-Congress/house-event/119528"
+      }
+    ],
+    "witnessDocuments": [
+      {
+        "documentType": "Witness Support Document",
+        "format": "PDF",
+        "url": "https://www.congress.gov/119/meeting/house/119528/witnesses/HMTG-119-IF18-Wstate-BradleyN-20260903-SD002.pdf"
+      }
+    ],
+    "witnesses": [
+      {
+        "name": "Mr. Neil Bradley",
+        "organization": "U.S. Chamber of Commerce",
+        "position": "Executive Vice President, Chief Policy Officer, and Head of Strategic Advocacy"
+      }
+    ]
+  },
+  "request": {
+    "chamber": "house",
+    "congress": "119",
+    "contentType": "application/json",
+    "eventId": "119528",
+    "format": "json"
+  }
+}

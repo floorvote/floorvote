@@ -1,0 +1,42 @@
+{
+  "committeeMeeting": {
+    "chamber": "Senate",
+    "committees": [
+      {
+        "name": "Senate Agriculture, Nutrition, and Forestry",
+        "systemCode": "ssaf00",
+        "url": "https://api.congress.gov/v3/committee/senate/ssaf00?format=json"
+      }
+    ],
+    "congress": 119,
+    "date": "2026-05-12T19:00:00Z",
+    "eventId": "338384",
+    "hearingTranscript": [
+      {
+        "jacketNumber": 63764,
+        "url": "https://api.congress.gov/v3/hearing/119/senate/63764?format=json"
+      }
+    ],
+    "location": {
+      "building": "Dirksen Senate Office Building",
+      "room": "106"
+    },
+    "meetingStatus": "Scheduled",
+    "title": "Hearings to examine perspectives on the fertilizer industry, focusing on ensuring a stable and affordable supply for American producers.",
+    "type": "Open Hearing",
+    "updateDate": "2026-05-11T22:08:26Z",
+    "videos": [
+      {
+        "name": "Hearings to examine perspectives on the fertilizer industry, focusing on ensuring a stable and affordable supply for American producers.",
+        "url": "https://www.congress.gov/event/119th-Congress/senate-event/338384"
+      }
+    ]
+  },
+  "request": {
+    "chamber": "senate",
+    "congress": "119",
+    "contentType": "application/json",
+    "eventId": "338384",
+    "format": "json"
+  }
+}

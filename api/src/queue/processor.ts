@@ -228,7 +228,7 @@ type CentralBill = {
   textHash: string | null
   textR2Key: string | null
   textStatus?: 'not_checked' | 'no_texts' | 'available' | 'in_r2'
-  texts: Array<{ docId: string; note: string; date: string; links: Array<{ url: string; mediaType: string }> }>
+  texts: Array<{ docId: string; note: string; date: string; /** This document's hash. Absent from a central older than #603. */ textHash?: string | null; links: Array<{ url: string; mediaType: string }> }>
   /** `videoUrl`: a recording of the meeting, when the provider publishes one. Absent from an older central. */
   actions: Array<{ description: string; date: string; chamber: string | null; classification: string[]; order: number; videoUrl?: string | null }>
   sponsors: Array<{ name: string; party: string | null; role: string | null; primary: boolean; personId: string | null; url: string | null }>
@@ -484,7 +484,7 @@ async function applyCentralBill(
   if (!msg.forceMetadata && !msg.forceAI && !msg.stubOnly && !msg.metadataOnly && !centralHasNewR2Key && !newlyMatched && existing?.providerUpdatedAt === centralBill.updatedAt && (existing?.aiProcessedAt != null || existing?.aiSkipReason != null)) {
     // Calendar reconciliation must still run even when the bill itself hasn't changed,
     // since hearings are updated independently of bill metadata.
-    if (msg.calendar && existing && (existing.matchType !== null || existing.priority !== null)) {
+    if (msg.calendar && existing && (existing.matchType !== null || existing.priority !== null || existing.groupKey !== null)) {
       const nowEarly = nowDb()
       await reconcileCalendar(db, existing.id, msg, false, nowEarly)
     }
@@ -844,6 +844,8 @@ async function applyCentralBill(
   for (const t of centralBill.texts) {
     const link = t.links[0] ?? null
     const altLink = t.links[1] ?? null
+    // '' when central sent none: an older central, or a document it has no hash for.
+    const textHash = typeof t.textHash === 'string' ? t.textHash : ''
     await db.insert(billTexts).values({
       id: crypto.randomUUID(),
       billId: billInternalId,
@@ -851,14 +853,15 @@ async function applyCentralBill(
       type: t.note,
       date: t.date,
       mime: link?.mediaType ?? 'text/html',
-      textHash: '',
+      textHash,
       stateLink: link?.url ?? null,
       altStateLink: altLink?.url ?? null,
       createdAt: now,
       updatedAt: now,
     }).onConflictDoUpdate({
       target: billTexts.docId,
-      set: { type: t.note, date: t.date, mime: link?.mediaType ?? 'text/html', stateLink: link?.url ?? null, altStateLink: altLink?.url ?? null, updatedAt: now },
+      // An empty hash never replaces a known one: it means central sent none, not that the text changed.
+      set: { type: t.note, date: t.date, mime: link?.mediaType ?? 'text/html', textHash: sql`CASE WHEN ${textHash} = '' THEN ${billTexts.textHash} ELSE ${textHash} END`, stateLink: link?.url ?? null, altStateLink: altLink?.url ?? null, updatedAt: now },
     })
   }
   // Central never drops a text except when a cutover moves the bill to another
@@ -871,9 +874,11 @@ async function applyCentralBill(
     lt(billTexts.updatedAt, fetchedAt),
   ))
 
-  // Feed events: only for tracked bills (keyword or manual) with AI data and detected changes from central.
+  // Feed events: only for tracked bills (keyword or manual) and members of a companion group (a companion pulled
+  // in through its group has no match type, and its actions belong in the group's card, #381) with AI data and
+  // detected changes from central.
   // F5+B5: switched gate from `!existing.isStub` to `existing.matchType !== null` (canonical field).
-  if (!isNew && existing?.aiProcessedAt && existing.matchType !== null && queueChanges.length > 0) {
+  if (!isNew && existing?.aiProcessedAt && (existing.matchType !== null || existing.groupKey !== null) && queueChanges.length > 0) {
     await db.insert(feedEvents).values({
       id:       crypto.randomUUID(),
       type:     'bill_updated',
@@ -916,8 +921,8 @@ async function applyCentralBill(
     }
   }
 
-  // Mirror hearings for tracked bills (priority filtering happens at read time).
-  if (msg.calendar && (derivedMatchType !== null || existing?.priority != null)) {
+  // Mirror hearings for tracked bills and group members (priority filtering happens at read time, by the group's priority).
+  if (msg.calendar && (derivedMatchType !== null || existing?.priority != null || existing?.groupKey != null)) {
     await reconcileCalendar(db, billInternalId, msg, isNew, now)
   }
 }

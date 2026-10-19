@@ -3,7 +3,8 @@ import type { AppDb, Env } from '../types'
 import { users, sessions, emailChanges, emailChangeReports, authEvents } from '../db/schema'
 import { generateToken, hashToken } from './crypto'
 import { recordAuthEvent } from './authEvents'
-import { sendBatch, resolveAssocName, type EmailMessage } from './email'
+import { senderFor, resolveAssocName } from './email'
+import type { AccountMessage } from '../../../shared/emailSender'
 import { normalizeMemberAddress } from './memberAddress'
 import { renderEmailChangeReportedEmail } from './emailChangeEmail'
 
@@ -206,9 +207,9 @@ async function alertAdmins(env: Env, db: AppDb, row: ReportRow, cancelledTo: str
       cancelledTo,
       stillPendingTo: stillPending?.newEmail ?? null,
     })
-    const messages: EmailMessage[] = recipients.map(r => ({ to: [r.email], subject, html, text }))
-    const { sent } = await sendBatch(env, messages, 'email-change-reported', db)
-    if (sent < messages.length) console.error(`[email-change] ${messages.length - sent} of ${messages.length} report alerts did not go out`)
+    const messages = recipients.map((r): AccountMessage => ({ purpose: 'account', to: [r.email], subject, html, text }))
+    const { sent, failed } = await senderFor(env, db).sendBatch(messages)
+    if (failed > 0) console.error(`[email-change] ${failed} of ${messages.length} report alerts did not go out`)
     return sent > 0
   } catch (e) {
     console.error('[email-change] the report alert failed', e)

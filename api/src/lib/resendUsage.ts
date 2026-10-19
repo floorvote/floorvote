@@ -19,15 +19,24 @@ async function writeConfig(db: Db, key: string, value: string): Promise<void> {
     .onConflictDoUpdate({ target: associationConfig.key, set: { value } })
 }
 
-export async function recordResendUsage(db: Db, res: Response): Promise<void> {
-  const { monthlyUsed, dailyUsed } = parseResendUsage(res)
+/** Store a quota reading (the Resend adapter reads it from the response headers). No-op when it holds nothing. */
+export async function recordResendReading(db: Db, { monthlyUsed, dailyUsed }: ResendReading): Promise<void> {
   if (monthlyUsed === null && dailyUsed === null) return
   if (monthlyUsed !== null) await writeConfig(db, 'resend_monthly_used', String(monthlyUsed))
   if (dailyUsed !== null) await writeConfig(db, 'resend_daily_used', String(dailyUsed))
   await writeConfig(db, 'resend_used_at', nowDb())
 }
 
+/** Note that Resend answered 429. */
+export async function recordResendThrottled(db: Db): Promise<void> {
+  await writeConfig(db, 'resend_last_429_at', nowDb())
+}
+
+export async function recordResendUsage(db: Db, res: Response): Promise<void> {
+  await recordResendReading(db, parseResendUsage(res))
+}
+
 export async function recordResendThrottle(db: Db, res: Response): Promise<void> {
   if (res.status !== 429) return
-  await writeConfig(db, 'resend_last_429_at', nowDb())
+  await recordResendThrottled(db)
 }

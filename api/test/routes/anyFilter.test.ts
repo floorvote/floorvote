@@ -54,11 +54,11 @@ describe('"Any" (has-value) filter — position + custom fields', () => {
     const any = await (await SELF.fetch('http://localhost/api/bills?tag=__any__', { headers: { Cookie: `session=${token}` } })).json() as { bills: { billNumber: string }[] }
     expect(any.bills.map(b => b.billNumber).sort()).toEqual(['T1', 'T2'])
 
-    const facets = await (await SELF.fetch('http://localhost/api/bills/facets', { headers: { Cookie: `session=${token}` } })).json() as { tags: Record<string, number> }
-    expect(facets.tags['__any__']).toBe(2) // distinct bills with a tag
+    const facets = await (await SELF.fetch('http://localhost/api/bills/facets', { headers: { Cookie: `session=${token}` } })).json() as { tag: Record<string, number> }
+    expect(facets.tag['__any__']).toBe(2) // distinct bills with a tag
   })
 
-  it('cf_<field>=__any__ returns bills with any value; facet count is distinct bills', async () => {
+  it('field.<field>=__any__ returns bills with any value; facet count is distinct bills', async () => {
     const res = await SELF.fetch('http://localhost/api/admin/custom-fields', {
       method: 'POST', headers: { Cookie: `session=${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'Tags', type: 'dropdown', options: ['a', 'b'], multiple: true }),
@@ -70,10 +70,10 @@ describe('"Any" (has-value) filter — position + custom fields', () => {
     await SELF.fetch(`http://localhost/api/bills/${b1}/custom-fields`, { method: 'PUT', headers: { Cookie: `session=${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ [fieldId]: ['a', 'b'] }) })
     await SELF.fetch(`http://localhost/api/bills/${b2}/custom-fields`, { method: 'PUT', headers: { Cookie: `session=${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ [fieldId]: ['a'] }) })
 
-    const list = await (await SELF.fetch(`http://localhost/api/bills?cf_${fieldId}=__any__`, { headers: { Cookie: `session=${token}` } })).json() as { bills: { billNumber: string }[] }
+    const list = await (await SELF.fetch(`http://localhost/api/bills?field.${fieldId}=__any__`, { headers: { Cookie: `session=${token}` } })).json() as { bills: { billNumber: string }[] }
     expect(list.bills.map(b => b.billNumber).sort()).toEqual(['C1', 'C2'])
 
-    const facets = await (await SELF.fetch('http://localhost/api/bills/facets', { headers: { Cookie: `session=${token}` } })).json() as { customFields: Record<string, Record<string, number>> }
-    expect(facets.customFields[fieldId]['__any__']).toBe(2) // distinct bills, not 3 (C1 has two values)
+    const facets = await (await SELF.fetch('http://localhost/api/bills/facets', { headers: { Cookie: `session=${token}` } })).json() as { field: Record<string, Record<string, number>> }
+    expect(facets.field[fieldId]['__any__']).toBe(2) // distinct bills, not 3 (C1 has two values)
   })
 })
