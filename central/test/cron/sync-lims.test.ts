@@ -328,10 +328,11 @@ describe('the stored LIMS record', () => {
     expect(built.rawJson).toBe(listed.rawJson)
     expect(built.rawHash).toBe(listed.rawHash)
 
-    // An unchanged listing doesn't queue the ingested bill again and leaves the details alone.
+    // An unchanged listing queues nothing and leaves the details alone.
+    await markIngested()
     const again = makeEnv()
     await runLimsSync(again.env, db)
-    expect(again.limsQueue.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body.billId))).not.toContain(B0400)
+    expect(again.limsQueue.sendBatch).not.toHaveBeenCalled()
     expect((await record()).detailsJson).toBe(built.detailsJson)
 
     // A changed listing replaces the BulkData record and its hash, and the

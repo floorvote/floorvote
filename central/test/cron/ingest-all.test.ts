@@ -59,10 +59,11 @@ const bodies = (q: MockQueue): any[] => [
 /**
  * One hourly pass of `provider`, then the ingest of every bill it queued on
  * the provider's own queue (unless `ingest` is false). Returns the bill ids
- * queued there, what the shared queue got, and the bill ids the instance was
- * sent as stubs.
+ * queued there, what the shared queue got, the bill ids the instance was sent
+ * as stubs, and the full messages it was sent. `fail` names bills whose
+ * ingest never lands (a provider that keeps failing them).
  */
-async function pass(provider: Provider, opts: { ingest?: boolean } = {}) {
+async function pass(provider: Provider, opts: { ingest?: boolean; fail?: number[] } = {}) {
   const db = drizzle(env.DB, { schema })
   const own = mockQueue()
   const shared = mockQueue()
@@ -74,7 +75,8 @@ async function pass(provider: Provider, opts: { ingest?: boolean } = {}) {
   await runSnapshotSync(provider, e, db)
   const ingests = bodies(own).filter(b => b.calendarRecheck === undefined)
   if (opts.ingest !== false) {
-    const messages = ingests.map(body => ({ body, ack: vi.fn(), retry: vi.fn() }))
+    const messages = ingests.filter(body => !opts.fail?.includes(body.billId))
+      .map(body => ({ body, ack: vi.fn(), retry: vi.fn() }))
     await processIngestorQueue({ messages } as any, e, db)
     for (const m of messages) expect(m.retry).not.toHaveBeenCalled()
   }
@@ -84,6 +86,8 @@ async function pass(provider: Provider, opts: { ingest?: boolean } = {}) {
     shared: bodies(shared).filter(b => b.calendarRecheck === undefined),
     stubbed: bodies(team).filter(b => b.stubOnly).map(b => Number(String(b.billId).split(':')[1])).sort((a, b) => a - b),
     ingestOrder: ingests.map(b => b.billId as number),
+    bodies: ingests,
+    full: bodies(team).filter(b => !b.stubOnly),
   }
 }
 
@@ -131,10 +135,14 @@ describe('a provider that declares ingestAll', () => {
     expect(await ingested()).toEqual(ids)
 
     feed(records.map(r => ({ ...r, Title: `${r.Title}, as amended` })))
-    const { queued, stubbed, shared } = await pass(cheap(1))
+    const { queued, stubbed, shared, full } = await pass(cheap(1))
     expect(queued).toEqual(ids)
     expect(stubbed).toEqual([])
     expect(shared).toEqual([])
+    // Each arrives as the ingest's full message, untracked.
+    for (const id of ids) {
+      expect(full).toContainEqual(expect.objectContaining({ tenantId: 'team', billId: `legiscan:${id}`, matchType: null }))
+    }
   })
 
   it('queues exactly perPass never-ingested bills a pass, and the rest on later passes, until none remain', async () => {
@@ -179,6 +187,60 @@ describe('a provider that declares ingestAll', () => {
     const tracked = (await db.select().from(schema.bills).where(eq(schema.bills.billNumber, 'B26-0003')).get())!.billId
     expect(ingestOrder).toHaveLength(3)
     expect(ingestOrder[0]).toBe(tracked)
+  })
+})
+
+describe('a never-ingested bill', () => {
+  it('gets a quiet first ingest: its backlog of actions and past hearings reaches instances as data, not as changes', async () => {
+    const meeting = { Id: 'm1', Date: '2026-01-20', Title: 'Committee hearing', Removed: false }
+    const records = [{ ...rec(1), Meetings: [meeting] }]
+    feed(records)
+    // perPass 0: the first pass only stubs it.
+    await pass(cheap(0))
+    expect(await ingested()).toEqual([])
+
+    const { queued, full, bodies: sent } = await pass(cheap(10))
+    const [id] = await allBillIds()
+    expect(queued).toEqual([id])
+    const msg = full.find(m => m.billId === `legiscan:${id}`)
+    expect(msg).toMatchObject({ matchType: null })
+    expect(msg.changes).toBeUndefined()
+    expect(msg.calendar?.changes ?? []).toEqual([])
+    expect(msg.calendar?.events).toHaveLength(1)
+    const logged = await env.DB.prepare('SELECT COUNT(*) AS n FROM bill_change_log WHERE bill_id = ?').bind(id).first<{ n: number }>()
+    expect(logged!.n).toBe(0)
+    // Queued by the provider, as a first full ingest.
+    expect(sent[0]).toMatchObject({ billId: id, queuedBy: 'example', firstFullIngest: true })
+  })
+
+  it('reports changes as usual once it has had its first ingest', async () => {
+    feed([rec(1)])
+    await pass(cheap(10))
+    const meeting = { Id: 'm1', Date: '2026-01-20', Title: 'Committee hearing', Removed: false }
+    feed([{ ...rec(1), Status: 'Enacted', Meetings: [meeting] }])
+    const { full, bodies: sent } = await pass(cheap(10))
+    expect(sent[0].firstFullIngest).toBeUndefined()
+    expect(full[0].changes?.map((c: any) => c.changeType)).toContain('status_change')
+  })
+
+  it('whose ingest keeps failing goes behind untried bills, then back to stubs after three passes', async () => {
+    feed([1, 2, 3, 4].map(n => rec(n)))
+    const ids = (await pass(cheap(0))).stubbed
+    expect(ids).toHaveLength(4)
+    const [a, b, c, d] = ids
+    const passes = []
+    for (let i = 0; i < 6; i++) passes.push(await pass(cheap(2), { fail: [a] }))
+    expect(passes.map(p => p.queued)).toEqual([[a, b], [c, d], [a], [a], [], []])
+    // Given up on, it gets a stub again, so instances hold its current status.
+    expect(passes[4].stubbed).toEqual([a])
+    expect(passes[5].stubbed).toEqual([])
+    expect(await ingested()).toEqual([b, c, d])
+
+    // A later change reaches instances as a stub, not as an ingest.
+    feed([{ ...rec(1), Status: 'Enacted' }, rec(2), rec(3), rec(4)])
+    const changed = await pass(cheap(2), { fail: [a] })
+    expect(changed.queued).toEqual([])
+    expect(changed.stubbed).toEqual([a])
   })
 })
 

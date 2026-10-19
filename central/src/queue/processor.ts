@@ -140,6 +140,7 @@ async function processBill(msg: BillMessage, env: Env, db: Db): Promise<void> {
     forceMetadata, forceAI, interactive,
     forceTextRefetch: msg.forceTextRefetch ?? false,
     matchProvenance: msg.matchProvenance,
+    firstFullIngest: msg.firstFullIngest,
   })
 }
 
@@ -194,6 +195,8 @@ export type IngestOptions = {
   forceTextRefetch?: boolean
   /** The new keyword matches the ingest brings instances (BillMessage.matchProvenance). */
   matchProvenance?: Record<string, MatchProvenance>
+  /** BillMessage.firstFullIngest: quiet while the bill has had no full ingest. */
+  firstFullIngest?: boolean
 }
 
 /**
@@ -218,10 +221,16 @@ export async function ingestMeasure(
     .select({
       changeHash: bills.changeHash, status: bills.status, title: bills.title, description: bills.description,
       provider: bills.provider, carriedFrom: bills.carriedFrom, carriedWaits: bills.carriedWaits,
+      textsFetchedAt: bills.textsFetchedAt, detailHash: bills.detailHash,
     })
     .from(bills)
     .where(eq(bills.billId, measure.bill_id))
     .get()
+  // The first full ingest an ingestAll pass queued, of a bill that still has
+  // had none (BillMessage.firstFullIngest). Its data is all new to instances,
+  // as a new bill's is, so nothing is reported as a change.
+  const quietFirst = !!opts.firstFullIngest && !!existingBillRow
+    && existingBillRow.textsFetchedAt === null && existingBillRow.detailHash === null
 
   // A cutover moved the bill to another provider while this ingest ran: the
   // bill's new provider writes it now, so this one writes nothing.
@@ -358,6 +367,10 @@ export async function ingestMeasure(
     }
     companionChanges = detectCompanionChanges(priorSasts, bill, provider)
   }
+  if (quietFirst) {
+    detectedChanges = []
+    companionChanges = []
+  }
 
   // This pull's effect on the bill's calendar. A new bill's entries are all
   // new, and like its other data they aren't reported as changes. Nor is a
@@ -374,7 +387,7 @@ export async function ingestMeasure(
     calendarPlan = null
   } else {
     calendarPlan = planCalendarPull(provider, bill.bill_id, priorCalendar, bill.calendar, bill.change_hash, now)
-    if (existingBillRow) calendarChanges = calendarPlan.changes
+    if (existingBillRow && !quietFirst) calendarChanges = calendarPlan.changes
   }
   // --- End change detection ---
 
@@ -433,7 +446,8 @@ export async function ingestMeasure(
       currentBodyId:      bill.current_body_id,
       // A cutover's first ingest changes the bill's data without reporting a
       // change, so instances still see it moved and fetch it again.
-      updatedAt:          detectedChanges.length > 0 || textHashChanged || carriedFrom ? now : sql`updated_at`,
+      // So is a quiet first full ingest.
+      updatedAt:          detectedChanges.length > 0 || textHashChanged || carriedFrom || quietFirst ? now : sql`updated_at`,
       textsFetchedAt:     now,
       detailHash:         holdBackChangeHash ? '' : bill.change_hash,
     },

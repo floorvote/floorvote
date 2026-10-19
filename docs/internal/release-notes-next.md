@@ -22,9 +22,10 @@ A fork upgrading from a build older than `v2026.10.0` has no rows to confirm. Cl
 
 Bills from the Maryland General Assembly, the Virginia LIS, and DC's LIMS now get a full ingest whether or not they match an instance's keywords, so instances covering those states receive every bill's history, sponsors, votes, and texts, not only the matched ones'. Analysis is unchanged: AI still runs only on keyword and manual matches, and untracked bills send members no notifications. LegiScan states are unchanged.
 
-- **Nothing to configure.** The providers declare it, and there's no switch.
+- **Nothing to configure, but bind the provider queues.** The providers declare it, and there's no switch. A provider whose queue isn't bound (`MGA_INGESTOR_QUEUE`, `LIS_INGESTOR_QUEUE`, `LIMS_INGESTOR_QUEUE`, commented out in `wrangler.example.toml`) sends these ingests to the shared queue, where they delay LegiScan's tracked bills by up to 500 ingests a pass per state. Bind each provider's queue before upgrading if you sync Maryland, Virginia, or DC from their own providers.
+- **A bill whose ingest keeps failing goes back to stubs.** After three passes without a first full ingest landing, the bill gets status updates as a stub, as before.
 - **A backfill over about a day.** Bills never fully ingested are queued at most 500 a pass for Maryland and Virginia and 200 for DC, so a state's existing stubs, and a new session's first pass, drain over several hourly passes rather than at once. Expect each provider's ingest queue, and each instance's queue, to stay busy meanwhile.
-- **More storage and calls.** Central's D1 grows by tens of megabytes and its R2 by about a gigabyte for all three states, mostly Maryland's PDFs. DC spends one `LegislationDetails` call per changed bill, on the LIMS queue's own pacing. LegiScan's budget is untouched.
+- **More storage and calls.** Central's D1 grows by tens of megabytes and its R2 by about a gigabyte for all three states, mostly Maryland's PDFs. DC spends one `LegislationDetails` call per changed bill, at the pace of whichever queue it is on. LegiScan's budget is untouched.
 
 **Deploying.** Upgrade the instances before central, so a bill page shows an untracked bill's full data as full rather than as a stub (#832).
 

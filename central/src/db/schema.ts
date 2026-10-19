@@ -103,6 +103,12 @@ export const bills = sqliteTable('bills', {
    * don't bind one more parameter per row.
    */
   carriedWaits:    integer('carried_waits'),
+  /**
+   * How many passes queued the bill for its first full ingest under a
+   * provider's ingestAll without one landing (0048, cron/sync.ts). Null for
+   * none, and with no default, as above.
+   */
+  firstIngestTries: integer('first_ingest_tries'),
 }, (t) => [
   index('idx_bills_session').on(t.sessionId),
   index('idx_bills_state').on(t.state),

@@ -150,6 +150,13 @@ export type BillMessage = {
    */
   firstIngestFor?: string
   /**
+   * The first full ingest of a bill a provider's ingestAll queued before it
+   * had one (cron/sync.ts). While the bill still has had none, the ingest
+   * stores its data and sends it with no changes, as a new bill's is: its
+   * backlog of actions, documents, and past hearings isn't news.
+   */
+  firstFullIngest?: boolean
+  /**
    * The instances this message brings a new keyword match to, by tenant id,
    * and where each match came from (MatchProvenance). Each instance's
    * notification carries its own. An instance missing here gets none, which

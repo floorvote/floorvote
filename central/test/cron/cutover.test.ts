@@ -903,6 +903,30 @@ describe('a moved bill no instance tracks', () => {
     expect(sentToTenant(after)).toContainEqual(expect.objectContaining({ billId: toHandle(B0001), matchType: 'keyword' }))
   })
 
+  it('skips an ingestAll message still waiting when an undo lands, so it costs no getBill', async () => {
+    const run = makeEnv()
+    expect((await cutover(run, '?confirm=true')).status).toBe(200)
+    await drain(run.limsQueue, run)
+    expect(await row('SELECT carried_from FROM bills WHERE bill_id = ?', B0001)).toEqual({ carried_from: null })
+
+    // B26-0001 changes at LIMS. LIMS declares ingestAll, so the next pass queues its ingest, untracked.
+    feed['BulkData/1/26'] = () => json(Object.values(bulk).filter(r => r.legislationCategory === 'Bill')
+      .map(r => (r.legislationNumber === 'B26-0001' ? { ...r, title: `${r.title as string}, as amended` } : r)))
+    const next = makeEnv()
+    const { runSnapshotSync } = await import('../../src/cron/sync-snapshots')
+    const { lims } = await import('../../src/providers/lims')
+    await runSnapshotSync(lims, next.env, drizzle(env.DB, { schema }), { force: true })
+    const waiting = queued(next.limsQueue).filter(b => b.billId === B0001)
+    expect(waiting).toHaveLength(1)
+
+    // The undo lands while it waits, and the message is skipped: no getBill.
+    expect((await undo(next, '?confirm=true')).status).toBe(200)
+    const messages = waiting.map(body => ({ body, ack: vi.fn(), retry: vi.fn() }))
+    await processIngestorQueue({ messages } as any, next.env, drizzle(env.DB, { schema }))
+    expect(legiscanCalls('getBill')).toEqual([])
+    expect(messages[0].ack).toHaveBeenCalled()
+  })
+
   it('isn\'t queued by LegiScan after an undo, so it costs no getBill', async () => {
     const run = makeEnv()
     expect((await cutover(run, '?confirm=true')).status).toBe(200)
