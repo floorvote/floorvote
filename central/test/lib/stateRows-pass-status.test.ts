@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 import { getProvider } from '../../src/providers'
 import { loadStateRows } from '../../src/lib/stateRows'
 
@@ -28,7 +28,7 @@ async function pass(sessionId: number, state: string, syncedAt: string, o: Recor
 const row = async (state: string) => (await loadStateRows(db(), E, NOW)).find(r => r.state === state)!
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
   await db().insert(schema.stateProviders).values({ state: LIMS_STATE, provider: 'lims' } as any)
 })
 

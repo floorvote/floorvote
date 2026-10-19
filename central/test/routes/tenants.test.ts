@@ -3,13 +3,13 @@ import { env } from 'cloudflare:test'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
 import { app } from '../../src/index-legiscan'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 import { eq } from 'drizzle-orm'
 
 const AUTH = { 'x-admin-secret': 'sek', 'content-type': 'application/json' }
 const TEST_ENV: any = { ...env, ADMIN_SECRET: 'sek' }
 
-beforeEach(async () => { await setupLsDb() })
+beforeEach(async () => { await clearDb() })
 
 async function seedReproc() {
   const db = drizzle(env.DB, { schema })

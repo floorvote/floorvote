@@ -25,12 +25,12 @@ import { getProvider } from '../../src/providers'
 import { limsBillId, limsDocId, limsSessionId } from '../../src/providers/lims/ids'
 import * as legiscan from '../../src/providers/legiscan/client'
 import { app } from '../../src/index-legiscan'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
 import ilTooLargeRaw from '../fixtures/il/too-large-to-display.html?raw'
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
   fetchMock.mockReset()
   // Default: text downloads succeed with empty html so r2_key gets stamped.
   fetchMock.mockResolvedValue(

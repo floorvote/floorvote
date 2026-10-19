@@ -2,7 +2,7 @@ import { env } from 'cloudflare:test'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { deleteOtherRollCalls, knownRollCallIds, type StoredRollCall } from '../../src/lib/billRollCalls'
 import type { CentralMeasure } from '../../src/providers'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 
 const stored = (rollCallId: number, over: Partial<StoredRollCall> = {}): StoredRollCall =>
   ({ rollCallId, date: '2026-03-03', description: 'Passed Senate (21-Y 19-N 0-A)', yea: 21, nay: 19, chamber: 'S', ...over })
@@ -36,7 +36,7 @@ describe('knownRollCallIds', () => {
 })
 
 describe('deleteOtherRollCalls', () => {
-  beforeEach(setupLsDb)
+  beforeEach(clearDb)
 
   it('deletes the bill\'s other roll calls and their member votes, and nothing of another bill', async () => {
     const row = (id: number, bill: number) => env.DB.prepare(

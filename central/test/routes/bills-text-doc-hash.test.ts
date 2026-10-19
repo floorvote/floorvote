@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
 import { app } from '../../src/index-legiscan'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 
 // The bill route sends each listed text with its own hash (#603), so an
 // instance can store it per document and tell a text that changed under the
@@ -13,7 +13,7 @@ import { setupLsDb } from '../helpers/setupLsDb'
 const BILL = 500
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
   const db = drizzle(env.DB, { schema })
   await db.insert(schema.sessions).values({
     sessionId: 1, state: 'ZZ', stateId: 99, yearStart: 2026, yearEnd: 2026, sessionName: 'ZZ 2026', sessionTitle: 'Regular',

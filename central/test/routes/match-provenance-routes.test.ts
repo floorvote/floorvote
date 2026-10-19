@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
 import { app } from '../../src/index-legiscan'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 
 // Seam 2 of #363: the operator and instance routes that turn bills into keyword
 // matches in bulk declare those matches bulk. The sync's own declarations are
@@ -46,7 +46,7 @@ function ingestorEnv() {
 const bodies = (sendBatch: ReturnType<typeof vi.fn>) => sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body))
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
   vi.clearAllMocks()
 })
 

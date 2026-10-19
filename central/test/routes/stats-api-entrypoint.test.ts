@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
 import { app, StatsApi, TenantApi } from '../../src/index-legiscan'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 
 // StatsApi is the named entrypoint a consumer Worker on the same account binds
 // to (`entrypoint = "StatsApi"`) to read tenant_stats. These tests call it the
@@ -29,7 +29,7 @@ const EXCLUDED = {
 }
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
 })
 
 describe('StatsApi.tenantStatsSince', () => {

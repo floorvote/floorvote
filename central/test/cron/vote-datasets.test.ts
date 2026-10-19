@@ -9,7 +9,7 @@ import { drizzle } from 'drizzle-orm/d1'
 import { sql } from 'drizzle-orm'
 import { zipSync, strToU8 } from 'fflate'
 import * as schema from '../../src/db/schema'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 
 const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
@@ -109,7 +109,7 @@ async function callsLogged(): Promise<Record<string, number>> {
 const weekPasses = () => db.run(sql`UPDATE sessions SET votes_checked_at = datetime('now', '-7 days')`)
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
   fetchMock.mockReset()
   ingestorSend.mockReset()
   tenantSend.mockReset()

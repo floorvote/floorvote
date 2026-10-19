@@ -3,7 +3,7 @@ import { env } from 'cloudflare:test'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
 import { app } from '../../src/index-legiscan'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 
 // Operators see how well one instance's claim links resolve (#573): central asks
 // the instance over its service binding, so nothing is stored here and nothing
@@ -12,7 +12,7 @@ import { setupLsDb } from '../helpers/setupLsDb'
 const ADMIN = { Authorization: 'Bearer sek' }
 const BASE: any = { ...env, ADMIN_SECRET: 'sek' }
 
-beforeEach(async () => { await setupLsDb() })
+beforeEach(async () => { await clearDb() })
 
 const COUNTS = {
   analyses: { withClaimSources: 7, emptyList: 2, noList: 5 },

@@ -3,7 +3,7 @@ import { env } from 'cloudflare:test'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
 import { app } from '../../src/index-legiscan'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 import { isSuperadminJtiRevoked } from '../../src/lib/superadminRevocation'
 import { signSuperadminJwt, verifySuperadminJwt } from '../../src/lib/superadminJwt'
 
@@ -18,7 +18,7 @@ async function genKeys(): Promise<{ priv: string; pub: string }> {
 const keys = await genKeys()
 const TEST_ENV: any = { ...env, ADMIN_SECRET: 'admin-secret', SUPERADMIN_JWT_PUBLIC_KEY: keys.pub }
 
-beforeEach(async () => { await setupLsDb() })
+beforeEach(async () => { await clearDb() })
 
 function post(body: unknown, secret?: string) {
   return app.fetch(

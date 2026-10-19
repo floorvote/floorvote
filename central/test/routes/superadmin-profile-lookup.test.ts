@@ -3,7 +3,7 @@ import { env } from 'cloudflare:test'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
 import { app, TenantApi } from '../../src/index-legiscan'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 import { saveSuperadminProfile } from '../../src/lib/superadminProfile'
 
 // The profile lookup an instance makes when a superadmin signs in by emailed link.
@@ -53,7 +53,7 @@ async function answer(res: Response) {
 }
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
   await saveSuperadminProfile(db(), SUPER, { name: 'Ada Lovelace', title: 'Operator support' })
   // Someone who set a profile and was later taken off the list.
   await saveSuperadminProfile(db(), REMOVED, { name: 'Former Staff', title: 'Ex-support' })

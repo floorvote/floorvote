@@ -4,7 +4,7 @@ import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import * as schema from '../../src/db/schema'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 import {
   isSuperAdmin,
   generateToken,
@@ -25,7 +25,7 @@ async function genKeys(): Promise<{ priv: string; pub: string }> {
 }
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
 })
 
 describe('isSuperAdmin', () => {

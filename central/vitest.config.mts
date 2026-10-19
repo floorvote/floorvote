@@ -25,6 +25,8 @@ export default defineConfig({
   ],
   test: {
     pool: cloudflarePool(),
+    // Builds the schema once per file; see test/setup.ts.
+    setupFiles: ['./test/setup.ts'],
     exclude: ['web/**', 'node_modules/**'],
     // Vitest's 5s default is too tight for this suite. Several tests seed
     // hundreds of D1 rows to exercise chunking and pagination boundaries

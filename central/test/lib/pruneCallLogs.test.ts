@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 import { CALL_LOG_RETENTION_DAYS, pruneCallLogs } from '../../src/lib/pruneCallLogs'
 import { legiscanCallsThisMonth } from '../../src/lib/legiscanBudget'
 import { loadStateRows } from '../../src/lib/stateRows'
@@ -28,7 +28,7 @@ const oldSecond = (i: number) => new Date(NOW.getTime() - (CALL_LOG_RETENTION_DA
 const callTimes = async () => (await db().select().from(schema.apiCallLog).all()).map(r => r.loggedAt).sort()
 const tickTimes = async () => (await db().select().from(schema.sessionSyncLog).all()).map(r => r.syncedAt).sort()
 
-beforeEach(async () => { await setupLsDb() })
+beforeEach(async () => { await clearDb() })
 
 describe('pruneCallLogs: retention window', () => {
   it('keeps the logs for longer than the longest window anything reads (the Budget page\'s 90 days)', () => {

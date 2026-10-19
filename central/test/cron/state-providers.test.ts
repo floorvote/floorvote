@@ -7,7 +7,7 @@ import { env } from 'cloudflare:test'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 import bulkRaw from '../fixtures/lims/bulk-records.json?raw'
 import details0400Raw from '../fixtures/lims/details-B26-0400.json?raw'
 import membersRaw from '../fixtures/lims/members-26.json?raw'
@@ -114,7 +114,7 @@ const logged = (spy: { mock: { calls: unknown[][] } }, pattern: RegExp) =>
   spy.mock.calls.map(c => c.map(String).join(' ')).filter(line => pattern.test(line))
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
   vi.clearAllMocks()
   vi.mocked(lims.getCouncilPeriods).mockResolvedValue([PERIOD])
   vi.mocked(lims.getMembers).mockResolvedValue(JSON.parse(membersRaw))

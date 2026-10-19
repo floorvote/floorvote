@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
 import { app } from '../../src/index-legiscan'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 
 // Release 1 of the neutral handle rename (#305): central's bill routes take a
 // bill by its neutral handle as readily as by its legacy one or a bare id, and
@@ -12,7 +12,7 @@ import { setupLsDb } from '../helpers/setupLsDb'
 const headers = { 'x-admin-secret': 'test-secret', 'Content-Type': 'application/json' }
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
   const db = drizzle(env.DB, { schema })
   await db.insert(schema.sessions).values({ sessionId: 1, state: 'RI', stateId: 39, yearStart: 2026, yearEnd: 2026, sessionName: 'RI 2026', sessionTitle: 'Regular' })
   await db.insert(schema.bills).values([

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import { eq } from 'drizzle-orm'
 import * as schema from '../../src/db/schema'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 import sessionRaw from '../fixtures/example/session-2026.json?raw'
 
 // Provider extras at the main seam: a provider's recorded feed in, central's
@@ -98,7 +98,7 @@ async function builtEnacted() {
 }
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
   vi.clearAllMocks()
   exampleFeed.records = structuredClone(records)
   const db = drizzle(env.DB, { schema })

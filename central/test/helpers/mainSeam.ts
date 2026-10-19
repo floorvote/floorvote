@@ -7,7 +7,7 @@ import { runSnapshotSync } from '../../src/cron/sync-snapshots'
 import { processIngestorQueue } from '../../src/queue/processor'
 import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
 import type { Provider } from '../../src/providers'
-import { setupLsDb } from './setupLsDb'
+import { clearDb } from './migrations'
 
 /**
  * The main seam for a provider's tests: its recorded feed in, central's bill
@@ -164,7 +164,7 @@ export const ADMIN_SECRET = 'test-secret'
 export async function resetCentral(at = '2026-09-28T09:00:00Z'): Promise<void> {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date(at))
-  await setupLsDb()
+  await clearDb()
   vi.clearAllMocks()
 }
 

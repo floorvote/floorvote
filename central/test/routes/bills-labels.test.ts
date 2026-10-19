@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
 import { app } from '../../src/index-legiscan'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 
 const headers = { 'x-admin-secret': 'test-secret' }
 
@@ -23,7 +23,7 @@ async function labels(state: string): Promise<Labels> {
 }
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
 })
 
 describe('GET /bills/labels', () => {

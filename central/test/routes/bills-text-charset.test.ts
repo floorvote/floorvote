@@ -3,13 +3,13 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
 import { app } from '../../src/index-legiscan'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 
 // Both endpoints read the same R2 object: GET /bills/:id/text (JSON, read by the
 // analysis path) and GET /bills/:id/text/:docId (inline, read by the bill text panel).
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
   const db = drizzle(env.DB, { schema })
   await db.insert(schema.sessions).values({
     sessionId: 1, state: 'VA', stateId: 46, yearStart: 2026, yearEnd: 2026, sessionName: 'VA 2026', sessionTitle: 'Regular',

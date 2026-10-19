@@ -3,7 +3,7 @@ import { env } from 'cloudflare:test'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
 import { app } from '../../src/index-legiscan'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 
 // The operator routes scripts/verify-instance.sh drives. None may call LegiScan,
 // change which bills a tenant tracks, or feed the ingestor.
@@ -11,7 +11,7 @@ import { setupLsDb } from '../helpers/setupLsDb'
 const AUTH = { 'x-admin-secret': 'sek', 'content-type': 'application/json' }
 const BASE: any = { ...env, ADMIN_SECRET: 'sek' }
 
-beforeEach(async () => { await setupLsDb() })
+beforeEach(async () => { await clearDb() })
 afterEach(() => { vi.unstubAllGlobals() })
 
 async function seedTenant(over: Partial<typeof schema.tenants.$inferInsert> = {}) {

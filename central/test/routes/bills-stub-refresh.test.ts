@@ -18,13 +18,13 @@ vi.stubGlobal('fetch', fetchMock)
 import { app, TenantApi } from '../../src/index-legiscan'
 import { processIngestorQueue } from '../../src/queue/processor'
 import * as legiscan from '../../src/providers/legiscan/client'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 
 const STUB = 700
 const AUTH = { 'x-admin-secret': 'test-secret' }
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
   fetchMock.mockReset()
   fetchMock.mockResolvedValue(new Response('<html></html>', { status: 200, headers: { 'content-type': 'text/html' } }))
   vi.mocked(legiscan.getBill).mockReset()

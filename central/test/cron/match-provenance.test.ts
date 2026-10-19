@@ -5,7 +5,7 @@ import * as schema from '../../src/db/schema'
 import { sessions, bills, billTenants, tenants, keywordRegistry } from '../../src/db/schema'
 import { applyMasterList } from '../../src/cron/sync'
 import type { SyncEntry } from '../../src/providers/types'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 
 // Seam 2 of #363: every path that links a bill to an instance with a keyword
 // match declares the match routine or bulk on the ingestor message, per
@@ -51,7 +51,7 @@ async function pass(list: SyncEntry[], tenantIds: string[]) {
 }
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
   vi.clearAllMocks()
   const db = drizzle(env.DB, { schema })
   await db.insert(sessions).values({

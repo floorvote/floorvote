@@ -3,7 +3,7 @@ import { env } from 'cloudflare:test'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
 import { app } from '../../src/index-legiscan'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 
 // An instance learns where central's admin dashboard lives from the same answer
 // that carries its capabilities and attribution (#538), so a superadmin's
@@ -12,7 +12,7 @@ import { setupLsDb } from '../helpers/setupLsDb'
 const TEST_ENV: any = { ...env, ADMIN_SECRET: 'sek' }
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
   await drizzle(env.DB, { schema }).insert(schema.tenants).values({ tenantId: 'ri', name: 'RI', stateCoverage: '["RI"]', active: true })
 })
 

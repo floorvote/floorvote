@@ -12,10 +12,10 @@ vi.mock('../../src/providers/legiscan/client', async () => {
   return { ...actual, getMasterListBySession: vi.fn() }
 })
 import * as legiscan from '../../src/providers/legiscan/client'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
 })
 
 async function seedTenantWithBills(opts: {

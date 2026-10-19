@@ -4,7 +4,7 @@ import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
 import { providerCacheDrop, providerCacheList, providerCachePut } from '../../src/lib/providerCache'
 import { providerContext } from '../../src/lib/providerContext'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 import { govinfo } from '../../src/providers/govinfo'
 
 // What a provider keeps between runs (ProviderContext.cache, #619): small text
@@ -14,7 +14,7 @@ import { govinfo } from '../../src/providers/govinfo'
 const db = () => drizzle(env.DB, { schema })
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
 })
 
 describe('what a provider keeps between runs', () => {

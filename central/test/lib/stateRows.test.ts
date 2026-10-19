@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 import { PROVIDERS, getProvider } from '../../src/providers'
 import { CALL_LOGGING, loadStateRows } from '../../src/lib/stateRows'
 
@@ -32,7 +32,7 @@ async function calls(rows: [string, string][]) {
 }
 const rowFor = async (state: string, e: any = E) => (await loadStateRows(db(), e, NOW)).find(r => r.state === state)!
 
-beforeEach(async () => { await setupLsDb() })
+beforeEach(async () => { await clearDb() })
 
 describe('loadStateRows: which states appear', () => {
   it('is empty when central holds no data', async () => {

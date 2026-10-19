@@ -26,7 +26,7 @@ vi.mock('../../src/lib/queuesRest', () => ({
 import { runSync } from '../../src/cron/sync'
 import * as legiscan from '../../src/providers/legiscan/client'
 import * as queuesRest from '../../src/lib/queuesRest'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 import { limsSessionId } from '../../src/providers/lims/ids'
 
 function getCurrentEtHour(): number {
@@ -41,7 +41,7 @@ function getCurrentEtHour(): number {
 }
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
   vi.clearAllMocks()
   // Re-establish the default for getSessionList after clearAllMocks wipes implementations.
   vi.mocked(legiscan.getSessionList).mockResolvedValue([])
@@ -621,14 +621,19 @@ describe('runSync → wildcard stateCoverage', () => {
   it('still fails a LegiScan pass when its log row cannot be written (only snapshot passes tolerate that)', async () => {
     const db = drizzle(env.DB, { schema })
     await env.DB.exec(`CREATE TRIGGER no_log BEFORE INSERT ON session_sync_log BEGIN SELECT RAISE(ABORT, 'log refused'); END`)
-    const { applyMasterList } = await import('../../src/cron/sync')
-    await expect(applyMasterList(
-      { sessionId: 7101, state: 'PA', sessionName: 'PA', provider: 'legiscan' }, [], [], env as any, db,
-    )).rejects.toThrow()
-    // And with the opt-in, the same write failing is noted and the pass returns.
-    await expect(applyMasterList(
-      { sessionId: 7101, state: 'PA', sessionName: 'PA', provider: 'legiscan' }, [], [], env as any, db, undefined, { tolerateLogFailure: true },
-    )).resolves.toEqual([])
+    try {
+      const { applyMasterList } = await import('../../src/cron/sync')
+      await expect(applyMasterList(
+        { sessionId: 7101, state: 'PA', sessionName: 'PA', provider: 'legiscan' }, [], [], env as any, db,
+      )).rejects.toThrow()
+      // And with the opt-in, the same write failing is noted and the pass returns.
+      await expect(applyMasterList(
+        { sessionId: 7101, state: 'PA', sessionName: 'PA', provider: 'legiscan' }, [], [], env as any, db, undefined, { tolerateLogFailure: true },
+      )).resolves.toEqual([])
+    } finally {
+      // clearDb() empties tables but keeps triggers; the next test must log freely.
+      await env.DB.exec('DROP TRIGGER IF EXISTS no_log')
+    }
   })
 
   it('does not sync sessions when no sessions exist in DB even with wildcard tenant', async () => {

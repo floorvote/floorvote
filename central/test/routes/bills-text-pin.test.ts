@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
 import { app } from '../../src/index-legiscan'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 
 // GET /bills/:id/text names the document it served (#568). Instances pin each
 // bill's claim sources to the document the model read, which is this one, so
@@ -12,7 +12,7 @@ import { setupLsDb } from '../helpers/setupLsDb'
 const BILL = 400
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
   const db = drizzle(env.DB, { schema })
   await db.insert(schema.sessions).values({
     sessionId: 1, state: 'ZZ', stateId: 99, yearStart: 2026, yearEnd: 2026, sessionName: 'ZZ 2026', sessionTitle: 'Regular',

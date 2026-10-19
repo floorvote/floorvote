@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import { eq } from 'drizzle-orm'
 import * as schema from '../../src/db/schema'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 
 // Partial snapshots (ProviderSnapshot.partial): a provider answers the ETag
 // core handed it with only the records that changed since. Driven through
@@ -164,7 +164,7 @@ const ORIGINAL = {
 }
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
   vi.clearAllMocks()
   feed({ records: [] })
   exampleFeed.asked = []

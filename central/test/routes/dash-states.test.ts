@@ -3,7 +3,7 @@ import { env } from 'cloudflare:test'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
 import { app } from '../../src/index-legiscan'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 import { getProvider } from '../../src/providers'
 import { createAdminSession } from '../../src/lib/adminAuth'
 import { signSuperadminJwt } from '../../src/lib/superadminJwt'
@@ -29,7 +29,7 @@ const LIS_STATE = getProvider('lis').states![0]
 const db = () => drizzle(env.DB, { schema })
 const get = (init: RequestInit = { headers: AUTH }, e: any = TEST_ENV) => app.fetch(new Request(URL, init), e)
 
-beforeEach(async () => { await setupLsDb() })
+beforeEach(async () => { await clearDb() })
 
 describe('GET /admin/dash/states: auth', () => {
   it('refuses an unauthenticated request', async () => {

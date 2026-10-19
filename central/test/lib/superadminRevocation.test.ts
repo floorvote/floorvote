@@ -3,14 +3,14 @@ import { env } from 'cloudflare:test'
 import { drizzle } from 'drizzle-orm/d1'
 import { eq } from 'drizzle-orm'
 import * as schema from '../../src/db/schema'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 import {
   isSuperadminJtiRevoked,
   revokeSuperadminJti,
   pruneRevokedSuperadminJtis,
 } from '../../src/lib/superadminRevocation'
 
-beforeEach(async () => { await setupLsDb() })
+beforeEach(async () => { await clearDb() })
 
 describe('superadmin jti revocation store', () => {
   it('reports an unknown jti as not revoked', async () => {

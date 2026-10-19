@@ -1,12 +1,12 @@
 import { env } from 'cloudflare:test'
 import { describe, it, expect, beforeEach } from 'vitest'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 
 // The sync pass reads a bill's relations from both sides (cron/sync.ts), the
 // companion's side by sast_bill_id. Without an index that is a scan of the whole
 // table per chunk of the session's bills.
 
-beforeEach(setupLsDb)
+beforeEach(clearDb)
 
 async function plan(sql: string): Promise<string> {
   const rows = (await env.DB.prepare(`EXPLAIN QUERY PLAN ${sql}`).all()).results as { detail: string }[]

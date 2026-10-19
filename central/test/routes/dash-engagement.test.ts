@@ -3,7 +3,7 @@ import { env } from 'cloudflare:test'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
 import { app } from '../../src/index-legiscan'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 
 // Freeze the clock so the hardcoded seed statDates (2026-05-27/28) always fall
 // inside the relative `?days=N` windows the endpoints compute from "now".
@@ -11,7 +11,7 @@ import { setupLsDb } from '../helpers/setupLsDb'
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-05-29T12:00:00Z'))
-  await setupLsDb()
+  await clearDb()
 })
 
 afterEach(() => {

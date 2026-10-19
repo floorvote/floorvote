@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
 import { app } from '../../src/index-legiscan'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 import { titleKey } from '../../../shared/titleCompanions'
 
 // GET /bills/:id serves each bill's title key (#521): the key instances store
@@ -13,7 +13,7 @@ import { titleKey } from '../../../shared/titleCompanions'
 // delivery, and on every page view at once, with nothing stored in central.
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
 })
 
 const TITLE = 'An act relating to elections and the registration of voters'

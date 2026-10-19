@@ -4,7 +4,7 @@ import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
 import { legiscanCallsThisMonth, monthStartDb } from '../../src/lib/legiscanBudget'
 import { app } from '../../src/index-legiscan'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 
 // The month's LegiScan call count: the number the Budget page shows, and the
 // one the stub refresh's budget floor reads. One function serves both, so the
@@ -13,7 +13,7 @@ import { setupLsDb } from '../helpers/setupLsDb'
 const NOW = new Date('2026-10-16T12:00:00Z')
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
 })
 
 async function log(loggedAt: string, callType = 'getBill') {

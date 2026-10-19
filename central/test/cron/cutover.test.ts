@@ -2,7 +2,7 @@ import { env } from 'cloudflare:test'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 import bulkRaw from '../fixtures/lims/bulk-records.json?raw'
 import details0400Raw from '../fixtures/lims/details-B26-0400.json?raw'
 import detailsHnRaw from '../fixtures/lims/details-HN26-0171.json?raw'
@@ -292,7 +292,7 @@ async function seedLegiscanDc() {
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-09-28T09:00:00Z'))   // 5 ET
-  await setupLsDb()
+  await clearDb()
   vi.clearAllMocks()
   Object.assign(hooks, { beforeRead: null, beforeLog: null, bill: null, failWrite: false, failVotes: false })
   vi.mocked(getCurrentEtHour).mockReturnValue(5)

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { env } from 'cloudflare:test'
 import { TenantApi, app } from '../../src/index-legiscan'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 
 // The TenantApi WorkerEntrypoint is the ONLY surface tenants can reach over the
 // service binding. It must be deny-by-default: only the explicit allowlist of
@@ -27,7 +27,7 @@ async function callTenantApi(method: string, path: string, init: RequestInit = {
 }
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
   vi.restoreAllMocks()
 })
 

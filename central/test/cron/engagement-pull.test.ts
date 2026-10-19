@@ -3,7 +3,7 @@ import { env } from 'cloudflare:test'
 import { drizzle } from 'drizzle-orm/d1'
 import { eq } from 'drizzle-orm'
 import * as schema from '../../src/db/schema'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 import { pullEngagementStats, pullEngagementStatsForTenant, shouldRunEngagementPull } from '../../src/cron/engagement-pull'
 import { sendOpsAlert } from '../../src/lib/jobAlert'
 
@@ -16,7 +16,7 @@ const mockSendOpsAlert = vi.mocked(sendOpsAlert)
 const TEST_ENV: any = { ...env, ADMIN_SECRET: 'sek' }
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
   vi.restoreAllMocks()
   mockSendOpsAlert.mockClear()
   mockSendOpsAlert.mockImplementation(async () => {})

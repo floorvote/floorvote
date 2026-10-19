@@ -3,7 +3,7 @@ import { env } from 'cloudflare:test'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
 import { app } from '../../src/index-legiscan'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 
 // The other readers of the sync log: a failed pass is a row in it, and is not a sync.
 const TEST_ENV: any = { ...env, ADMIN_SECRET: 'sek' }
@@ -17,7 +17,7 @@ const get = async (path: string) => {
 const ago = (ms: number) => new Date(Date.now() - ms).toISOString()
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
   await db().insert(schema.tenants).values({ tenantId: 'ri', name: 'RI', stateCoverage: '["RI"]', active: true } as any)
   await db().insert(schema.sessions).values({
     sessionId: 1, state: 'RI', stateId: 41, yearStart: 2026, yearEnd: 2026, prefile: 0, sineDie: 0, prior: 0, special: 0,

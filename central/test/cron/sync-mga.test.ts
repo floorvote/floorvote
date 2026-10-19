@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import { eq } from 'drizzle-orm'
 import * as schema from '../../src/db/schema'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 import sampleRaw from '../fixtures/mga/2026RS-sample.json?raw'
 
 vi.mock('../../src/providers/mga/client', async () => {
@@ -61,7 +61,7 @@ async function billByNumber(number: string) {
 }
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
   vi.clearAllMocks()
   vi.mocked(mga.mgaSessionExists).mockImplementation(async code => code === CODE)
   vi.mocked(mga.getMgaSession).mockImplementation(async code => (code === CODE ? file(structuredClone(sample)) : null))

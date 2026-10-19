@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { env } from 'cloudflare:test'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 import { revokeSuperadminJti, isSuperadminJtiRevoked, pruneRevokedSuperadminJtis } from '../../src/lib/superadminRevocation'
 import { pruneCallLogs } from '../../src/lib/pruneCallLogs'
 import worker from '../../src/index-legiscan'
@@ -32,7 +32,7 @@ async function tick(isoUtc: string) {
 }
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
   prune.mockReset()
   pruneJtis.mockClear()
   prune.mockImplementation(async () => ({ apiCallLog: 0, sessionSyncLog: 0 }))

@@ -3,11 +3,11 @@ import { env } from 'cloudflare:test'
 import { drizzle } from 'drizzle-orm/d1'
 import { eq } from 'drizzle-orm'
 import * as schema from '../../src/db/schema'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 import { getSetting, getSettingNumber, setSetting } from '../../src/lib/settings'
 import migration0020 from '../../migrations-legiscan/0020_legiscan_limit_10k.sql?raw'
 
-beforeEach(async () => { await setupLsDb() })
+beforeEach(async () => { await clearDb() })
 
 describe('settings helpers', () => {
   it('reads a seeded default', async () => {

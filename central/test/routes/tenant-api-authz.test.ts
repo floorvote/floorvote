@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { env } from 'cloudflare:test'
 import { TenantApi, app } from '../../src/index-legiscan'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 
 // Object-level authorization for the tenant-reachable central surface.
 //
@@ -43,7 +43,7 @@ function bindingCall(
 const JSON_HEADERS = { 'content-type': 'application/json' }
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
   vi.restoreAllMocks()
 })
 

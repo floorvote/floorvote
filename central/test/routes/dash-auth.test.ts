@@ -4,7 +4,7 @@ import { drizzle } from 'drizzle-orm/d1'
 import { eq } from 'drizzle-orm'
 import * as schema from '../../src/db/schema'
 import { app } from '../../src/index-legiscan'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 import { hashToken } from '../../src/lib/adminAuth'
 import { signSuperadminJwt, verifySuperadminJwt } from '../../src/lib/superadminJwt'
 import { revokeSuperadminJti } from '../../src/lib/superadminRevocation'
@@ -30,7 +30,7 @@ const TEST_ENV: any = {
 }
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
   vi.restoreAllMocks()
 })
 

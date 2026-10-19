@@ -4,6 +4,7 @@ import { drizzle } from 'drizzle-orm/d1'
 import { eq } from 'drizzle-orm'
 import * as schema from '../../src/db/schema'
 import { resetCentral } from '../helpers/mainSeam'
+import { legiscanMigrations, setupDb } from '../helpers/migrations'
 import bulkRaw from '../fixtures/lims/bulk-records.json?raw'
 import membersRaw from '../fixtures/lims/members-26.json?raw'
 import mgaRaw from '../fixtures/mga/2026RS-sample.json?raw'
@@ -124,7 +125,11 @@ beforeEach(async () => {
   ])
 })
 
-afterEach(() => { vi.useRealTimers() })
+afterEach(async () => {
+  vi.useRealTimers()
+  // clearDb() empties tables but keeps triggers; three tests below install one.
+  await env.DB.exec('DROP TRIGGER IF EXISTS no_etag; DROP TRIGGER IF EXISTS no_failed_rows;')
+})
 
 describe('a pass that finishes', () => {
   it('logs one row for a LIMS pass, with the counts it reported', async () => {
@@ -383,6 +388,8 @@ describe('a pass that fails', () => {
 
 describe('a logging failure', () => {
   const dropLog = () => env.DB.exec('DROP TABLE session_sync_log')
+  // The schema is built once per file (test/setup.ts); put the table back.
+  afterEach(() => setupDb(legiscanMigrations))
 
   it('does not break a pass that finishes with nothing, or its session stamp', async () => {
     vi.mocked(limsClient.getBulkData).mockResolvedValue([])

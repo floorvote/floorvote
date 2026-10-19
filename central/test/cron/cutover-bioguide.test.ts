@@ -2,7 +2,7 @@ import { env } from 'cloudflare:test'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
-import { setupLsDb } from '../helpers/setupLsDb'
+import { clearDb } from '../helpers/migrations'
 import sessionRaw from '../fixtures/example/session-2026.json?raw'
 
 // Legislators matched by Bioguide id in a cutover, and stored from a snapshot
@@ -91,7 +91,7 @@ const feedPeople = (): NonNullable<typeof exampleFeed.people> => [
 ]
 
 beforeEach(async () => {
-  await setupLsDb()
+  await clearDb()
   vi.clearAllMocks()
   exampleFeed.records = structuredClone(records)
   exampleFeed.people = feedPeople()
