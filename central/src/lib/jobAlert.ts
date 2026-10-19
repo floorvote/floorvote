@@ -1,10 +1,10 @@
 import type { Env } from '../types'
-import { sendEmail } from './email'
+import { centralSender } from './sender'
 import { PRODUCT_NAME } from '../../../shared/brand'
 
 // Structural subset of the env that jobAlert needs, so callers and tests can
 // pass a minimal env rather than a full `Env`.
-type AlertEnv = Pick<Env, 'RESEND_API_KEY' | 'EMAIL_PROVIDER' | 'EMAIL' | 'ALERT_EMAILS'>
+type AlertEnv = Pick<Env, 'RESEND_API_KEY' | 'EMAIL_PROVIDER' | 'EMAIL' | 'EMAIL_FROM' | 'EMAIL_REPLY_TO' | 'ALERT_EMAILS'>
 
 /**
  * Scheduled jobs run via `ctx.waitUntil(promise)`; a rejected promise vanishes
@@ -38,7 +38,9 @@ function alertRecipients(env: AlertEnv): string[] {
 
 /**
  * Best-effort ops alert: send `{ subject, text, html }` to every `alertRecipients`
- * address via `sendEmail`. Never throws; no-ops (just logs) when no recipients.
+ * address through the shared sender with the operator purpose (so it falls
+ * back to the second provider when central has both). Never throws; no-ops
+ * (just logs) when no recipients, and logs a send that fails.
  */
 export async function sendOpsAlert(env: AlertEnv, msg: { subject: string; text: string; html: string }): Promise<void> {
   const recipients = alertRecipients(env)
@@ -47,7 +49,8 @@ export async function sendOpsAlert(env: AlertEnv, msg: { subject: string; text: 
     return
   }
   try {
-    await sendEmail(env, { to: recipients, subject: msg.subject, html: msg.html, text: msg.text })
+    const r = await centralSender(env).send({ purpose: 'operator', to: recipients, subject: msg.subject, html: msg.html, text: msg.text })
+    if (!r.ok) console.error(`[ops-alert] "${msg.subject}" not sent: ${r.error}`)
   } catch (e) {
     console.error('[ops-alert] alert email itself failed', e)
   }

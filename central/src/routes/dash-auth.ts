@@ -16,7 +16,7 @@ import { verifySuperadminJwt } from '../lib/superadminJwt'
 import { isSuperadminJtiRevoked } from '../lib/superadminRevocation'
 import { setSuperadminCookie } from '../lib/superadminIssuer'
 import { sendAdminMagicLink } from '../lib/adminEmail'
-import { activeProvider } from '../lib/email'
+import { hasConfiguredProvider } from '../../../shared/emailProviders'
 import { nowDb } from '../lib/dbTime'
 import { checkRateLimit } from '../../../shared/rateLimit'
 import { verifyTurnstile } from '../../../shared/turnstile'
@@ -108,10 +108,10 @@ dashAuthRoutes.post('/login', async (c) => {
   if (!isSuperAdmin(email, c.env.SUPERADMIN_EMAILS)) {
     return c.json({ data: { ok: true }, meta: { generatedAt: new Date().toISOString() } })
   }
-  // Gate on "a sender is configured" (Resend's key, or the Cloudflare binding
-  // `sendEmail` would pick), not on Resend specifically.
+  // Gate on "a sender is configured" (Resend's key, or the Cloudflare binding),
+  // as the shared sender sees it, not on Resend specifically.
   const missing: string[] = []
-  if (!c.env.RESEND_API_KEY && activeProvider(c.env) !== 'cloudflare') {
+  if (!hasConfiguredProvider(c.env)) {
     missing.push('an email sender (RESEND_API_KEY, or EMAIL_PROVIDER=cloudflare with an EMAIL binding)')
   }
   if (!c.env.ADMIN_APP_URL) missing.push('ADMIN_APP_URL')

@@ -56,11 +56,11 @@ the other provider is configured. A permanent one never does.
 
 | Purpose | Emails | Falls back | Counts toward email health | Demo mode |
 |---|---|---|---|---|
-| Sign-in | tenant login, admin-sent login and invite links, the invite queue | yes | yes, when a recorder is supplied | invites suppressed, login sends |
+| Sign-in | tenant login, admin-sent login and invite links, the invite queue, central's dashboard sign-in link | yes | yes, when a recorder is supplied | invites suppressed, login sends |
 | Account | the email-change confirmation link, the notice to the old address, the "this wasn't me" report | yes | yes, when a recorder is supplied | suppressed |
 | Notification | mentions, replies (a reply keeps its thread and one-click mute headers) | yes | yes, when a recorder is supplied | suppressed |
 | Bulk | the digest, the week-ahead email | **never** | yes, when a recorder is supplied | suppressed |
-| Operator | feedback, invite-bounce notices, job alerts, sample emails | yes | **never** | sends |
+| Operator | feedback, invite-bounce notices, job alerts, sample emails, central's ops alerts | yes | **never** | sends |
 | Outage alert | the email-health alert | the healthy provider first, then the failing one | **never** | sends |
 
 Bulk mail never falls back, so an outage on the first provider can't push a whole
@@ -83,7 +83,12 @@ A sample email returns the sender's result as it is, so the operator who asked
 sees which provider sent it, or why none did.
 
 The API supplies `emailHealthRecorder(db)`, and central supplies none, so central
-counts nothing. A sign-in message carries its `auth_events` writer, called once
+counts nothing. Central builds its sender with `centralSender(env)`
+(`central/src/lib/sender.ts`), which tries only the providers that are configured
+(a Resend key, or the `EMAIL` binding): with both, the dashboard sign-in link and
+ops alerts fall back, and with neither, a send fails at once without calling a
+provider. The dashboard login gate asks `hasConfiguredProvider` the same question.
+A sign-in message carries its `auth_events` writer, called once
 per attempt. `sendEmail` and `sendBatch` have no caller left, and #711 deletes them.
 
 The email-change confirmation turns the sender's verdict into the member's

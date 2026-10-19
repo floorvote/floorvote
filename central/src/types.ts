@@ -62,7 +62,7 @@ export type Env = {
   ADMIN_SECRET: string
   OPERATOR_NAME: string
   RESEND_API_KEY?: string
-  EMAIL?: import('./lib/email').CloudflareEmailBinding
+  EMAIL?: import('../../shared/emailProviders').CloudflareEmailBinding
   EMAIL_PROVIDER?: string
   EMAIL_FROM?: string       // full sender address; defaults to notifications@example.com
   EMAIL_REPLY_TO?: string   // reply-to; defaults to EMAIL_FROM

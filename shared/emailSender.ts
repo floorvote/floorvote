@@ -21,7 +21,8 @@
  * report), notification (mentions and replies), bulk (the digest and the
  * week-ahead email), operator (feedback, invite-bounce notices, job alerts, and
  * sample emails), and outage-alert (the email-health alert, which tries the
- * healthy provider first). #710 moves central's.
+ * healthy provider first). Central sends its dashboard sign-in link as sign-in
+ * and its ops alerts as operator, with no recorder.
  *
  * Tests pass in-memory providers through `SenderOptions.providers`; the real
  * adapters live in `./emailProviders`.
