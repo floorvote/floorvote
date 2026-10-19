@@ -22,7 +22,7 @@ A fork upgrading from a build older than `v2026.10.0` has no rows to confirm. Cl
 
 Statements in an AI summary can now link to the bill text behind them, as summary citations. On an HTML bill, clicking a statement opens the bill text at the passage, highlighted. On a PDF, it opens the cited page, with the quote beside the link. A statement whose quote can't be found stays plain text.
 
-- **A per-instance setting, on by default.** Admins can turn Summary citations off in the instance's AI settings. Off, new analyses don't ask for claim sources, and existing links show as plain text. On again, stored links show again.
+- **A per-instance setting, on by default.** Admins can turn summary citations off in the instance's AI settings. Off, new analyses don't ask for claim sources, and existing links show as plain text. On again, stored links show again.
 - **Links arrive on a bill's next analysis.** Existing summaries aren't backfilled.
 - **A small added cost.** Each analysis returns about 490 more output tokens. The setting says it may raise AI costs slightly.
 - **Relevance scores move slightly.** Any change to the analysis call moves them, and this one does: the mean score dropped by 0.07 to 0.19 points on the 10-point scale in testing. A few more bills than re-running the same analysis would move may cross the digest's relevance threshold when they are next analyzed.

@@ -661,7 +661,7 @@ dashRoutes.get('/tenants/:id/claim-sources', async (c) => {
   const tenant = await db.select({ id: schema.tenants.tenantId }).from(schema.tenants).where(eq(schema.tenants.tenantId, id)).get()
   if (!tenant) return c.json({ error: { code: 'not_found', message: 'Tenant not found' } }, 404)
   const rpc = resolveTenantRpc(c.env, id)
-  if (!rpc) return c.json({ error: { code: 'not_bound', message: 'Tenant is not bound to central, so its claim link counts cannot be read' } }, 501)
+  if (!rpc) return c.json({ error: { code: 'not_bound', message: 'Tenant is not bound to central, so its summary citation counts cannot be read' } }, 501)
   try {
     return c.json({ data: await rpc.claimSourceCounts(), meta: { generatedAt: new Date().toISOString() } })
   } catch (err) {

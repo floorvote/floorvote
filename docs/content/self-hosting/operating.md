@@ -105,7 +105,7 @@ Each tenant Worker exposes `GET /api/health`. On the LegiScan central, the healt
 
 ## Summary citations
 
-A summary citation takes a reader from a statement in an AI summary to the bill text behind it. (Underneath, each statement is a "claim" and its citation a "claim link", the terms the instance's settings route and central's dashboard use.) When an instance analyzes a bill, it asks the model, in the same call, for a short quote from the bill that supports each claim in the summary. The instance then looks for each quote in the text the reader sees, and records how it matched. On an HTML bill, clicking a statement opens the bill text at that passage, highlighted. On a PDF, it opens the cited page, with the quote shown beside the link. A statement whose quote can't be found is shown as plain text, with no link.
+A summary citation takes a reader from a statement in an AI summary to the bill text behind it. (Underneath, each statement is a "claim" and its citation a "claim link", the terms the instance's settings route uses.) When an instance analyzes a bill, it asks the model, in the same call, for a short quote from the bill that supports each claim in the summary. The instance then looks for each quote in the text the reader sees, and records how it matched. On an HTML bill, clicking a statement opens the bill text at that passage, highlighted. On a PDF, it opens the cited page, with the quote shown beside the link. A statement whose quote can't be found is shown as plain text, with no link.
 
 Links arrive with a bill's next analysis. Summaries already written are not backfilled, and a bill with no claim sources reads exactly as it did before.
 
@@ -123,7 +123,7 @@ Any change to the analysis call moves relevance scores slightly, and this one do
 
 ### Reading the counts
 
-Central's dashboard shows, for each instance, how its stored claim sources resolved. Open **Tenants**, choose the instance, and find **Claim links** (the dashboard keeps the earlier name), beside the instance's AI instructions status. Central asks the instance, which scans its bills at most every 30 minutes and reuses the answer in between. The section says how old the counts are, and the cut-off count is always current. When central can't ask, because it has no binding for the instance or the instance hasn't been upgraded to this release, the section says "unavailable" with the reason.
+Central's dashboard shows, for each instance, how its stored claim sources resolved. Open **Tenants**, choose the instance, and find **Summary citations**, beside the instance's AI instructions status. Central asks the instance, which scans its bills at most every 30 minutes and reuses the answer in between. The section says how old the counts are, and the cut-off count is always current. When central can't ask, because it has no binding for the instance or the instance hasn't been upgraded to this release, the section says "unavailable" with the reason.
 
 Each claim source is counted once, by how its quote matched:
 
