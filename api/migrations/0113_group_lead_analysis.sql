@@ -16,8 +16,10 @@
 -- triggers on bill_texts recompute a grouped bill's group when a text is
 -- added, removed, or redated, since the newest text can move the lead too.
 -- The recompute still writes only group_tags, so it fires no trigger again.
--- The backfill applies the rule to every group an instance already has.
--- idx_bills_group_tags is unchanged.
+-- The backfill applies the rule to every group an instance already has, and
+-- rewrites any group_tags that drifted. Every trigger is dropped if it exists
+-- before it is created, so running this file again leaves the same triggers
+-- and tags. idx_bills_group_tags is unchanged.
 --
 -- The natural bill number is the text before the first digit, then the number
 -- from it, as lib/groupLead.ts splits it.
@@ -29,6 +31,9 @@
 DROP TRIGGER IF EXISTS bills_group_tags_insert;
 DROP TRIGGER IF EXISTS bills_group_tags_update;
 DROP TRIGGER IF EXISTS bills_group_tags_delete;
+DROP TRIGGER IF EXISTS bill_texts_group_tags_insert;
+DROP TRIGGER IF EXISTS bill_texts_group_tags_update;
+DROP TRIGGER IF EXISTS bill_texts_group_tags_delete;
 
 UPDATE bills SET group_tags = COALESCE((SELECT g.tags FROM bills g WHERE g.group_key = bills.group_key
       AND (g.ai_processed_at IS NOT NULL OR g.tenant_summary IS NOT NULL OR g.tags <> '[]')

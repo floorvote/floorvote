@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations } from '../helpers'
+import { resetDb, applyMigrations, parseMigration } from '../helpers'
+import migration0113 from '../../migrations/0113_group_lead_analysis.sql?raw'
 import { getDb } from '../../src/db/client'
 import { loadTeamValuesOf } from '../../src/lib/teamFields'
 
@@ -83,6 +84,41 @@ describe('migration 0113: a group\'s tags follow its lead bill', () => {
 
     it('leaves a bill in no group its own tags', async () => {
       expect((await groupTags()).solo).toEqual(['solo'])
+    })
+  })
+
+  describe('running it again', () => {
+    // Wrangler records an applied migration and never runs it twice, but an
+    // operator re-running the file by hand, or a partial apply retried, must
+    // leave the same triggers and correct tags.
+    const rerun = async () => {
+      for (const q of parseMigration(migration0113, '0113_group_lead_analysis').queries) await env.DB.prepare(q).run()
+    }
+
+    beforeEach(async () => {
+      await resetDb()
+      await applyMigrations()
+      await insert({ id: 'r1', number: 'HB10', at: '2026-09-05 00:00:00', key: 'r1', texts: ['2026-01-01'] })
+      await insert({ id: 'r2', number: 'SB20', at: '2026-09-01 00:00:00', key: 'r1', texts: ['2026-03-01'] })
+    })
+
+    it('succeeds on a database that already has it, and keeps the lead\'s tags', async () => {
+      await rerun()
+      expect((await groupTags()).r1).toEqual(['r2'])
+    })
+
+    it('corrects group tags that drifted, and leaves every trigger working once', async () => {
+      await run("UPDATE bills SET group_tags = '[\"stale\"]'")
+      await rerun()
+      const tags = await groupTags()
+      expect([tags.r1, tags.r2]).toEqual([['r2'], ['r2']])
+      const { results } = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE '%group_tags%' ORDER BY name").all<{ name: string }>()
+      expect(results.map(r => r.name)).toEqual([
+        'bill_texts_group_tags_delete', 'bill_texts_group_tags_insert', 'bill_texts_group_tags_update',
+        'bills_group_tags_delete', 'bills_group_tags_insert', 'bills_group_tags_update',
+      ])
+      await text('r1', '2026-06-01')
+      expect((await groupTags()).r2).toEqual(['r1'])
     })
   })
 
