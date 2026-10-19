@@ -670,6 +670,7 @@ export function BillList() {
     subject: f.subject,
     committee: f.committee,
     committeeScope: f.committeeScope,
+    committeeLabels: f.committeeLabels,
     field: f.field,
     minRelevance: f.minRelevance,
     positionOptions: f.positionOptions,

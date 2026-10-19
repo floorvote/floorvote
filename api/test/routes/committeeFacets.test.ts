@@ -38,4 +38,15 @@ describe('the committee facet', () => {
       102: { name: 'Rules', state: 'NJ', chamber: 'S' },
     })
   })
+
+  it('names every committee picked, whatever the scope and the other filters leave out', async () => {
+    // NJ Rules (102) holds no bill now and is in no TX bill, so it has no count here, but the menu and the chip
+    // still need its name to show it picked.
+    const body = await facets('committee=102&committeeScope=current&state=TX')
+    expect(body.committee).toEqual({ 201: 1 })
+    expect(body.committeeInfo).toEqual({
+      102: { name: 'Rules', state: 'NJ', chamber: 'S' },
+      201: { name: 'State Affairs', state: 'TX', chamber: 'H' },
+    })
+  })
 })

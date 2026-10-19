@@ -397,6 +397,7 @@ export function FilterSheet({
     state, status, stage, position, priority,
     year: year.map(Number),
     tag, subject, committee, committeeScope, field, minRelevance,
+    committeeLabels: Object.fromEntries(committeeGroups.flatMap(g => g.options.map(o => [o.value, o.label]))),
     positionOptions,
     customFieldDefs,
     isMultiState,

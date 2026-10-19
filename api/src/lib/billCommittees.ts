@@ -12,13 +12,13 @@ const INSERT_CHUNK = 15
  * The bill's committees (#471), replaced on every write of the bill as its subjects are: one row for each committee
  * central names, its pending committee (marked current) and each committee it was referred to. A referral with no
  * committee id (DC's "Retained by the Council") has no row. A committee keeps the name and chamber of its latest
- * mention, the pending committee's when that is one.
+ * mention, the pending committee's when that is one. The delete and the inserts run as one batch, which D1 runs as one
+ * transaction, so a write that fails leaves the rows it would have replaced.
  */
 export async function syncBillCommittees(
   db: AppDb, billInternalId: string, state: string,
   pending: CentralCommittee | null | undefined, referrals: CentralCommittee[] | undefined,
 ): Promise<void> {
-  await db.delete(billCommittees).where(eq(billCommittees.billId, billInternalId)).run()
   const rows = new Map<string, typeof billCommittees.$inferInsert>()
   for (const r of referrals ?? []) {
     if (!r.committeeId || !r.name) continue
@@ -28,7 +28,7 @@ export async function syncBillCommittees(
     rows.set(pending.committeeId, { billId: billInternalId, committeeId: pending.committeeId, state, name: pending.name, chamber: pending.chamber, isCurrent: true })
   }
   const values = [...rows.values()]
-  for (let i = 0; i < values.length; i += INSERT_CHUNK) {
-    await db.insert(billCommittees).values(values.slice(i, i + INSERT_CHUNK)).run()
-  }
+  const inserts = []
+  for (let i = 0; i < values.length; i += INSERT_CHUNK) inserts.push(db.insert(billCommittees).values(values.slice(i, i + INSERT_CHUNK)))
+  await db.batch([db.delete(billCommittees).where(eq(billCommittees.billId, billInternalId)), ...inserts])
 }

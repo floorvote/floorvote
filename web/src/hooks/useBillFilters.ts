@@ -322,10 +322,15 @@ export function useBillFilters(opts: {
       }))
   }, [facetCounts.subject])
 
-  // The Committee filter's options (#471): by state, procedural committees last (lib/committeeGroups.ts).
+  // The Committee filter's options (#471): by state, procedural committees last, the picked ones kept (lib/committeeGroups.ts).
   const committeeGroups = useMemo(
-    () => groupCommittees(facetCounts.committee ?? {}, facetCounts.committeeInfo ?? {}),
-    [facetCounts.committee, facetCounts.committeeInfo],
+    () => groupCommittees(facetCounts.committee ?? {}, facetCounts.committeeInfo ?? {}, filter.committee),
+    [facetCounts.committee, facetCounts.committeeInfo, filter.committee],
+  )
+  // Each committee's label by id, for the chips.
+  const committeeLabels = useMemo(
+    () => Object.fromEntries(committeeGroups.flatMap(g => g.options.map(o => [o.value, o.label]))) as Record<string, string>,
+    [committeeGroups],
   )
 
   const uniqueStates = [...new Set([...knownStates, ...Object.keys(facetCounts.state)])].sort((a, b) => {
@@ -352,7 +357,7 @@ export function useBillFilters(opts: {
     match, setMatch,
     tag, setTag,
     subject, subjectGroups,
-    committee, setCommittee, committeeScope, setCommitteeScope, committeeGroups,
+    committee, setCommittee, committeeScope, setCommitteeScope, committeeGroups, committeeLabels,
     field, setField,
     filter,
     handleTagClick, handleTagsChange, handleSubjectsChange, handleStatusClick, handlePriorityClick,

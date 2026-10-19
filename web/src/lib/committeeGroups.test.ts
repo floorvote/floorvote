@@ -30,6 +30,11 @@ describe('committeeGroups', () => {
     expect(nj.options).toEqual([{ value: '101', label: 'Judiciary (Senate)', count: 2, procedural: false }])
   })
 
+  it('keeps a picked committee the counts leave out, at zero, so it can be unpicked', () => {
+    const [nj] = committeeGroups({ 101: 2 }, INFO, ['102'])
+    expect(nj.options.map(o => [o.value, o.count])).toEqual([['101', 2], ['102', 0]])
+  })
+
   it('leaves out a count with no name to show for it', () => {
     expect(committeeGroups({ 999: 3, 201: 1 }, INFO).flatMap(g => g.options.map(o => o.value))).toEqual(['201'])
   })
