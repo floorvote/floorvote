@@ -36,3 +36,11 @@ The Bills page has a Committee filter. It lists each committee with its number o
 
 - **Instance migration only.** Instance migration 0116 adds an empty `bill_committees` table. Central doesn't change, since it already sends each bill's committees.
 - **Run the refresh after deploying each instance.** An instance stores a bill's committees only when the bill is next delivered, and an analyzed bill that hasn't changed isn't redelivered. Until the refresh runs, the counts and the filter cover only bills delivered since the deploy. Fill every bill at once with `POST /admin/refresh-metadata` on the instance (an admin request). It queues one metadata-only delivery per stored bill, so one central fetch each: about 52,000 on the largest instance. It runs no AI, and it rewrites each bill's stored metadata from central.
+
+## Bill committees
+
+Admins can pick committees in a new Bill committees card under Bill keywords on the Settings page, and every bill referred to a picked committee is fully analyzed, in addition to keyword matches. Each committee shows its size against the session, procedural committees are hidden until shown, and saving goes through a review step that states how many bills would be fully analyzed and how many of them aren't analyzed now.
+
+- **Central first, then the instances.** Central migration 0047 adds an empty `committee_registry` table, and central learns each instance's picks when it registers. An instance on an older central saves its picks, and they take effect once central is upgraded and the instance registers again (its hourly sync does).
+- **No instance migration.** The picks are a config row. The card sizes committees from the instance's `bill_committees` rows, so run the Committee filter's refresh first, or the card lists only the committees of bills delivered since that deploy.
+- **LegiScan calls.** A committee match costs what a keyword match of the same bill costs: one `getBill` when it first matches, and one each time it changes. A procedural committee can hold half a session, which the review step's count makes visible before anything is saved. Central spends no calls to learn a bill's committees: it reads the referrals it stores and the masterlist's last action.

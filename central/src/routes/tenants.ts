@@ -3,6 +3,7 @@ import { drizzle } from 'drizzle-orm/d1'
 import { groupByIngestQueue, ingestQueueForBill } from '../lib/providerRouting'
 import { eq, and, isNull, isNotNull, inArray, asc, desc, count, exists, sql } from 'drizzle-orm'
 import { matchesUnion, billMatchText } from '../lib/keywords'
+import { committeeHits, saveSelectedCommittees, selectedCommittees } from '../lib/committeeMatch'
 import * as schema from '../db/schema'
 import { secretsMatch } from '../lib/auth'
 import { nowDb } from '../lib/dbTime'
@@ -69,6 +70,8 @@ tenantsRoutes.post('/register', guardCallerTenantBody(), async (c) => {
     apiUrl: string
     stateCoverage: string[]
     keywords?: string[]
+    /** The committee ids the instance picked (#471), as strings. Present replaces the stored picks, and empty clears them. */
+    committees?: string[]
     aiContextPersonalized?: boolean
   }>()
 
@@ -154,6 +157,11 @@ tenantsRoutes.post('/register', guardCallerTenantBody(), async (c) => {
         .values({ tenantId: body.tenantId, keyword: kw })
         .onConflictDoNothing()
     }
+  }
+
+  if (Array.isArray(body.committees)) {
+    const ids = body.committees.map(id => Number(id)).filter(id => Number.isSafeInteger(id) && id > 0)
+    await saveSelectedCommittees(db, body.tenantId, ids)
   }
 
   // Delivery is binding-first (see lib/tenantDelivery.ts): a static TENANT_QUEUE_<ID>
@@ -254,6 +262,7 @@ tenantsRoutes.post('/seed-session/:tenantId', async (c) => {
     title:       schema.bills.title,
     description: schema.bills.description,
     billNumber:  schema.bills.billNumber,
+    lastAction:  schema.bills.lastAction,
   })
     .from(schema.bills)
     .where(eq(schema.bills.sessionId, sessionId))
@@ -265,11 +274,15 @@ tenantsRoutes.post('/seed-session/:tenantId', async (c) => {
     return c.json({ ok: true, done: true, offset, processed: 0, keywordMatches: 0, nonKeyword: 0 })
   }
 
+  // A bill referred to a committee the tenant picked (#471) matches as a keyword match does.
+  const picks = [...((await selectedCommittees(db, [tenantId])).get(tenantId) ?? [])]
+  const hits = await committeeHits(db, sessionBills.map(b => ({ ...b, state: sessRow.state })), picks)
+
   const keywordMatchIds: number[] = []
   const nonKeywordIds: number[] = []
   for (const b of sessionBills) {
     const haystack = billMatchText(b)
-    const matched = keywords.length > 0 ? matchesUnion(haystack, keywords).matched : false
+    const matched = (keywords.length > 0 && matchesUnion(haystack, keywords).matched) || hits.has(b.billId)
     if (matched) keywordMatchIds.push(b.billId)
     else nonKeywordIds.push(b.billId)
   }

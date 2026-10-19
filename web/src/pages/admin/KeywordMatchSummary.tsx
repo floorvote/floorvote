@@ -32,7 +32,7 @@ function isSummary(value: unknown): value is Summary {
  * A whole-number percentage that never rounds into a claim it is not: a share
  * above zero reads "<1%" rather than "0%", and one below all reads ">99%".
  */
-function percentOf(matched: number, total: number): string {
+export function percentOf(matched: number, total: number): string {
   if (total === 0 || matched === 0) return '0%'
   if (matched === total) return '100%'
   const rounded = Math.round((matched / total) * 100)

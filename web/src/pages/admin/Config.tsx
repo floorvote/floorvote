@@ -29,6 +29,7 @@ import { settingBox, SETTING_BOX_HEADER, SETTING_BOX_TITLE, SETTING_BOX_DESC } f
 import { MissingRequiredReason, useRequiredSubmit } from '../../components/RequiredField'
 import TagTaxonomyTable from './TagTaxonomyTable'
 import { KeywordMatchSummary } from './KeywordMatchSummary'
+import { BillCommitteesCard } from './BillCommitteesCard'
 import { rowsFromTaxonomy, rowsToTaxonomy, type TaxonomyRow } from './taxonomyRows'
 
 type ChangedBy = { id: string; name: string | null; email: string } | null
@@ -884,6 +885,9 @@ export function Config() {
           </>
         )}
       </div>
+
+      {/* Bill committees (#471) */}
+      {!loading && <BillCommitteesCard demoLocked={demoLocked} />}
 
       {/* AI instructions */}
       <div style={sectionCard}>

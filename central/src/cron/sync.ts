@@ -3,6 +3,7 @@ import { DEFAULT_PROVIDER_ID, getProvider, type Provider, type SessionRef, type 
 import { sessions, bills, billTenants, billSasts, tenants, keywordRegistry, sessionSyncLog } from '../db/schema'
 import { relationshipKind } from '../lib/vocabulary'
 import { matchesUnion, billMatchText } from '../lib/keywords'
+import { committeeHits, inPickedCommittee, selectedCommittees } from '../lib/committeeMatch'
 import { decideMode, getCurrentEtHour } from '../lib/sync-schedule'
 import { nowDb } from '../lib/dbTime'
 import { providerContext } from '../lib/providerContext'
@@ -315,6 +316,11 @@ export async function applyMasterList(
     arr.push(r.keyword.toLowerCase())
     keywordsByTenant.set(r.tenantId, arr)
   }
+  // Per-tenant committee picks (#471), and the picked committees each listed bill is referred to.
+  const picksByTenant = await selectedCommittees(db, tenantIds)
+  const pickedIds = [...new Set([...picksByTenant.values()].flatMap(s => [...s]))]
+  const hits = await committeeHits(db,
+    list.map(e => ({ billId: e.bill_id, billNumber: e.number, lastAction: e.last_action, state: session.state })), pickedIds)
 
   // Load existing bills + bill_tenants links in chunks
   const billIds = list.map(b => b.bill_id)
@@ -440,7 +446,8 @@ export async function applyMasterList(
     const haystack = billMatchText({ title: entry.title, description: entry.description, billNumber: entry.number })
     for (const t of coveringTenants) {
       const kws = keywordsByTenant.get(t.tenantId) ?? []
-      const matched = kws.length > 0 ? matchesUnion(haystack, kws).matched : false
+      const matched = (kws.length > 0 && matchesUnion(haystack, kws).matched)
+        || inPickedCommittee(hits, entry.bill_id, picksByTenant.get(t.tenantId))
       const linkKey = `${entry.bill_id}:${t.tenantId}`
       const linkExists = existingLinks.has(linkKey)
       const prevMatchType = linkExists ? existingLinks.get(linkKey) : undefined

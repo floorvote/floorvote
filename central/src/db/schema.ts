@@ -365,6 +365,12 @@ export const keywordRegistry = sqliteTable('keyword_registry', {
   keyword:  text('keyword').notNull(),
 }, (t) => [primaryKey({ columns: [t.tenantId, t.keyword] })])
 
+/** The committees each instance picked (#471, migration 0047): a bill referred to one is fully analyzed there, as a keyword match is. */
+export const committeeRegistry = sqliteTable('committee_registry', {
+  tenantId:    text('tenant_id').notNull(),
+  committeeId: integer('committee_id').notNull(),
+}, (t) => [primaryKey({ columns: [t.tenantId, t.committeeId] })])
+
 export const billTenants = sqliteTable('bill_tenants', {
   billId:     integer('bill_id').notNull(),
   tenantId:   text('tenant_id').notNull(),

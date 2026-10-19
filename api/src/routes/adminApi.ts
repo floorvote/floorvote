@@ -10,6 +10,7 @@ import { sendSignInLinkLogged } from '../lib/signInLink'
 import { registerWithCentral } from '../cron/sync'
 import { matchesKeywords, billMatchText } from '../lib/keywords'
 import { summarizeKeywordMatches } from '../lib/keywordMatchSummary'
+import { COMMITTEE_PICKS_KEY, billsInCommittees, committeeSizes, isCommitteeIdList, readCommitteePicks, summarizeCommitteePicks } from '../lib/committeePicks'
 import { centralFetch } from '../lib/centralFetch'
 import { legacyHandle, parseHandle } from '../../../shared/billHandle'
 import { resolveStoredHandle } from '../lib/storedHandle'
@@ -772,7 +773,7 @@ adminApiRouter.delete('/roles/:id', async (c) => {
   return new Response(null, { status: 204 })
 })
 
-const ALLOWED_CONFIG_KEYS = ['association_name', 'sync_frequency', 'keywords', 'org_noun', 'position_label', 'ai_context', 'relevance_question', 'tag_taxonomy', 'modules', 'mention_emails_enabled', 'new_match_min_relevance'] as const
+const ALLOWED_CONFIG_KEYS = ['association_name', 'sync_frequency', 'keywords', 'org_noun', 'position_label', 'ai_context', 'relevance_question', 'tag_taxonomy', 'modules', 'mention_emails_enabled', 'new_match_min_relevance', 'bill_committees'] as const
 
 // GET /admin/config
 adminApiRouter.get('/config', async (c) => {
@@ -886,6 +887,10 @@ adminApiRouter.put('/config', async (c) => {
     }
   }
 
+  if (COMMITTEE_PICKS_KEY in body && body[COMMITTEE_PICKS_KEY] !== null && !isCommitteeIdList(body[COMMITTEE_PICKS_KEY])) {
+    return c.json({ error: 'bill_committees must be a list of committee ids' }, 400)
+  }
+
   const db = getDb(c.env.DB)
   // Every write in one batch, so no AI setting's value can land without the
   // record of who changed it (#602), and a save is all or nothing.
@@ -906,7 +911,7 @@ adminApiRouter.put('/config', async (c) => {
   writes.push(...recordStatements(db, changedAi, c.get('user').id))
   if (writes.length > 0) await db.batch(writes as unknown as Parameters<typeof db.batch>[0])
 
-  if ('keywords' in body) {
+  if ('keywords' in body || COMMITTEE_PICKS_KEY in body) {
     // Await register so the subsequent keyword-resync sees updated central keyword_registry.
     // Adds ~200ms to the PUT response but eliminates the race condition.
     try {
@@ -930,18 +935,19 @@ adminApiRouter.post('/keyword-resync', async (c) => {
 
   const kwRow = await db.select().from(associationConfig).where(eq(associationConfig.key, 'keywords')).get()
   const keywords: string[] = kwRow ? JSON.parse(kwRow.value) : []
-  if (keywords.length === 0) return c.json({ queued: 0, note: 'no keywords configured' })
+  // A bill referred to a picked committee (#471) matches as a keyword match does.
+  const inPicks = await billsInCommittees(db, await readCommitteePicks(db))
+  if (keywords.length === 0 && inPicks.size === 0) return c.json({ queued: 0, note: 'no keywords configured' })
 
   // Find unprocessed bills that now match keywords — queue them for AI processing
   const unprocessed = await db
-    .select({ externalId: bills.externalId, title: bills.title, abstract: bills.abstract, billNumber: bills.billNumber })
+    .select({ id: bills.id, externalId: bills.externalId, title: bills.title, abstract: bills.abstract, billNumber: bills.billNumber })
     .from(bills)
     .where(and(isNull(bills.aiProcessedAt), isNotNull(bills.externalId)))
     .all()
 
-  const matching = unprocessed.filter(b =>
-    matchesKeywords(billMatchText({ title: b.title, description: b.abstract, billNumber: b.billNumber }), keywords)
-  )
+  const matching = unprocessed.filter(b => inPicks.has(b.id) || (keywords.length > 0
+    && matchesKeywords(billMatchText({ title: b.title, description: b.abstract, billNumber: b.billNumber }), keywords)))
 
   const BATCH_SIZE = 100
   for (let i = 0; i < matching.length; i += BATCH_SIZE) {
@@ -993,9 +999,9 @@ adminApiRouter.post('/keyword-resync', async (c) => {
     .where(and(eq(bills.matchType, 'keyword'), isNotNull(bills.externalId)))
     .all()
 
-  const staleBills = keywordBills.filter(b =>
-    !matchesKeywords(billMatchText({ title: b.title, description: b.abstract, billNumber: b.billNumber }), keywords)
-  )
+  // With no keywords saved, nothing is downgraded, as before committee picks: the save's confirmation promises it.
+  const staleBills = keywords.length === 0 ? [] : keywordBills.filter(b => !inPicks.has(b.id)
+    && !matchesKeywords(billMatchText({ title: b.title, description: b.abstract, billNumber: b.billNumber }), keywords))
 
   let demoted = 0
   let protectedAsManual = 0
@@ -1092,9 +1098,10 @@ adminApiRouter.post('/keyword-resync-preview', async (c) => {
     .from(bills)
     .where(eq(bills.matchType, 'keyword'))
     .all()
-  const staleBills = keywordBills.filter(b =>
-    !matchesKeywords(billMatchText({ title: b.title, description: b.abstract, billNumber: b.billNumber }), keywords)
-  )
+  // A bill in a picked committee (#471) stays analyzed whatever the keywords.
+  const inPicks = await billsInCommittees(db, await readCommitteePicks(db))
+  const staleBills = keywordBills.filter(b => !inPicks.has(b.id)
+    && !matchesKeywords(billMatchText({ title: b.title, description: b.abstract, billNumber: b.billNumber }), keywords))
 
   let wouldDemote = 0
   let wouldProtect = 0
@@ -1138,6 +1145,29 @@ adminApiRouter.post('/keyword-match-summary', async (c) => {
 
   return c.json(await summarizeKeywordMatches(db, c.env.TENANT_ID, keywords, saved))
 })
+
+// GET /admin/bill-committees — the Bill committees card (#471): each committee's size against its state's bills,
+// the saved picks, and the running total for them. Reads only.
+adminApiRouter.get('/bill-committees', async (c) => {
+  const db = getDb(c.env.DB)
+  const selected = await readCommitteePicks(db)
+  const [sizes, summary] = await Promise.all([committeeSizes(db), summarizeCommitteePicks(db, selected, await savedKeywords(db))])
+  return c.json({ ...sizes, selected, summary })
+})
+
+// POST /admin/bill-committees/summary — the running total for a set of picks not yet saved: { committees: string[] }.
+// Reads only; no central or AI calls.
+adminApiRouter.post('/bill-committees/summary', async (c) => {
+  const db = getDb(c.env.DB)
+  const body = await c.req.json().catch(() => null) as { committees?: unknown } | null
+  if (!isCommitteeIdList(body?.committees)) return c.json({ error: 'committees must be a list of committee ids' }, 400)
+  return c.json(await summarizeCommitteePicks(db, body.committees, await savedKeywords(db)))
+})
+
+async function savedKeywords(db: AppDb): Promise<string[]> {
+  const row = await db.select().from(associationConfig).where(eq(associationConfig.key, 'keywords')).get()
+  return row ? JSON.parse(row.value) : []
+}
 
 // POST /admin/reprocess-bill/:externalId — reprocess a single bill, forcing AI re-run
 adminApiRouter.post('/reprocess-bill/:externalId', async (c) => {

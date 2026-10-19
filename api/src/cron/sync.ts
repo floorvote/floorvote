@@ -3,6 +3,7 @@ import { associationConfig } from '../db/schema'
 import { ensureAssociationName } from '../lib/associationName'
 import { centralFetch } from '../lib/centralFetch'
 import { readConfigString } from '../lib/configValue'
+import { readCommitteePicks } from '../lib/committeePicks'
 import { isAiConfigDefault } from '../../../shared/aiDefaults'
 import type { AppDb, Env } from '../types'
 
@@ -25,6 +26,8 @@ export async function registerWithCentral(env: Env, db: AppDb): Promise<boolean>
     apiUrl: env.APP_URL,
     stateCoverage,
     keywords,
+    // The committees picked in the Bill committees card (#471). Always sent, so an empty list clears central's.
+    committees: await readCommitteePicks(db),
     aiContextPersonalized: !isAiConfigDefault(readConfigString(aiContextRow)),
   }
 

@@ -3,6 +3,7 @@ import { drizzle } from 'drizzle-orm/d1'
 import { eq, and, isNull, isNotNull, inArray, like } from 'drizzle-orm'
 import * as schema from '../db/schema'
 import { bills, billTenants, tenants, keywordRegistry, sessions } from '../db/schema'
+import { committeeHits, selectedCommittees } from '../lib/committeeMatch'
 import { matchesUnion, billMatchText } from '../lib/keywords'
 import { DEFAULT_PROVIDER_ID, findProvider, getProvider, type SessionRef, type SyncEntry } from '../providers'
 import { secretsMatch } from '../lib/auth'
@@ -408,7 +409,8 @@ adminRoutes.post('/sync-keywords/:tenantId', guardCallerTenantParam(), async (c)
     .where(eq(keywordRegistry.tenantId, tenantId))
     .all()
   const keywords = kwRows.map(r => r.keyword.toLowerCase())
-  if (keywords.length === 0) {
+  const picks = [...((await selectedCommittees(db, [tenantId])).get(tenantId) ?? [])]
+  if (keywords.length === 0 && picks.length === 0) {
     return c.json({ ok: true, newlyMatched: 0, candidates: 0, truncated: false, note: 'no keywords configured' })
   }
 
@@ -419,6 +421,8 @@ adminRoutes.post('/sync-keywords/:tenantId', guardCallerTenantParam(), async (c)
     title: bills.title,
     description: bills.description,
     billNumber: bills.billNumber,
+    lastAction: bills.lastAction,
+    state: bills.state,
   })
     .from(billTenants)
     .innerJoin(bills, eq(billTenants.billId, bills.billId))
@@ -427,12 +431,14 @@ adminRoutes.post('/sync-keywords/:tenantId', guardCallerTenantParam(), async (c)
       isNull(billTenants.matchType),
     ))
     .all()
+  // A bill referred to a committee the tenant picked (#471) matches as a keyword match does.
+  const hits = await committeeHits(db, candidates, picks)
 
   // Evaluate keyword match. Stop once we hit the cap.
   const newlyMatched: number[] = []
   for (const row of candidates) {
     const hay = billMatchText(row)
-    if (matchesUnion(hay, keywords).matched) {
+    if ((keywords.length > 0 && matchesUnion(hay, keywords).matched) || hits.has(row.billId)) {
       newlyMatched.push(row.billId)
       if (newlyMatched.length >= SYNC_KEYWORDS_CAP) break
     }
