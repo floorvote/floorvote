@@ -109,7 +109,7 @@ describe('composer attachments, adding files', () => {
     fetchMock.mockImplementationOnce(() => new Promise<Response>(r => { finish = r }))
     const { container } = await mount()
     await pick(container, pdf())
-    expect(await screen.findByText(/Uploading/)).toBeInTheDocument()
+    expect((await screen.findAllByText(/Uploading/)).length).toBeGreaterThan(0)
     await act(async () => { finish(new Response(JSON.stringify({ id: 'att9', name: 'memo.pdf', contentType: 'application/pdf', size: 2048 }), { status: 201 })) })
     await waitFor(() => expect(screen.queryByText(/Uploading/)).toBeNull())
   })
@@ -233,7 +233,7 @@ describe('composer attachments, removing and posting', () => {
     await act(async () => { editor.commands.insertContent('hello') })
     expect(screen.getByRole('button', { name: 'Post' })).toBeEnabled()
     await pick(container, pdf())
-    await screen.findByText(/Uploading/)
+    await screen.findAllByText(/Uploading/)
     expect(screen.getByRole('button', { name: 'Post' })).toBeDisabled()
   })
 
@@ -245,7 +245,7 @@ describe('composer attachments, removing and posting', () => {
     }))
     const { container } = await mount()
     await pick(container, pdf('slow.pdf'))
-    await screen.findByText(/Uploading/)
+    await screen.findAllByText(/Uploading/)
     await userEvent.click(screen.getByRole('button', { name: 'Remove slow.pdf' }))
     expect(signal?.aborted).toBe(true)
     expect(screen.queryByRole('listitem', { name: /slow\.pdf/ })).toBeNull()
@@ -256,5 +256,117 @@ describe('composer attachments, removing and posting', () => {
     await act(async () => { editor.commands.insertContent('hi') })
     await userEvent.click(screen.getByRole('button', { name: 'Post' }))
     expect(onSubmit).toHaveBeenCalledWith('<p>hi</p>', [])
+  })
+})
+
+describe('composer attachments, unmounting', () => {
+  const deletes = () => fetchMock.mock.calls.filter(([, i]) => i.method === 'DELETE').map(([u]) => u)
+
+  it('removes finished, unposted uploads from the server when the composer goes away', async () => {
+    const { container, unmount } = await mount()
+    await pick(container, pdf('a.pdf'))
+    await screen.findByRole('listitem', { name: /a\.pdf/ })
+    unmount()
+    expect(deletes()).toEqual(['/api/attachments/att1'])
+  })
+
+  it('leaves posted files alone when the composer goes away', async () => {
+    const { container, editor, unmount } = await mount()
+    await act(async () => { editor.commands.insertContent('hi') })
+    await pick(container, pdf('a.pdf'))
+    await screen.findByRole('listitem', { name: /a\.pdf/ })
+    await userEvent.click(screen.getByRole('button', { name: 'Post' }))
+    unmount()
+    expect(deletes()).toEqual([])
+  })
+
+  it('leaves files alone while their post is still in flight', async () => {
+    const { container, editor, onSubmit, unmount } = await mount()
+    onSubmit.mockImplementation(() => new Promise(() => {}))
+    await act(async () => { editor.commands.insertContent('hi') })
+    await pick(container, pdf('a.pdf'))
+    await screen.findByRole('listitem', { name: /a\.pdf/ })
+    await userEvent.click(screen.getByRole('button', { name: 'Post' }))
+    unmount()
+    expect(deletes()).toEqual([])
+  })
+})
+
+describe('composer attachments, a post that fails', () => {
+  it('keeps the draft text and the file rows, and says the post failed', async () => {
+    const { container, editor, onSubmit } = await mount()
+    onSubmit.mockRejectedValueOnce(new Error('Server error'))
+    await act(async () => { editor.commands.insertContent('my draft') })
+    await pick(container, pdf('a.pdf'))
+    await screen.findByRole('listitem', { name: /a\.pdf/ })
+    await userEvent.click(screen.getByRole('button', { name: 'Post' }))
+    expect(await screen.findByText(/couldn.t post/i)).toBeInTheDocument()
+    expect(editor.getText()).toBe('my draft')
+    expect(screen.getByRole('listitem', { name: /a\.pdf/ })).toBeInTheDocument()
+    // And it can be tried again with the same file.
+    await userEvent.click(screen.getByRole('button', { name: 'Post' }))
+    expect(onSubmit).toHaveBeenLastCalledWith('<p>my draft</p>', ['att1'])
+  })
+
+  it('clears the draft and the rows once the post succeeds', async () => {
+    const { container, editor, onSubmit } = await mount()
+    onSubmit.mockResolvedValue(undefined)
+    await act(async () => { editor.commands.insertContent('done') })
+    await pick(container, pdf('a.pdf'))
+    await screen.findByRole('listitem', { name: /a\.pdf/ })
+    await userEvent.click(screen.getByRole('button', { name: 'Post' }))
+    await waitFor(() => expect(editor.getText()).toBe(''))
+    expect(screen.queryByRole('listitem', { name: /a\.pdf/ })).toBeNull()
+  })
+})
+
+describe('composer attachments, saying why Post is held', () => {
+  it('ties visible Uploading text to the held Post button', async () => {
+    fetchMock.mockImplementationOnce(() => new Promise<Response>(() => {}))
+    const { container, editor } = await mount()
+    await act(async () => { editor.commands.insertContent('hi') })
+    await pick(container, pdf('slow.pdf'))
+    const post = screen.getByRole('button', { name: 'Post' })
+    await waitFor(() => expect(post).toBeDisabled())
+    const note = document.getElementById(post.getAttribute('aria-describedby') ?? 'none')
+    expect(note).toHaveTextContent(/Uploading/)
+  })
+
+  it('announces uploading and then done in a polite live region', async () => {
+    let finish!: (r: Response) => void
+    fetchMock.mockImplementationOnce(() => new Promise<Response>(r => { finish = r }))
+    const { container } = await mount()
+    const live = screen.getByRole('status')
+    expect(live).toHaveAttribute('aria-live', 'polite')
+    await pick(container, pdf('slow.pdf'))
+    await waitFor(() => expect(live).toHaveTextContent(/Uploading/))
+    await act(async () => { finish(new Response(JSON.stringify({ id: 'att9', name: 'slow.pdf', contentType: 'application/pdf', size: 2048 }), { status: 201 })) })
+    await waitFor(() => expect(live).toHaveTextContent(/uploaded/i))
+  })
+})
+
+describe('composer attachments, focus after removing a row', () => {
+  it('moves to the next row’s × when there is one', async () => {
+    const { container } = await mount()
+    await pick(container, pdf('a.pdf'), pdf('b.pdf'))
+    await screen.findByRole('listitem', { name: /b\.pdf/ })
+    await userEvent.click(screen.getByRole('button', { name: 'Remove a.pdf' }))
+    expect(screen.getByRole('button', { name: 'Remove b.pdf' })).toHaveFocus()
+  })
+
+  it('moves to the previous row’s × after removing the last row', async () => {
+    const { container } = await mount()
+    await pick(container, pdf('a.pdf'), pdf('b.pdf'))
+    await screen.findByRole('listitem', { name: /b\.pdf/ })
+    await userEvent.click(screen.getByRole('button', { name: 'Remove b.pdf' }))
+    expect(screen.getByRole('button', { name: 'Remove a.pdf' })).toHaveFocus()
+  })
+
+  it('moves to the paperclip after removing the only row', async () => {
+    const { container } = await mount()
+    await pick(container, pdf('a.pdf'))
+    await screen.findByRole('listitem', { name: /a\.pdf/ })
+    await userEvent.click(screen.getByRole('button', { name: 'Remove a.pdf' }))
+    expect(screen.getByRole('button', { name: 'Attach a file' })).toHaveFocus()
   })
 })

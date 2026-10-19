@@ -81,7 +81,31 @@ export function useAttachmentUploads(limits: AttachmentLimits | null | undefined
     for (const i of [...itemsRef.current]) remove(i.key)
   }, [remove])
 
-  useEffect(() => () => { controllers.current.forEach(c => c.abort()) }, [])
+  // While a post is in flight its files are about to be attached: leave them be.
+  const posting = useRef(false)
+  const [announcement, setAnnouncement] = useState('')
+  const wasUploading = useRef(false)
+  const uploadingNow = items.some(i => i.status === 'uploading')
+  useEffect(() => {
+    if (uploadingNow) {
+      const n = items.filter(i => i.status === 'uploading').length
+      setAnnouncement(n === 1 ? 'Uploading 1 file' : `Uploading ${n} files`)
+    } else if (wasUploading.current) {
+      setAnnouncement('Files uploaded')
+    }
+    wasUploading.current = uploadingNow
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the count only matters while uploading
+  }, [uploadingNow])
+
+  // When the composer goes away (another bill, a remount): cancel what is in flight and
+  // remove finished uploads that were never posted, rather than leave them for the daily cleanup.
+  useEffect(() => () => {
+    controllers.current.forEach(c => c.abort())
+    if (posting.current) return
+    for (const i of itemsRef.current) {
+      if (i.status === 'done' && i.id) removeAttachment(i.id).catch(() => { /* the server clears it after a day */ })
+    }
+  }, [])
 
   return {
     items,
@@ -89,6 +113,8 @@ export function useAttachmentUploads(limits: AttachmentLimits | null | undefined
     remove,
     clear,
     discard,
+    setPosting: (v: boolean) => { posting.current = v },
+    announcement,
     ids: () => itemsRef.current.filter(i => i.status === 'done' && i.id).map(i => i.id!),
     uploading: items.some(i => i.status === 'uploading'),
     hasFiles: items.some(i => i.status !== 'refused'),
@@ -138,6 +164,7 @@ export function PendingAttachmentRows({ items, onRemove }: { items: PendingAttac
             <button
               type="button"
               aria-label={`Remove ${item.name}`}
+              data-remove-attachment={item.key}
               onClick={() => onRemove(item.key)}
               style={{ flex: 'none', border: 'none', background: 'transparent', color: color.textMuted, cursor: 'pointer', fontSize: fontSize.xl, lineHeight: 1, padding: '2px 6px' }}
             >×</button>
@@ -155,7 +182,7 @@ export function DropOverlay() {
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       background: color.bgBlueChip, opacity: 0.94,
       border: `2px dashed ${color.linkBlue}`, borderRadius: radius.lg,
-      color: color.linkBlue, fontSize: fontSize.base,fontWeight: fontWeight.semibold,
+      color: color.linkBlue, fontSize: fontSize.base, fontWeight: fontWeight.semibold,
     }}>Drop to attach</div>
   )
 }

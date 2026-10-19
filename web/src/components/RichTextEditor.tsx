@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { EditorContent, EditorContext, ReactRenderer, useEditor } from '@tiptap/react'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
@@ -19,6 +19,7 @@ import { MENTION_STYLE } from '../../../shared/mentionStyle'
 import { useUnsavedRegistration } from '../lib/unsavedText'
 import { mentionSuggestionItems } from '../lib/mentionItems'
 import { useAuth } from '../hooks/useAuth'
+import { SR_ONLY } from '../lib/textStyles'
 
 import { Toolbar, ToolbarGroup, ToolbarSeparator } from '@/components/tiptap-ui-primitive/toolbar'
 import { MarkButton } from '@/components/tiptap-ui/mark-button'
@@ -86,7 +87,7 @@ function useMentionData(enabled: boolean) {
 
 interface RichTextEditorProps {
   /** `attachmentIds`: the files uploaded for this comment (always empty while `attachments` is off). */
-  onSubmit?: (html: string, attachmentIds: string[]) => void
+  onSubmit?: (html: string, attachmentIds: string[]) => void | Promise<unknown>
   /**
    * File attachments (#465): the limits from GET /config, or null/absent to
    * leave attachments off. Sets whether the toolbar gets a paperclip and the
@@ -124,6 +125,9 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
   // dragenter and dragleave also fire for every child the pointer crosses, so count them.
   const dragDepth = useRef(0)
   const [dragging, setDragging] = useState(false)
+  const [posting, setPosting] = useState(false)
+  const heldNoteId = useId()
+  const [postError, setPostError] = useState(false)
   const initialTextRef = useRef('')
   const [editorTooltip, setEditorTooltip] = useState<MentionTooltipData | null>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
@@ -271,18 +275,30 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
     },
   })
 
-  const handleSubmit = useCallback(() => {
-    if (!editor || !onSubmit || disabled) return
+  const handleSubmit = useCallback(async () => {
+    if (!editor || !onSubmit || disabled || posting) return
     const text = editor.getText().trim()
     if (!text && !allowEmpty) return
     // The comment can't post while a file is still going up: it would post without it.
     if (uploadsRef.current.uploading) return
     const html = trimEdgeParagraphs(editor.getHTML())
-    onSubmit(html, uploadsRef.current.ids())
+    setPosting(true)
+    uploadsRef.current.setPosting(true)
+    setPostError(false)
+    try {
+      await onSubmit(html, uploadsRef.current.ids())
+    } catch {
+      // Keep the draft and its files so the member can try again.
+      setPostError(true)
+      return
+    } finally {
+      setPosting(false)
+      uploadsRef.current.setPosting(false)
+    }
     uploadsRef.current.clear()
     editor.commands.clearContent()
     setHasContent(false)
-  }, [editor, onSubmit, allowEmpty, disabled])
+  }, [editor, onSubmit, allowEmpty, disabled, posting])
 
   function handleEditorMouseOver(e: React.MouseEvent) {
     const target = e.target as HTMLElement
@@ -305,6 +321,16 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
         setEditorTooltip({ anchorRect, type: 'user', userName: target.dataset.label || id, userTitle: null, userRoles: [] })
       }
     }
+  }
+
+  // After a row's × the focus would fall to the page: hand it to the next row's ×, else the previous
+  // one, else the paperclip. Those elements outlive the removal, so focus them first.
+  const removeRow = (key: string) => {
+    const buttons = Array.from(wrapperRef.current?.querySelectorAll<HTMLElement>('[data-remove-attachment]') ?? [])
+    const at = buttons.findIndex(b => b.dataset.removeAttachment === key)
+    const next = buttons[at + 1] ?? buttons[at - 1] ?? wrapperRef.current?.querySelector<HTMLElement>('[aria-label="Attach a file"]')
+    next?.focus()
+    uploads.remove(key)
   }
 
   const carriesFiles = (e: React.DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files')
@@ -417,7 +443,9 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
         </Toolbar>
 
         <EditorContent editor={editor} role="presentation" />
-        {attachmentsOn && <PendingAttachmentRows items={uploads.items} onRemove={uploads.remove} />}
+        {attachmentsOn && <PendingAttachmentRows items={uploads.items} onRemove={removeRow} />}
+        {/* Polite announcements for what the rows show: uploading, then done. Refusals announce themselves. */}
+        {attachmentsOn && <div role="status" aria-live="polite" style={SR_ONLY}>{uploads.announcement}</div>}
       </EditorContext.Provider>
 
       {onSubmit && (
@@ -432,6 +460,16 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
           <span style={{ fontSize: fontSize.sm, color: color.textMuted, marginRight: 'auto' }}>
             {enableMentions && 'Type @ to mention · '}{isMac() ? '⌘↵' : 'Ctrl+Enter'} to {submitLabel.toLowerCase()}
           </span>
+          {uploads.uploading && (
+            <span id={heldNoteId} style={{ fontSize: fontSize.sm, color: color.textSecondary }}>
+              Uploading… {submitLabel} is available when it finishes.
+            </span>
+          )}
+          {postError && (
+            <span role="alert" style={{ fontSize: fontSize.sm, color: color.textDanger }}>
+              Couldn’t post. Your draft is kept; try again.
+            </span>
+          )}
           {onCancel && (
             <button
               type="button"
@@ -453,7 +491,8 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={(!hasContent && !allowEmpty) || disabled || uploads.uploading}
+            aria-describedby={uploads.uploading ? heldNoteId : undefined}
+            disabled={(!hasContent && !allowEmpty) || disabled || uploads.uploading || posting}
             style={{
               fontSize: fontSize.sm,
               padding: '6px 18px',
