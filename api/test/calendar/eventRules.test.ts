@@ -387,6 +387,23 @@ describe('the week-ahead email and the calendar, under the Calendar page\'s one 
     for (const title of Object.values(TITLES)) expect(html).toContain(title)
   })
 
+  it('past the 30-event cap, the email lists what it can and counts the rest, so listed plus left out is what the calendar shows (#675)', async () => {
+    await sync()
+    const db = getDb(env.DB)
+    for (let i = 0; i < 40; i++) {
+      await db.insert(calendarEvents).values({ id: `cap-${i}`, uid: `cap-${i}@test`, billId: null, source: 'body', sequence: 0, date: isoDay(1 + (i % 5)), time: `${String(8 + Math.floor(i / 5)).padStart(2, '0')}:00:00`, description: `Capped week event ${i} end`, status: 'confirmed', ruleMatch: null })
+    }
+    const shown = (await calendarUids()).filter(uid => uid in TITLES || uid.startsWith('cap-'))
+    await runWeekAhead(env as any, getDb(env.DB))
+    const call = sendBatch.mock.calls.at(-1) as unknown as [unknown, { html: string }[]] | undefined
+    const html = call?.[1][0].html ?? ''
+    const listedCount = Array.from(html.matchAll(/Capped week event \d+ end|Housing roundtable|Committee of the Whole hearing|Legislative Meeting/g)).length
+    const omitted = Number(html.match(/and (\d+) more on the calendar/)?.[1])
+    expect(shown).toHaveLength(43)
+    expect(listedCount + omitted).toBe(shown.length)
+    expect(omitted).toBeGreaterThan(0)
+  })
+
   it('refuses a member the rules: only an admin changes which events show', async () => {
     await sync()
     expect((await saveRules({ committees: [HOUSING], kinds: [], topics: [], trackedBills: false }, member)).status).toBe(403)
@@ -408,5 +425,121 @@ describe('deadlines', () => {
     const ics = await feed()
     expect(ics).toContain('UID:deadline-1@test')
     expect(ics).not.toContain('UID:deadline-2@test')
+  })
+})
+
+// A companion group has one priority, the one set most recently on any member
+// (#374, #381), so a body event whose agenda holds a member shows through the
+// rules whichever member carries it (#640).
+describe('event rules, for companion groups', () => {
+  const db = () => getDb(env.DB)
+  const SENATE_HANDLE = 'legiscan:1012600770'
+  const COMPANION = 'council-2600@lims.dccouncil.gov'
+  const EXTRA = 'council-2601@lims.dccouncil.gov'
+
+  /** A Committee of the Whole event, which RULES hides, with the companion bill on its agenda. */
+  const companionHearing = (o: Partial<CentralBodyEvent> = {}) => bodyEvent({
+    uid: COMPANION, type: 'Hearing', date: isoDay(5), committee: COW, title: 'Companion hearing',
+    agenda: [{ topic: 'Soccer Stadium Redevelopment Act (Senate)', billNumber: 'SB 1' }],
+    url: 'https://lims.dccouncil.gov/Hearings/hearings/2600', eventHash: 'e6',
+    bills: [SENATE_HANDLE], covers: [], ...o,
+  })
+
+  let companionId: string
+
+  /** The companion member: tracked by keyword, no priority of its own, grouped with the prioritized bill. */
+  beforeEach(async () => {
+    companionId = await seedBill({ billNumber: 'SB 1', state: 'DC', priority: null, externalId: SENATE_HANDLE })
+    await db().update(bills).set({ matchType: 'keyword', groupKey: 'g-stadium' }).where(eq(bills.id, companionId))
+    await db().update(bills).set({ groupKey: 'g-stadium', prioritySetAt: '2026-01-01 00:00:00' }).where(eq(bills.id, billId))
+    central.events = [...central.events, companionHearing()]
+  })
+
+  const ruleMatches = async () => Object.fromEntries((await db().select({ uid: calendarEvents.uid, ruleMatch: calendarEvents.ruleMatch })
+    .from(calendarEvents).where(eq(calendarEvents.source, 'body')).all()).map(r => [r.uid, r.ruleMatch]))
+
+  it('shows an event whose agenda links only a member with no priority, when another member carries the priority', async () => {
+    await sync()
+    const res = await saveRules(RULES)
+    expect(res.status).toBe(200)
+    expect(await calendarUids()).toEqual([ROUNDTABLE, STADIUM, COMPANION].sort())
+    expect((await ruleMatches())[COMPANION]).toBe(1)
+    expect(await feed()).toContain(`UID:${COMPANION}`)
+  })
+
+  it('still hides it when no member of the group has a priority', async () => {
+    await db().update(bills).set({ priority: null, prioritySetAt: null, matchType: 'keyword' }).where(eq(bills.id, billId))
+    await sync()
+    await saveRules(RULES)
+    expect(await calendarUids()).toEqual([ROUNDTABLE])
+    expect((await ruleMatches())[COMPANION]).toBe(0)
+  })
+
+  it('reports the group event as prioritized on the settings page', async () => {
+    await sync()
+    const body = await (await api('/admin/event-rules')).json() as any
+    expect(body.events.find((e: any) => e.facets.title === 'Companion hearing')).toMatchObject({ trackedOnAgenda: true, prioritizedOnAgenda: true })
+  })
+
+  it('does not treat an ungrouped tracked bill with no priority as prioritized', async () => {
+    const solo = await seedBill({ billNumber: 'HB 5', state: 'DC', priority: null, externalId: 'legiscan:555' })
+    await db().update(bills).set({ matchType: 'keyword' }).where(eq(bills.id, solo))
+    central.events = [...central.events, bodyEvent({ uid: EXTRA, committee: COW, title: 'Solo hearing', date: isoDay(6), eventHash: 'e7', bills: ['legiscan:555'] })]
+    await sync()
+    await saveRules(RULES)
+    expect(await calendarUids()).not.toContain(EXTRA)
+    expect((await ruleMatches())[EXTRA]).toBe(0)
+  })
+
+  it('rewrites a stale rule_match on the next evaluation, and a re-run changes nothing', async () => {
+    await sync()
+    await saveRules(RULES)
+    await db().update(calendarEvents).set({ ruleMatch: 0 }).where(eq(calendarEvents.uid, COMPANION))
+    expect((await ruleMatches())[COMPANION]).toBe(0)
+
+    await sync()
+    const first = await ruleMatches()
+    expect(first[COMPANION]).toBe(1)
+
+    await sync()
+    expect(await ruleMatches()).toEqual(first)
+    const again = await saveRules(RULES)
+    expect(await again.json()).toMatchObject({ shown: 3, hidden: 1 })
+    expect(await ruleMatches()).toEqual(first)
+  })
+
+  it('hides the event again on the next evaluation once the group loses its priority, and a re-run changes nothing', async () => {
+    await sync()
+    await saveRules(RULES)
+    expect(await calendarUids()).toContain(COMPANION)
+    await db().update(bills).set({ priority: null, prioritySetAt: null }).where(eq(bills.id, billId))
+    await sync()
+    const after = await ruleMatches()
+    expect(after[COMPANION]).toBe(0)
+    await sync()
+    expect(await ruleMatches()).toEqual(after)
+    expect(await calendarUids()).not.toContain(COMPANION)
+  })
+
+  it('counts a priority set on the member itself, and ignores a prioritized bill that left the group', async () => {
+    await db().update(bills).set({ priority: null, prioritySetAt: null, groupKey: 'g-other' }).where(eq(bills.id, billId))
+    await db().update(bills).set({ priority: 'low', prioritySetAt: '2026-02-01 00:00:00' }).where(eq(bills.id, companionId))
+    await sync()
+    await saveRules(RULES)
+    expect((await ruleMatches())[COMPANION]).toBe(1)
+    // The stadium hearing's bill left the group and has no priority now, so it is hidden.
+    expect((await ruleMatches())[STADIUM]).toBe(0)
+  })
+
+  it('lists the same events in the week-ahead email and on the calendar', async () => {
+    await db().insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'week-ahead': { enabled: true, settings: { weeklyDay: String(new Date().getUTCDay()) } } }) })
+    await sync()
+    await saveRules(RULES)
+    expect(await calendarUids()).toContain(COMPANION)
+    await runWeekAhead(env as any, getDb(env.DB))
+    const call = sendBatch.mock.calls.at(-1) as unknown as [unknown, { html: string }[]] | undefined
+    const html = call?.[1][0].html ?? ''
+    expect(html).toContain('Companion hearing')
+    expect(html).not.toContain('Legislative Meeting')
   })
 })

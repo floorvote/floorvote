@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   createSender, resolveFrom, resolveFromBulk, resolveReplyTo,
-  type SignInMessage, type SignInEvent, type AccountMessage, type NotificationMessage, type BulkMessage, type HealthRecorder, type SenderEnv,
+  type SignInMessage, type SignInEvent, type AccountMessage, type NotificationMessage, type BulkMessage, type OperatorMessage, type OutageAlertMessage,
+  type HealthRecorder, type SenderEnv,
 } from './emailSender'
 import type { Attempt, EmailProvider, OutgoingEmail, ProviderName } from './emailProviders'
 
@@ -704,5 +705,284 @@ describe('purposes apart: bulk does not leak into the others', () => {
     ])
     expect(r.results.map(x => (x.ok ? `ok:${x.provider}` : 'fail'))).toEqual(['fail', 'ok:resend'])
     expect(second.sent.map(e => e.to[0])).toEqual(['note@example.com'])
+  })
+})
+
+// The operator purpose (feedback, invite-bounce notices, job alerts, and sample
+// emails, #709) falls back, never counts toward email health, and sends in
+// demo mode. The outage alert is the same, except that it tries the healthy
+// provider first: the provider the alert is about is the primary, and the
+// alert can't count on it to carry the news.
+const operator = (overrides: Partial<OperatorMessage> = {}): OperatorMessage => ({
+  purpose: 'operator', to: ['ops@example.com'], subject: 'Feedback from a member', html: '<p>Great tool</p>',
+  ...overrides,
+})
+
+const outageAlert = (overrides: Partial<OutageAlertMessage> = {}): OutageAlertMessage => ({
+  purpose: 'outage-alert', to: ['ops@example.com'], subject: 'Email sending is failing', html: '<p>cloudflare is failing</p>',
+  ...overrides,
+})
+
+describe('operator purpose: delivery and fallback', () => {
+  it('sends through the first provider and leaves the second alone', async () => {
+    const first = memoryProvider('cloudflare'), second = memoryProvider('resend'), recorder = memoryRecorder()
+    const r = await createSender(env, { recorder, providers: [first, second] }).send(operator())
+    expect(r).toMatchObject({ ok: true, provider: 'cloudflare' })
+    expect(first.sent).toHaveLength(1)
+    expect(second.sent).toHaveLength(0)
+    expect(recorder.calls).toEqual([])
+  })
+
+  it('goes out through the second provider when the first has an outage', async () => {
+    const first = memoryProvider('cloudflare', 'temporary'), second = memoryProvider('resend')
+    const r = await createSender(env, { providers: [first, second] }).send(operator())
+    expect(r).toMatchObject({ ok: true, provider: 'resend' })
+    expect(r.attempts.map(a => `${a.provider}:${a.ok}`)).toEqual(['cloudflare:false', 'resend:true'])
+    expect(second.sent[0].to).toEqual(['ops@example.com'])
+  })
+
+  it('goes out through the second provider when the first adapter throws', async () => {
+    const r = await createSender(env, { providers: [memoryProvider('cloudflare', 'throw'), memoryProvider('resend')] }).send(operator())
+    expect(r).toMatchObject({ ok: true, provider: 'resend' })
+  })
+
+  it('does not retry a suppressed recipient through the other provider, and counts nothing', async () => {
+    const first = memoryProvider('cloudflare', 'permanent'), second = memoryProvider('resend'), recorder = memoryRecorder()
+    const r = await createSender(env, { recorder, providers: [first, second] }).send(operator())
+    expect(r).toMatchObject({ ok: false, provider: 'cloudflare', permanent: true })
+    expect(second.sent).toHaveLength(0)
+    expect(recorder.calls).toEqual([])
+  })
+
+  it('reports an outage on both providers as temporary, with one attempt on each and no more', async () => {
+    const first = memoryProvider('cloudflare', 'temporary'), second = memoryProvider('resend', 'temporary')
+    const r = await createSender(env, { providers: [first, second] }).send(operator())
+    expect(r).toMatchObject({ ok: false, provider: 'resend', permanent: false, error: 'outage' })
+    expect(first.sent).toHaveLength(1)
+    expect(second.sent).toHaveLength(1)
+  })
+
+  it('makes one attempt and reports temporary when only one provider is configured', async () => {
+    const only = memoryProvider('resend', 'temporary'), recorder = memoryRecorder()
+    const r = await createSender(env, { recorder, providers: [only] }).send(operator())
+    expect(r).toMatchObject({ ok: false, provider: 'resend', permanent: false })
+    expect(only.sent).toHaveLength(1)
+    expect(recorder.calls).toEqual([])
+  })
+
+  it('fails an invalid address as permanent without calling a provider', async () => {
+    const first = memoryProvider('cloudflare'), second = memoryProvider('resend')
+    const r = await createSender(env, { providers: [first, second] }).send(operator({ to: ['ops@example.gov;'] }))
+    expect(r).toMatchObject({ ok: false, provider: null, permanent: true })
+    expect(first.sent).toHaveLength(0)
+    expect(second.sent).toHaveLength(0)
+  })
+
+  it('sends from the default From, never the bulk one, with the default Reply-To', async () => {
+    const first = memoryProvider('cloudflare')
+    await createSender({ ...env, EMAIL_FROM_BULK: 'notifications@mail.example.org' }, { providers: [first] }).send(operator())
+    expect(first.sent[0].from).toBe('FloorVote <notifications@example.org>')
+    expect(first.sent[0].replyTo).toBe('notifications@example.org')
+  })
+
+  it('derives a text part from the html when none is given, and keeps a hand-written one', async () => {
+    const first = memoryProvider('cloudflare')
+    await createSender(env, { providers: [first] }).sendBatch([operator(), operator({ text: 'hand-written' })])
+    expect(first.sent.map(e => e.text)).toEqual([expect.stringContaining('Great tool'), 'hand-written'])
+  })
+})
+
+describe('operator purpose: never counts toward email health', () => {
+  it('counts nothing for a send that worked', async () => {
+    const recorder = memoryRecorder()
+    await createSender(env, { recorder, providers: [memoryProvider('cloudflare')] }).send(operator())
+    expect(recorder.calls).toEqual([])
+  })
+
+  it('counts nothing for a send that fallback rescued, neither the failed first attempt nor the rescue', async () => {
+    const recorder = memoryRecorder()
+    const r = await createSender(env, { recorder, providers: [memoryProvider('cloudflare', 'temporary'), memoryProvider('resend')] }).send(operator())
+    expect(r).toMatchObject({ ok: true, provider: 'resend' })
+    expect(recorder.calls).toEqual([])
+  })
+
+  it('counts nothing for a failure on both providers', async () => {
+    const recorder = memoryRecorder()
+    await createSender(env, { recorder, providers: [memoryProvider('cloudflare', 'temporary'), memoryProvider('resend', 'temporary')] }).send(operator())
+    expect(recorder.calls).toEqual([])
+  })
+
+  it('counts nothing for a whole batch of operator mail', async () => {
+    const recorder = memoryRecorder()
+    const r = await createSender(env, { recorder, providers: [memoryProvider('cloudflare', 'temporary'), memoryProvider('resend')] }).sendBatch([
+      operator({ to: ['a@example.com'] }), operator({ to: ['b@example.com'] }),
+    ])
+    expect(r).toMatchObject({ sent: 2, failed: 0, skipped: 0 })
+    expect(recorder.calls).toEqual([])
+  })
+
+  it('counts a member-bound message in the same batch and not the operator message beside it', async () => {
+    const recorder = memoryRecorder()
+    await createSender(env, { recorder, providers: [memoryProvider('cloudflare')] }).sendBatch([operator(), notification()])
+    expect(recorder.calls).toHaveLength(1)
+    expect(recorder.calls[0]).toHaveLength(1)
+  })
+})
+
+describe('operator purpose: demo mode', () => {
+  const demo: SenderEnv = { ...env, DEMO_MODE: 'true' }
+
+  it('sends in demo mode', async () => {
+    const first = memoryProvider('cloudflare')
+    const r = await createSender(demo, { providers: [first] }).send(operator())
+    expect(r).toMatchObject({ ok: true, provider: 'cloudflare' })
+    expect(r).not.toHaveProperty('skipped')
+    expect(first.sent).toHaveLength(1)
+  })
+
+  it('still falls back in demo mode', async () => {
+    const r = await createSender(demo, { providers: [memoryProvider('cloudflare', 'temporary'), memoryProvider('resend')] }).send(operator())
+    expect(r).toMatchObject({ ok: true, provider: 'resend' })
+  })
+
+  it('sends a whole batch in demo mode, while bulk mail beside it is suppressed', async () => {
+    const first = memoryProvider('cloudflare')
+    const r = await createSender(demo, { providers: [first] }).sendBatch([operator({ to: ['a@example.com'] }), bulk(), operator({ to: ['b@example.com'] })])
+    expect(r).toMatchObject({ sent: 2, failed: 0, skipped: 1 })
+    expect(first.sent.map(e => e.to[0])).toEqual(['a@example.com', 'b@example.com'])
+  })
+})
+
+describe('operator purpose: does not leak into the others', () => {
+  it('leaves a bulk message without fallback and an account message suppressed in demo mode', async () => {
+    const first = memoryProvider('cloudflare', 'temporary'), second = memoryProvider('resend')
+    const r = await createSender(env, { providers: [first, second] }).sendBatch([bulk({ to: ['digest@example.com'] }), operator({ to: ['ops@example.com'] })])
+    expect(r.results.map(x => (x.ok ? `ok:${x.provider}` : 'fail'))).toEqual(['fail', 'ok:resend'])
+    expect(second.sent.map(e => e.to[0])).toEqual(['ops@example.com'])
+    const demoRun = await createSender({ ...env, DEMO_MODE: 'true' }, { providers: [memoryProvider('cloudflare')] }).sendBatch([account(), operator()])
+    expect(demoRun).toMatchObject({ sent: 1, failed: 0, skipped: 1 })
+  })
+
+  it('uses the bulk From for bulk mail and the default From for operator mail in one batch', async () => {
+    const first = memoryProvider('cloudflare')
+    await createSender({ ...env, EMAIL_FROM_BULK: 'notifications@mail.example.org' }, { providers: [first] }).sendBatch([bulk(), operator()])
+    const bySubject = Object.fromEntries(first.sent.map(e => [e.subject, e.from]))
+    expect(bySubject['Your daily digest']).toBe('FloorVote <notifications@mail.example.org>')
+    expect(bySubject['Feedback from a member']).toBe('FloorVote <notifications@example.org>')
+  })
+})
+
+describe('outage-alert purpose: the healthy provider first', () => {
+  // The providers are [the failing primary, the healthy other], as the sender
+  // is given them. The alert is about the first, so the rule sends it through
+  // the second.
+  it('goes out through the healthy provider first, leaving the failing one untouched', async () => {
+    const failing = memoryProvider('cloudflare', 'temporary'), healthy = memoryProvider('resend')
+    const r = await createSender(env, { providers: [failing, healthy] }).send(outageAlert())
+    expect(r).toMatchObject({ ok: true, provider: 'resend' })
+    expect(healthy.sent).toHaveLength(1)
+    expect(failing.sent).toHaveLength(0)
+    expect(r.attempts.map(a => `${a.provider}:${a.ok}`)).toEqual(['resend:true'])
+  })
+
+  it('goes out through the healthy provider first whichever provider is the failing one', async () => {
+    const failing = memoryProvider('resend', 'temporary'), healthy = memoryProvider('cloudflare')
+    const r = await createSender(env, { providers: [failing, healthy] }).send(outageAlert())
+    expect(r).toMatchObject({ ok: true, provider: 'cloudflare' })
+    expect(failing.sent).toHaveLength(0)
+  })
+
+  it('falls back to the failing provider when the healthy one is rejected, trying the healthy one first', async () => {
+    const failing = memoryProvider('cloudflare'), healthy = memoryProvider('resend', 'temporary')
+    const r = await createSender(env, { providers: [failing, healthy] }).send(outageAlert())
+    expect(r).toMatchObject({ ok: true, provider: 'cloudflare' })
+    expect(r.attempts.map(a => `${a.provider}:${a.ok}`)).toEqual(['resend:false', 'cloudflare:true'])
+  })
+
+  it('falls back to the failing provider when the healthy adapter throws', async () => {
+    const r = await createSender(env, { providers: [memoryProvider('cloudflare'), memoryProvider('resend', 'throw')] }).send(outageAlert())
+    expect(r).toMatchObject({ ok: true, provider: 'cloudflare' })
+    expect(r.attempts.map(a => a.provider)).toEqual(['resend', 'cloudflare'])
+  })
+
+  it('reports temporary after one attempt on each, the healthy one first, when both providers are down', async () => {
+    const failing = memoryProvider('cloudflare', 'temporary'), healthy = memoryProvider('resend', 'temporary')
+    const r = await createSender(env, { providers: [failing, healthy] }).send(outageAlert())
+    expect(r).toMatchObject({ ok: false, provider: 'cloudflare', permanent: false })
+    expect(r.attempts.map(a => a.provider)).toEqual(['resend', 'cloudflare'])
+    expect(failing.sent).toHaveLength(1)
+    expect(healthy.sent).toHaveLength(1)
+  })
+
+  it('does not retry a suppressed recipient through the failing provider', async () => {
+    const failing = memoryProvider('cloudflare'), healthy = memoryProvider('resend', 'permanent')
+    const r = await createSender(env, { providers: [failing, healthy] }).send(outageAlert())
+    expect(r).toMatchObject({ ok: false, provider: 'resend', permanent: true })
+    expect(failing.sent).toHaveLength(0)
+  })
+
+  it('makes one attempt on the only configured provider, and counts nothing', async () => {
+    const only = memoryProvider('cloudflare', 'temporary'), recorder = memoryRecorder()
+    const r = await createSender(env, { recorder, providers: [only] }).send(outageAlert())
+    expect(r).toMatchObject({ ok: false, provider: 'cloudflare', permanent: false })
+    expect(only.sent).toHaveLength(1)
+    expect(recorder.calls).toEqual([])
+  })
+
+  it('sends through the only configured provider when it works', async () => {
+    const only = memoryProvider('resend')
+    expect(await createSender(env, { providers: [only] }).send(outageAlert())).toMatchObject({ ok: true, provider: 'resend' })
+    expect(only.sent).toHaveLength(1)
+  })
+
+  it('orders a batch the same way, message by message', async () => {
+    const failing = memoryProvider('cloudflare', 'temporary'), healthy = memoryProvider('resend')
+    const r = await createSender(env, { providers: [failing, healthy] }).sendBatch([outageAlert({ to: ['a@example.com'] }), outageAlert({ to: ['b@example.com'] })])
+    expect(r).toMatchObject({ sent: 2, failed: 0 })
+    expect(failing.sent).toHaveLength(0)
+    expect(healthy.sent.map(e => e.to[0])).toEqual(['a@example.com', 'b@example.com'])
+  })
+
+  it('leaves the order of every other purpose alone: operator mail tries the first provider first', async () => {
+    const first = memoryProvider('cloudflare'), second = memoryProvider('resend')
+    await createSender(env, { providers: [first, second] }).sendBatch([operator(), notification(), account(), signIn()])
+    expect(first.sent).toHaveLength(4)
+    expect(second.sent).toHaveLength(0)
+  })
+})
+
+describe('outage-alert purpose: never counts, and sends in demo mode', () => {
+  it('counts nothing for an alert the healthy provider carried', async () => {
+    const recorder = memoryRecorder()
+    await createSender(env, { recorder, providers: [memoryProvider('cloudflare', 'temporary'), memoryProvider('resend')] }).send(outageAlert())
+    expect(recorder.calls).toEqual([])
+  })
+
+  it('counts nothing for an alert that needed both providers, so it cannot fake a recovery', async () => {
+    const recorder = memoryRecorder()
+    await createSender(env, { recorder, providers: [memoryProvider('cloudflare'), memoryProvider('resend', 'temporary')] }).send(outageAlert())
+    expect(recorder.calls).toEqual([])
+  })
+
+  it('sends in demo mode', async () => {
+    const failing = memoryProvider('cloudflare', 'temporary'), healthy = memoryProvider('resend')
+    const r = await createSender({ ...env, DEMO_MODE: 'true' }, { providers: [failing, healthy] }).send(outageAlert())
+    expect(r).toMatchObject({ ok: true, provider: 'resend' })
+    expect(r).not.toHaveProperty('skipped')
+    expect(healthy.sent).toHaveLength(1)
+  })
+
+  it('sends from the default From, never the bulk one', async () => {
+    const healthy = memoryProvider('resend')
+    await createSender({ ...env, EMAIL_FROM_BULK: 'notifications@mail.example.org' }, { providers: [memoryProvider('cloudflare'), healthy] }).send(outageAlert())
+    expect(healthy.sent[0].from).toBe('FloorVote <notifications@example.org>')
+  })
+
+  it('fails an invalid address as permanent without calling a provider', async () => {
+    const failing = memoryProvider('cloudflare'), healthy = memoryProvider('resend')
+    const r = await createSender(env, { providers: [failing, healthy] }).send(outageAlert({ to: ['not-an-address'] }))
+    expect(r).toMatchObject({ ok: false, provider: null, permanent: true })
+    expect(failing.sent).toHaveLength(0)
+    expect(healthy.sent).toHaveLength(0)
   })
 })

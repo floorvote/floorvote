@@ -23,11 +23,17 @@ import { aiInstructionsChanged, configChanged, type ConfigSnapshot, centralSyncW
 import { isWildcardKeyword } from '../../../../shared/keywords'
 import { buildDefaultAiContext, buildDefaultRelevanceQuestion, isAiConfigDefault } from '../../../../shared/aiDefaults'
 import { DEFAULT_TAXONOMY, serializeTaxonomy, type TaxonomyItem } from '../../../../shared/taxonomy'
+import { absoluteTime } from '../../lib/time'
 import { useUnsavedRegistration } from '../../lib/unsavedText'
 import { MissingRequiredReason, useRequiredSubmit } from '../../components/RequiredField'
 import TagTaxonomyTable from './TagTaxonomyTable'
 import { KeywordMatchSummary } from './KeywordMatchSummary'
 import { rowsFromTaxonomy, rowsToTaxonomy, type TaxonomyRow } from './taxonomyRows'
+
+type ChangedBy = { id: string; name: string | null; email: string } | null
+// Who last changed each AI setting and when (#602), from the admin config and a save's response.
+type AiSettingRecords = Record<`${AiSettingField}_changed_at`, string | null> & Record<`${AiSettingField}_changed_by`, ChangedBy>
+type AiSettingField = 'ai_context' | 'relevance_question' | 'tag_taxonomy'
 
 type ConfigData = {
   keywords?: string[]
@@ -40,7 +46,7 @@ type ConfigData = {
   prioritized_bills_count?: number
   new_match_min_relevance?: number
   claim_links_enabled?: boolean
-}
+} & Partial<AiSettingRecords>
 
 type CustomFieldDef = {
   id: string
@@ -51,6 +57,28 @@ type CustomFieldDef = {
   multiple?: boolean
   displayOrder: number
   pinned: boolean
+}
+
+const AI_SETTING_FIELDS: AiSettingField[] = ['ai_context', 'relevance_question', 'tag_taxonomy']
+
+function pickAiRecords(data: Partial<AiSettingRecords>): Partial<AiSettingRecords> {
+  const out: Record<string, unknown> = {}
+  for (const f of AI_SETTING_FIELDS) {
+    out[`${f}_changed_at`] = data[`${f}_changed_at`] ?? null
+    out[`${f}_changed_by`] = data[`${f}_changed_by`] ?? null
+  }
+  return out as Partial<AiSettingRecords>
+}
+
+// "Last changed by Avery on October 20, 2026 at 2:05 PM", or nothing for a
+// setting nobody has changed. A removed admin reads as a neutral label, with
+// the date still shown.
+function ChangedLine({ field, records, testId }: { field: AiSettingField; records: Partial<AiSettingRecords>; testId: string }) {
+  const at = records[`${field}_changed_at`]
+  if (!at) return null
+  const by = records[`${field}_changed_by`]
+  const who = by ? (by.name?.trim() || by.email) : 'a removed user'
+  return <div data-testid={testId} style={{ ...HELPER_TEXT, marginTop: 4 }}>Last changed by {who} on {absoluteTime(at)}</div>
 }
 
 const PRESET_NOUNS = ['team', 'association', 'coalition'] as const
@@ -135,6 +163,8 @@ export function Config() {
   // The claim links setting (#570). It saves the moment it's toggled, apart from
   // the AI instructions above it, so it never rides along with unsaved edits.
   const [claimLinks, setClaimLinks] = useState(true)
+  // Who last changed each AI setting (#602). Empty for a setting nobody has changed.
+  const [aiRecords, setAiRecords] = useState<Partial<AiSettingRecords>>({})
   const [savingClaimLinks, setSavingClaimLinks] = useState(false)
   const [saveClaimLinksError, setSaveClaimLinksError] = useState<string | null>(null)
   // What the polite live region says after a save, so a screen reader user hears
@@ -242,6 +272,7 @@ export function Config() {
         setNewMatchMinRelevance(newMatchMinRelevanceValue)
         // On unless an admin turned it off, as the server reads it.
         setClaimLinks(data.claim_links_enabled !== false)
+        setAiRecords(pickAiRecords(data))
         const loadedRows = rowsFromTaxonomy(
           Array.isArray(data.tag_taxonomy) ? data.tag_taxonomy as TaxonomyItem[] : [],
         )
@@ -444,7 +475,7 @@ export function Config() {
     setSavingAi(true)
     setSavedAi(false)
     try {
-      await apiFetch('/admin/config', {
+      const saved = await apiFetch<Partial<AiSettingRecords> | undefined>('/admin/config', {
         method: 'PUT',
         body: JSON.stringify({
           ai_context: aiContext.trim() || null,
@@ -452,6 +483,7 @@ export function Config() {
           tag_taxonomy: taxonomy.length > 0 ? taxonomy : null,
         }),
       })
+      if (saved && typeof saved === 'object' && 'ai_context_changed_at' in saved) setAiRecords(pickAiRecords(saved))
       updateSnapshot({ aiContext, relevanceQuestion, tagTaxonomy })
       savedTaxonomyRows.current = taxonomyRows
       setUndoValues(prev => {
@@ -879,6 +911,7 @@ export function Config() {
                   placeholder={buildDefaultAiContext(associationName)}
                 />
                 <div style={hintStyle}>System instructions sent to the AI for every bill. Controls the summary style and framing.</div>
+                <ChangedLine field="ai_context" records={aiRecords} testId="ai-context-changed" />
                 {isAiConfigDefault(aiContext) && (
                   <div style={hintStyle}>
                     Leaving this blank uses the generic instructions shown above. Personalizing them improves summaries and relevance scores.
@@ -918,6 +951,7 @@ export function Config() {
                   placeholder={buildDefaultRelevanceQuestion(associationName)}
                 />
                 <div style={hintStyle}>Prompt sent to guide the AI in scoring each bill's relevance from 1–10.</div>
+                <ChangedLine field="relevance_question" records={aiRecords} testId="relevance-question-changed" />
                 {isAiConfigDefault(relevanceQuestion) && (
                   <div style={hintStyle}>
                     Leaving this blank uses the generic instructions shown above. Personalizing them improves summaries and relevance scores.
@@ -973,6 +1007,7 @@ export function Config() {
                   List of tags for the AI to assign to bills. It will only assign
                   tags from this list.
                 </div>
+                <ChangedLine field="tag_taxonomy" records={aiRecords} testId="tag-taxonomy-changed" />
                 {isAiConfigDefault(tagTaxonomy) && (
                   <div style={hintStyle}>
                     Leaving this blank uses the generic tag list. Personalizing it keeps tags
