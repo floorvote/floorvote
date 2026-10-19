@@ -618,6 +618,19 @@ describe('runSync → wildcard stateCoverage', () => {
     expect(logRows.every(r => r.status === 'ok' && r.error === null)).toBe(true)
   })
 
+  it('still fails a LegiScan pass when its log row cannot be written (only snapshot passes tolerate that)', async () => {
+    const db = drizzle(env.DB, { schema })
+    await env.DB.exec(`CREATE TRIGGER no_log BEFORE INSERT ON session_sync_log BEGIN SELECT RAISE(ABORT, 'log refused'); END`)
+    const { applyMasterList } = await import('../../src/cron/sync')
+    await expect(applyMasterList(
+      { sessionId: 7101, state: 'PA', sessionName: 'PA', provider: 'legiscan' }, [], [], env as any, db,
+    )).rejects.toThrow()
+    // And with the opt-in, the same write failing is noted and the pass returns.
+    await expect(applyMasterList(
+      { sessionId: 7101, state: 'PA', sessionName: 'PA', provider: 'legiscan' }, [], [], env as any, db, undefined, { tolerateLogFailure: true },
+    )).resolves.toEqual([])
+  })
+
   it('does not sync sessions when no sessions exist in DB even with wildcard tenant', async () => {
     const db = drizzle(env.DB, { schema })
 

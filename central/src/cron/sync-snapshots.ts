@@ -6,7 +6,7 @@ import { terminalStatuses } from '../lib/vocabulary'
 import { providerContext } from '../lib/providerContext'
 import { ingestQueueFor, providerConfigured } from '../lib/providerRouting'
 import { loadStateOwners, ownerOfState, statesOwnedBy } from '../lib/stateProviders'
-import { applyMasterList } from './sync'
+import { applyMasterList, logSyncPass } from './sync'
 import { assignSessionSlugs } from '../lib/sessionSlugs'
 import { carriedBillIds, carriedPeopleIds, withCarriedBillIds, withCarriedPeople } from '../lib/carriedIds'
 import type { Provider, ProviderContext, ProviderPerson, ProviderRecord, StoredSession, SyncSession } from '../providers'
@@ -100,7 +100,7 @@ export async function runSnapshotSync(
     } catch (err) {
       console.error(`[sync-${provider.id}] ${session.sessionName} failed:`, err)
       errors.push(err instanceof Error ? err : new Error(String(err)))
-      await logPass(db, provider, session, { status: 'failed', error: errorMessage(err) })
+      await logOutcome(db, session, { status: 'failed', error: errorMessage(err) })
     }
   }
   if (errors.length === 1) throw errors[0]
@@ -121,31 +121,26 @@ function errorMessage(err: unknown): string {
 }
 
 /**
- * One row in session_sync_log for a pass: its counts when it finished with
- * nothing to count (an empty answer), or the error when it failed. A pass
- * that has records logs its counts through applyMasterList, as a LegiScan
- * full pass does. The States page reads these rows. Logging is a record of
- * the pass, never part of it: a write that fails is noted and the sync goes on.
- * A pass that fails after applyMasterList logged its counts adds this row
- * beside that one, and it is the newer, so the pass reads as failed.
+ * One row in session_sync_log for a pass's outcome: zero counts for an empty
+ * answer, which finished with nothing to count, or the error for a pass that
+ * failed. A pass that has records logs its counts through applyMasterList, as a
+ * LegiScan full pass does. The States page reads these rows. A pass that fails
+ * after applyMasterList logged its counts adds a failed row beside that one, and
+ * it is the newer, so the pass reads as failed.
  */
-async function logPass(
-  db: Db, provider: Provider, session: SessionRow, outcome: { status: 'ok' } | { status: 'failed'; error: string },
+function logOutcome(
+  db: Db, session: SessionRow, outcome: { status: 'ok' } | { status: 'failed'; error: string },
 ): Promise<void> {
-  try {
-    await db.insert(sessionSyncLog).values({
-      syncedAt: nowDb(),
-      state: session.state,
-      sessionId: session.sessionId,
-      sessionName: session.sessionName,
-      billsChecked: 0,
-      billsChanged: 0,
-      billsQueued: 0,
-      ...outcome,
-    })
-  } catch (err) {
-    console.error(`[sync-${provider.id}] couldn't log the ${outcome.status} pass of ${session.sessionName}:`, err)
-  }
+  return logSyncPass(db, {
+    syncedAt: nowDb(),
+    state: session.state,
+    sessionId: session.sessionId,
+    sessionName: session.sessionName,
+    billsChecked: 0,
+    billsChanged: 0,
+    billsQueued: 0,
+    ...outcome,
+  }, { tolerate: true, label: `${session.state} ${session.sessionName} (${outcome.status})` })
 }
 
 /**
@@ -314,9 +309,10 @@ async function runSnapshotPass(
       ? withChanges(await storedRecords(db, provider.id, session.sessionId), listed)
       : listed
   if (snapshot.partial) console.log(`[sync-${provider.id}] ${session.sessionName}: ${listed.length} records changed since its last read; matching them with its stored records`)
-  // An empty answer is nothing new, and a pass that finished all the same.
+  // An empty answer is nothing new, and a pass that finished all the same, unless the
+  // provider lost the state meanwhile (a pass with records logs nothing then, either).
   if (records.length === 0) {
-    await logPass(db, provider, session, { status: 'ok' })
+    if (await ownerOfState(db, session.state) === provider.id) await logOutcome(db, session, { status: 'ok' })
     return { records: 0, queued: 0, refreshed: 0 }
   }
 

@@ -243,6 +243,17 @@ describe('a pass that finishes', () => {
     expect(await logRows()).toEqual([])
   })
 
+  it('logs nothing for an empty answer when the provider lost the state to another during the pass', async () => {
+    vi.mocked(mgaClient.getMgaSession).mockImplementation(async code => {
+      if (code !== MGA_CODE) return null
+      await db().update(schema.stateProviders).set({ provider: 'legiscan' }).where(eq(schema.stateProviders.state, 'MD'))
+      return { unchanged: true, records: [], etag: null }
+    })
+    const { env: e } = makeEnv()
+    await runSnapshotSync(mga, e, db())
+    expect(await logRows()).toEqual([])
+  })
+
   it('logs nothing when the provider lost the state to another during the pass', async () => {
     vi.mocked(mgaClient.getMgaSession).mockImplementation(async code => {
       if (code !== MGA_CODE) return null

@@ -863,6 +863,8 @@ dashRoutes.get('/sync/ticks/:id/changes', async (c) => {
     .from(schema.sessionSyncLog)
     .where(and(
       eq(schema.sessionSyncLog.sessionId, tick.sessionId),
+      // A failed pass queued nothing, so it doesn't end the window the ok pass's changes land in.
+      eq(schema.sessionSyncLog.status, 'ok'),
       gte(schema.sessionSyncLog.syncedAt, tick.syncedAt),
       sql`${schema.sessionSyncLog.id} != ${id}`,
     ))

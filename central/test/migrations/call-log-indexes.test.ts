@@ -6,6 +6,7 @@ import { legiscanMigrations, parseMigrations, setupDb, type MigrationFiles } fro
 import { setupLsDb } from '../helpers/setupLsDb'
 import { planOf, spyOnD1 } from '../helpers/queryPlan'
 import { loadStateRows } from '../../src/lib/stateRows'
+import { app } from '../../src/index-legiscan'
 import { pruneCallLogs } from '../../src/lib/pruneCallLogs'
 import { splitStatements } from '../../../shared/sqlStatements'
 
@@ -16,7 +17,7 @@ import { splitStatements } from '../../../shared/sqlStatements'
 
 const NOW = new Date('2026-10-14T15:30:00Z')
 // Any SCAN of a log table, covering index or not, reads every row of it.
-const NOT_FULL_SCAN = /\bSCAN (api_call_log|session_sync_log|l|l2)\b/
+const NOT_FULL_SCAN = /\bSCAN (api_call_log|session_sync_log|l\d*)\b/
 
 async function plan(sql: string): Promise<string> {
   const rows = (await env.DB.prepare(`EXPLAIN QUERY PLAN ${sql}`).all()).results as { detail: string }[]
@@ -98,6 +99,64 @@ describe('call-log indexes: the queries the States page runs', () => {
     // The check that a pass is its session's newest looks up the session's rows by index.
     const syncDelete = await planOf(deletes.find(c => c.sql.includes('DELETE FROM session_sync_log'))!)
     expect(syncDelete).toMatch(/SEARCH \w+ USING (COVERING )?INDEX idx_session_sync_log_session_synced/)
+  })
+})
+
+// The two dashboard reads that filter the log on status (a failed pass is not a sync) must
+// still walk an index in order, as the unfiltered reads do. Checked on the SQL the routes ran.
+describe('call-log indexes: the dashboard reads that skip failed passes', () => {
+  beforeEach(async () => {
+    await setupLsDb()
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO sessions (session_id, state_id, state, year_start, year_end, session_tag, session_title, session_name, provider)
+        VALUES (1, 1, 'RI', 2026, 2026, '', 'Regular', 'RI 2026', 'legiscan')`),
+      ...Array.from({ length: 50 }, (_, i) => env.DB.prepare(
+        `INSERT INTO session_sync_log (synced_at, state, session_id, session_name, status) VALUES (?, 'RI', 1, 'RI 2026', ?)`)
+        .bind(`2026-10-${String(1 + (i % 14)).padStart(2, '0')} 05:00:00`, i % 5 === 0 ? 'failed' : 'ok')),
+    ])
+    await env.DB.prepare('ANALYZE').run()
+  })
+
+  async function logQueries(path: string) {
+    const { db, captured } = spyOnD1()
+    const res = await app.fetch(new Request(`http://central${path}`, { headers: { Authorization: 'Bearer sek' } }), { ...env, DB: db, ADMIN_SECRET: 'sek' } as any)
+    expect(res.status).toBe(200)
+    return captured.filter(c => c.sql.includes('session_sync_log'))
+  }
+
+  it('reads the Overview\'s last sync newest-first through an index, with no sort', async () => {
+    const qs = await logQueries('/admin/dash/overview')
+    expect(qs.length).toBeGreaterThan(0)
+    for (const q of qs) {
+      expect(q.sql).toContain('"status" = ?')
+      const p = await planOf(q)
+      // Newest first through the index with a LIMIT: it stops at the first ok row, so no sort.
+      expect(p).toMatch(/idx_session_sync_log_/)
+      expect(p).not.toMatch(/TEMP B-TREE/)
+    }
+  })
+
+  it('reads each state\'s last sync through an index, with no scan or sort', async () => {
+    const qs = await logQueries('/admin/dash/sync/states')
+    expect(qs.length).toBeGreaterThan(0)
+    for (const q of qs) {
+      expect(q.sql).toContain('"status" = ?')
+      const p = await planOf(q)
+      expect(p).toMatch(/SEARCH session_sync_log USING (COVERING )?INDEX idx_session_sync_log_/)
+      expect(p).not.toMatch(NOT_FULL_SCAN)
+      expect(p).not.toMatch(/TEMP B-TREE/)
+    }
+  })
+
+  it('finds a tick\'s next ok pass through an index', async () => {
+    const { db, captured } = spyOnD1()
+    const res = await app.fetch(new Request('http://central/admin/dash/sync/ticks/3/changes', { headers: { Authorization: 'Bearer sek' } }), { ...env, DB: db, ADMIN_SECRET: 'sek' } as any)
+    expect(res.status).toBe(200)
+    const next = captured.filter(c => c.sql.includes('session_sync_log') && c.sql.includes('"status" = ?') && c.sql.includes('order by'))
+    expect(next.length).toBe(1)
+    const p = await planOf(next[0])
+    expect(p).toMatch(/SEARCH session_sync_log USING (COVERING )?INDEX idx_session_sync_log_/)
+    expect(p).not.toMatch(NOT_FULL_SCAN)
   })
 })
 

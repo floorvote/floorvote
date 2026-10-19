@@ -67,3 +67,43 @@ describe('GET /admin/dash/sync/states: stale', () => {
     expect(ri.stale).toBe(false)
   })
 })
+
+describe('GET /admin/dash/sync/ticks/:id/changes', () => {
+  const change = (id: string, detectedAt: string) => db().insert(schema.billChangeLog).values({
+    id, billId: 1, changeType: 'status', oldValue: null, newValue: '1', detail: null, detectedAt,
+  } as any)
+  beforeEach(async () => {
+    await db().insert(schema.bills).values({ billId: 1, sessionId: 1, state: 'RI', stateId: 41, billNumber: 'H1', changeHash: 'h', title: 't' } as any)
+  })
+  const idsOf = async (tickId: number) => (await get(`/admin/dash/sync/ticks/${tickId}/changes`)).changes.map((c: any) => c.id ?? c.detectedAt)
+
+  it('bounds an ok tick\'s window at the next ok pass, so a failed row between does not cut it short', async () => {
+    await log('2026-10-14 05:00:00')
+    await log('2026-10-14 06:00:00', { status: 'failed', error: 'boom', billsChecked: 0, billsChanged: 0, billsQueued: 0 })
+    await log('2026-10-14 13:00:00')
+    await change('c1', '2026-10-14 05:30:00')
+    await change('c2', '2026-10-14 07:30:00')
+    await change('c3', '2026-10-14 14:00:00')
+    const [first] = (await get('/admin/dash/sync/ticks')).syncs.slice().reverse()
+    const data = await get(`/admin/dash/sync/ticks/${first.id}/changes`)
+    expect(data.windowEnd).toBe('2026-10-14 13:00:00')
+    expect(data.changes.map((c: any) => c.detectedAt)).toEqual(['2026-10-14 07:30:00', '2026-10-14 05:30:00'])
+  })
+
+  it('leaves an ok tick followed only by a failed row open-ended, with the changes after the failure', async () => {
+    await log('2026-10-14 05:00:00')
+    await log('2026-10-14 06:00:00', { status: 'failed', error: 'boom', billsChecked: 0, billsChanged: 0, billsQueued: 0 })
+    await change('c1', '2026-10-14 07:30:00')
+    const [first] = (await get('/admin/dash/sync/ticks')).syncs.slice().reverse()
+    const data = await get(`/admin/dash/sync/ticks/${first.id}/changes`)
+    expect(data.changes.map((c: any) => c.detectedAt)).toEqual(['2026-10-14 07:30:00'])
+  })
+
+  it('still bounds a tick at the next ok pass of the same session', async () => {
+    await log('2026-10-14 05:00:00')
+    await log('2026-10-14 13:00:00')
+    await change('c1', '2026-10-14 14:00:00')
+    const [first] = (await get('/admin/dash/sync/ticks')).syncs.slice().reverse()
+    expect((await get(`/admin/dash/sync/ticks/${first.id}/changes`)).changes).toEqual([])
+  })
+})
