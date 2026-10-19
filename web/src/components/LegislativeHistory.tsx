@@ -2,6 +2,7 @@ import { Fragment, useId, useState } from 'react'
 import { CHROME_TEXT } from '../lib/textStyles'
 import { TabularRow } from './TabularRow'
 import { ExternalLinkIcon } from './ExternalLinkIcon'
+import { PartyBadge } from './PartyBadge'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 import { httpUrl } from '../../../shared/httpUrl'
 import { groupVotes, type VoteTone } from '../lib/voteWords'
@@ -26,7 +27,7 @@ interface VoteEntry {
   absent: number
   passed: number
   /** Each legislator's vote on this roll call, where central has them (any provider). */
-  legislatorVotes?: { name: string; vote: string; url?: string | null }[]
+  legislatorVotes?: { name: string; vote: string; url?: string | null; party?: string | null }[]
 }
 
 interface LegislativeHistoryProps {
@@ -38,7 +39,7 @@ interface LegislativeHistoryProps {
 
 type TimelineItem =
   | { kind: 'action'; date: string; chamber?: string; action: string; importance?: number; videoUrl?: string }
-  | { kind: 'vote'; date: string; chamber: string | null; desc: string; yea: number; nay: number; nv: number; absent: number; passed: number; legislatorVotes?: { name: string; vote: string; url?: string | null }[] }
+  | { kind: 'vote'; date: string; chamber: string | null; desc: string; yea: number; nay: number; nv: number; absent: number; passed: number; legislatorVotes?: { name: string; vote: string; url?: string | null; party?: string | null }[] }
 
 const TONE_COLOR: Record<VoteTone, string> = {
   yea: color.textSuccessDark,
@@ -56,8 +57,8 @@ function VoterName({ name, url }: { name: string; url?: string | null }) {
   )
 }
 
-function VoterNames({ voters }: { voters: { name: string; url?: string | null }[] }) {
-  return <>{voters.map((v, i) => <span key={i}>{i > 0 && ', '}<VoterName name={v.name} url={v.url} /></span>)}</>
+function VoterNames({ voters }: { voters: { name: string; url?: string | null; party?: string | null }[] }) {
+  return <>{voters.map((v, i) => <span key={i}>{i > 0 && ', '}<VoterName name={v.name} url={v.url} />{v.party?.trim() && <PartyBadge party={v.party.trim()} size="mini" />}</span>)}</>
 }
 
 /**
@@ -108,7 +109,7 @@ function RollCallTally({ vote }: { vote: Pick<VoteEntry, 'yea' | 'nay' | 'nv' | 
         }}>
           {groups.map(({ group, voters }) => (
             <Fragment key={group.key}>
-              <dt style={{ color: TONE_COLOR[group.tone], fontWeight: fontWeight.bold, minWidth: 0, overflowWrap: 'anywhere' }}>{group.label}</dt>
+              <dt style={{ color: TONE_COLOR[group.tone], fontWeight: fontWeight.medium, minWidth: 0, overflowWrap: 'anywhere' }}>{group.label}</dt>
               <dd style={{ margin: 0, minWidth: 0, overflowWrap: 'anywhere' }}><VoterNames voters={voters} /></dd>
             </Fragment>
           ))}

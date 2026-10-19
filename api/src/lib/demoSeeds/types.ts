@@ -1,4 +1,5 @@
 import type { TaxonomyItem } from '../taxonomy'
+import type { Attribution } from '../../../../shared/dataAttribution'
 
 /**
  * The data half of a demo reset. Everything here is inert description — all
@@ -146,6 +147,11 @@ export type DemoSeed = {
   sessions: { data: DemoSeedSession[] }
   /** State coverage for a multi-state tenant; null for a STATE-scoped one. */
   stateCoverage: string[] | null
+  /** The data credit GET /config serves (`attribution`). A demo never hears from
+   *  central, the only source of it on a live instance, so the seed names the
+   *  providers its states come from. Omit for "not known yet" (the Stage filter
+   *  is then offered). Written verbatim to association_config.data_attribution. */
+  attribution?: Attribution
 
   users: DemoSeedUser[]
   roles: DemoSeedRole[]

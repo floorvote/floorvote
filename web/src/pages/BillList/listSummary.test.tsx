@@ -1,13 +1,16 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render } from '@testing-library/react'
-import { billsFilterValuesFromSearch, type BillsFilterValues } from './billsQuery'
+import { billsQueryFromSearch, type BillsQuery } from './billsQuery'
 import { buildListSummary, type SummaryFieldDef } from './listSummary'
 import { buildActiveFilterGroups, type ActiveFilterGroupArgs } from './activeFilterGroups'
-import { FILTER_ANY } from './FilterPanel'
+import { FILTER_ANY, activeFilterCount, activeFilters, encodeSubjectFilter, withBillFilter } from '../../../../shared/billFilter'
 
-const values = (qs: string, over: Partial<BillsFilterValues> = {}): BillsFilterValues =>
-  ({ ...billsFilterValuesFromSearch(new URLSearchParams(qs)), ...over })
-const summarize = (qs: string, over: Partial<BillsFilterValues> = {}, extra: Parameters<typeof buildListSummary>[0] extends infer I ? Partial<I> : never = {}) =>
+// A list URL as the query the pane summarizes. A search term never rides in the URL the app builds, so a test sets it beside.
+const values = (qs: string, over: { search?: string } = {}): BillsQuery => {
+  const q = billsQueryFromSearch(new URLSearchParams(qs))
+  return over.search === undefined ? q : { ...q, filter: withBillFilter({ search: over.search }, q.filter) }
+}
+const summarize = (qs: string, over: { search?: string } = {}, extra: Parameters<typeof buildListSummary>[0] extends infer I ? Partial<I> : never = {}) =>
   buildListSummary({ values: values(qs, over), ...extra })
 
 describe('buildListSummary: the headline', () => {
@@ -44,7 +47,7 @@ describe('buildListSummary: the headline', () => {
   })
 
   it('counts a value repeated in the URL once', () => {
-    const s = summarize('status=2&status=2&year=2026&year=2026&cf_team=yes&cf_team=yes')
+    const s = summarize('status=2&status=2&year=2026&year=2026&field.team=yes&field.team=yes')
     expect(s.filterCount).toBe(3)
   })
 
@@ -127,22 +130,22 @@ describe('buildListSummary: the saved view', () => {
 
 describe('buildListSummary: the filter list reads like the chips', () => {
   it('lists search first, then each dimension in the chip row’s order', () => {
-    const s = summarize('state=RI&status=3&year=2026&minRelevance=5&tag=Water&cf_team=Alpha', { search: 'storm' }, {
+    const s = summarize('state=RI&status=3&year=2026&minRelevance=5&tag=Water&field.team=Alpha', { search: 'storm' }, {
       customFieldDefs: [{ id: 'f1', slug: 'team', name: 'Team', type: 'dropdown' }],
     })
     expect(s.filters).toEqual(['Search: “storm”', 'RI', expect.any(String), 'Year: 2026', 'Relevance 5+', 'Water', 'Team: Alpha'])
   })
 
   it('names the any/none sentinels as the chips do', () => {
-    const s = summarize(`position=${FILTER_ANY}&position=none&priority=${FILTER_ANY}&priority=none&tag=${FILTER_ANY}&cf_team=${FILTER_ANY}`)
+    const s = summarize(`position=${FILTER_ANY}&position=none&priority=${FILTER_ANY}&priority=none&tag=${FILTER_ANY}&field.team=${FILTER_ANY}`)
     expect(s.filters).toEqual(['Any position', 'Not set', 'Any priority', 'No priority', 'Any tag', 'team: Any'])
   })
 
   it('names a binary custom field by its name alone, and a missing def by its key', () => {
     const defs: SummaryFieldDef[] = [{ id: 'f9', slug: 'tracked', name: 'Tracked by team', type: 'binary' }]
-    expect(summarize('cf_tracked=yes', {}, { customFieldDefs: defs }).filters).toEqual(['Tracked by team'])
-    expect(summarize('cf_f9=yes', {}, { customFieldDefs: defs }).filters).toEqual(['Tracked by team'])
-    expect(summarize('cf_mystery=yes').filters).toEqual(['mystery: yes'])
+    expect(summarize('field.tracked=yes', {}, { customFieldDefs: defs }).filters).toEqual(['Tracked by team'])
+    expect(summarize('field.f9=yes', {}, { customFieldDefs: defs }).filters).toEqual(['Tracked by team'])
+    expect(summarize('field.mystery=yes').filters).toEqual(['mystery: yes'])
   })
 
   it('drops the state prefix from a subject in a single-state tenant only', () => {
@@ -151,24 +154,31 @@ describe('buildListSummary: the filter list reads like the chips', () => {
   })
 
   it('shows a status or stage it cannot decode as it was given', () => {
-    expect(summarize('status=zzz&stage=zzz').filters).toEqual(['zzz', 'zzz'])
+    expect(summarize('status=zzz&stage=zzz').filters).toEqual(['zzz', 'Stage: zzz'])
+  })
+
+  it('lists a stage as a Stage chip after the statuses, one line for each value and none extra (#677)', () => {
+    const s = summarize('stage=enacted&status=Introduced&stage=passed')
+    expect(s.filters).toEqual(['Introduced', 'Stage: Enacted', 'Stage: Passed legislature'])
+    expect(s.filterCount).toBe(3)
   })
 
   it('matches, label for label, the chips the Bills page draws for the same filters', () => {
     const defs = [{ id: 'f1', slug: 'team', name: 'Team', type: 'dropdown' as const, options: null, displayOrder: 0 },
                   { id: 'f2', slug: 'tracked', name: 'Tracked by team', type: 'binary' as const, options: null, displayOrder: 1 }]
     const qs = 'state=RI&status=3&stage=passed&position=Support&position=none&position=__any__&priority=high&priority=none&priority=__any__' +
-      '&year=2025&year=2026&minRelevance=10&tag=Water&tag=__any__&subject=NJ:Elections&cf_team=Alpha&cf_tracked=yes&cf_team=__any__'
+      '&year=2025&year=2026&minRelevance=10&tag=Water&tag=__any__&subject=NJ:Elections&field.team=Alpha&field.tracked=yes&field.team=__any__'
     const v = values(qs)
     for (const isMultiState of [false, true]) {
       const noop = vi.fn()
       const args: ActiveFilterGroupArgs = {
-        filterStates: v.states, filterStatuses: v.statuses, filterStages: v.stages, filterPositions: v.positions,
-        filterPriorities: v.priorities, filterYears: v.years, selectedTags: v.tags, selectedSubjects: v.subjects,
-        cfFilters: { f1: ['Alpha', FILTER_ANY], f2: ['yes'] }, filterMinRelevance: v.minRelevance,
+        state: [...v.filter.state], status: [...v.filter.status], stage: [...v.filter.stage], position: [...v.filter.position],
+        priority: [...v.filter.priority], year: v.filter.year.map(Number), tag: [...v.filter.tag],
+        subject: v.filter.subject.map(x => encodeSubjectFilter(x.state, x.name)),
+        field: { f1: ['Alpha', FILTER_ANY], f2: ['yes'] }, minRelevance: v.filter.minRelevance ?? 0,
         positionOptions: [{ value: 'Support' }, { value: 'none', label: 'Not set' }], customFieldDefs: defs, isMultiState,
         onRemoveState: noop, onRemoveStatus: noop, onRemoveStage: noop, onRemovePosition: noop, onRemovePriority: noop,
-        onRemoveYear: noop, onRemoveTag: noop, onRemoveSubject: noop, onRemoveCf: noop, onRemoveMinRelevance: noop,
+        onRemoveYear: noop, onRemoveTag: noop, onRemoveSubject: noop, onRemoveField: noop, onRemoveMinRelevance: noop,
       }
       const chipTexts = buildActiveFilterGroups(args).flatMap(g => g.chips).map(chip => {
         const { container, unmount } = render(<div>{chip}</div>)
@@ -180,5 +190,35 @@ describe('buildListSummary: the filter list reads like the chips', () => {
       expect(s.filters).toEqual(chipTexts)
       expect(s.filterCount).toBe(chipTexts.length)
     }
+  })
+})
+
+describe('buildListSummary: reads the one list of active filters', () => {
+  it('has one entry per value of the shared list, search included, so its count is the badge plus the search', () => {
+    const qs = 'status=2&status=3&year=2026&myBills=1&field.team=Alpha&minRelevance=3&match=any'
+    const q = billsQueryFromSearch(new URLSearchParams(qs))
+    const withSearch = { ...q, filter: withBillFilter({ search: 'storm' }, q.filter) }
+    const list = activeFilters(withSearch.filter)
+    const s = buildListSummary({ values: withSearch })
+    expect(s.filterCount).toBe(list.reduce((n, a) => n + a.count, 0))
+    expect(s.filterCount).toBe(activeFilterCount(list) + 1)
+    expect(s.filters).toHaveLength(s.filterCount)
+  })
+
+  it('leaves out a filter the list holds as hidden', () => {
+    const s = buildListSummary({ values: values('drafts=1&status=2'), hidden: ['drafts'] })
+    expect(s.filters).toEqual([expect.any(String)])
+    expect(s.filterCount).toBe(1)
+  })
+
+  it('lists a toggle and a custom field once each', () => {
+    const s = summarize('unvoted=1&field.flagged=true', {}, { customFieldDefs: [{ id: 'f2', slug: 'flagged', name: 'Flagged', type: 'binary' }] })
+    expect(s.filters).toEqual(['Not yet voted', 'Flagged'])
+    expect(s.filterCount).toBe(2)
+  })
+
+  it('counts a search alone as the one entry, and says "All bills" for a blank one', () => {
+    expect(summarize('', { search: 'water' }).filters).toEqual(['Search: “water”'])
+    expect(summarize('', { search: ' ' }).filterCount).toBe(0)
   })
 })

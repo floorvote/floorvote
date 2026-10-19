@@ -11,6 +11,9 @@
 .sidebar-brand { --fv-focus-ring: var(--fv-text-on-brand); }
 .mobile-topbar { --fv-focus-ring: var(--fv-text-on-brand); }
 
+/* The split pane's resize handle is an 8px strip: draw its ring inside it. */
+.pane-resize-handle:focus-visible { outline-offset: -2px; }
+
 /* Stretched-link overlay for sidebar widget headers (Prioritized bills /
    Upcoming hearings — see Sidebar.tsx). The header row lays out its title
    link and its chips as flex siblings, so no interactive element nests

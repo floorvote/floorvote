@@ -22,7 +22,7 @@ import { clearRollCallCaches } from '../../src/providers/govinfo/client'
 import { rollCallNetwork } from '../helpers/govinfoRollCalls'
 import { toHandle } from '../../src/lib/billHandle'
 import { mainSeam, resetCentral } from '../helpers/mainSeam'
-import { BILL_TYPES, buildZip, fileType, fixtureFiles, serveZip } from '../helpers/govinfoZip'
+import { BILL_TYPES, buildZip, fileType, fixtureFiles, LISTING_URL, listingResponse, serveZip } from '../helpers/govinfoZip'
 import { parseXml } from '../../src/providers/govinfo/xml'
 import { xmlObject } from '../helpers/xmlObject'
 
@@ -90,6 +90,9 @@ beforeEach(async () => {
     calls.push({ method: init?.method ?? 'GET', url, accept: new Headers(init?.headers).get('Accept') })
     const zip = ZIP_URL.exec(url)
     if (zip && zip[2] === zip[3]) return serveZips()(zip[2])
+    // Every file listed as it was when the zips, built from the same files, were built (#616).
+    const listing = listingResponse(url, files, () => '2026-07-18T23:27:00Z')
+    if (listing) return listing
     const f = FILE_URL.exec(url)
     if (f) {
       const answer = fileAnswers.get(f[3])
@@ -151,7 +154,7 @@ async function nothingWritten() {
 describe('a tracked bill\'s file', () => {
   it('is downloaded once at ingest, by its own address, and not the zip again', async () => {
     await ingest('HB3132')
-    const detail = calls.filter(c => !ZIP_URL.test(c.url) && !PDF_URL.test(c.url))
+    const detail = calls.filter(c => !ZIP_URL.test(c.url) && !LISTING_URL.test(c.url) && !PDF_URL.test(c.url))
     expect(detail).toEqual([{
       method: 'GET',
       url: 'https://www.govinfo.gov/bulkdata/BILLSTATUS/119/hr/BILLSTATUS-119hr3132.xml',

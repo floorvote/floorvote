@@ -129,7 +129,7 @@ EMAIL_PROVIDER = "cloudflare"
 # DEAD_LETTER_QUEUE = "your-tenant-dlq"              # must match the consumer above
 # ADMIN_APP_URL = "https://admin.example.com"       # base URL for admin dashboard magic-link emails; also sent to instances for the superadmin Profile link
 # EMAIL_FROM = "notifications@example.com"           # sender address for admin email
-# ALERT_EMAILS = "ops@example.com"                   # comma-separated ops alert recipients
+# ALERT_EMAILS = "ops@example.com"                   # comma-separated ops alert recipients; an invalid entry is logged and skipped
 # CF_ACCOUNT_ID = "REPLACE_WITH_ACCOUNT_ID"          # required for CF_QUEUES_TOKEN dynamic delivery; also used by D1 anomaly watch
 # CF_FLOORVOTE_ZONE_ID = "REPLACE_WITH_ZONE_ID"      # zone ID (not account ID) — only for Login Activity delivery-status lookups
 # SUPERADMIN_JWT_PUBLIC_KEY = "{...ES256 public JWK JSON...}"  # pairs with private key secret
@@ -145,8 +145,13 @@ EMAIL_PROVIDER = "cloudflare"
 # Without it Virginia bills have no text. The API's terms allow
 # non-commercial use only, so setting the key accepts them.
 # Congress (US) from GovInfo Bill Status (www.govinfo.gov, src/providers/govinfo)
-# needs no key. A full read of the 119th Congress takes about 5.5 seconds of CPU
-# in a Worker, so no [limits] cpu_ms is needed for it.
+# needs no key for bills and votes. A full read of the 119th Congress takes about
+# 5.5 seconds of CPU in a Worker, so no [limits] cpu_ms is needed for it.
+# Committee hearings, markups, and meetings come from the Congress.gov API, and
+# only when the optional CONGRESS_API_KEY secret is set (an api.data.gov key, free
+# at https://api.congress.gov/sign-up/). Without it Congress's calendars are empty
+# and nothing else changes. The provider asks the API for no more than 10 requests
+# a minute, so a key set for the first time fills in the calendar over a day or two.
 
 [env.legiscan.triggers]
 crons = ["0 * * * *"]
@@ -181,9 +186,10 @@ namespace_id = "3001"
 # LEGISCAN_API_KEY      — LegiScan bill data
 # LIMS_API_KEY          — DC Council LIMS developer key (optional; needed for a claim of DC by lims)
 # LIS_API_KEY           — Virginia LIS API key (optional; with it, Virginia bills from lis carry their text; non-commercial use only)
+# CONGRESS_API_KEY      — Congress.gov API key (optional; with it, Congress's committee meetings from govinfo appear on the body calendar and on the calendars of the bills they take up)
 # ADMIN_SECRET          — protects /admin/* and /tenants/* routes
 # CF_QUEUES_TOKEN       — Cloudflare API token (Queues: Edit) for dynamic per-tenant delivery
-# RESEND_API_KEY        — magic-link email, only if central sends through Resend (not needed with EMAIL_PROVIDER=cloudflare and the EMAIL binding)
+# RESEND_API_KEY        — magic-link email, needed unless central has an EMAIL binding (the binding alone counts as a sender; with both, the link and ops alerts fall back to the second)
 # SUPERADMIN_JWT_PRIVATE_KEY — ES256 private JWK; central is the sole JWT issuer
 # SUPERADMIN_EMAILS     — comma-separated superadmin allowlist
 # CF_ANALYTICS_TOKEN    — Cloudflare API token (Account Analytics: Read, D1: Read)

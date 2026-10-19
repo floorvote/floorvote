@@ -160,7 +160,7 @@ export const billSasts = sqliteTable('bill_sasts', {
   type:           text('type').notNull(),
   sastBillNumber: text('sast_bill_number').notNull(),
   sastBillId:     integer('sast_bill_id').notNull(),
-}, (t) => [index('idx_bill_sasts_bill').on(t.billId)])
+}, (t) => [index('idx_bill_sasts_bill').on(t.billId), index('idx_bill_sasts_sast_bill_id').on(t.sastBillId)])
 
 export const billSubjects = sqliteTable('bill_subjects', {
   id:          text('id').primaryKey(),
@@ -377,7 +377,10 @@ export const apiCallLog = sqliteTable('api_call_log', {
   loggedAt:  text('logged_at').notNull().default(sql`(datetime('now'))`),
   callType:  text('call_type').notNull(),
   params:    text('params').notNull(),
-})
+}, (t) => [
+  // Every reader filters on logged_at; call_type rides along so the counts never touch the table (0044).
+  index('idx_api_call_log_logged_at').on(t.loggedAt, t.callType),
+])
 
 export const sessionSyncLog = sqliteTable('session_sync_log', {
   id:           integer('id').primaryKey({ autoIncrement: true }),
@@ -388,7 +391,15 @@ export const sessionSyncLog = sqliteTable('session_sync_log', {
   billsChecked: integer('bills_checked').notNull().default(0),
   billsChanged: integer('bills_changed').notNull().default(0),
   billsQueued:  integer('bills_queued').notNull().default(0),
-})
+  /** 'failed' for a snapshot provider's pass that threw; 'ok' for every pass that finished (0045). */
+  status:       text('status', { enum: ['ok', 'failed'] }).notNull().default('ok'),
+  /** The message of the error that ended a failed pass, truncated; null for a pass that finished (0045). */
+  error:        text('error'),
+}, (t) => [
+  index('idx_session_sync_log_session_synced').on(t.sessionId, t.syncedAt),
+  index('idx_session_sync_log_state_synced').on(t.state, t.syncedAt),
+  index('idx_session_sync_log_synced').on(t.syncedAt),
+])
 
 export const magicLinks = sqliteTable('magic_links', {
   id:         text('id').primaryKey(),
@@ -501,6 +512,17 @@ export const providerIds = sqliteTable('provider_ids', {
   kind:      text('kind').notNull(),
   nativeKey: text('native_key').notNull(),
 })
+
+/**
+ * What a provider keeps between runs (ProviderContext.cache): text entries under
+ * keys it names. See migrations-legiscan/0042_provider_cache.sql and lib/providerCache.ts.
+ */
+export const providerCache = sqliteTable('provider_cache', {
+  provider:  text('provider').notNull(),
+  key:       text('key').notNull(),
+  value:     text('value').notNull(),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, t => [primaryKey({ columns: [t.provider, t.key] })])
 
 /**
  * Cutovers: a state moved from one provider to another with every matched bill

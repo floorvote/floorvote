@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { app } from '../../src/index'
 import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink, seedAuthEvent } from '../helpers'
+import { fakeBinding, stubResend } from '../../../shared/emailTestKit'
 import { getDb } from '../../src/db/client'
 import { users, sessions, authEvents, emailChanges } from '../../src/db/schema'
 import { _resetSuperadminAllowlistCache } from '../../src/lib/superadminCentral'
@@ -20,14 +21,20 @@ async function sha256Hex(s: string): Promise<string> {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
+// The binding every request sends through, and the messages it accepted.
+let cf: ReturnType<typeof fakeBinding>
 let sent: Sent[]
+function useBinding() {
+  cf = fakeBinding()
+  sent = cf.delivered as unknown as Sent[]
+}
 const superadmins = ['root@operator.example']
 
 function testEnv(extra: Record<string, unknown> = {}) {
   return {
     ...env,
     EMAIL_PROVIDER: 'cloudflare',
-    EMAIL: { send: async (m: Sent) => { sent.push(m); return { messageId: `m-${sent.length}` } } },
+    EMAIL: cf.binding,
     CENTRAL: {
       fetch: async (req: Request) => {
         if (new URL(req.url).pathname === '/api/admin/superadmin/emails') {
@@ -94,7 +101,7 @@ beforeEach(async () => {
   await resetDb()
   await applyMigrations()
   _resetSuperadminAllowlistCache()
-  sent = []
+  useBinding()
   owner = await seedUser({ role: 'owner', email: 'olive@org.org', name: 'Olive Owner' })
   ownerCookie = `session=${await seedSession(owner)}`
   admin = await seedUser({ role: 'admin', email: 'ada@org.org', name: 'Ada Admin' })
@@ -236,8 +243,9 @@ describe('the request: same rules as a member asking', () => {
   })
 
   it('says so, naming no admin, when the confirmation cannot be sent', async () => {
-    const failing = { send: async () => { throw new Error('provider down') } }
-    const r = await changeFor(adminCookie, jane, NEW, { EMAIL: failing })
+    // Both providers are down: the binding throws, and the fallback (Resend) answers 500.
+    stubResend('down', { status: 500, body: 'upstream error' })
+    const r = await changeFor(adminCookie, jane, NEW, { EMAIL: fakeBinding('down').binding })
     expect(r.status).toBe(502)
     expect(await pending()).toHaveLength(0)
   })
@@ -285,7 +293,7 @@ describe('confirming an admin-initiated change', () => {
     oldLink = await seedMagicLink(jane)
     await changeFor(adminCookie, jane, NEW)
     token = linkSentTo(CONFIRM_LINK, NEW)
-    sent = []
+    useBinding()
   })
 
   it('takes effect only after the new address confirms: loading the page changes nothing', async () => {
@@ -440,7 +448,7 @@ describe("an admin's change and the member's own requests", () => {
   it("refuses the member's own request while an admin's change is pending, and leaves the admin's link working", async () => {
     expect((await changeFor(adminCookie, jane, REAL)).status).toBe(200)
     const adminLink = linkSentTo(CONFIRM_LINK, REAL)
-    sent = []
+    useBinding()
 
     for (const email of ['jane@thief.org', 'jane@thief2.org']) {
       const r = await ownRequest(takenCookie, email)

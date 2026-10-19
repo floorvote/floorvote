@@ -82,30 +82,32 @@ export const vocabulary: ProviderVocabulary = {
     1: { label: 'Hearing', kind: 'hearing', explainer: 'A committee or subcommittee meeting with the bill on its docket.' },
   },
 
+  // Declared in the order the bill page shows them. The summaries run latest
+  // stage first, since the fold-out holds them in this order.
   extras: {
     chapter: {
-      label: 'Chapter', display: 'identifier',
+      label: 'Chapter', display: 'identifier', placement: 'meta',
       explainer: 'Where the act is printed in the Acts of Assembly for its year.',
     },
     emergency: {
-      label: 'Emergency bill', display: 'text',
+      label: 'Emergency bill', display: 'text', placement: 'flag',
       explainer: 'Takes effect as soon as it becomes law, rather than on July 1. Passing it takes four-fifths of the members voting in each chamber.',
     },
-    summaryIntroduced: {
-      label: 'Summary as introduced', display: 'text',
-      explainer: 'The Division of Legislative Services\' summary of the bill as it was introduced. The bill\'s description is its latest summary.',
-    },
-    summaryPassedHouse: {
-      label: 'Summary as passed the House', display: 'text',
-      explainer: 'The summary of the bill as the House of Delegates passed it.',
+    summaryPassed: {
+      label: 'Summary as passed the General Assembly', display: 'text', placement: 'panel',
+      explainer: 'The summary of the bill as both chambers passed it, before the Governor\'s amendments.',
     },
     summaryPassedSenate: {
-      label: 'Summary as passed the Senate', display: 'text',
+      label: 'Summary as passed the Senate', display: 'text', placement: 'panel',
       explainer: 'The summary of the bill as the Senate passed it.',
     },
-    summaryPassed: {
-      label: 'Summary as passed the General Assembly', display: 'text',
-      explainer: 'The summary of the bill as both chambers passed it, before the Governor\'s amendments.',
+    summaryPassedHouse: {
+      label: 'Summary as passed the House', display: 'text', placement: 'panel',
+      explainer: 'The summary of the bill as the House of Delegates passed it.',
+    },
+    summaryIntroduced: {
+      label: 'Summary as introduced', display: 'text', placement: 'panel',
+      explainer: 'The Division of Legislative Services\' summary of the bill as it was introduced. The bill\'s description is its latest summary.',
     },
   },
 }

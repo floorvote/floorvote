@@ -11,6 +11,7 @@ export const inventory: FieldInventory = {
   EffectiveDate: { extra: 'effectiveDate' },
   Packet: { extra: 'packet' },
   WithdrawnBy: { extra: 'withdrawnBy' },
+  Signed: { extra: 'becameLaw' },
   InternalId: { ignored: 'The feed\'s database key. Number already identifies the measure, and nothing links by this.' },
   Attachments: { ignored: 'Staff files with no type or date to show them by.' },
   'Meetings[].Id': 'mapped',

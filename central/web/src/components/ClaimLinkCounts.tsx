@@ -62,11 +62,11 @@ export function ClaimLinkCounts({ tenantId }: { tenantId: string }) {
 
   return (
     <section style={{ marginBottom: 24 }}>
-      <h2 style={{ fontSize: 16 }}>Claim links</h2>
+      <h2 style={{ fontSize: 16 }}>Summary citations</h2>
       {state.kind === 'loading' && <div style={{ fontSize: 13, color: 'var(--muted)' }}>Loading…</div>}
       {state.kind === 'unavailable' && (
         <div style={{ fontSize: 13, color: 'var(--warning)' }}>
-          Claim link counts are unavailable: {state.reason}.
+          Summary citation counts are unavailable: {state.reason}.
         </div>
       )}
       {state.kind === 'ok' && <Loaded counts={state.counts} />}
@@ -124,7 +124,7 @@ function Loaded({ counts }: { counts: Counts }) {
       <p style={{ fontSize: 12, color: 'var(--muted)', margin: 0, maxWidth: 720 }}>
         Read from each bill's stored claim sources. An analysis that asked for claim sources and got nothing usable back
         is counted under Asked, none stored. An AI-processed bill with no list at all is counted under No list stored: it was
-        analyzed before claim links, with the setting off, on its title and abstract alone, or retried without claim sources
+        analyzed before summary citations, with the setting off, on its title and abstract alone, or retried without claim sources
         after a cut-off response. The cut-off count starts from when the instance began counting them.
       </p>
     </>

@@ -90,8 +90,8 @@ function fitsDisplay(extra: VocabularyExtra, value: string): boolean {
 
 /**
  * A bill's extras as the bill detail sends them: its provider's stored values,
- * in vocabulary order, with labels, explainers, and display types. Null when
- * there are none. A stored key the vocabulary no longer declares is skipped.
+ * in vocabulary order, with labels, explainers, display types, and placements
+ * (`panel` when the vocabulary gives none). Null when there are none. A stored key the vocabulary no longer declares is skipped.
  */
 export async function billExtrasDetail(db: Db, billId: number, provider: Provider): Promise<BillExtras | null> {
   const declared = Object.entries(provider.vocabulary.extras ?? {})
@@ -103,7 +103,7 @@ export async function billExtrasDetail(db: Db, billId: number, provider: Provide
   const values = new Map(rows.map(r => [r.key, r.value]))
   const fields = declared.flatMap(([key, extra]) => {
     const value = values.get(key)
-    return value === undefined ? [] : [{ key, label: extra.label, explainer: extra.explainer ?? null, display: extra.display, value }]
+    return value === undefined ? [] : [{ key, label: extra.label, explainer: extra.explainer ?? null, display: extra.display, placement: extra.placement ?? 'panel', value }]
   })
   return fields.length > 0 ? { providerName: provider.displayName, fields } : null
 }

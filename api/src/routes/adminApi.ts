@@ -6,7 +6,7 @@ import { hasLoggedInSelect } from '../lib/loginHistory'
 import { pendingInviteBounces } from '../lib/inviteBounces'
 import { users, sessions, magicLinks, associationConfig, bills, comments, commentReactions, memberVotes, notes, feedEvents, officialPositions, roles, userRoles, authEvents } from '../db/schema'
 import { generateToken, hashToken } from '../lib/crypto'
-import { sendMagicLink } from '../lib/email'
+import { sendSignInLinkLogged } from '../lib/signInLink'
 import { registerWithCentral } from '../cron/sync'
 import { matchesKeywords, billMatchText } from '../lib/keywords'
 import { summarizeKeywordMatches } from '../lib/keywordMatchSummary'
@@ -35,6 +35,7 @@ import { adminSendChecks, claimSend, releaseSend } from '../lib/adminSendLimits'
 import { mayChangeEmail, refuseSuperadmin, requestEmailChange } from '../lib/emailChange'
 import { centralEmail, type DeliveryStatus, type SuppressionStatus } from '../lib/centralEmail'
 import { userTitleSql } from '../lib/userTitle'
+import { AI_SETTING_KEYS, changedAiSettings, readAiSettingRecordFields, recordStatements } from '../lib/aiSettingAudit'
 import { readClaimLinksSetting, writeClaimLinksSetting } from '../lib/claimLinksSetting'
 
 export const adminApiRouter = new Hono<AppEnv>()
@@ -272,10 +273,11 @@ async function deliverLink(c: Context<AppEnv>, db: AppDb, target: { id: string; 
   })
 
   const url = `${c.env.APP_URL}/auth/verify?token=${encodeURIComponent(rawToken)}`
+  const sent = sendSignInLinkLogged(c.env, db, { to: target.email, link: linkType, url, userId: target.id })
   try {
-    c.executionCtx.waitUntil(sendMagicLink(target.email, url, c.env, linkType, db, target.id).catch(console.error))
+    c.executionCtx.waitUntil(sent)
   } catch {
-    sendMagicLink(target.email, url, c.env, linkType, db, target.id).catch(console.error)
+    // No ExecutionContext in test environments — fire and forget
   }
 }
 
@@ -810,6 +812,7 @@ adminApiRouter.get('/config', async (c) => {
   result.claim_links_enabled = claimLinks.enabled
   result.claim_links_changed_at = claimLinks.changedAt
   result.claim_links_changed_by = claimLinks.changedBy
+  Object.assign(result, await readAiSettingRecordFields(db))
   return c.json(result)
 })
 
@@ -884,20 +887,24 @@ adminApiRouter.put('/config', async (c) => {
   }
 
   const db = getDb(c.env.DB)
-  for (const key of Object.keys(body)) {
-    if (body[key] === null) {
-      await db.delete(associationConfig).where(eq(associationConfig.key, key))
-    } else {
-      const value = JSON.stringify(body[key])
-      await db
-        .insert(associationConfig)
-        .values({ key, value })
-        .onConflictDoUpdate({
-          target: associationConfig.key,
-          set: { value: sql`excluded.value` },
-        })
-    }
-  }
+  // Every write in one batch, so no AI setting's value can land without the
+  // record of who changed it (#602), and a save is all or nothing.
+  const current = new Map((await db.select().from(associationConfig).all()).map(r => [r.key, r.value]))
+  const changedAi = changedAiSettings(current, body)
+  // An AI setting saved with the value it already has is not written at all.
+  const writeKeys = Object.keys(body).filter(k => !(AI_SETTING_KEYS as readonly string[]).includes(k) || (changedAi as string[]).includes(k))
+  const writes: unknown[] = writeKeys.map((key) => {
+    if (body[key] === null) return db.delete(associationConfig).where(eq(associationConfig.key, key))
+    return db
+      .insert(associationConfig)
+      .values({ key, value: JSON.stringify(body[key]) })
+      .onConflictDoUpdate({
+        target: associationConfig.key,
+        set: { value: sql`excluded.value` },
+      })
+  })
+  writes.push(...recordStatements(db, changedAi, c.get('user').id))
+  if (writes.length > 0) await db.batch(writes as unknown as Parameters<typeof db.batch>[0])
 
   if ('keywords' in body) {
     // Await register so the subsequent keyword-resync sees updated central keyword_registry.
@@ -910,7 +917,7 @@ adminApiRouter.put('/config', async (c) => {
     }
   }
 
-  return c.json({ ok: true })
+  return c.json({ ok: true, ...(await readAiSettingRecordFields(db)) })
 })
 
 // POST /admin/keyword-resync — re-run AI on tenant bills that newly match current keywords.

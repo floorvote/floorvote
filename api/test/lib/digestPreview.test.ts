@@ -278,9 +278,13 @@ describe('renderDigestEmail: new matches as full cards', () => {
     expect(html.match(/padding:0 14px 10px 14px/g) ?? []).toHaveLength(1)
     expect(html).toContain('First summary.')
   })
-  it('puts a "New match" chip in the top-right, where an updated bill shows its priority chip', () => {
+  it('puts the amber pill in the top-right, where an updated bill shows its priority chip: "New · Set priority" for an admin, "New match" for a member', () => {
+    for (const [forMember, label] of [[false, 'New · Set priority'], [true, 'New match']] as const) {
+      const html = render({ newMatches: [match(1)], forMember })
+      expect(html.indexOf(`>${label}<`)).toBeGreaterThan(html.indexOf('RI HB 1001'))
+    }
     const html = render({ newMatches: [match(1)] })
-    const chipAt = html.indexOf('>New match<')
+    const chipAt = html.indexOf('>New · Set priority<')
     expect(chipAt).toBeGreaterThan(-1)
     // The chip sits in the right-aligned cell, after the badge cell.
     const rightCell = html.lastIndexOf('<td align="right"', chipAt)
@@ -288,20 +292,22 @@ describe('renderDigestEmail: new matches as full cards', () => {
     expect(rightCell).toBeGreaterThan(-1)
     expect(html.indexOf('RI HB 1001')).toBeLessThan(chipAt)
   })
-  it('styles the chip #fef3c7 on #854d0e, with the priority chip\'s padding and radius', () => {
+  it('styles the pill like the app: #fef3c7 fill, #92400e text, #fde68a border, with the priority chip\'s padding and radius', () => {
     expect(color.bgAmberPriority).toBe('#fef3c7')
-    expect(color.textAmberWarning).toBe('#854d0e')
+    expect(color.textAmberDark).toBe('#92400e')
+    expect(color.borderAmber).toBe('#fde68a')
     const html = render({ newMatches: [match(1)] })
-    expect(html).toMatch(new RegExp(`<span style="[^"]*background:#fef3c7;color:#854d0e;[^"]*padding:3px 10px;border-radius:${radius.sm}px;[^"]*">New match</span>`))
+    expect(html).toMatch(new RegExp(`<span style="[^"]*background:#fef3c7;color:#92400e;border:1px solid #fde68a;[^"]*padding:3px 10px;border-radius:${radius.sm}px;[^"]*">New · Set priority</span>`))
     // Same padding/radius as the priority chip on an updated bill.
     const priority = render({ events: [ev({ priority: 'high' })] })
     const chipStyle = (h: string, label: string) => h.match(new RegExp(`<span style="([^"]*)">${label}</span>`))![1]
     const pad = (s: string) => s.match(/padding:[^;]+;border-radius:[^;]+;/)![0]
-    expect(pad(chipStyle(html, 'New match'))).toBe(pad(chipStyle(priority, 'High priority')))
+    expect(pad(chipStyle(html, 'New · Set priority'))).toBe(pad(chipStyle(priority, 'High priority')))
   })
   it('every card carries one chip; an updated bill\'s card has none', () => {
     const html = render({ events: updates(2), newMatches: matches(3) })
-    expect(html.match(/>New match</g) ?? []).toHaveLength(3)
+    expect(html.match(/>New · Set priority</g) ?? []).toHaveLength(3)
+    expect(render({ events: updates(2) })).not.toContain('New · Set priority<')
     expect(render({ events: updates(2) })).not.toContain('New match<')
   })
   it('a new match shows no priority chip', () => {
@@ -372,8 +378,10 @@ describe('renderDigestEmail: new-matches subtitle, admin and member', () => {
     expect(html).not.toMatch(/dismiss/i)
     expect(html).toMatch(/>\s*3 new matches\s*</)
   })
-  it('the admin and member digests differ only by that subtitle', () => {
-    const strip = (h: string) => h.replace(/<tr><td[^>]*>Set a priority or dismiss each from the bill list\.<\/td><\/tr>/, '')
+  it('the admin and member digests differ only by that subtitle and the cards\' pill, a link for an admin and a label for a member', () => {
+    const strip = (h: string) => h
+      .replace(/<tr><td[^>]*>Set a priority or dismiss each from the bill list\.<\/td><\/tr>/, '')
+      .replace(/<a [^>]*>(<span [^>]*>)New · Set priority(<\/span>)<\/a>/g, '$1New match$2')
     const admin = render({ newMatches: matches(3) })
     const member = render({ newMatches: matches(3), forMember: true })
     expect(admin).not.toEqual(member)
