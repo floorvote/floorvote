@@ -411,7 +411,7 @@ describe('POST /admin/dash/auth/login — sender gate (Cloudflare Email or Resen
     expect(warn).toHaveBeenCalledTimes(1)
     const msg = String(warn.mock.calls[0][0])
     expect(msg).toContain('RESEND_API_KEY')
-    expect(msg).toContain('EMAIL')
+    expect(msg).toContain('RESEND_API_KEY, or an EMAIL binding')
     expect(msg).not.toContain('ADMIN_APP_URL')
     const db = drizzle(env.DB, { schema })
     expect((await db.select().from(schema.magicLinks).all()).length).toBe(0)

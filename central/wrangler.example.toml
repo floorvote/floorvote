@@ -189,7 +189,7 @@ namespace_id = "3001"
 # CONGRESS_API_KEY      — Congress.gov API key (optional; with it, Congress's committee meetings from govinfo appear on the body calendar and on the calendars of the bills they take up)
 # ADMIN_SECRET          — protects /admin/* and /tenants/* routes
 # CF_QUEUES_TOKEN       — Cloudflare API token (Queues: Edit) for dynamic per-tenant delivery
-# RESEND_API_KEY        — magic-link email, only if central sends through Resend (not needed with EMAIL_PROVIDER=cloudflare and the EMAIL binding)
+# RESEND_API_KEY        — magic-link email, needed unless central has an EMAIL binding (the binding alone counts as a sender; with both, the link and ops alerts fall back to the second)
 # SUPERADMIN_JWT_PRIVATE_KEY — ES256 private JWK; central is the sole JWT issuer
 # SUPERADMIN_EMAILS     — comma-separated superadmin allowlist
 # CF_ANALYTICS_TOKEN    — Cloudflare API token (Account Analytics: Read, D1: Read)

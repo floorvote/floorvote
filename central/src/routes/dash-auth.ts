@@ -112,7 +112,7 @@ dashAuthRoutes.post('/login', async (c) => {
   // as the shared sender sees it, not on Resend specifically.
   const missing: string[] = []
   if (!hasConfiguredProvider(c.env)) {
-    missing.push('an email sender (RESEND_API_KEY, or EMAIL_PROVIDER=cloudflare with an EMAIL binding)')
+    missing.push('an email sender (RESEND_API_KEY, or an EMAIL binding)')
   }
   if (!c.env.ADMIN_APP_URL) missing.push('ADMIN_APP_URL')
   if (missing.length > 0) {

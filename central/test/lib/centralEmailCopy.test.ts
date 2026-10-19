@@ -11,6 +11,15 @@ const tests = import.meta.glob(['../**/*.ts', '!../**/centralEmailCopy.test.ts']
 const IMPORTS_COPY = /(?:from\s+|import\(\s*|vi\.mock\(\s*|require\(\s*)['"](?:(?:\.\.?\/)+(?:[\w./-]*\/)?lib\/email|\.\/email)(?:\.ts)?['"]/
 
 describe("central's own email copy", () => {
+  it('read every source and test file as a string', () => {
+    for (const [file, text] of [...Object.entries(sources), ...Object.entries(tests)]) expect(typeof text, file).toBe('string')
+  })
+
+  it('scans real sources: adminEmail.ts and jobAlert.ts use centralSender', () => {
+    expect(sources['../../src/lib/adminEmail.ts']).toContain('centralSender')
+    expect(sources['../../src/lib/jobAlert.ts']).toContain('centralSender')
+  })
+
   it('has found central sources to scan', () => {
     expect(Object.keys(sources).length).toBeGreaterThan(20)
     expect(Object.keys(tests).length).toBeGreaterThan(20)
@@ -34,7 +43,7 @@ describe("central's own email copy", () => {
 
   it('has no src file that sends mail through anything but the shared sender', () => {
     const rawProviders = Object.entries(sources)
-      .filter(([, text]) => text.includes('api.resend.com/emails') || /\bEMAIL!?\.send\(/.test(text))
+      .filter(([, text]) => text.includes('api.resend.com/emails') || /\bEMAIL[!?]?\.send\(/.test(text))
       .map(([file]) => file)
     expect(rawProviders).toEqual([])
   })

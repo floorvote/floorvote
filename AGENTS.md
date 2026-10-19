@@ -103,7 +103,7 @@ See [`docs/content/self-hosting/index.md`](docs/content/self-hosting/index.md) f
 |---|---|
 | `LEGISCAN_API_KEY` | LegiScan bill data |
 | `ADMIN_SECRET` | Protects `/api/admin/*` and `/api/tenants/*` routes |
-| `RESEND_API_KEY` | Admin dashboard magic-link email, unless central sends through Cloudflare Email (`EMAIL_PROVIDER=cloudflare` with an `EMAIL` binding). Dashboard login needs at least one of those two senders plus `ADMIN_APP_URL`: `dash-auth.ts` sends nothing, logs a warning, and still answers ok if either is missing. With both configured, the sign-in link and ops alerts fall back to the second when the first is down |
+| `RESEND_API_KEY` | Admin dashboard magic-link email, unless central sends through Cloudflare Email (an `EMAIL` binding; `EMAIL_PROVIDER=cloudflare` makes it the first one tried, but the binding alone counts as a sender). Dashboard login needs at least one of those two senders plus `ADMIN_APP_URL`: `dash-auth.ts` sends nothing, logs a warning, and still answers ok if either is missing. With both configured, the sign-in link and ops alerts fall back to the second when the first is down |
 | `CF_QUEUES_TOKEN` | Cloudflare API token (Queues: Edit) for dynamic per-tenant queue delivery |
 | `SUPERADMIN_JWT_PRIVATE_KEY` | ES256 private JWK — central is the sole issuer of superadmin tokens |
 | `SUPERADMIN_EMAILS` | Comma-separated superadmin allowlist |
