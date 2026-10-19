@@ -5,7 +5,7 @@ import { isSnapshotProvider } from '../cron/sync-snapshots'
 import { providerCapabilities } from './capabilities'
 import { monthStartDb } from './legiscanBudget'
 import { providerConfigured } from './providerRouting'
-import { DEFAULT_FULL_HOURS_ET, DEFAULT_RAW_HOURS_ET, decideMode, getCurrentEtHour } from './sync-schedule'
+import { DEFAULT_RAW_HOURS_ET, decideMode, defaultFullHours, getCurrentEtHour } from './sync-schedule'
 import type { Db, Env } from '../types'
 
 /**
@@ -93,7 +93,7 @@ function iso(stored: string | null | undefined): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toISOString()
 }
 
-function parseHours(json: string | null, fallback: number[]): number[] {
+function parseHours(json: string | null, fallback: readonly number[]): readonly number[] {
   if (!json) return fallback
   try {
     const arr = JSON.parse(json)
@@ -102,17 +102,17 @@ function parseHours(json: string | null, fallback: number[]): number[] {
   return fallback
 }
 
-function sortedUnion(lists: number[][]): number[] {
+function sortedUnion(lists: (readonly number[])[]): number[] {
   return [...new Set(lists.flat())].sort((a, b) => a - b)
 }
 
 /** The next top of an hour, within two days, at which one of `rows` would be read. */
-function nextRead(rows: SessionRow[], snapshot: boolean, now: Date): string | null {
+function nextRead(rows: SessionRow[], provider: Provider | undefined, snapshot: boolean, now: Date): string | null {
   const first = Math.floor(now.getTime() / 3_600_000) + 1
   for (let h = first; h < first + 48; h++) {
     const at = new Date(h * 3_600_000)
     const etHour = getCurrentEtHour(at)
-    if (rows.some(r => snapshot ? decideMode(r, etHour) === 'full' : decideMode(r, etHour) !== 'skip')) return at.toISOString()
+    if (rows.some(r => snapshot ? decideMode(r, etHour, provider) === 'full' : decideMode(r, etHour, provider) !== 'skip')) return at.toISOString()
   }
   return null
 }
@@ -224,8 +224,8 @@ export async function loadStateRows(db: Db, env: Env, now: Date = new Date()): P
     const lastReads = [...owned.map(s => iso(s.lastSyncedAt)), iso(lastOk.get(state))].filter((d): d is string => !!d).sort()
     const lastRead = lastReads.at(-1) ?? null
     const pass = passes.get(state)
-    const hoursOf = (pick: (s: SessionRow) => string | null, fallback: number[]) =>
-      active.length === 0 ? fallback : sortedUnion(active.map(s => parseHours(pick(s), fallback)))
+    const hoursOf = (pick: (s: SessionRow) => string | null, fallback: readonly number[]) =>
+      active.length === 0 ? [...fallback] : sortedUnion(active.map(s => parseHours(pick(s), fallback)))
 
     return {
       state,
@@ -239,11 +239,11 @@ export async function loadStateRows(db: Db, env: Env, now: Date = new Date()): P
         queue, warning,
       },
       schedule: {
-        fullHours: hoursOf(s => s.fullSyncHoursEt, DEFAULT_FULL_HOURS_ET),
+        fullHours: hoursOf(s => s.fullSyncHoursEt, defaultFullHours(provider)),
         rawHours: snapshot ? null : hoursOf(s => s.rawSyncHoursEt, DEFAULT_RAW_HOURS_ET),
         override: active.some(s => s.fullSyncHoursEt !== null || s.rawSyncHoursEt !== null),
         lastRead,
-        nextRead: nextRead(active, snapshot, now),
+        nextRead: nextRead(active, provider, snapshot, now),
         stale: !lastRead || now.getTime() - new Date(lastRead).getTime() > STALE_MS,
         lastPass: pass ? { at: iso(pass.synced_at), status: pass.status, error: pass.error, billsChecked: pass.bills_checked, billsChanged: pass.bills_changed, billsQueued: pass.bills_queued } : null,
       },

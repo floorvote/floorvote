@@ -4,7 +4,7 @@ import { limsBillId, limsPeopleId, limsSessionId } from './ids'
 import { limsCategories } from './config'
 import { hearingUid, limsBodyEvents } from './hearings'
 import { vocabulary } from './vocabulary'
-import type { Provider, ProviderImport, ProviderPerson, ProviderRecord, SyncSession } from '../sdk'
+import { EVERY_HOUR_ET, type Provider, type ProviderImport, type ProviderPerson, type ProviderRecord, type SyncSession } from '../sdk'
 
 /**
  * The DC Council's Legislative Information Management System (client.ts,
@@ -41,6 +41,8 @@ export const lims: Provider<'LIMS_API_KEY' | 'LIMS_CATEGORIES'> = {
   configured: env => !!env.LIMS_API_KEY,
   // LIMS answers 429 above about two concurrent requests.
   ingestQueue: 'LIMS_INGESTOR_QUEUE',
+  // An unchanged pass is a few BulkData calls, so every hour is cheap.
+  fullHoursEt: EVERY_HOUR_ET,
 
   /**
    * The current Council Period, plus the previous one while it is within a

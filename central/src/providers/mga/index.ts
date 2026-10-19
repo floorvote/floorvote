@@ -3,7 +3,7 @@ import {
   assignMgaCommitteeIds, buildMgaBill, MD_STATE_ID, MGA_STATE, mgaDocKeys, mgaNativeKey, mgaPersonKey, mgaRecordHash, mgaSponsorNames, mgaSubjectKeys, toMgaMasterListEntry,
 } from './map'
 import { vocabulary } from './vocabulary'
-import type { Provider, ProviderRecord, SyncSession } from '../sdk'
+import { EVERY_HOUR_ET, type Provider, type ProviderRecord, type SyncSession } from '../sdk'
 
 /**
  * The Maryland General Assembly's public data (client.ts, map.ts): one JSON file
@@ -25,6 +25,8 @@ export const mga: Provider = {
   envKeys: [],
   // A cutover queues thousands of bills; their own queue keeps them from holding up LegiScan's.
   ingestQueue: 'MGA_INGESTOR_QUEUE',
+  // An unchanged pass is one conditional request answered 304, so every hour is cheap.
+  fullHoursEt: EVERY_HOUR_ET,
   // The file carries no votes, so a bill's roll calls are always none.
   replacesRollCalls: true,
   states: [MGA_STATE],

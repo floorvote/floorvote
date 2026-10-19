@@ -3,7 +3,9 @@ import { requireAdmin, type DashEnv } from '../lib/adminAuth'
 import { drizzle } from 'drizzle-orm/d1'
 import { sql, eq, gte, desc, inArray, isNull, and } from 'drizzle-orm'
 import * as schema from '../db/schema'
-import { DEFAULT_FULL_HOURS_ET, DEFAULT_RAW_HOURS_ET } from '../lib/sync-schedule'
+import { DEFAULT_RAW_HOURS_ET, defaultFullHours } from '../lib/sync-schedule'
+import { findProvider } from '../providers'
+import { isSnapshotProvider } from '../cron/sync-snapshots'
 import { getSettingNumber } from '../lib/settings'
 import { nowDb } from '../lib/dbTime'
 import { fetchAiUsage } from '../lib/aiGatewayAnalytics'
@@ -19,15 +21,15 @@ export const dashRoutes = new Hono<DashEnv>()
 
 dashRoutes.use('*', requireAdmin())
 
-function parseHoursOrDefault(json: string | null, fallback: number[]): { hours: number[]; isDefault: boolean } {
-  if (!json) return { hours: fallback, isDefault: true }
+function parseHoursOrDefault(json: string | null, fallback: readonly number[]): { hours: number[]; isDefault: boolean } {
+  if (!json) return { hours: [...fallback], isDefault: true }
   try {
     const arr = JSON.parse(json)
     if (Array.isArray(arr) && arr.every(n => Number.isInteger(n) && n >= 0 && n < 24)) {
       return { hours: arr, isDefault: false }
     }
   } catch {}
-  return { hours: fallback, isDefault: true }
+  return { hours: [...fallback], isDefault: true }
 }
 
 function normalizeHours(input: unknown): number[] | null {
@@ -163,8 +165,13 @@ dashRoutes.get('/sync/sessions', async (c) => {
     .all()
 
   const shape = (r: typeof allSessions[number]) => {
-    const full = parseHoursOrDefault(r.fullSyncHoursEt, DEFAULT_FULL_HOURS_ET)
-    const raw = parseHoursOrDefault(r.rawSyncHoursEt, DEFAULT_RAW_HOURS_ET)
+    const provider = findProvider(r.provider)
+    const fullDefault = defaultFullHours(provider)
+    const full = parseHoursOrDefault(r.fullSyncHoursEt, fullDefault)
+    const snapshot = isSnapshotProvider(provider)
+    // A snapshot provider has no raw pass, so it has no raw hours to default.
+    const rawDefault = snapshot ? [] : DEFAULT_RAW_HOURS_ET
+    const raw = parseHoursOrDefault(r.rawSyncHoursEt, rawDefault)
     return {
       sessionId: r.sessionId,
       state: r.state,
@@ -174,6 +181,9 @@ dashRoutes.get('/sync/sessions', async (c) => {
       lastSyncedAt: r.lastSyncedAt,
       fullSyncHours: full.hours,
       fullSyncIsDefault: full.isDefault,
+      defaultFullHours: [...fullDefault],
+      defaultRawHours: rawDefault,
+      snapshot,
       rawSyncHours: raw.hours,
       rawSyncIsDefault: raw.isDefault,
       syncEnabled: r.syncEnabled,
