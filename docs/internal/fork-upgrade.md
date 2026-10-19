@@ -175,7 +175,7 @@ Deploy central, claim DC, then deploy every instance, all before the next top of
 
    It costs one LIMS details call per bill, paced at one a second, and no LegiScan calls.
 
-3. **Check each team's event rules** through the Calendar page's gear ("Committee events settings", admins only) within the hour. It shows the committees, and one line, "Kept from an earlier setting: …", for the rest of a carried-over rule: hearing types as event types, topic keywords, and the tracked-bills choice. They should match the team's #217 settings.
+3. **Check each team's event rules** through the Calendar page's "Event filters" button (admins only) within the hour. It shows the committees, and one line, "Kept from an earlier setting: …", for the rest of a carried-over rule: hearing types as event types, topic keywords, and the tracked-bills choice. They should match the team's #217 settings.
 4. **Check the LegiScan budget.** Central migration `0020_legiscan_limit_10k` lowers the dashboard's monthly budget from 30,000 to 10,000 calls (LegiScan's free tier since October 1, 2026) if you never changed it. Raise it on the dashboard if you pay for more.
 5. **Remove `LIMS_STATES`** from `central/wrangler.toml` at your next deploy. Central doesn't read it (#319): only the row decides, and a state changes provider only by a claim or a cutover (`docs/internal/sync-pipeline.md`, "State ownership").
 6. **Drop `council_events`** once every instance is upgraded and its Council rows are body events. Upstream's `body_events` replaced it.

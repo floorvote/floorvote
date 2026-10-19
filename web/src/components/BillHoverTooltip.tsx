@@ -47,7 +47,7 @@ export function BillHoverTooltip({ bill, cursor }: { bill: TooltipBill; cursor: 
       const top = above >= 8 ? above : Math.min(cursor.y + 18, window.innerHeight - h - 8)
       setPos({ left: Math.max(8, left), top: Math.max(8, top) })
     }
-  }, [cursor.x, cursor.y])
+  }, [cursor.x, cursor.y, lazySummary, bill.title])
 
   return createPortal((
     <div ref={ref} style={{
