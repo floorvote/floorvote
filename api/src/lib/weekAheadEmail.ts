@@ -110,7 +110,8 @@ export const WEEK_AHEAD_DETAILS_MAX_CHARS = 300
 
 function truncateDetails(details: string): { text: string; cut: boolean } {
   if (details.length <= WEEK_AHEAD_DETAILS_MAX_CHARS) return { text: details, cut: false }
-  const head = details.slice(0, WEEK_AHEAD_DETAILS_MAX_CHARS)
+  let head = details.slice(0, WEEK_AHEAD_DETAILS_MAX_CHARS)
+  if (/[\uD800-\uDBFF]$/.test(head)) head = head.slice(0, -1)  // not half of a surrogate pair
   const lastSpace = head.search(/\s\S*$/)
   return { text: `${(lastSpace > WEEK_AHEAD_DETAILS_MAX_CHARS / 2 ? head.slice(0, lastSpace) : head).trimEnd()}…`, cut: true }
 }
@@ -123,8 +124,8 @@ export const WEEK_AHEAD_BODY_EVENT_CAP = 30
 /**
  * Keep the email under the clip: at most `cap` body events, the earliest first.
  * A body event with a prioritized bill on its agenda is never cut and doesn't
- * count toward the cap. Custom, bill-entry, and date-field events are never cut
- * either (an instance adds few). Returns the days still holding events, and how
+ * count toward the cap. Custom, bill-entry, and date-field events are not cut
+ * here (an instance adds few); fitToBudget bounds them by size. Returns the days still holding events, and how
  * many body events were left out.
  */
 export function capBodyEvents(days: WeekAheadDay[], cap: number = WEEK_AHEAD_BODY_EVENT_CAP): { days: WeekAheadDay[]; omitted: number } {
@@ -169,7 +170,8 @@ export function fitToBudget(
       .filter(d => d.events.length > 0)
     return { kept, omitted: omitted + all.length - k }
   }
-  let lo = 0, hi = all.length - 1  // all.length already failed
+  // The top event is always kept, so a day exists to label even when it alone is over budget.
+  let lo = 1, hi = Math.max(all.length - 1, 1)  // all.length already failed
   while (lo < hi) {
     const mid = Math.ceil((lo + hi) / 2)
     const c = keep(mid)

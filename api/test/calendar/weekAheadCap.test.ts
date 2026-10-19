@@ -107,6 +107,7 @@ describe('the week-ahead email, capped at 30 body events (#675)', () => {
     const html = await emailed()
     expect(listed(html, 0, 20)).toHaveLength(20)
     expect(listed(html, 20, 60)).toHaveLength(CAP)
+    expect(Buffer.byteLength(html, 'utf8')).toBeLessThan(80 * 1024)  // headroom: the byte budget (#774) cut nothing
     expect(html.match(OVERFLOW)?.[1]).toBe('10')
   })
 

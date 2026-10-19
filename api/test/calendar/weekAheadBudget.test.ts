@@ -135,6 +135,23 @@ describe('the week-ahead email, bounded for every event kind (#774)', () => {
     expect(html).toContain('200 events in the week ahead')
   })
 
+  it('still sends one event that alone is over the budget', async () => {
+    await getDb(env.DB).insert(calendarEvents).values({ id: 'c-huge', uid: 'c-huge@test', billId: null, source: 'custom', sequence: 0, date: isoDay(2), description: 'Huge ' + 'x'.repeat(200_000), status: 'confirmed' })
+    const html = await emailed()
+    expect(html).toContain('Huge ')
+    expect(html).toContain('Manage email settings')
+    expect(html).not.toMatch(OVERFLOW)
+  })
+
+  it('does not split an emoji when it truncates details', async () => {
+    // No spaces, so the cut lands on the 300th UTF-16 unit, inside the emoji's pair.
+    await getDb(env.DB).insert(calendarEvents).values({ id: 'c-emoji', uid: 'c-emoji@test', billId: null, source: 'custom', sequence: 0, date: isoDay(2), description: 'Emoji one', status: 'confirmed', details: 'x'.repeat(299) + '\u{1F600}' + 'y'.repeat(50) })
+    const html = await emailed()
+    expect(html).toContain('…')
+    // A boolean, so a failure doesn't print the lone surrogate, which crashes the worker's socket.
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(html)).toBe(false)
+  })
+
   it('adds no overflow line when the week fits', async () => {
     await seedCustom(0, 5)
     const html = await emailed()
