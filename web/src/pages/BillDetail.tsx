@@ -1409,6 +1409,7 @@ export function BillDetail() {
   // An untriaged new match is an amber state of the priority control. This page
   // keeps its own priority and dismissed state, so it can show the change at once.
   const isNewMatch = isUntriagedNewMatch({ ...bill, priority }) && !triageDismissed
+  const headerCompanions = (bill.groupBills ?? []).filter(g => g.billId !== bill.id)
   return (
     <div className="bill-detail-outer" style={{ padding: '24px 32px', maxWidth: 1100, margin: '0 auto' }}>
       <style>{`
@@ -1424,10 +1425,10 @@ export function BillDetail() {
       <div style={{ ...CARD, padding: '20px 24px' }}>
 
         {/* Chip strip */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: priorityMeta ? 20 : 12 }}>
-          {/* A badge for each bill in the group, this page's bill first, as the
-              bill list's group row shows them. Each companion links to its page. */}
-          <div data-testid="bill-group-badges" style={{ display: 'contents' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: priorityMeta ? 20 : headerCompanions.length > 0 ? 8 : 12 }}>
+          {/* This page's bill alone: the status, sponsors, and referrals here are its own.
+              The group's other bills are on the "Grouped with" line below. */}
+          <div data-testid="bill-header-badge" style={{ display: 'contents' }}>
             <BillBadge
               billNumber={bill.billNumber}
               state={bill.state}
@@ -1440,14 +1441,6 @@ export function BillDetail() {
                 return `https://${instanceDomain}${window.location.pathname}`
               })()}
             />
-            {(bill.groupBills ?? []).filter(g => g.billId !== bill.id).map(g => (
-              <BillBadge
-                key={g.billId}
-                billNumber={g.billNumber}
-                state={g.state}
-                to={billUrl({ id: g.billId, state: g.state, sessionSlug: g.sessionSlug, billNumber: g.billNumber })}
-              />
-            ))}
           </div>
           {bill.isDraft ? <DraftChip /> : (() => {
             const chip = <StatusChip status={decodeStatus(bill.status)} describedBy={statusExplainer ? 'bill-status-explainer' : undefined} onClick={() => navigate(billsListPath({ status: [bill.status] }))} />
@@ -1625,6 +1618,24 @@ export function BillDetail() {
           </span>
         </div>
 
+        {/* The group's other bills, each with its own status, in the order the group lists them. */}
+        {headerCompanions.length > 0 && (
+          <div data-testid="grouped-with-line" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 12px', margin: '0 0 12px', fontSize: fontSize.sm, color: color.textMuted }}>
+            <span>Grouped with</span>
+            {headerCompanions.map(g => (
+              <span key={g.billId} data-testid="grouped-with-member" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                <BillBadge
+                  mini
+                  billNumber={g.billNumber}
+                  state={g.state}
+                  to={billUrl({ id: g.billId, state: g.state, sessionSlug: g.sessionSlug, billNumber: g.billNumber })}
+                />
+                <StatusChip mini capWidth status={decodeStatus(g.status)} />
+              </span>
+            ))}
+          </div>
+        )}
+
         {bill.isDraft && (
           <div style={{ background: color.bgAmberPriority, border: `1px solid ${color.borderAmber}`, borderRadius: radius.md, padding: '10px 14px', marginBottom: 10, fontSize: fontSize.sm, color: color.textAmberWarning }}>
             <p style={{ margin: '0 0 10px', fontWeight: fontWeight.medium, lineHeight: 1.5 }}>
@@ -1767,7 +1778,7 @@ export function BillDetail() {
           const bodyLabel = chamberLabel ? `${chamberLabel} ${typeNoun}` : null
           const typeLabel = null
           // One line for each kind, identical companions first, whatever labels the legislature used.
-          // The header's badges already name the identical bills in the group, so
+          // The header's "Grouped with" line already names the identical bills in the group, so
           // this line lists only the identical bills outside it.
           const groupIds = new Set((bill.groupBills ?? []).map(g => g.billId))
           const listedRelated = bill.relatedBillIds.filter(r => !(r.kind === 'identical' && r.route && groupIds.has(r.route.id)))
