@@ -1,11 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
-// Mock the email module so no real send happens.
+// Mock the sender so no real send happens. `senderFor` records the db it is
+// given (an alert must not be counted, so none), and `sendEmail` records each
+// message the job alert sends, with its purpose.
+type Sent = { purpose?: string; to: string[]; subject: string; html: string; text?: string }
 const sendEmail = vi.fn(
-  async (_env: any, _msg: { to: string[]; subject: string; html: string; text?: string }, _db?: unknown) =>
+  async (_env: any, _msg: Sent, _db?: unknown) =>
     ({ ok: true, provider: 'resend' as const }),
 )
-vi.mock('../../src/lib/email', () => ({ sendEmail: (env: any, msg: any, db?: any) => sendEmail(env, msg, db) }))
+vi.mock('../../src/lib/email', () => ({
+  senderFor: (env: any, db?: any) => ({ send: (msg: any) => sendEmail(env, msg, db) }),
+}))
 
 import { runJob, reportJobFailure } from '../../src/lib/jobAlert'
 
@@ -46,15 +51,23 @@ describe('reportJobFailure', () => {
     expect(msg.html).toContain('nope')
   })
 
-  it('does not pass a db, so alert mail is never counted in email_send_stats', async () => {
+  it('sends with the operator purpose and no db, so alert mail is never counted in email_send_stats', async () => {
     await reportJobFailure(env({ DB: {} }), { job: 'week-ahead', error: new Error('nope') })
     expect(sendEmail).toHaveBeenCalledOnce()
+    expect(sendEmail.mock.calls[0][1].purpose).toBe('operator')
     expect(sendEmail.mock.calls[0][2]).toBeUndefined()
+  })
+
+  it('does not decide fallback, From, or demo mode itself: the message carries only its purpose and content', async () => {
+    await reportJobFailure(env(), { job: 'week-ahead', error: new Error('nope') })
+    expect(sendEmail).toHaveBeenCalledOnce()
+    expect(Object.keys(sendEmail.mock.calls[0][1]).sort()).toEqual(['html', 'purpose', 'subject', 'text', 'to'])
   })
 
   it('includes the stack when the error has one', async () => {
     const err = new Error('with-stack')
     await reportJobFailure(env(), { job: 'register', error: err })
+    expect(sendEmail).toHaveBeenCalledOnce()
     const msg = sendEmail.mock.calls[0][1]
     expect(msg.html).toContain('with-stack')
     expect(String(msg.html)).toContain('Error')
@@ -62,11 +75,12 @@ describe('reportJobFailure', () => {
 
   it('handles non-Error throwables', async () => {
     await reportJobFailure(env(), { job: 'register', error: 'string-error' })
+    expect(sendEmail).toHaveBeenCalledOnce()
     const msg = sendEmail.mock.calls[0][1]
     expect(msg.html).toContain('string-error')
   })
 
-  it('does not throw if sendEmail throws', async () => {
+  it('does not throw if the send rejects', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     sendEmail.mockRejectedValueOnce(new Error('send-fail'))
     await expect(

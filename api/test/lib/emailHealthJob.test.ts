@@ -151,6 +151,53 @@ describe('runEmailHealth', () => {
     expect(sent.subject).not.toContain('still failing')
   })
 
+  it('alerts through cloudflare, not the failing resend, when resend is the primary', async () => {
+    const db = getDb(env.DB)
+    await recordSendStats(db, 'resend', { sent: 0, failed: 3, suppressed: 0, lastError: '500' }, LAST_HOUR)
+    const { e, cfSend } = jobEnv({ EMAIL_PROVIDER: 'resend' })
+    expect(await runEmailHealth(e, db, NOW)).toBe('trip')
+    expect(cfSend).toHaveBeenCalledOnce()
+    expect(fetch).not.toHaveBeenCalled()
+    const sent = (cfSend.mock.calls as unknown as [{ to: string[]; subject: string }][])[0][0]
+    expect(sent.to).toEqual(['ops@example.test'])
+    expect(sent.subject).toContain('resend')
+  })
+
+  it('sends the alert in demo mode', async () => {
+    const db = getDb(env.DB)
+    await recordSendStats(db, 'cloudflare', { sent: 0, failed: 3, suppressed: 0, lastError: ERR }, LAST_HOUR)
+    const { e } = jobEnv({ DEMO_MODE: 'true' })
+    expect(await runEmailHealth(e, db, NOW)).toBe('trip')
+    expect(fetch).toHaveBeenCalledOnce()
+    const [state] = await db.select().from(emailAlertState).all()
+    expect(state).toMatchObject({ status: 'failing', lastAlertedAt: '2026-09-23 21:00:00' })
+  })
+
+  it('does not count an alert that needed both providers either', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    fetch.mockImplementation(async () => new Response('unauthorized', { status: 401 }))
+    const db = getDb(env.DB)
+    await recordSendStats(db, 'cloudflare', { sent: 0, failed: 3, suppressed: 0, lastError: ERR }, LAST_HOUR)
+    const { e, cfSend } = jobEnv()
+    await runEmailHealth(e, db, NOW)
+    expect(fetch).toHaveBeenCalledOnce()
+    expect(cfSend).toHaveBeenCalledOnce()
+    const rows = await db.select().from(emailSendStats).all()
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ provider: 'cloudflare', sent: 0, failed: 3 })
+  })
+
+  it('writes no Resend usage reading for its own alert', async () => {
+    fetch.mockImplementation(async () => new Response(JSON.stringify({ id: 'rs-alert' }), { status: 200, headers: { 'x-resend-monthly-quota': '900', 'x-resend-daily-quota': '50' } }))
+    const db = getDb(env.DB)
+    await recordSendStats(db, 'cloudflare', { sent: 0, failed: 3, suppressed: 0, lastError: ERR }, LAST_HOUR)
+    const { e } = jobEnv()
+    await runEmailHealth(e, db, NOW)
+    const { associationConfig } = await import('../../src/db/schema')
+    expect((await db.select().from(associationConfig).all()).filter(r => r.key.startsWith('resend_'))).toEqual([])
+  })
+
   it('on remind, says still failing and since when', async () => {
     const db = getDb(env.DB)
     await db.insert(emailAlertState).values({
