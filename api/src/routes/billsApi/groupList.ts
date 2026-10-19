@@ -8,7 +8,7 @@ import { filterTagsToTaxonomy } from '../../lib/taxonomy'
 import type { AppDb } from '../../types'
 import { billsAs, buildBillNumberBoost, type BillsFilter } from './query'
 import { newMatchWhere } from '../../lib/newMatch'
-import { billNum, billPrefix, compareLead, leadOrder, newestTextDate } from '../../lib/groupLead'
+import { billNum, billPrefix, compareLead, groupedNewestTextDate, leadOrder } from '../../lib/groupLead'
 
 /**
  * The bill list's companion groups (see **Companion group** in CONTEXT.md).
@@ -330,9 +330,6 @@ const memberColumns = {
   createdAt: bills.createdAt, updatedAt: bills.updatedAt, groupKey: bills.groupKey,
 }
 type BillRow = Pick<typeof bills.$inferSelect, keyof typeof memberColumns> & { newestTextDate: string | null }
-// A grouped bill's newest text date, which picks the group's lead. Read only for bills in a group,
-// whose lead it can decide: a bill in no group is its own row.
-const newestTextDateColumn = sql<string | null>`CASE WHEN ${bills.groupKey} IS NULL THEN NULL ELSE ${newestTextDate(sql`${bills.id}`)} END`
 
 /** A bill in a group, as the list row names it. */
 export type GroupMemberSummary = { id: string; billNumber: string; state: string; status: string; sessionSlug: string; matched?: boolean }
@@ -342,9 +339,7 @@ export type GroupMemberSummary = { id: string; billNumber: string; state: string
  * first, then the newest text, then the bill number. The first is the group's
  * lead, the bill the row is about and whose analysis the group shows.
  */
-export function compareMembers(a: Pick<BillRow, 'id' | 'billNumber' | 'statusRank' | 'newestTextDate'>, b: Pick<BillRow, 'id' | 'billNumber' | 'statusRank' | 'newestTextDate'>): number {
-  return compareLead(a, b)
-}
+export const compareMembers = compareLead
 
 /** A row of the page's one read of everything the team and the viewer have on its bills: its kind, then up to six values. */
 type Extra = { kind: string; a: string; b: unknown; c: unknown; d: unknown; e: unknown; f: unknown }
@@ -377,7 +372,7 @@ export async function loadGroupRows(db: AppDb, groupKeys: readonly string[], ctx
   // is why votes and comments each carry the viewer's own in a column. Whether each bill met the filter is one
   // more column of the first.
   const [memberRows, extras] = await Promise.all([
-    db.select({ ...memberColumns, newestTextDate: newestTextDateColumn, met: ctx.filter ? sql<number>`CASE WHEN ${ctx.filter(bills)!} THEN 1 ELSE 0 END` : sql<number>`0` })
+    db.select({ ...memberColumns, newestTextDate: groupedNewestTextDate(bills), met: ctx.filter ? sql<number>`CASE WHEN ${ctx.filter(bills)!} THEN 1 ELSE 0 END` : sql<number>`0` })
       .from(bills).where(sql`${bills.id} IN ${pageBills}`).all(),
     db.all(sql`WITH pb AS MATERIALIZED (SELECT value AS id FROM json_each(${keys}) UNION SELECT g.id FROM bills g WHERE g.group_key IN (SELECT value FROM json_each(${keys})))
       SELECT 'position' AS kind, ${officialPositions.billId} AS a, ${officialPositions.position} AS b, ${officialPositions.setBy} AS c, ${officialPositions.updatedAt} AS d, NULL AS e, NULL AS f

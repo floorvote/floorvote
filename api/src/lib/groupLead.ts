@@ -65,6 +65,15 @@ export const billNum = (n: SQL) => sql`CAST(substr(${n}, ${firstDigitPos(n)}) AS
 export const newestTextDate = (billId: SQL) =>
   sql`(SELECT MAX(NULLIF(t.date, '')) FROM bill_texts t WHERE t.bill_id = ${billId})`
 
+/**
+ * A bill's newest text date when it is in a group, whose lead it can decide,
+ * and NULL for a bill in no group, which is its own row: `table` is the bills
+ * table or an alias of it. The one expression the list rows and the team field
+ * reads use, so both feed `compareLead` the same value.
+ */
+export const groupedNewestTextDate = (table: { id: unknown; groupKey: unknown }) =>
+  sql<string | null>`CASE WHEN ${table.groupKey} IS NULL THEN NULL ELSE ${newestTextDate(sql`${table.id}`)} END`
+
 /** The ORDER BY terms that put a group's bills, as the table alias `g`, in lead order. */
 export const leadOrder = (g: string): SQL => {
   const col = (name: string) => sql.raw(`${g}.${name}`)

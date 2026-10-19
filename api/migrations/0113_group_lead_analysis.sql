@@ -16,8 +16,9 @@
 -- triggers on bill_texts recompute a grouped bill's group when a text is
 -- added, removed, or redated, since the newest text can move the lead too.
 -- The recompute still writes only group_tags, so it fires no trigger again.
--- The backfill applies the rule to every group an instance already has, and
--- rewrites any group_tags that drifted. Every trigger is dropped if it exists
+-- The backfill, after the triggers so a write between them is covered too,
+-- applies the rule to every group an instance already has, and rewrites any
+-- group_tags that drifted. Every trigger is dropped if it exists
 -- before it is created, so running this file again leaves the same triggers
 -- and tags. idx_bills_group_tags is unchanged.
 --
@@ -34,17 +35,6 @@ DROP TRIGGER IF EXISTS bills_group_tags_delete;
 DROP TRIGGER IF EXISTS bill_texts_group_tags_insert;
 DROP TRIGGER IF EXISTS bill_texts_group_tags_update;
 DROP TRIGGER IF EXISTS bill_texts_group_tags_delete;
-
-UPDATE bills SET group_tags = COALESCE((SELECT g.tags FROM bills g WHERE g.group_key = bills.group_key
-      AND (g.ai_processed_at IS NOT NULL OR g.tenant_summary IS NOT NULL OR g.tags <> '[]')
-      ORDER BY g.id = (SELECT l.id FROM bills l WHERE l.group_key = g.group_key
-        ORDER BY l.status_rank DESC,
-          (SELECT MAX(NULLIF(t.date, '')) FROM bill_texts t WHERE t.bill_id = l.id) DESC NULLS LAST,
-          substr(l.bill_number, 1, min(CASE WHEN instr(l.bill_number, '0') = 0 THEN 99999 ELSE instr(l.bill_number, '0') END, CASE WHEN instr(l.bill_number, '1') = 0 THEN 99999 ELSE instr(l.bill_number, '1') END, CASE WHEN instr(l.bill_number, '2') = 0 THEN 99999 ELSE instr(l.bill_number, '2') END, CASE WHEN instr(l.bill_number, '3') = 0 THEN 99999 ELSE instr(l.bill_number, '3') END, CASE WHEN instr(l.bill_number, '4') = 0 THEN 99999 ELSE instr(l.bill_number, '4') END, CASE WHEN instr(l.bill_number, '5') = 0 THEN 99999 ELSE instr(l.bill_number, '5') END, CASE WHEN instr(l.bill_number, '6') = 0 THEN 99999 ELSE instr(l.bill_number, '6') END, CASE WHEN instr(l.bill_number, '7') = 0 THEN 99999 ELSE instr(l.bill_number, '7') END, CASE WHEN instr(l.bill_number, '8') = 0 THEN 99999 ELSE instr(l.bill_number, '8') END, CASE WHEN instr(l.bill_number, '9') = 0 THEN 99999 ELSE instr(l.bill_number, '9') END) - 1) ASC,
-          CAST(substr(l.bill_number, min(CASE WHEN instr(l.bill_number, '0') = 0 THEN 99999 ELSE instr(l.bill_number, '0') END, CASE WHEN instr(l.bill_number, '1') = 0 THEN 99999 ELSE instr(l.bill_number, '1') END, CASE WHEN instr(l.bill_number, '2') = 0 THEN 99999 ELSE instr(l.bill_number, '2') END, CASE WHEN instr(l.bill_number, '3') = 0 THEN 99999 ELSE instr(l.bill_number, '3') END, CASE WHEN instr(l.bill_number, '4') = 0 THEN 99999 ELSE instr(l.bill_number, '4') END, CASE WHEN instr(l.bill_number, '5') = 0 THEN 99999 ELSE instr(l.bill_number, '5') END, CASE WHEN instr(l.bill_number, '6') = 0 THEN 99999 ELSE instr(l.bill_number, '6') END, CASE WHEN instr(l.bill_number, '7') = 0 THEN 99999 ELSE instr(l.bill_number, '7') END, CASE WHEN instr(l.bill_number, '8') = 0 THEN 99999 ELSE instr(l.bill_number, '8') END, CASE WHEN instr(l.bill_number, '9') = 0 THEN 99999 ELSE instr(l.bill_number, '9') END)) AS INTEGER) ASC,
-          l.id ASC LIMIT 1) DESC,
-        g.match_type IS NOT NULL DESC, COALESCE(g.ai_processed_at, '') DESC, g.id DESC LIMIT 1), '[]')
-WHERE group_key IS NOT NULL;
 
 CREATE TRIGGER bills_group_tags_insert AFTER INSERT ON bills
 WHEN NEW.group_key IS NOT NULL OR NEW.group_tags IS NOT NEW.tags
@@ -141,3 +131,14 @@ BEGIN
         g.match_type IS NOT NULL DESC, COALESCE(g.ai_processed_at, '') DESC, g.id DESC LIMIT 1), '[]')
   WHERE group_key = (SELECT group_key FROM bills WHERE id = OLD.bill_id);
 END;
+
+UPDATE bills SET group_tags = COALESCE((SELECT g.tags FROM bills g WHERE g.group_key = bills.group_key
+      AND (g.ai_processed_at IS NOT NULL OR g.tenant_summary IS NOT NULL OR g.tags <> '[]')
+      ORDER BY g.id = (SELECT l.id FROM bills l WHERE l.group_key = g.group_key
+        ORDER BY l.status_rank DESC,
+          (SELECT MAX(NULLIF(t.date, '')) FROM bill_texts t WHERE t.bill_id = l.id) DESC NULLS LAST,
+          substr(l.bill_number, 1, min(CASE WHEN instr(l.bill_number, '0') = 0 THEN 99999 ELSE instr(l.bill_number, '0') END, CASE WHEN instr(l.bill_number, '1') = 0 THEN 99999 ELSE instr(l.bill_number, '1') END, CASE WHEN instr(l.bill_number, '2') = 0 THEN 99999 ELSE instr(l.bill_number, '2') END, CASE WHEN instr(l.bill_number, '3') = 0 THEN 99999 ELSE instr(l.bill_number, '3') END, CASE WHEN instr(l.bill_number, '4') = 0 THEN 99999 ELSE instr(l.bill_number, '4') END, CASE WHEN instr(l.bill_number, '5') = 0 THEN 99999 ELSE instr(l.bill_number, '5') END, CASE WHEN instr(l.bill_number, '6') = 0 THEN 99999 ELSE instr(l.bill_number, '6') END, CASE WHEN instr(l.bill_number, '7') = 0 THEN 99999 ELSE instr(l.bill_number, '7') END, CASE WHEN instr(l.bill_number, '8') = 0 THEN 99999 ELSE instr(l.bill_number, '8') END, CASE WHEN instr(l.bill_number, '9') = 0 THEN 99999 ELSE instr(l.bill_number, '9') END) - 1) ASC,
+          CAST(substr(l.bill_number, min(CASE WHEN instr(l.bill_number, '0') = 0 THEN 99999 ELSE instr(l.bill_number, '0') END, CASE WHEN instr(l.bill_number, '1') = 0 THEN 99999 ELSE instr(l.bill_number, '1') END, CASE WHEN instr(l.bill_number, '2') = 0 THEN 99999 ELSE instr(l.bill_number, '2') END, CASE WHEN instr(l.bill_number, '3') = 0 THEN 99999 ELSE instr(l.bill_number, '3') END, CASE WHEN instr(l.bill_number, '4') = 0 THEN 99999 ELSE instr(l.bill_number, '4') END, CASE WHEN instr(l.bill_number, '5') = 0 THEN 99999 ELSE instr(l.bill_number, '5') END, CASE WHEN instr(l.bill_number, '6') = 0 THEN 99999 ELSE instr(l.bill_number, '6') END, CASE WHEN instr(l.bill_number, '7') = 0 THEN 99999 ELSE instr(l.bill_number, '7') END, CASE WHEN instr(l.bill_number, '8') = 0 THEN 99999 ELSE instr(l.bill_number, '8') END, CASE WHEN instr(l.bill_number, '9') = 0 THEN 99999 ELSE instr(l.bill_number, '9') END)) AS INTEGER) ASC,
+          l.id ASC LIMIT 1) DESC,
+        g.match_type IS NOT NULL DESC, COALESCE(g.ai_processed_at, '') DESC, g.id DESC LIMIT 1), '[]')
+WHERE group_key IS NOT NULL;
