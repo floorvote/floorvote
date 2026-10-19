@@ -523,6 +523,12 @@ type BillDetailData = {
   analysisAiSkipReason?: 'pdf_too_large' | null
   analysisTextStatus?: 'not_checked' | 'no_texts' | 'available' | 'in_r2' | null
   /**
+   * The group's lead, when Regenerate analyzes it instead of the bill above:
+   * while the lead has no analysis and the page shows another member's. Null
+   * or absent otherwise.
+   */
+  regenerateBill?: { id: string; externalId: string | null; billNumber: string; aiProcessedAt: string | null; aiSkipReason: string | null; textStatus: string | null } | null
+  /**
    * The document the shown analysis read (#601), which on a companion's page is
    * the analyzed member's, with what names and opens it. `analysisLastAiText` is
    * null when none is recorded or it is no longer listed. Both are absent from a
@@ -1313,19 +1319,23 @@ export function BillDetail() {
     // The guard reads this page's own bill, so it applies only when this page's
     // own bill is the one that would be re-analyzed. On a pulled companion's
     // page that is another bill, one with an analysis to show.
-    const targetId = bill.analysisBillId ?? bill.id
+    // While the group's lead has no analysis, Regenerate analyzes the lead
+    // (as a group analysis if it is untracked), never promoting it, and the
+    // run lands once the lead's analysis is the one the page shows.
+    const lead = bill.regenerateBill ?? null
+    const targetId = lead?.id ?? bill.analysisBillId ?? bill.id
     const other = targetId !== bill.id
-    if (!other && bill.matchType === null && !bill.aiProcessedAt) return handlePromote()
+    if (!lead && !other && bill.matchType === null && !bill.aiProcessedAt) return handlePromote()
     // Regenerate re-analyzes the bill whose analysis this page shows (#563):
     // its own, or on a companion group's page the lead's (or the member's
     // shown while the lead has none),
     // whose analysis time is what this run moves. Without the server's
     // analysis fields, that is this bill.
     const hasAnalysisBill = bill.analysisBillId != null
-    const targetExternalId = other ? bill.analysisBillExternalId : bill.externalId
-    const targetNumber = other ? (bill.analysisBillNumber ?? null) : bill.billNumber
-    const prevProcessedAt = hasAnalysisBill ? (bill.analysisAiProcessedAt ?? null) : bill.aiProcessedAt
-    const prevSkipReason = hasAnalysisBill ? (bill.analysisAiSkipReason ?? null) : bill.aiSkipReason
+    const targetExternalId = lead ? lead.externalId : other ? bill.analysisBillExternalId : bill.externalId
+    const targetNumber = lead ? lead.billNumber : other ? (bill.analysisBillNumber ?? null) : bill.billNumber
+    const prevProcessedAt = lead ? lead.aiProcessedAt : hasAnalysisBill ? (bill.analysisAiProcessedAt ?? null) : bill.aiProcessedAt
+    const prevSkipReason = lead ? lead.aiSkipReason : hasAnalysisBill ? (bill.analysisAiSkipReason ?? null) : bill.aiSkipReason
     const run = ++regenerateRun.current
     setRegenerateError(null)
     setRegenerateNotice(null)
@@ -1348,6 +1358,10 @@ export function BillDetail() {
           const r = await fetch(`/api/bills/${bill.id}`, { credentials: 'include' })
           if (!r.ok) return null
           const d = await r.json() as BillDetailData
+          // Still waiting on the lead: its own fields, named as the target.
+          if (d.regenerateBill && d.regenerateBill.id === targetId) {
+            return { aiProcessedAt: d.regenerateBill.aiProcessedAt, aiSkipReason: d.regenerateBill.aiSkipReason, textStatus: d.regenerateBill.textStatus, analysisBillId: targetId }
+          }
           if (d.analysisBillId == null) return d
           return {
             aiProcessedAt: d.analysisAiProcessedAt ?? null,

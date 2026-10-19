@@ -386,6 +386,54 @@ describe("Regenerate on a pulled companion's page", () => {
   })
 })
 
+// While the group's lead has no analysis, the page shows another member's, and
+// the detail names the lead as `regenerateBill`. Regenerate analyzes the lead,
+// and the run lands once the lead's analysis is the one the page shows (review C1).
+describe("Regenerate while the group's lead has no analysis", () => {
+  const LEAD = { id: 's20', externalId: 'legiscan:20', billNumber: 'SB20', aiProcessedAt: null, aiSkipReason: null, textStatus: 'in_r2' }
+  const WAITING = { ...COMPANION, regenerateBill: LEAD }
+  const LANDED = { ...COMPANION, analysisBillId: 's20', analysisBillExternalId: 'legiscan:20', analysisBillNumber: 'SB20', analysisAiProcessedAt: '2026-10-15 12:00:00', regenerateBill: null }
+
+  it('analyzes the lead, not the member whose analysis shows', async () => {
+    const { posts } = setup(WAITING, [WAITING])
+    await regenerate(user)
+    await waitFor(() => expect(posts()).toHaveLength(1))
+    expect(posts()[0]).toBe('/api/admin/reprocess-bill/legiscan%3A20')
+  })
+
+  it("keeps polling while the other member's analysis still shows, and lands once the lead's does", async () => {
+    setup(WAITING, [WAITING, LANDED])
+    await regenerate(user)
+    expect(await screen.findByText('Regenerating SB20…')).toBeInTheDocument()
+    await tick()
+    expect(chip()).toBeInTheDocument()
+    await tick()
+    expect(await screen.findByText("Re-analyzed SB20, the bill this page's summary comes from.")).toBeInTheDocument()
+  })
+
+  it("reads a skip from the lead's own fields", async () => {
+    setup(WAITING, [{ ...WAITING, regenerateBill: { ...LEAD, aiSkipReason: 'pdf_too_large' } }])
+    await regenerate(user)
+    await tick()
+    expect(await screen.findByText(/AI couldn't analyze the text of SB20/)).toBeInTheDocument()
+  })
+
+  it('ends as moved when the group changes so neither the lead nor its analysis is named', async () => {
+    setup(WAITING, [{ ...COMPANION, analysisBillId: 'x9', analysisBillNumber: 'X9', regenerateBill: null }])
+    await regenerate(user)
+    await tick()
+    expect(await screen.findByText(/group changed while SB20 was being re-analyzed/)).toBeInTheDocument()
+  })
+
+  it("analyzes the lead from its own page, though it is untracked and unanalyzed, instead of promoting it", async () => {
+    const own = { ...COMPANION, matchType: null, aiProcessedAt: null, regenerateBill: { ...LEAD, id: '42', externalId: 'legiscan:42', billNumber: 'HB 1' } }
+    const { posts } = setup(own, [own])
+    await regenerate(user)
+    await waitFor(() => expect(posts()).toHaveLength(1))
+    expect(posts()[0]).toBe('/api/admin/reprocess-bill/legiscan%3A42')
+  })
+})
+
 describe('Regenerate where the page shows its own bill\'s analysis', () => {
   it("re-analyzes a bill in no group, polls its time, and says nothing when it lands", async () => {
     const { posts, refetched } = setup({}, [{ analysisAiProcessedAt: '2026-10-15 12:00:00', aiProcessedAt: '2026-10-15 12:00:00' }])

@@ -153,6 +153,53 @@ describe('GET /api/bills/:id: the bill the shown analysis comes from', () => {
   })
 })
 
+// Regenerate analyzes the group's lead. While the lead has no analysis, the page
+// shows another member's, so the detail names the lead separately for
+// Regenerate to analyze and poll (review C1).
+describe('GET /api/bills/:id: the bill Regenerate analyzes', () => {
+  let cookie: string
+  const db = () => getDb(env.DB)
+  type RegenDetail = { analysisBillId: string; regenerateBill: { id: string; externalId: string | null; billNumber: string; aiProcessedAt: string | null; aiSkipReason: string | null; textStatus: string | null } | null }
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    cookie = `session=${await seedSession(await seedUser({ email: 'member@example.com', role: 'member' }))}`
+    vi.mocked(centralFetch).mockReset()
+    vi.mocked(centralFetch).mockResolvedValue(new Response('{}', { status: 200 }))
+  })
+
+  async function detail(billId: string): Promise<RegenDetail> {
+    const res = await SELF.fetch(`https://x/api/bills/${billId}`, { headers: { Cookie: cookie } })
+    expect(res.status).toBe(200)
+    return await res.json() as RegenDetail
+  }
+
+  it('is the lead, on every member\'s page, while the lead has no analysis and another member\'s shows', async () => {
+    await seedBill({ id: 'a190', billNumber: 'A190', externalId: 'legiscan:190', matchType: 'keyword', tenantSummary: 'Tracked summary.', aiProcessedAt: '2026-09-01 00:00:00' })
+    await seedBill({ id: 'b1713', billNumber: 'S1713', externalId: 'legiscan:1713', matchType: null, statusRank: 300, textStatus: 'in_r2' })
+    await db().update(bills).set({ groupKey: 'a190' }).where(inArray(bills.id, ['a190', 'b1713']))
+    for (const id of ['a190', 'b1713']) {
+      expect(await detail(id)).toMatchObject({
+        analysisBillId: 'a190',
+        regenerateBill: { id: 'b1713', externalId: 'legiscan:1713', billNumber: 'S1713', aiProcessedAt: null, aiSkipReason: null, textStatus: 'in_r2' },
+      })
+    }
+  })
+
+  it('is no other bill when the lead\'s analysis is the one shown', async () => {
+    await seedBill({ id: 'a190', billNumber: 'A190', externalId: 'legiscan:190', matchType: 'keyword', tenantSummary: 'Tracked summary.', aiProcessedAt: '2026-09-01 00:00:00' })
+    await seedBill({ id: 'b1713', billNumber: 'S1713', externalId: 'legiscan:1713', matchType: null, statusRank: 300, tenantSummary: 'Lead summary.', aiProcessedAt: '2026-08-01 00:00:00' })
+    await db().update(bills).set({ groupKey: 'a190' }).where(inArray(bills.id, ['a190', 'b1713']))
+    expect(await detail('a190')).toMatchObject({ analysisBillId: 'b1713', regenerateBill: null })
+  })
+
+  it('is no other bill for a bill in no group', async () => {
+    await seedBill({ id: 'solo', billNumber: 'HB 1', externalId: 'legiscan:1' })
+    expect((await detail('solo')).regenerateBill).toBeNull()
+  })
+})
+
 // The "based on text" link names the document the shown analysis read, so on a
 // companion's page it is the analyzed member's, never the companion's own (#601).
 describe('GET /api/bills/:id: the document the shown analysis was based on', () => {

@@ -307,6 +307,17 @@ export async function buildBillDetail(
         lastAiTextDocId: bills.lastAiTextDocId,
       }).from(bills).where(eq(bills.id, analysisBillId)).get()) ?? bill
 
+  // The bill Regenerate analyzes when it isn't the one above: the group's lead,
+  // while it has no analysis and the page shows another member's. Regenerate
+  // analyzes it, and the page polls until its analysis is the one shown.
+  const leadId = teamValues.leadBillId
+  const regenerateBill = leadId !== null && leadId !== analysisBill.id
+    ? (await db.select({
+        id: bills.id, externalId: bills.externalId, billNumber: bills.billNumber,
+        aiProcessedAt: bills.aiProcessedAt, aiSkipReason: bills.aiSkipReason, textStatus: bills.textStatus,
+      }).from(bills).where(eq(bills.id, leadId)).get()) ?? null
+    : null
+
   // The document that analysis read, as the text list has it, for the page to
   // name and open (#601). On a companion's page it is the analyzed member's,
   // which is not in this bill's list. Null when none is recorded or it is no
@@ -402,6 +413,15 @@ export async function buildBillDetail(
     analysisAiProcessedAt: analysisBill.aiProcessedAt ?? null,
     analysisAiSkipReason: analysisBill.aiSkipReason ?? null,
     analysisTextStatus: analysisBill.textStatus ?? null,
+    // The lead, when Regenerate should analyze it instead of the bill above. Null otherwise.
+    regenerateBill: regenerateBill && {
+      id: regenerateBill.id,
+      externalId: regenerateBill.externalId ?? null,
+      billNumber: regenerateBill.billNumber,
+      aiProcessedAt: regenerateBill.aiProcessedAt ?? null,
+      aiSkipReason: regenerateBill.aiSkipReason ?? null,
+      textStatus: regenerateBill.textStatus ?? null,
+    },
     // The document that analysis read (#601): the link above the summary names and opens it.
     analysisLastAiTextDocId: analysisDocId,
     analysisLastAiText,

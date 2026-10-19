@@ -5,7 +5,7 @@ import { nowDb } from './dbTime'
 import { FIELD_CHANGED, teamValueText, type FieldChangedMetadata, type TeamField } from '../../../shared/teamFields'
 import type { ReplacedTeamValue } from '../../../shared/companionGroups'
 import type { AppDb } from '../types'
-import { newestTextDate, pickLead } from './groupLead'
+import { groupedNewestTextDate, pickLead } from './groupLead'
 
 /**
  * Team fields (see **Team field** in CONTEXT.md): the official position,
@@ -66,13 +66,15 @@ export type GroupTeamValues = {
   customFields: Map<string, CustomFieldValue>
   analysis: { billId: string; tenantSummary: string | null; tags: string[]; aiProcessedAt: string | null } | null
   triaged: { billId: string; triagedAt: string; triagedBy: string | null } | null
+  /** The group's lead bill (lib/groupLead.ts), or null for no members. Its analysis is `analysis` once it has one. */
+  leadBillId: string | null
 }
 
 const billValueColumns = {
   id: bills.id,
   billNumber: bills.billNumber,
   statusRank: bills.statusRank,
-  newestTextDate: sql<string | null>`CASE WHEN ${bills.groupKey} IS NULL THEN NULL ELSE ${newestTextDate(sql`${bills.id}`)} END`,
+  newestTextDate: groupedNewestTextDate(bills),
   matchType: bills.matchType,
   priority: bills.priority,
   prioritySetAt: bills.prioritySetAt,
@@ -135,6 +137,7 @@ export function resolveTeamValues(rows: TeamValueRows, members: ReadonlySet<stri
       ? { billId: analysis.id, tenantSummary: analysis.tenantSummary, tags: parseTags(analysis.tags), aiProcessedAt: analysis.aiProcessedAt }
       : null,
     triaged: triaged ? { billId: triaged.id, triagedAt: triaged.triagedAt!, triagedBy: triaged.triagedBy } : null,
+    leadBillId: lead?.id ?? null,
   }
 }
 
@@ -170,7 +173,7 @@ export async function loadTeamValuesOf(db: AppDb, billIds: readonly string[]): P
 /** The team field values one bill reads: its group's, or its own. */
 export async function loadGroupTeamValues(db: AppDb, billId: string): Promise<GroupTeamValues> {
   return (await loadTeamValuesOf(db, [billId])).get(billId)
-    ?? { position: null, priority: null, customFields: new Map(), analysis: null, triaged: null }
+    ?? { position: null, priority: null, customFields: new Map(), analysis: null, triaged: null, leadBillId: null }
 }
 
 /**
@@ -332,9 +335,9 @@ export async function recordFieldChanges(db: AppDb, changes: readonly FieldChang
 
 /**
  * The tags each group reads before a write to its members' `match_type`, for
- * `recordGroupTagChanges`. While a group's lead has no analysis, its tags
- * come from a tracked member first, so a bill starting or stopping to match
- * can move them with no analysis to record it. Only bills in a group are read: a bill in no group reads its own
+ * `recordGroupTagChanges`. A group's tags come from a tracked member first, so
+ * a bill starting or stopping to match can move them with no analysis to
+ * record it. Only bills in a group are read: a bill in no group reads its own
  * tags, whatever its match type. One bill stands for each group, the one with the
  * smallest id among those given, and is the one the event is recorded on, so a
  * cleanup always records on the same bill.
