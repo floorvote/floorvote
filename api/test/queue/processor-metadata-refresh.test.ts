@@ -151,6 +151,7 @@ describe('a metadata refresh leaves the stored provider version alone', () => {
     await deliver(refresh)
     const after = (await row())!
     expect(after.title).toBe('Election Administration Act, as amended')
+    expect(after.status).toBe('passed')
     expect(after.abstract).toBe('A revised abstract')
     expect(after.stateUrl).toBe('https://state.example/HB789-v2')
     expect(after.textR2Key).toBe('bills/789/ver-2.html')
@@ -222,7 +223,8 @@ describe('the regular delivery after a metadata refresh', () => {
     // The AI's own dedup by text hash still holds.
     expect(await analysisCalls()).toBe(1)
     expect(after.lastAiTextHash).toBe('hash-one')
-    expect(textFetches).toBeGreaterThanOrEqual(fetchesBefore)
+    // Dedup by hash also skips the text fetch.
+    expect(textFetches).toBe(fetchesBefore)
   })
 
   it('still runs the full path after several refreshes in a row', async () => {
