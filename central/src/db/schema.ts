@@ -377,7 +377,10 @@ export const apiCallLog = sqliteTable('api_call_log', {
   loggedAt:  text('logged_at').notNull().default(sql`(datetime('now'))`),
   callType:  text('call_type').notNull(),
   params:    text('params').notNull(),
-})
+}, (t) => [
+  // Every reader filters on logged_at; call_type rides along so the counts never touch the table (0044).
+  index('idx_api_call_log_logged_at').on(t.loggedAt, t.callType),
+])
 
 export const sessionSyncLog = sqliteTable('session_sync_log', {
   id:           integer('id').primaryKey({ autoIncrement: true }),
@@ -388,7 +391,11 @@ export const sessionSyncLog = sqliteTable('session_sync_log', {
   billsChecked: integer('bills_checked').notNull().default(0),
   billsChanged: integer('bills_changed').notNull().default(0),
   billsQueued:  integer('bills_queued').notNull().default(0),
-})
+}, (t) => [
+  index('idx_session_sync_log_session_synced').on(t.sessionId, t.syncedAt),
+  index('idx_session_sync_log_state_synced').on(t.state, t.syncedAt),
+  index('idx_session_sync_log_synced').on(t.syncedAt),
+])
 
 export const magicLinks = sqliteTable('magic_links', {
   id:         text('id').primaryKey(),

@@ -171,16 +171,20 @@ export async function loadStateRows(db: Db, env: Env, now: Date = new Date()): P
     callsByProvider.set(id, (callsByProvider.get(id) ?? 0) + Number(r.n))
   }
 
-  // Each state's latest logged pass among its owner's sessions.
-  const passes = new Map((await db.all<{ state: string; synced_at: string; bills_checked: number; bills_changed: number; bills_queued: number }>(sql`
-    SELECT l.state, l.synced_at, l.bills_checked, l.bills_changed, l.bills_queued
-    FROM session_sync_log l
-    JOIN sessions s ON s.session_id = l.session_id
-    WHERE s.provider = COALESCE((SELECT provider FROM state_providers WHERE state = s.state), ${DEFAULT_PROVIDER_ID})
-      AND l.id = (
-        SELECT l2.id FROM session_sync_log l2 JOIN sessions s2 ON s2.session_id = l2.session_id
-        WHERE l2.state = l.state AND s2.provider = s.provider
-        ORDER BY l2.synced_at DESC, l2.id DESC LIMIT 1)`)).map(r => [r.state, r]))
+  // Each state's latest logged pass among its owner's sessions. Each owned session's newest
+  // pass is one lookup in idx_session_sync_log_session_synced, so this reads a row per session
+  // rather than the whole log; the newest of those per state is picked here.
+  const passes = new Map<string, { id: number; state: string; synced_at: string; bills_checked: number; bills_changed: number; bills_queued: number }>()
+  for (const r of await db.all<{ id: number; state: string; synced_at: string; bills_checked: number; bills_changed: number; bills_queued: number }>(sql`
+    SELECT l.id, l.state, l.synced_at, l.bills_checked, l.bills_changed, l.bills_queued
+    FROM sessions s
+    JOIN session_sync_log l ON l.id = (
+      SELECT l2.id FROM session_sync_log l2 WHERE l2.session_id = s.session_id
+      ORDER BY l2.synced_at DESC, l2.id DESC LIMIT 1)
+    WHERE s.provider = COALESCE((SELECT provider FROM state_providers WHERE state = s.state), ${DEFAULT_PROVIDER_ID})`)) {
+    const best = passes.get(r.state)
+    if (!best || r.synced_at > best.synced_at || (r.synced_at === best.synced_at && r.id > best.id)) passes.set(r.state, r)
+  }
 
   return states.map((state): StateRow => {
     const row = ownerRows.get(state)
