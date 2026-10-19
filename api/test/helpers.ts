@@ -1,35 +1,14 @@
 /// <reference types="vite/client" />
-import { env, applyD1Migrations, reset, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
+import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { and, eq } from 'drizzle-orm'
 import { vi } from 'vitest'
 import { app } from '../src/index'
 import { getDb } from '../src/db/client'
-import { splitStatements } from '../../shared/sqlStatements'
 import { generateToken, hashToken } from '../src/lib/crypto'
+// The schema (migrations, resetDb, clearDb) lives in test/schema.ts, which must
+// not import the app; see its header.
+export { parseMigration, migrationsFromFiles, applyMigrations, resetDb, rememberSchema, clearDb } from './schema'
 import { users, sessions, magicLinks, bills, billTexts, roles, userRoles, comments, notifications, calendarEvents, authEvents } from '../src/db/schema'
-
-// Every file in api/migrations/, so a new migration is applied by the tests the
-// moment it lands, with no list to update. test/migrations/allApplied.test.ts
-// fails if any file is left out.
-const migrationFiles = import.meta.glob<string>('../migrations/*.sql', { query: '?raw', import: 'default', eager: true })
-
-export function parseMigration(sql: string, name: string) {
-  return { name, queries: splitStatements(sql) }
-}
-
-/**
- * Migration files keyed by path, valued by raw SQL (what
- * import.meta.glob(..., { query: '?raw', import: 'default', eager: true })
- * returns), as migrations in filename order, each named by its basename
- * without the extension, like applyMigrations' names. For building a database
- * from a whole folder, such as a fork's (test/migrations/forkUpgrade.test.ts).
- */
-export function migrationsFromFiles(files: Record<string, string>): { name: string; queries: string[] }[] {
-  return Object.entries(files)
-    .map(([path, sql]) => ({ name: path.split('/').pop()!.replace(/\.sql$/, ''), sql }))
-    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
-    .map(({ name, sql }) => ({ name, queries: splitStatements(sql) }))
-}
 
 // Send a request to the app and wait for the background work it starts
 // (`ctx.waitUntil`, such as a magic-link email or a central backfill) before
@@ -56,21 +35,6 @@ export function stubFetch(
     handler(input instanceof Request ? input.url : String(input), init))
   vi.stubGlobal('fetch', spy)
   return spy
-}
-
-export async function resetDb(): Promise<void> {
-  await reset()
-}
-
-/**
- * Apply every migration. With `before`, apply only those whose names sort
- * before it, so a test can seed rows as an older database holds them and then
- * call applyMigrations() again to run the rest over them.
- */
-export async function applyMigrations(opts: { before?: string } = {}): Promise<void> {
-  const migrations = migrationsFromFiles(migrationFiles)
-  const before = opts.before
-  await applyD1Migrations(env.DB, before ? migrations.filter(m => m.name < before) : migrations)
 }
 
 export async function seedUser(overrides?: {

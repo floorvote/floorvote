@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { env, createExecutionContext } from 'cloudflare:test'
 import { inArray, eq } from 'drizzle-orm'
-import { resetDb, applyMigrations, appFetch, stubFetch, seedUser, seedSession, seedBill, seedBillText } from '../helpers'
+import { clearDb, appFetch, stubFetch, seedUser, seedSession, seedBill, seedBillText } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { memberVotes, officialPositions, comments, notes, calendarEvents, associationConfig } from '../../src/db/schema'
 import { app } from '../../src/index'
@@ -15,8 +15,7 @@ describe('GET /bills', () => {
   let memberToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const memberId = await seedUser()
     memberToken = await seedSession(memberId)
     await seedBill({ billNumber: 'HB 1', title: 'Election Act', priority: 'high', status: 'In Committee' })
@@ -246,8 +245,7 @@ describe('GET /bills — comma multi-search', () => {
   let memberToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const memberId = await seedUser()
     memberToken = await seedSession(memberId)
     await seedBill({ billNumber: 'H 7377', title: 'Mail Ballot Modernization Act' })
@@ -326,8 +324,7 @@ describe('GET /bills — comma multi-search', () => {
 describe('GET /bills — long search terms (D1 LIKE 50-byte limit)', () => {
   let token: string
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const uid = await seedUser()
     token = await seedSession(uid)
     await seedBill({ billNumber: 'HB 1', title: 'Election administration and voter registration procedures act', tenantSummary: 'A bill about elections' })
@@ -370,8 +367,7 @@ describe('GET /bills — monitoring-only bills are visible to all roles', () => 
   let normalBillId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const memberId = await seedUser({ role: 'member' })
     memberToken = await seedSession(memberId)
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.com' })
@@ -413,8 +409,7 @@ describe('GET /bills — tag filter', () => {
   let memberToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const memberId = await seedUser()
     memberToken = await seedSession(memberId)
     // Bill with Elections tag only
@@ -486,8 +481,7 @@ describe('GET /bills/:id', () => {
   let billId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     memberId = await seedUser({ role: 'member', name: 'Alice' })
     memberToken = await seedSession(memberId)
     adminId = await seedUser({ role: 'admin', name: 'Admin' })
@@ -668,8 +662,7 @@ describe('POST /bills/:id/votes', () => {
   let billId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     memberId = await seedUser()
     memberToken = await seedSession(memberId)
     billId = await seedBill()
@@ -727,8 +720,7 @@ describe('DELETE /bills/:id/votes', () => {
   let billId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     memberId = await seedUser()
     memberToken = await seedSession(memberId)
     billId = await seedBill()
@@ -754,8 +746,7 @@ describe('PATCH /bills/:id/priority (admin only)', () => {
   let billId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'admin' })
     adminToken = await seedSession(adminId)
     const memberId = await seedUser({ role: 'member' })
@@ -831,8 +822,7 @@ describe('PATCH /bills/:id/priority — promotion to full analysis', () => {
   let adminToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'admin' })
     adminToken = await seedSession(adminId)
     // central promote + calendar backfill both go through global fetch in tests
@@ -901,8 +891,7 @@ describe('POST /bills/:id/position (admin only)', () => {
   let billId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ role: 'admin' })
     adminToken = await seedSession(adminId)
     billId = await seedBill()
@@ -962,8 +951,7 @@ describe('DELETE /bills/:id/position (admin only)', () => {
   let adminId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ role: 'admin' })
     adminToken = await seedSession(adminId)
     const memberId = await seedUser({ role: 'member' })
@@ -1044,8 +1032,7 @@ describe('POST /bills/:id/comments', () => {
   let billId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const memberId = await seedUser()
     memberToken = await seedSession(memberId)
     billId = await seedBill()
@@ -1095,8 +1082,7 @@ describe('POST /bills/:id/comments — demo per-bill cap', () => {
   const demoEnv = { ...env, DEMO_MODE: 'true' }
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     userId = await seedUser()
     cookie = `session=${await seedSession(userId)}`
     billId = await seedBill()
@@ -1160,8 +1146,7 @@ describe('GET /bills — pagination', () => {
   let memberToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const memberId = await seedUser()
     memberToken = await seedSession(memberId)
     // Seed 5 bills
@@ -1218,8 +1203,7 @@ describe('GET /bills — sort', () => {
   let token: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const userId = await seedUser()
     token = await seedSession(userId)
     // Seed 3 bills with distinct sortable values
@@ -1342,8 +1326,7 @@ describe('PUT /bills/:id/note', () => {
   let billId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const memberId = await seedUser()
     memberToken = await seedSession(memberId)
     billId = await seedBill()
@@ -1390,8 +1373,7 @@ describe('GET /bills — multi-value filters', () => {
   let token: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const userId = await seedUser()
     token = await seedSession(userId)
     await seedBill({ billNumber: 'HB 1', status: 'In Committee', priority: 'high', session: '2025' })
@@ -1436,8 +1418,7 @@ describe('GET /bills — tag filter with long tag names', () => {
   const LONG_TAG = 'County Election Officials & Voter Registrars Duties' // 51 chars → 55-byte LIKE pattern
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const userId = await seedUser()
     token = await seedSession(userId)
     // Facets filter tag counts to the current taxonomy; seed one covering this fixture's tags.
@@ -1473,8 +1454,7 @@ describe('GET /bills/facets', () => {
   let adminId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ role: 'admin' })
     token = await seedSession(adminId)
     // Facets filter tag counts to the current taxonomy; seed one covering this fixture's tags.
@@ -1687,8 +1667,7 @@ describe('GET /bills — unvoted filter', () => {
   let token: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     userId = await seedUser({ canVote: true })
     token = await seedSession(userId)
     await seedBill({ billNumber: 'HB 1' })
@@ -1727,8 +1706,7 @@ describe('POST /bills/bulk (admin only)', () => {
   let billId3: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'admin' })
     adminToken = await seedSession(adminId)
     const memberId = await seedUser({ role: 'member' })
@@ -1992,8 +1970,7 @@ describe('POST /bills/bulk — match=any', () => {
   let adminToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'admin' })
     adminToken = await seedSession(adminId)
 
@@ -2030,8 +2007,7 @@ describe('POST /bills/bulk-dismiss — match=any', () => {
   let adminToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'admin' })
     adminToken = await seedSession(adminId)
 
@@ -2068,8 +2044,7 @@ describe('POST /bills/bulk — priority promotion', () => {
   let adminToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'admin' })
     adminToken = await seedSession(adminId)
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
@@ -2115,8 +2090,7 @@ describe('GET /bills/bulk-values — nullMatchCount', () => {
   let adminToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'admin' })
     adminToken = await seedSession(adminId)
   })
@@ -2145,8 +2119,7 @@ describe('GET /bills/bulk-values (admin only)', () => {
   let billId3: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ role: 'admin' })
     adminToken = await seedSession(adminId)
     const memberId = await seedUser({ role: 'member' })
@@ -2237,8 +2210,7 @@ describe('GET /bills/bulk-values — match=any', () => {
   let adminToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'admin' })
     adminToken = await seedSession(adminId)
 
@@ -2278,8 +2250,7 @@ describe('stored timestamps are space-format', () => {
   let adminId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ role: 'admin' })
     adminToken = await seedSession(adminId)
   })
@@ -2364,8 +2335,7 @@ describe('GET /bills — broadened search fields', () => {
   let memberToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const memberId = await seedUser()
     memberToken = await seedSession(memberId)
     // Term lives ONLY in tenant_summary:
@@ -2415,8 +2385,7 @@ describe('GET /bills — bill-number ranking', () => {
   let memberToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const memberId = await seedUser()
     memberToken = await seedSession(memberId)
   })
@@ -2479,8 +2448,7 @@ describe('GET /bills — bill-number ranking', () => {
 
 describe('GET /bills/:id legislator votes', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   it("carries central's per-legislator votes into the bill's vote summary", async () => {
@@ -2667,8 +2635,7 @@ describe('GET /bills/:id legislator votes', () => {
 
 describe('GET /bills/:id provider extras', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   it("passes central's extras through as central labeled them, and null when central sends none", async () => {
@@ -2701,8 +2668,7 @@ describe('GET /bills/:id provider extras', () => {
 
 describe('GET /bills/:id committees', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   it("names the bill's committee and referrals as central does, and keeps the stored committee when central has none", async () => {
@@ -2757,8 +2723,7 @@ describe('GET /bills/:id committees', () => {
 // bill by the `view` flag, which only the bill page sends.
 describe('GET /bills/:id tells central it is a page view', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   function recordingCentral() {

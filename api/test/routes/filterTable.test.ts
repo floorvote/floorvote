@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { app } from '../../src/index'
 import { BILL_FILTER_DEFS } from '../../../shared/billFilter'
 import { FILTER_TABLE, emptyFacets } from '../../src/routes/billsApi/filterTable'
@@ -45,8 +45,7 @@ describe('the facets response built for a list with nothing in it', () => {
   let cookie: string
 
   beforeAll(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     cookie = `session=${await seedSession(await seedUser({ role: 'admin' }))}`
     await seedBill({ billNumber: 'HB 1', priority: 'high', status: 'Passed', statusStage: 'passed', isDraft: true, yearStart: 2026 })
   })

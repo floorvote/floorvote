@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { SELF } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { feedEvents, users } from '../../src/db/schema'
 
@@ -12,8 +12,7 @@ describe('GET /feed', () => {
   let billId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     memberId = await seedUser({ name: 'Alice', title: 'County Clerk, Ingham County' })
     memberToken = await seedSession(memberId)
     billId = await seedBill({ billNumber: 'HB 42', title: 'Election Security Act' })
@@ -256,8 +255,7 @@ describe('POST /feed/seen', () => {
   let memberToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     memberId = await seedUser({ name: 'Bob' })
     memberToken = await seedSession(memberId)
   })
@@ -289,8 +287,7 @@ describe('GET /feed latestEventAt', () => {
   let memberId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     memberId = await seedUser({ name: 'Carol' })
     memberToken = await seedSession(memberId)
   })
@@ -433,8 +430,7 @@ describe('GET /feed default-scope group visibility', () => {
   let memberToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     memberId = await seedUser({ name: 'Alice' })
     memberToken = await seedSession(memberId)
   })
@@ -507,8 +503,7 @@ describe('GET /feed — billIsDraft', () => {
   let memberId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     memberId = await seedUser({ name: 'Dana' })
     memberToken = await seedSession(memberId)
   })

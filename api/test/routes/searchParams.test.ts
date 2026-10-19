@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm'
 import { buildSearchCondition, buildBillNumberBoost } from '../../src/routes/billsApi/query'
 import { FILTER_ANY } from '../../../shared/billFilter'
 import { MAX_SEARCH_TOKENS } from '../../../shared/searchLimits'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, appFetch } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill, appFetch } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { app } from '../../src/index'
 import { bills, billSubjects, memberVotes, associationConfig, customFieldDefinitions, billCustomFieldValues } from '../../src/db/schema'
@@ -52,8 +52,7 @@ describe('match=any', () => {
   let userId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     userId = await seedUser()
     token = await seedSession(userId)
 
@@ -225,8 +224,7 @@ describe('facet counts under match=any are the resulting total', () => {
   let trackFieldId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const userId = await seedUser()
     token = await seedSession(userId)
 
@@ -363,8 +361,7 @@ describe('subject filter cap', () => {
   let token: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const userId = await seedUser()
     token = await seedSession(userId)
   })
@@ -417,8 +414,7 @@ describe('custom-field facets with another CF field left unfiltered', () => {
   let trackFieldId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const userId = await seedUser()
     token = await seedSession(userId)
 
@@ -546,8 +542,7 @@ describe('one name per filter', () => {
   let token: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const userId = await seedUser({ role: 'admin' })
     token = await seedSession(userId)
     const hb1 = await seedBill({ billNumber: 'HB0001', title: 'Water Rights Act', session: OLDER, status: 'Introduced', tags: ['Energy'] })

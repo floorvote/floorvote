@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, stubFetch } from '../helpers'
+import { clearDb, seedUser, stubFetch } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills, associationConfig } from '../../src/db/schema'
 import { buildBillDetail } from '../../src/routes/billsApi/detail'
@@ -9,8 +9,7 @@ import { SUPPRESSED_SUBJECT_STATES_KEY } from '../../src/lib/billSubjects'
 describe('buildBillDetail — subjects', () => {
   beforeEach(async () => {
     stubFetch(() => new Response('{}', { status: 404 })) // bill detail asks central for supplemental data
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   it('returns stored subjects, not a live central lookup', async () => {
@@ -56,8 +55,7 @@ describe('buildBillDetail — subjects', () => {
 describe('buildBillDetail — subjects suppression', () => {
   beforeEach(async () => {
     stubFetch(() => new Response('{}', { status: 404 })) // bill detail asks central for supplemental data
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   async function seedBillIn(id: string, state: string, subjects: string) {

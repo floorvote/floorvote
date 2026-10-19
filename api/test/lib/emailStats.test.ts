@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations } from '../helpers'
+import { clearDb } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { emailSendStats } from '../../src/db/schema'
 import { hourKey, tally, recordSendStats } from '../../src/lib/emailStats'
@@ -35,7 +35,7 @@ describe('tally', () => {
 })
 
 describe('recordSendStats', () => {
-  beforeEach(async () => { await resetDb(); await applyMigrations() })
+  beforeEach(async () => { await clearDb() })
 
   it('upserts into one row per hour and provider, incrementing counts', async () => {
     const db = getDb(env.DB)

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
+import { clearDb, seedUser, seedSession } from '../helpers'
 
 describe('GET /api/views', () => {
   let adminCookie: string
@@ -9,8 +9,7 @@ describe('GET /api/views', () => {
   let adminId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Admin' })
     adminCookie = `session=${await seedSession(adminId)}`
     const memberId = await seedUser({ role: 'member', email: 'member@example.com', name: 'Member' })

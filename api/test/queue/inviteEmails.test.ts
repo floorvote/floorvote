@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser } from '../helpers'
+import { clearDb, seedUser } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { magicLinks, authEvents } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
@@ -19,8 +19,7 @@ describe('processInviteEmails', () => {
   let userId: string
   let errorSpy: ReturnType<typeof vi.spyOn>
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     userId = await seedUser({ role: 'member', email: 'jane@example.com', name: 'Jane' })
     resetMail()
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})

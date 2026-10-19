@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { resetDb, applyMigrations, appFetch, stubFetch, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, appFetch, stubFetch, seedUser, seedSession, seedBill } from '../helpers'
 import { sessionToSlug, legacySessionSlug, billUrl } from '../../../shared/sessionSlug'
 
 describe('Council Period slugs', () => {
@@ -16,8 +16,7 @@ describe('resolving DC bill URLs', () => {
   let cookie: string
   beforeEach(async () => {
     stubFetch() // the bill lookup may ask central in the background; answer it, never reach it
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     cookie = `session=${await seedSession(await seedUser({ email: 'm@x.com' }))}`
   })
   const get = (path: string) => appFetch(`https://x/api/bills/resolve/${path}`, { headers: { Cookie: cookie } })

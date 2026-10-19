@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 
 // Bills from three providers, each with the stage and rank central sent from
 // its vocabulary. Rank orders them across providers, where their labels alone
@@ -19,8 +19,7 @@ describe('status stage and rank in the bill list', () => {
   let cookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     cookie = `session=${await seedSession(await seedUser())}`
     await seedProviderMix()
   })
@@ -80,8 +79,7 @@ describe('status and stage as one fact', () => {
   }
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     cookie = `session=${await seedSession(await seedUser({ role: 'admin' }))}`
     await seedProviderMix()
   })
@@ -281,8 +279,7 @@ describe('GET /bills/labels', () => {
   }
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     cookie = `session=${await seedSession(await seedUser())}`
   })
 

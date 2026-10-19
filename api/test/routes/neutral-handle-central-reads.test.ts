@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, bills } from '../../src/db/schema'
 import { app } from '../../src/index'
@@ -22,8 +22,7 @@ let member: string
 let admin: string
 
 beforeEach(async () => {
-  await resetDb()
-  await applyMigrations()
+  await clearDb()
   vi.mocked(centralFetch).mockReset()
   member = `session=${await seedSession(await seedUser({ email: 'member@x.com', role: 'member' }))}`
   admin = `session=${await seedSession(await seedUser({ email: 'admin@x.com', role: 'admin' }))}`

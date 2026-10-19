@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { memberVotes, users } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
@@ -8,7 +8,7 @@ import { eq } from 'drizzle-orm'
 describe('deactivated members drop out of vote tallies', () => {
   let adminTok: string, billId: string
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     adminTok = await seedSession(await seedUser({ role: 'admin', email: 'a@x.com' }))
     billId = await seedBill({ matchType: 'keyword', title: 'Tally bill' })
     const active = await seedUser({ role: 'member', email: 'active@x.com' })

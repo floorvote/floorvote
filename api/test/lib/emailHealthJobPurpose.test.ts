@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations } from '../helpers'
+import { clearDb } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { recordSendStats } from '../../src/lib/emailStats'
 
@@ -25,7 +25,7 @@ const jobEnv = (over: Record<string, unknown> = {}) => ({
 }) as never
 
 beforeEach(async () => {
-  await resetDb(); await applyMigrations()
+  await clearDb()
   resetMail()
   vi.spyOn(console, 'error').mockImplementation(() => {})
 })

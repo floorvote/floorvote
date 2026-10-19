@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
 import { app } from '../../src/index'
 import { and, eq } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, bills, calendarEvents, comments, memberVotes, notes, notifications, teamEvents, users } from '../../src/db/schema'
 import { rowidOf } from '../../src/db/rowid'
@@ -61,8 +61,7 @@ describe('bill routes across a companion group', () => {
   }
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     vi.mocked(centralFetch).mockReset()
     vi.mocked(centralFetch).mockRejectedValue(new Error('central unreachable'))
     for (const [name, role] of [['ann', 'member'], ['ben', 'member'], ['ada', 'admin']] as const) {

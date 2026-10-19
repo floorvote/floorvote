@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, appFetch, stubFetch, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, appFetch, stubFetch, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { processCentralNotification } from '../../src/queue/processor'
 import { bills } from '../../src/db/schema'
@@ -15,8 +15,7 @@ describe('bill URLs by the session slug central assigned', () => {
   let cookie: string
   beforeEach(async () => {
     stubFetch() // the bill lookup may ask central in the background; answer it, never reach it
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     cookie = `session=${await seedSession(await seedUser({ email: 'm@x.com' }))}`
   })
   afterEach(() => vi.unstubAllGlobals())

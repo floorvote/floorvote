@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:test'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink, stubFetch } from '../helpers'
+import { clearDb, seedUser, seedSession, seedMagicLink, stubFetch } from '../helpers'
 import { parseInstanceHints, serializeInstanceHints } from '../../../shared/instanceHint'
 
 // Central's superadmin allowlist is fetched in the background on a first
@@ -19,7 +19,7 @@ function hintValue(setCookie: string): string {
 const enc = (list: Parameters<typeof serializeInstanceHints>[0]) => encodeURIComponent(serializeInstanceHints(list))
 
 describe('fv_instances reminder cookie', () => {
-  beforeEach(async () => { await resetDb(); await applyMigrations() })
+  beforeEach(async () => { await clearDb() })
 
   it('is set on the parent domain after a successful verify', async () => {
     const uid = await seedUser({ email: 'a@b.com' })

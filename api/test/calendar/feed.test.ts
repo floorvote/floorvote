@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, appFetch, stubFetch, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
+import { clearDb, appFetch, stubFetch, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, calendarEvents, calendarEventBills } from '../../src/db/schema'
 
@@ -11,8 +11,7 @@ describe('calendar feed', () => {
   let priorityBillId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const uid = await seedUser({ email: 'a@b.com' })
     token = await seedSession(uid)
     priorityBillId = await seedBill({ billNumber: 'H 5174', state: 'RI', session: '2026', priority: 'high' })
@@ -158,8 +157,7 @@ describe('calendar feed', () => {
 
 describe('PATCH /api/bills/:id/priority', () => {
   it('returns 200 and sets priority even when backfill central call fails (fire-and-forget)', async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ email: 'admin@patch.com', role: 'admin' })
     const adminToken = await seedSession(adminId)
     const billId = await seedBill({ billNumber: 'H 100', state: 'RI', session: '2026', externalId: 'legiscan:100' })
@@ -178,7 +176,7 @@ describe('PATCH /api/bills/:id/priority', () => {
 })
 
 describe('calendar backfill', () => {
-  beforeEach(async () => { await resetDb(); await applyMigrations() })
+  beforeEach(async () => { await clearDb() })
 
   it('collectPriorityLegiscanIds returns numeric legiscan ids of priority bills only', async () => {
     const { collectPriorityLegiscanIds } = await import('../../src/lib/calendarBackfill')

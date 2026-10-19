@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedAuthEvent } from '../helpers'
+import { clearDb, seedUser, seedSession, seedAuthEvent } from '../helpers'
 import { fakeBinding } from '../../../shared/emailTestKit'
 
 vi.mock('../../src/lib/centralFetch', () => ({
@@ -40,7 +40,7 @@ describe('change-email clears a bounced invite', () => {
   }
 
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     cf = fakeBinding()
     adminId = await seedUser({ role: 'admin', email: 'admin@example.test' })
     cookie = `session=${await seedSession(adminId)}`

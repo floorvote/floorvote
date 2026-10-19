@@ -1,7 +1,7 @@
 import { env, SELF } from 'cloudflare:test'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, appFetch, seedUser, seedSession, seedMagicLink } from '../helpers'
+import { clearDb, appFetch, seedUser, seedSession, seedMagicLink } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { users, authEvents, sessions } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
@@ -46,8 +46,7 @@ function centralMockFor(opts: { superadminEmails?: string[] }): { fetch: (req: R
 
 beforeEach(async () => {
   stubResend() // the sign-in email goes out through Resend
-  await resetDb()
-  await applyMigrations()
+  await clearDb()
   // In-isolate superadmin allowlist cache (D3) persists across tests in the same
   // isolate — reset it so each test's centralMockFor allowlist is honored.
   _resetSuperadminAllowlistCache()
@@ -647,7 +646,7 @@ describe('GET /auth/me — superadmin JWT fallback', () => {
 })
 
 describe('auth event logging — verify', () => {
-  beforeEach(async () => { await resetDb(); await applyMigrations() })
+  beforeEach(async () => { await clearDb() })
 
   it('records verify_success', async () => {
     const db = getDb(env.DB)
@@ -690,7 +689,7 @@ describe('auth event logging — verify', () => {
 })
 
 describe('auth event logging — magic-link request', () => {
-  beforeEach(async () => { await resetDb(); await applyMigrations() })
+  beforeEach(async () => { await clearDb() })
 
   it('records link_requested for a known user', async () => {
     const db = getDb(env.DB)
@@ -722,7 +721,7 @@ describe('auth event logging — magic-link request', () => {
 })
 
 describe('auth event logging — logout', () => {
-  beforeEach(async () => { await resetDb(); await applyMigrations() })
+  beforeEach(async () => { await clearDb() })
 
   it('records logout for the session owner', async () => {
     const db = getDb(env.DB)
@@ -757,8 +756,7 @@ describe('POST /auth/demo-login', () => {
   const demoEnv = { ...env, DEMO_MODE: 'true' }
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     // seedUser can't set the id, and the route looks up the fixed 'demo-user'.
     await getDb(env.DB).insert(users).values({
       id: 'demo-user',

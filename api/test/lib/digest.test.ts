@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { eq, inArray } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { feedEvents, associationConfig, bills } from '../../src/db/schema'
 import { runDigest } from '../../src/lib/digest'
@@ -20,7 +20,7 @@ async function addEvent(db: ReturnType<typeof getDb>, billId: string, type: stri
 describe('runDigest', () => {
   let billId: string
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     const u = await seedUser({ email: 'a@e.com' }); await seedSession(u)
     billId = await seedBill({ billNumber: 'H 1', state: 'RI', session: '2026', priority: 'high' })
   })
@@ -92,7 +92,7 @@ describe('runDigest', () => {
   })
 
   it('respects per-user opt-out (no recipients → no send)', async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     const db = getDb(env.DB); await enableModule(db)
     const u = await seedUser({ email: 'out@e.com', emailDigestEnabled: false }); await seedSession(u)
     const b = await seedBill({ billNumber: 'H 2', state: 'RI', session: '2026', priority: 'high' })

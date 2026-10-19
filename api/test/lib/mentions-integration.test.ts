@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, appFetch, stubFetch, seedUser, seedSession, seedBill, seedRole, seedUserRole, mentionRecords } from '../helpers'
+import { clearDb, appFetch, stubFetch, seedUser, seedSession, seedBill, seedRole, seedUserRole, mentionRecords } from '../helpers'
 
 describe('comment mention extraction (integration)', () => {
   let adminId: string
@@ -10,8 +10,7 @@ describe('comment mention extraction (integration)', () => {
 
   beforeEach(async () => {
     stubFetch() // mention emails go out through fetch
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ role: 'admin', name: 'Admin', email: 'admin@example.com' })
     adminToken = await seedSession(adminId)
     mentionedUserId = await seedUser({ name: 'Jane Smith', email: 'jane@example.com' })

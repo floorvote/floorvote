@@ -1,5 +1,23 @@
-// Runs before every test file (vitest `setupFiles`). Two guarantees, so a green
-// run means what it appears to:
+// Runs before every test file (vitest `setupFiles`). Builds the schema once
+// per file, and makes two guarantees so a green run means what it appears to.
+//
+// The schema: each test file has its own storage, so the migrations run here,
+// once per file, and a test that needs a clean database calls clearDb() in
+// its beforeEach, which empties the tables rather than rebuilding them. Before
+// this, every test wiped storage and replayed all 83 migrations: some 2,000
+// rebuilds per CI run, and the whole of the check-api job's time (#804). The
+// migration tests under test/migrations still do that on purpose, to seed rows
+// as an older schema held them.
+//
+// test/schema.ts is loaded lazily, inside the beforeAll, and must stay that
+// way. Importing `cloudflare:test` from this file's static import graph (it,
+// or any module it imports) stops a test file's vi.mock() calls from taking
+// effect: with a static `import './schema'` here, 40 of the 45 change-email
+// tests fail because their mocked central client is the real one. The test
+// file's own imports are registered by the time a beforeAll runs, so loading
+// the module then is the same as the test file importing it itself.
+//
+// The guarantees:
 //
 //   1. No test reaches the network by accident. `fetch` is replaced with a guard
 //      that refuses the request and fails the test, naming the URL. A test that
@@ -17,8 +35,14 @@
 // pool no longer ships `fetchMock`, and miniflare's `outboundService` runs in
 // the Node process, where it can neither name the failing test nor be overridden
 // by a per-test stub.
-import { beforeEach, afterEach, afterAll } from 'vitest'
+import { beforeAll, beforeEach, afterEach, afterAll } from 'vitest'
 import { networkGuard, takeBlockedRequests } from './networkGuard'
+
+beforeAll(async () => {
+  const { applyMigrations, rememberSchema } = await import('./schema')
+  await applyMigrations()
+  await rememberSchema()
+})
 
 beforeEach(() => {
   // A plain assignment rather than vi.stubGlobal, so a test's own

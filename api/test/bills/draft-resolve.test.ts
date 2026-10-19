@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
+import { clearDb, seedUser, seedSession } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills } from '../../src/db/schema'
 
@@ -8,8 +8,7 @@ describe('draft canonical URLs', () => {
   let adminToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ email: 'admin@x.com', role: 'admin' })
     adminToken = await seedSession(adminId)
   })

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { getDb } from '../db/client'
-import { resetDb, applyMigrations, seedBill } from '../../test/helpers'
+import { clearDb, seedBill } from '../../test/helpers'
 import { matchesKeywords } from './keywords'
 import {
   summarizeKeywordMatches, foldForMatch, isFoldSafe, clearKeywordMatchCorpus, setMaxCachedCharsForTest,
@@ -140,8 +140,7 @@ describe('summarizeKeywordMatches memory handling', () => {
   }
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     clearKeywordMatchCorpus()
   })
 

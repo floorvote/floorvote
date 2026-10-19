@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { env, createExecutionContext, createScheduledController, waitOnExecutionContext } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedUser, seedAuthEvent } from '../helpers'
+import { clearDb, seedUser, seedAuthEvent } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, authEvents, users } from '../../src/db/schema'
 import { fakeBinding, stubResend, type BindingOutcomes } from '../../../shared/emailTestKit'
@@ -77,7 +77,7 @@ const bounced = (errorCause: string) => ({ status: 'deliveryFailed', isSpam: fal
 describe('hourly run: emailing the inviter about bounced invites', () => {
   let ownerId: string
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     ownerId = await seedUser({ role: 'owner', email: 'owner@example.test', name: 'Olive Owner' })
   })
   afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })

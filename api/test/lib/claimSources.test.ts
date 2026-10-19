@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations } from '../helpers'
+import { clearDb } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig } from '../../src/db/schema'
 import { claimLinksEnabled } from '../../src/lib/claimSources'
@@ -9,8 +9,7 @@ import { claimLinksEnabled } from '../../src/lib/claimSources'
 // and who can, is covered in test/routes/adminClaimLinks.test.ts.
 describe('claimLinksEnabled', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   it('is on for a new instance with no settings', async () => {

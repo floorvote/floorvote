@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedBill } from '../helpers'
+import { clearDb, seedBill } from '../helpers'
 import { runDemoReset } from '../../src/lib/demoReset'
 import { DEMO_SEEDS } from '../../src/lib/demoSeeds'
 
@@ -10,8 +10,8 @@ import { DEMO_SEEDS } from '../../src/lib/demoSeeds'
  * `INSERT ... SELECT ... WHERE (SELECT id FROM bills WHERE external_id = ?) IS
  * NOT NULL` guards the machinery uses mean a dangling id produces zero rows
  * silently, not an error. A table count that comes up short is the only way that
- * class of bug surfaces — hence a real resetDb() / applyMigrations() /
- * runDemoReset() round trip here, against real D1 bindings.
+ * class of bug surfaces — hence a real runDemoReset() round trip here, against
+ * real D1 bindings.
  */
 const seed = DEMO_SEEDS['lake-michigan']
 const count = async (t: string) =>
@@ -19,8 +19,7 @@ const count = async (t: string) =>
 
 describe('runDemoReset with the lake-michigan seed', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     // Every bill the seed references must exist, or its INSERT ... SELECT guards
     // no-op instead of failing loudly. priority: null so the "every bill has a
     // priority" test below proves the RESET set it, not the fixture.

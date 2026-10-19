@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { isBillMuted, muteLinkTokens } from '../../src/lib/billMutes'
 
@@ -67,7 +67,7 @@ describe('POST /api/mute-link rate limiting', () => {
   const muted = () => isBillMuted(getDb(env.DB), ben, billId)
 
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     ben = await seedUser({ name: 'Ben', email: 'ben@example.com' })
     billId = await seedBill({ billNumber: 'HB 1' })
     validToken = await (await muteLinkTokens(getDb(env.DB)))(ben, billId)

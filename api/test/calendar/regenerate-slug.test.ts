@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
+import { clearDb, seedUser, seedSession } from '../helpers'
 
 describe('POST /api/calendar/regenerate-slug', () => {
   let adminId: string
@@ -9,8 +9,7 @@ describe('POST /api/calendar/regenerate-slug', () => {
   let memberToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ email: 'admin@test.com', role: 'admin' })
     adminToken = await seedSession(adminId)
     memberId = await seedUser({ email: 'member@test.com', role: 'member' })

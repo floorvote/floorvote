@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
-import { resetDb, applyMigrations } from '../helpers'
+import { clearDb } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig } from '../../src/db/schema'
 import {
@@ -9,7 +9,7 @@ import {
 } from '../../src/lib/taxonomy'
 
 describe('taxonomy helpers', () => {
-  beforeEach(async () => { await resetDb(); await applyMigrations() })
+  beforeEach(async () => { await clearDb() })
 
   it('filterTagsToTaxonomy keeps only exact-case members', () => {
     const allowed = new Set(['Elections', 'Public Records'])

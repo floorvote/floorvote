@@ -2,7 +2,7 @@ import { env } from 'cloudflare:test'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink, seedAuthEvent } from '../helpers'
+import { clearDb, seedUser, seedSession, seedMagicLink, seedAuthEvent } from '../helpers'
 import { fakeBinding, stubResend } from '../../../shared/emailTestKit'
 import { getDb } from '../../src/db/client'
 import { users, sessions, authEvents, emailChanges } from '../../src/db/schema'
@@ -98,8 +98,7 @@ let jane: string
 const NEW = 'jane@newjob.org'
 
 beforeEach(async () => {
-  await resetDb()
-  await applyMigrations()
+  await clearDb()
   _resetSuperadminAllowlistCache()
   useBinding()
   owner = await seedUser({ role: 'owner', email: 'olive@org.org', name: 'Olive Owner' })

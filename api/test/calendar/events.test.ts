@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { calendarEvents, calendarEventBills } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
@@ -19,8 +19,7 @@ describe('GET /api/calendar/events', () => {
   let token: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const uid = await seedUser({ email: 'a@b.com' })
     token = await seedSession(uid)
 
@@ -203,7 +202,7 @@ describe('GET /api/calendar/events', () => {
 describe('GET /api/calendar/events — bills[].isDraft', () => {
   let token: string
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     const uid = await seedUser({ email: 'a@b.com' }); token = await seedSession(uid)
   })
 
@@ -257,7 +256,7 @@ describe('GET /api/calendar/events — bills[].isDraft', () => {
 describe('GET /api/calendar/bill-options', () => {
   let token: string
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     const uid = await seedUser({ email: 'a@b.com' }); token = await seedSession(uid)
     await seedBill({ billNumber: 'H 100', state: 'RI', session: '2026', matchType: 'keyword' })
     await seedBill({ billNumber: 'H 200', state: 'RI', session: '2026', matchType: null }) // lightweight stub
@@ -299,7 +298,7 @@ describe('GET /api/calendar/bill-options', () => {
 describe('POST /api/calendar/events', () => {
   let adminToken: string, memberToken: string, billId: string
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     const admin = await seedUser({ email: 'admin@b.com', role: 'admin' }); adminToken = await seedSession(admin)
     const member = await seedUser({ email: 'm@b.com', role: 'member' }); memberToken = await seedSession(member)
     billId = await seedBill({ billNumber: 'H 100', state: 'RI', session: '2026', matchType: 'manual' })
@@ -336,7 +335,7 @@ describe('POST /api/calendar/events', () => {
 
 describe('POST /api/calendar/events — billIds[]', () => {
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
   })
 
   it('POST accepts billIds[] and links them via the join table', async () => {
@@ -363,7 +362,7 @@ describe('POST /api/calendar/events — billIds[]', () => {
 describe('PUT /api/calendar/events/:id', () => {
   let adminToken: string, customId: string, hearingId: string
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     const admin = await seedUser({ email: 'admin@b.com', role: 'admin' }); adminToken = await seedSession(admin)
     const billId = await seedBill({ billNumber: 'H 100', state: 'RI', session: '2026', priority: 'high' })
     hearingId = await seedCalendarEvent(billId, { uid: 'h@t' })
@@ -399,7 +398,7 @@ describe('PUT /api/calendar/events/:id', () => {
 describe('DELETE /api/calendar/events/:id', () => {
   let adminToken: string, customId: string, hearingId: string
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     const admin = await seedUser({ email: 'admin@b.com', role: 'admin' }); adminToken = await seedSession(admin)
     const billId = await seedBill({ billNumber: 'H 100', state: 'RI', session: '2026', priority: 'high' })
     hearingId = await seedCalendarEvent(billId, { uid: 'h@t' })
@@ -434,7 +433,7 @@ describe('POST /api/calendar/events/:id/restore', () => {
   let adminToken: string, customId: string
 
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     const admin = await seedUser({ email: 'admin@b.com', role: 'admin' }); adminToken = await seedSession(admin)
     const db = getDb(env.DB)
     customId = crypto.randomUUID()
@@ -529,7 +528,7 @@ describe('custom event details/url', () => {
   let adminToken: string
 
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     const admin = await seedUser({ email: 'admin@b.com', role: 'admin' }); adminToken = await seedSession(admin)
   })
 

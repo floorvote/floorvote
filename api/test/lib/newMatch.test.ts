@@ -1,14 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations } from '../helpers'
+import { clearDb } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig } from '../../src/db/schema'
 import { getNewMatchMinRelevance } from '../../src/lib/newMatch'
 
 describe('getNewMatchMinRelevance', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   async function setConfig(value: string) {

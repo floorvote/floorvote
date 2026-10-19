@@ -3,10 +3,10 @@ import { env } from 'cloudflare:test'
 import { getDb } from '../../src/db/client'
 import { associationConfig } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
-import { resetDb, applyMigrations } from '../helpers'
+import { clearDb } from '../helpers'
 import { recordResendUsage, recordResendThrottle } from '../../src/lib/resendUsage'
 
-beforeEach(async () => { await resetDb(); await applyMigrations() })
+beforeEach(async () => { await clearDb() })
 
 function resWith(headers: Record<string, string>, status = 200): Response {
   return new Response('{}', { status, headers })

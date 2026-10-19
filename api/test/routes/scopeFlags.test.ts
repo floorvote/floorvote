@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, appFetch, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, appFetch, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills, memberVotes, notes } from '../../src/db/schema'
 import { app } from '../../src/index'
@@ -33,8 +33,7 @@ describe('the scope toggles read 1 and true alike', () => {
   const ALL = ['HB 1', 'HB 2', 'HB 3', 'HB 4']
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     ada = await seedUser({ role: 'admin', email: 'ada@example.com' })
     ben = await seedUser({ role: 'member', email: 'ben@example.com' })
     adaToken = await seedSession(ada)
@@ -94,7 +93,7 @@ describe('the scope toggles read 1 and true alike', () => {
   })
 
   describe('GET /bills with the list cache on', () => {
-    // The Workers Cache API outlives resetDb, so each test names its own tenant.
+    // The Workers Cache API outlives clearDb, so each test names its own tenant.
     const cached = (tenant: string) => async (token: string, qs: string) => {
       const res = await app.request(`/api/bills?${qs}`, { headers: { Cookie: `session=${token}` } }, { ...env, TENANT_ID: tenant, LIST_CACHE_TTL: '60' })
       expect(res.status).toBe(200)

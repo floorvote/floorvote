@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF, env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, bills } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
@@ -14,7 +14,7 @@ async function seedTaxonomy(names: string[]) {
 describe('tag taxonomy filtering — chips', () => {
   let token: string
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'admin', email: 'a@e.com' })
     token = await seedSession(adminId)
     await seedTaxonomy(['Elections'])
@@ -38,7 +38,7 @@ describe('tag taxonomy filtering — chips', () => {
 describe('tag taxonomy filtering — facets', () => {
   let token: string
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'admin', email: 'a@e.com' })
     token = await seedSession(adminId)
     await getDb(env.DB).insert(associationConfig).values({
@@ -72,7 +72,7 @@ describe('tag taxonomy filtering — "Any tag" list filter', () => {
   }
 
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'admin', email: 'a@e.com' })
     token = await seedSession(adminId)
   })
@@ -154,7 +154,7 @@ describe('tag taxonomy filtering — "Any tag" list filter', () => {
 describe('tag taxonomy filtering — bulk filter', () => {
   let token: string
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'admin', email: 'a@e.com' })
     token = await seedSession(adminId)
     await seedTaxonomy(['Elections'])
@@ -179,7 +179,7 @@ describe('tag taxonomy filtering — bulk filter', () => {
 
 describe('public /config exposes tagTaxonomy', () => {
   it('returns the configured taxonomy tag names', async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     const uid = await seedUser({ role: 'member', email: 'm@e.com' })
     const token = await seedSession(uid)
     await getDb(env.DB).insert(associationConfig).values({

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
 import { eq, inArray } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, billCustomFieldValues, bills, comments, customFieldDefinitions, memberVotes, notes, officialPositions } from '../../src/db/schema'
 import { splitFromGroup } from '../../src/lib/companionGroups'
@@ -56,8 +56,7 @@ describe('bill list: one row per companion group', () => {
   }
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     ada = await seedUser({ name: 'ada', email: 'ada@example.com', role: 'admin' })
     ben = await seedUser({ name: 'ben', email: 'ben@example.com', role: 'member' })
     cookie = `session=${await seedSession(ada)}`

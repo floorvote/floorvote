@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
+import { clearDb, seedUser, seedSession } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig } from '../../src/db/schema'
 import { claimLinksEnabled } from '../../src/lib/claimSources'
@@ -45,8 +45,7 @@ describe('the claim links setting (admin API)', () => {
     .filter(r => r.key.startsWith('claim_links'))
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Avery Admin' })
     adminCookie = `session=${await seedSession(adminId)}`
     ownerId = await seedUser({ role: 'owner', email: 'owner@example.com', name: 'Olive Owner' })

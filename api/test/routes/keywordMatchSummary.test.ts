@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig } from '../../src/db/schema'
 import { centralFetch } from '../../src/lib/centralFetch'
@@ -24,8 +24,7 @@ describe('POST /admin/keyword-match-summary', () => {
   let adminCookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     vi.clearAllMocks()
     clearKeywordMatchCorpus()
     await getDb(env.DB).delete(associationConfig)

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedBill, seedUser } from '../helpers'
+import { clearDb, seedBill, seedUser } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { billGroupOverrides, bills } from '../../src/db/schema'
 import { previewSplit, splitFromGroup, syncIdenticalCompanions } from '../../src/lib/companionGroups'
@@ -40,8 +40,7 @@ function instance(seed: number): Instance {
 }
 
 async function settle(inst: Instance, order: number[], later: 'drop' | 'keep' = 'keep'): Promise<Array<string | null>> {
-  await resetDb()
-  await applyMigrations()
+  await clearDb()
   const admin = await seedUser({ role: 'admin', email: 'ada@example.com', name: 'ada' })
   for (let i = 0; i < BILLS; i++) await seedBill({ id: id(i), billNumber: `B${i}`, state: 'NJ', externalId: `legiscan:${100 + i}` })
   const db = getDb(env.DB)

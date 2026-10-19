@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations } from '../helpers'
+import { clearDb } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { processCentralNotification, processQueue } from '../../src/queue/processor'
 import worker from '../../src/index'
@@ -20,8 +20,7 @@ const probe = (over: Partial<TenantQueueMessage> = {}): TenantQueueMessage =>
 let fetchMock: ReturnType<typeof vi.fn>
 
 beforeEach(async () => {
-  await resetDb()
-  await applyMigrations()
+  await clearDb()
   vi.clearAllMocks()
   fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ billId: 'legiscan:42', title: 'A bill', number: 'HB 1' }), { status: 200 }))
   vi.stubGlobal('fetch', fetchMock)

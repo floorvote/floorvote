@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations } from '../helpers'
+import { clearDb } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, authEvents, emailSendStats } from '../../src/db/schema'
 import { sendSignInLink, sendSignInLinkLogged } from '../../src/lib/signInLink'
@@ -31,7 +31,7 @@ async function stats() {
 const events = async () => getDb(env.DB).select().from(authEvents).all()
 
 beforeEach(async () => {
-  await resetDb(); await applyMigrations()
+  await clearDb()
   vi.spyOn(console, 'error').mockImplementation(() => {})
   vi.spyOn(console, 'warn').mockImplementation(() => {})
 })

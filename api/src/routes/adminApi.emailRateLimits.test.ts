@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
 import { app } from '../index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedAuthEvent } from '../../test/helpers'
+import { clearDb, seedUser, seedSession, seedAuthEvent } from '../../test/helpers'
 import { getDb } from '../db/client'
 import { users, authEvents } from '../db/schema'
 import { resetMail, signInSent, backgroundWork } from '../../test/mail'
@@ -73,8 +73,7 @@ describe('admin email routes: rate limits', () => {
 
   beforeEach(async () => {
     resetMail()
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Ada Admin' })
     adminCookie = `session=${await seedSession(adminId)}`
   })

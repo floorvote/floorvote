@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { extractMentions, mentionEmailsEnabled } from '../../src/lib/mentions'
 import { stripHtml } from '../../src/lib/stripHtml'
-import { resetDb, applyMigrations } from '../helpers'
+import { clearDb } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig } from '../../src/db/schema'
 
@@ -94,7 +94,7 @@ describe('stripHtml', () => {
 })
 
 describe('mentionEmailsEnabled', () => {
-  beforeEach(async () => { await resetDb(); await applyMigrations() })
+  beforeEach(async () => { await clearDb() })
 
   it('defaults to true when the flag is unset', async () => {
     expect(await mentionEmailsEnabled(getDb(env.DB))).toBe(true)

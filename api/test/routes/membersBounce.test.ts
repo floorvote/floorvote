@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink, seedAuthEvent } from '../helpers'
+import { clearDb, seedUser, seedSession, seedMagicLink, seedAuthEvent } from '../helpers'
 
 type MemberRow = { id: string; email: string; emailBounce: { reason: string | null } | null }
 
@@ -25,7 +25,7 @@ describe('GET /admin/members — emailBounce', () => {
   let cookie: string
 
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ role: 'admin', email: 'admin@example.test' })
     cookie = `session=${await seedSession(adminId)}`
   })

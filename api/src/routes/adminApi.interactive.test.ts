@@ -11,13 +11,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../index'
-import {
-  resetDb,
-  applyMigrations,
-  seedUser,
-  seedSession,
-  seedBill,
-} from '../../test/helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../../test/helpers'
 import { getDb } from '../db/client'
 import { associationConfig, bills } from '../db/schema'
 import { eq } from 'drizzle-orm'
@@ -37,8 +31,7 @@ describe('interactive flag origination invariant', () => {
   let adminCookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Admin User' })
     const adminToken = await seedSession(adminId)
     adminCookie = `session=${adminToken}`

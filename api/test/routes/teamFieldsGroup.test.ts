@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
 import { and, eq } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, billCustomFieldValues, bills, customFieldDefinitions, officialPositions, teamEvents } from '../../src/db/schema'
 import { syncIdenticalCompanions } from '../../src/lib/companionGroups'
@@ -96,8 +96,7 @@ describe('team fields across a companion group', () => {
   }
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     vi.mocked(centralFetch).mockReset()
     vi.mocked(centralFetch).mockRejectedValue(new Error('central unreachable'))
     for (const [name, role] of [['ann', 'member'], ['ada', 'admin']] as const) {

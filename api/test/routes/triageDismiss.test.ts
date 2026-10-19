@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF, env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
@@ -11,8 +11,7 @@ describe('PATCH /bills/:id/triage-dismiss', () => {
   let billId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ role: 'admin', email: 'admin@example.com' })
     adminToken = await seedSession(adminId)
     billId = await seedBill({ billNumber: 'HB 1', title: 'Election Act', matchType: 'keyword' })

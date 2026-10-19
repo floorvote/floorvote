@@ -2,7 +2,7 @@ import { env } from 'cloudflare:test'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink, seedAuthEvent } from '../helpers'
+import { clearDb, resetDb, applyMigrations, seedUser, seedSession, seedMagicLink, seedAuthEvent } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { users, sessions, authEvents, emailChanges, emailSendStats } from '../../src/db/schema'
 import { requestEmailChange, confirmEmailChange, EMAIL_CHANGE_ERRORS } from '../../src/lib/emailChange'
@@ -113,8 +113,7 @@ let janeSession: string
 let janeCookie: string
 
 beforeEach(async () => {
-  await resetDb()
-  await applyMigrations()
+  await clearDb()
   _resetSuperadminAllowlistCache()
   useBinding()
   superadmins = ['root@operator.example']
@@ -501,12 +500,18 @@ describe('confirming from the new address', () => {
   it('still reports success when the notice to the old address cannot be built after the commit', async () => {
     await env.DB.prepare('DROP TABLE association_config').run()
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const r = await confirm(token)
-    expect(r.status).toBe(200)
-    expect(r.body).toEqual({ ok: true, email: 'jane@newjob.org' })
-    expect((await member(jane)).email).toBe('jane@newjob.org')
-    expect(errors).toHaveBeenCalled()
-    errors.mockRestore()
+    try {
+      const r = await confirm(token)
+      expect(r.status).toBe(200)
+      expect(r.body).toEqual({ ok: true, email: 'jane@newjob.org' })
+      expect((await member(jane)).email).toBe('jane@newjob.org')
+      expect(errors).toHaveBeenCalled()
+    } finally {
+      errors.mockRestore()
+      // The schema is built once per file (test/setup.ts); put the table back.
+      await resetDb()
+      await applyMigrations()
+    }
   })
 
   it('maps a last-moment unique-constraint race to the same clear message', async () => {
@@ -516,12 +521,17 @@ describe('confirming from the new address', () => {
       `CREATE TRIGGER racer BEFORE UPDATE OF email ON users WHEN NEW.email = 'jane@newjob.org'
        BEGIN INSERT INTO users (id, email) VALUES ('racer', 'jane@newjob.org'); END`,
     ).run()
-    const r = await confirm(token)
-    expect(r.status).toBe(409)
-    expect(r.body).toEqual({ error: 'That address is already used by another member.' })
-    expect((await member(jane)).email).toBe('jane@oldjob.org')
-    expect(await sessionAlive(otherSession)).toBe(true)
-    expect((await signIn(oldLink)).status).toBe(200)
+    try {
+      const r = await confirm(token)
+      expect(r.status).toBe(409)
+      expect(r.body).toEqual({ error: 'That address is already used by another member.' })
+      expect((await member(jane)).email).toBe('jane@oldjob.org')
+      expect(await sessionAlive(otherSession)).toBe(true)
+      expect((await signIn(oldLink)).status).toBe(200)
+    } finally {
+      // clearDb() empties tables but keeps triggers; the next test must not race.
+      await env.DB.prepare('DROP TRIGGER IF EXISTS racer').run()
+    }
   })
 
   it("cancels another member's pending change to the same address", async () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedComment } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill, seedComment } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills, memberVotes, officialPositions, notes } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
@@ -8,7 +8,7 @@ import { eq } from 'drizzle-orm'
 describe('DELETE /api/bills/:id guard', () => {
   let adminTok: string
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     adminTok = await seedSession(await seedUser({ role: 'admin', email: 'a@x.com' }))
   })
 

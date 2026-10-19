@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedComment } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill, seedComment } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { comments, notifications } from '../../src/db/schema'
 import { writeNotifications } from '../../src/lib/notifications'
@@ -50,7 +50,7 @@ describe('reacting to a comment notifies its author', () => {
   }
 
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     send = vi.fn(async () => ({ messageId: 'm-1' }))
     cookies.clear()
     billId = await seedBill({ billNumber: 'HB 1' })

@@ -6,7 +6,7 @@ import { getDb } from '../../src/db/client'
 import { bills, billIdenticalLinks, calendarEvents } from '../../src/db/schema'
 import { buildVEvent } from '../../src/lib/ical'
 import { hearingUid } from '../../src/lib/hearingUid'
-import { resetDb, applyMigrations, seedBill } from '../helpers'
+import { clearDb, seedBill } from '../helpers'
 import { processBill } from '../../src/lib/llm'
 
 // Release 1 of the neutral handle rename (#305): a tenant accepts a bill handle
@@ -73,8 +73,7 @@ function calendarBlock(identityKey = '1|house cmte on elections') {
 
 describe('a tenant receiving a neutral bill handle', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     vi.clearAllMocks()
     stubCentral()
   })
@@ -144,8 +143,7 @@ describe('a tenant receiving a neutral bill handle', () => {
 
 describe('a sync batch mixing legacy and neutral handles', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     vi.clearAllMocks()
     stubCentral()
   })
@@ -171,8 +169,7 @@ describe('a sync batch mixing legacy and neutral handles', () => {
 
   it('gives the same result whichever form comes first', async () => {
     const run = async (order: string[]) => {
-      await resetDb()
-      await applyMigrations()
+      await clearDb()
       await processQueue(order.map(h => queueMessage(msg(h, { matchType: 'keyword' }))) as any, testEnv as any, db())
       return (await allBills()).map(r => [r.externalId, r.title]).sort()
     }
@@ -182,8 +179,7 @@ describe('a sync batch mixing legacy and neutral handles', () => {
 
 describe('hearing UIDs stay legacy', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     vi.clearAllMocks()
     stubCentral()
   })
@@ -220,8 +216,7 @@ describe('hearing UIDs stay legacy', () => {
 
   it('builds a byte-identical calendar entry whether the first delivery was legacy or neutral', async () => {
     const build = async (handle: string) => {
-      await resetDb()
-      await applyMigrations()
+      await clearDb()
       const id = await seedBill({ billNumber: 'H 999', state: 'RI', session: '2026 Regular Session', externalId: 'legiscan:999', matchType: 'keyword', priority: 'high', aiProcessedAt: '2026-06-01T00:00:00Z' })
       await process(msg(handle, { calendar: calendarBlock() }))
       const [row] = await db().select().from(calendarEvents).where(and(eq(calendarEvents.billId, id))).all()
@@ -240,8 +235,7 @@ describe('hearing UIDs stay legacy', () => {
 // find the migrated rows by either spelling, and never insert a second one (#305).
 describe('a tenant whose rows are already stored under the neutral handle', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     vi.clearAllMocks()
     stubCentral()
   })

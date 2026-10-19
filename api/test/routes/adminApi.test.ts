@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedMagicLink, seedRole, seedUserRole, seedAuthEvent } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill, seedMagicLink, seedRole, seedUserRole, seedAuthEvent } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { users, sessions, magicLinks, associationConfig, bills, comments, memberVotes, notes, feedEvents, roles, userRoles, authEvents, teamEvents } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
@@ -26,8 +26,7 @@ describe('Admin Members API', () => {
   let memberCookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Admin User' })
     const adminToken = await seedSession(adminId)
     adminCookie = `session=${adminToken}`
@@ -722,8 +721,7 @@ describe('auth event logging — admin invite', () => {
   let adminCookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Admin User' })
     const adminToken = await seedSession(adminId)
     adminCookie = `session=${adminToken}`
@@ -768,8 +766,7 @@ describe('Admin Config API', () => {
   let memberCookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const db = getDb(env.DB)
     await db.delete(associationConfig)
     adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Admin User' })
@@ -1013,8 +1010,7 @@ describe('POST /admin/refresh-metadata', () => {
   let adminCookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Admin User' })
     const adminToken = await seedSession(adminId)
     adminCookie = `session=${adminToken}`
@@ -1065,8 +1061,7 @@ describe('POST /admin/reprocess-bill/:externalId', () => {
   let adminCookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'admin' })
     const adminToken = await seedSession(adminId)
     adminCookie = `session=${adminToken}`
@@ -1112,8 +1107,7 @@ describe('POST /admin/reprocess-bill/:externalId for a bill pulled in by its gro
   }, { ...env, BILL_QUEUE: mockQueue })
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     sent.length = 0
     adminCookie = `session=${await seedSession(await seedUser({ role: 'admin' }))}`
     await seedBill({ id: 'a190', billNumber: 'A190', externalId: 'legiscan:190', matchType: 'keyword', tenantSummary: 'x', aiProcessedAt: '2026-09-01 00:00:00' })
@@ -1154,8 +1148,7 @@ describe('GET /admin/config taxonomy handling', () => {
   let adminCookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const db = getDb(env.DB)
     await db.delete(associationConfig)
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Admin User' })
@@ -1207,8 +1200,7 @@ describe('Role CRUD', () => {
   let memberCookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Admin User' })
     const adminToken = await seedSession(adminId)
     adminCookie = `session=${adminToken}`
@@ -1434,8 +1426,7 @@ describe('PUT /admin/members/:id/roles', () => {
   let memberCookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Admin User' })
     const adminToken = await seedSession(adminId)
     adminCookie = `session=${adminToken}`
@@ -1491,8 +1482,7 @@ describe('PUT /admin/config — keyword-sync side effect', () => {
   let adminCookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const db = getDb(env.DB)
     await db.delete(sessions)
     await db.delete(users)
@@ -1541,8 +1531,7 @@ describe('POST /admin/keyword-resync', () => {
   let adminCookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const db = getDb(env.DB)
     await db.delete(associationConfig)
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Admin User' })
@@ -1826,7 +1815,7 @@ describe('POST /admin/keyword-resync', () => {
 describe('POST /admin/keyword-resync-preview — priority protection', () => {
   let adminCookie: string
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     await getDb(env.DB).delete(associationConfig)
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Admin User' })
     adminCookie = `session=${await seedSession(adminId)}`
@@ -1851,7 +1840,7 @@ describe('POST /admin/keyword-resync-preview — priority protection', () => {
 describe('POST /admin/keyword-resync-preview — wildcard keyword', () => {
   let adminCookie: string
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     await getDb(env.DB).delete(associationConfig)
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Admin User' })
     adminCookie = `session=${await seedSession(adminId)}`
@@ -1901,8 +1890,7 @@ describe('POST /admin/reprocess-llm-all — scope', () => {
   let adminCookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Admin User' })
     const adminToken = await seedSession(adminId)
     adminCookie = `session=${adminToken}`
@@ -1964,8 +1952,7 @@ describe('GET /admin/members/:id/auth-events', () => {
   let adminCookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.com' })
     const adminToken = await seedSession(adminId)
     adminCookie = `session=${adminToken}`
@@ -2019,8 +2006,7 @@ describe('GET /admin/members — loginTrouble flag', () => {
   let adminCookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Admin User' })
     const adminToken = await seedSession(adminId)
     adminCookie = `session=${adminToken}`
@@ -2075,8 +2061,7 @@ describe('GET /admin/unknown-login-attempts', () => {
   let adminCookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.com' })
     const adminToken = await seedSession(adminId)
     adminCookie = `session=${adminToken}`

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills, memberVotes, officialPositions, billSubjects, customFieldDefinitions, billCustomFieldValues } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
@@ -18,7 +18,7 @@ type ListBody = {
   pagination: { total: number }
 }
 
-// The Workers Cache API (caches.default) is NOT reset by resetDb between tests.
+// The Workers Cache API (caches.default) is NOT reset by clearDb between tests.
 // Default-list cache keys exclude bill IDs, so without isolation a prior test's
 // cached page could leak into the next. Give each test a unique TENANT_ID so its
 // cache keys never collide with another test's.
@@ -123,8 +123,7 @@ describe('GET /bills default-list caching', () => {
   let list: ReturnType<typeof makeList>
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     list = makeList(`cache-test-${crypto.randomUUID()}`)
     userId = await seedUser()
     token = await seedSession(userId)

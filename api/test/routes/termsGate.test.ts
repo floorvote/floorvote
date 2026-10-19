@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink, stubFetch } from '../helpers'
+import { clearDb, seedUser, seedSession, seedMagicLink, stubFetch } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { termsAcceptances } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
@@ -35,8 +35,7 @@ describe('the terms gate in requireAuth', () => {
   let cookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     userId = await seedUser({ role: 'member' })
     await seedMagicLink(userId, { used: true })
     cookie = `session=${await seedSession(userId)}`
@@ -115,8 +114,7 @@ describe('POST /api/auth/accept-terms', () => {
   let cookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     userId = await seedUser({ role: 'member' })
     await seedMagicLink(userId, { used: true })
     cookie = `session=${await seedSession(userId)}`
@@ -202,8 +200,7 @@ describe('GET /auth/me reports acceptance state', () => {
   let cookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     userId = await seedUser({ role: 'member' })
     cookie = `session=${await seedSession(userId)}`
   })
@@ -285,8 +282,7 @@ describe('superadmins skip the terms gate', () => {
   const acceptRows = async () => getDb(env.DB).select().from(termsAcceptances).all()
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     _resetSuperadminAllowlistCache()
   })
 

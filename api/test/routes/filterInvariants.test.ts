@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { app } from '../../src/index'
 import { inArray } from 'drizzle-orm'
@@ -126,8 +126,7 @@ for (const grouped of [false, true]) describe(`filter algebra${grouped ? ' on co
   }
 
   beforeAll(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const userId = await seedUser({ role: 'admin' })
     token = await seedSession(userId)
 

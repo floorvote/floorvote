@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
 import { asc, eq } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { billGroupOverrides, bills, comments, officialPositions, teamEvents } from '../../src/db/schema'
 import { rowidOf } from '../../src/db/rowid'
@@ -55,8 +55,7 @@ describe('grouping and splitting bills by hand', () => {
     syncIdenticalCompanions(db(), handle, companions.map(sastBillId => ({ sastBillId, kind: 'identical' })))
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     send.mockReset()
     vi.mocked(centralFetch).mockReset()
     vi.mocked(centralFetch).mockResolvedValue(new Response('{}', { status: 200 }))

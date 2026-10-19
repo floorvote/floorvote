@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF, env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills } from '../../src/db/schema'
 import { eq, inArray } from 'drizzle-orm'
@@ -12,8 +12,7 @@ describe('POST /bills/bulk-dismiss', () => {
   let nm1: string, nm2: string, prioritized: string, manual: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ role: 'admin', email: 'admin@example.com' })
     adminToken = await seedSession(adminId)
     nm1 = await seedBill({ billNumber: 'NM 1', matchType: 'keyword', newMatchAt: MATCH, relevanceScore: 80 })

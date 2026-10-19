@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
 import { eq, inArray } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills, memberVotes, notes, officialPositions } from '../../src/db/schema'
 import { centralFetch } from '../../src/lib/centralFetch'
@@ -40,8 +40,7 @@ describe('bulk actions on companion groups', () => {
   }
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     vi.mocked(centralFetch).mockReset()
     vi.mocked(centralFetch).mockRejectedValue(new Error('central unreachable'))
     ada = await seedUser({ name: 'ada', email: 'ada@example.com', role: 'admin' })

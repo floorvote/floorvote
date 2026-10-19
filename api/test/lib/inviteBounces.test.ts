@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { env } from 'cloudflare:test'
 import { and, eq, inArray } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedUser, seedAuthEvent, seedMagicLink } from '../helpers'
+import { clearDb, seedUser, seedAuthEvent, seedMagicLink } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { authEvents, users } from '../../src/db/schema'
 import { runInviteBounceCheck } from '../../src/lib/inviteBounces'
@@ -59,7 +59,7 @@ async function seedSent(userId: string, email: string, messageId: string, opts: 
 
 describe('runInviteBounceCheck', () => {
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     inviterId = await seedUser({ role: 'admin', email: 'inviter@example.test' })
   })
   afterEach(() => { vi.restoreAllMocks() })

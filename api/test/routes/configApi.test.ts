@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { SELF } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
+import { clearDb, seedUser, seedSession } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { env } from 'cloudflare:test'
 import { associationConfig, customFieldDefinitions } from '../../src/db/schema'
@@ -39,8 +39,7 @@ describe('GET /config', () => {
   let cookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const userId = await seedUser({ role: 'member' })
     const token = await seedSession(userId)
     cookie = `session=${token}`
@@ -251,8 +250,7 @@ describe('PUT /admin/config', () => {
   let cookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     // requireAdmin gates the whole /admin/* router, so this needs an
     // admin-or-owner session — unlike the plain-member cookie GET /config uses.
     const userId = await seedUser({ role: 'owner' })
@@ -282,8 +280,7 @@ describe('GET /config orgNoun', () => {
   let cookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const userId = await seedUser({ role: 'member' })
     const token = await seedSession(userId)
     cookie = `session=${token}`
@@ -331,8 +328,7 @@ describe('GET /config/sessions', () => {
   let cookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const userId = await seedUser({ role: 'member' })
     const token = await seedSession(userId)
     cookie = `session=${token}`
@@ -375,8 +371,7 @@ describe('GET /config/sessions', () => {
 
 describe('GET /config/custom-fields', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   it('returns pinned: false by default for a newly created field', async () => {

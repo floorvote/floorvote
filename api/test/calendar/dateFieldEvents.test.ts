@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
 import { and, eq } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, billCustomFieldValues, bills, customFieldDefinitions } from '../../src/db/schema'
 import { runWeekAhead } from '../../src/lib/weekAhead'
@@ -27,8 +27,7 @@ let userId: string
 let token: string
 
 beforeEach(async () => {
-  await resetDb()
-  await applyMigrations()
+  await clearDb()
   userId = await seedUser({ email: 'a@b.com', role: 'admin' })
   token = await seedSession(userId)
   resetMail()

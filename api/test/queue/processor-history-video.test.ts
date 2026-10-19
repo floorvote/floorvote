@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedBill } from '../helpers'
+import { clearDb, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { processCentralNotification } from '../../src/queue/processor'
 import { bills } from '../../src/db/schema'
@@ -37,8 +37,7 @@ async function history(actions: object[], flags: Partial<TenantQueueMessage>) {
 
 describe('a meeting video on a history entry', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   afterEach(() => {

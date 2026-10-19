@@ -5,7 +5,7 @@ import { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core'
 import { comments } from '../../src/db/schema'
 import { getDb } from '../../src/db/client'
 import { rowidOf } from '../../src/db/rowid'
-import { resetDb, applyMigrations, seedUser } from '../helpers'
+import { clearDb, seedUser } from '../helpers'
 
 const dialect = new SQLiteSyncDialect()
 const render = (table: Parameters<typeof rowidOf>[0]) => dialect.sqlToQuery(rowidOf(table)).sql
@@ -21,8 +21,7 @@ describe('rowidOf', () => {
 
   describe('against D1', () => {
     beforeEach(async () => {
-      await resetDb()
-      await applyMigrations()
+      await clearDb()
     })
 
     it('resolves when the comments table is aliased', async () => {

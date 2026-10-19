@@ -1,10 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
 import { getDb } from '../../src/db/client'
 import { customFieldDefinitions, billCustomFieldValues } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 
 // Saved views follow a custom field's rename and a dropdown option's rename (#703): the field row and every
 // view that filters on it change in one request, or none do.
@@ -53,12 +53,18 @@ async function fieldRow(fieldId: string) {
 }
 
 beforeEach(async () => {
-  await resetDb()
-  await applyMigrations()
+  await clearDb()
   adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Admin' })
   adminCookie = `session=${await seedSession(adminId)}`
   const memberId = await seedUser({ role: 'member', email: 'member@example.com', name: 'Member' })
   memberCookie = `session=${await seedSession(memberId)}`
+})
+
+// The write-failure tests below install a trigger that aborts updates to
+// saved_views. Drop it afterwards: clearDb() empties users, whose ON DELETE
+// SET NULL on saved_views.created_by is an update, and would trip it.
+afterEach(async () => {
+  await env.DB.exec('DROP TRIGGER IF EXISTS fail_view; DROP TRIGGER IF EXISTS fail_view_b;')
 })
 
 describe('renaming a custom field', () => {

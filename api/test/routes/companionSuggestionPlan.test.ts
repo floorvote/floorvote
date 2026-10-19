@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
+import { clearDb, seedUser, seedSession } from '../helpers'
 import { centralFetch } from '../../src/lib/centralFetch'
 
 // The query plans of the companion suggestion's lookup (#521). The lookup runs
@@ -52,8 +52,7 @@ describe('companion suggestion query plans', () => {
   const SCANS_BILLS = /SCAN (bills|b|o|other)\b(?! USING)/
 
   beforeAll(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const userId = await seedUser({ role: 'admin' })
     cookie = `session=${await seedSession(userId)}`
     // 40,000 bills in two states and four sessions each. In one state, every bill has a chamber and every

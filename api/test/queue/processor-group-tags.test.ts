@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedBill } from '../helpers'
+import { clearDb, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { processCentralNotification } from '../../src/queue/processor'
 import { associationConfig } from '../../src/db/schema'
@@ -66,8 +66,7 @@ async function groupTags(): Promise<Record<string, string[]>> {
 
 describe('group tags follow analyses and groups', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     vi.clearAllMocks()
     central.clear()
     await getDb(env.DB).insert(associationConfig).values({ key: 'tag_taxonomy', value: JSON.stringify([{ name: 'Energy' }, { name: 'Labor' }, { name: 'Housing' }]) })

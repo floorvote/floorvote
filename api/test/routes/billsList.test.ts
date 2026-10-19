@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { billSubjects, associationConfig } from '../../src/db/schema'
 import { app } from '../../src/index'
@@ -42,8 +42,7 @@ describe('GET /bills — subject filtering', () => {
   let token: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const userId = await seedUser()
     token = await seedSession(userId)
   })
@@ -179,8 +178,7 @@ describe('GET /bills — subject suppression', () => {
   let token: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const userId = await seedUser()
     token = await seedSession(userId)
   })
@@ -265,8 +263,7 @@ describe('GET /bills/facets — billStates', () => {
   let token: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     clearBillStatesCache()
     token = await seedSession(await seedUser())
   })

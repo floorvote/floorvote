@@ -1,13 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedMagicLink } from '../helpers'
+import { clearDb, seedUser, seedMagicLink } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { usedMagicLinkCount } from '../../src/lib/loginHistory'
 
 describe('usedMagicLinkCount', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   it('is 0 for a user who has never used a link — the superadmin JWT case', async () => {

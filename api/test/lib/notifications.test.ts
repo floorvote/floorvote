@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedComment, seedCommentMention } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill, seedComment, seedCommentMention } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { comments, roles } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
@@ -51,8 +51,7 @@ describe('GET /notifications', () => {
   let commentId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     userId = await seedUser({ name: 'Jane', email: 'jane@example.com' })
     token = await seedSession(userId)
     authorId = await seedUser({ name: 'Bob', email: 'bob@example.com' })
@@ -170,8 +169,7 @@ describe('POST /notifications/mark-read (bulk)', () => {
   let token: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     userId = await seedUser({ email: 'jane@example.com' })
     token = await seedSession(userId)
     const authorId = await seedUser({ email: 'bob@example.com' })
@@ -212,8 +210,7 @@ describe('POST /notifications/mark-read/:commentId (single)', () => {
   let commentId2: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     userId = await seedUser({ email: 'jane@example.com' })
     token = await seedSession(userId)
     const authorId = await seedUser({ email: 'bob@example.com' })
@@ -239,8 +236,7 @@ describe('POST /notifications/mark-read-by-bill/:billId (bill page opened)', () 
   let billB: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     userId = await seedUser({ email: 'jane@example.com' })
     token = await seedSession(userId)
     authorId = await seedUser({ email: 'bob@example.com' })

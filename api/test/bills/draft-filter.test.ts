@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { inArray } from 'drizzle-orm'
-import { resetDb, applyMigrations, appFetch, stubFetch, seedUser, seedSession } from '../helpers'
+import { clearDb, appFetch, stubFetch, seedUser, seedSession } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills } from '../../src/db/schema'
 
@@ -14,8 +14,7 @@ describe('GET /api/bills — drafts filter', () => {
   let memberToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ email: 'admin@x.com', role: 'admin' })
     adminToken = await seedSession(adminId)
     const memberId = await seedUser({ email: 'member@x.com', role: 'member' })
@@ -60,8 +59,7 @@ describe('POST /api/bills/bulk — drafts filter must scope the write', () => {
   let adminToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ email: 'admin@x.com', role: 'admin' })
     adminToken = await seedSession(adminId)
   })

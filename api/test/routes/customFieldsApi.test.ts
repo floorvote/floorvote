@@ -1,14 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
 import { getDb } from '../../src/db/client'
-import { resetDb, applyMigrations, seedUser, seedSession, seedRole, seedUserRole } from '../helpers'
+import { clearDb, seedUser, seedSession, seedRole, seedUserRole } from '../helpers'
 import { customFieldDefinitions } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
 
 describe('GET /admin/custom-fields', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   it('returns pinned: false by default', async () => {
@@ -70,8 +69,7 @@ describe('PUT /admin/custom-fields/:id (pinned)', () => {
   let fieldId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'owner' })
     adminToken = await seedSession(adminId)
 
@@ -161,8 +159,7 @@ describe('PUT /admin/custom-fields/:id (pinned)', () => {
 
 describe('GET /config/custom-fields', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   it('includes pinned field in response', async () => {
@@ -197,8 +194,7 @@ describe('GET /config/custom-fields', () => {
 // server's check stays as the backstop for any other client.
 describe('POST /admin/custom-fields dropdown options backstop', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   async function post(body: Record<string, unknown>) {

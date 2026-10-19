@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { env } from 'cloudflare:test'
 import { eq, inArray } from 'drizzle-orm'
-import { appFetch, resetDb, applyMigrations, seedUser, seedSession, seedBill, seedComment } from '../helpers'
+import { clearDb, appFetch, seedUser, seedSession, seedBill, seedComment } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, bills, feedEvents } from '../../src/db/schema'
 import { stubResend } from '../../../shared/emailTestKit'
@@ -185,7 +185,7 @@ describe('runDigest: saved views', () => {
   }
 
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     resend = stubResend()
     await db().insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'email-digest': true }) })
     const a = await person('admin@example.com', 'admin'); admin = a.id; adminCookie = a.cookie

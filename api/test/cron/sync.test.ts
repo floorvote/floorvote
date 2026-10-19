@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { applyMigrations } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { registerWithCentral } from '../../src/cron/sync'
 import { associationConfig } from '../../src/db/schema'
@@ -18,7 +17,6 @@ describe('registerWithCentral', () => {
   let fetchCalls: { url: string; options: RequestInit }[] = []
 
   beforeEach(async () => {
-    await applyMigrations()
     fetchCalls = []
     vi.stubGlobal('fetch', vi.fn(async (url: string, options: RequestInit) => {
       fetchCalls.push({ url, options })

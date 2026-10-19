@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, stubFetch, seedUser, seedSession } from '../helpers'
+import { clearDb, stubFetch, seedUser, seedSession } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { app } from '../../src/index'
 import { processCentralNotification } from '../../src/queue/processor'
@@ -74,8 +74,7 @@ describe('claim links setting, through the analysis pipeline', () => {
   let memberCookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     vi.clearAllMocks()
     geminiGenerateMock.mockReset()
     await getDb(env.DB).insert(associationConfig).values([

@@ -10,9 +10,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF } from 'cloudflare:test'
-import {
-  resetDb, applyMigrations, seedUser, seedSession, seedBill, seedComment, seedCommentMention,
-} from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill, seedComment, seedCommentMention } from '../helpers'
 
 describe('GET /notifications — billIsDraft', () => {
   let recipientToken: string
@@ -20,8 +18,7 @@ describe('GET /notifications — billIsDraft', () => {
   let authorId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     recipientId = await seedUser({ email: 'r@b.com', name: 'Rita' })
     recipientToken = await seedSession(recipientId)
     authorId = await seedUser({ email: 'a@b.com', name: 'Alice' })

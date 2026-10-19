@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedAuthEvent } from '../helpers'
+import { clearDb, seedUser, seedAuthEvent } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { previouslyBouncedAddresses, isPreviouslyBounced } from '../../src/lib/bouncedAddresses'
 
@@ -31,8 +31,7 @@ describe('previouslyBouncedAddresses', () => {
 
   beforeEach(async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     memberId = await seedUser({ email: 'someone@example.com' })
   })
 

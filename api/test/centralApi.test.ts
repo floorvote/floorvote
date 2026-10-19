@@ -1,11 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env, createExecutionContext } from 'cloudflare:test'
 import { CentralApi } from '../src/centralApi'
-import { resetDb, applyMigrations, stubFetch, seedBill } from './helpers'
+import { clearDb, stubFetch, seedBill } from './helpers'
 
 beforeEach(async () => {
-  await resetDb()
-  await applyMigrations()
+  await clearDb()
 })
 
 describe('CentralApi RPC entrypoint', () => {

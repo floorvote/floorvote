@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
-import { applyMigrations, resetDb } from '../helpers'
+import { clearDb } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { ensureAssociationName } from '../../src/lib/associationName'
 import { associationConfig } from '../../src/db/schema'
@@ -19,10 +19,9 @@ async function getName(db: ReturnType<typeof getDb>): Promise<string | undefined
 
 describe('ensureAssociationName', () => {
   beforeEach(async () => {
-    // resetDb first: D1 state persists across tests within a file, and other
+    // clearDb first: D1 state persists across tests within a file, and other
     // tests in this describe leave an edited association_name behind.
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   it('replaces the migration placeholder with ASSOCIATION_NAME', async () => {

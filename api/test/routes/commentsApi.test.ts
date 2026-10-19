@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, appFetch, stubFetch, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, appFetch, stubFetch, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { comments, commentReactions, feedEvents } from '../../src/db/schema'
 import { REACTION_EMOJIS } from '../../../shared/reactionEmojis'
@@ -23,8 +23,7 @@ describe('GET /bills/:id/comments', () => {
 
   beforeEach(async () => {
     stubFetch() // mention emails go out through fetch
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     memberId = await seedUser({ name: 'Alice', title: 'Clerk' })
     memberToken = await seedSession(memberId)
     billId = await seedBill()
@@ -70,8 +69,7 @@ describe('POST /bills/:id/comments', () => {
 
   beforeEach(async () => {
     stubFetch() // mention emails go out through fetch
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     memberId = await seedUser()
     memberToken = await seedSession(memberId)
     billId = await seedBill()
@@ -137,8 +135,7 @@ describe('PATCH /comments/:id (sanitization, H5)', () => {
 
   beforeEach(async () => {
     stubFetch() // mention emails go out through fetch
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     memberId = await seedUser()
     memberToken = await seedSession(memberId)
     billId = await seedBill()
@@ -174,8 +171,7 @@ describe('PATCH /comments/:id (feed preview)', () => {
 
   beforeEach(async () => {
     stubFetch() // mention emails go out through fetch
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     memberId = await seedUser()
     memberToken = await seedSession(memberId)
     billId = await seedBill()
@@ -231,8 +227,7 @@ describe('POST /comments/:id/reactions', () => {
 
   beforeEach(async () => {
     stubFetch() // mention emails go out through fetch
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     memberId = await seedUser()
     memberToken = await seedSession(memberId)
     const billId = await seedBill()
@@ -361,8 +356,7 @@ describe('DELETE /comments/:id/reactions/:emoji', () => {
 
   beforeEach(async () => {
     stubFetch() // mention emails go out through fetch
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     memberId = await seedUser()
     memberToken = await seedSession(memberId)
     const billId = await seedBill()
@@ -431,8 +425,7 @@ describe('DELETE /comments/:id', () => {
 
   beforeEach(async () => {
     stubFetch() // mention emails go out through fetch
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     memberId = await seedUser({ role: 'member' })
     memberToken = await seedSession(memberId)
     const adminId = await seedUser({ role: 'admin' })

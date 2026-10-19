@@ -1,14 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations } from '../helpers'
+import { clearDb } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills, feedEvents } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
 
 describe('new-match data model', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   it('accepts new_match columns and a bill_matched feed event', async () => {

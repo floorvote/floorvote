@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, appFetch, stubFetch, seedUser, seedSession } from '../helpers'
+import { clearDb, appFetch, stubFetch, seedUser, seedSession } from '../helpers'
 
 // Editing a summary keeps only the claim sources whose claim is still in the
 // edited text (#569). Drafts are the one bill whose summary is edited by hand.
@@ -29,8 +29,7 @@ describe('PATCH /api/bills/:id/draft and claim sources', () => {
 
   beforeEach(async () => {
     stubFetch()
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     token = await seedSession(await seedUser({ email: 'admin@x.com', role: 'admin' }))
     const res = await appFetch('https://x/api/bills/draft', {
       method: 'POST',

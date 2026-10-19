@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { appFetch, resetDb, applyMigrations, stubFetch, seedUser, seedSession } from '../helpers'
+import { clearDb, appFetch, stubFetch, seedUser, seedSession } from '../helpers'
 import { MAX_SUBJECT_FILTERS as SHARED_MAX_SUBJECT_FILTERS } from '../../../shared/limits'
 import { MAX_SUBJECT_FILTERS as API_MAX_SUBJECT_FILTERS } from '../../src/lib/billSubjects'
 
@@ -21,8 +21,7 @@ describe('subject filter cap', () => {
 
   beforeEach(async () => {
     stubFetch()
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     token = await seedSession(await seedUser({ role: 'member', email: 'member@example.com' }))
   })
 

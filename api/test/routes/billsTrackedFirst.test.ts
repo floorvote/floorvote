@@ -1,13 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 
 describe('Tracked-first query optimization', () => {
   let token: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const userId = await seedUser({ role: 'member' })
     token = await seedSession(userId)
   })
@@ -98,8 +97,7 @@ describe('Facets always reflect all bills', () => {
   let token: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const userId = await seedUser({ role: 'member' })
     token = await seedSession(userId)
   })

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedBill } from '../helpers'
+import { clearDb, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { processCentralNotification } from '../../src/queue/processor'
 import { associationConfig, bills, teamEvents } from '../../src/db/schema'
@@ -51,8 +51,7 @@ describe('processor: tags are not recorded as team events', () => {
 
   beforeEach(async () => {
     centralBill.relatedBills = []
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     vi.clearAllMocks()
     await db().insert(associationConfig).values({ key: 'tag_taxonomy', value: JSON.stringify([{ name: 'Energy' }, { name: 'Labor' }]) })
     vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) =>

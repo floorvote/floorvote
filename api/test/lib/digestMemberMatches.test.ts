@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { inArray } from 'drizzle-orm'
 import { feedEvents, associationConfig, bills } from '../../src/db/schema'
@@ -34,7 +34,7 @@ async function priorityUpdate(billNumber: string) {
 }
 
 beforeEach(async () => {
-  await resetDb(); await applyMigrations()
+  await clearDb()
   resend = stubResend()
   const db = getDb(env.DB)
   await db.insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'email-digest': true }) })

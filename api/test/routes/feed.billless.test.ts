@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { feedEvents } from '../../src/db/schema'
 
@@ -16,8 +16,7 @@ describe('GET /feed — bill-less events', () => {
   let memberToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ role: 'admin', name: 'Ada Admin', email: 'ada@example.com' })
     adminToken = await seedSession(adminId)
     memberToken = await seedSession(await seedUser({ name: 'Mia Member', email: 'mia@example.com' }))
@@ -116,8 +115,7 @@ describe('GET /feed/events/:id/bills', () => {
   let memberToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ role: 'admin', name: 'Ada Admin' })
     memberToken = await seedSession(await seedUser({ name: 'Mia Member', email: 'mia@example.com' }))
   })
@@ -171,8 +169,7 @@ describe('GET /feed/events/:id/bills', () => {
 // line must still credit it to the bills it named.
 describe('GET /bills/:id priorityMeta with a bulk priority edit', () => {
   it('credits the bulk edit to every bill it named, and only those', async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'admin', name: 'Ada Admin', email: 'ada@example.com' })
     const adminToken = await seedSession(adminId)
     const otherId = await seedUser({ name: 'Old Setter', email: 'old@example.com' })

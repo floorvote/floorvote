@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations } from '../helpers'
+import { clearDb } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { users, sessions } from '../../src/db/schema'
 import { ensureDemoSession, DEMO_SESSION_TOKEN, DEMO_SESSION_ID } from '../../src/lib/demoSession'
@@ -9,8 +9,7 @@ import { eq } from 'drizzle-orm'
 
 describe('ensureDemoSession — D1 demo session write amplification', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     // The shared session references user_id='demo-user'; seed that row.
     await getDb(env.DB).insert(users).values({
       id: 'demo-user',

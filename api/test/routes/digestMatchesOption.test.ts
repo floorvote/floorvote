@@ -1,17 +1,16 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF } from 'cloudflare:test'
-import { stubFetch, resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
+import { clearDb, stubFetch, seedUser, seedSession } from '../helpers'
 
 // #366: the option nested under the digest switch, "Include newly matched bills".
 describe('the digest new-match option', () => {
   beforeEach(async () => {
-    await resetDb()
+    await clearDb()
     // /auth/me and PATCH /users/me look up central's superadmin allowlist, and the
     // network guard refuses a fetch no test stubbed. An empty allowlist: nobody here is a superadmin.
     stubFetch(url => (new URL(url).pathname === '/api/admin/superadmin/emails'
       ? new Response(JSON.stringify({ hashes: [] }), { status: 200 })
       : new Response('not found', { status: 404 })))
-    await applyMigrations()
   })
 
   const patchMe = (token: string, body: unknown) => SELF.fetch('http://localhost/api/users/me', {

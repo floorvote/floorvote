@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
 import { eq } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedRole, seedUserRole } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill, seedRole, seedUserRole } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills, users } from '../../src/db/schema'
 
@@ -113,7 +113,7 @@ describe('muting comments on a bill', () => {
   }
 
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     send = vi.fn(async () => ({ messageId: 'm-1' }))
     pending = []
     cookies.clear()

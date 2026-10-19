@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedBill } from '../helpers'
+import { clearDb, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig } from '../../src/db/schema'
 import { cachedClaimSourceCounts, recordClaimSourcesCutOff } from '../../src/lib/claimSourceCounts'
@@ -33,8 +33,7 @@ async function analyzedBill(items: number) {
 }
 
 beforeEach(async () => {
-  await resetDb()
-  await applyMigrations()
+  await clearDb()
 })
 
 describe('the cached counts', () => {

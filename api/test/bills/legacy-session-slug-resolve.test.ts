@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { resetDb, applyMigrations, appFetch, stubFetch, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, appFetch, stubFetch, seedUser, seedSession, seedBill } from '../helpers'
 
 // Releases before provider-model slugged a numbered special session to its
 // year: "2026 Special Session 1" was /MD/2026/..., and is /MD/2026-s1/... now.
@@ -13,8 +13,7 @@ describe('resolving a link made before a session got its own slug', () => {
   let cookie: string
   beforeEach(async () => {
     stubFetch() // the bill lookup may ask central in the background; answer it, never reach it
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     cookie = `session=${await seedSession(await seedUser({ email: 'm@x.com' }))}`
   })
   const get = (path: string) => appFetch(`https://x/api/bills/resolve/${path}`, { headers: { Cookie: cookie } })

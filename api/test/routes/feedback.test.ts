@@ -1,14 +1,13 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { SELF, env } from 'cloudflare:test'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
+import { clearDb, seedUser, seedSession } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { emailSendStats, associationConfig } from '../../src/db/schema'
 import { fakeBinding, stubResend, bothBindingFirst } from '../../../shared/emailTestKit'
 
 beforeEach(async () => {
-  await resetDb()
-  await applyMigrations()
+  await clearDb()
 })
 
 afterEach(() => {

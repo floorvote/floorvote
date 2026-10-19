@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
+import { clearDb, seedUser, seedSession } from '../helpers'
 
 // Performance is a requirement of the grouped bill list (#379): it has to stay
 // at the level it had before groups, on the largest instance (about 93,000
@@ -54,8 +54,7 @@ describe('GET /bills query plans', () => {
   const NO_TABLE_SCAN = /SCAN (bills|c|m|k)\b(?! USING)/
 
   beforeAll(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const userId = await seedUser({ role: 'admin' })
     cookie = `session=${await seedSession(userId)}`
     // 30,000 bills. i % 30 = 0 are tracked (1,000). Bills 1 to 7,500 are grouped in pairs, so a

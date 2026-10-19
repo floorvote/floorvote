@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 
 // Regression: `field.` query keys are slug-form in the URL (and therefore in every
 // stored view's query, since a view persists the URL's own search string), but
@@ -13,8 +13,7 @@ describe('GET /bills — field. filter accepts slug or id', () => {
   let token: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'admin', email: 'a@e.com' })
     token = await seedSession(adminId)
   })

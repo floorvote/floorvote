@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedComment, seedCommentMention } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill, seedComment, seedCommentMention } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { users } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
@@ -9,7 +9,7 @@ describe('deactivated member mentions drop out of notifications', () => {
   let userId: string, token: string, authorId: string, billId: string, commentId: string
 
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     userId = await seedUser({ name: 'Jane', email: 'jane@example.com' })
     token = await seedSession(userId)
     authorId = await seedUser({ name: 'Bob', email: 'bob@example.com' })

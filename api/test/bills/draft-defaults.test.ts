@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
+import { clearDb, seedUser, seedSession } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills } from '../../src/db/schema'
 import { centralFetch } from '../../src/lib/centralFetch'
@@ -19,8 +19,7 @@ function mockSession(yearStart: number, yearEnd: number, sineDie: boolean) {
 
 describe('nextDraftNumber (unit)', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   it('numbers each state independently, starting at D1', async () => {
@@ -50,8 +49,7 @@ describe('GET /api/bills/draft-defaults', () => {
   let memberToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ email: 'admin@x.com', role: 'admin' })
     adminToken = await seedSession(adminId)
     const memberId = await seedUser({ email: 'member@x.com', role: 'member' })

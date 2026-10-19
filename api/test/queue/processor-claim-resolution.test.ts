@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { inArray } from 'drizzle-orm'
-import { resetDb, applyMigrations, stubFetch, seedBill } from '../helpers'
+import { clearDb, stubFetch, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { processCentralNotification } from '../../src/queue/processor'
 import { associationConfig, bills } from '../../src/db/schema'
@@ -84,8 +84,7 @@ async function row() {
 const stored = async () => JSON.parse((await row()).claim_sources as string) as ResolvedClaimSource[]
 
 beforeEach(async () => {
-  await resetDb()
-  await applyMigrations()
+  await clearDb()
   vi.clearAllMocks()
   geminiGenerateMock.mockReset()
   claimLinksEnabledMock.mockResolvedValue(true)

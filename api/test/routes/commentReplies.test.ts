@@ -2,9 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
-import {
-  resetDb, applyMigrations, seedUser, seedSession, seedBill, seedComment, seedRole, seedUserRole, stubFetch
-} from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill, seedComment, seedRole, seedUserRole, stubFetch } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, comments, memberVotes, notes, notifications, emailSendStats } from '../../src/db/schema'
 
@@ -69,7 +67,7 @@ describe('replying to a bill notifies its other commenters', () => {
     `<span data-type="mention" data-id="user:${id}" data-label="${label}">@${label}</span>`
 
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     send = vi.fn(async () => ({ messageId: 'm-1' }))
     pending = []
     cookies.clear()

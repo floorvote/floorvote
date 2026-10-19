@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, calendarEvents, calendarEventBills } from '../../src/db/schema'
 import { runWeekAhead } from '../../src/lib/weekAhead'
@@ -20,8 +20,7 @@ const CAP = 30
 const isoDay = (offsetDays: number) => new Date(Date.now() + offsetDays * 86400_000).toISOString().slice(0, 10)
 
 beforeEach(async () => {
-  await resetDb()
-  await applyMigrations()
+  await clearDb()
   await seedSession(await seedUser({ email: 'member@b.com' }))
   const weekday = String(new Date().getUTCDay())
   await getDb(env.DB).insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'week-ahead': { enabled: true, settings: { weeklyDay: weekday } } }) })
@@ -167,8 +166,7 @@ describe('the week-ahead email, capped at 30 body events (#675)', () => {
   it('cuts the same events on every send when many share one time, whatever order they were stored in', async () => {
     const db = getDb(env.DB)
     const seed = async (ids: number[]) => {
-      await resetDb()
-      await applyMigrations()
+      await clearDb()
       await seedSession(await seedUser({ email: 'member@b.com' }))
       await db.insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'week-ahead': { enabled: true, settings: { weeklyDay: String(new Date().getUTCDay()) } } }) })
       for (const i of ids) {

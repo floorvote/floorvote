@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:test'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession, stubFetch } from '../helpers'
+import { clearDb, seedUser, seedSession, stubFetch } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { users } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
@@ -11,8 +11,7 @@ import { eq } from 'drizzle-orm'
 beforeEach(() => { stubFetch() })
 
 beforeEach(async () => {
-  await resetDb()
-  await applyMigrations()
+  await clearDb()
 })
 
 // Format an instant as SQLite space-format UTC ("YYYY-MM-DD HH:MM:SS").

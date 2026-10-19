@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF, env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
+import { clearDb, seedUser, seedSession } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { calendarEvents } from '../../src/db/schema'
 
@@ -17,8 +17,7 @@ describe('POST /calendar/import', () => {
   let adminToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const admin = await seedUser({ email: 'admin@b.com', role: 'admin' })
     adminToken = await seedSession(admin)
   })

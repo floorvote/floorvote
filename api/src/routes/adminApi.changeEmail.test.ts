@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
 import { app } from '../index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink, seedAuthEvent } from '../../test/helpers'
+import { clearDb, seedUser, seedSession, seedMagicLink, seedAuthEvent } from '../../test/helpers'
 import { getDb } from '../db/client'
 import { users, magicLinks, authEvents } from '../db/schema'
 import { resetMail, signInSent, linkIn, backgroundWork } from '../../test/mail'
@@ -69,8 +69,7 @@ describe('POST /admin/members/:id/change-email', () => {
 
   beforeEach(async () => {
     resetMail()
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Ada Admin' })
     adminCookie = `session=${await seedSession(adminId)}`
     pendingId = await seedPending('jane@exmaple.com')

@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession } from '../../test/helpers'
+import { clearDb, seedUser, seedSession } from '../../test/helpers'
 
 describe('PUT /api/admin/deletion-policy + config exposure', () => {
-  beforeEach(async () => { await resetDb(); await applyMigrations() })
+  beforeEach(async () => { await clearDb() })
 
   it('lets an owner enable deletion and reflects it in both config reads', async () => {
     const ownerTok = await seedSession(await seedUser({ role: 'owner', email: 'o@x.com' }))

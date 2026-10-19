@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink, seedBill, seedCalendarEvent } from '../helpers'
+import { clearDb, seedUser, seedSession, seedMagicLink, seedBill, seedCalendarEvent } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { memberVotes, associationConfig, calendarEvents, users, bills } from '../../src/db/schema'
 import { eq, inArray } from 'drizzle-orm'
@@ -12,8 +12,7 @@ describe('GET /stats/sidebar', () => {
   let memberToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     memberId = await seedUser()
     memberToken = await seedSession(memberId)
   })
@@ -75,8 +74,7 @@ describe('GET /stats/sidebar — DEMO_MODE upcoming hearings', () => {
   const dateFromNow = (n: number) => new Date(Date.now() + n * 86400_000).toISOString().slice(0, 10)
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     memberId = await seedUser()
     memberToken = await seedSession(memberId)
 
@@ -137,8 +135,7 @@ describe('GET /stats/sidebar — upcoming hearings from central', () => {
   const dateFromNow = (n: number) => new Date(Date.now() + n * 86400_000).toISOString().slice(0, 10)
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     memberToken = await seedSession(await seedUser())
 
     const db = getDb(env.DB)
@@ -223,7 +220,7 @@ describe('GET /stats/sidebar — upcoming hearings from central', () => {
 describe('GET /api/stats memberCount', () => {
   let token: string
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     // Requester: accepted (used magic link) + a live session so they can authenticate.
     const me = await seedUser({ email: 'me@b.com' })
     await seedMagicLink(me, { used: true })
@@ -260,7 +257,7 @@ describe('GET /api/stats memberCount', () => {
 describe('GET /api/stats newMatchesCount', () => {
   let token: string
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     token = await seedSession(await seedUser({ email: 'admin@b.com', role: 'admin' }))
   })
 
@@ -280,7 +277,7 @@ const isoDay = (offset: number) => new Date(Date.now() + offset * 86400_000).toI
 describe('GET /api/stats calendarUpcomingCount', () => {
   let token: string
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     const uid = await seedUser({ email: 'a@b.com' }); token = await seedSession(uid)
     const prio = await seedBill({ billNumber: 'H 1', state: 'RI', session: '2026', priority: 'high' })
     const plain = await seedBill({ billNumber: 'H 2', state: 'RI', session: '2026' })
@@ -324,8 +321,7 @@ describe('GET /stats/sidebar — priorityBills isDraft', () => {
   let memberToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const memberId = await seedUser()
     memberToken = await seedSession(memberId)
   })

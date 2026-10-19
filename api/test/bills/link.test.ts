@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, appFetch, stubFetch, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
+import { clearDb, appFetch, stubFetch, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
 import { getDb } from '../../src/db/client'
 import {
   bills, memberVotes, officialPositions, comments, notes,
@@ -30,8 +30,7 @@ describe('POST /api/bills/:id/link', () => {
 
   beforeEach(async () => {
     stubFetch() // central lookups and background backfills are answered, never real
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ email: 'admin@x.com', role: 'admin' })
     adminToken = await seedSession(adminId)
     memberId = await seedUser({ email: 'member@x.com', role: 'member' })

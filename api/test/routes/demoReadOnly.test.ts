@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
+import { clearDb, seedUser, seedSession } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { users } from '../../src/db/schema'
 import { DEMO_WRITE_ALLOWLIST } from '../../src/middleware/auth'
@@ -25,8 +25,7 @@ describe('demo read-only guard', () => {
   const demoEnv = { ...env, DEMO_MODE: 'true' }
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const userId = await seedUser({ role: 'owner' })
     cookie = `session=${await seedSession(userId)}`
   })
@@ -128,8 +127,7 @@ describe('demo write rate limit', () => {
   const denyEnv = { ...demoEnv, DEMO_WRITE_RATE_LIMITER: fakeLimiter(false) }
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const userId = await seedUser({ role: 'owner' })
     cookie = `session=${await seedSession(userId)}`
   })
@@ -314,8 +312,7 @@ describe('demo write categorisation', () => {
   const demoEnv = { ...env, DEMO_MODE: 'true' }
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const userId = await seedUser({ role: 'owner' })
     cookie = `session=${await seedSession(userId)}`
   })

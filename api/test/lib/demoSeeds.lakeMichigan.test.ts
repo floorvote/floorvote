@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedBill } from '../helpers'
+import { clearDb, seedBill } from '../helpers'
 import { runDemoReset } from '../../src/lib/demoReset'
 import { DEMO_SEEDS, resolveDemoSeed } from '../../src/lib/demoSeeds'
 import { LM_BILLS, LM_HEARING_NOTICE_SOURCES } from '../../src/lib/demoSeeds/lakeMichigan/bills'
@@ -552,8 +552,7 @@ describe('lake-michigan hearing notices through a real demo reset', () => {
   const s = DEMO_SEEDS['lake-michigan']
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   it('writes every hearing_added row, with the calendar details intact', async () => {

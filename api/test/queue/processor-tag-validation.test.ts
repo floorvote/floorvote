@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
-import { resetDb, applyMigrations } from '../helpers'
+import { clearDb } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { processCentralNotification } from '../../src/queue/processor'
 import { bills, associationConfig } from '../../src/db/schema'
@@ -33,7 +33,7 @@ const centralBill = {
 const testEnv = { ...env, TENANT_ID: 'test-org', CENTRAL_API_URL: 'https://central.test' }
 
 describe('processor — write-time tag validation', () => {
-  beforeEach(async () => { await resetDb(); await applyMigrations(); vi.clearAllMocks() })
+  beforeEach(async () => { await clearDb(); vi.clearAllMocks() })
 
   it('drops AI tags not in the tenant taxonomy before storing', async () => {
     const db = getDb(env.DB)

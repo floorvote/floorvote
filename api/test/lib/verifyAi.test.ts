@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env, createExecutionContext } from 'cloudflare:test'
-import { resetDb, applyMigrations } from '../helpers'
+import { clearDb } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { verifyAi } from '../../src/lib/verifyAi'
 import { CentralApi } from '../../src/centralApi'
@@ -31,8 +31,7 @@ function central(opts: { bill?: Response; text?: Response } = {}) {
 }
 
 beforeEach(async () => {
-  await resetDb()
-  await applyMigrations()
+  await clearDb()
   vi.clearAllMocks()
   vi.mocked(processBill).mockResolvedValue({ summary: 'A summary', tags: ['Elections', 'Voting'], relevanceScore: 8, affectedCitations: [] })
   central()

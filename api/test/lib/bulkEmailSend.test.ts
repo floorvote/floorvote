@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, emailSendStats, feedEvents } from '../../src/db/schema'
 import { runDigest } from '../../src/lib/digest'
@@ -32,7 +32,7 @@ function bothProviders(cf: ReturnType<typeof binding>, extra: Record<string, str
 let resend: ReturnType<typeof stubResend>
 const resendBodies = () => resend.calls.map(c => c.body)
 beforeEach(async () => {
-  await resetDb(); await applyMigrations()
+  await clearDb()
   resend = stubResend()
 })
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })

@@ -2,11 +2,10 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { getDb } from '../../src/db/client'
 import { computeEngagementSnapshot } from '../../src/lib/engagementSnapshot'
-import { resetDb, applyMigrations } from '../helpers'
+import { clearDb } from '../helpers'
 
 beforeEach(async () => {
-  await resetDb()
-  await applyMigrations()
+  await clearDb()
 })
 
 describe('computeEngagementSnapshot', () => {

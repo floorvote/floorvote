@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser } from '../helpers'
+import { clearDb, seedUser } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, emailSendStats } from '../../src/db/schema'
 import { reportJobFailure } from '../../src/lib/jobAlert'
@@ -38,7 +38,7 @@ async function healthWrites() {
 const NOTHING = { stats: [], config: [] }
 
 beforeEach(async () => {
-  await resetDb(); await applyMigrations()
+  await clearDb()
   vi.spyOn(console, 'error').mockImplementation(() => {})
   vi.spyOn(console, 'warn').mockImplementation(() => {})
   vi.spyOn(console, 'log').mockImplementation(() => {})

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { env } from 'cloudflare:test'
-import { applyMigrations, resetDb } from '../helpers'
+import { clearDb } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills } from '../../src/db/schema'
 import { healStalledAiBills, countStalledAiBills } from '../../src/lib/healStalledAi'
@@ -39,8 +39,7 @@ function fakeEnv(sent: unknown[]) {
 
 describe('healStalledAiBills selection', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   it('does not select a bill attempted 5 minutes ago', async () => {
@@ -124,8 +123,7 @@ describe('healStalledAiBills selection', () => {
 // must not let the local keywords overrule that.
 describe('healStalledAiBills for a bill pulled in by its group', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   it('marks the retry a group analysis when the bill has no match type and its group has a tracked bill', async () => {

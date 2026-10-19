@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { asc, eq } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedBill } from '../helpers'
+import { clearDb, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { processCentralNotification } from '../../src/queue/processor'
 import { bills, teamEvents } from '../../src/db/schema'
@@ -88,8 +88,7 @@ async function eventsOf(id: string) {
 
 describe('companion groups at ingest', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     central.clear()
     vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url: string) => {
       const handle = decodeURIComponent(String(url).split('/bills/')[1] ?? '')

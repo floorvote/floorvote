@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { env, createExecutionContext } from 'cloudflare:test'
-import { resetDb, applyMigrations } from '../helpers'
+import { clearDb } from '../helpers'
 import app from '../../src/index'
 import { CentralApi } from '../../src/centralApi'
 import { getDb } from '../../src/db/client'
@@ -10,8 +10,7 @@ import { fakeBinding, stubResend } from '../../../shared/emailTestKit'
 
 describe('sendSampleEmail', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   it('does not count toward email_send_stats, so a sample cannot mask a failing provider', async () => {
@@ -39,7 +38,7 @@ describe('the sample email result, at the HTTP route and the RPC', () => {
   }), e)
 
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.spyOn(console, 'warn').mockImplementation(() => {})
   })

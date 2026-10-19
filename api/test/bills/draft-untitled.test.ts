@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, appFetch, stubFetch, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
+import { clearDb, appFetch, stubFetch, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills, calendarEvents, calendarEventBills, feedEvents } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
@@ -15,8 +15,7 @@ let memberToken: string
 
 beforeEach(async () => {
   stubFetch() // central lookups and background backfills are answered, never real
-  await resetDb()
-  await applyMigrations()
+  await clearDb()
   const adminId = await seedUser({ email: 'admin@x.com', role: 'admin' })
   adminToken = await seedSession(adminId)
   const memberId = await seedUser({ email: 'member@x.com', role: 'member' })

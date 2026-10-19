@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedBill, seedUser } from '../helpers'
+import { clearDb, seedBill, seedUser } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { billGroupOverrides, bills } from '../../src/db/schema'
 import { groupByHand, recomputeGroups, splitFromGroup, syncIdenticalCompanions } from '../../src/lib/companionGroups'
@@ -74,8 +74,7 @@ describe('grouping by hand while other writes land', () => {
   const db = () => getDb(env.DB)
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     admin = await seedUser({ role: 'admin', email: 'ada@example.com', name: 'ada' })
     other = await seedUser({ role: 'admin', email: 'bo@example.com', name: 'bo' })
     await seedBill({ id: 'a190', billNumber: 'A190', state: 'NJ', externalId: 'legiscan:190' })

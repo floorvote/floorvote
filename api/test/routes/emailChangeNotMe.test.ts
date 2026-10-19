@@ -2,7 +2,7 @@ import { env } from 'cloudflare:test'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink } from '../helpers'
+import { clearDb, seedUser, seedSession, seedMagicLink } from '../helpers'
 import { fakeBinding, stubResend } from '../../../shared/emailTestKit'
 import { getDb } from '../../src/db/client'
 import { users, sessions, authEvents, emailChanges, emailChangeReports, emailSendStats } from '../../src/db/schema'
@@ -90,8 +90,7 @@ let owner: string
 let admin: string
 
 beforeEach(async () => {
-  await resetDb()
-  await applyMigrations()
+  await clearDb()
   _resetSuperadminAllowlistCache()
   useBinding()
   sendFails = false

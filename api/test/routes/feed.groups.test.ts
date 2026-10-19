@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
 import { eq, inArray } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills, feedEvents } from '../../src/db/schema'
 import { splitFromGroup } from '../../src/lib/companionGroups'
@@ -36,8 +36,7 @@ describe('GET /feed: companion groups', () => {
   const numbers = (body: FeedBody) => body.events.map(e => e.billNumber).sort()
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ role: 'admin', name: 'Ada Admin', email: 'ada@example.com' })
     cookie = `session=${await seedSession(adminId)}`
     // Ids sort a < b < c, so a group's key is its first bill's id.

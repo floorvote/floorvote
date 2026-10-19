@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations } from '../helpers'
+import { clearDb } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { emailAlertState, emailSendStats } from '../../src/db/schema'
 import { recordSendStats } from '../../src/lib/emailStats'
@@ -25,7 +25,7 @@ function jobEnv(overrides: Record<string, unknown> = {}, binding: BindingOutcome
 describe('runEmailHealth', () => {
   let resend: ReturnType<typeof stubResend>
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     resend = stubResend()
   })
   afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })

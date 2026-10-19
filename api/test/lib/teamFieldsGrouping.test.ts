@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedBill, seedUser } from '../helpers'
+import { clearDb, seedBill, seedUser } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { officialPositions, teamEvents } from '../../src/db/schema'
 import { syncIdenticalCompanions } from '../../src/lib/companionGroups'
@@ -52,8 +52,7 @@ describe('grouping replaces team field values inside the guarded recompute', () 
   let ada: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     ada = await seedUser({ name: 'Ada', email: 'ada@example.com', role: 'admin' })
     await seedBill({ id: 'a190', billNumber: 'A190', state: 'NJ', externalId: 'legiscan:190' })
     await seedBill({ id: 'b1713', billNumber: 'S1713', state: 'NJ', externalId: 'legiscan:1713' })

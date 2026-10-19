@@ -2,7 +2,7 @@ import { env } from 'cloudflare:test'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
+import { clearDb, seedUser, seedSession } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { users } from '../../src/db/schema'
 import { signSuperadminJwt } from '../../../shared/superadminJwt'
@@ -58,8 +58,7 @@ function patchMe(cookie: string, body: unknown, e = asEnv([SUPER])) {
 }
 
 beforeEach(async () => {
-  await resetDb()
-  await applyMigrations()
+  await clearDb()
   _resetSuperadminAllowlistCache()
 })
 

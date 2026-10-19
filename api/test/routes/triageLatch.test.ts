@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, appFetch, stubFetch, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, appFetch, stubFetch, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills } from '../../src/db/schema'
 import { eq, inArray } from 'drizzle-orm'
@@ -16,8 +16,7 @@ describe('setting a priority latches a new match as triaged', () => {
   let adminToken: string, adminId: string, billId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ role: 'admin', email: 'admin@example.com' })
     adminToken = await seedSession(adminId)
     billId = await seedBill({ billNumber: 'NM 1', matchType: 'keyword', newMatchAt: MATCH, relevanceScore: 80 })
@@ -78,8 +77,7 @@ describe('bulk priority-set latches new matches as triaged', () => {
   let adminToken: string, adminId: string, a: string, b: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ role: 'admin', email: 'admin@example.com' })
     adminToken = await seedSession(adminId)
     a = await seedBill({ billNumber: 'B A', matchType: 'keyword', newMatchAt: '2026-06-20 00:00:00', relevanceScore: 80 })

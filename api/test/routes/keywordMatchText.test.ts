@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, bills } from '../../src/db/schema'
 import { centralFetch } from '../../src/lib/centralFetch'
@@ -38,8 +38,7 @@ describe('instance keyword checks read the same text central matches', () => {
   let adminCookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     vi.clearAllMocks()
     await getDb(env.DB).delete(associationConfig)
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Admin User' })

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedBillText } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill, seedBillText } from '../helpers'
 import { EXPORT_TABLES } from '../../../shared/exportTables'
 import { SUPPRESSED_SUBJECT_STATES_KEY } from '../../src/lib/billSubjects'
 
@@ -41,8 +41,7 @@ describe('Export API', () => {
   let memberCookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Admin User' })
     const adminToken = await seedSession(adminId)
     adminCookie = `session=${adminToken}`

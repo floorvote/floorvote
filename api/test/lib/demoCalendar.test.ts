@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedBill, seedCalendarEvent } from '../helpers'
+import { clearDb, seedBill, seedCalendarEvent } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { loadUpcomingDemoHearings, loadDemoBillCalendar } from '../../src/lib/demoCalendar'
 
@@ -11,8 +11,7 @@ describe('demoCalendar read helpers', () => {
   let billId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     billId = await seedBill({ externalId: 'legiscan:111', billNumber: 'A111', title: 'Test Act', state: 'NJ', priority: 'high' })
   })
 

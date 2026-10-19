@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import app from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, feedEvents } from '../../src/db/schema'
 
@@ -11,8 +11,7 @@ afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 
 describe('POST /api/internal/run-digest', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   it('returns 401 without the admin secret', async () => {

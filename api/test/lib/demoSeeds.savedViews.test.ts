@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedBill, seedSession } from '../helpers'
+import { clearDb, seedBill, seedSession } from '../helpers'
 import { runDemoReset } from '../../src/lib/demoReset'
 import { DEMO_SEEDS, type DemoSeed } from '../../src/lib/demoSeeds'
 import { LM_BILLS } from '../../src/lib/demoSeeds/lakeMichigan/bills'
@@ -91,8 +91,7 @@ describe.each(CASES)('saved views in the $slug demo seed', ({ slug, fixtures, ex
   const seed = DEMO_SEEDS[slug]
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     await seedFixtures(seed, fixtures)
     await runDemoReset(env.DB, seed)
   })

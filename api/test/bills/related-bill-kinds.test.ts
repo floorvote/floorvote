@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { centralFetch } from '../../src/lib/centralFetch'
 
 vi.mock('../../src/lib/centralFetch', () => ({
@@ -20,8 +20,7 @@ describe('GET /api/bills/:id: related bills', () => {
   let token: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     token = await seedSession(await seedUser({ email: 'member@x.com', role: 'member' }))
     vi.mocked(centralFetch).mockReset()
   })

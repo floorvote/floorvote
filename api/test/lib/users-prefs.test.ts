@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
+import { clearDb, seedUser, seedSession } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { users } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
@@ -8,7 +8,7 @@ import { eq } from 'drizzle-orm'
 describe('PATCH /api/users/me email digest pref', () => {
   let uid: string, token: string
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     uid = await seedUser({ email: 'm@e.com' }); token = await seedSession(uid)
   })
   it('toggles email_digest_enabled for the current user', async () => {

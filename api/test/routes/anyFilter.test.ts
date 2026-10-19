@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF, env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { officialPositions, associationConfig } from '../../src/db/schema'
 
@@ -8,8 +8,7 @@ describe('"Any" (has-value) filter — position + custom fields', () => {
   let token: string
   let adminId: string
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ role: 'admin', email: 'a@e.com' })
     token = await seedSession(adminId)
   })

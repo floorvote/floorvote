@@ -1,9 +1,22 @@
-// The shared test setup (test/setup.ts): the network guard, and the draining of
-// background work.
+// The shared test setup (test/setup.ts): the schema, the network guard, and
+// the draining of background work.
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
+import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { takeBlockedRequests } from './networkGuard'
 import { stubFetch } from './helpers'
+
+describe('schema', () => {
+  it('is in place before the first test, with no call from the test', async () => {
+    const row = await env.DB.prepare('SELECT count(*) AS n FROM users').first<{ n: number }>()
+    expect(row?.n).toBe(0)
+  })
+
+  it('has the whole migration list applied, not just the first', async () => {
+    // notifications arrives in 0085; a schema that stopped early has no such table.
+    const row = await env.DB.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'notifications'").first<{ n: number }>()
+    expect(row?.n).toBe(1)
+  })
+})
 
 describe('network guard', () => {
   it('refuses an unstubbed request and names the method and URL', async () => {

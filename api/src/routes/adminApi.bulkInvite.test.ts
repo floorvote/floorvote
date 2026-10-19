@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedAuthEvent } from '../../test/helpers'
+import { clearDb, seedUser, seedSession, seedAuthEvent } from '../../test/helpers'
 import { getDb } from '../db/client'
 import { users } from '../db/schema'
 import { inArray } from 'drizzle-orm'
@@ -27,8 +27,7 @@ describe('POST /admin/members/bulk-invite', () => {
   let adminCookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Admin' })
     adminCookie = `session=${await seedSession(adminId)}`
   })
@@ -166,8 +165,7 @@ describe('POST /admin/members/bulk-invite address checks', () => {
   let adminCookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Admin' })
     adminCookie = `session=${await seedSession(adminId)}`
   })
@@ -333,8 +331,7 @@ describe('POST /admin/members/bulk-invite previously bounced addresses', () => {
 
   beforeEach(async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Admin' })
     adminCookie = `session=${await seedSession(adminId)}`
   })

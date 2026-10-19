@@ -1,13 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser } from '../helpers'
+import { clearDb, seedUser } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { countActiveOwners } from '../../src/lib/owners'
 
 describe('countActiveOwners', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   it('returns 1 when there is one active owner', async () => {

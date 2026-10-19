@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations } from '../helpers'
+import { clearDb } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { authEvents } from '../../src/db/schema'
 import { recordAuthEvent, authReqContext } from '../../src/lib/authEvents'
 
 describe('recordAuthEvent', () => {
-  beforeEach(async () => { await resetDb(); await applyMigrations() })
+  beforeEach(async () => { await clearDb() })
 
   it('writes a row with all provided fields', async () => {
     const db = getDb(env.DB)

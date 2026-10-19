@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { env, createExecutionContext, createScheduledController, waitOnExecutionContext } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
+import { clearDb, seedUser, seedSession } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
@@ -36,8 +36,7 @@ describe('demo attribution (#676)', () => {
   }
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     fetchSpy = vi.spyOn(globalThis, 'fetch')
   })
   afterEach(() => fetchSpy.mockRestore())

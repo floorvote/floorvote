@@ -3,11 +3,10 @@ import { env } from 'cloudflare:test'
 import * as schema from '../../src/db/schema'
 import { getDb } from '../../src/db/client'
 import { computeEngagementStats, computeExcludedEngagementStats, normalizeExcludeDomains } from '../../src/lib/engagementStats'
-import { resetDb, applyMigrations } from '../helpers'
+import { clearDb } from '../helpers'
 
 beforeEach(async () => {
-  await resetDb()
-  await applyMigrations()
+  await clearDb()
 })
 
 async function seedKnownActivity() {

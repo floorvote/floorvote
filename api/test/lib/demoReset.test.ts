@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedBill } from '../helpers'
+import { clearDb, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { calendarEvents, calendarEventBills, associationConfig, users, sessions, magicLinks, feedEvents, roles, customFieldDefinitions } from '../../src/db/schema'
 import { runDemoReset } from '../../src/lib/demoReset'
@@ -26,8 +26,7 @@ const dateFromNow = (n: number) => new Date(Date.now() + n * 86400_000).toISOStr
 
 describe('runDemoReset — calendar seeding', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     // Seed the bills the reset attaches hearings, feed events, and comments to.
     await seedSeedBills()
   })
@@ -200,8 +199,7 @@ const countRows = async (table: string): Promise<number> => {
 
 describe('runDemoReset with the default seed', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   it('is the only registered seed', () => {
@@ -391,8 +389,7 @@ describe('runDemoReset with the default seed', () => {
 // by a minimal seed that lives with the tests and is not registered.
 describe('runDemoReset with a single-state seed', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   it('omits state_coverage, which only a multi-state seed writes', async () => {

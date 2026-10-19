@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations } from '../helpers'
+import { clearDb } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { emailSendStats } from '../../src/db/schema'
 import { senderFor } from '../../src/lib/email'
@@ -9,7 +9,7 @@ import { fakeBinding, stubResend } from '../../../shared/emailTestKit'
 const msg = (to: string) => ({ to: [to], subject: 'Hi', html: '<p>x</p>' })
 
 describe('sends are counted in email_send_stats', () => {
-  beforeEach(async () => { await resetDb(); await applyMigrations() })
+  beforeEach(async () => { await clearDb() })
   afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
   it('a send counts each attempt of a rescued send against its own provider', async () => {

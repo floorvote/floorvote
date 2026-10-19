@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, bills, calendarEvents, calendarEventBills } from '../../src/db/schema'
 import { syncBodyEvents, type CentralBodyEvent } from '../../src/lib/bodyEvents'
@@ -51,8 +51,7 @@ let token: string
 let billId: string
 
 beforeEach(async () => {
-  await resetDb()
-  await applyMigrations()
+  await clearDb()
   token = await seedSession(await seedUser({ email: 'a@b.com' }))
   const db = getDb(env.DB)
   await db.insert(associationConfig).values({ key: 'state_coverage', value: '["DC"]' })

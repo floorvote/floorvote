@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
 import { eq, inArray } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedBill, seedUser, seedSession, stubFetch } from '../helpers'
+import { clearDb, seedBill, seedUser, seedSession, stubFetch } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { processCentralNotification } from '../../src/queue/processor'
 import { runDigest } from '../../src/lib/digest'
@@ -82,8 +82,7 @@ async function expectCompanionAnalyzed() {
 
 describe('companions that didn\'t match are analyzed through their group', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     vi.clearAllMocks()
     central.clear()
     queued.length = 0

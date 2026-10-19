@@ -9,7 +9,7 @@ import { newMatchWhere } from '../../src/lib/newMatch'
 import { PRIORITY_COLORS } from '../../../shared/billChipColors'
 import { runWeekAhead } from '../../src/lib/weekAhead'
 import { associationConfig } from '../../src/db/schema'
-import { resetDb, applyMigrations, seedBill, seedUser, seedSession } from '../helpers'
+import { clearDb, seedBill, seedUser, seedSession } from '../helpers'
 
 const sendBatch = vi.hoisted(() => vi.fn(async () => ({ sent: 1, failed: 0 })))
 vi.mock('../../src/lib/email', async (importOriginal) => ({ ...await importOriginal<typeof import('../../src/lib/email')>(), senderFor: (e: unknown) => ({ sendBatch: (messages: unknown[]) => (sendBatch as (...a: unknown[]) => unknown)(e, messages) }) }))
@@ -79,8 +79,7 @@ describe('processCentralNotification: a pulled companion in a group', () => {
     db().update(bills).set({ priority, prioritySetAt: priority ? '2026-06-01 09:00:00' : null }).where(eq(bills.id, 'a-mate'))
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     vi.clearAllMocks()
     adminId = await seedUser({ role: 'admin', email: 'ada@example.com' })
     cookie = `session=${await seedSession(adminId)}`
@@ -212,8 +211,7 @@ describe('processCentralNotification: an ungrouped bill with no match type and n
   const db = () => getDb(env.DB)
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     vi.clearAllMocks()
     await seedBill({
       id: 'lone', billNumber: 'H 900', externalId: 'legiscan:900', matchType: null,

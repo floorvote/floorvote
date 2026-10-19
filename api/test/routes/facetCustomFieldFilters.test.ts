@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { app } from '../../src/index'
 import { customFieldDefinitions, billCustomFieldValues } from '../../src/db/schema'
@@ -26,8 +26,7 @@ describe('facet counts under an active custom-field filter', () => {
   const SLUGS: Record<string, string> = { [MULTI]: 'areas', [SINGLE]: 'stage', [TEXT]: 'owner' }
 
   beforeAll(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const userId = await seedUser()
     token = await seedSession(userId)
     const db = getDb(env.DB)

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession } from '../../test/helpers'
+import { clearDb, seedUser, seedSession } from '../../test/helpers'
 import { getDb } from '../db/client'
 import { associationConfig, users } from '../db/schema'
 import { eq } from 'drizzle-orm'
@@ -10,7 +10,7 @@ async function enableDeletion() {
 }
 
 describe('hard-delete gating', () => {
-  beforeEach(async () => { await resetDb(); await applyMigrations() })
+  beforeEach(async () => { await clearDb() })
 
   it('DELETE /admin/members/:id is 403 when disabled, ok when enabled', async () => {
     const ownerTok = await seedSession(await seedUser({ role: 'owner', email: 'o@x.com' }))

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { eq, inArray } from 'drizzle-orm'
 import { bills, feedEvents } from '../../src/db/schema'
@@ -19,8 +19,7 @@ describe('GET /feed — the new-matches row', () => {
   let memberToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminToken = await seedSession(await seedUser({ role: 'admin', name: 'Ada Admin', email: 'ada@example.com' }))
     memberToken = await seedSession(await seedUser({ name: 'Mia Member', email: 'mia@example.com' }))
   })

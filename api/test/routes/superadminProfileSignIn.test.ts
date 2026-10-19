@@ -2,7 +2,7 @@ import { env } from 'cloudflare:test'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedMagicLink } from '../helpers'
+import { clearDb, seedUser, seedMagicLink } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { users } from '../../src/db/schema'
 import { _resetSuperadminAllowlistCache } from '../../src/lib/superadminCentral'
@@ -75,8 +75,7 @@ const userRow = async (email: string) =>
   getDb(env.DB).select().from(users).where(eq(users.email, email)).get()
 
 beforeEach(async () => {
-  await resetDb()
-  await applyMigrations()
+  await clearDb()
   _resetSuperadminAllowlistCache()
 })
 

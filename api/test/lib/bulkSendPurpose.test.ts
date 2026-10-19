@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, feedEvents } from '../../src/db/schema'
 import { runDigest } from '../../src/lib/digest'
@@ -20,7 +20,7 @@ const stamp = async (key: string) => (await getDb(env.DB).select().from(associat
 const batch = (sent: number, failed: number, skipped = 0) => ({ sent, failed, skipped, results: [] })
 
 beforeEach(async () => {
-  await resetDb(); await applyMigrations()
+  await clearDb()
   resetMail()
   mail.sendBatch.mockResolvedValue(batch(1, 0))
 })

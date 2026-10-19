@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 
 // D1 rejects a statement with more than 100 bound parameters. An @everyone on a
 // larger instance turns into one parameter per member, both when the mention
@@ -10,7 +10,7 @@ import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../he
 // failure would otherwise be silent, so the test awaits them.
 describe('@everyone on an instance of more than 100 members', () => {
   it('notifies and emails every member', async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     const send = vi.fn(async () => ({ messageId: 'm-1' }))
     const pending: Promise<unknown>[] = []
     const adminId = await seedUser({ role: 'admin', name: 'Admin', email: 'admin@example.com' })

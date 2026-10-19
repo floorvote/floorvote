@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedBill } from '../helpers'
+import { clearDb, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { processCentralNotification } from '../../src/queue/processor'
 import { bills } from '../../src/db/schema'
@@ -51,8 +51,7 @@ async function stored() {
 
 describe('the title key at ingest', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     served = {}
     vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url: string) => {
       const handle = decodeURIComponent(String(url).split('/bills/')[1] ?? '')

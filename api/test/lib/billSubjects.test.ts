@@ -92,7 +92,7 @@ describe('isSubjectsSuppressedForState', () => {
 })
 
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations } from '../helpers'
+import { clearDb } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills, billSubjects, associationConfig } from '../../src/db/schema'
 import { syncBillSubjects, loadSuppressedSubjectStates, SUPPRESSED_SUBJECT_STATES_KEY } from '../../src/lib/billSubjects'
@@ -100,8 +100,7 @@ import { eq } from 'drizzle-orm'
 
 describe('loadSuppressedSubjectStates', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   it('is empty when the tenant has no config row — on by default', async () => {
@@ -181,8 +180,7 @@ describe('loadSuppressedSubjectStates', () => {
 
 describe('syncBillSubjects', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   async function seedBill(db: ReturnType<typeof getDb>, id: string) {

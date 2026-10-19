@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 
 type ListResp = { bills: { id: string; billNumber: string }[] }
 type Facets = { newMatchesCount: number }
@@ -11,8 +11,7 @@ describe('GET /bills?newMatches=1 — worklist predicate', () => {
   let adminToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.com' })
     adminToken = await seedSession(adminId)
 
@@ -77,8 +76,7 @@ describe('the triage list and chip show bulk and routine matches alike', () => {
   let adminToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.com' })
     adminToken = await seedSession(adminId)
     await seedBill({ billNumber: 'RT 1', matchType: 'keyword', newMatchAt: MATCH, relevanceScore: 8, matchProvenance: 'routine' })

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedRole, seedUserRole, stubFetch } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill, seedRole, seedUserRole, stubFetch } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { memberVotes, comments, notes, users, associationConfig } from '../../src/db/schema'
 import { env } from 'cloudflare:test'
@@ -16,8 +16,7 @@ describe('PATCH /users/me', () => {
   let memberToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const memberId = await seedUser({ name: 'Alice' })
     memberToken = await seedSession(memberId)
   })
@@ -281,8 +280,7 @@ describe('GET /users/me/bills', () => {
   let memberToken: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     memberId = await seedUser()
     memberToken = await seedSession(memberId)
     const billId1 = await seedBill({ billNumber: 'HB 1', title: 'Bill One' })
@@ -359,8 +357,7 @@ describe('GET/PUT /bills/:id/note', () => {
   let billId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     memberId = await seedUser()
     memberToken = await seedSession(memberId)
     billId = await seedBill()
@@ -413,8 +410,7 @@ describe('GET /users', () => {
   let memberCookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     memberId = await seedUser({ role: 'member', email: 'member@example.com', name: 'Member User' })
     const memberToken = await seedSession(memberId)
     memberCookie = `session=${memberToken}`
@@ -440,8 +436,7 @@ describe('GET /roles', () => {
   let memberCookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const memberId = await seedUser({ name: 'Alice', title: 'Town Clerk' })
     const memberToken = await seedSession(memberId)
     memberCookie = `session=${memberToken}`
@@ -464,8 +459,7 @@ describe('GET /roles', () => {
   })
 
   it('returns empty array when no roles exist', async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const userId = await seedUser()
     const token = await seedSession(userId)
     const res = await SELF.fetch('http://localhost/api/roles', {
@@ -483,8 +477,7 @@ describe('GET /roles', () => {
 
 describe('DELETE /users/me — last-owner guard', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     await getDb(env.DB).insert(associationConfig).values({ key: 'account_deletion_enabled', value: 'true' })
   })
 
@@ -541,8 +534,7 @@ describe('DELETE /users/me — last-owner guard', () => {
 
 describe('POST /users/me/deactivate — last-owner guard', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   it('blocks the sole active owner with 409', async () => {

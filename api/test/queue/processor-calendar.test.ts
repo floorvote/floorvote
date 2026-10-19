@@ -4,7 +4,7 @@ import { processCentralNotification } from '../../src/queue/processor'
 import { getDb } from '../../src/db/client'
 import { calendarEvents, feedEvents } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedBill } from '../helpers'
+import { clearDb, seedBill } from '../helpers'
 
 vi.mock('../../src/lib/llm', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/lib/llm')>()
@@ -67,8 +67,7 @@ describe('processCentralNotification — calendar mirror', () => {
   let billId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     vi.clearAllMocks()
     vi.stubGlobal('fetch', vi.fn().mockImplementation(() =>
       Promise.resolve(new Response(JSON.stringify(centralBillJson()), { status: 200, headers: { 'Content-Type': 'application/json' } })),
@@ -169,8 +168,7 @@ describe('processCentralNotification — calendar mirror', () => {
   it('still reconciles calendar when the bill metadata dedup early-returns', async () => {
     // Reset the bill so its providerUpdatedAt matches the central mock's updatedAt ('2026-06-02T00:00:00Z')
     // AND aiProcessedAt is set — this triggers the early-return dedup branch in processCentralNotification.
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     billId = await seedBill({
       billNumber: 'H 5174',
       state: 'RI',
@@ -196,8 +194,7 @@ describe('processCentralNotification — calendar mirror', () => {
   })
 
   it('reconciles calendar for a stub bill (matchType null) when it has priority set', async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     vi.stubGlobal('fetch', vi.fn().mockImplementation(() =>
       Promise.resolve(new Response(JSON.stringify({
         ...centralBillJson('H 7777'),

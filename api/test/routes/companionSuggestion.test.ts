@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { asc, eq } from 'drizzle-orm'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { billGroupOverrides, bills, companionSuggestionDismissals, teamEvents } from '../../src/db/schema'
 import { centralFetch } from '../../src/lib/centralFetch'
@@ -77,8 +77,7 @@ describe('companion suggestions from matching titles', () => {
   }
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     send.mockReset()
     envOverrides = {}
     central.clear()

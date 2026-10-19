@@ -1,15 +1,14 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
+import { clearDb, seedUser, seedSession } from '../helpers'
 
 describe('GET /api/bills/:id — same-day comment ordering', () => {
   let cookie: string
   let userId: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     userId = await seedUser({ role: 'owner' })
     cookie = `session=${await seedSession(userId)}`
   })

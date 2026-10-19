@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, stubFetch } from '../helpers'
+import { clearDb, stubFetch } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { processCentralNotification } from '../../src/queue/processor'
 import { associationConfig } from '../../src/db/schema'
@@ -103,8 +103,7 @@ async function row() {
 const lastSchema = () => geminiGenerateMock.mock.calls.at(-1)![0].config.responseSchema
 
 beforeEach(async () => {
-  await resetDb()
-  await applyMigrations()
+  await clearDb()
   vi.clearAllMocks()
   geminiGenerateMock.mockReset()
   claimLinksEnabledMock.mockResolvedValue(true)

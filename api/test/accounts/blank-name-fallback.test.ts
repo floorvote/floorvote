@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedComment, seedCommentMention, stubFetch } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill, seedComment, seedCommentMention, stubFetch } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, billCustomFieldValues, commentReactions, customFieldDefinitions, feedEvents, memberVotes, officialPositions } from '../../src/db/schema'
 import { runDigest } from '../../src/lib/digest'
@@ -22,8 +22,7 @@ let clearedId: string
 let billId: string
 
 beforeEach(async () => {
-  await resetDb()
-  await applyMigrations()
+  await clearDb()
   viewerId = await seedUser({ role: 'admin', name: 'Viewer Person', email: 'viewer@example.com' })
   viewerToken = await seedSession(viewerId)
   clearedId = await seedUser({ role: 'member', name: 'Old Name', email: CLEARED_EMAIL })

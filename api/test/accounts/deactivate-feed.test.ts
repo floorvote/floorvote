@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { feedEvents, users, associationConfig } from '../../src/db/schema'
 import { runDigest } from '../../src/lib/digest'
@@ -12,7 +12,7 @@ describe('deactivated members\' feed events are hidden from /api/feed', () => {
   let memberTok: string, billId: string, activeId: string, goneId: string
 
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     activeId = await seedUser({ role: 'member', email: 'active@x.com', name: 'Active Member' })
     goneId = await seedUser({ role: 'member', email: 'gone@x.com', name: 'Gone Member', deactivatedAt: new Date().toISOString() })
     memberTok = await seedSession(activeId)
@@ -42,7 +42,7 @@ describe('deactivated members\' feed events are hidden from /api/feed', () => {
 
 describe('/api/feed nav-dot signal (latestEventAt) excludes deactivated authors', () => {
   it('does not light the nav dot for a deactivated author\'s event; reactivation restores it', async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     const viewer = await seedUser({ email: 'viewer@x.com' })
     const viewerTok = await seedSession(viewer)
     const gone = await seedUser({ email: 'gone2@x.com', deactivatedAt: new Date().toISOString() })
@@ -72,7 +72,7 @@ describe('runDigest excludes feed events authored by a deactivated member', () =
   }
 
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
   })
 
   it('sends nothing when the sole qualifying event was authored by a deactivated member', async () => {
@@ -111,7 +111,7 @@ describe('runDigest excludes feed events authored by a deactivated member', () =
 
 describe('bill detail hides priority attribution set by a deactivated member', () => {
   it('priorityMeta is null while the setter is deactivated and restored on reactivation; bill.priority is unaffected', async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     const adminTok = await seedSession(await seedUser({ role: 'admin', email: 'admin@x.com' }))
     const gone = await seedUser({ role: 'member', email: 'gone5@x.com', name: 'Gone Setter', deactivatedAt: new Date().toISOString() })
     const billId = await seedBill({ matchType: 'keyword', title: 'Priority bill', priority: 'high' })

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
 import { getDb } from '../../src/db/client'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { customFieldDefinitions, billCustomFieldValues } from '../../src/db/schema'
 import { and, eq } from 'drizzle-orm'
 
@@ -21,8 +21,7 @@ async function makeMultiField(name: string, options: string[]): Promise<string> 
 
 describe('multi-select custom fields', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   it('POST creates a multi=true field', async () => {

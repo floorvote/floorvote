@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, stubFetch } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill, stubFetch } from '../helpers'
 
 // Central's superadmin allowlist is fetched in the background on a first
 // authenticated request; answer it so the network guard stays quiet.
@@ -9,8 +9,7 @@ beforeEach(() => { stubFetch() })
 describe('canVote', () => {
   describe('GET /auth/me', () => {
     it('returns canVote true by default', async () => {
-      await resetDb()
-      await applyMigrations()
+      await clearDb()
       const userId = await seedUser()
       const token = await seedSession(userId)
       const res = await SELF.fetch('http://localhost/api/auth/me', {
@@ -22,8 +21,7 @@ describe('canVote', () => {
     })
 
     it('returns canVote false for non-voting user', async () => {
-      await resetDb()
-      await applyMigrations()
+      await clearDb()
       const userId = await seedUser({ canVote: false })
       const token = await seedSession(userId)
       const res = await SELF.fetch('http://localhost/api/auth/me', {
@@ -41,8 +39,7 @@ describe('canVote', () => {
     let billId: string
 
     beforeEach(async () => {
-      await resetDb()
-      await applyMigrations()
+      await clearDb()
       const nonVoterId = await seedUser({ canVote: false, email: 'nonvoter@test.com' })
       nonVoterToken = await seedSession(nonVoterId)
       const voterId = await seedUser({ email: 'voter@test.com' })
@@ -84,8 +81,7 @@ describe('canVote', () => {
     let memberId: string
 
     beforeEach(async () => {
-      await resetDb()
-      await applyMigrations()
+      await clearDb()
       const adminId = await seedUser({ role: 'admin', email: 'admin@test.com' })
       adminToken = await seedSession(adminId)
       memberId = await seedUser({ email: 'member@test.com' })

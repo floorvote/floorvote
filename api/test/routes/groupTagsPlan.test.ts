@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
+import { clearDb, seedUser, seedSession } from '../helpers'
 
 // Performance of the tag filter in a grouped bill list (#537). Since one row
 // per group (#379), a tag filter must read each grouped bill's current group
@@ -40,8 +40,7 @@ describe('tag filter query plans', () => {
   const readsGroupTags = (p: Planned) => /group_tags/.test(p.sql)
 
   beforeAll(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const userId = await seedUser({ role: 'admin' })
     cookie = `session=${await seedSession(userId)}`
     // 30,000 bills, of which i % 40 = 0 are analyzed with tags (750) and i % 30 = 0 are tracked. Bills 1 to

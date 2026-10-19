@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
-import { resetDb, applyMigrations, appFetch, stubFetch, seedUser, seedSession, seedBill } from '../helpers'
+import { clearDb, appFetch, stubFetch, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills, billSubjects } from '../../src/db/schema'
 import { MAX_SUBJECT_FILTERS } from '../../src/lib/billSubjects'
@@ -47,8 +47,7 @@ describe('bulk routes reject over-cap subject filters', () => {
 
   beforeEach(async () => {
     stubFetch()
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminToken = await seedSession(await seedUser({ role: 'admin', email: 'admin@example.com' }))
     memberToken = await seedSession(await seedUser({ role: 'member', email: 'member@example.com' }))
     // Holds Subject 1 to Subject 40, not Subject 41. A new match, so a dismiss would stamp it.

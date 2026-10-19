@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { appFetch, resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
+import { clearDb, appFetch, seedUser, seedSession } from '../helpers'
 
 // #449: a member includes a saved view in their digest. The subscription is the
 // member's own and rides on the view: one row per member and view, removed with
@@ -16,8 +16,7 @@ describe('saved view digest subscriptions', () => {
   let benCookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const admin = await seedUser({ role: 'admin', email: 'admin@example.com' })
     adminCookie = `session=${await seedSession(admin)}`
     ada = await seedUser({ role: 'member', email: 'ada@example.com' })

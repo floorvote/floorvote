@@ -1,13 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedAuthEvent } from '../helpers'
+import { clearDb, seedUser, seedSession, seedAuthEvent } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { authEvents } from '../../src/db/schema'
 
 describe('GET /users/me/auth-events', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   it("returns only the caller's own events, newest first", async () => {

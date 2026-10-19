@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser } from '../helpers'
+import { clearDb, seedUser } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { checkMemberAddresses, normalizeMemberAddress } from '../../src/lib/memberAddress'
 
@@ -21,8 +21,7 @@ describe('normalizeMemberAddress', () => {
 
 describe('checkMemberAddresses', () => {
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
   })
 
   it('returns an empty list for no addresses', async () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedRole, seedUserRole, mentionRecords } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill, seedRole, seedUserRole, mentionRecords } from '../helpers'
 
 // @admins reaches every current Admin and Owner. Posts go through the comments
 // routes with the Cloudflare email binding stubbed, so "who got emailed" is read
@@ -53,7 +53,7 @@ describe('@admins mention', () => {
   const emailedTo = () => send.mock.calls.map(call => (call[0] as { to: string[] }).to[0]).sort()
 
   beforeEach(async () => {
-    await resetDb(); await applyMigrations()
+    await clearDb()
     send = vi.fn(async () => ({ messageId: 'm-1' }))
     pending = []
     billId = await seedBill()

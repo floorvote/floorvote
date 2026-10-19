@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../index'
-import { resetDb, applyMigrations, seedUser, seedSession } from '../../test/helpers'
+import { clearDb, seedUser, seedSession } from '../../test/helpers'
 import { getDb } from '../db/client'
 import { calendarEvents } from '../db/schema'
 
@@ -9,8 +9,7 @@ describe('calendarApi demo mode', () => {
   let adminCookie: string
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Admin' })
     adminCookie = `session=${await seedSession(adminId)}`
   })

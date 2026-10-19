@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:test'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedMagicLink } from '../helpers'
+import { clearDb, seedUser, seedMagicLink } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { magicLinks, authEvents } from '../../src/db/schema'
 
@@ -11,8 +11,7 @@ const status = (token?: string) =>
 describe('GET /auth/verify/status', () => {
   let userId: string
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     userId = await seedUser({ email: 'owner@example.com' })
   })
 
@@ -61,7 +60,7 @@ describe('GET /auth/verify/status', () => {
 })
 
 describe('GET /auth/verify/status rate limiting', () => {
-  beforeEach(async () => { await resetDb(); await applyMigrations() })
+  beforeEach(async () => { await clearDb() })
 
   /** Records every key it is asked about, and denies the ones told to. */
   function limiter(deny: (key: string) => boolean) {

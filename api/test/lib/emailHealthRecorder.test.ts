@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
-import { resetDb, applyMigrations } from '../helpers'
+import { clearDb } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, emailSendStats } from '../../src/db/schema'
 import { emailHealthRecorder } from '../../src/lib/emailHealthRecorder'
@@ -19,7 +19,7 @@ async function config(key: string) {
 }
 
 describe('emailHealthRecorder', () => {
-  beforeEach(async () => { await resetDb(); await applyMigrations() })
+  beforeEach(async () => { await clearDb() })
 
   it('counts each attempt to its own provider', async () => {
     await emailHealthRecorder(getDb(env.DB)).record([

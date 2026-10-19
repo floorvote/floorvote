@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { env } from 'cloudflare:test'
 import { inArray } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, bills, calendarEvents, calendarEventBills } from '../../src/db/schema'
 import { runWeekAhead } from '../../src/lib/weekAhead'
@@ -28,8 +28,7 @@ describe('the week-ahead email: companion groups', () => {
   const db = () => getDb(env.DB)
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     await seedSession(await seedUser({ email: 'member@b.com' }))
     const weekday = String(new Date().getUTCDay())
     await db().insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'week-ahead': { enabled: true, settings: { weeklyDay: weekday } } }) })

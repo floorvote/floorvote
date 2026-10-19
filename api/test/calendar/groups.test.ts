@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
 import { eq, inArray } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills, calendarEventBills, calendarEvents } from '../../src/db/schema'
 import { splitFromGroup } from '../../src/lib/companionGroups'
@@ -41,8 +41,7 @@ describe('calendar: companion groups', () => {
   const numbersOf = (e: Entry) => e.bills.map(b => b.billNumber)
 
   beforeEach(async () => {
-    await resetDb()
-    await applyMigrations()
+    await clearDb()
     adminId = await seedUser({ role: 'admin', email: 'ada@example.com' })
     token = await seedSession(adminId)
     // Ids sort a < b < c, so a group's key is its first bill's id.
