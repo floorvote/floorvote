@@ -28,7 +28,7 @@ export type ExtraDisplay = typeof EXTRA_DISPLAYS[number]
  * - `meta`: a "Label: value" item in the meta row at the top of the page.
  * - `detail`: a labeled, full-width line under the meta row, line breaks kept.
  *   For values too long for the dotted meta row.
- * - `flag`: a small chip beside the bill's body label. The value is "Yes"; a
+ * - `flag`: plain text beside the bill's body label, in the style of a meta label. The value is "Yes"; a
  *   flag with any other value shows as a meta item, so a value is never hidden.
  * - `panel`: the "Additional information" fold-out. The default.
  */

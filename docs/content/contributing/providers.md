@@ -25,7 +25,7 @@ The interface and every shape that crosses the boundary are documented in [`prov
 
 Every provider maps into the shapes LegiScan introduced: the same bill, session, sponsor, history, vote, text, and calendar fields. If your feed has something those shapes can hold, map it there. A bill from your provider then works with search, keyword matching, notifications, and AI summaries exactly as a LegiScan bill does.
 
-A field only your feed publishes goes in **extras**: display-only values the bill page shows, such as Maryland's chapter number or the statutes a bill affects. Each extra says where, with a `placement`: in the meta row at the top of the page (`meta`), as a full-width line under it (`detail`), as a chip beside the bill's body label (`flag`), or in the "Additional information" fold-out (`panel`, the default). Extras are never sorted, filtered, matched, or sent to AI. If a field needs any of that, or a second provider publishes it too, it becomes a shared column instead, and that is a change to central, discussed in an issue first.
+A field only your feed publishes goes in **extras**: display-only values the bill page shows, such as Maryland's chapter number or the statutes a bill affects. Each extra says where, with a `placement`: in the meta row at the top of the page (`meta`), as a full-width line under it (`detail`), as plain text beside the bill's body label (`flag`), or in the "Additional information" fold-out (`panel`, the default). Extras are never sorted, filtered, matched, or sent to AI. If a field needs any of that, or a second provider publishes it too, it becomes a shared column instead, and that is a change to central, discussed in an issue first.
 
 ### Official feeds only
 

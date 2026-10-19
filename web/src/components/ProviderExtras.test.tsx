@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import type { BillExtraField } from '../../../shared/providerExtras'
-import { placeExtras, ExtraMetaItem, ExtraDetailList, ExtraFlagChips } from './ProviderExtras'
+import { placeExtras, ExtraMetaItem, ExtraDetailList, ExtraFlagItem } from './ProviderExtras'
 
 const f = (key: string, over: Partial<BillExtraField> = {}): BillExtraField =>
   ({ key, label: `Label ${key}`, explainer: null, display: 'text', value: `value ${key}`, ...over })
@@ -112,17 +112,43 @@ describe('ExtraDetailList', () => {
   })
 })
 
-describe('ExtraFlagChips', () => {
-  it('shows one chip per flag, named by its label, with no "Yes"', () => {
-    render(<ExtraFlagChips fields={[f('e', { label: 'Emergency bill', value: 'Yes', placement: 'flag' }), f('c', { label: 'Constitutional amendment', value: 'Yes', placement: 'flag' })]} />)
-    expect(screen.getByTestId('extra-flag-e')).toHaveTextContent('Emergency bill')
-    expect(screen.getByTestId('extra-flag-c')).toHaveTextContent('Constitutional amendment')
+describe('ExtraFlagItem', () => {
+  it('shows the flag as its label alone, with no "Yes" and no "Label:" colon', () => {
+    render(<ExtraFlagItem field={f('e', { label: 'Emergency bill', value: 'Yes', placement: 'flag' })} />)
+    const item = screen.getByTestId('extra-flag-e')
+    expect(item).toHaveTextContent(/^Emergency bill$/)
     expect(screen.queryByText(/Yes/)).toBeNull()
   })
 
-  it('explains a chip on hover of its label', async () => {
-    render(<ExtraFlagChips fields={[f('e', { label: 'Emergency bill', value: 'Yes', explainer: 'Takes effect at once.' })]} />)
+  it('takes the same muted label style as a meta item, with no chip color, background, or padding', () => {
+    render(<>
+      <ExtraMetaItem field={f('m', { label: 'Chapter', value: 'Chapter 5' })} />
+      <ExtraFlagItem field={f('e', { label: 'Emergency bill', value: 'Yes', placement: 'flag' })} />
+    </>)
+    const metaLabel = screen.getByTestId('extra-meta-m').firstElementChild as HTMLElement
+    const flag = screen.getByTestId('extra-flag-e')
+    expect(flag.style.color).toBe(metaLabel.style.color)
+    expect(flag.style.background).toBe('')
+    expect(flag.style.backgroundColor).toBe('')
+    expect(flag.style.padding).toBe('')
+    expect(flag.style.borderRadius).toBe('')
+    expect(flag.style.fontWeight).toBe('')
+  })
+
+  it('wraps a long label rather than holding the row open', () => {
+    render(<ExtraFlagItem field={f('e', { label: 'A'.repeat(200), value: 'Yes' })} />)
+    expect(screen.getByTestId('extra-flag-e')).toHaveStyle({ minWidth: '0', maxWidth: '100%', overflowWrap: 'anywhere' })
+  })
+
+  it('explains the flag on hover of its label', () => {
+    render(<ExtraFlagItem field={f('e', { label: 'Emergency bill', value: 'Yes', explainer: 'Takes effect at once.' })} />)
     const label = screen.getByRole('button', { name: 'Emergency bill' })
     expect(label).toHaveAccessibleDescription('Takes effect at once.')
+  })
+
+  it('shows a label with no explainer as plain text, not a button', () => {
+    render(<ExtraFlagItem field={f('e', { label: 'Emergency bill', value: 'Yes', explainer: null })} />)
+    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.getByText('Emergency bill')).toBeInTheDocument()
   })
 })

@@ -66,7 +66,7 @@ import { isEditableTarget } from '../lib/isEditableTarget'
 import { BillPicker, type BillOption } from '../components/BillPicker'
 import { editableFieldBox } from '../lib/editableFieldStyle'
 import { CollapsibleSection } from '../components/CollapsibleSection'
-import { ProviderExtrasList, ExtraMetaItem, ExtraDetailList, ExtraFlagChips, placeExtras } from '../components/ProviderExtras'
+import { ProviderExtrasList, ExtraMetaItem, ExtraDetailList, ExtraFlagItem, placeExtras } from '../components/ProviderExtras'
 import type { BillExtras } from '../../../shared/providerExtras'
 import { RELATIONSHIP_KINDS, RELATIONSHIP_KIND_LABELS, isRelationshipKind, type RelationshipKind } from '../../../shared/relationshipKinds'
 import type { GroupBill, GroupBillLink, GroupingEvent, GroupNote } from '../../../shared/companionGroups'
@@ -1802,16 +1802,10 @@ export function BillDetail() {
                 <HoverTooltip text={typeExplainer} describe={{ id: 'bill-type-explainer' }}>{bodyLabel}</HoverTooltip>
               </span>
             : <span key="body" style={{ whiteSpace: 'nowrap' }}>{bodyLabel}</span>
+          if (bodyLabelEl) metaItems.push(bodyLabelEl)
           // The provider's flags (an emergency bill, a constitutional amendment)
-          // are chips beside the body label, which keeps its own wording.
-          if (placedExtras.flags.length > 0) {
-            metaItems.push(
-              <span key="body" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                {bodyLabelEl}
-                <ExtraFlagChips fields={placedExtras.flags} />
-              </span>,
-            )
-          } else if (bodyLabelEl) metaItems.push(bodyLabelEl)
+          // are plain meta text right after the body label, which keeps its own wording.
+          for (const f of placedExtras.flags) metaItems.push(<ExtraFlagItem key={`flag-${f.key}`} field={f} />)
           // The bill's next deadline (an executive's time to act, a review
           // period ending, an act expiring), where it's hard to miss.
           const nextDeadline = (bill.calendar ?? []).filter(e => e.kind === 'deadline' && e.date >= todayIso())

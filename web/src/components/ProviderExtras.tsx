@@ -1,5 +1,5 @@
 import type { BillExtraField } from '../../../shared/providerExtras'
-import { color, fontSize, fontWeight, radius } from '../styles/tokens'
+import { color, fontSize, fontWeight } from '../styles/tokens'
 import { safeDate } from '../lib/dates'
 import { ExternalLinkIcon } from './ExternalLinkIcon'
 import { HoverTooltip } from './HoverTooltip'
@@ -12,7 +12,7 @@ import { HoverTooltip } from './HoverTooltip'
  *
  * Which fields reach the panel is `placeExtras`'s call: only those placed in
  * `panel`. The others show in the meta row (`ExtraMetaItem`), under it
- * (`ExtraDetailList`), or as chips beside the body label (`ExtraFlagChips`),
+ * (`ExtraDetailList`), or as plain meta text beside the body label (`ExtraFlagItem`),
  * and every one of them takes its place from the `placement` central sends.
  */
 export function ProviderExtrasList({ fields }: { fields: BillExtraField[] }) {
@@ -81,7 +81,7 @@ export interface PlacedExtras {
  * - a missing or unknown placement is `panel`, so a page and a central of
  *   different ages still show every value;
  * - a flag whose value isn't "Yes" is a meta item, so a value is never hidden
- *   behind a chip that says nothing;
+ *   behind a flag that says nothing;
  * - a date that is only the placeholder (`0000-00-00`) is dropped, since it
  *   says nothing.
  */
@@ -138,19 +138,16 @@ export function ExtraDetailList({ fields }: { fields: BillExtraField[] }) {
   )
 }
 
-/** The fields placed in `flag`, as small chips named by their labels. The value is "Yes", so it isn't shown. */
-export function ExtraFlagChips({ fields }: { fields: BillExtraField[] }) {
+/**
+ * One flag, as plain meta text: the label alone, since a flag's value is "Yes"
+ * and isn't shown. It takes the muted label style of the meta row's other
+ * labels, with no color of its own, and keeps the label's hover and click
+ * explainer.
+ */
+export function ExtraFlagItem({ field }: { field: BillExtraField }) {
   return (
-    <>
-      {fields.map(f => (
-        <span
-          key={f.key}
-          data-testid={`extra-flag-${f.key}`}
-          style={{ display: 'inline-flex', alignItems: 'center', background: color.bgAmberPriority, color: color.textAmberDark, borderRadius: radius.pill, padding: '1px 8px', fontSize: fontSize.xs, fontWeight: fontWeight.medium }}
-        >
-          <HoverTooltip text={f.explainer} describe>{f.label}</HoverTooltip>
-        </span>
-      ))}
-    </>
+    <span data-testid={`extra-flag-${field.key}`} style={{ minWidth: 0, maxWidth: '100%', overflowWrap: 'anywhere', color: color.textMuted }}>
+      <HoverTooltip text={field.explainer} describe>{field.label}</HoverTooltip>
+    </span>
   )
 }

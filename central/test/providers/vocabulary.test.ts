@@ -59,7 +59,7 @@ describe.each([...PROVIDERS, example].map(p => [p.id, p] as const))('%s vocabula
     }
   })
 
-  it('shows an extra flag as a chip only when its value could be "Yes"', () => {
+  it('shows an extra flag only when its value could be "Yes"', () => {
     // A flag's value is "Yes" (anything else falls back to a meta item), so its label names the thing that is true.
     for (const e of Object.values(provider.vocabulary.extras ?? {})) {
       if (e.placement === 'flag') expect(e.label.trim(), e.label).not.toMatch(/[:?]$/)
@@ -207,13 +207,13 @@ describe('where each provider\'s extras go on the bill page', () => {
     return by
   }
 
-  it('declares Maryland\'s chapter and between-chambers step as meta, statutes as detail, and both flags as chips', () => {
+  it('declares Maryland\'s chapter and between-chambers step as meta, statutes as detail, and both flags with the flag placement', () => {
     expect(placements('mga')).toEqual({
       meta: ['chapter', 'chamberInteraction'], detail: ['statutes'], flag: ['emergency', 'constitutionalAmendment'], panel: [],
     })
   })
 
-  it('declares Virginia\'s chapter as meta, the emergency flag as a chip, and the summaries in the panel, latest stage first', () => {
+  it('declares Virginia\'s chapter as meta, the emergency flag with the flag placement, and the summaries in the panel, latest stage first', () => {
     expect(placements('lis')).toEqual({
       meta: ['chapter'], detail: [], flag: ['emergency'],
       panel: ['summaryPassed', 'summaryPassedSenate', 'summaryPassedHouse', 'summaryIntroduced'],

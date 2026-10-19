@@ -252,7 +252,7 @@ const field = (key: string, label: string, value: string, over: Record<string, u
 const extrasOf = (providerName: string, fields: unknown[]) => ({ providerName, fields })
 const foldOut = () => screen.queryByRole('button', { name: /Additional information from/ })
 
-describe('extras placed in the meta row, the detail list, and as chips', () => {
+describe('extras placed in the meta row, the detail list, and as flags', () => {
   const dc = extrasOf('DC Council LIMS', [
     field('lawNumber', 'D.C. Law number', 'L26-0129', { display: 'identifier', placement: 'meta' }),
     field('actNumber', 'Act number', 'A26-0309', { display: 'identifier', placement: 'meta' }),
@@ -310,7 +310,7 @@ describe('extras placed in the meta row, the detail list, and as chips', () => {
     expect(foldOut()).toBeNull()
   })
 
-  it('shows chips for the emergency and constitutional amendment flags, beside the "House bill" label', async () => {
+  it('shows the emergency and constitutional amendment flags as plain meta text, in the meta row beside the "House bill" label', async () => {
     renderBillDetail({
       state: 'MD', billNumber: 'HB 1',
       extras: extrasOf('Example General Assembly', [
@@ -320,17 +320,39 @@ describe('extras placed in the meta row, the detail list, and as chips', () => {
     })
     const emergency = await screen.findByTestId('extra-flag-emergency')
     const amendment = screen.getByTestId('extra-flag-constitutionalAmendment')
-    expect(emergency).toHaveTextContent('Emergency bill')
-    expect(amendment).toHaveTextContent('Constitutional amendment')
+    expect(emergency).toHaveTextContent(/^Emergency bill$/)
+    expect(amendment).toHaveTextContent(/^Constitutional amendment$/)
+    // Same row as the body label, right after it, in the order central sent them.
     const label = screen.getByText('House bill')
-    expect(label.parentElement?.contains(emergency)).toBe(true)
-    expect(label.parentElement?.contains(amendment)).toBe(true)
+    const row = emergency.parentElement!.parentElement!
+    expect(row.contains(label)).toBe(true)
+    expect(row.contains(amendment)).toBe(true)
+    const order = [label, emergency, amendment]
+    for (let i = 1; i < order.length; i++) {
+      expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    }
     // The label's noun is untouched.
     expect(screen.queryByText(/amendment bill|Emergency bill bill/i)).toBeNull()
     expect(foldOut()).toBeNull()
   })
 
-  it('shows a chip even when the bill has no body label to sit beside', async () => {
+  it('gives a flag no chip color: no amber or other background, and the label color a meta label has', async () => {
+    renderBillDetail({
+      state: 'MD', billNumber: 'HB 1',
+      extras: extrasOf('Example General Assembly', [
+        field('chapter', 'Chapter', 'Chapter 5', { placement: 'meta' }),
+        field('emergency', 'Emergency bill', 'Yes', { placement: 'flag' }),
+      ]),
+    })
+    const flag = await screen.findByTestId('extra-flag-emergency')
+    const metaLabel = screen.getByTestId('extra-meta-chapter').firstElementChild as HTMLElement
+    expect(flag.style.background).toBe('')
+    expect(flag.style.backgroundColor).toBe('')
+    expect(flag.style.borderRadius).toBe('')
+    expect(flag.style.color).toBe(metaLabel.style.color)
+  })
+
+  it('shows a flag with no body label to sit beside', async () => {
     renderBillDetail({
       state: 'MD', billNumber: '1234',
       extras: extrasOf('Example General Assembly', [field('emergency', 'Emergency bill', 'Yes', { placement: 'flag' })]),
@@ -338,7 +360,18 @@ describe('extras placed in the meta row, the detail list, and as chips', () => {
     expect(await screen.findByTestId('extra-flag-emergency')).toBeInTheDocument()
   })
 
-  it('shows a flag whose value is not "Yes" as a "Label: value" meta item, never as a chip', async () => {
+  it('leaves the next-deadline item amber when a flag is shown too', async () => {
+    renderBillDetail({
+      state: 'MD', billNumber: 'HB 1',
+      calendar: [{ id: 1, kind: 'deadline', date: '2999-01-01', type: 'Deadline', typeId: 10, description: 'Governor must act' }],
+      extras: extrasOf('Example General Assembly', [field('emergency', 'Emergency bill', 'Yes', { placement: 'flag' })]),
+    })
+    const deadline = await screen.findByTestId('next-deadline')
+    expect(deadline.style.color).not.toBe('')
+    expect(screen.getByTestId('extra-flag-emergency').style.color).not.toBe(deadline.style.color)
+  })
+
+  it('shows a flag whose value is not "Yes" as a "Label: value" meta item, never as a flag', async () => {
     renderBillDetail({
       state: 'MD', billNumber: 'HB 1',
       extras: extrasOf('Example General Assembly', [field('emergency', 'Emergency bill', 'Pending', { placement: 'flag' })]),
