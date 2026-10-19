@@ -917,12 +917,15 @@ async function reconcileCalendar(
   const changedUids = new Set<string>()
 
   // Upsert current events. The ICS SEQUENCE only ever rises: it bumps when an
-  // event's content changes (its event_hash) and when a cancelled event comes
-  // back, so calendar clients take the newer copy.
+  // event's date, time, location, description, or kind changes and when a
+  // cancelled event comes back, so calendar clients take the newer copy. A new
+  // event_hash alone is stored but is no change a member can see.
   for (const e of block.events) {
     const uid = hearingUid(msg.billId, e.identityKey, msg.tenantId)
     incomingUids.add(uid)
-    const existing = await db.select({ id: calendarEvents.id, sequence: calendarEvents.sequence, eventHash: calendarEvents.eventHash, status: calendarEvents.status })
+    const existing = await db.select({ id: calendarEvents.id, sequence: calendarEvents.sequence, eventHash: calendarEvents.eventHash, status: calendarEvents.status,
+      date: calendarEvents.date, time: calendarEvents.time, location: calendarEvents.location,
+      description: calendarEvents.description, kind: calendarEvents.kind })
       .from(calendarEvents).where(eq(calendarEvents.uid, uid)).get()
 
     // The body event shown in the entry's place (lib/bodyEvents.ts). A central
@@ -936,9 +939,11 @@ async function reconcileCalendar(
       })
       changedUids.add(uid)
     } else {
-      const hashChanged = (existing.eventHash ?? '') !== (e.eventHash ?? '')
+      const visibleChanged = (['date', 'time', 'location', 'description'] as const).some(k => (existing[k] ?? '') !== (e[k] ?? ''))
+        // A stored kind of null predates kinds, so filling it in is no change.
+        || (!!e.kind && !!existing.kind && existing.kind !== e.kind)
       const reconfirmed = existing.status === 'cancelled'
-      const bump = hashChanged || reconfirmed
+      const bump = visibleChanged || reconfirmed
       await db.update(calendarEvents).set({
         billId: billInternalId, status: 'confirmed', ...(e.kind ? { kind: e.kind } : {}), ...cover,
         date: e.date, time: e.time, location: e.location, description: e.description,

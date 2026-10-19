@@ -217,8 +217,8 @@ describe('changes', () => {
     const prior = stored(legiscan, [entry({ date: '2026-12-01' }), entry({ type_id: 2, description: 'Approps', date: '2026-04-27' })])
     vi.spyOn(console, 'log').mockImplementation(() => {})
     const plan = planCalendarPull(legiscan, BILL, prior, [
-      entry({ date: '2026-12-01', event_hash: 'h2' }),
-      entry({ type_id: 2, description: 'Approps', date: '2026-04-27', event_hash: 'h2' }),
+      entry({ date: '2026-12-01', time: '11:00', event_hash: 'h2' }),
+      entry({ type_id: 2, description: 'Approps', date: '2026-04-27', time: '11:00', event_hash: 'h2' }),
     ], 'pull-1', NOW)
     expect(plan.changes.map(c => [c.changeType, c.date])).toEqual([['hearing_changed', '2026-12-01']])
   })
@@ -236,6 +236,29 @@ describe('changes', () => {
     expect(logged).toContain('[calendar-change]')
     expect(logged).toContain('"oldHash":"h1"')
     expect(logged).toContain('"newHash":"h2"')
+  })
+
+  it('sends no change when only the hash moved, and still logs the move', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const prior = stored(legiscan, [entry()])
+    const plan = planCalendarPull(legiscan, BILL, prior, [entry({ event_hash: 'h2' })], 'pull-1', NOW)
+    expect(plan.changes).toEqual([])
+    const logged = spy.mock.calls.map(c => c.join(' ')).join('\n')
+    expect(logged).toContain('[calendar-change]')
+    expect(logged).toContain('"newHash":"h2"')
+  })
+
+  it('sends hearing_changed when any one visible field moved along with the hash', () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    const withIds: Provider = { ...lims, id: 'with-ids' }
+    const prior = stored(withIds, [entry({ event_id: 'E-77' })])
+    const edits: Array<Partial<MeasureCalendarEntry>> = [
+      { time: '11:00' }, { location: 'Room 200' }, { description: 'Moved' }, { date: '2026-06-11' }, { type_id: 3 },
+    ]
+    for (const edit of edits) {
+      const plan = planCalendarPull(withIds, BILL, prior, [entry({ event_id: 'E-77', event_hash: 'h2', ...edit })], 'pull-1', NOW)
+      expect([edit, kinds(plan)]).toEqual([edit, ['hearing_changed']])
+    }
   })
 
   it('names each entry\'s kind from the vocabulary', () => {

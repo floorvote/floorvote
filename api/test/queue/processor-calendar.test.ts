@@ -138,6 +138,7 @@ describe('processCentralNotification — calendar mirror', () => {
     )
     const changed = calendarBlock('hearing_changed')
     changed.events[0].eventHash = 'h2'
+    changed.events[0].time = '15:00:00'
     changed.changes[0].eventHash = 'h2'
     await processCentralNotification(
       { tenantId: 'ri', billId: 'legiscan:999', calendar: changed } as any,
@@ -147,6 +148,48 @@ describe('processCentralNotification — calendar mirror', () => {
     expect(rows).toHaveLength(1)
     expect(rows[0].sequence).toBe(1)
     expect(rows[0].eventHash).toBe('h2')
+  })
+
+  it('stores a new hash without bumping sequence when no visible field changed', async () => {
+    await processCentralNotification(
+      { tenantId: 'ri', billId: 'legiscan:999', calendar: calendarBlock('hearing_added') } as any,
+      testEnv as any, getDb(env.DB),
+    )
+    const hashOnly = calendarBlock('hearing_changed')
+    hashOnly.events[0].eventHash = 'h2'
+    await processCentralNotification(
+      { tenantId: 'ri', billId: 'legiscan:999', calendar: hashOnly } as any,
+      testEnv as any, getDb(env.DB),
+    )
+    const rows = await getDb(env.DB).select().from(calendarEvents).where(eq(calendarEvents.billId, billId)).all()
+    expect(rows[0].sequence).toBe(0)
+    expect(rows[0].eventHash).toBe('h2')
+  })
+
+  it('bumps sequence once for each visible field that changes', async () => {
+    const deliver = (patch: Record<string, string>) => {
+      const block = calendarBlock('hearing_changed')
+      Object.assign(block.events[0], patch, { eventHash: `h-${JSON.stringify(patch)}` })
+      return processCentralNotification({ tenantId: 'ri', billId: 'legiscan:999', calendar: block } as any, testEnv as any, getDb(env.DB))
+    }
+    const sequence = async () => (await getDb(env.DB).select().from(calendarEvents).where(eq(calendarEvents.billId, billId)).get())?.sequence
+    const added = calendarBlock('hearing_added')
+    Object.assign(added.events[0], { kind: 'hearing' })
+    await processCentralNotification(
+      { tenantId: 'ri', billId: 'legiscan:999', calendar: added } as any,
+      testEnv as any, getDb(env.DB),
+    )
+    const seen: Array<number | undefined> = []
+    // Each edit keeps the earlier ones, as a provider's edits do.
+    let current: Record<string, string> = { kind: 'hearing' }
+    for (const patch of [
+      { date: '2026-06-05' }, { location: 'Room 36' }, { description: 'House Cmte on Elections, rescheduled' }, { kind: 'markup' },
+    ]) {
+      current = { ...current, ...patch }
+      await deliver(current)
+      seen.push(await sequence())
+    }
+    expect(seen).toEqual([1, 2, 3, 4])
   })
 
   it('marks a hearing cancelled when it disappears from the events set', async () => {
@@ -257,6 +300,7 @@ describe('processCentralNotification — calendar mirror', () => {
       seen.push((await row()).sequence)
       const changed = calendarBlock('hearing_changed')
       changed.events[0].eventHash = 'h2'
+      changed.events[0].time = '15:00:00'
       changed.changes[0].eventHash = 'h2'
       await deliver(changed)
       seen.push((await row()).sequence)

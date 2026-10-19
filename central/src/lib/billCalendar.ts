@@ -152,8 +152,9 @@ function isPast(date: string | null, today: string): boolean {
 
 /**
  * The changes instances see, identity by identity: an identity that appears
- * is added, one that disappears is cancelled, and one whose entry's hash moves
- * is changed. A past entry that changes or is cancelled is not reported.
+ * is added, one that disappears is cancelled, and one whose date, time,
+ * location, description, or kind moves is changed. A hash that moves alone is
+ * logged but not sent. A past entry that changes or is cancelled is not reported.
  */
 function calendarChanges(provider: Provider, before: CalendarRow[], after: CalendarRow[], today: string): CalendarChange[] {
   const was = representatives(before)
@@ -175,10 +176,12 @@ function calendarChanges(provider: Provider, before: CalendarRow[], after: Calen
       for (const k of ['date', 'time', 'location', 'description'] as const) {
         if ((prev[k] ?? '') !== (row[k] ?? '')) diff[k] = [prev[k], row[k]]
       }
+      const [wasKind, nowKind] = [calendarKind(provider, prev.typeId), calendarKind(provider, row.typeId)]
+      if (wasKind !== nowKind) diff.kind = [wasKind, nowKind]
       console.log('[calendar-change] hearing_changed', JSON.stringify({
         identityKey: key, oldHash: prev.eventHash, newHash: row.eventHash, date: row.date, diff, suppressedAsPast,
       }))
-      if (!suppressedAsPast) changes.push(change('hearing_changed', row))
+      if (!suppressedAsPast && Object.keys(diff).length > 0) changes.push(change('hearing_changed', row))
     }
   }
   for (const [key, prev] of was) {
