@@ -46,17 +46,25 @@ export type ClaimSourcesDetail = { billId: string; document: ClaimDocument; item
 
 /**
  * An HTML claim that renders as a link, with the passage it opens. `index` is
- * its place in the items. The `popover` is that passage in quotation marks, which
+ * its first item's place in the items. A claim with several items (#802) is
+ * still one link: `rest` holds its other passages, and is absent for one. The `popover` is that passage in quotation marks, which
  * the link previews on hover and focus (#696), as a PDF claim does its quote.
  */
-export type PassageLink = { index: number; claim: string; quoteAt: Span; matched: string; popover: string }
+export type PassageLink = { index: number; claim: string; quoteAt: Span; matched: string; popover: string; rest?: Passage[] }
+
+/** One passage of an HTML claim: its `matched` text and where it is. */
+export type Passage = { matched: string; quoteAt: Span }
+
+/** One quote of a PDF claim and the page the model cited for it. */
+export type PageQuote = { quote: string; page: number | null }
 
 /**
  * A PDF claim that renders as a link (#572): it opens the PDF at `page`, which
  * is null when the model cited none, and shows `quote` beside the link as
- * `popover`. The quote was never matched against the file.
+ * `popover`. The quote was never matched against the file. A claim with several
+ * items (#802) lists the others in `rest`.
  */
-export type PageLink = { index: number; claim: string; quote: string; page: number | null; popover: string }
+export type PageLink = { index: number; claim: string; quote: string; page: number | null; popover: string; rest?: PageQuote[] }
 
 export type ClaimLink = PassageLink | PageLink
 
@@ -77,17 +85,38 @@ const LINKED: ReadonlySet<ClaimSourceStatus> = new Set<ClaimSourceStatus>(['exac
 export function linkableClaims(cs: ClaimSourcesDetail | null | undefined, enabled: boolean | undefined): ClaimLink[] {
   if (enabled === false || !cs) return []
   if (cs.document.mime === 'application/pdf') {
-    return cs.items.flatMap((item, index): PageLink[] => {
-      if (item.status !== 'unverified' || typeof item.quote !== 'string' || item.quote.trim() === '') return []
+    const links = new Map<string, PageLink>()
+    cs.items.forEach((item, index) => {
+      if (item.status !== 'unverified' || typeof item.quote !== 'string' || item.quote.trim() === '') return
       const page = typeof item.page === 'number' ? item.page : null
-      return [{ index, claim: item.claim, quote: item.quote, page, popover: `${describePageTarget(pdfPageTarget(page))}: \u201c${item.quote}\u201d` }]
+      const have = links.get(item.claim)
+      if (have) {
+        have.rest = [...(have.rest ?? []), { quote: item.quote, page }]
+        have.popover += ` ${pdfPopover(item.quote, page)}`
+      } else {
+        links.set(item.claim, { index, claim: item.claim, quote: item.quote, page, popover: pdfPopover(item.quote, page) })
+      }
     })
+    return [...links.values()]
   }
-  return cs.items.flatMap((item, index): PassageLink[] =>
-    LINKED.has(item.status) && item.quoteAt && typeof item.matched === 'string' && item.matched.trim() !== ''
-      ? [{ index, claim: item.claim, quoteAt: item.quoteAt, matched: item.matched, popover: `\u201c${item.matched}\u201d` }]
-      : [])
+  // A claim with several items is one link, from its first item that was found.
+  const links = new Map<string, PassageLink>()
+  cs.items.forEach((item, index) => {
+    if (!LINKED.has(item.status) || !item.quoteAt || typeof item.matched !== 'string' || item.matched.trim() === '') return
+    // An anchored item's `matched` is only the anchor: the preview shows the model's whole quote (#802).
+    const shown = item.status === 'anchored' && typeof item.quote === 'string' && item.quote.trim() !== '' ? item.quote : item.matched
+    const have = links.get(item.claim)
+    if (have) {
+      have.rest = [...(have.rest ?? []), { matched: item.matched, quoteAt: item.quoteAt }]
+      have.popover += ` \u2026 \u201c${shown}\u201d`
+    } else {
+      links.set(item.claim, { index, claim: item.claim, quoteAt: item.quoteAt, matched: item.matched, popover: `\u201c${shown}\u201d` })
+    }
+  })
+  return [...links.values()]
 }
+
+const pdfPopover = (quote: string, page: number | null) => `${describePageTarget(pdfPageTarget(page))}: \u201c${quote}\u201d`
 
 // ── Linking claims in the summary ────────────────────────────────────────────
 
@@ -270,9 +299,8 @@ const PASSAGE_CSS = `mark[data-fv-passage]{background:${PASSAGE_FRAME.fill} !imp
   + `#${PASSAGE_ID}{scroll-margin-top:40px !important}`
   // The ring is drawn inside the mark (a negative offset). A ring outside it was cut off by the frame's edge
   // wherever the bill's text runs to that edge, as it does on the right (#696).
-  + `#${PASSAGE_ID}:focus{outline:2px solid ${PASSAGE_FRAME.ring} !important;outline-offset:-2px}`
-  // The passage can span several marks: ring them all while the first has focus.
-  + `:root:has(#${PASSAGE_ID}:focus) mark[data-fv-passage]{outline:2px solid ${PASSAGE_FRAME.ring} !important;outline-offset:-2px}`
+  // Only :focus-visible, so a keyboard reader sees the ring and a mouse reader doesn't (#802).
+  + `#${PASSAGE_ID}:focus-visible{outline:2px solid ${PASSAGE_FRAME.ring} !important;outline-offset:-2px}`
 
 const ENTITY = /&[A-Za-z][A-Za-z0-9]{0,31};/g
 const ENTITY_CACHE = new Map<string, string>()
@@ -343,7 +371,10 @@ function doctypeOf(doc: Document): string {
  * or null when the passage isn't in it (the document changed, or nothing was
  * stored to find).
  *
- * The passage is the stored `matched` text, found in the rendered document's
+ * A claim can have several passages (#802): each is marked, the first one found
+ * carries the id below, and one that isn't found is skipped. Null only when none is.
+ *
+ * Each passage is the stored `matched` text, found in the rendered document's
  * text with whitespace ignored. Where it occurs more than once, the stored
  * location (offsets into `billHtmlToText` of the document) says which. The
  * highlight is one `<mark>` around each text node's part of the passage, and
@@ -355,11 +386,32 @@ function doctypeOf(doc: Document): string {
  * and serialized back with its doctype, script and all, for the sandbox to
  * keep inert as it does the plain text.
  */
-export function markPassage(html: string, passage: { matched: string; quoteAt: Span }): string | null {
-  const needle = squash(passage.matched)
-  if (needle.length === 0) return null
+export function markPassage(html: string, passage: Passage | readonly Passage[]): string | null {
   const doc = new DOMParser().parseFromString(html, 'text/html')
+  // The scroll target is the highlight's alone.
+  for (const el of doc.querySelectorAll(`[id="${PASSAGE_ID}"]`)) el.removeAttribute('id')
+  for (const el of doc.querySelectorAll(`a[name="${PASSAGE_ID}"]`)) el.removeAttribute('name')
 
+  // Each passage is marked on its own, found again in the text as the earlier
+  // ones left it. The first one found carries the id, whichever item it was.
+  let marked = 0
+  for (const p of Array.isArray(passage) ? passage : [passage as Passage]) {
+    if (markOne(doc, html, p, marked === 0)) marked++
+  }
+  if (marked === 0) return null
+
+  const style = doc.createElement('style')
+  style.setAttribute('data-fv-passage', '')
+  style.textContent = PASSAGE_CSS
+  doc.head.appendChild(style)
+
+  return doctypeOf(doc) + doc.documentElement.outerHTML
+}
+
+/** Highlight one passage in the parsed document, with the scroll target on it when `target`. False when it isn't found. */
+function markOne(doc: Document, html: string, passage: Passage, target: boolean): boolean {
+  const needle = squash(passage.matched)
+  if (needle.length === 0) return false
   // Every text node `billHtmlToText` reads (all but script and style), with
   // where each character of the squashed text came from.
   const nodes: Text[] = []
@@ -388,34 +440,30 @@ export function markPassage(html: string, passage: { matched: string; quoteAt: S
   const found: number[] = []
   for (let i = text.indexOf(needle); i !== -1; i = text.indexOf(needle, i + 1)) found.push(i)
   const visible = found.filter(i => !unmarkable(nodes[nodeAt[i]]))
-  if (visible.length === 0) return null
+  if (visible.length === 0) return false
   const k = occurrenceBefore(html, needle, passage.quoteAt)
-  const target = visible.find(i => i >= (found[k] ?? Infinity)) ?? visible[0]
+  const at = visible.find(i => i >= (found[k] ?? Infinity)) ?? visible[0]
 
-  const firstNode = nodeAt[target]
-  const lastNode = nodeAt[target + needle.length - 1]
+  const firstNode = nodeAt[at]
+  const lastNode = nodeAt[at + needle.length - 1]
   const parts: { node: Text; from: number; to: number }[] = []
   for (let j = firstNode; j <= lastNode; j++) {
     const node = nodes[j]
-    const from = j === firstNode ? offsetAt[target] : 0
-    const to = j === lastNode ? offsetAt[target + needle.length - 1] + 1 : node.data.length
+    const from = j === firstNode ? offsetAt[at] : 0
+    const to = j === lastNode ? offsetAt[at + needle.length - 1] + 1 : node.data.length
     if (to <= from || unmarkable(node)) continue
     const parentTag = (node.parentNode as Element | null)?.tagName?.toUpperCase() ?? ''
     if (TABLE_PARENTS.has(parentTag) && node.data.slice(from, to).trim() === '') continue
     parts.push({ node, from, to })
   }
-  if (parts.length === 0) return null
-
-  // The scroll target is the highlight's alone.
-  for (const el of doc.querySelectorAll(`[id="${PASSAGE_ID}"]`)) el.removeAttribute('id')
-  for (const el of doc.querySelectorAll(`a[name="${PASSAGE_ID}"]`)) el.removeAttribute('name')
+  if (parts.length === 0) return false
 
   parts.forEach(({ node, from, to }, i) => {
     const mid = from > 0 ? node.splitText(from) : node
     if (to - from < mid.data.length) mid.splitText(to - from)
     const mark = doc.createElement('mark')
     mark.setAttribute('data-fv-passage', '')
-    if (i === 0) {
+    if (target && i === 0) {
       mark.setAttribute('id', PASSAGE_ID)
       mark.setAttribute('tabindex', '-1')
     }
@@ -423,12 +471,7 @@ export function markPassage(html: string, passage: { matched: string; quoteAt: S
     mark.appendChild(mid)
   })
 
-  const style = doc.createElement('style')
-  style.setAttribute('data-fv-passage', '')
-  style.textContent = PASSAGE_CSS
-  doc.head.appendChild(style)
-
-  return doctypeOf(doc) + doc.documentElement.outerHTML
+  return true
 }
 
 /**

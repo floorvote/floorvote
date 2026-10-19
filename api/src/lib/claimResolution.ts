@@ -527,6 +527,25 @@ function found(status: ClaimSourceStatus, doc: string, at: Span): { status: Clai
   return { status, at, matched: trimEnd(normalize(doc.slice(at.start, at.end), { tags: true, fold: false })).s }
 }
 
+/** What joins the passages of a stitched quote: three or more dots, or an ellipsis character. */
+const ELLIPSIS = /\s*(?:\.{3,}|\u2026)\s*/
+
+/**
+ * The items a claim source resolves as. A quote the model stitched from
+ * separate passages with an ellipsis (#802) is one item per segment, each
+ * resolved on its own, with the claim and page of the original. A quote found
+ * whole, exact or normalized, is one item first, so dots inside a single
+ * passage never split it.
+ */
+function segmentsOf(item: ClaimSource, doc: string, normDoc: () => Norm): ClaimSource[] {
+  if (!ELLIPSIS.test(item.quote)) return [item]
+  const segments = item.quote.split(ELLIPSIS).filter(s => s.trim().length > 0)
+  if (segments.length < 2) return [item]
+  const whole = resolveDirectly(item.quote, doc, normDoc)
+  if ('status' in whole && whole.status !== 'ungrounded') return [item]
+  return segments.map(quote => ({ ...item, quote }))
+}
+
 /**
  * Resolve a bill's claim sources against the summary it stores and the document
  * its analysis read (`billHtmlToText` of the pinned document), or null for a PDF.
@@ -565,18 +584,20 @@ export function resolveClaimSources(
       out.push({ ...item, status: item.quote.trim().length === 0 ? 'ungrounded' : 'unverified', claimAt })
       continue
     }
-    if (searched >= MAX_ITEMS) {
-      capped++
-      out.push({ ...item, status: 'ungrounded', claimAt })
-      continue
-    }
-    searched++
-    const r = resolveDirectly(item.quote, docText, getNormDoc)
-    if ('search' in r) {
-      out.push({ ...item, status: 'ungrounded', claimAt })
-      pending.push({ index: out.length - 1, quote: r.search, cost: matchCost(getNormDoc().s, firstPattern(r.search), budget) })
-    } else {
-      out.push(withResult({ ...item, status: r.status, claimAt }, r))
+    for (const part of segmentsOf(item, docText, getNormDoc)) {
+      if (searched >= MAX_ITEMS) {
+        capped++
+        out.push({ ...part, status: 'ungrounded', claimAt })
+        continue
+      }
+      searched++
+      const r = resolveDirectly(part.quote, docText, getNormDoc)
+      if ('search' in r) {
+        out.push({ ...part, status: 'ungrounded', claimAt })
+        pending.push({ index: out.length - 1, quote: r.search, cost: matchCost(getNormDoc().s, firstPattern(r.search), budget) })
+      } else {
+        out.push(withResult({ ...part, status: r.status, claimAt }, r))
+      }
     }
   }
 
