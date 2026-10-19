@@ -287,6 +287,11 @@ export function BillListPane() {
   }, [search])
 
   const [loadingMore, setLoadingMore] = useState(false)
+  // A failed page stops the chain: the sentinel would otherwise still be in
+  // range and fire again at once. The reader's Retry clears it; so does a new list.
+  const [loadMoreFailed, setLoadMoreFailed] = useState(false)
+  const loadMoreBusy = useRef(false)
+  useEffect(() => { setLoadMoreFailed(false) }, [search])
   const sentinelRef = useRef<HTMLLIElement>(null)
   // Infinite scroll, as on the Bills page, but watched inside the pane's own
   // scroller: the pane scrolls independently of the viewport. The list (and so
@@ -294,7 +299,7 @@ export function BillListPane() {
   useEffect(() => {
     const sentinel = sentinelRef.current
     const root = scrollRef.current
-    if (!sentinel || !root || !search || !hasMore || loading || loadingMore) return
+    if (!sentinel || !root || !search || !hasMore || loading || loadingMore || loadMoreFailed) return
     const observer = new IntersectionObserver(
       entries => { if (entries[0].isIntersecting) loadMore() },
       { root, rootMargin: '1200px' }, // prefetch well before the end is visible
@@ -302,11 +307,14 @@ export function BillListPane() {
     observer.observe(sentinel)
     return () => observer.disconnect()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- loadMore is rebuilt each render from the values listed
-  }, [search, hasMore, loading, loadingMore, page])
+  }, [search, hasMore, loading, loadingMore, loadMoreFailed, page])
 
   function loadMore() {
-    if (!search || loadingMore) return
+    // The ref also stops two observer callbacks in one tick, before state lands.
+    if (!search || loadMoreBusy.current) return
+    loadMoreBusy.current = true
     setLoadingMore(true)
+    setLoadMoreFailed(false)
     const next = page + 1
     apiFetch<BillsPage>(`/bills?${billsApiParamsFromSearch(search, next, peekCustomFieldDefs())}`)
       .then(data => {
@@ -314,8 +322,8 @@ export function BillListPane() {
         setHasMore(next < data.pagination.totalPages)
         setPage(next)
       })
-      .catch(() => {})
-      .finally(() => setLoadingMore(false))
+      .catch(() => setLoadMoreFailed(true))
+      .finally(() => { loadMoreBusy.current = false; setLoadingMore(false) })
   }
 
   const here = decodePath(location.pathname)
@@ -389,8 +397,18 @@ export function BillListPane() {
             </li>
           ))}
           {hasMore && (
-            <li ref={sentinelRef} style={{ ...CHROME_TEXT, padding: 12, textAlign: 'center' }}>
-              {loadingMore ? 'Loading…' : ''}
+            <li
+              ref={sentinelRef}
+              aria-hidden={loadingMore || loadMoreFailed ? undefined : true}
+              role={loadingMore ? 'status' : undefined}
+              style={{ ...CHROME_TEXT, padding: 12, textAlign: 'center' }}
+            >
+              {loadingMore ? 'Loading…' : loadMoreFailed ? (
+                <>
+                  Couldn’t load more{' '}
+                  <button type="button" onClick={loadMore} style={{ color: color.linkBlue, background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit' }}>Retry</button>
+                </>
+              ) : ''}
             </li>
           )}
         </ul>

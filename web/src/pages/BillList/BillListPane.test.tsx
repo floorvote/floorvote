@@ -314,6 +314,28 @@ describe('BillListPane: infinite scroll', () => {
     expect(within(pane).queryByText('Loading…')).toBeNull()
   })
 
+  it('stops after a failed page, and Retry fetches it again', async () => {
+    let fail = true
+    hoisted.respond = (path) => {
+      if (!path.startsWith('/bills?')) return {}
+      if (new URLSearchParams(path.slice(7)).get('page') === '2') return fail ? new Error('boom') : page(secondPage, { page: 2, total: 5, totalPages: 2 })
+      return page(firstPage, { total: 5, totalPages: 2 })
+    }
+    renderPane('/RI/2026/HB%201')
+    const pane = await screen.findByRole('navigation', { name: 'Bill list' })
+    await within(pane).findByText('Title of HB 3')
+    intersect()
+    await within(pane).findByText('Couldn’t load more')
+    intersect()
+    await act(async () => {})
+    expect(pageCalls(2)).toHaveLength(1)
+
+    fail = false
+    fireEvent.click(within(pane).getByRole('button', { name: 'Retry' }))
+    await within(pane).findByText('Title of HB 5')
+    expect(pageCalls(2)).toHaveLength(2)
+  })
+
   it('requests nothing when there is no further page', async () => {
     hoisted.respond = (path) => path.startsWith('/bills?') ? page(firstPage, { total: 3, totalPages: 1 }) : {}
     renderPane('/RI/2026/HB%201')
