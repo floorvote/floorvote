@@ -327,7 +327,7 @@ describe('runDigest', () => {
     const html: string = calls.find(c => c.to[0] === 'admin@e.com').html
     expect(html).toContain('Lets counties start mail ballot processing early.')
     expect(html.match(/padding:0 14px 10px 14px/g) ?? []).toHaveLength(1)
-    expect(html).toContain('>New match<')
+    expect(html).toContain('>New · Set priority<')
   })
 
   it('no digest, to an admin or a member, ever says "keyword"', async () => {
@@ -452,7 +452,7 @@ describe('runDigest', () => {
       }
     })
 
-    it('lists every routine new match of an untriaged group', async () => {
+    it('lists every routine new match of an untriaged group as one new match naming each bill', async () => {
       const db = getDb(env.DB); await enableModule(db)
       const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
       const first = await seedBill({ billNumber: 'GRP 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 90 })
@@ -464,7 +464,8 @@ describe('runDigest', () => {
 
       expect(calls).toHaveLength(2)
       for (const c of calls) {
-        expect(c.html).toContain('2 new matches')
+        expect(c.html).toContain('1 new match')
+        expect(c.html).not.toContain('2 new matches')
         expect(c.html).toContain('GRP 1')
         expect(c.html).toContain('GRP 2')
       }

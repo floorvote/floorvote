@@ -42,16 +42,18 @@ export function BillHoverTooltip({ bill, cursor }: { bill: TooltipBill; cursor: 
       const w = ref.current.offsetWidth
       const h = ref.current.offsetHeight
       const left = Math.min(cursor.x + 16, window.innerWidth - w - 8)
-      const top = Math.min(cursor.y + 18, window.innerHeight - h - 8)
+      // Above the pointer, its bottom edge just over the cursor; below it only when there is no room above.
+      const above = cursor.y - 18 - h
+      const top = above >= 8 ? above : Math.min(cursor.y + 18, window.innerHeight - h - 8)
       setPos({ left: Math.max(8, left), top: Math.max(8, top) })
     }
-  }, [cursor.x, cursor.y])
+  }, [cursor.x, cursor.y, lazySummary, bill.title])
 
   return createPortal((
     <div ref={ref} style={{
       ...TOOLTIP_CHROME,
       borderRadius: radius.lg,
-      position: 'fixed', left: pos?.left ?? cursor.x + 16, top: pos?.top ?? cursor.y + 18,
+      position: 'fixed', left: pos?.left ?? cursor.x + 16, top: pos?.top ?? cursor.y - 18,
       visibility: pos === null ? 'hidden' : 'visible',
       zIndex: 1000,
       padding: '10px 12px', maxWidth: 280, pointerEvents: 'none',

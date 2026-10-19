@@ -102,7 +102,7 @@ describe('legislator profile links: LegiScan people', () => {
     const db = drizzle(env.DB, { schema })
     await db.insert(schema.rollCallVotes).values({ id: 'v-orphan', rollCallId: 31, peopleId: 999, voteId: 1, voteText: 'Nay' })
     const { body } = await detail()
-    expect(body.votes[0].legislatorVotes).toContainEqual({ personId: '999', name: '999', vote: 'Nay', url: null })
+    expect(body.votes[0].legislatorVotes).toContainEqual({ personId: '999', name: '999', vote: 'Nay', url: null, party: null })
   })
 })
 

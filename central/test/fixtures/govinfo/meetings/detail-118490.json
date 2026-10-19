@@ -1,0 +1,45 @@
+{
+  "committeeMeeting": {
+    "chamber": "House",
+    "committees": [
+      {
+        "name": "House Small Business",
+        "systemCode": "hssm00",
+        "url": "https://api.congress.gov/v3/committee/house/hssm00?format=json"
+      }
+    ],
+    "congress": 119,
+    "date": "2025-07-15T14:00:00Z",
+    "eventId": "118490",
+    "location": {
+      "building": "Rayburn House Office Building",
+      "room": "2360"
+    },
+    "meetingDocuments": [
+      {
+        "documentType": "Support Document",
+        "format": "PDF",
+        "name": "Public Notice",
+        "url": "https://www.congress.gov/119/meeting/house/118490/documents/HHRG-119-SM00-20250715-SD001.pdf"
+      }
+    ],
+    "meetingStatus": "Postponed",
+    "title": "\"A Voice for Small Business: How the SBA Office of Advocacy is Cutting Red Tape\"",
+    "type": "Hearing",
+    "updateDate": "2026-01-02T07:37:23Z",
+    "witnesses": [
+      {
+        "name": "Mr. Chip Bishop",
+        "organization": "U.S. Small Business Administration",
+        "position": "Deputy Chief Counsel of the Office of Advocacy"
+      }
+    ]
+  },
+  "request": {
+    "chamber": "house",
+    "congress": "119",
+    "contentType": "application/json",
+    "eventId": "118490",
+    "format": "json"
+  }
+}

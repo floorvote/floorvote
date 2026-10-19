@@ -53,6 +53,11 @@ export type Env = {
   // (`[[ratelimits]]` in wrangler.toml, per tenant env). Optional: absent in dev/
   // tests → checkRateLimit fails open.
   LOGIN_RATE_LIMITER?: RateLimiter
+  // Workers Rate Limiting binding for the one-click mute link (#685): 120/60s
+  // per IP, since mail providers send many members' unsubscribes from a few
+  // IPs. Optional: an instance whose wrangler.toml predates it falls back to
+  // LOGIN_RATE_LIMITER (routes/muteLink.ts); with neither, it fails open.
+  MUTE_LINK_RATE_LIMITER?: RateLimiter
   // Workers Rate Limiting binding for the additive writes a DEMO_MODE tenant
   // allows. Demo auto-login hands any caller a session with no interaction, so
   // those writes are anonymous by construction and keyed per-IP in demoReadOnly.

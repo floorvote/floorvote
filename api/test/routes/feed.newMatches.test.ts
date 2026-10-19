@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { feedEvents } from '../../src/db/schema'
+import { eq, inArray } from 'drizzle-orm'
+import { bills, feedEvents } from '../../src/db/schema'
 
 type FeedBody = {
   events: Array<Record<string, unknown>>
@@ -80,5 +81,66 @@ describe('GET /feed — the new-matches row', () => {
 
     const body = await get(`/feed/events/${id}/bills`) as { bills: Array<{ id: string; billNumber: string }> }
     expect(body.bills.map((x) => x.billNumber)).toEqual(['HB 1', 'HB 2'])
+  })
+
+  // #638: a companion group is one policy, so the row counts it once.
+  describe('companion groups', () => {
+    const group = async (...ids: string[]) => {
+      await getDb(env.DB).update(bills).set({ groupKey: [...ids].sort()[0] }).where(inArray(bills.id, ids))
+    }
+    const countOf = (body: FeedBody, id: string) => (body.events.find((e) => e.id === id)!.metadata as { count?: number }).count
+
+    it('counts a group whose members both matched once, keeping every member in billIds', async () => {
+      const a = await seedBill({ billNumber: 'HB 1' }); const b = await seedBill({ billNumber: 'SB 2' })
+      await group(a, b)
+      const id = await seedRow([a, b])
+
+      const body = await feed()
+      expect(countOf(body, id)).toBe(1)
+      expect((body.events[0].metadata as { billIds: string[] }).billIds).toEqual([a, b])
+    })
+
+    it('counts a group and an ungrouped match as two, and an ungrouped pair as two', async () => {
+      const a = await seedBill({ billNumber: 'HB 1' }); const b = await seedBill({ billNumber: 'SB 2' })
+      const c = await seedBill({ billNumber: 'HB 3' }); const d = await seedBill({ billNumber: 'HB 4' })
+      await group(a, b)
+      const id = await seedRow([a, b, c])
+      expect(countOf(await feed(), id)).toBe(2)
+
+      await getDb(env.DB).delete(feedEvents).where(eq(feedEvents.id, id))
+      const id2 = await seedRow([c, d])
+      expect(countOf(await feed(), id2)).toBe(2)
+    })
+
+    it('counts a group whose members matched on one day once, and two groups as two', async () => {
+      const [a, b, c, d] = [await seedBill({ billNumber: 'A' }), await seedBill({ billNumber: 'B' }), await seedBill({ billNumber: 'C' }), await seedBill({ billNumber: 'D' })]
+      await group(a, b); await group(c, d)
+      const id = await seedRow([a, c, b, d])
+      expect(countOf(await feed(), id)).toBe(2)
+    })
+
+    it('gives a member the same count as an admin', async () => {
+      const a = await seedBill({ billNumber: 'HB 1' }); const b = await seedBill({ billNumber: 'SB 2' })
+      await group(a, b)
+      const id = await seedRow([a, b])
+      expect(countOf(await feed(adminToken), id)).toBe(1)
+      expect(countOf(await feed(memberToken), id)).toBe(1)
+    })
+
+    it('still counts a deleted bill\'s id, as it did', async () => {
+      const a = await seedBill({ billNumber: 'HB 1' })
+      const id = await seedRow([a, 'gone-bill-id'])
+      expect(countOf(await feed(), id)).toBe(2)
+    })
+
+    it('gives each bill of the expanded list its group key, so members read as one entry', async () => {
+      const a = await seedBill({ billNumber: 'HB 1' }); const b = await seedBill({ billNumber: 'SB 2' }); const c = await seedBill({ billNumber: 'HB 3' })
+      await group(a, b)
+      const id = await seedRow([a, b, c])
+
+      const body = await get(`/feed/events/${id}/bills`) as { bills: Array<{ id: string; groupKey: string | null }> }
+      const key = [a, b].sort()[0]
+      expect(body.bills.map((x) => [x.id, x.groupKey])).toEqual([[a, key], [b, key], [c, null]])
+    })
   })
 })

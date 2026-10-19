@@ -123,7 +123,7 @@ describe('DC from LIMS', () => {
     // Each Councilmember's vote on each floor reading.
     const firstReading = bill.votes.find((v: any) => v.date === '2026-03-03')
     expect(firstReading.legislatorVotes).toHaveLength(13)
-    expect(firstReading.legislatorVotes).toContainEqual({ personId: String(limsPeopleId(194)), name: 'Zachary Parker', vote: 'Yes', url: null })
+    expect(firstReading.legislatorVotes).toContainEqual({ personId: String(limsPeopleId(194)), name: 'Zachary Parker', vote: 'Yes', url: null, party: null })
 
     // Hearing, mark-up, and reading videos, on the history entries they record.
     expect(bill.actions.filter((a: any) => a.videoUrl).map((a: any) => [a.date, a.description.trim(), a.videoUrl])).toEqual([
@@ -136,22 +136,20 @@ describe('DC from LIMS', () => {
 
     // The extras panel, titled with the provider's name, in vocabulary order.
     expect(bill.extras.providerName).toBe('DC Council')
-    expect(bill.extras.fields.map((f: any) => [f.label, f.value])).toEqual([
-      ['D.C. Law number', 'L26-0129'],
-      ['Act number', 'A26-0309'],
-      ['Sent to the Mayor', '2026-04-13'],
-      ['Mayor\'s deadline', '2026-04-28'],
-      ['Signed by the Mayor', '2026-04-24'],
-      ['Enacted', '2026-04-24'],
-      ['Sent to Congress', '2026-04-29'],
-      ['Law effective', '2026-06-11'],
+    // The ten review dates that repeat the timeline are no longer served, and each field says where the page shows it.
+    expect(bill.extras.fields.map((f: any) => [f.label, f.value, f.placement])).toEqual([
+      ['D.C. Law number', 'L26-0129', 'meta'],
+      ['Act number', 'A26-0309', 'meta'],
+      ['Law effective', '2026-06-11', 'meta'],
     ])
+    // The Mayor's deadline is still a calendar entry, with the id it had.
+    expect(bill.calendar.filter((c: any) => c.type === 'Deadline').map((c: any) => [c.date, c.description])).toEqual([['2026-04-28', "Mayor's response due"]])
 
     const reprogramming = await getJson(`/bills/${toHandle(REPROG)}`)
     expect(reprogramming).toMatchObject({ status: 'New', statusStage: 'introduced', billType: 'Reprogramming' })
-    expect(reprogramming.extras.fields.map((f: any) => [f.key, f.value])).toEqual([
-      ['requestedBy', 'Mayor'],
-      ['commentCommittees', 'Youth Affairs'],
+    expect(reprogramming.extras.fields.map((f: any) => [f.key, f.value, f.placement])).toEqual([
+      ['requestedBy', 'Mayor', 'meta'],
+      ['commentCommittees', 'Youth Affairs', 'detail'],
     ])
     const notice = await getJson(`/bills/${toHandle(HN)}`)
     expect(notice).toMatchObject({ status: 'Not Applicable', statusStage: null, statusRank: 0 })

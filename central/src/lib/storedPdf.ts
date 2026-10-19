@@ -7,6 +7,17 @@
 const MAGIC = new TextEncoder().encode('%PDF-')
 
 /**
+ * Whether `bytes` start with `%PDF-`, and nothing (a byte order mark, a space)
+ * before it. Only the first five bytes are read. The one test of what counts as a
+ * PDF: ingest, the inline route, and the JSON route all use it.
+ */
+export function startsWithPdfMagic(bytes: Uint8Array): boolean {
+  if (bytes.length < MAGIC.length) return false
+  for (let i = 0; i < MAGIC.length; i++) if (bytes[i] !== MAGIC[i]) return false
+  return true
+}
+
+/**
  * Check that `body` starts with `%PDF-`, reading only as far as the first five
  * bytes. Returns a stream with every byte of the original, in order, to serve; or
  * null (and cancels the source) when it isn't a PDF. The rest of the body is read
@@ -24,16 +35,16 @@ export async function pdfStreamOrNull(body: ReadableStream<Uint8Array>): Promise
     else if (value.length > 0) { head.push(value); have += value.length }
   }
 
-  let isPdf = have >= MAGIC.length
-  if (isPdf) {
-    let at = 0
-    outer: for (const chunk of head) {
-      for (const b of chunk) {
-        if (b !== MAGIC[at]) { isPdf = false; break outer }
-        if (++at === MAGIC.length) break outer
-      }
-    }
+  // The first five bytes, gathered across however many chunks they arrived in.
+  const first = new Uint8Array(Math.min(have, MAGIC.length))
+  let at = 0
+  for (const chunk of head) {
+    if (at >= first.length) break
+    const take = chunk.subarray(0, first.length - at)
+    first.set(take, at)
+    at += take.length
   }
+  const isPdf = startsWithPdfMagic(first)
   if (!isPdf) {
     await reader.cancel().catch(() => {})
     return null

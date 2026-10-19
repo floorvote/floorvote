@@ -145,6 +145,20 @@ describe('toMgaMasterListEntry', () => {
     expect(enacted.status_date).toBe('2026-04-09')
   })
 
+  it('pins the feed\'s limit: a Status naming a later date than the last reading keeps the reading\'s date and the Status text', () => {
+    // The feed has no action history and its Status text carries no year, so a hearing the text puts after the
+    // last reading or report can't be dated. The mapper keeps the reading's date and the text, and infers no year.
+    const r = { ...rec('HB0001'), Status: 'In the House - Hearing 3/04', FirstReadingDateOppositeHouse: null }
+    const e = toMgaMasterListEntry(r, '2026RS', 1, 'h', null)
+    expect(e.last_action).toBe('In the House - Hearing 3/04')
+    expect(e.last_action_date).toBe('2026-02-06')
+    expect(e.status_date).toBe('2026-02-06')
+    // No year is inferred from the text, whatever the date in it.
+    for (const text of ['In the House - Hearing 3/04', 'In the Senate - Hearing 12/15', 'In the House - Hearing 3/04/2027']) {
+      expect(toMgaMasterListEntry({ ...r, Status: text }, '2026RS', 1, 'h', null).last_action_date).toBe('2026-02-06')
+    }
+  })
+
   it('types a master-list row by its prefix, as the full build does, for every Maryland prefix and both chambers', async () => {
     const expected: Record<string, string> = { HB: 'B', SB: 'B', HJ: 'JR', SJ: 'JR', HR: 'R', SR: 'R' }
     for (const [prefix, type] of Object.entries(expected)) {

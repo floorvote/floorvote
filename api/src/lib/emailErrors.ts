@@ -1,14 +1,20 @@
+import type { SendResult } from '../../../shared/emailSender'
+
+type Failed = Extract<SendResult, { ok: false }>
+
 /**
- * A send that failed because of the recipient address, not the provider:
- * retrying it later or through the other provider cannot succeed. The invite
- * queue consumer acks on this instead of retrying.
- *
- * Lives apart from email.ts so callers can `instanceof` it even when a test
- * mocks the email module wholesale.
+ * One line saying why a send failed, for a log: the provider that failed and
+ * its error, or just the reason when no provider was tried (an invalid
+ * address, or none configured).
  */
-export class PermanentSendError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'PermanentSendError'
-  }
+export function describeSendFailure(r: Failed): string {
+  return r.provider ? `Email send failed (${r.provider}): ${r.error}` : r.error
+}
+
+/**
+ * Log a failed send. A send that went out, or that demo mode suppressed, logs
+ * nothing: neither is a failure.
+ */
+export function logSendFailure(r: SendResult): void {
+  if (!r.ok) console.error(describeSendFailure(r))
 }

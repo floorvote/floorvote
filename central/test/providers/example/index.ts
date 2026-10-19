@@ -18,6 +18,8 @@ export interface ExampleRecord {
   EffectiveDate: string | null
   Packet: string | null
   WithdrawnBy: string | null
+  /** "Yes" when the measure was signed into law. Absent on most records. */
+  Signed?: string | null
   InternalId: number
   Attachments: { Name: string; Url: string; Size: number }[]
   /** Meetings with the measure on their agenda, each with the feed's own id. Removed ones stay listed, flagged. */
@@ -112,7 +114,7 @@ export const example: Provider = {
         event_id: m.Id,
         ...(m.Removed ? { cancelled: true } : {}),
       }))),
-      extras: { lawNumber: r.LawNumber, effectiveDate: r.EffectiveDate, packet: r.Packet, withdrawnBy: r.WithdrawnBy },
+      extras: { lawNumber: r.LawNumber, effectiveDate: r.EffectiveDate, packet: r.Packet, withdrawnBy: r.WithdrawnBy, becameLaw: r.Signed ?? null },
     }
     return measure
   },
