@@ -249,7 +249,7 @@ describe('muting comments on a bill', () => {
     const url = oneClickUrl(ben)
     expect(url.startsWith('https://floorvote.example.org/')).toBe(true)
     expect(ben.html).toContain('Mute this bill')
-    expect(ben.html).toContain('Turn off reply emails')
+    expect(ben.html).toContain('Turn off reply notifications')
     expect(ben.html).toContain('/profile#setting-email-replies')
     // The footer link opens a page that asks before muting, so a mail scanner
     // that follows links can't mute anything.
