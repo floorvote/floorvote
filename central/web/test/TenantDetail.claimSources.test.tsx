@@ -61,7 +61,7 @@ function renderPage(path = '/tenants/ri') {
 }
 
 async function section() {
-  const heading = await screen.findByRole('heading', { name: 'Claim links' })
+  const heading = await screen.findByRole('heading', { name: 'Summary citations' })
   const el = heading.closest('section') as HTMLElement
   // The heading shows while the counts load.
   await waitFor(() => expect(within(el).queryByText('Loading…')).toBeNull())
@@ -156,7 +156,7 @@ describe('the claim links section on an instance page', () => {
     claimResponse = () => new Response(JSON.stringify({ error: { code: 'tenant_call_failed', message: 'RPC method does not exist' } }), { status: 502 })
     renderPage()
     const s = within(await section())
-    expect(s.getByText(/Claim link counts are unavailable/)).toBeInTheDocument()
+    expect(s.getByText(/Summary citation counts are unavailable/)).toBeInTheDocument()
     expect(s.getByText(/RPC method does not exist/)).toBeInTheDocument()
     expect(screen.getByText(/AI instructions: personalized/)).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Match type' })).toBeInTheDocument()
@@ -166,7 +166,7 @@ describe('the claim links section on an instance page', () => {
     claimResponse = () => new Response(JSON.stringify({ error: { code: 'not_bound', message: 'Tenant is not bound to central' } }), { status: 501 })
     renderPage()
     const s = within(await section())
-    expect(s.getByText(/Claim link counts are unavailable/)).toBeInTheDocument()
+    expect(s.getByText(/Summary citation counts are unavailable/)).toBeInTheDocument()
     expect(s.getByText(/not bound/)).toBeInTheDocument()
   })
 
@@ -174,7 +174,7 @@ describe('the claim links section on an instance page', () => {
     claimResponse = () => new Response(JSON.stringify({ data: { surprise: true }, meta: {} }))
     renderPage()
     const s = within(await section())
-    expect(s.getByText(/Claim link counts are unavailable/)).toBeInTheDocument()
+    expect(s.getByText(/Summary citation counts are unavailable/)).toBeInTheDocument()
     expect(screen.getByText(/AI instructions: personalized/)).toBeInTheDocument()
   })
 })

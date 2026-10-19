@@ -6,7 +6,7 @@ import { users, sessions, magicLinks, termsAcceptances } from '../db/schema'
 import { nowDb } from '../lib/dbTime'
 import { dbTsToEpoch } from '../../../shared/time'
 import { generateToken, hashToken } from '../lib/crypto'
-import { sendMagicLink } from '../lib/email'
+import { sendSignInLinkLogged } from '../lib/signInLink'
 import { recordAuthEvent, authReqContext } from '../lib/authEvents'
 import { getSuperAdminCookieDomain } from '../lib/superadmin'
 import { parseAppDomains } from '../lib/appDomains'
@@ -143,11 +143,11 @@ authRoutes.post('/magic-link', async (c) => {
     await recordAuthEvent(db, { event: 'link_requested', email: user.email, userId: user.id, linkType: 'login', ...authReqContext(c) })
 
     const url = `${c.env.APP_URL}/auth/verify?token=${encodeURIComponent(rawToken)}`
+    const sent = sendSignInLinkLogged(c.env, db, { to: user.email, link: 'login', url, userId: user.id })
     try {
-      c.executionCtx.waitUntil(sendMagicLink(user.email, url, c.env, 'login', db, user.id).catch(console.error))
+      c.executionCtx.waitUntil(sent)
     } catch {
       // No ExecutionContext in test environments — fire and forget
-      sendMagicLink(user.email, url, c.env, 'login', db, user.id).catch(console.error)
     }
   } else {
     await recordAuthEvent(db, {

@@ -1,8 +1,8 @@
 import { and, eq, ne, isNull, isNotNull, gte, lt, exists, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/sqlite-core'
 import { calendarEvents, calendarEventBills, bills, users, sessions, associationConfig } from '../db/schema'
-import { renderWeekAheadEmail, type WeekAheadEvent, type WeekAheadDay } from './weekAheadEmail'
-import { sendBatch, unsubscribeHeaders } from './email'
+import { renderWeekAheadEmail, capBodyEvents, type WeekAheadEvent, type WeekAheadDay } from './weekAheadEmail'
+import { senderFor, unsubscribeHeaders } from './email'
 import { nowDb } from './dbTime'
 import { prioritizedBillEntry, billEntryGroupKey } from './calendarVisibility'
 import { loadDateFieldEvents } from './dateFieldEvents'
@@ -116,7 +116,7 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
         ),
       ),
     )
-    .orderBy(calendarEvents.date, calendarEvents.time)
+    .orderBy(calendarEvents.date, calendarEvents.time, calendarEvents.id)
     .all()
 
   // Date custom fields on prioritized bills (#342): all-day, and projected
@@ -190,11 +190,14 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
     dayEventMap.get(d)!.push(ev)
   }
 
-  const days: WeekAheadDay[] = dateOrder
+  const allDays: WeekAheadDay[] = dateOrder
     .filter(d => dayEventMap.has(d))
     .map(d => ({ date: d, label: formatDayLabel(d), events: dayEventMap.get(d)! }))
 
-  if (days.length === 0) return
+  if (allDays.length === 0) return
+
+  // Keep the email under Gmail's clip (#675): the calendar has the rest.
+  const { days, omitted } = capBodyEvents(allDays)
 
   // Recipients: opted-in users with active sessions
   const recipients = await db.select({ email: users.email }).from(users)
@@ -213,15 +216,12 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
   const lastDay = days[days.length - 1].label.split(', ').slice(1).join(', ')
   const range = firstDay === lastDay ? firstDay : `${firstDay}–${lastDay}`
   const subject = `${assocName}: Your week ahead — ${range}`
-  const html = renderWeekAheadEmail({ days, assocName, appUrl: env.APP_URL })
+  const html = renderWeekAheadEmail({ days, assocName, appUrl: env.APP_URL, omitted })
 
   const headers = unsubscribeHeaders(env.APP_URL, 'setting-week-ahead')
-  await sendBatch(
-    env,
-    recipients.map(r => ({ to: [r.email], subject, html, headers })),
-    'week-ahead',
-    db,
-    { bulk: true },
+  const { sent, failed } = await senderFor(env, db).sendBatch(
+    recipients.map(r => ({ purpose: 'bulk' as const, to: [r.email], subject, html, headers })),
   )
+  console.log(`[week-ahead] sent ${sent}, failed ${failed}`)
   await stampLastWeekAhead(db, nowDb())
 }

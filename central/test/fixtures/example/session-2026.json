@@ -9,6 +9,7 @@
     "EffectiveDate": "2026-06-01",
     "Packet": "https://legislature.example/packets/B26-0001.pdf",
     "WithdrawnBy": null,
+    "Signed": "Yes",
     "InternalId": 70011,
     "Attachments": [
       { "Name": "Committee report", "Url": "https://legislature.example/files/7001.pdf", "Size": 81233 }

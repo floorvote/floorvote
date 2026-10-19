@@ -5,6 +5,7 @@ import { STATUS_CHIP_MAX_WIDTH } from '../lib/chipStyles'
 import { CHIP_GRID, CHIP_GRID_MULTISTATE } from '../pages/BillList/constants'
 import { paneGridTemplate } from '../pages/BillList/paneWidth'
 import { color } from '../styles/tokens'
+import { CHIP_MINI_DIMS } from '../../../shared/billChipColors'
 import { LONGEST_STATUS_LABELS, VERY_LONG_STATUS } from './longStatusLabels.fixture'
 
 // The status chip's opt-in width cap (#404): the bill table and the split pane
@@ -138,6 +139,36 @@ describe('a short label', () => {
     expect(chip).not.toHaveAttribute('title')
     expect(chip.style.maxWidth).toBe('')
     expect(chip.style.textOverflow).toBe('')
+  })
+})
+
+describe('StatusChip mini', () => {
+  it('is smaller than the default chip, in the shared mini dimensions', () => {
+    const { rerender } = render(<StatusChip status="Passed" />)
+    const full = chipOf('Passed')
+    const fullSize = parseFloat(full.style.fontSize)
+    rerender(<StatusChip status="Passed" mini />)
+    const mini = chipOf('Passed')
+    expect(parseFloat(mini.style.fontSize)).toBeLessThan(fullSize)
+    expect(mini.style.fontSize).toBe(`${CHIP_MINI_DIMS.fontSize}px`)
+    expect(mini.style.padding).toBe(CHIP_MINI_DIMS.padding)
+  })
+
+  it('keeps the default chip as it was without the prop', () => {
+    render(<StatusChip status="Passed" />)
+    expect(chipOf('Passed').style.padding).toBe('3px 10px')
+  })
+
+  it('stays plain text with no click handler, and a button with one', () => {
+    const { rerender } = render(<StatusChip status="Passed" mini />)
+    expect(screen.queryByRole('button')).toBeNull()
+    rerender(<StatusChip status="Passed" mini onClick={() => {}} />)
+    expect(screen.getByRole('button', { name: 'Passed' })).toBeInTheDocument()
+  })
+
+  it('renders nothing for an empty status', () => {
+    const { container } = render(<StatusChip status="" mini />)
+    expect(container).toBeEmptyDOMElement()
   })
 })
 

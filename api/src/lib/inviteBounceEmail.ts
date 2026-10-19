@@ -4,7 +4,7 @@ import { users } from '../db/schema'
 import { color, fontSize, fontWeight, radius, shadow } from '../../../shared/tokens'
 import { PRODUCT_NAME } from '../../../shared/brand'
 import { renderEmailShell, emailButton, emailFooterLink } from './emailShell'
-import { sendEmail, resolveAssocName } from './email'
+import { senderFor, resolveAssocName } from './email'
 import type { RecordedBounce } from './inviteBounces'
 import { normalizeMemberAddress } from './memberAddress'
 
@@ -145,8 +145,9 @@ export async function notifyInviteBounces(env: Env, db: AppDb, bounces: Recorded
   for (const r of recipients) {
     const { subject, html, text } = renderInviteBounceEmail({ appUrl: env.APP_URL, instanceName, bounces: r.bounces })
     try {
-      const res = await sendEmail(env, { to: [r.email], subject, html, text }, db)
-      if (!res.ok) console.error(`[invite-bounces] bounce notification to member ${r.id} failed (${res.provider}): ${res.error}`)
+      // The operator purpose never counts toward email health, so no db.
+      const res = await senderFor(env).send({ purpose: 'operator', to: [r.email], subject, html, text })
+      if (!res.ok) console.error(`[invite-bounces] bounce notification to member ${r.id} failed (${res.provider ?? 'no provider'}): ${res.error}`)
     } catch (err) {
       console.error(`[invite-bounces] bounce notification to member ${r.id} failed`, err)
     }

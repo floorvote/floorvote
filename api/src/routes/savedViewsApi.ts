@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { eq, sql, and, ne } from 'drizzle-orm'
 import { getDb } from '../db/client'
-import { savedViews } from '../db/schema'
+import { savedViews, savedViewSubscriptions } from '../db/schema'
 import { nowDb } from '../lib/dbTime'
 import { requireAuth } from '../middleware/auth'
 import type { AppEnv } from '../types'
@@ -28,7 +28,8 @@ function validateViewQuery(input: unknown): { value: string } | { error: string 
   return { value: query }
 }
 
-export type SavedViewDto = { id: string; name: string; query: string; slug: string; previousSlug: string | null }
+/** `subscribed` is whether the member asking has included the view in their digest (#449). */
+export type SavedViewDto = { id: string; name: string; query: string; slug: string; previousSlug: string | null; subscribed: boolean }
 
 // Reads are member-accessible: every member can see and apply every view.
 // Writes live under /api/admin/views instead — the same split /api/roles uses.
@@ -38,7 +39,7 @@ savedViewsRouter.use('*', requireAuth)
 
 // Mirrors customFieldsApi's toSlug/uniqueSlug, but hyphenated rather than
 // underscored — this slug is URL-facing (?view=clerk-bills), where
-// customFieldsApi's feeds into a cf_<slug> query key instead.
+// customFieldsApi's feeds into a field.<slug> query key instead.
 function toSlug(name: string): string {
   return name
     .toLowerCase()
@@ -82,10 +83,38 @@ savedViewsRouter.get('/', async (c) => {
     }
   }
 
+  const mine = new Set((await db
+    .select({ viewId: savedViewSubscriptions.viewId })
+    .from(savedViewSubscriptions)
+    .where(eq(savedViewSubscriptions.userId, c.get('user').id))
+    .all()).map(r => r.viewId))
+
   const views: SavedViewDto[] = rows.map(r => ({
-    id: r.id, name: r.name, query: r.query, slug: r.slug as string, previousSlug: r.previousSlug,
+    id: r.id, name: r.name, query: r.query, slug: r.slug as string, previousSlug: r.previousSlug, subscribed: mine.has(r.id),
   }))
   return c.json({ views })
+})
+
+// PUT /api/views/:id/subscription — include a view in the caller's own digest, or take it out.
+// A member's own preference, so it is not an admin write. Every member can see every view, so a view
+// the caller can't subscribe to is one that doesn't exist (never made, or deleted). Idempotent.
+savedViewsRouter.put('/:id/subscription', async (c) => {
+  const body = await c.req.json().catch(() => null) as { subscribed?: unknown } | null
+  if (typeof body?.subscribed !== 'boolean') return c.json({ error: 'subscribed must be true or false' }, 400)
+
+  const db = getDb(c.env.DB)
+  const viewId = c.req.param('id')
+  const view = await db.select({ id: savedViews.id }).from(savedViews).where(eq(savedViews.id, viewId)).get()
+  if (!view) return c.json({ error: 'not found' }, 404)
+
+  const userId = c.get('user').id
+  if (body.subscribed) {
+    await db.insert(savedViewSubscriptions).values({ userId, viewId }).onConflictDoNothing()
+  } else {
+    await db.delete(savedViewSubscriptions)
+      .where(and(eq(savedViewSubscriptions.userId, userId), eq(savedViewSubscriptions.viewId, viewId)))
+  }
+  return c.json({ subscribed: body.subscribed })
 })
 
 // ── Admin writes ──────────────────────────────────────────────────────────────
@@ -220,6 +249,9 @@ adminSavedViewsRouter.delete('/:id', async (c) => {
   const existing = await db.select({ id: savedViews.id }).from(savedViews).where(eq(savedViews.id, id)).get()
   if (!existing) return c.json({ error: 'not found' }, 404)
 
+  // The subscriptions go with the view. The table's own cascade does it too, but a subscription must never
+  // outlive its view, so the delete states it rather than leaning on foreign keys being enforced.
+  await db.delete(savedViewSubscriptions).where(eq(savedViewSubscriptions.viewId, id))
   await db.delete(savedViews).where(eq(savedViews.id, id))
   return c.body(null, 204)
 })

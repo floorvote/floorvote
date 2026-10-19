@@ -1,0 +1,86 @@
+{
+  "committeeMeeting": {
+    "chamber": "House",
+    "committees": [
+      {
+        "name": "House Natural Resources Subcommittee on Water, Wildlife and Fisheries",
+        "systemCode": "hsii13",
+        "url": "https://api.congress.gov/v3/committee/house/hsii13?format=json"
+      }
+    ],
+    "congress": 119,
+    "date": "2025-06-24T14:15:00Z",
+    "eventId": "118298",
+    "location": {
+      "building": "Longworth House Office Building",
+      "room": "1324"
+    },
+    "meetingDocuments": [
+      {
+        "description": "H.R. 1676 (Rep. Donalds), “Make SWAPs Efficient Act of 2025”",
+        "documentType": "Bills and Resolutions",
+        "format": "PDF",
+        "name": "H.R. 1676 (Rep. Donalds), “Make SWAPs Efficient Act of 2025”",
+        "url": "https://www.congress.gov/119/meeting/house/118298/documents/BILLS-119HR1676ih.pdf"
+      }
+    ],
+    "meetingStatus": "Scheduled",
+    "relatedItems": {
+      "bills": [
+        {
+          "congress": 119,
+          "number": "3857",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/3857?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "3538",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/3538?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "3858",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/3858?format=json"
+        },
+        {
+          "congress": 119,
+          "number": "1676",
+          "type": "HR",
+          "url": "https://api.congress.gov/v3/bill/119/hr/1676?format=json"
+        }
+      ]
+    },
+    "title": "Legislative hearing on H.R. 1676 (Rep. Donalds), “Make SWAPs Efficient Act of 2025.” H.R. 3538 (Rep. Garbarino), “Wildlife Confiscations Network Act of 2025.” H.R. 3857 (Rep. Hurd), “Snow Water Supply Forecasting Reauthorization Act of 2025.” H.R. 3858 (Rep. Dingell), “Sport Fish Restoration, Recreational Boating Safety, and Wildlife Restoration Act of 2025.”",
+    "type": "Hearing",
+    "updateDate": "2026-10-13T13:34:05Z",
+    "videos": [
+      {
+        "name": "Legislative Hearing | Water, Wildlife and Fisheries Subcommittee",
+        "url": "https://www.congress.gov/event/119th-Congress/house-event/118298"
+      }
+    ],
+    "witnessDocuments": [
+      {
+        "documentType": "Witness Statement",
+        "format": "PDF",
+        "url": "https://www.congress.gov/119/meeting/house/118298/witnesses/HHRG-119-II13-Wstate-MikoD-20250624.pdf"
+      }
+    ],
+    "witnesses": [
+      {
+        "name": "The Honorable Byron Donalds",
+        "position": "Member of Congress"
+      }
+    ]
+  },
+  "request": {
+    "chamber": "house",
+    "congress": "119",
+    "contentType": "application/json",
+    "eventId": "118298",
+    "format": "json"
+  }
+}

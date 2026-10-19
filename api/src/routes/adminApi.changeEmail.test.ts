@@ -5,13 +5,14 @@ import { app } from '../index'
 import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink, seedAuthEvent } from '../../test/helpers'
 import { getDb } from '../db/client'
 import { users, magicLinks, authEvents } from '../db/schema'
-import { sendMagicLink } from '../lib/email'
+import { resetMail, signInSent, linkIn, backgroundWork } from '../../test/mail'
 
 vi.mock('../lib/centralFetch', () => ({
   centralFetch: vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }),
 }))
 vi.mock('../cron/sync', () => ({ registerWithCentral: vi.fn().mockResolvedValue(undefined) }))
-vi.mock('../lib/email', () => ({ sendMagicLink: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('../lib/email', async (importOriginal) =>
+  (await import('../../test/mail')).withFakeSender(await importOriginal<typeof import('../lib/email')>()))
 
 const UNCHANGED = "That's already their address. Check it for a typo, or use Resend invite to send to it again."
 const IN_USE = 'Another member already uses that address.'
@@ -46,11 +47,14 @@ describe('POST /admin/members/:id/change-email', () => {
     email: unknown,
     opts: { cookie?: string; central?: unknown } = {},
   ) {
+    // The invite goes out in the background, so wait for it before a test reads what was sent.
+    const bg = backgroundWork()
     const res = await app.request(`/api/admin/members/${targetId}/change-email`, {
       method: 'POST',
       headers: { Cookie: opts.cookie ?? adminCookie, 'Content-Type': 'application/json' },
       body: JSON.stringify({ email }),
-    }, { ...env, CENTRAL: (opts.central ?? centralWith({ suppressed: false })) as Fetcher })
+    }, { ...env, CENTRAL: (opts.central ?? centralWith({ suppressed: false })) as Fetcher }, bg.ctx)
+    await bg.settle()
     return { status: res.status, body: await res.json() as { ok?: boolean; email?: string; error?: string } }
   }
 
@@ -64,7 +68,7 @@ describe('POST /admin/members/:id/change-email', () => {
   }
 
   beforeEach(async () => {
-    vi.mocked(sendMagicLink).mockClear()
+    resetMail()
     await resetDb()
     await applyMigrations()
     adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Ada Admin' })
@@ -84,9 +88,14 @@ describe('POST /admin/members/:id/change-email', () => {
       expect(changed).toMatchObject({ email: 'jane@example.com', reason: 'jane@exmaple.com', actorId: adminId })
 
       // Sent the way Resend invite sends: an invite link to the new address.
-      expect(sendMagicLink).toHaveBeenCalledTimes(1)
-      const [to, , , linkType, , userId] = vi.mocked(sendMagicLink).mock.calls[0]
-      expect([to, linkType, userId]).toEqual(['jane@example.com', 'invite', pendingId])
+      expect(signInSent()).toHaveLength(1)
+      const [invite] = signInSent()
+      expect(invite).toMatchObject({ purpose: 'sign-in', link: 'invite', to: ['jane@example.com'] })
+      // The fake sender never calls the message's event writer, so call it as the real one would:
+      // the event lands on the member's own history.
+      await invite.recordEvent!({ event: 'email_sent', provider: 'resend', reason: null, messageId: 'rs-1' })
+      const [sentEvent] = await eventsFor(pendingId, 'email_sent')
+      expect(sentEvent).toMatchObject({ email: 'jane@example.com', linkType: 'invite', provider: 'resend' })
       const [requested] = await eventsFor(pendingId, 'link_requested')
       expect(requested).toMatchObject({ email: 'jane@example.com', linkType: 'invite' })
 
@@ -118,7 +127,7 @@ describe('POST /admin/members/:id/change-email', () => {
         expect(res.status).not.toBe(200)
       }
 
-      const url = vi.mocked(sendMagicLink).mock.calls[0][1]
+      const url = linkIn(signInSent()[0])
       const newToken = new URL(url).searchParams.get('token')!
       const res = await app.request('/api/auth/verify', {
         method: 'POST',
@@ -183,7 +192,7 @@ describe('POST /admin/members/:id/change-email', () => {
     async function expectUntouched(id: string, email: string) {
       expect((await memberRow(id)).email).toBe(email)
       expect(await eventsFor(id, 'email_changed')).toHaveLength(0)
-      expect(sendMagicLink).not.toHaveBeenCalled()
+      expect(signInSent()).toHaveLength(0)
     }
 
     it.each([
@@ -323,7 +332,7 @@ describe('POST /admin/members/:id/change-email', () => {
     it('returns 404 for an unknown member', async () => {
       const r = await changeEmail('no-such-member', 'jane@example.com')
       expect(r.status).toBe(404)
-      expect(sendMagicLink).not.toHaveBeenCalled()
+      expect(signInSent()).toHaveLength(0)
     })
   })
 
@@ -341,7 +350,7 @@ describe('POST /admin/members/:id/change-email', () => {
       }
       expect((await memberRow(pendingId)).email).toBe('jane@exmaple.com')
       expect(await eventsFor(pendingId, 'email_changed')).toHaveLength(0)
-      expect(sendMagicLink).not.toHaveBeenCalled()
+      expect(signInSent()).toHaveLength(0)
     })
 
     it('refuses, and cancels nothing, when the member signs in between the check and the write', async () => {
@@ -364,7 +373,7 @@ describe('POST /admin/members/:id/change-email', () => {
       const links = await getDb(env.DB).select().from(magicLinks).where(eq(magicLinks.userId, pendingId)).all()
       expect(links).toHaveLength(2)
       expect(await eventsFor(pendingId, 'email_changed')).toHaveLength(0)
-      expect(sendMagicLink).not.toHaveBeenCalled()
+      expect(signInSent()).toHaveLength(0)
     })
 
     it('refuses when the member is deactivated between the check and the write', async () => {
@@ -377,7 +386,7 @@ describe('POST /admin/members/:id/change-email', () => {
       const r = await changeEmail(pendingId, 'jane@example.com', { central })
       expect(r.status).toBe(409)
       expect((await memberRow(pendingId)).email).toBe('jane@exmaple.com')
-      expect(sendMagicLink).not.toHaveBeenCalled()
+      expect(signInSent()).toHaveLength(0)
     })
 
     it('lets exactly one of two concurrent changes to the same address through', async () => {
@@ -390,7 +399,7 @@ describe('POST /admin/members/:id/change-email', () => {
       expect(results.find(r => r.status === 409)!.body).toEqual({ error: IN_USE })
       const holders = (await getDb(env.DB).select().from(users).all()).filter(u => u.email === 'shared@example.com')
       expect(holders).toHaveLength(1)
-      expect(sendMagicLink).toHaveBeenCalledTimes(1)
+      expect(signInSent()).toHaveLength(1)
     })
   })
 

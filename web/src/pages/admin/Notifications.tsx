@@ -7,12 +7,13 @@ import { isModuleEnabled, getModuleSetting } from '../../lib/modules'
 import type { ModulesConfig } from '../../lib/modules'
 import { CARD } from '../../lib/cardStyle'
 import { CARD_TITLE } from '../../lib/textStyles'
+import { settingBox, SETTING_BOX_HEADER, SETTING_BOX_TITLE, SETTING_BOX_DESC } from '../../lib/settingBoxStyle'
 import { useSidebarRefresh } from '../../context/SidebarRefreshContext'
 import { useDemo } from '../../context/DemoContext'
 import { useConfig } from '../../context/ConfigContext'
 import { usePageTitle } from '../../hooks/usePageTitle'
 import { orgNotificationsLabel } from '../../lib/orgNoun'
-import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
+import { color, radius, fontSize } from '../../styles/tokens'
 
 interface AdminConfigResponse {
   modules?: ModulesConfig
@@ -124,21 +125,7 @@ export function Notifications() {
     border: `1px solid ${color.borderDefault}`,
     fontFamily: 'inherit',
   }
-  const settingBox: React.CSSProperties = {
-    padding: '12px 14px',
-    border: `1px solid ${color.borderDefault}`,
-    borderRadius: radius.lg,
-    background: color.white,
-    opacity: demoLocked ? 0.55 : 1,
-  }
-  const boxHeader: React.CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 16,
-  }
-  const boxTitle: React.CSSProperties = { fontSize: fontSize.sm, fontWeight: fontWeight.bold, color: color.textPrimary }
-  const boxDesc: React.CSSProperties = { fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5, marginTop: 2 }
+  const settingBoxStyle = settingBox(demoLocked)
 
   return (
     <div style={PAGE}>
@@ -159,11 +146,11 @@ export function Notifications() {
           <div style={{ marginTop: 16, color: color.textMuted, fontSize: fontSize.sm }}>Loading…</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
-            <div style={settingBox}>
-              <div style={boxHeader}>
+            <div style={settingBoxStyle}>
+              <div style={SETTING_BOX_HEADER}>
                 <div>
-                  <div style={boxTitle}>Send a digest of recent bill activity to members</div>
-                  <div style={boxDesc}>
+                  <div style={SETTING_BOX_TITLE}>Send a digest of recent bill activity to members</div>
+                  <div style={SETTING_BOX_DESC}>
                     Email members a daily or weekly summary of recent activity on priority bills. Admins and owners also get a list of new bills matching your keywords awaiting a priority decision. Members can opt out individually on their Account page.
                   </div>
                 </div>
@@ -217,11 +204,11 @@ export function Notifications() {
               </div>
             </div>
 
-            <div style={settingBox}>
-              <div style={boxHeader}>
+            <div style={settingBoxStyle}>
+              <div style={SETTING_BOX_HEADER}>
                 <div>
-                  <div style={boxTitle}>Send a digest of upcoming hearings and events to members</div>
-                  <div style={boxDesc}>
+                  <div style={SETTING_BOX_TITLE}>Send a digest of upcoming hearings and events to members</div>
+                  <div style={SETTING_BOX_DESC}>
                     Email members a weekly preview of upcoming hearings and events. Members can opt out individually on their Account page.
                   </div>
                 </div>
@@ -251,11 +238,11 @@ export function Notifications() {
               </div>
             </div>
 
-            <div style={settingBox}>
-              <div style={boxHeader}>
+            <div style={settingBoxStyle}>
+              <div style={SETTING_BOX_HEADER}>
                 <div>
-                  <div style={boxTitle}>Send conversation emails to members</div>
-                  <div style={boxDesc}>
+                  <div style={SETTING_BOX_TITLE}>Send conversation emails to members</div>
+                  <div style={SETTING_BOX_DESC}>
                     Covers mentions of a member, a role, @admins, or @everyone in comments, and replies on bills members have commented on, for the whole instance. Members can turn off their own reply notifications, in the app and by email, but not mention emails. This switch does not affect in-app notifications.
                   </div>
                 </div>
