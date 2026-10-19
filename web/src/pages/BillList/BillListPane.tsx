@@ -291,7 +291,9 @@ export function BillListPane() {
   // range and fire again at once. The reader's Retry clears it; so does a new list.
   const [loadMoreFailed, setLoadMoreFailed] = useState(false)
   const loadMoreBusy = useRef(false)
-  useEffect(() => { setLoadMoreFailed(false) }, [search])
+  const searchRef = useRef(search)
+  searchRef.current = search
+  useEffect(() => { setLoadMoreFailed(false); loadMoreBusy.current = false; setLoadingMore(false) }, [search])
   const sentinelRef = useRef<HTMLLIElement>(null)
   // Infinite scroll, as on the Bills page, but watched inside the pane's own
   // scroller: the pane scrolls independently of the viewport. The list (and so
@@ -316,14 +318,17 @@ export function BillListPane() {
     setLoadingMore(true)
     setLoadMoreFailed(false)
     const next = page + 1
+    // A response for a list the pane has since left must not touch this one.
+    const stale = () => searchRef.current !== search
     apiFetch<BillsPage>(`/bills?${billsApiParamsFromSearch(search, next, peekCustomFieldDefs())}`)
       .then(data => {
+        if (stale()) return
         setBills(prev => [...prev, ...data.bills])
         setHasMore(next < data.pagination.totalPages)
         setPage(next)
       })
-      .catch(() => setLoadMoreFailed(true))
-      .finally(() => { loadMoreBusy.current = false; setLoadingMore(false) })
+      .catch(() => { if (!stale()) setLoadMoreFailed(true) })
+      .finally(() => { if (!stale()) { loadMoreBusy.current = false; setLoadingMore(false) } })
   }
 
   const here = decodePath(location.pathname)
@@ -400,10 +405,9 @@ export function BillListPane() {
             <li
               ref={sentinelRef}
               aria-hidden={loadingMore || loadMoreFailed ? undefined : true}
-              role={loadingMore ? 'status' : undefined}
               style={{ ...CHROME_TEXT, padding: 12, textAlign: 'center' }}
             >
-              {loadingMore ? 'Loading…' : loadMoreFailed ? (
+              {loadingMore ? <span role="status">Loading…</span> : loadMoreFailed ? (
                 <>
                   Couldn’t load more{' '}
                   <button type="button" onClick={loadMore} style={{ color: color.linkBlue, background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit' }}>Retry</button>
