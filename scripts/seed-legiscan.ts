@@ -64,7 +64,7 @@ import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { execSync } from 'child_process'
 import * as readline from 'readline'
-import { seedCentralDb, seedIndividualVotesOnly, cleanupTmpFiles, runSql, type SeedCentralDbOptions } from './lib/seed-legiscan-db.js'
+import { seedCentralDb, seedIndividualVotesOnly, cleanupTmpFiles, runSql, sessionSyncOnSql, type SeedCentralDbOptions } from './lib/seed-legiscan-db.js'
 import { progress, progressDone } from './lib/progress.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -505,6 +505,17 @@ async function main() {
     console.log(`  To link later: POST ${CENTRAL_API_URL}/api/tenants/seed-session/<tenantId>?sessionId=${sessionId}`)
   }
 
+  // ── Turn on sync for a session this seed created ──────────────────────────
+  // A new session row went in with sync off, so central's hourly sync left it
+  // alone while the bills loaded. Turn it on only once the load and the link
+  // step have both finished. A seed with skipped bill files is incomplete, so
+  // its session stays off until a re-run completes. A session that existed
+  // before the seed keeps its own setting (sessionSyncOnSql is a no-op there).
+  if (errorCount === 0) {
+    runSql([sessionSyncOnSql(sessionId)], seedOpts)
+    console.log('\n  ✓ Sync is on for this session (it stays as it was if the session predates this seed)')
+  }
+
   cleanupTmpFiles()
 
   console.log(`\n✅ Done!`)
@@ -524,7 +535,7 @@ async function main() {
   // build failures (malformed JSON) — still an incomplete seed, so exit non-zero
   // instead of letting "✅ Done" imply a full seed.
   if (errorCount > 0) {
-    console.error(`\n⚠️  ${errorCount} bill file(s) failed to build and were skipped — seed is INCOMPLETE. Re-run to retry (idempotent).`)
+    console.error(`\n⚠️  ${errorCount} bill file(s) failed to build and were skipped — seed is INCOMPLETE. Re-run to retry (idempotent). A session this seed created keeps sync off until a run completes.`)
     process.exit(1)
   }
 }

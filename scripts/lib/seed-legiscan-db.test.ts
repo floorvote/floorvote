@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { DatabaseSync } from 'node:sqlite'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { isTransientD1Error, sessionUpsertSql } from './seed-legiscan-db'
+import { isTransientD1Error, sessionUpsertSql, sessionSyncOnSql } from './seed-legiscan-db'
 
 describe('isTransientD1Error', () => {
   // These are exactly the blips that the original narrow filter (timeout/503 only)
@@ -70,5 +70,42 @@ describe('sessionUpsertSql', () => {
     db.exec(sessionUpsertSql(2154, 'RI', { ...session, sine_die: 1 }))
     expect(db.prepare('SELECT session_name, sine_die, provider, slug, sync_enabled, full_sync_hours_et FROM sessions').all())
       .toEqual([{ session_name: '2026 Regular Session', sine_die: 1, provider: 'legiscan', slug: '2026', sync_enabled: 0, full_sync_hours_et: '[5]' }])
+  })
+
+  const syncOf = (db: DatabaseSync) =>
+    (db.prepare('SELECT sync_enabled FROM sessions WHERE session_id = 2154').get() as { sync_enabled: number }).sync_enabled
+
+  it('inserts a new session with sync off', () => {
+    const db = migrated()
+    db.exec(sessionUpsertSql(2154, 'RI', session))
+    expect(syncOf(db)).toBe(0)
+  })
+
+  it('turns sync on for a session it created only when the finished seed runs sessionSyncOnSql', () => {
+    const db = migrated()
+    db.exec(sessionUpsertSql(2154, 'RI', session))
+    expect(syncOf(db)).toBe(0) // still off while bills load and the tenant link runs
+    db.exec(sessionSyncOnSql(2154))
+    expect(syncOf(db)).toBe(1)
+  })
+
+  it.each([0, 1])('leaves sync_enabled = %i alone when seeding a session that already existed', (before) => {
+    const db = migrated()
+    db.exec(`INSERT INTO sessions (session_id, state, state_id, year_start, year_end, session_title, session_name, sync_enabled)
+      VALUES (2154, 'RI', 39, 2026, 2026, 'old', 'old', ${before})`)
+    db.exec(sessionUpsertSql(2154, 'RI', session))
+    expect(syncOf(db)).toBe(before)
+    db.exec(sessionSyncOnSql(2154))
+    expect(syncOf(db)).toBe(before)
+  })
+
+  it('ends with sync on when a re-run completes a seed that stopped partway', () => {
+    const db = migrated()
+    db.exec(sessionUpsertSql(2154, 'RI', session)) // first run creates the session, then dies mid-load
+    expect(syncOf(db)).toBe(0)
+    db.exec(sessionUpsertSql(2154, 'RI', session)) // re-run: the row now exists
+    expect(syncOf(db)).toBe(0)
+    db.exec(sessionSyncOnSql(2154))
+    expect(syncOf(db)).toBe(1)
   })
 })

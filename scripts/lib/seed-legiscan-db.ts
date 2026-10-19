@@ -57,19 +57,42 @@ export interface SeedSession {
   prior?: number; special?: number; session_tag?: string; session_title?: string; session_name?: string
 }
 
+/** The `settings` key that marks a session this seeder created and has not finished loading. */
+export const seedPendingKey = (sessionId: number) => `seed_pending_session:${num(sessionId)}`
+
 /**
  * Upsert a seeded session's row. On an existing row, only the dataset's own
  * fields are written: central's slug (unique within the state, and never
  * changed once assigned), the row's provider, and its sync settings stay as
  * they are. A new row gets its slug on central's next cron tick.
+ *
+ * A new row is inserted with `sync_enabled = 0`, so central's hourly sync
+ * leaves it alone while the bills load (hours, for a full session), and a
+ * `settings` marker records that the seeder owes it a `sessionSyncOnSql`.
+ * The marker survives an interrupted seed, so a re-run that completes still
+ * turns sync on, while a session that existed before any seed keeps its
+ * setting.
  */
 export function sessionUpsertSql(sessionId: number, state: string, session: SeedSession): string {
-  return `INSERT INTO sessions (session_id, state, state_id, year_start, year_end, prefile, sine_die, prior, special, session_tag, session_title, session_name)
-VALUES (${num(sessionId)}, ${esc(state)}, ${num(session.state_id)}, ${num(session.year_start)}, ${num(session.year_end)}, ${num(session.prefile ?? 0)}, ${num(session.sine_die ?? 0)}, ${num(session.prior ?? 0)}, ${num(session.special ?? 0)}, ${esc(session.session_tag ?? '')}, ${esc(session.session_title ?? '')}, ${esc(session.session_name ?? '')})
+  return `INSERT OR IGNORE INTO settings (key, value)
+SELECT ${esc(seedPendingKey(sessionId))}, '1' WHERE NOT EXISTS (SELECT 1 FROM sessions WHERE session_id = ${num(sessionId)});
+INSERT INTO sessions (session_id, state, state_id, year_start, year_end, prefile, sine_die, prior, special, session_tag, session_title, session_name, sync_enabled)
+VALUES (${num(sessionId)}, ${esc(state)}, ${num(session.state_id)}, ${num(session.year_start)}, ${num(session.year_end)}, ${num(session.prefile ?? 0)}, ${num(session.sine_die ?? 0)}, ${num(session.prior ?? 0)}, ${num(session.special ?? 0)}, ${esc(session.session_tag ?? '')}, ${esc(session.session_title ?? '')}, ${esc(session.session_name ?? '')}, 0)
 ON CONFLICT (session_id) DO UPDATE SET
   state_id = excluded.state_id, year_start = excluded.year_start, year_end = excluded.year_end,
   prefile = excluded.prefile, sine_die = excluded.sine_die, prior = excluded.prior, special = excluded.special,
   session_tag = excluded.session_tag, session_title = excluded.session_title, session_name = excluded.session_name;`
+}
+
+/**
+ * Turn sync on for a session the seeder created, once its load (and the
+ * tenant link step) has finished, and clear the marker. A no-op for a session
+ * that existed before the seed: it has no marker, so its sync setting stays.
+ */
+export function sessionSyncOnSql(sessionId: number): string {
+  return `UPDATE sessions SET sync_enabled = 1
+WHERE session_id = ${num(sessionId)} AND EXISTS (SELECT 1 FROM settings WHERE key = ${esc(seedPendingKey(sessionId))});
+DELETE FROM settings WHERE key = ${esc(seedPendingKey(sessionId))};`
 }
 
 export function isTransientD1Error(msg: string): boolean {
