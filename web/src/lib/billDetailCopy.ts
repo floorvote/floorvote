@@ -6,7 +6,7 @@ type TextStatus = 'in_r2' | 'available' | 'no_texts' | 'not_checked' | null
 type AiSkipReason = 'pdf_too_large' | null
 
 // Message shown in the "no AI summary yet" box on the bill detail page.
-// Branches by whether the bill is monitoring-only (matchType=null) vs fully tracked,
+// Branches by whether the bill is monitoring-only (matchType=null, and a stub or fully ingested) vs fully tracked,
 // whether LegiScan has confirmed there's no published text, and whether AI
 // permanently failed on the existing text.
 //
@@ -14,6 +14,8 @@ type AiSkipReason = 'pdf_too_large' | null
 // returns (title/status/last_action). Sponsors and full action history are not.
 export function getNoAnalysisMessage(args: {
   matchType: MatchType
+  /** The instance holds the bill's full ingest. Absent from a server that predates it, so a stub. */
+  fullyIngested?: boolean
   textStatus: TextStatus
   aiSkipReason?: AiSkipReason
 }): string {
@@ -24,6 +26,10 @@ export function getNoAnalysisMessage(args: {
   // The bill detail page still shows the underlying text link, so the user has recourse.
   if (args.aiSkipReason === 'pdf_too_large') {
     return "This bill's full text exceeds the length our AI provider can process. The full document is available via the source link below."
+  }
+
+  if (isLightweight && args.fullyIngested) {
+    return "This bill doesn't match your keywords, so it has no AI analysis."
   }
 
   if (isLightweight) {

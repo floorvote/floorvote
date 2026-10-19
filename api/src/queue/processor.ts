@@ -554,6 +554,7 @@ async function applyCentralBill(
     history: history.length > 0 ? JSON.stringify(history) : null,
     relatedBillIds: centralBill.relatedBills.length > 0 ? JSON.stringify(centralBill.relatedBills.map(r => r.identifier)) : null,
     centralSyncedAt: now,
+    fullyIngestedAt: now,
     textR2Key: centralBill.textR2Key,
     textStatus: centralBill.textStatus ?? null,
     subjects: centralBill.subjects?.length ? JSON.stringify(centralBill.subjects) : null,

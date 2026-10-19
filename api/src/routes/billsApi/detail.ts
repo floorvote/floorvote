@@ -463,6 +463,9 @@ export async function buildBillDetail(
     history: bill.history ? JSON.parse(bill.history) : [],
     relatedBillIds: resolvedRelated,
     matchType: bill.matchType,
+    // Whether central's full message has been applied, which is what separates a
+    // monitored bill with its data from a stub (migration 0117).
+    fullyIngested: bill.fullyIngestedAt != null,
     newMatchAt: bill.newMatchAt ?? null,
     // Triaging any member triages the group.
     triagedAt: teamValues.triaged?.triagedAt ?? null,

@@ -499,6 +499,8 @@ type BillDetailData = {
   extras?: BillExtras | null
   customFieldValues: Record<string, { value: string; setBy: string | null; updatedAt: string }>
   matchType: 'keyword' | 'manual' | null
+  /** Central's full message has been applied: the bill's data is here, tracked or not. Absent from an older server. */
+  fullyIngested?: boolean
   newMatchAt?: string | null
   triagedAt?: string | null
   isDraft?: boolean
@@ -1641,7 +1643,7 @@ export function BillDetail() {
               // that has none sent an un-promoted stub down the reprocess path,
               // where the queue consumer skips AI for want of bill text — so it
               // spun for three minutes and produced nothing. Those bills get the
-              // in-page "Enable full analysis" button instead, which promotes
+              // in-page "Run analysis" button instead, which promotes
               // via central and fetches the text first.
               // Drafts are excluded too: a draft can carry a hand-written
               // tenantSummary, but it has no externalId, so reprocess-bill
@@ -2440,13 +2442,12 @@ export function BillDetail() {
           const isStuck = !isLightweight && textConfirmed && !bill.aiSkipReason
           if (isStuck && !isAdmin) return null
 
-          const message = getNoAnalysisMessage({ matchType: bill.matchType, textStatus: bill.textStatus, aiSkipReason: bill.aiSkipReason })
+          const message = getNoAnalysisMessage({ matchType: bill.matchType, fullyIngested: bill.fullyIngested, textStatus: bill.textStatus, aiSkipReason: bill.aiSkipReason })
 
-          // Admins can kick off AI for an unanalyzed bill — either promoting a lightweight stub
+          // Admins can kick off AI for an unanalyzed bill — either promoting an untracked bill
           // or repairing a stuck tracked bill. Both go through handlePromote → promote-bill
           // (idempotent on match_type, re-runs AI via forceAI).
           const canRunAnalysis = isAdmin && (isLightweight || isStuck)
-          const promoteLabel = isLightweight ? 'Enable full analysis' : 'Run analysis'
           const generateDisabled = promoting || pendingPromote || demoLocked
           const hasAdminContent = canRunAnalysis && (pendingPromote || !generateDisabled || !!promoteError || !!promoteOutcomeMsg)
 
@@ -2474,7 +2475,7 @@ export function BillDetail() {
                         ...(pendingPromote ? DIMMED_WHILE_RUNNING : {}),
                       }}
                     >
-                      {promoting ? 'Queueing…' : promoteLabel}
+                      {promoting ? 'Queueing…' : 'Run analysis'}
                     </button>
                     {pendingPromote && <AnalysisProgressChip label="Analyzing…" />}
                     {isLightweight && !pendingPromote && (

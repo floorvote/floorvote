@@ -224,6 +224,10 @@ export const bills = sqliteTable('bills', {
   //   WHERE ai_processed_at IS NOT NULL GROUP BY 1 ORDER BY 1 DESC
   // To ask what is still stuck, use the predicate in lib/healStalledAi.ts.
   aiHealAttempts: integer('ai_heal_attempts').notNull().default(0),
+  // When central's full message for the bill was last applied (migration 0117),
+  // null for a bill that has only had stubs. Written by the queue processor's
+  // full path alone, and the bill page's test for full or stub.
+  fullyIngestedAt: text('fully_ingested_at'),
   textStatus: text('text_status'),
   newMatchAt: text('new_match_at'),
   // Where the keyword match came from, as central declared it (MatchProvenance

@@ -2,6 +2,20 @@ import { describe, it, expect } from 'vitest'
 import { getNoAnalysisMessage } from './billDetailCopy'
 
 describe('getNoAnalysisMessage', () => {
+  describe('monitored and fully ingested (matchType=null)', () => {
+    it('says only that there is no AI analysis, whatever the text status', () => {
+      for (const ts of ['available', 'in_r2', 'no_texts', 'not_checked', null] as const) {
+        expect(getNoAnalysisMessage({ matchType: null, fullyIngested: true, textStatus: ts }))
+          .toBe("This bill doesn't match your keywords, so it has no AI analysis.")
+      }
+    })
+
+    it('a stub (fullyIngested false) keeps the stub message', () => {
+      expect(getNoAnalysisMessage({ matchType: null, fullyIngested: false, textStatus: 'available' }))
+        .toContain('Sponsors, full action history, and bill text are not')
+    })
+  })
+
   describe('monitoring-only (matchType=null)', () => {
     it('with text_status=no_texts: explains no text and lists what is kept current', () => {
       const msg = getNoAnalysisMessage({ matchType: null, textStatus: 'no_texts' })
