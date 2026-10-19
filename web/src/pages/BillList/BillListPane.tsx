@@ -287,6 +287,23 @@ export function BillListPane() {
   }, [search])
 
   const [loadingMore, setLoadingMore] = useState(false)
+  const sentinelRef = useRef<HTMLLIElement>(null)
+  // Infinite scroll, as on the Bills page, but watched inside the pane's own
+  // scroller: the pane scrolls independently of the viewport. The list (and so
+  // the sentinel) renders only once `loading` is false, hence the dependency.
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    const root = scrollRef.current
+    if (!sentinel || !root || !search || !hasMore || loading || loadingMore) return
+    const observer = new IntersectionObserver(
+      entries => { if (entries[0].isIntersecting) loadMore() },
+      { root, rootMargin: '1200px' }, // prefetch well before the end is visible
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadMore is rebuilt each render from the values listed
+  }, [search, hasMore, loading, loadingMore, page])
+
   function loadMore() {
     if (!search || loadingMore) return
     setLoadingMore(true)
@@ -315,7 +332,7 @@ export function BillListPane() {
   }), [resolved, multiState])
 
   // Bring the current bill into view only when it is off-screen, and only when
-  // the bill changes (or the list first arrives) — never when "Show more"
+  // the bill changes (or the list first arrives) — never when a page
   // appends, which would yank the reader back from where they scrolled.
   // `loading` is a dependency because the list renders only once it is false:
   // were the bills and the end of loading ever committed separately, an effect
@@ -372,15 +389,8 @@ export function BillListPane() {
             </li>
           ))}
           {hasMore && (
-            <li style={{ padding: 12 }}>
-              <button
-                type="button"
-                onClick={loadMore}
-                disabled={loadingMore}
-                style={{ width: '100%', padding: '6px 10px', fontSize: fontSize.sm, color: color.linkBlue, background: color.white, border: `1px solid ${color.borderDefault}`, cursor: 'pointer' }}
-              >
-                {loadingMore ? 'Loading…' : `Show more (${bills.length.toLocaleString()} of ${total.toLocaleString()})`}
-              </button>
+            <li ref={sentinelRef} style={{ ...CHROME_TEXT, padding: 12, textAlign: 'center' }}>
+              {loadingMore ? 'Loading…' : ''}
             </li>
           )}
         </ul>
