@@ -1,7 +1,8 @@
 import { and, eq, gte } from 'drizzle-orm'
 import type { Env, AppDb } from '../types'
 import { emailSendStats, emailAlertState } from '../db/schema'
-import { senderFor, activeProvider, otherProvider, type ProviderName } from './email'
+import { senderFor } from './email'
+import { primaryProviderName, fallbackProviderName, type ProviderName } from '../../../shared/emailProviders'
 import { decideEmailHealth, windowStartHour, OK_STATE, type HealthDecision, type HealthState, type HourStat } from './emailHealth'
 import { toDbTs } from './dbTime'
 import { parseEmailList } from '../../../shared/operator'
@@ -15,8 +16,8 @@ import { PRODUCT_NAME } from '../../../shared/brand'
  * failing one before the healthy one.
  */
 export async function runEmailHealth(env: Env, db: AppDb, now: Date = new Date()): Promise<HealthDecision> {
-  const primary = activeProvider(env)
-  const alternate = otherProvider(env, primary)
+  const primary = primaryProviderName(env)
+  const alternate = fallbackProviderName(env, primary)
   const windowStart = windowStartHour(now)
 
   const rows: HourStat[] = await db.select().from(emailSendStats)
@@ -109,9 +110,11 @@ export function renderHealthAlert(env: Pick<Env, 'APP_URL'>, a: AlertInput): { s
     recover: `${a.primary} is sending email for ${host} again.`,
   }[a.decision]
 
+  // Which emails fall back is the purposes' rule (shared/emailSender.ts). Say it
+  // exactly: the docs and AGENTS.md say the same, and a test pins this wording.
   const rescue = a.alternate
-    ? `Login and invite links fall back to ${a.alternate}: ${a.rescued ?? 0} sent through ${a.alternate} in the last 24 hours.`
-    : `No fallback provider is configured, so login and invite links are failing too.`
+    ? `Sign-in, account, notification, and operator email fall back to ${a.alternate}: ${a.rescued ?? 0} sent through ${a.alternate} in the last 24 hours.`
+    : `No fallback provider is configured, so sign-in, account, notification, and operator email are failing too.`
 
   const lines = [
     lead,
@@ -119,7 +122,7 @@ export function renderHealthAlert(env: Pick<Env, 'APP_URL'>, a: AlertInput): { s
     `Last 24 hours through ${a.primary}: ${sent} sent, ${failed} failed, ${suppressed} suppressed.`,
     ...(lastError ? [`Last error: ${lastError}`] : []),
     '',
-    ...(a.decision === 'recover' ? [] : [rescue, 'Digests and week-ahead mail do not fall back and are not being delivered.']),
+    ...(a.decision === 'recover' ? [] : [rescue, 'Digests and week-ahead mail never fall back, so they are not being delivered.']),
     '',
     `This alert was sent through ${a.alternate ?? a.primary}.`,
   ]

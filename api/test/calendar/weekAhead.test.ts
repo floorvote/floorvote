@@ -4,12 +4,13 @@ import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedCalendar
 import { getDb } from '../../src/db/client'
 import { associationConfig, calendarEvents, calendarEventBills } from '../../src/db/schema'
 import { runWeekAhead } from '../../src/lib/weekAhead'
+import { resetMail, lastBatch } from '../mail'
 
 // The week-ahead email takes a bill's own calendar entries (hearings, markups)
 // when the bill is prioritized, by the rule the calendar page applies (#341).
 
-const sendBatch = vi.hoisted(() => vi.fn(async () => ({ sent: 1, failed: 0 })))
-vi.mock('../../src/lib/email', async (importOriginal) => ({ ...await importOriginal<typeof import('../../src/lib/email')>(), senderFor: (e: unknown) => ({ sendBatch: (messages: unknown[]) => (sendBatch as (...a: unknown[]) => unknown)(e, messages) }) }))
+vi.mock('../../src/lib/email', async (importOriginal) =>
+  (await import('../mail')).withFakeSender(await importOriginal<typeof import('../../src/lib/email')>()))
 
 const isoDay = (offsetDays: number) => new Date(Date.now() + offsetDays * 86400_000).toISOString().slice(0, 10)
 
@@ -19,13 +20,13 @@ beforeEach(async () => {
   await seedSession(await seedUser({ email: 'member@b.com' }))
   const weekday = String(new Date().getUTCDay())
   await getDb(env.DB).insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'week-ahead': { enabled: true, settings: { weeklyDay: weekday } } }) })
-  sendBatch.mockClear()
+  resetMail()
 })
 
 async function emailed(): Promise<string> {
   await runWeekAhead(env as any, getDb(env.DB))
-  const call = sendBatch.mock.calls.at(-1) as unknown as [unknown, { html: string }[]] | undefined
-  return call?.[1][0].html ?? ''
+  const call = lastBatch()
+  return call?.[0].html ?? ''
 }
 
 describe('the week-ahead email, for a bill\'s own calendar entries', () => {

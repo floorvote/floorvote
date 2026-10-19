@@ -49,7 +49,7 @@ describe('network guard', () => {
     try {
       await fetch('https://api.resend.com/emails', { method: 'POST' })
     } catch {
-      // swallowed, as `sendMagicLink(...).catch(console.error)` does
+      // swallowed, as `sendSignInLinkLogged` does
     }
   })
 })

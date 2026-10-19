@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { sendAdminMagicLink } from '../../src/lib/adminEmail'
-import { fakeBinding, stubResend, bothBindingFirst, bothResendFirst, RESEND_KEY } from '../helpers/mail'
+import { fakeBinding, stubResend, bothBindingFirst, bothResendFirst, RESEND_KEY } from '../../../shared/emailTestKit'
 
 const TO = 'admin@example.com'
 const URL_ = 'https://admin.example.com/auth/callback?token=abc'

@@ -28,9 +28,10 @@ api/src/lib/replies.ts        renderReplyEmail() (sets In-Reply-To and Reference
                               List-Unsubscribe that mutes the bill, only when APP_URL is https)
 api/src/lib/inviteBounceEmail.ts
                               renderInviteBounceEmail() + notifyInviteBounces() (hourly, after the bounce check)
-api/src/lib/email.ts          renderMagicLinkEmail() + buildSignInMessage() (login/invite) + sendMagicLink, and the
-                              sendFeedback (renders the feedback email and sends it as operator mail), and the older
-                              sendEmail/sendBatch, which have no caller left (#711 deletes them)
+api/src/lib/email.ts          senderFor() (the one way into the sender) + renderMagicLinkEmail() + buildSignInMessage()
+                              (login/invite) + the org name and noun lookups
+api/src/lib/signInLink.ts     sendSignInLink(): reads the org name, builds the sign-in message, sends it, writes the events
+api/src/lib/feedbackEmail.ts  renderFeedbackEmail(): the feedback email the route sends as operator mail
 api/src/lib/sampleEmails.ts   renderSampleEmail() registry + sendSampleEmail()  ← single source for QA + previews + tests
 shared/emailSender.ts         createSender(): send a message by purpose (see "Sending" below)
 shared/emailProviders.ts      the Resend and Cloudflare send_email adapters
@@ -40,7 +41,7 @@ api/src/lib/emailHealthRecorder.ts
 
 ## Sending
 
-Email is moving onto one sender, shared by the API and central (#705). A caller
+All email goes through one sender, shared by the API and central (#705). A caller
 names the email's **purpose**, and `createSender(env, { recorder })` decides the
 rest from it: fallback to the other provider, health counting, the From address,
 and demo-mode suppression. It refuses a malformed address before calling any
@@ -89,12 +90,30 @@ counts nothing. Central builds its sender with `centralSender(env)`
 ops alerts fall back, and with neither, a send fails at once without calling a
 provider. The dashboard login gate asks `hasConfiguredProvider` the same question.
 A sign-in message carries its `auth_events` writer, called once
-per attempt. `sendEmail` and `sendBatch` have no caller left, and #711 deletes them.
+per attempt.
 
 The email-change confirmation turns the sender's verdict into the member's
 answer: a permanent failure is "That address can't receive email" (400), and a
 temporary one, meaning both providers failed, is "try again" (502). The pending
 change is deleted either way.
+
+### Testing email
+
+Every email test uses the one set of fakes in `shared/emailTestKit.ts`. Pick the
+one that matches what the test is about:
+
+- **A caller's test** (a route, a job, the queue) fakes the whole sender. In the
+  API that is `api/test/mail.ts`: replace `senderFor` in the email module with
+  `withFakeSender`, then read each message, with its purpose, from `mail.sent()`
+  and choose the answer with `mail.send.mockResolvedValue(...)`. A caller's test
+  asserts the purpose it sends with and how it acts on the result, not how a
+  provider fails.
+- **The sender's own tests** (`shared/emailSender.test.ts`) pass `memoryProvider`
+  and `memoryRecorder` into `createSender`, so each purpose's rules run for real
+  with no network.
+- **The few tests that run a real adapter**, or a caller end to end through the
+  real sender (the API's health recorder and sign-in events, central's sender gate),
+  fake the transport with `fakeBinding` and `stubResend`.
 
 ## The shell contract
 

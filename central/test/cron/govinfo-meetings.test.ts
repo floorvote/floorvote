@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import { and, eq, like } from 'drizzle-orm'
 import * as schema from '../../src/db/schema'
+import { fakeBinding } from '../../../shared/emailTestKit'
 
 // Committee meetings from the Congress.gov API at the main seam (#619): the
 // API's recorded answers go in (the list, and a detail for each meeting), with
@@ -72,9 +73,9 @@ let served: Map<string, () => Response>
 let calls: string[]
 
 /** The email binding ops alerts go out through, so a test sees each alert sent. The address is made up. */
-const mail = { send: vi.fn(async (_message: any) => ({})) }
+const mail = fakeBinding('ok')
 const ALERTS_TO = 'ops@example.org'
-const seam = mainSeam(govinfo, { tenantId: 'usteam', env: { CONGRESS_API_KEY: CONGRESS_KEY, EMAIL_PROVIDER: 'cloudflare', EMAIL: mail, ALERT_EMAILS: ALERTS_TO } })
+const seam = mainSeam(govinfo, { tenantId: 'usteam', env: { CONGRESS_API_KEY: CONGRESS_KEY, EMAIL_PROVIDER: 'cloudflare', EMAIL: mail.binding, ALERT_EMAILS: ALERTS_TO } })
 const keyless = mainSeam(govinfo, { tenantId: 'usteam' })
 const { makeRun, sentToTenant, getJson, queuedIds } = seam
 const db = () => drizzle(env.DB, { schema })
@@ -92,7 +93,7 @@ beforeEach(async () => {
   await resetCentral('2026-10-17T13:00:00Z')
   clearRollCallCaches()
   clearMeetingCaches()
-  mail.send.mockClear()
+  mail.sent.length = 0
   net.paced.length = 0
   files = new Map([...fixtureFiles, ...rollCallBillFiles])
   recorded = new Map(files)
@@ -1028,7 +1029,7 @@ describe('a meeting that can\'t be read, pass after pass', () => {
   const failing = async () => (await env.DB.prepare(`SELECT key FROM provider_cache WHERE provider = 'govinfo' AND key LIKE 'failing/119/%' ORDER BY key`).all<{ key: string }>()).results.map(r => r.key.slice('failing/119/'.length))
   const isWarm = async () => !!(await env.DB.prepare(`SELECT key FROM provider_cache WHERE provider = 'govinfo' AND key = 'warm/119'`).first())
   /** Every alert sent, as its recipients, subject, and text. */
-  const alerts = () => mail.send.mock.calls.map(([m]: any[]) => ({ to: [m.to].flat(), subject: String(m.subject), text: String(m.text) }))
+  const alerts = () => mail.sent.map(m => ({ to: [m.to].flat(), subject: String(m.subject), text: String(m.text) }))
   /** The alerts that name a meeting. */
   const alertsNaming = (id: string) => alerts().filter(a => `${a.subject}\n${a.text}`.includes(id))
 
@@ -1560,7 +1561,7 @@ describe('pruning an earlier Congress\'s cached meetings', () => {
     const quarantined = await cache('failing/120/%')
     expect(Object.keys(quarantined)).toEqual(['failing/120/990002'])
     expect(JSON.parse(quarantined['failing/120/990002'])).toMatchObject({ strikes: QUARANTINE_AFTER, alerted: true })
-    const alertsBefore = mail.send.mock.calls.length
+    const alertsBefore = mail.sent.length
     const current = async () => ({ ...(await cache('meeting/120/%')), ...(await cache('warm/120')) })
     const before = await current()
     expect(Object.keys(before).length).toBeGreaterThan(1)
@@ -1572,7 +1573,7 @@ describe('pruning an earlier Congress\'s cached meetings', () => {
     expect(await current()).toEqual(before)
     expect(JSON.parse((await cache('failing/120/%'))['failing/120/990002'])).toMatchObject({ alerted: true })
     // No new alert for the meeting still quarantined, nor for the old one pruned.
-    expect(mail.send.mock.calls.length).toBe(alertsBefore)
+    expect(mail.sent.length).toBe(alertsBefore)
   })
 
   it('is a no-op the next time: the same rows and the same values', async () => {

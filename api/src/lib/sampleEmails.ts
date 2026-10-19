@@ -1,6 +1,6 @@
 // Sample email payloads + a targeted sender, for QA of the email templates.
 // Renders each email type from representative fixed data and sends to ONE
-// address via the real send path (the shared sender / sendMagicLink) — used by the
+// address via the real send path (the shared sender) — used by the
 // admin-gated POST /api/internal/send-sample-email endpoint and by the
 // scripts/render-*-sample.ts preview generators (so the committed samples and
 // the emails QA receives stay identical).

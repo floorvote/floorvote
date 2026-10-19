@@ -4,6 +4,7 @@ import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../he
 import { getDb } from '../../src/db/client'
 import { associationConfig, calendarEvents, calendarEventBills } from '../../src/db/schema'
 import { runWeekAhead } from '../../src/lib/weekAhead'
+import { resetMail, lastBatch } from '../mail'
 
 // The week-ahead email lists at most 30 body events, so a busy legislature's
 // week stays under Gmail's ~102 KB clip, which would hide the footer and the
@@ -11,8 +12,8 @@ import { runWeekAhead } from '../../src/lib/weekAhead'
 // cut and doesn't count toward the 30. The email ends with a line counting the
 // rest, linking to the Calendar page.
 
-const sendBatch = vi.hoisted(() => vi.fn(async () => ({ sent: 1, failed: 0 })))
-vi.mock('../../src/lib/email', async (importOriginal) => ({ ...await importOriginal<typeof import('../../src/lib/email')>(), senderFor: (e: unknown) => ({ sendBatch: (messages: unknown[]) => (sendBatch as (...a: unknown[]) => unknown)(e, messages) }) }))
+vi.mock('../../src/lib/email', async (importOriginal) =>
+  (await import('../mail')).withFakeSender(await importOriginal<typeof import('../../src/lib/email')>()))
 
 const GMAIL_CLIP_BYTES = 102 * 1024
 const CAP = 30
@@ -24,7 +25,7 @@ beforeEach(async () => {
   await seedSession(await seedUser({ email: 'member@b.com' }))
   const weekday = String(new Date().getUTCDay())
   await getDb(env.DB).insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'week-ahead': { enabled: true, settings: { weeklyDay: weekday } } }) })
-  sendBatch.mockClear()
+  resetMail()
 })
 
 const label = (i: number) => `Body event ${String(i).padStart(3, '0')} end`
@@ -54,8 +55,8 @@ async function seedBodyEvents(from: number, to: number, opts: { heavy?: boolean;
 
 async function emailed(): Promise<string> {
   await runWeekAhead(env as any, getDb(env.DB))
-  const call = sendBatch.mock.calls.at(-1) as unknown as [unknown, { html: string }[]] | undefined
-  return call?.[1][0].html ?? ''
+  const call = lastBatch()
+  return call?.[0].html ?? ''
 }
 
 const listed = (html: string, from: number, to: number) => Array.from({ length: to - from }, (_, k) => from + k).filter(i => html.includes(label(i)))

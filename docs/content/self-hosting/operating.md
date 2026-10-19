@@ -12,7 +12,8 @@ The LegiScan central can serve a superadmin dashboard with its own magic-link lo
 
 ```bash
 # Magic-link email for the dashboard: only if central sends through Resend.
-# Skip it when central uses Cloudflare Email (EMAIL_PROVIDER="cloudflare" with the EMAIL binding).
+# Skip it when central sends through Cloudflare Email: a bound EMAIL binding counts as a sender
+# on its own, and EMAIL_PROVIDER only picks which one is tried first.
 wrangler secret put RESEND_API_KEY --env legiscan
 
 # ES256 private JWK (JSON string); central is the sole issuer

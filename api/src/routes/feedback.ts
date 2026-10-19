@@ -1,6 +1,9 @@
 import { Hono } from 'hono'
 import { requireAuth } from '../middleware/auth'
-import { sendFeedback } from '../lib/email'
+import { senderFor, resolveAssocName } from '../lib/email'
+import { renderFeedbackEmail } from '../lib/feedbackEmail'
+import { describeSendFailure } from '../lib/emailErrors'
+import { parseEmailList } from '../../../shared/operator'
 import { getDb } from '../db/client'
 import type { AppEnv } from '../types'
 
@@ -20,15 +23,23 @@ feedbackRouter.post('/', async (c) => {
   const user = c.get('user')
 
   try {
-    await sendFeedback(
-      { email: user.email },
-      body.message.trim(),
-      body.pageUrl,
-      c.env,
-      getDb(c.env.DB),
-    )
+    const recipients = parseEmailList(c.env.OPERATOR_CONTACT_EMAILS)
+    if (recipients.length === 0) {
+      throw new Error('Feedback not configured — OPERATOR_CONTACT_EMAILS is empty')
+    }
+    const { subject, html } = renderFeedbackEmail({
+      fromEmail: user.email,
+      message: body.message.trim(),
+      pageUrl: body.pageUrl,
+      appUrl: c.env.APP_URL,
+      assocName: await resolveAssocName(c.env, getDb(c.env.DB)),
+    })
+    // Operator mail: the sender falls back, never counts it toward email health
+    // (so no db), and sends on a demo too.
+    const r = await senderFor(c.env).send({ purpose: 'operator', to: recipients, subject, html })
+    if (!r.ok) throw new Error(describeSendFailure(r))
   } catch (err) {
-    console.error('sendFeedback failed:', err)
+    console.error('feedback send failed:', err)
     return c.json({ error: 'Failed to send feedback' }, 500)
   }
 

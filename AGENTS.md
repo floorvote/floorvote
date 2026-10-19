@@ -46,7 +46,7 @@ This is the canonical project layout — the README intentionally does not dupli
 | Storage | Cloudflare R2 (bill text) |
 | Queues | Cloudflare Queues (ingestor + per-tenant delivery) |
 | Frontend | React 19 + React Router 7 + Vite 8 (Workers Assets) |
-| Email | Cloudflare Email Service (magic link auth); Resend available as a fallback via `EMAIL_PROVIDER` |
+| Email | Cloudflare Email Service or Resend, through one purpose-level sender (`shared/emailSender.ts`). With both configured, `EMAIL_PROVIDER` picks the first one tried and the other is the fallback for sign-in, account, notification, and operator email. Digests and week-ahead mail never fall back |
 | AI | Google Gemini 2.5 Flash via Cloudflare AI Gateway. `api/src/lib/llm.ts` holds the default; override per env with the `GEMINI_MODEL` and `GEMINI_THINKING_BUDGET` vars |
 | Legislative data | LegiScan by default, plus opt-in providers for DC (LIMS), Maryland (MGA), Virginia (LIS), and Congress (GovInfo) |
 | Testing | Vitest + @cloudflare/vitest-pool-workers; Vitest + jsdom |
@@ -80,7 +80,7 @@ See [`docs/content/self-hosting/index.md`](docs/content/self-hosting/index.md) f
 | `CF_AIG_TOKEN` | Cloudflare AI Gateway auth token (required) |
 | `CENTRAL_ADMIN_SECRET` | Must match central's `ADMIN_SECRET`; removable after adding a CentralApi service binding |
 | `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile login protection (optional; unset → gate fails open) |
-| `RESEND_API_KEY` | Optional fallback email provider (only when `EMAIL_PROVIDER=resend` or the Cloudflare `EMAIL` binding is absent) |
+| `RESEND_API_KEY` | Optional second email provider. A key and a bound `EMAIL` binding each count as a sender on their own, and `EMAIL_PROVIDER` only picks which is tried first (`resend` makes Resend first; anything else makes the binding first when it is bound). With both, the other is the fallback for sign-in, account, notification, and operator email. Digests and week-ahead mail never fall back |
 | `GEMINI_API_KEY` | Optional fallback AI key (only when `AI_GATEWAY_ENABLED` is unset/false) |
 
 **Tenant vars** (in `[env.<tenant>.vars]` in `api/wrangler.toml`):

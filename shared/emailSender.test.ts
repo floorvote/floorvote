@@ -4,35 +4,11 @@ import {
   type SignInMessage, type SignInEvent, type AccountMessage, type NotificationMessage, type BulkMessage, type OperatorMessage, type OutageAlertMessage,
   type HealthRecorder, type SenderEnv,
 } from './emailSender'
-import type { Attempt, EmailProvider, OutgoingEmail, ProviderName } from './emailProviders'
+import { memoryProvider, memoryRecorder } from './emailTestKit'
+import type { EmailProvider } from './emailProviders'
 
 // The sender against in-memory providers: no fetch, no binding. The adapters'
 // own tests (emailProviders.test.ts) cover the transports.
-
-type Outcome = 'ok' | 'temporary' | 'permanent' | 'throw'
-
-function memoryProvider(name: ProviderName, outcomes: Outcome[] | Outcome = 'ok') {
-  const sent: OutgoingEmail[] = []
-  let i = 0
-  const provider: EmailProvider & { sent: OutgoingEmail[] } = {
-    name,
-    sent,
-    async send(email) {
-      sent.push(email)
-      const outcome = Array.isArray(outcomes) ? outcomes[Math.min(i++, outcomes.length - 1)] : outcomes
-      if (outcome === 'throw') throw new Error(`${name} adapter blew up`)
-      if (outcome === 'ok') return { ok: true, provider: name, messageId: `${name}-${sent.length}` }
-      return { ok: false, provider: name, error: outcome === 'permanent' ? 'E_RECIPIENT_SUPPRESSED: gone' : 'outage', permanent: outcome === 'permanent' }
-    },
-  }
-  return provider
-}
-
-function memoryRecorder() {
-  const calls: Attempt[][] = []
-  const recorder: HealthRecorder & { calls: Attempt[][] } = { calls, async record(attempts) { calls.push(attempts) } }
-  return recorder
-}
 
 function signIn(overrides: Partial<SignInMessage> = {}): SignInMessage & { events: SignInEvent[] } {
   const events: SignInEvent[] = []
@@ -335,6 +311,25 @@ describe('default providers from env', () => {
     expect(r).toMatchObject({ ok: true, provider: 'resend', messageId: 'rs-9' })
     expect(EMAIL.send).toHaveBeenCalledOnce()
     expect(fetchStub).toHaveBeenCalledOnce()
+  })
+
+  it('falls back from Resend to the binding when the Resend fetch throws, keeping why in the first attempt', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('network down') }))
+    const EMAIL = { send: vi.fn(async () => ({ messageId: 'cf-1' })) }
+    const r = await createSender({ ...env, EMAIL_PROVIDER: 'resend', EMAIL, RESEND_API_KEY: 'test-api-key' }).send(signIn())
+    expect(r).toMatchObject({ ok: true, provider: 'cloudflare', messageId: 'cf-1' })
+    expect(r.attempts.map(a => `${a.provider}:${a.ok}`)).toEqual(['resend:false', 'cloudflare:true'])
+    expect(r.attempts[0]).toMatchObject({ ok: false, permanent: false })
+    expect((r.attempts[0] as { error: string }).error).toContain('fetch failed')
+  })
+
+  it('reports a Resend fetch that throws, with nothing else configured, as one temporary failure that says why', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('network down') }))
+    const r = await createSender({ ...env, RESEND_API_KEY: 'test-api-key' }).send(signIn())
+    expect(r).toMatchObject({ ok: false, provider: 'resend', permanent: false })
+    expect((r as { error: string }).error).toContain('fetch failed')
+    expect((r as { error: string }).error).toContain('network down')
+    expect(r.attempts).toHaveLength(1)
   })
 
   it('makes a single attempt when only the binding is configured', async () => {

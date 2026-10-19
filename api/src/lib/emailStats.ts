@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm'
 import type { AppDb } from '../types'
-import type { EmailSendResult, ProviderName } from './email'
+import type { Attempt, ProviderName } from '../../../shared/emailProviders'
 import { emailSendStats } from '../db/schema'
 import { toDbTs } from './dbTime'
 
@@ -9,31 +9,19 @@ export function hourKey(d: Date): string {
   return toDbTs(d).slice(0, 13) + ':00:00'
 }
 
-/**
- * A failure about one recipient rather than about the provider. The address
- * previously hard-bounced or reported spam, so retrying it through another
- * provider would only damage that provider's reputation too, and counting it
- * as a provider failure would let a few dead addresses in a digest page the
- * operator. Deliberately narrow: anything not listed here is treated as the
- * provider failing, which errs toward falling back and toward alerting.
- */
-export function isRecipientError(r: Pick<EmailSendResult, 'error'>): boolean {
-  return !!r.error?.includes('E_RECIPIENT_SUPPRESSED')
-}
-
 export type SendTally = { sent: number; failed: number; suppressed: number; lastError: string | null }
 
 /**
- * Count sends or attempts. A failure is suppressed when its adapter classified
- * it permanent (the shared sender's attempts), or, for a result from the old
- * sendEmail path, when isRecipientError says so.
+ * Count attempts. A failure is suppressed when its adapter classified it
+ * permanent: the address can't receive mail, which is not the provider's fault.
+ * Any other failure is the provider's.
  */
-export function tally(results: Array<Pick<EmailSendResult, 'ok' | 'error'> & { permanent?: boolean }>): SendTally {
+export function tally(attempts: Attempt[]): SendTally {
   const t: SendTally = { sent: 0, failed: 0, suppressed: 0, lastError: null }
-  for (const r of results) {
-    if (r.ok) t.sent++
-    else if (r.permanent ?? isRecipientError(r)) t.suppressed++
-    else { t.failed++; t.lastError = r.error ?? 'unknown error' }
+  for (const a of attempts) {
+    if (a.ok) t.sent++
+    else if (a.permanent) t.suppressed++
+    else { t.failed++; t.lastError = a.error }
   }
   return t
 }

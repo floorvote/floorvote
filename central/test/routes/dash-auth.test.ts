@@ -8,6 +8,7 @@ import { setupLsDb } from '../helpers/setupLsDb'
 import { hashToken } from '../../src/lib/adminAuth'
 import { signSuperadminJwt, verifySuperadminJwt } from '../../src/lib/superadminJwt'
 import { revokeSuperadminJti } from '../../src/lib/superadminRevocation'
+import { fakeBinding, stubResend } from '../../../shared/emailTestKit'
 
 async function genKeys(): Promise<{ priv: string; pub: string }> {
   const kp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])
@@ -239,21 +240,8 @@ describe('POST /admin/dash/auth/login', () => {
 })
 
 describe('POST /admin/dash/auth/login — sender gate (Cloudflare Email or Resend)', () => {
-  type Sent = { to: string | string[]; from: string; subject: string; html?: string; text?: string }
-
-  function fakeBinding(opts: { fail?: boolean } = {}) {
-    const sent: Sent[] = []
-    return {
-      sent,
-      binding: {
-        send: async (m: Sent) => {
-          if (opts.fail) throw Object.assign(new Error('binding exploded: secret-detail-xyz'), { code: 'E_SENDER_NOT_VERIFIED' })
-          sent.push(m)
-          return {}
-        },
-      },
-    }
-  }
+  // What a binding that fails says, so a test can check it never reaches the response.
+  const BINDING_EXPLODED = { message: 'binding exploded: secret-detail-xyz', code: 'E_SENDER_NOT_VERIFIED' }
 
   // Env with no sender configured; each test layers on what it needs.
   const BASE_ENV: any = { ...TEST_ENV, RESEND_API_KEY: undefined, EMAIL: undefined, EMAIL_PROVIDER: undefined }
@@ -281,10 +269,6 @@ describe('POST /admin/dash/auth/login — sender gate (Cloudflare Email or Resen
     return response
   }
 
-  function stubResendFetch() {
-    return vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ id: 'resend-1' }), { status: 200 }))
-  }
-
   const okBody = async (res: Response) => {
     const b = await res.json() as { data: { ok: boolean }; meta: { generatedAt: string } }
     return b.data
@@ -292,7 +276,7 @@ describe('POST /admin/dash/auth/login — sender gate (Cloudflare Email or Resen
 
   it('sends one email through the Cloudflare binding with no RESEND_API_KEY', async () => {
     const { sent, binding } = fakeBinding()
-    const fetchSpy = stubResendFetch()
+    const fetchSpy = stubResend().spy
     const res = await login('admin@example.com', { ...BASE_ENV, EMAIL_PROVIDER: 'cloudflare', EMAIL: binding })
     expect(res.status).toBe(200)
     expect(await okBody(res)).toEqual({ ok: true })
@@ -324,7 +308,7 @@ describe('POST /admin/dash/auth/login — sender gate (Cloudflare Email or Resen
   })
 
   it('falls back to the existing Resend sender when the binding is absent', async () => {
-    const fetchSpy = stubResendFetch()
+    const fetchSpy = stubResend().spy
     const res = await login('admin@example.com', { ...BASE_ENV, RESEND_API_KEY: 'rk_test', EMAIL_PROVIDER: 'cloudflare', EMAIL: undefined })
     expect(res.status).toBe(200)
     expect(fetchSpy).toHaveBeenCalledTimes(1)
@@ -332,7 +316,7 @@ describe('POST /admin/dash/auth/login — sender gate (Cloudflare Email or Resen
   })
 
   it('leaves Resend-only behavior unchanged', async () => {
-    const fetchSpy = stubResendFetch()
+    const fetchSpy = stubResend().spy
     const res = await login('admin@example.com', { ...BASE_ENV, RESEND_API_KEY: 'rk_test' })
     expect(res.status).toBe(200)
     expect(fetchSpy).toHaveBeenCalledTimes(1)
@@ -342,7 +326,7 @@ describe('POST /admin/dash/auth/login — sender gate (Cloudflare Email or Resen
 
   it('uses Resend, not the binding, when EMAIL_PROVIDER=resend even if a binding exists', async () => {
     const { sent, binding } = fakeBinding()
-    const fetchSpy = stubResendFetch()
+    const fetchSpy = stubResend().spy
     await login('admin@example.com', { ...BASE_ENV, RESEND_API_KEY: 'rk_test', EMAIL_PROVIDER: 'resend', EMAIL: binding })
     expect(sent).toHaveLength(0)
     expect(fetchSpy).toHaveBeenCalledTimes(1)
@@ -350,7 +334,7 @@ describe('POST /admin/dash/auth/login — sender gate (Cloudflare Email or Resen
 
   it('sends through the binding when EMAIL_PROVIDER is not cloudflare and no Resend key is set: a bound binding counts as a configured sender', async () => {
     const { sent, binding } = fakeBinding()
-    const fetchSpy = stubResendFetch()
+    const fetchSpy = stubResend().spy
     const res = await login('admin@example.com', { ...BASE_ENV, EMAIL_PROVIDER: 'resend', EMAIL: binding })
     expect(res.status).toBe(200)
     expect(sent).toHaveLength(1)
@@ -358,8 +342,8 @@ describe('POST /admin/dash/auth/login — sender gate (Cloudflare Email or Resen
   })
 
   it('sends the link through Resend when the binding, tried first, is down', async () => {
-    const down = fakeBinding({ fail: true })
-    const fetchSpy = stubResendFetch()
+    const down = fakeBinding('down', BINDING_EXPLODED)
+    const fetchSpy = stubResend().spy
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     const res = await login('admin@example.com', { ...BASE_ENV, RESEND_API_KEY: 'rk_test', EMAIL_PROVIDER: 'cloudflare', EMAIL: down.binding })
@@ -373,7 +357,7 @@ describe('POST /admin/dash/auth/login — sender gate (Cloudflare Email or Resen
 
   it('sends the link through the binding when Resend, tried first, is down', async () => {
     const { sent, binding } = fakeBinding()
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('upstream', { status: 503 }))
+    const fetchSpy = stubResend('down').spy
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     const res = await login('admin@example.com', { ...BASE_ENV, RESEND_API_KEY: 'rk_test', EMAIL: binding })
@@ -384,8 +368,8 @@ describe('POST /admin/dash/auth/login — sender gate (Cloudflare Email or Resen
   })
 
   it('still answers the plain 200 with the link stored when both providers are down', async () => {
-    const down = fakeBinding({ fail: true })
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('upstream', { status: 503 }))
+    const down = fakeBinding('down', BINDING_EXPLODED)
+    const fetchSpy = stubResend('down').spy
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     const res = await login('admin@example.com', { ...BASE_ENV, RESEND_API_KEY: 'rk_test', EMAIL_PROVIDER: 'cloudflare', EMAIL: down.binding })
@@ -397,7 +381,7 @@ describe('POST /admin/dash/auth/login — sender gate (Cloudflare Email or Resen
   })
 
   it('sends nothing when a blank Resend key is the only thing configured', async () => {
-    const fetchSpy = stubResendFetch()
+    const fetchSpy = stubResend().spy
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const res = await login('admin@example.com', { ...BASE_ENV, RESEND_API_KEY: '' })
     expect(res.status).toBe(200)
@@ -406,7 +390,7 @@ describe('POST /admin/dash/auth/login — sender gate (Cloudflare Email or Resen
   })
 
   it('sends nothing, inserts nothing, and warns naming the sender when no sender is configured', async () => {
-    const fetchSpy = stubResendFetch()
+    const fetchSpy = stubResend().spy
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const res = await login('admin@example.com', BASE_ENV)
     expect(res.status).toBe(200)
@@ -443,7 +427,7 @@ describe('POST /admin/dash/auth/login — sender gate (Cloudflare Email or Resen
   })
 
   it('sends nothing with Resend configured but ADMIN_APP_URL unset', async () => {
-    const fetchSpy = stubResendFetch()
+    const fetchSpy = stubResend().spy
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const res = await login('admin@example.com', { ...BASE_ENV, RESEND_API_KEY: 'rk_test', ADMIN_APP_URL: undefined })
     expect(res.status).toBe(200)
@@ -453,7 +437,7 @@ describe('POST /admin/dash/auth/login — sender gate (Cloudflare Email or Resen
 
   it('gives an unlisted address the identical response and sends nothing, in every configuration', async () => {
     const { sent, binding } = fakeBinding()
-    const fetchSpy = stubResendFetch()
+    const fetchSpy = stubResend().spy
     const configs: any[] = [
       { ...BASE_ENV, EMAIL_PROVIDER: 'cloudflare', EMAIL: binding },
       { ...BASE_ENV, RESEND_API_KEY: 'rk_test' },
@@ -483,7 +467,7 @@ describe('POST /admin/dash/auth/login — sender gate (Cloudflare Email or Resen
   })
 
   it('logs a binding send failure and still returns the plain 200 without leaking it', async () => {
-    const { binding } = fakeBinding({ fail: true })
+    const { binding } = fakeBinding('down', BINDING_EXPLODED)
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     const res = await login('admin@example.com', { ...BASE_ENV, EMAIL_PROVIDER: 'cloudflare', EMAIL: binding })
     expect(res.status).toBe(200)
@@ -496,7 +480,7 @@ describe('POST /admin/dash/auth/login — sender gate (Cloudflare Email or Resen
   })
 
   it('logs a Resend send failure without leaking it to the response', async () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('resend-internal-detail', { status: 500 }))
+    stubResend('down', { status: 500, body: 'resend-internal-detail' }).spy
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     const res = await login('admin@example.com', { ...BASE_ENV, RESEND_API_KEY: 'rk_test' })
     expect(res.status).toBe(200)
@@ -690,7 +674,7 @@ describe('POST /admin/dash/auth/login — the send is off the response path (#67
   })
 
   it('logs a Resend failure from the background the same way', async () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('resend-internal-detail', { status: 500 }))
+    stubResend('down', { status: 500, body: 'resend-internal-detail' }).spy
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     const { res, settle } = post('admin@example.com', { ...TEST_ENV, RESEND_API_KEY: 'rk_test', EMAIL: undefined, EMAIL_PROVIDER: undefined })
     const response = await res

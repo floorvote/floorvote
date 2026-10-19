@@ -139,6 +139,8 @@ CF_AIG_GATEWAY = "<your-gateway-slug>"
 GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_THINKING_BUDGET = "0"
 
+# which email provider is tried first: "cloudflare" or "resend". With both
+# configured, the other is the fallback (see "Optional fallbacks" below).
 EMAIL_PROVIDER = "cloudflare"
 
 # who gets cron-failure and email outage alerts
@@ -285,7 +287,11 @@ npx wrangler secret put CF_AIG_TOKEN --env [slug]
 > [!TIP]
 > **Optional fallbacks.** `GEMINI_API_KEY` is only read if you flip `AI_GATEWAY_ENABLED` to `"false"`. You don't set `LEGISCAN_API_KEY` on a tenant — only central calls LegiScan.
 >
-> **`RESEND_API_KEY` is worth setting even on Cloudflare Email Service**, and is required if you set `EMAIL_PROVIDER="resend"`. With both providers configured, login and invite links that the primary fails to send are retried through the other one: Resend when the primary is Cloudflare and `RESEND_API_KEY` is set, Cloudflare when the primary is Resend and the `EMAIL` binding exists. The hourly email-health check alerts `ALERT_EMAILS` through the other provider first, then the primary. With only one provider configured, there is no fallback, and the alert goes through the same provider that is failing. `EMAIL_FROM` must be verified on both providers for fallback to work. Digests and week-ahead mail never fall back.
+> **`RESEND_API_KEY` is worth setting even on Cloudflare Email Service**, and is required if you set `EMAIL_PROVIDER="resend"`. A bound `EMAIL` binding and a `RESEND_API_KEY` each count as a sender on their own, and `EMAIL_PROVIDER` only picks which one is tried first. With both configured, an email the first provider fails to send is retried once through the other one: Resend when the first is Cloudflare, Cloudflare when the first is Resend.
+>
+> **Which emails fall back.** Sign-in, account, notification, and operator email falls back. That covers login and invite links, the email-change emails, mention and reply emails, and mail to operators and admins (feedback, invite-bounce notices, job alerts, and sample emails). Digests and week-ahead mail never do, so an outage on the first provider can't push a whole recipient list onto the second and use up its quota. An address that can't receive mail (it bounced or reported spam) is never retried through the other provider either.
+>
+> The hourly email-health check alerts `ALERT_EMAILS` through the healthy provider first, then the failing one. With only one provider configured, there is no fallback, and the alert goes through the same provider that is failing. `EMAIL_FROM` must be verified on both providers for fallback to work.
 
 ## Step 7: Bind the tenant on central
 

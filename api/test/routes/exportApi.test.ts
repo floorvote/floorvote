@@ -5,9 +5,8 @@ import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedBillText
 import { EXPORT_TABLES } from '../../../shared/exportTables'
 import { SUPPRESSED_SUBJECT_STATES_KEY } from '../../src/lib/billSubjects'
 
-vi.mock('../../src/lib/email', () => ({
-  sendMagicLink: vi.fn().mockResolvedValue(undefined),
-}))
+vi.mock('../../src/lib/email', async (importOriginal) =>
+  (await import('../mail')).withFakeSender(await importOriginal<typeof import('../../src/lib/email')>()))
 
 vi.mock('../../src/cron/sync', () => ({
   registerWithCentral: vi.fn().mockResolvedValue(undefined),

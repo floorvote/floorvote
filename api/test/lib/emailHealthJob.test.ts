@@ -4,7 +4,7 @@ import { resetDb, applyMigrations } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { emailAlertState, emailSendStats } from '../../src/db/schema'
 import { recordSendStats } from '../../src/lib/emailStats'
-import { runEmailHealth } from '../../src/lib/emailHealthJob'
+import { runEmailHealth, renderHealthAlert } from '../../src/lib/emailHealthJob'
 
 const NOW = new Date('2026-09-23T21:00:00Z')
 const LAST_HOUR = new Date('2026-09-23T20:30:00Z')
@@ -51,7 +51,7 @@ describe('runEmailHealth', () => {
     expect(body.subject).toContain('ut.example.test')
     expect(body.subject).toContain('cloudflare')
     expect(body.text).toContain(ERR)
-    expect(body.text).toMatch(/Digests and week-ahead mail do not fall back/)
+    expect(body.text).toContain('Digests and week-ahead mail never fall back')
     const [state] = await db.select().from(emailAlertState).all()
     expect(state).toMatchObject({
       provider: 'cloudflare', status: 'failing',
@@ -209,5 +209,60 @@ describe('runEmailHealth', () => {
     const body = JSON.parse((fetch.mock.calls[0][1] as RequestInit).body as string)
     expect(body.subject).toContain('still failing')
     expect(body.text).toContain('since 2026-09-22 10:00:00 UTC')
+  })
+})
+
+// The alert says which emails fall back. This is the one place an operator
+// reads it during an outage, so the wording is pinned: sign-in, account,
+// notification, and operator email falls back, and digests and week-ahead mail
+// never do. (The docs and AGENTS.md say the same thing; a rule change has to
+// change all three.)
+describe('the alert\'s wording on which emails fall back', () => {
+  const rows = [{ hour: '2026-09-23 20:00:00', sent: 0, failed: 3, suppressed: 0, lastError: 'E_INTERNAL_SERVER_ERROR: down' }]
+  const input = (over: Record<string, unknown> = {}) => ({
+    decision: 'trip' as const, primary: 'cloudflare' as const, alternate: 'resend' as const,
+    rows, rescued: 3, failingSince: '2026-09-23 21:00:00', ...over,
+  })
+  const render = (over: Record<string, unknown> = {}) => renderHealthAlert({ APP_URL: 'https://ut.example.test' }, input(over) as never)
+  const lines = (over: Record<string, unknown> = {}) => render(over).text.split('\n')
+
+  it('says exactly which emails fall back to the other provider, and how many it carried', () => {
+    expect(lines()).toContain('Sign-in, account, notification, and operator email fall back to resend: 3 sent through resend in the last 24 hours.')
+  })
+
+  it('says digests and week-ahead mail never fall back, so they are not being delivered', () => {
+    expect(lines()).toContain('Digests and week-ahead mail never fall back, so they are not being delivered.')
+  })
+
+  it('says the same on a reminder, whichever provider is failing', () => {
+    const l = lines({ decision: 'remind', primary: 'resend', alternate: 'cloudflare', rescued: 0 })
+    expect(l).toContain('Sign-in, account, notification, and operator email fall back to cloudflare: 0 sent through cloudflare in the last 24 hours.')
+    expect(l).toContain('Digests and week-ahead mail never fall back, so they are not being delivered.')
+  })
+
+  it('names the same four kinds of email as failing, with nothing to fall back to', () => {
+    const l = lines({ alternate: null, rescued: null })
+    expect(l).toContain('No fallback provider is configured, so sign-in, account, notification, and operator email are failing too.')
+    expect(l).toContain('Digests and week-ahead mail never fall back, so they are not being delivered.')
+    expect(l.join('\n')).not.toContain('fall back to')
+  })
+
+  it('has neither line on a recovery notice', () => {
+    const text = render({ decision: 'recover' }).text
+    expect(text).not.toMatch(/fall back/)
+    expect(text).not.toContain('not being delivered')
+  })
+
+  it('no longer says login and invite links are the only mail that falls back', () => {
+    const { text, html } = render()
+    expect(text).not.toContain('Login and invite links')
+    expect(html).not.toContain('Login and invite links')
+    expect(text).not.toContain('do not fall back')
+  })
+
+  it('carries the same wording in the html part', () => {
+    const { html } = render()
+    expect(html).toContain('Sign-in, account, notification, and operator email fall back to resend')
+    expect(html).toContain('Digests and week-ahead mail never fall back')
   })
 })

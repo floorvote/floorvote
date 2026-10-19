@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { runJob, reportJobFailure, sendOpsAlert } from '../../src/lib/jobAlert'
-import { fakeBinding, stubResend, bothBindingFirst, bothResendFirst, RESEND_KEY } from '../helpers/mail'
+import { fakeBinding, stubResend, bothBindingFirst, bothResendFirst, RESEND_KEY } from '../../../shared/emailTestKit'
 
 // jobAlert goes through the shared sender with the operator purpose. These
 // tests drive it with fake providers; shared/emailSender.test.ts covers the

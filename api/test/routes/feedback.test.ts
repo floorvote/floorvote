@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { SELF, env } from 'cloudflare:test'
+import { app } from '../../src/index'
 import { resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { emailSendStats, associationConfig } from '../../src/db/schema'
+import { fakeBinding, stubResend, bothBindingFirst } from '../../../shared/emailTestKit'
 
 beforeEach(async () => {
   await resetDb()
@@ -145,5 +147,92 @@ describe('POST /feedback', () => {
     expect(res.status).toBe(200)
     const body = await res.json() as { ok: boolean }
     expect(body.ok).toBe(true)
+  })
+})
+
+// Feedback is operator mail: the route names the purpose and the sender does
+// the rest (fallback, never counted). These run the route in process with a
+// fake binding and a faked Resend, so each can set what the providers do.
+describe('POST /feedback: operator mail through the sender', () => {
+  async function post(over: Record<string, unknown>, body: unknown = { message: 'Great tool!', pageUrl: 'http://localhost:5173/bills' }) {
+    const userId = await seedUser({ email: 'tester@example.com' })
+    const token = await seedSession(userId)
+    const res = await app.request('/api/feedback', {
+      method: 'POST',
+      headers: { Cookie: `session=${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }, { ...env, OPERATOR_CONTACT_EMAILS: 'a@x.org, b@y.org', APP_URL: 'http://localhost:5173', ...over })
+    return res
+  }
+
+  let errorSpy: ReturnType<typeof vi.spyOn>
+  beforeEach(() => {
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+
+  it('sends one email to the parsed OPERATOR_CONTACT_EMAILS recipients, saying who wrote it, from what page, and what', async () => {
+    const cf = fakeBinding('ok')
+    const res = await post({ EMAIL_PROVIDER: 'cloudflare', EMAIL: cf.binding })
+    expect(res.status).toBe(200)
+    expect(cf.sent).toHaveLength(1)
+    expect(cf.sent[0].to).toEqual(['a@x.org', 'b@y.org'])
+    expect(cf.sent[0].subject).toBe('Feedback from tester@example.com')
+    const html = String(cf.sent[0].html)
+    expect(html).toContain('New feedback')
+    expect(html).toContain('Great tool!')
+    expect(html).toContain('tester@example.com')
+    expect(html).toContain('http://localhost:5173/bills')
+  })
+
+  it('escapes what the member wrote', async () => {
+    const cf = fakeBinding('ok')
+    await post({ EMAIL_PROVIDER: 'cloudflare', EMAIL: cf.binding }, { message: '<script>alert(1)</script>' })
+    const html = String(cf.sent[0].html)
+    expect(html).toContain('&lt;script&gt;')
+    expect(html).not.toContain('<script>')
+  })
+
+  it('fails with 500, and calls no provider, when OPERATOR_CONTACT_EMAILS is empty', async () => {
+    const cf = fakeBinding('ok')
+    const res = await post({ EMAIL_PROVIDER: 'cloudflare', EMAIL: cf.binding, OPERATOR_CONTACT_EMAILS: '' })
+    expect(res.status).toBe(500)
+    expect(cf.sent).toHaveLength(0)
+    expect(errorSpy.mock.calls.map(c => c.join(' ')).join('\n')).toMatch(/not configured|empty/i)
+  })
+
+  it('falls back to the second provider when the first is down', async () => {
+    const cf = fakeBinding('down')
+    const resend = stubResend()
+    const res = await post({ ...bothBindingFirst(cf.binding) })
+    expect(res.status).toBe(200)
+    expect(cf.sent).toHaveLength(1)
+    expect(resend.calls).toHaveLength(1)
+    expect(resend.calls[0].body.to).toEqual(['a@x.org', 'b@y.org'])
+    expect(resend.calls[0].body.subject).toBe('Feedback from tester@example.com')
+  })
+
+  it('writes nothing to email health when it goes out by fallback', async () => {
+    stubResend()
+    await post({ ...bothBindingFirst(fakeBinding('down').binding) })
+    const db = getDb(env.DB)
+    expect(await db.select().from(emailSendStats).all()).toEqual([])
+    expect((await db.select().from(associationConfig).all()).filter(r => r.key.startsWith('resend_'))).toEqual([])
+  })
+
+  it('fails with 500 when every provider is down', async () => {
+    stubResend('down', { status: 401, body: 'unauthorized' })
+    const cf = fakeBinding('down')
+    const res = await post({ ...bothBindingFirst(cf.binding) })
+    expect(res.status).toBe(500)
+    expect(cf.sent).toHaveLength(1)
+  })
+
+  it('fails with 500 for a suppressed recipient, without trying the other provider', async () => {
+    const resend = stubResend()
+    const cf = fakeBinding('suppressed')
+    const res = await post({ ...bothBindingFirst(cf.binding) })
+    expect(res.status).toBe(500)
+    expect(resend.calls).toHaveLength(0)
   })
 })

@@ -185,17 +185,19 @@ fi
 
 # Collect per-instance secrets upfront — before the log redirect makes stdout a
 # pipe (wrangler refuses to prompt when stdout is not a TTY). Only CF_AIG_TOKEN is
-# required; GEMINI/RESEND are optional rollback credentials (blank = skip).
+# required; GEMINI and RESEND are optional (blank = skip).
 if [[ $FROM_STEP -le 5 && $PREFLIGHT_ONLY -eq 0 ]]; then
   echo
   read -rsp "CF_AIG_TOKEN (required — AI Gateway 'Run' token): " CF_AIG_TOKEN || \
     die "could not read CF_AIG_TOKEN — this prompt needs a terminal. Run interactively, or use --preflight-only to validate without it."
   echo
   [[ -n "$CF_AIG_TOKEN" ]] || die "CF_AIG_TOKEN is required"
-  echo "  The next two are OPTIONAL rollback credentials. Leave blank to skip."
+  echo "  The next two are OPTIONAL. Leave blank to skip."
   echo "  GEMINI_API_KEY is only read if AI_GATEWAY_ENABLED is flipped to false."
   read -rsp "GEMINI_API_KEY (optional): " GEMINI_API_KEY; echo
-  echo "  RESEND_API_KEY is only used if EMAIL_PROVIDER=resend (or the EMAIL binding is absent)."
+  echo "  RESEND_API_KEY is a second email sender: the first tried when EMAIL_PROVIDER=resend (or"
+  echo "  there is no EMAIL binding), and otherwise the fallback for sign-in, account, notification,"
+  echo "  and operator email when the EMAIL binding fails. Digests and week-ahead mail never fall back."
   read -rsp "RESEND_API_KEY (optional): " RESEND_API_KEY; echo
 fi
 
@@ -643,7 +645,7 @@ if step secrets "Set secrets"; then
   fi
   if [[ -n "${RESEND_API_KEY:-}" ]]; then
     echo "$RESEND_API_KEY" | npx wrangler secret put RESEND_API_KEY --env "$SLUG"
-    log_ok "RESEND_API_KEY set (rollback credential)"
+    log_ok "RESEND_API_KEY set (second email sender)"
   else
     log "RESEND_API_KEY skipped (EMAIL_PROVIDER=${EMAIL_PROVIDER})"
   fi

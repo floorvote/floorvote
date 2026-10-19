@@ -8,13 +8,14 @@ import { syncBodyEvents, type CentralBodyEvent } from '../../src/lib/bodyEvents'
 import { hearingUid } from '../../src/lib/hearingUid'
 import { runWeekAhead } from '../../src/lib/weekAhead'
 import { COUNCIL_CALENDAR_TOPIC } from '../../../shared/eventRules'
+import { resetMail, lastBatch } from '../mail'
 
 // Event rules on an instance (#298): central's body events and rule options in
 // (fetch stubbed), an admin's rules saved through the settings route, and the
 // instance's calendar, ICS feed, and week-ahead email out.
 
-const sendBatch = vi.hoisted(() => vi.fn(async () => ({ sent: 1, failed: 0 })))
-vi.mock('../../src/lib/email', async (importOriginal) => ({ ...await importOriginal<typeof import('../../src/lib/email')>(), senderFor: (e: unknown) => ({ sendBatch: (messages: unknown[]) => (sendBatch as (...a: unknown[]) => unknown)(e, messages) }) }))
+vi.mock('../../src/lib/email', async (importOriginal) =>
+  (await import('../mail')).withFakeSender(await importOriginal<typeof import('../../src/lib/email')>()))
 
 const isoDay = (offsetDays: number) => new Date(Date.now() + offsetDays * 86400_000).toISOString().slice(0, 10)
 const HANDLE = 'legiscan:1012600769'
@@ -85,7 +86,7 @@ beforeEach(async () => {
     throw new Error(`unexpected fetch ${url}`)
   })
   vi.stubGlobal('fetch', fetchMock)
-  sendBatch.mockClear()
+  resetMail()
 })
 
 afterEach(() => {
@@ -307,8 +308,8 @@ describe('the week-ahead email', () => {
   })
 
   const emailed = () => {
-    const call = sendBatch.mock.calls.at(-1) as unknown as [unknown, { html: string }[]] | undefined
-    return call?.[1][0].html ?? ''
+    const call = lastBatch()
+    return call?.[0].html ?? ''
   }
 
   it('lists every body event the calendar shows while there are no rules (All events)', async () => {
@@ -353,8 +354,8 @@ describe('the week-ahead email and the calendar, under the Calendar page\'s one 
     if (rules) await saveRules(rules)
     const shown = (await calendarUids()).filter(uid => uid in TITLES)
     await runWeekAhead(env as any, getDb(env.DB))
-    const call = sendBatch.mock.calls.at(-1) as unknown as [unknown, { html: string }[]] | undefined
-    const html = call?.[1][0].html ?? ''
+    const call = lastBatch()
+    const html = call?.[0].html ?? ''
     for (const [uid, title] of Object.entries(TITLES)) expect(html.includes(title), `${title}: calendar ${shown.includes(uid) ? 'shows' : 'hides'} it`).toBe(shown.includes(uid))
   })
 
@@ -372,8 +373,8 @@ describe('the week-ahead email and the calendar, under the Calendar page\'s one 
     const ics = await feed()
     for (const uid of Object.keys(TITLES)) expect(ics).toContain(`UID:${uid}`)
     await runWeekAhead(env as any, getDb(env.DB))
-    const call = sendBatch.mock.calls.at(-1) as unknown as [unknown, { html: string }[]] | undefined
-    const html = call?.[1][0].html ?? ''
+    const call = lastBatch()
+    const html = call?.[0].html ?? ''
     for (const title of Object.values(TITLES)) expect(html).toContain(title)
   })
 
@@ -382,8 +383,8 @@ describe('the week-ahead email and the calendar, under the Calendar page\'s one 
     await saveRules({ committees: [HOUSING], kinds: [], topics: [], trackedBills: false })
     await saveRules(null)
     await runWeekAhead(env as any, getDb(env.DB))
-    const call = sendBatch.mock.calls.at(-1) as unknown as [unknown, { html: string }[]] | undefined
-    const html = call?.[1][0].html ?? ''
+    const call = lastBatch()
+    const html = call?.[0].html ?? ''
     for (const title of Object.values(TITLES)) expect(html).toContain(title)
   })
 
@@ -395,8 +396,8 @@ describe('the week-ahead email and the calendar, under the Calendar page\'s one 
     }
     const shown = (await calendarUids()).filter(uid => uid in TITLES || uid.startsWith('cap-'))
     await runWeekAhead(env as any, getDb(env.DB))
-    const call = sendBatch.mock.calls.at(-1) as unknown as [unknown, { html: string }[]] | undefined
-    const html = call?.[1][0].html ?? ''
+    const call = lastBatch()
+    const html = call?.[0].html ?? ''
     const listedCount = Array.from(html.matchAll(/Capped week event \d+ end|Housing roundtable|Committee of the Whole hearing|Legislative Meeting/g)).length
     const omitted = Number(html.match(/and (\d+) more on the calendar/)?.[1])
     expect(shown).toHaveLength(43)
@@ -537,8 +538,8 @@ describe('event rules, for companion groups', () => {
     await saveRules(RULES)
     expect(await calendarUids()).toContain(COMPANION)
     await runWeekAhead(env as any, getDb(env.DB))
-    const call = sendBatch.mock.calls.at(-1) as unknown as [unknown, { html: string }[]] | undefined
-    const html = call?.[1][0].html ?? ''
+    const call = lastBatch()
+    const html = call?.[0].html ?? ''
     expect(html).toContain('Companion hearing')
     expect(html).not.toContain('Legislative Meeting')
   })

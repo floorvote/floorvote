@@ -20,7 +20,7 @@ import { DEMO_WRITE_ALLOWLIST } from '../../src/middleware/auth'
  * it is that the route you allowlisted sends mail and must not be reachable
  * anonymously.
  *
- * `sendMagicLink` separately refuses to send INVITE links on a demo, so an
+ * The sender's sign-in purpose separately refuses to send INVITE links on a demo, so an
  * accidental invite-route allowlisting is caught at runtime too. Login links are
  * deliberately still sent: superadmin access to a demo is `/login?manual=1`.
  */
