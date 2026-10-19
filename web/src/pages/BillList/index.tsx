@@ -951,43 +951,45 @@ export function BillList() {
               counts={facetCounts.year}
             />
           )}
-          <>
-            <style>{`
-              input[type=range].relevance-slider { -webkit-appearance: none; appearance: none; background: transparent; height: 14px; margin: 0; }
-              input[type=range].relevance-slider::-webkit-slider-runnable-track {
-                background: linear-gradient(to right, ${color.accentAmber} 0%, ${color.accentAmber} ${(relevanceDraft / 10) * 100}%, ${color.borderDefault} ${(relevanceDraft / 10) * 100}%, ${color.borderDefault} 100%);
-                height: 4px; border-radius: 4px;
-              }
-              input[type=range].relevance-slider::-webkit-slider-thumb {
-                -webkit-appearance: none; width: 14px; height: 14px; background: ${color.accentAmber};
-                border-radius: 50%; margin-top: -5px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-              }
-              input[type=range].relevance-slider::-moz-range-track { background: ${color.borderDefault}; height: 4px; border-radius: 4px; }
-              input[type=range].relevance-slider::-moz-range-progress { background: ${color.accentAmber}; height: 4px; border-radius: 4px 0 0 4px; }
-              input[type=range].relevance-slider::-moz-range-thumb { background: ${color.accentAmber}; border-radius: 50%; width: 14px; height: 14px; border: none; cursor: pointer; }
-            `}</style>
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              background: relevanceDraft > 0 ? color.bgInfo : color.white,
-              border: `1px solid ${relevanceDraft > 0 ? color.tagBorderBlue : color.borderDefault}`,
-              borderRadius: radius.md, padding: '6px 10px',
-            }}>
-              <label style={{ fontSize: fontSize.sm, whiteSpace: 'nowrap', color: relevanceDraft > 0 ? color.linkBlue : color.textSlate, fontWeight: relevanceDraft > 0 ? fontWeight.medium : fontWeight.normal }}>
-                Relevance: <span style={{ display: 'inline-block', width: 26, textAlign: 'left' }}>{relevanceDraft === 0 ? 'All' : relevanceDraft < 10 ? `${relevanceDraft}+` : '10'}</span>
-              </label>
-              <input
-                type="range"
-                className="relevance-slider"
-                min={0}
-                max={10}
-                value={relevanceDraft}
-                onChange={(e) => setRelevanceDraft(Number(e.target.value))}
-                onPointerUp={commitRelevance}
-                onKeyUp={commitRelevance}
-                style={{ width: 80 }}
-              />
-            </div>
-          </>
+          <HoverTooltip text={`Filter by AI-scored relevance to your ${orgNoun}`}>
+            <>
+              <style>{`
+                input[type=range].relevance-slider { -webkit-appearance: none; appearance: none; background: transparent; height: 14px; margin: 0; }
+                input[type=range].relevance-slider::-webkit-slider-runnable-track {
+                  background: linear-gradient(to right, ${color.accentAmber} 0%, ${color.accentAmber} ${(relevanceDraft / 10) * 100}%, ${color.borderDefault} ${(relevanceDraft / 10) * 100}%, ${color.borderDefault} 100%);
+                  height: 4px; border-radius: 4px;
+                }
+                input[type=range].relevance-slider::-webkit-slider-thumb {
+                  -webkit-appearance: none; width: 14px; height: 14px; background: ${color.accentAmber};
+                  border-radius: 50%; margin-top: -5px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+                }
+                input[type=range].relevance-slider::-moz-range-track { background: ${color.borderDefault}; height: 4px; border-radius: 4px; }
+                input[type=range].relevance-slider::-moz-range-progress { background: ${color.accentAmber}; height: 4px; border-radius: 4px 0 0 4px; }
+                input[type=range].relevance-slider::-moz-range-thumb { background: ${color.accentAmber}; border-radius: 50%; width: 14px; height: 14px; border: none; cursor: pointer; }
+              `}</style>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                background: relevanceDraft > 0 ? color.bgInfo : color.white,
+                border: `1px solid ${relevanceDraft > 0 ? color.tagBorderBlue : color.borderDefault}`,
+                borderRadius: radius.md, padding: '6px 10px',
+              }}>
+                <label style={{ fontSize: fontSize.sm, whiteSpace: 'nowrap', color: relevanceDraft > 0 ? color.linkBlue : color.textSlate, fontWeight: relevanceDraft > 0 ? fontWeight.medium : fontWeight.normal }}>
+                  Relevance: <span style={{ display: 'inline-block', width: 26, textAlign: 'left' }}>{relevanceDraft === 0 ? 'All' : relevanceDraft < 10 ? `${relevanceDraft}+` : '10'}</span>
+                </label>
+                <input
+                  type="range"
+                  className="relevance-slider"
+                  min={0}
+                  max={10}
+                  value={relevanceDraft}
+                  onChange={(e) => setRelevanceDraft(Number(e.target.value))}
+                  onPointerUp={commitRelevance}
+                  onKeyUp={commitRelevance}
+                  style={{ width: 80 }}
+                />
+              </div>
+            </>
+          </HoverTooltip>
           <FilterDropdown
             placeholder={filterDimensionLabel('position')}
             options={f.positionOptions}
@@ -1012,15 +1014,17 @@ export function BillList() {
             anyIsFilter
           />
           {f.allTags.length > 0 && (
-            <FilterDropdown
-              placeholder={filterDimensionLabel('tag')}
-              options={f.allTags.map(t => ({ value: t }))}
-              selected={f.tag}
-              onChange={f.handleTagsChange}
-              multi
-              counts={filterCounts.tag}
-              anyIsFilter
-            />
+            <HoverTooltip text="Filter by your team's AI-generated tags">
+              <FilterDropdown
+                placeholder={filterDimensionLabel('tag')}
+                options={f.allTags.map(t => ({ value: t }))}
+                selected={f.tag}
+                onChange={f.handleTagsChange}
+                multi
+                counts={filterCounts.tag}
+                anyIsFilter
+              />
+            </HoverTooltip>
           )}
           {f.subjectGroups.length > 0 && (
             <HoverTooltip

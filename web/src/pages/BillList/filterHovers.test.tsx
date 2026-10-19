@@ -118,7 +118,6 @@ describe('Bills page filter bar hovers', () => {
     ['Session year', /^Session year/],
     ['Position', /^Position/],
     ['Priority', /^Priority/],
-    ['Tag', /^Tag/],
   ]
   it.each(REMOVED)('shows no bubble over the %s dropdown, which only restated its label', async (_name, label) => {
     await renderBillList({ isAdmin: true })
@@ -133,12 +132,6 @@ describe('Bills page filter bar hovers', () => {
     expect(screen.queryByText(/^Filter by (state|legislative|your|AI)/)).not.toBeInTheDocument()
   })
 
-  it('shows no bubble over the Relevance slider', async () => {
-    await renderBillList({ isAdmin: true })
-    hover(screen.getByRole('slider'))
-    expect(bubbles()).toHaveLength(0)
-  })
-
   it('shows no bubble over Not yet voted, which only restated it', async () => {
     await renderBillList({ isAdmin: true })
     hover(screen.getByRole('button', { name: /not yet voted/i }))
@@ -148,8 +141,15 @@ describe('Bills page filter bar hovers', () => {
   const KEPT: [string, RegExp, string][] = [
     ['My bills', /my bills/i, "Show only bills you've voted on, commented on, or noted"],
     ['New matches', /new matches/i, 'Show only newly keyword-matched bills awaiting a priority decision'],
+    ['Tag', /^Tag/, "Filter by your team's AI-generated tags"],
     ['Drafts', /drafts/i, 'Show only draft bills — pre-filed, not yet introduced'],
   ]
+  it('still says over the Relevance slider that the score is AI-generated', async () => {
+    await renderBillList({ isAdmin: true })
+    hover(screen.getByRole('slider'))
+    expect(screen.getByText('Filter by AI-scored relevance to your association')).toBeInTheDocument()
+  })
+
   it.each(KEPT)('still explains %s, which says more than its label', async (_name, label, text) => {
     await renderBillList({ isAdmin: true })
     hover(screen.getByRole('button', { name: label }))
