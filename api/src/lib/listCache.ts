@@ -1,4 +1,5 @@
 import type { Env } from '../types'
+import { BILL_FILTER_DEFS, encodeSubjectFilter, serializeBillFilter, type BillFilter, type SubjectValue } from '../../../shared/billFilter'
 
 // ── Default-list query cache ──────────────────────────────────────────────
 // Caches ONLY the shared, expensive count+ordered-page query for GET /bills
@@ -23,29 +24,15 @@ export type CachedListPage = {
   billRows: Record<string, unknown>[]
 }
 
-// The query inputs that determine the shared bill set + ordering. Multi-value
-// filters are arrays; everything that affects the page must be present here.
+// The query inputs that determine the shared bill set + ordering: the whole bill filter, and how the page is cut.
+// The key is the filter as the shared module serializes it (shared/billFilter.ts), so every filter the module
+// names is in it, and a filter added there is in it with no edit here.
 export type ListCacheParams = {
-  statuses: string[]
-  stages: string[]
-  priorities: string[]
-  positionValues: string[]
-  sessions: string[]
-  years: string[]
-  states: string[]
-  tagFilters: string[]
-  subjectFilters: Array<{ state: string; name: string }>
-  q: string | undefined
-  minRelevance: string | undefined
-  cfParamMap: Record<string, string[]>
+  filter: BillFilter
   sort: string
   dir: 'asc' | 'desc'
   page: number
   pageSize: number
-  // drafts is org-shared and low-volume (unlike myBills/unvoted, which are
-  // per-user and bypass this cache entirely), so it widens the cache key
-  // instead of bypassing.
-  drafts: boolean
 }
 
 // Caching is OFF by default. Authenticated tenants edit bills (incl. priority,
@@ -65,34 +52,31 @@ export function listCacheTtl(env: { LIST_CACHE_TTL?: string }): number {
   return n < 0 ? 0 : n
 }
 
-// Deterministic, order-independent serialization of the params. Multi-value
-// arrays are sorted so filter order doesn't change the key; cf_* params are
-// sorted by field id with their values sorted too.
+// The filter with the values of every multi-select filter and of each custom field in one order, so two orders of
+// the same picks (which the list reads the same) share a key. The serializer writes keys in one order and sorts
+// the custom fields, and this does the same for the values.
+function inValueOrder(filter: BillFilter): BillFilter {
+  const text = (v: string | SubjectValue) => typeof v === 'string' ? v : encodeSubjectFilter(v.state, v.name)
+  const byText = (a: string | SubjectValue, b: string | SubjectValue) => (text(a) < text(b) ? -1 : text(a) > text(b) ? 1 : 0)
+  const out: Record<string, unknown> = { ...filter }
+  for (const def of BILL_FILTER_DEFS) {
+    if (def.kind === 'multi-select') out[def.name] = [...(filter[def.name] as readonly (string | SubjectValue)[])].sort(byText)
+    if (def.kind === 'custom-field') {
+      out[def.name] = Object.fromEntries(Object.entries(filter.field).map(([key, values]) => [key, [...values].sort()]))
+    }
+  }
+  return out as BillFilter
+}
+
+// Deterministic, order-independent serialization of the params.
 function serializeParams(p: ListCacheParams): string {
-  const sortedArr = (a: string[]) => [...a].sort()
-  const cf = Object.keys(p.cfParamMap)
-    .sort()
-    .map((k) => [k, sortedArr(p.cfParamMap[k])] as const)
-  const canonical = {
-    statuses: sortedArr(p.statuses),
-    stages: sortedArr(p.stages),
-    priorities: sortedArr(p.priorities),
-    positionValues: sortedArr(p.positionValues),
-    sessions: sortedArr(p.sessions),
-    years: sortedArr(p.years),
-    states: sortedArr(p.states),
-    tagFilters: sortedArr(p.tagFilters),
-    subjectFilters: sortedArr(p.subjectFilters.map(v => `${v.state}:${v.name}`)),
-    q: p.q ?? null,
-    minRelevance: p.minRelevance ?? null,
-    cf,
+  return JSON.stringify({
+    filter: serializeBillFilter(inValueOrder(p.filter)),
     sort: p.sort,
     dir: p.dir,
     page: p.page,
     pageSize: p.pageSize,
-    drafts: p.drafts,
-  }
-  return JSON.stringify(canonical)
+  })
 }
 
 // Build a synthetic Request usable as a Cache API key. Scoped per tenant via
@@ -138,11 +122,6 @@ export async function putCachedPage(
 
 // Helper used by the route: should this request bypass the cache entirely?
 // myBills / unvoted make the bill SET per-user, so they're not cacheable.
-export function isPerUserListRequest(opts: {
-  myBills?: string
-  unvoted?: string
-}): boolean {
-  const myBills = opts.myBills === '1' || opts.myBills === 'true'
-  const unvoted = opts.unvoted === '1'
-  return myBills || unvoted
+export function isPerUserListRequest(filter: Pick<BillFilter, 'myBills' | 'unvoted'>): boolean {
+  return filter.myBills || filter.unvoted
 }

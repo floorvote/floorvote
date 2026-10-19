@@ -47,7 +47,6 @@ function renderRow(isAdmin: boolean, opts: { onVote?: (billId: string, pos: 'sup
       <BillRow
         bill={makeBill(opts.bill)}
         index={0}
-        selectedTags={[]}
         onTagClick={vi.fn()}
         isAdmin={isAdmin}
         positionVocabulary={['Support', 'Oppose']}
@@ -58,11 +57,7 @@ function renderRow(isAdmin: boolean, opts: { onVote?: (billId: string, pos: 'sup
         onPriorityChange={vi.fn()}
         onPositionChange={vi.fn()}
         onVote={opts.onVote}
-        filterStatuses={[]}
-        filterPriorities={[]}
-        filterPositions={[]}
-        filterYears={[]}
-        filterMinRelevance={0}
+        filter={{ status: [], priority: [], position: [], year: [], minRelevance: 0, tag: [] }}
         sortedPaths={[]}
         isMultiState={false}
         isSelectionMode={false}
@@ -402,5 +397,15 @@ describe('BillRow untitled draft title', () => {
     renderRow(false, { bill: { title: '', isDraft: false, abstract: 'Filed bill abstract' } })
     expect(screen.getByText('Filed bill abstract')).toBeInTheDocument()
     expect(screen.queryByText('Untitled draft')).toBeNull()
+  })
+})
+
+// Grouping Status by Stage changes the filter control only (#677). A row shows the provider's status and no stage text,
+// even when the bill it is given carries a stage (the list reads the stage only to filter and sort).
+describe('BillRow shows Status only, never a stage', () => {
+  it('draws no stage text or stage chip for a bill with a stage', () => {
+    const { container } = renderRow(true, { bill: { status: 'Became Law', ...({ statusStage: 'enacted', statusRank: 705 } as object) } })
+    expect(screen.getAllByText('Became Law').length).toBeGreaterThan(0)
+    expect(container.textContent ?? '').not.toMatch(/\bEnacted\b|\bStage\b/i)
   })
 })

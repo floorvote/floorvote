@@ -1,10 +1,11 @@
 import { env } from 'cloudflare:test'
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink, seedAuthEvent } from '../helpers'
+import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink, seedAuthEvent, stubFetch } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { users, sessions, authEvents, emailChanges } from '../../src/db/schema'
+import { users, sessions, authEvents, emailChanges, emailSendStats } from '../../src/db/schema'
+import { requestEmailChange, confirmEmailChange, EMAIL_CHANGE_ERRORS } from '../../src/lib/emailChange'
 import { _resetSuperadminAllowlistCache } from '../../src/lib/superadminCentral'
 import { hashToken } from '../../src/lib/crypto'
 
@@ -288,6 +289,8 @@ describe('POST /users/me/email-change: limits', () => {
   })
 
   it("says so when the confirmation can't be sent, and leaves nothing to confirm", async () => {
+    // Both providers are down: the binding throws, and the fallback (Resend) answers 500.
+    stubFetch(() => new Response('upstream error', { status: 500 }))
     const failing = { send: async () => { throw new Error('provider down') } }
     const r = await request(janeCookie, 'jane@newjob.org', {}, { EMAIL: failing })
     expect(r.status).toBe(502)
@@ -556,5 +559,153 @@ describe('demo', () => {
   it('still answers the read-only status call on a demo instance', async () => {
     const r = await call('/api/auth/email-change/status', { method: 'POST', body: '{"token":"x"}' }, { DEMO_MODE: 'true' })
     expect(r).toMatchObject({ status: 200, body: { status: 'invalid' } })
+  })
+})
+
+// Email-change emails send by the account purpose (#707): the confirmation
+// link, the notice to the old address, and the "this wasn't me" report all fall
+// back to the second provider, count each attempt to the provider that made it,
+// and are never sent from a demo instance. A new address that can't receive
+// mail is told so, and an outage is told to try again.
+describe('sending by purpose', () => {
+  const cfError = (code: string) => Object.assign(new Error(code.toLowerCase()), { code })
+  /** A Cloudflare binding whose send throws for the addresses `fails` names, and delivers the rest. */
+  function binding(fails: (to: string) => string | null) {
+    return {
+      send: vi.fn(async (m: Sent) => {
+        const code = fails(m.to[0])
+        if (code) throw cfError(code)
+        sent.push(m)
+        return { messageId: `cf-${sent.length}` }
+      }),
+    }
+  }
+  const down = () => 'E_INTERNAL_SERVER_ERROR'
+  const resendOk = () => stubFetch(() => new Response(JSON.stringify({ id: 'rs-1' }), { status: 200 }))
+  type ResendBody = { to: string[]; subject: string; html: string; text: string }
+  const resendBodies = (spy: ReturnType<typeof stubFetch>) => spy.mock.calls.map(c => JSON.parse(String((c[1] as RequestInit).body)) as ResendBody)
+  async function stats() {
+    return Object.fromEntries((await getDb(env.DB).select().from(emailSendStats).all()).map(r => [r.provider, r]))
+  }
+  const withResend = { RESEND_API_KEY: 'test-api-key' }
+  const noContext = { userAgent: null, ipCountry: null }
+
+  beforeEach(() => { vi.spyOn(console, 'error').mockImplementation(() => {}); vi.spyOn(console, 'warn').mockImplementation(() => {}) })
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
+
+  it('sends the confirmation and the old-address notice through Resend when Cloudflare is down, counting each attempt to its own provider', async () => {
+    const fetch = resendOk()
+    const r = await request(janeCookie, 'jane@newjob.org', {}, { EMAIL: binding(down), ...withResend })
+    expect(r.status).toBe(200)
+    expect(sent).toHaveLength(0)
+    const bodies = resendBodies(fetch)
+    expect(bodies.map(b => b.to[0]).sort()).toEqual(['jane@newjob.org', 'jane@oldjob.org'])
+    const by = await stats()
+    expect(by.cloudflare).toMatchObject({ sent: 0, failed: 2, suppressed: 0 })
+    expect(by.resend).toMatchObject({ sent: 2, failed: 0 })
+    // The link that went out through Resend is a working one.
+    const token = bodies.find(b => b.to[0] === 'jane@newjob.org')!.text.match(LINK)![1]
+    expect((await confirm(token)).status).toBe(200)
+    expect((await member(jane)).email).toBe('jane@newjob.org')
+  })
+
+  it('counts a confirmation that worked first time once, to the first provider', async () => {
+    const fetch = resendOk()
+    await request(janeCookie, 'jane@newjob.org', {}, withResend)
+    expect(fetch).not.toHaveBeenCalled()
+    expect((await stats()).cloudflare).toMatchObject({ sent: 2, failed: 0 })
+    expect((await stats()).resend).toBeUndefined()
+  })
+
+  it('sends the notice to the old address through Resend when only the notice would fail on Cloudflare', async () => {
+    const fetch = resendOk()
+    const r = await request(janeCookie, 'jane@newjob.org', {}, { EMAIL: binding(to => (to === 'jane@oldjob.org' ? 'E_INTERNAL_SERVER_ERROR' : null)), ...withResend })
+    expect(r.status).toBe(200)
+    expect(sent.map(m => m.to[0])).toEqual(['jane@newjob.org'])
+    expect(resendBodies(fetch)).toHaveLength(1)
+    const [notice] = resendBodies(fetch)
+    expect(notice.to).toEqual(['jane@oldjob.org'])
+    expect(notice.text).toMatch(/\/auth\/not-me\?token=[0-9a-f]{64}/)
+  })
+
+  it('sends the commit notice to the old address through Resend when Cloudflare is down', async () => {
+    await request(janeCookie, 'jane@newjob.org')
+    const token = tokenSentTo('jane@newjob.org')
+    sent = []
+    const fetch = resendOk()
+    const r = await call('/api/auth/email-change/confirm', { method: 'POST', body: JSON.stringify({ token }) }, { EMAIL: binding(down), ...withResend })
+    expect(r.status).toBe(200)
+    expect((await member(jane)).email).toBe('jane@newjob.org')
+    expect(resendBodies(fetch)).toHaveLength(1)
+    const [notice] = resendBodies(fetch)
+    expect(notice.to).toEqual(['jane@oldjob.org'])
+    expect(notice.subject).toMatch(/changed/i)
+  })
+
+  it('answers "this address can\'t receive email" when the new address is suppressed, without retrying it through Resend', async () => {
+    const fetch = resendOk()
+    const EMAIL = binding(to => (to === 'jane@newjob.org' ? 'E_RECIPIENT_SUPPRESSED' : null))
+    const r = await request(janeCookie, 'jane@newjob.org', {}, { EMAIL, ...withResend })
+    expect(r.status).toBe(400)
+    expect(r.body).toEqual({ error: "That address can't receive email. Check it for a typo, or use a different address." })
+    expect(fetch).not.toHaveBeenCalled()
+    // No pending change, no notice to the old address (nothing happened), but the request still used its allowance.
+    expect(await getDb(env.DB).select().from(emailChanges).all()).toHaveLength(0)
+    expect(sent).toHaveLength(0)
+    expect((await eventsFor(jane)).filter(e => e.event === 'email_change_requested')).toHaveLength(1)
+    // A dead address is the address's problem, not an outage.
+    expect((await stats()).cloudflare).toMatchObject({ sent: 0, failed: 0, suppressed: 1 })
+  })
+
+  it('answers "try again" when both providers are down, and counts one failure on each', async () => {
+    const fetch = stubFetch(() => new Response('upstream error', { status: 500 }))
+    const r = await request(janeCookie, 'jane@newjob.org', {}, { EMAIL: binding(down), ...withResend })
+    expect(r.status).toBe(502)
+    expect(r.body).toEqual({ error: EMAIL_CHANGE_ERRORS.sendFailed })
+    expect(r.body.error).toMatch(/try again/i)
+    expect(fetch).toHaveBeenCalledOnce()
+    expect(await getDb(env.DB).select().from(emailChanges).all()).toHaveLength(0)
+    const by = await stats()
+    expect(by.cloudflare).toMatchObject({ sent: 0, failed: 1, suppressed: 0 })
+    expect(by.resend).toMatchObject({ sent: 0, failed: 1, suppressed: 0 })
+  })
+
+  it('answers "try again" when a single provider is configured and down', async () => {
+    const r = await request(janeCookie, 'jane@newjob.org', {}, { EMAIL: binding(down), RESEND_API_KEY: '' })
+    expect(r.status).toBe(502)
+    expect(r.body).toEqual({ error: EMAIL_CHANGE_ERRORS.sendFailed })
+    expect(await getDb(env.DB).select().from(emailChanges).all()).toHaveLength(0)
+  })
+
+  it('does not fail the request, or retry through Resend, when the old address is suppressed', async () => {
+    const fetch = resendOk()
+    const EMAIL = binding(to => (to === 'jane@oldjob.org' ? 'E_RECIPIENT_SUPPRESSED' : null))
+    const r = await request(janeCookie, 'jane@newjob.org', {}, { EMAIL, ...withResend })
+    expect(r.status).toBe(200)
+    expect(fetch).not.toHaveBeenCalled()
+    expect((await stats()).cloudflare).toMatchObject({ sent: 1, failed: 0, suppressed: 1 })
+  })
+
+  it('sends nothing from a demo instance, by the purpose\'s rule alone', async () => {
+    const fetch = resendOk()
+    const EMAIL = binding(() => null)
+    await requestEmailChange(testEnv({ EMAIL, DEMO_MODE: 'true', ...withResend }) as never, getDb(env.DB), {
+      member: { id: jane, email: 'jane@oldjob.org' }, requesterId: jane, sessionId: null, rawNewEmail: 'jane@newjob.org', ctx: noContext,
+    })
+    expect(EMAIL.send).not.toHaveBeenCalled()
+    expect(fetch).not.toHaveBeenCalled()
+    expect(await getDb(env.DB).select().from(emailSendStats).all()).toHaveLength(0)
+  })
+
+  it('sends no commit notice from a demo instance either, though the change itself goes through', async () => {
+    await request(janeCookie, 'jane@newjob.org')
+    const token = tokenSentTo('jane@newjob.org')
+    sent = []
+    const fetch = resendOk()
+    const EMAIL = binding(() => null)
+    const r = await confirmEmailChange(testEnv({ EMAIL, DEMO_MODE: 'true', ...withResend }) as never, getDb(env.DB), token, noContext)
+    expect(r.ok).toBe(true)
+    expect(EMAIL.send).not.toHaveBeenCalled()
+    expect(fetch).not.toHaveBeenCalled()
   })
 })

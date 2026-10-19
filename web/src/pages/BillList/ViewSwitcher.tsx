@@ -23,7 +23,22 @@ import { MissingRequiredReason, useRequiredSubmit } from '../../components/Requi
 // to the name column, so it is left as-is rather than tightened.
 const MENU_WIDTH = 300
 
-export type SavedView = { id: string; name: string; query: string; slug?: string; previousSlug?: string | null }
+export type SavedView = { id: string; name: string; query: string; slug?: string; previousSlug?: string | null; subscribed?: boolean }
+
+/**
+ * The envelope on each view row, which includes the view in the member's own email digest (#449). The parent
+ * passes it only when the instance's digest is on, so with none there is no envelope. `memberOn` is the member's
+ * own digest switch: with it off, including a view first offers to turn it on (`onTurnOn`).
+ */
+export type DigestControl = {
+  cadence: 'daily' | 'weekly'
+  memberOn: boolean
+  onToggle: (id: string, subscribed: boolean) => void | Promise<void>
+  onTurnOn: () => void | Promise<void>
+}
+
+// The envelope's own column: after the count and the same width on every row, so the icons line up.
+const ENVELOPE_COLUMN_WIDTH = 24
 
 // Sentinel key for the "All bills" row's count, distinct from any view id.
 const ALL_BILLS_KEY = '__all_bills__'
@@ -43,7 +58,7 @@ function ViewCountBadge({ count, failed }: { count: number | undefined; failed: 
 }
 
 export function ViewSwitcher({
-  views, currentSearch, isAdmin, onApply, onRename, onDelete, onReorder, onOverwrite,
+  views, currentSearch, isAdmin, onApply, onRename, onDelete, onReorder, onOverwrite, digest,
 }: {
   views: SavedView[]
   currentSearch: string
@@ -53,6 +68,7 @@ export function ViewSwitcher({
   onDelete: (id: string) => void | Promise<void>
   onReorder: (order: string[]) => void | Promise<void>
   onOverwrite: (id: string) => void | Promise<void>
+  digest?: DigestControl
 }) {
   const [open, setOpen] = useState(false)
   const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -68,6 +84,8 @@ export function ViewSwitcher({
   // able to show both confirms at once.
   const [confirmingOverwriteId, setConfirmingOverwriteId] = useState<string | null>(null)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
+  // The row asking "turn on your digest to include this view?", for a member whose digest is off.
+  const [digestPromptId, setDigestPromptId] = useState<string | null>(null)
   // Local, optimistic ordering of `views` — reordered immediately on drop and
   // reverted if onReorder rejects. Reset from props whenever the incoming
   // views identity/order changes (a fresh fetch, a rename/delete reload).
@@ -89,6 +107,8 @@ export function ViewSwitcher({
   // Reorder is a write, gated the same as Rename/Delete: an admin, on a tenant
   // positively known not to be a demo.
   const canReorder = isAdmin && isNotDemo
+  // The digest never sends on a demo, so the envelope is offered only where it would.
+  const digestControl = isNotDemo ? digest : undefined
 
   // Drag- and keyboard-reorder, shared with the tag table
   // (admin/TagTaxonomyTable.tsx) and custom fields (admin/Config.tsx) — see
@@ -128,6 +148,7 @@ export function ViewSwitcher({
     setRenamingId(null)
     setConfirmingId(null)
     setConfirmingOverwriteId(null)
+    setDigestPromptId(null)
     setHoveredId(null)
     setFocusedId(null)
   }, [open])
@@ -212,6 +233,25 @@ export function ViewSwitcher({
     } catch {
       // Leave the confirm state open so the user can see the overwrite
       // didn't take, instead of closing as though it had succeeded.
+    }
+  }
+
+  // The envelope: remove an included view, include one with the digest on, or ask first with it off.
+  function clickEnvelope(v: SavedView) {
+    if (!digestControl) return
+    if (v.subscribed) { void digestControl.onToggle(v.id, false); return }
+    if (!digestControl.memberOn) { setDigestPromptId(v.id); return }
+    void digestControl.onToggle(v.id, true)
+  }
+
+  async function turnOnAndInclude(id: string) {
+    if (!digestControl) return
+    try {
+      await digestControl.onTurnOn()
+      await digestControl.onToggle(id, true)
+      setDigestPromptId(null)
+    } catch {
+      // Leave the prompt open so the member can see it didn't take, as a failed delete does.
     }
   }
 
@@ -351,6 +391,18 @@ export function ViewSwitcher({
                 </div>
               )
             }
+            if (digestPromptId === v.id && digestControl) {
+              return (
+                <div key={v.id}>
+                  {indicator}
+                  <div style={{ ...rowStyle(false), cursor: 'default', ...dnd.sourceStyle(i) }} {...dropHandlers}>
+                    <span style={{ flex: 1, minWidth: 0, fontWeight: fontWeight.medium }}>{`Turn on your email digest to include "${v.name}"?`}</span>
+                    <button onClick={() => setDigestPromptId(null)} style={smallButtonStyle('cancel')}>Not now</button>
+                    <button onClick={() => { void turnOnAndInclude(v.id) }} style={smallButtonStyle('primary')}>Turn on digest</button>
+                  </div>
+                </div>
+              )
+            }
             const isActive = active?.id === v.id
             // Only draggable via this handle, not the whole row: the row's
             // name button applies the view and closes the menu on click, so
@@ -438,6 +490,28 @@ export function ViewSwitcher({
                     </span>
                   )}
                   <ViewCountBadge count={viewCounts[v.id]} failed={failedCounts.has(v.id)} />
+                  {digestControl && (() => {
+                    const on = v.subscribed === true
+                    const count = failedCounts.has(v.id) ? undefined : viewCounts[v.id]
+                    const now = count === undefined ? '' : ` · ${count.toLocaleString()} ${count === 1 ? 'bill' : 'bills'} now`
+                    const when = `your ${digestControl.cadence} digest`
+                    return (
+                      <HoverTooltip text={`${on ? 'Remove this view from' : 'Include this view in'} ${when}${now}`}>
+                        <button
+                          onClick={() => clickEnvelope(v)}
+                          aria-label={`${on ? `Remove "${v.name}" from` : `Include "${v.name}" in`} ${when}`}
+                          aria-pressed={on}
+                          style={{ ...iconGlyphButtonStyle, width: ENVELOPE_COLUMN_WIDTH, flex: 'none', justifyContent: 'center', color: on ? VIEW_STYLE.text : color.textSecondary }}
+                        >
+                          <span
+                            className="material-symbols-outlined"
+                            data-filled={on ? 'true' : 'false'}
+                            style={{ fontSize: fontSize.base, fontVariationSettings: `'FILL' ${on ? 1 : 0}` }}
+                          >mail</span>
+                        </button>
+                      </HoverTooltip>
+                    )
+                  })()}
                 </div>
               </div>
             )
@@ -493,11 +567,12 @@ const iconGlyphButtonStyle: React.CSSProperties = {
   display: 'inline-flex', alignItems: 'center', lineHeight: 1,
 }
 
-function smallButtonStyle(kind: 'danger' | 'cancel'): React.CSSProperties {
+function smallButtonStyle(kind: 'danger' | 'cancel' | 'primary'): React.CSSProperties {
   const base: React.CSSProperties = {
     fontFamily: 'inherit', fontSize: fontSize.xs, padding: '2px 8px',
     borderRadius: radius.sm, cursor: 'pointer', whiteSpace: 'nowrap',
   }
   if (kind === 'danger') return { ...base, border: `1px solid ${color.borderRedChip}`, background: color.white, color: color.textDanger, fontWeight: fontWeight.semibold }
+  if (kind === 'primary') return { ...base, border: `1px solid ${color.accentBlue}`, background: color.white, color: color.accentBlue, fontWeight: fontWeight.semibold }
   return { ...base, border: `1px solid ${color.borderDefault}`, background: color.white, color: color.textSecondary }
 }

@@ -6,6 +6,7 @@ import { buildBillCardModel } from '../../../web/src/lib/billCardModel'
 import { COMMENT_PREVIEW_MAX } from '../../../web/src/lib/feedUtils'
 import type { GroupedBillEvents, FeedEvent } from '../../../web/src/lib/feedUtils'
 import { SAMPLE_DIGEST_EVENTS, SAMPLE_NEW_MATCHES, SAMPLE_ASSOC_NAME } from '../../src/lib/sampleEmails'
+import { billsListPath, parseBillFilter, withBillFilter } from '../../../shared/billFilter'
 
 const ev = (over: any = {}) => ({
   type: 'bill_updated',
@@ -229,6 +230,21 @@ describe('sample digest emails render the wording for their cadence', () => {
   })
 })
 
+// The digest's links to the Bills list are the shared module's, so the list they open applies exactly the filter the
+// digest names (the new matches) and the page reads it back as that filter and no other.
+describe('the digest\'s links to the Bills list', () => {
+  const links = (html: string) => [...html.matchAll(/href="(https:\/\/x\/bills\?[^"]*)"/g)].map(m => m[1].replace(/&amp;/g, '&'))
+
+  it('the new-matches-only sample links to the list filtered to new matches, built with billsListPath', () => {
+    const found = links(renderSampleEmail('digest-new-only', 'https://x').html)
+    expect(found.length).toBeGreaterThan(0)
+    for (const link of found) {
+      expect(link).toBe(`https://x${billsListPath({ newMatches: true })}`)
+      expect(parseBillFilter(new URL(link).searchParams)).toEqual(withBillFilter({ newMatches: true }))
+    }
+  })
+})
+
 describe('renderDigestEmail — updates lead, new matches follow with a count and a cap', () => {
   const match = (n: number, relevanceScore: number | null) => ({
     billId: `m${n}`, billNumber: `HB ${1000 + n}`, billTitle: `Matched bill ${n}`,
@@ -297,5 +313,69 @@ describe('renderDigestEmail — untitled drafts', () => {
   it('never labels a filed bill "Untitled draft", even with a blank title', () => {
     const html = renderDigestEmail({ events: [ev({ billTitle: '', billIsDraft: false })], assocName: 'X', appUrl: 'https://x' })
     expect(html).not.toContain('Untitled draft')
+  })
+})
+
+// #588: the new-match card uses the priority dropdown's words. The corner chip
+// says "New match", and a "Set priority" link opens the bill page, where the
+// amber dropdown is. A member can't set priorities, so their cards have no link.
+describe('renderDigestEmail: the new-match card and its "Set priority" link', () => {
+  const match = (n: number) => ({
+    billId: `m${n}`, billNumber: `HB ${1000 + n}`, billTitle: `Matched bill ${n}`,
+    billState: 'RI', billSession: '2026', billSessionSlug: '2026', relevanceScore: n, summary: n === 2 ? null : `Summary ${n}`,
+  })
+  const items = [match(1), match(2), match(3)]
+  const anchors = (html: string) => [...html.matchAll(/<a href="([^"]*)"[^>]*>\s*([^<]*?)\s*<\/a>/g)].map(m => ({ href: m[1], text: m[2] }))
+  const setPriorityLinks = (html: string) => anchors(html).filter(a => a.text === 'Set priority')
+
+  it('puts a "Set priority" link on every new-match card for an admin', () => {
+    const html = renderDigestEmail({ events: [], assocName: 'X', appUrl: 'https://x', newMatches: items })
+    expect(setPriorityLinks(html)).toHaveLength(3)
+  })
+
+  it("points each link at that card's own bill page", () => {
+    const html = renderDigestEmail({ events: [], assocName: 'X', appUrl: 'https://x', newMatches: items })
+    const titleHrefs = (title: string) => anchors(html).filter(a => a.text === title).map(a => a.href)
+    const links = setPriorityLinks(html).map(a => a.href)
+    for (const n of [1, 2, 3]) {
+      const [titleHref] = titleHrefs(`Matched bill ${n}`)
+      expect(titleHref).toMatch(/^https:\/\/x\//)
+      expect(links).toContain(titleHref)
+    }
+    expect(new Set(links).size).toBe(3)
+  })
+
+  it('keeps the "New match" chip in the card corner', () => {
+    const html = renderDigestEmail({ events: [], assocName: 'X', appUrl: 'https://x', newMatches: items })
+    expect(html.match(/>New match</g)).toHaveLength(3)
+  })
+
+  it('adds the link to a card with no summary, too', () => {
+    const html = renderDigestEmail({ events: [], assocName: 'X', appUrl: 'https://x', newMatches: [match(2)] })
+    expect(setPriorityLinks(html)).toHaveLength(1)
+  })
+
+  it("leaves the link off a member's cards, since a member can't set a priority", () => {
+    const html = renderDigestEmail({ events: [], assocName: 'X', appUrl: 'https://x', newMatches: items, forMember: true })
+    expect(html).toContain('Matched bill 1')
+    expect(html.match(/>New match</g)).toHaveLength(3)
+    expect(html).not.toContain('Set priority')
+  })
+
+  it('gives only the listed cards a link when there are more than the cap, not the "See all" line', () => {
+    const many = Array.from({ length: 14 }, (_, i) => match(i + 1))
+    const html = renderDigestEmail({ events: [], assocName: 'X', appUrl: 'https://x', newMatches: many })
+    expect(setPriorityLinks(html)).toHaveLength(10)
+    expect(html).toContain('See all 14 new matches')
+  })
+
+  it('adds no link to an updated-bill card', () => {
+    const html = renderDigestEmail({ events: [ev()], assocName: 'X', appUrl: 'https://x' })
+    expect(html).not.toContain('Set priority')
+  })
+
+  it('shows the link in the sample digest an admin previews', () => {
+    const html = renderSampleEmail('digest', 'https://x').html
+    expect(setPriorityLinks(html)).toHaveLength(3)
   })
 })

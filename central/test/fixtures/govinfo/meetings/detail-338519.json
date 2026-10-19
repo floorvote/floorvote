@@ -1,0 +1,30 @@
+{
+  "committeeMeeting": {
+    "chamber": "Senate",
+    "committees": [
+      {
+        "name": "Senate Armed Services Subcommittee on Cybersecurity",
+        "systemCode": "ssas21",
+        "url": "https://api.congress.gov/v3/committee/senate/ssas21?format=json"
+      }
+    ],
+    "congress": 119,
+    "date": "2026-06-09T15:00:00Z",
+    "eventId": "338519",
+    "location": {
+      "building": "Russell Senate Office Building",
+      "room": "232A"
+    },
+    "meetingStatus": "Scheduled",
+    "title": "Closed business meeting to markup the National Defense Authorization Act for fiscal year 2027.",
+    "type": "Closed Markup Session",
+    "updateDate": "2026-05-29T00:08:33Z"
+  },
+  "request": {
+    "chamber": "senate",
+    "congress": "119",
+    "contentType": "application/json",
+    "eventId": "338519",
+    "format": "json"
+  }
+}

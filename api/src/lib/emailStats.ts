@@ -23,11 +23,16 @@ export function isRecipientError(r: Pick<EmailSendResult, 'error'>): boolean {
 
 export type SendTally = { sent: number; failed: number; suppressed: number; lastError: string | null }
 
-export function tally(results: EmailSendResult[]): SendTally {
+/**
+ * Count sends or attempts. A failure is suppressed when its adapter classified
+ * it permanent (the shared sender's attempts), or, for a result from the old
+ * sendEmail path, when isRecipientError says so.
+ */
+export function tally(results: Array<Pick<EmailSendResult, 'ok' | 'error'> & { permanent?: boolean }>): SendTally {
   const t: SendTally = { sent: 0, failed: 0, suppressed: 0, lastError: null }
   for (const r of results) {
     if (r.ok) t.sent++
-    else if (isRecipientError(r)) t.suppressed++
+    else if (r.permanent ?? isRecipientError(r)) t.suppressed++
     else { t.failed++; t.lastError = r.error ?? 'unknown error' }
   }
   return t

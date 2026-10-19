@@ -9,6 +9,7 @@ import { nowDb } from '../lib/dbTime'
 import { fetchAiUsage } from '../lib/aiGatewayAnalytics'
 import { legiscanCallsOnly, legiscanCallsThisMonth, monthStartDb } from '../lib/legiscanBudget'
 import { resolveTenantRpc } from '../lib/tenantRpc'
+import { loadStateRows } from '../lib/stateRows'
 
 // Every dashboard query of api_call_log uses legiscanCallsOnly
 // (lib/legiscanBudget.ts), so the dashboard shows only LegiScan calls and other
@@ -299,6 +300,13 @@ dashRoutes.get('/sync/states', async (c) => {
   result.sort((a, b) => a.state.localeCompare(b.state))
 
   return c.json({ data: { states: result }, meta: { generatedAt: new Date().toISOString() } })
+})
+
+// One row per state central covers: its provider and health (lib/stateRows.ts).
+// Read only, behind the same requireAdmin as the rest of the dashboard.
+dashRoutes.get('/states', async (c) => {
+  const db = drizzle(c.env.DB, { schema })
+  return c.json({ data: { states: await loadStateRows(db, c.env) }, meta: { generatedAt: new Date().toISOString() } })
 })
 
 dashRoutes.get('/sync/api-budget', async (c) => {
