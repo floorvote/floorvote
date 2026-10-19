@@ -1,10 +1,18 @@
 import type React from 'react'
+import { useEffect, useState } from 'react'
 import { color, radius } from '../styles/tokens'
 import { SECTION_LABEL, CHROME_TEXT } from '../lib/textStyles'
 import { COUNT_BADGE } from '../lib/chipStyles'
 import { usePrefersReducedMotion } from '../lib/usePrefersReducedMotion'
 
 const DUR = 160
+// Once a section is fully open, its clip box reaches this far past the body on
+// every side, so a shadow inside the body shows whole: the claim quote box's
+// glow (#696) spreads about 13px. Anything wider than this is still clipped.
+export const OPEN_PAINT_ROOM = 16
+// How long after opening the room is made if no transitionend arrives (a
+// section opened while it wasn't rendered, say).
+const SETTLE_FALLBACK_MS = DUR + 60
 const EASE = 'cubic-bezier(.4, 0, .2, 1)'
 
 export interface CollapsibleSectionProps {
@@ -47,6 +55,23 @@ export function CollapsibleSection({
   const innerTransition = reduce ? undefined : `opacity ${DUR}ms ease, transform ${DUR}ms ${EASE}`
   const chevTransition = reduce ? undefined : `transform ${DUR}ms ${EASE}`
 
+  // The clip box hides the body while the row animates. Once the section has
+  // fully opened, it makes room around the body (padding, cancelled by a
+  // negative margin, so nothing moves). It drops the room the moment the
+  // section starts to close, so a closed section shows nothing.
+  const [settled, setSettled] = useState(open)
+  const [prevOpen, setPrevOpen] = useState(open)
+  if (open !== prevOpen) {
+    setPrevOpen(open)
+    setSettled(open && reduce)
+  }
+  useEffect(() => {
+    if (!open || settled) return
+    const t = setTimeout(() => setSettled(true), SETTLE_FALLBACK_MS)
+    return () => clearTimeout(t)
+  }, [open, settled])
+  const room = open && settled ? OPEN_PAINT_ROOM : 0
+
   return (
     <div
       id={id}
@@ -79,8 +104,11 @@ export function CollapsibleSection({
         inert={!open}
         aria-hidden={!open}
         style={{ display: 'grid', gridTemplateRows: open ? '1fr' : '0fr', transition: rowsTransition }}
+        onTransitionEnd={e => {
+          if (open && e.target === e.currentTarget && e.propertyName === 'grid-template-rows') setSettled(true)
+        }}
       >
-        <div style={{ overflow: 'hidden', minHeight: 0 }}>
+        <div style={{ overflow: 'hidden', minHeight: 0, padding: room, margin: -room }}>
           <div
             style={{
               marginTop: 6,
