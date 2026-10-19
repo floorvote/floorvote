@@ -2,7 +2,7 @@ import { env } from 'cloudflare:test'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink, seedAuthEvent } from '../helpers'
+import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink, seedAuthEvent, stubFetch } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { users, sessions, authEvents, emailChanges } from '../../src/db/schema'
 import { _resetSuperadminAllowlistCache } from '../../src/lib/superadminCentral'
@@ -236,6 +236,8 @@ describe('the request: same rules as a member asking', () => {
   })
 
   it('says so, naming no admin, when the confirmation cannot be sent', async () => {
+    // Both providers are down: the binding throws, and the fallback (Resend) answers 500.
+    stubFetch(() => new Response('upstream error', { status: 500 }))
     const failing = { send: async () => { throw new Error('provider down') } }
     const r = await changeFor(adminCookie, jane, NEW, { EMAIL: failing })
     expect(r.status).toBe(502)
