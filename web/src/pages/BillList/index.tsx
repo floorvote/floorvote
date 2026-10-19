@@ -918,14 +918,16 @@ export function BillList() {
             </HoverTooltip>
           ) : (
             <>
-              <FilterDropdown
-                placeholder={filterDimensionLabel('status')}
-                options={f.statuses.map(s => ({ value: s, label: decodeStatus(s) ?? s }))}
-                selected={f.status}
-                onChange={f.setStatus}
-                multi
-                counts={filterCounts.status}
-              />
+              <HoverTooltip text="Filter by current legislative status">
+                <FilterDropdown
+                  placeholder={filterDimensionLabel('status')}
+                  options={f.statuses.map(s => ({ value: s, label: decodeStatus(s) ?? s }))}
+                  selected={f.status}
+                  onChange={f.setStatus}
+                  multi
+                  counts={filterCounts.status}
+                />
+              </HoverTooltip>
               {/* The separate Stage control stays only for an API that sends no statusGroups to group by. */}
               {stageOffered && (
                 <HoverTooltip text="Filter by common stage, which compares bills across states whose statuses differ">

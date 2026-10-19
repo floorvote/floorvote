@@ -114,7 +114,6 @@ const bubbles = () => Array.from(document.body.querySelectorAll<HTMLElement>('sp
 describe('Bills page filter bar hovers', () => {
   const REMOVED: [string, RegExp][] = [
     ['State', /^State/],
-    ['Status', /^Status/],
     ['Session year', /^Session year/],
     ['Position', /^Position/],
     ['Priority', /^Priority/],
