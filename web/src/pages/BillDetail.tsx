@@ -512,8 +512,8 @@ type BillDetailData = {
   aiSkipReason: 'pdf_too_large' | null
   /**
    * The bill the analysis shown on this page comes from: this bill's own, or
-   * on a companion group's page a tracked member's (#554), with that bill's
-   * handle and analysis state. Regenerate re-analyzes and polls it (#563).
+   * on a companion group's page its lead's (or while the lead has none, a
+   * tracked member's), with that bill's handle and analysis state. Regenerate re-analyzes and polls it (#563).
    * Absent from a server that predates them, when the bill's own fields apply.
    */
   analysisBillId?: string
@@ -1317,7 +1317,8 @@ export function BillDetail() {
     const other = targetId !== bill.id
     if (!other && bill.matchType === null && !bill.aiProcessedAt) return handlePromote()
     // Regenerate re-analyzes the bill whose analysis this page shows (#563):
-    // its own, or on a pulled companion's page the tracked bill's (#554),
+    // its own, or on a companion group's page the lead's (or the member's
+    // shown while the lead has none),
     // whose analysis time is what this run moves. Without the server's
     // analysis fields, that is this bill.
     const hasAnalysisBill = bill.analysisBillId != null

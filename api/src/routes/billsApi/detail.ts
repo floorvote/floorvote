@@ -294,7 +294,8 @@ export async function buildBillDetail(
   }
 
   // The bill the shown analysis comes from: this bill's own unless its group
-  // shows a tracked member's (#554). Regenerate re-analyzes it and polls its
+  // shows another member's, its lead's (lib/groupLead.ts), or while the lead
+  // has none, a tracked member's (#554). Regenerate re-analyzes it and polls its
   // analysis time (#563), so the page needs its handle and where its analysis
   // stands, which on a companion's page are not the page bill's own.
   const analysisBillId = teamValues.analysis?.billId ?? bill.id
@@ -354,7 +355,7 @@ export async function buildBillDetail(
     // Central's committee when it has one. Only demo seeds fill bills.committee, and a name has no id or chamber.
     committee: centralRich?.committee ?? (bill.committee ? { committeeId: null, name: bill.committee, chamber: null } : null),
     referrals: centralRich?.referrals ?? [],
-    // The group's analysis: its most recently analyzed tracked member's, or any member's when none tracked has one.
+    // The group's analysis: its lead's, or while the lead has none, the most recently analyzed tracked member's (any member's when none tracked has one).
     tenantSummary: teamValues.analysis ? teamValues.analysis.tenantSummary : bill.tenantSummary,
     tags: filterTagsToTaxonomy(teamValues.analysis ? teamValues.analysis.tags : JSON.parse(bill.tags) as string[], tagSet),
     relevanceScore: bill.relevanceScore,
@@ -393,7 +394,8 @@ export async function buildBillDetail(
     aiSkipReason: bill.aiSkipReason ?? null,
     lastAiTextDocId: bill.lastAiTextDocId,
     // Where the analysis shown above stands: the page bill's own fields in no
-    // group or on a tracked bill's page, the tracked bill's on a companion's.
+    // group or on the page of the bill whose analysis the group shows, that
+    // bill's on another member's.
     analysisBillId: analysisBill.id,
     analysisBillExternalId: analysisBill.externalId ?? null,
     analysisBillNumber: analysisBill.billNumber,

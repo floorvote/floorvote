@@ -77,14 +77,14 @@ describe('processor: tag team events', () => {
       await seedBill({ id: 'comp', billNumber: 'S77', state: 'NJ', externalId: 'legiscan:77', matchType: 'keyword' })
     })
 
-    it("records the group's tags before and after, not the bill's own, for a tracked bill", async () => {
+    it("records the group's tags before and after, not the bill's own, for the lead", async () => {
       await analyze(['Energy'])
       const own = await db().select({ id: bills.id, groupKey: bills.groupKey }).from(bills).where(eq(bills.externalId, BILL_ID)).get()
       expect(own!.groupKey).not.toBeNull()
-      // The tracked companion is analyzed later, so the group shows its tags.
+      // A4242 leads (it is further along), but its analysis is gone, so the group shows the tracked companion's tags.
       await db().update(bills).set({ tags: JSON.stringify(['Labor']), tenantSummary: 'S77 summary', aiProcessedAt: '2026-01-01 00:00:00' }).where(eq(bills.id, 'comp'))
-      await db().update(bills).set({ aiProcessedAt: '2025-12-01 00:00:00' }).where(eq(bills.id, own!.id))
-      // A4242's own tags don't change, but the group's do, from S77's to A4242's.
+      await db().update(bills).set({ tags: '[]', tenantSummary: null, aiProcessedAt: null }).where(eq(bills.id, own!.id))
+      // A4242's own tags were none, but the group's change from S77's to A4242's.
       await analyze(['Energy'])
       expect((await tagEvents()).slice(1)).toEqual([{ actorUserId: null, field: 'tags', label: 'tags', old: ['Labor'], new: ['Energy'] }])
     })
@@ -97,8 +97,9 @@ describe('processor: tag team events', () => {
       expect(await tagEvents()).toEqual([{ actorUserId: null, field: 'tags', label: 'tags', old: [], new: ['Energy'] }])
     })
 
-    it("records nothing for a bill that didn't match when the group's tracked analysis keeps its tags", async () => {
-      await db().update(bills).set({ tags: JSON.stringify(['Labor']), tenantSummary: 'S77 summary', aiProcessedAt: '2026-01-01 00:00:00' }).where(eq(bills.id, 'comp'))
+    it("records nothing for a bill that didn't match when the lead's analysis keeps the group's tags", async () => {
+      // S77 is furthest along, so it leads, and its analysis is the group's.
+      await db().update(bills).set({ tags: JSON.stringify(['Labor']), tenantSummary: 'S77 summary', aiProcessedAt: '2026-01-01 00:00:00', statusRank: 900 }).where(eq(bills.id, 'comp'))
       await processCentralNotification({ tenantId: 'test-org', billId: BILL_ID, matchType: null, metadataOnly: true }, testEnv as never, db())
       await analyze(['Energy'], null)
       expect(await tagEvents()).toEqual([])

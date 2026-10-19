@@ -1725,10 +1725,11 @@ describe('POST /admin/keyword-resync', () => {
   })
 
   describe('cleanup pass — the group tags a demote moves (#562)', () => {
-    // Since #554 a group's tags come from a tracked member first, so demoting a bill to untracked can move them
-    // with no analysis to record it. The cleanup records the change itself, as the null-actor tags event an analysis
-    // writes. Bills below match 'election' or don't ('Voting' ones are stale); the group's tags are the most
-    // recent analysis among its tracked members.
+    // While a group's lead has no analysis, its tags come from a tracked member first (#554), so demoting a bill to
+    // untracked can move them with no analysis to record it. The cleanup records the change itself, as the null-actor
+    // tags event an analysis writes. Bills below match 'election' or don't ('Voting' ones are stale). Each group has
+    // a lead, furthest along and matching, with no analysis yet, so the group's tags are the most recent analysis
+    // among its tracked members.
     type TagsEvent = { billId: string; actorUserId: string | null; label: string; old: string[]; new: string[] }
     const db = () => getDb(env.DB)
     const STALE = 'Voting Registration Bill'
@@ -1737,7 +1738,14 @@ describe('POST /admin/keyword-resync', () => {
 
     async function member(id: string, o: { title?: string; tags: string[]; at: string; matchType?: 'keyword' | 'manual' | null; group?: string; priority?: 'high' }) {
       await seedBill({ id, externalId: `legiscan:${id}`, billNumber: id.toUpperCase(), state: 'NJ', title: o.title ?? STALE, matchType: o.matchType === undefined ? 'keyword' : o.matchType, priority: o.priority, ...analyzed(o.tags, o.at) })
-      if (o.group) await db().update(bills).set({ groupKey: o.group }).where(eq(bills.id, id))
+      if (o.group) {
+        await db().update(bills).set({ groupKey: o.group }).where(eq(bills.id, id))
+        const leadId = `lead-${o.group}`
+        if (!await db().select({ id: bills.id }).from(bills).where(eq(bills.id, leadId)).get()) {
+          await seedBill({ id: leadId, externalId: `legiscan:${leadId}`, billNumber: 'Z1', state: 'NJ', title: MATCHING, matchType: 'keyword', statusRank: 900 })
+          await db().update(bills).set({ groupKey: o.group }).where(eq(bills.id, leadId))
+        }
+      }
     }
     async function cleanup() {
       await db().delete(associationConfig)

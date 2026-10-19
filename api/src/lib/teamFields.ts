@@ -5,6 +5,7 @@ import { nowDb } from './dbTime'
 import { FIELD_CHANGED, teamValueText, type FieldChangedMetadata, type TeamField } from '../../../shared/teamFields'
 import type { ReplacedTeamValue } from '../../../shared/companionGroups'
 import type { AppDb } from '../types'
+import { newestTextDate, pickLead } from './groupLead'
 
 /**
  * Team fields (see **Team field** in CONTEXT.md): the official position,
@@ -24,18 +25,25 @@ import type { AppDb } from '../types'
  * oldest, and a tie goes to the larger bill id, so every member's page reads
  * the same one.
  *
- * The analysis (team summary and tags) comes from a bill the team tracks
- * (#554): among the members with an analysis, those with a match type come
- * first, and the most recent of those is the group's. A pulled companion is
- * analyzed only so its own page has a summary, so its newer analysis doesn't
- * replace the tracked bill's. Only a group with no tracked analysis reads the
- * most recent of any member's. Migration 0106's `group_tags` triggers apply
- * the same rule.
+ * The analysis (team summary and tags) is the group's lead bill's (see
+ * **Lead bill** in CONTEXT.md and lib/groupLead.ts): the bill furthest along,
+ * then the one with the newest text, then the lowest bill number, tracked or
+ * not. So the group's summary is of the bill that has moved furthest, and it
+ * changes only when the lead does or the lead is analyzed again, never because
+ * another member was. While the lead has no analysis yet, the group reads the
+ * one it would have read before leads: among the members with an analysis,
+ * those with a match type first, and the most recent of those (#554).
+ * Migration 0113's `group_tags` triggers apply the same rule.
  */
 
 type BillValues = {
   id: string
-  /** Whether the bill is tracked (a match type), which decides whose analysis a group shows. */
+  /** The lead's fields (lib/groupLead.ts), which decide whose analysis a group shows. */
+  billNumber: string
+  statusRank: number
+  /** The bill's newest text date, read only for a bill in a group. */
+  newestTextDate: string | null
+  /** Whether the bill is tracked (a match type), which decides whose analysis a group shows while its lead has none. */
   matchType: 'keyword' | 'manual' | null
   priority: 'high' | 'medium' | 'low' | null
   prioritySetAt: string | null
@@ -51,7 +59,7 @@ type CustomFieldValue = { billId: string; fieldId: string; value: string; setBy:
 /** Every team field value stored on some bills, as read from the database. */
 export type TeamValueRows = { bills: BillValues[]; positions: PositionValue[]; customFields: CustomFieldValue[] }
 
-/** A group's team field values, each the one set most recently on any member (the analysis preferring tracked members), or null. */
+/** A group's team field values, each the one set most recently on any member (the analysis the lead's), or null. */
 export type GroupTeamValues = {
   position: PositionValue | null
   priority: { billId: string; priority: 'high' | 'medium' | 'low'; setAt: string | null } | null
@@ -62,6 +70,9 @@ export type GroupTeamValues = {
 
 const billValueColumns = {
   id: bills.id,
+  billNumber: bills.billNumber,
+  statusRank: bills.statusRank,
+  newestTextDate: sql<string | null>`CASE WHEN ${bills.groupKey} IS NULL THEN NULL ELSE ${newestTextDate(sql`${bills.id}`)} END`,
   matchType: bills.matchType,
   priority: bills.priority,
   prioritySetAt: bills.prioritySetAt,
@@ -104,9 +115,11 @@ export async function readTeamValueRows(db: AppDb, billIds: readonly string[]): 
 export function resolveTeamValues(rows: TeamValueRows, members: ReadonlySet<string>): GroupTeamValues {
   const memberBills = rows.bills.filter(b => members.has(b.id)).map(b => ({ ...b, billId: b.id }))
   const priority = mostRecent(memberBills.filter(b => b.priority !== null), b => b.prioritySetAt)
-  const analyzed = memberBills.filter(b => b.aiProcessedAt !== null || b.tenantSummary !== null || b.tags !== '[]')
+  const hasAnalysis = (b: BillValues) => b.aiProcessedAt !== null || b.tenantSummary !== null || b.tags !== '[]'
+  const lead = pickLead(memberBills)
+  const analyzed = memberBills.filter(hasAnalysis)
   const trackedAnalyzed = analyzed.filter(b => b.matchType !== null)
-  const analysis = mostRecent(trackedAnalyzed.length > 0 ? trackedAnalyzed : analyzed, b => b.aiProcessedAt)
+  const analysis = lead && hasAnalysis(lead) ? lead : mostRecent(trackedAnalyzed.length > 0 ? trackedAnalyzed : analyzed, b => b.aiProcessedAt)
   const triaged = mostRecent(memberBills.filter(b => b.triagedAt !== null), b => b.triagedAt)
   const customFields = new Map<string, CustomFieldValue>()
   const byField = new Map<string, CustomFieldValue[]>()
@@ -319,9 +332,9 @@ export async function recordFieldChanges(db: AppDb, changes: readonly FieldChang
 
 /**
  * The tags each group reads before a write to its members' `match_type`, for
- * `recordGroupTagChanges`. A group's tags come from a tracked member first, so
- * a bill starting or stopping to match can move them with no analysis to
- * record it. Only bills in a group are read: a bill in no group reads its own
+ * `recordGroupTagChanges`. While a group's lead has no analysis, its tags
+ * come from a tracked member first, so a bill starting or stopping to match
+ * can move them with no analysis to record it. Only bills in a group are read: a bill in no group reads its own
  * tags, whatever its match type. One bill stands for each group, the one with the
  * smallest id among those given, and is the one the event is recorded on, so a
  * cleanup always records on the same bill.

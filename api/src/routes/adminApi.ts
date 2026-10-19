@@ -1014,7 +1014,7 @@ adminApiRouter.post('/keyword-resync', async (c) => {
     const toManual = staleBills.filter(b => engagedIds.has(b.id) || b.priority != null)
     const toDemote = staleBills.filter(b => !engagedIds.has(b.id) && b.priority == null)
 
-    // A group's tags come from a tracked member first (#554), so demoting a bill can move them, and no
+    // While a group's lead has no analysis, its tags come from a tracked member first (#554), so demoting a bill can move them, and no
     // analysis records it. Protecting one as manual keeps it tracked, so it can't.
     const tagsBefore = await snapshotGroupTags(db, toDemote)
 

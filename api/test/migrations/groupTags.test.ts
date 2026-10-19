@@ -30,7 +30,8 @@ describe('migration 0103: group tags', () => {
       ('g3b', 'HB9', 't', 'NJ', 'Introduced', 's', '[]', NULL, NULL, 'g3a'),
       ('g4a', 'HB10', 't', 'NJ', 'Introduced', 's', '["Labor"]', 'x', '2026-01-01 00:00:00', 'g4a'),
       ('g4b', 'HB11', 't', 'NJ', 'Introduced', 's', '["Water"]', 'x', '2026-01-01 00:00:00', 'g4a')`).run()
-    await applyMigrations()
+    // 0113 makes the tags follow each group's lead bill (groupLeadAnalysis.test.ts), which these fixtures don't set up.
+    await applyMigrations({ before: '0113_group_lead_analysis' })
   })
 
   it("stores each grouped bill's group tags from its group's current analysis", async () => {

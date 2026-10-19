@@ -8,8 +8,11 @@ import { centralFetch } from '../../src/lib/centralFetch'
 
 vi.mock('../../src/lib/centralFetch', () => ({ centralFetch: vi.fn() }))
 
-// A bill's page shows the analysis of one bill (#554): its own, or the one a
-// tracked member of its companion group has. Regenerate re-analyzes that bill
+// A bill's page shows the analysis of one bill: its own, or its companion
+// group's lead bill's (groupSummaryLead.test.ts), or while the lead has none,
+// the one a tracked member of the group has (#554). In these groups A190 leads
+// (equally far along, no texts, and its number comes first) unless a test says
+// otherwise. Regenerate re-analyzes that bill
 // and polls it (#563), so the detail says which bill it is and when and how it
 // was last analyzed.
 
@@ -133,12 +136,20 @@ describe('GET /api/bills/:id: the bill the shown analysis comes from', () => {
     expect(await detail('a190')).toMatchObject({ analysisBillId: 'a190' })
   })
 
-  it('moves to the companion once it matches on its own', async () => {
+  it('stays the lead\'s when the companion starts matching on its own', async () => {
     await seedBill({ id: 'a190', billNumber: 'A190', externalId: 'legiscan:190', matchType: 'keyword', tenantSummary: 'Tracked summary.', aiProcessedAt: '2026-09-01 00:00:00' })
     await seedBill({ id: 'b1713', billNumber: 'S1713', externalId: 'legiscan:1713', matchType: null, tenantSummary: 'Companion summary.', aiProcessedAt: '2026-09-05 00:00:00' })
     await group('a190', 'b1713')
     await db().update(bills).set({ matchType: 'keyword' }).where(eq(bills.id, 'b1713'))
-    expect(await detail('a190')).toMatchObject({ analysisBillId: 'b1713', analysisBillExternalId: 'legiscan:1713' })
+    expect(await detail('a190')).toMatchObject({ analysisBillId: 'a190', analysisBillExternalId: 'legiscan:190' })
+  })
+
+  it('moves to the companion when it moves further along', async () => {
+    await seedBill({ id: 'a190', billNumber: 'A190', externalId: 'legiscan:190', matchType: 'keyword', tenantSummary: 'Tracked summary.', aiProcessedAt: '2026-09-05 00:00:00' })
+    await seedBill({ id: 'b1713', billNumber: 'S1713', externalId: 'legiscan:1713', matchType: null, tenantSummary: 'Companion summary.', aiProcessedAt: '2026-09-01 00:00:00' })
+    await group('a190', 'b1713')
+    await db().update(bills).set({ statusRank: 300 }).where(eq(bills.id, 'b1713'))
+    expect(await detail('a190')).toMatchObject({ analysisBillId: 'b1713', analysisBillExternalId: 'legiscan:1713', tenantSummary: 'Companion summary.' })
   })
 })
 
@@ -172,8 +183,9 @@ describe('GET /api/bills/:id: the document the shown analysis was based on', () 
     await db().update(bills).set({ lastAiTextDocId: docId }).where(eq(bills.id, billId))
   }
 
+  // A190 is further along, so it leads, though the companion's text is newer.
   async function companionPair() {
-    await seedBill({ id: 'a190', billNumber: 'A190', externalId: 'legiscan:190', matchType: 'keyword', tenantSummary: 'Tracked summary.', aiProcessedAt: '2026-09-01 00:00:00' })
+    await seedBill({ id: 'a190', billNumber: 'A190', externalId: 'legiscan:190', matchType: 'keyword', tenantSummary: 'Tracked summary.', aiProcessedAt: '2026-09-01 00:00:00', statusRank: 200 })
     await seedBill({ id: 'b1713', billNumber: 'S1713', externalId: 'legiscan:1713', matchType: null, tenantSummary: 'Companion summary.', aiProcessedAt: '2026-09-05 00:00:00' })
     await db().update(bills).set({ groupKey: 'a190' }).where(inArray(bills.id, ['a190', 'b1713']))
     await seedBillText('a190', { docId: '7001', type: 'Introduced', date: '2026-01-01', mime: 'text/html' })
@@ -193,9 +205,8 @@ describe('GET /api/bills/:id: the document the shown analysis was based on', () 
 
   it("carries what names and opens the analyzed member's document, whatever its type", async () => {
     await companionPair()
-    await db().update(bills).set({ matchType: null }).where(eq(bills.id, 'a190'))
-    await db().update(bills).set({ matchType: 'keyword' }).where(eq(bills.id, 'b1713'))
-    // Now the companion is the tracked bill, and the other member's page shows its PDF.
+    await db().update(bills).set({ statusRank: 300 }).where(eq(bills.id, 'b1713'))
+    // Now the companion leads, and the other member's page shows its PDF.
     const d = await detail('a190')
     expect(d.analysisLastAiText).toMatchObject({ docId: '7002', type: 'Engrossed', mime: 'application/pdf' })
   })

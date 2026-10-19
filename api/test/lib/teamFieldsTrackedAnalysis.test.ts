@@ -1,18 +1,23 @@
 import { describe, it, expect } from 'vitest'
 import { resolveTeamValues, type TeamValueRows } from '../../src/lib/teamFields'
 
-// A group's analysis (team summary and tags) comes from a bill the team tracks
-// (#554). Among the members with an analysis, those that match on their own
-// (a match type, keyword or manual) come first, and the most recent of them is
-// the group's. Only a group with no tracked analysis falls back to the most
-// recent of any member, such as a pulled companion's. The other team fields
-// keep the most-recent rule.
+// A group's analysis (team summary and tags) is its lead bill's
+// (teamFieldsLeadAnalysis.test.ts). While the lead has no analysis yet, it comes
+// from a bill the team tracks (#554): among the members with an analysis, those
+// that match on their own (a match type, keyword or manual) come first, and the
+// most recent of them is the group's. Only a group with no tracked analysis
+// falls back to the most recent of any member, such as a pulled companion's.
+// Every group below has such a lead. The other team fields keep the
+// most-recent rule.
 
 type Bill = TeamValueRows['bills'][number]
 
 function bill(id: string, over: Partial<Bill> = {}): Bill {
   return {
     id,
+    billNumber: id.toUpperCase(),
+    statusRank: 100,
+    newestTextDate: null,
     matchType: 'keyword',
     priority: null,
     prioritySetAt: null,
@@ -29,12 +34,15 @@ function analyzed(id: string, at: string | null, matchType: Bill['matchType'], t
   return bill(id, { matchType, aiProcessedAt: at, tenantSummary: `${id} summary`, tags: JSON.stringify(tags) })
 }
 
+// The group's lead: furthest along, with no analysis yet.
+const LEAD = bill('lead', { statusRank: 900 })
+
 function analysisOf(...members: Bill[]) {
-  const rows: TeamValueRows = { bills: members, positions: [], customFields: [] }
-  return resolveTeamValues(rows, new Set(members.map(m => m.id)))
+  const rows: TeamValueRows = { bills: [LEAD, ...members], positions: [], customFields: [] }
+  return resolveTeamValues(rows, new Set([LEAD, ...members].map(m => m.id)))
 }
 
-describe('a group shows its tracked bill\'s analysis', () => {
+describe('while its lead has no analysis, a group shows its tracked bill\'s', () => {
   it('keeps the tracked bill\'s analysis over a newer one of a pulled companion', () => {
     const v = analysisOf(
       analyzed('a190', '2026-09-01 00:00:00', 'keyword', ['Labor']),
@@ -108,8 +116,9 @@ describe('a group shows its tracked bill\'s analysis', () => {
   })
 
   it('reads a bill in no group\'s own analysis, tracked or not', () => {
-    expect(analysisOf(analyzed('solo', '2026-09-01 00:00:00', null)).analysis?.billId).toBe('solo')
-    expect(analysisOf(analyzed('solo', '2026-09-01 00:00:00', 'keyword')).analysis?.billId).toBe('solo')
+    const own = (b: Bill) => resolveTeamValues({ bills: [b], positions: [], customFields: [] }, new Set([b.id])).analysis?.billId
+    expect(own(analyzed('solo', '2026-09-01 00:00:00', null))).toBe('solo')
+    expect(own(analyzed('solo', '2026-09-01 00:00:00', 'keyword'))).toBe('solo')
   })
 
   it('makes a companion eligible once it matches on its own', () => {

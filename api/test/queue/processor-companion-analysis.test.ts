@@ -25,7 +25,7 @@ vi.mock('../../src/lib/llm', async (importOriginal) => {
 type Related = { identifier: string; sastBillId: number; kind: string }
 
 // What central serves for each bill, keyed by its handle.
-const central = new Map<string, { number: string; relatedBills: Related[]; text?: boolean; updatedAt?: string; lastAction?: string }>()
+const central = new Map<string, { number: string; relatedBills: Related[]; text?: boolean; updatedAt?: string; lastAction?: string; statusRank?: number }>()
 
 function centralBill(handle: string) {
   const b = central.get(handle)!
@@ -37,6 +37,7 @@ function centralBill(handle: string) {
     title: `${b.number} title`,
     abstract: null,
     status: 'Introduced',
+    ...(b.statusRank !== undefined ? { statusRank: b.statusRank } : {}),
     statusDate: null,
     lastAction: b.lastAction ?? null,
     updatedAt: b.updatedAt ?? '2026-10-01T00:00:00Z',
@@ -535,11 +536,11 @@ describe('companions that didn\'t match are analyzed through their group', () =>
     })
   })
 
-  describe('the group shows its tracked bill\'s analysis', () => {
-    // #554 (replacing #377's most-recent-wins for the analysis): a group's summary and tags come from a bill the
-    // team tracks. The pulled companion is analyzed only so its own page has a summary, so its newer analysis
-    // never replaces the tracked bill's on any member's page, the group's row, the tag filter, or the counts.
-    // It shows on the group only once it matches on its own, or when no tracked bill has an analysis.
+  describe('the group shows its lead\'s analysis', () => {
+    // A group's summary and tags are its lead bill's (groupSummaryLead.test.ts). A190 is further along, so it
+    // leads, and the pulled companion's newer analysis never replaces A190's on any member's page, the group's
+    // row, the tag filter, or the counts, whether or not the companion matches on its own. It shows on the
+    // group only when A190 has no analysis, or the companion leads.
     let cookie: string
     type Page = { tenantSummary: string | null; tags: string[] }
     type ListBody = { bills: Page[]; pagination: { total: number } }
@@ -555,9 +556,10 @@ describe('companions that didn\'t match are analyzed through their group', () =>
       const llm = await import('../../src/lib/llm')
       vi.mocked(llm.processBill).mockResolvedValue({ summary: 'S1713 summary', tags: ['Energy'], relevanceScore: 5, affectedCitations: [] })
       cookie = `session=${await seedSession(await seedUser({ role: 'admin', email: 'admin@example.com' }))}`
+      central.set('legiscan:190', { ...central.get('legiscan:190')!, statusRank: 300 })
       await deliver('legiscan:190')
       await drain()
-      // The companion was analyzed after the tracked bill. Without it, nothing below would be tested.
+      // The companion was analyzed after the lead. Without it, nothing below would be tested.
       const companion = await billRow('b1713')
       expect(companion).toMatchObject({ tenantSummary: 'S1713 summary', matchType: null })
       expect(companion.aiProcessedAt! > (await billRow('a190')).aiProcessedAt!).toBe(true)
@@ -605,7 +607,7 @@ describe('companions that didn\'t match are analyzed through their group', () =>
       expect((await list('tag=Labor')).pagination.total).toBe(1)
     })
 
-    it('shows the companion\'s analysis once it matches on its own, with no new analysis', async () => {
+    it('keeps the lead\'s analysis when the companion matches on its own, with no new analysis', async () => {
       const llm = await import('../../src/lib/llm')
       const analyses = vi.mocked(llm.processBill).mock.calls.length
       expect(await page('a190')).toMatchObject({ tenantSummary: 'A190 summary', tags: ['Labor'] })
@@ -615,13 +617,24 @@ describe('companions that didn\'t match are analyzed through their group', () =>
       await deliver('legiscan:1713', { matchType: 'keyword' })
       expect(vi.mocked(llm.processBill).mock.calls.length).toBe(analyses)
       expect((await billRow('b1713')).matchType).toBe('keyword')
+      expect(await page('a190')).toMatchObject({ tenantSummary: 'A190 summary', tags: ['Labor'] })
+      expect((await list('tag=Labor')).pagination.total).toBe(1)
+      expect((await list('tag=Energy')).pagination.total).toBe(0)
+    })
+
+    it('shows the companion\'s analysis once it moves further along and leads, with no new analysis', async () => {
+      const llm = await import('../../src/lib/llm')
+      const analyses = vi.mocked(llm.processBill).mock.calls.length
+      central.set('legiscan:1713', { number: 'S1713', text: true, relatedBills: [identical('A190', 190)], updatedAt: '2026-10-02T00:00:00Z', statusRank: 400 })
+      await deliver('legiscan:1713', { metadataOnly: true })
+      expect(vi.mocked(llm.processBill).mock.calls.length).toBe(analyses)
       expect(await page('a190')).toMatchObject({ tenantSummary: 'S1713 summary', tags: ['Energy'] })
       expect((await list('tag=Energy')).pagination.total).toBe(1)
       expect((await list('tag=Labor')).pagination.total).toBe(0)
       expect((await tagCounts()).Energy).toBe(1)
     })
 
-    it('shows the companion\'s analysis when the tracked bill has none', async () => {
+    it('shows the companion\'s analysis when the lead has none', async () => {
       expect((await list('tag=Energy')).pagination.total).toBe(0)
       await getDb(env.DB).update(bills).set({ tenantSummary: null, tags: '[]', aiProcessedAt: null }).where(eq(bills.id, 'a190'))
       expect(await page('a190')).toMatchObject({ tenantSummary: 'S1713 summary', tags: ['Energy'] })
@@ -731,9 +744,10 @@ describe('companions that didn\'t match are analyzed through their group', () =>
   })
 
   describe('a companion that starts matching records the change it makes to its group\'s tags (#562)', () => {
-    // Since #554 a group's tags come from a bill the team tracks, so a match type written alone can move them:
-    // the companion becomes tracked, and its analysis (which the model made earlier) now speaks for the group.
-    // No analysis runs, so nothing else records it. The event is the same null-actor tags event an analysis writes.
+    // While a group's lead has no analysis, its tags come from a bill the team tracks (#554), so a match type
+    // written alone can move them: the companion becomes tracked, and its analysis (which the model made earlier)
+    // now speaks for the group. No analysis runs, so nothing else records it. The event is the same null-actor tags
+    // event an analysis writes. Here the group's lead is S9, tracked, furthest along, and not yet analyzed.
     type TagsEvent = { billId: string; actorUserId: string | null; field: string; label: string; old: string[]; new: string[] }
     const tagsEvents = async (): Promise<TagsEvent[]> => {
       const rows = await getDb(env.DB).select().from(teamEvents).where(eq(teamEvents.type, 'field_changed')).orderBy(teamEvents.createdAt, rowidOf(teamEvents)).all()
@@ -743,12 +757,16 @@ describe('companions that didn\'t match are analyzed through their group', () =>
     }
     const analyzedCalls = async () => vi.mocked((await import('../../src/lib/llm')).processBill).mock.calls.length
     const becomesMatching = (flags: Partial<TenantQueueMessage> = { matchType: 'keyword' }) => {
-      central.set('legiscan:1713', { number: 'S1713', text: true, relatedBills: [identical('A190', 190)], updatedAt: '2026-10-02T00:00:00Z' })
+      central.set('legiscan:1713', { number: 'S1713', text: true, relatedBills: [identical('A190', 190), identical('S9', 9)], updatedAt: '2026-10-02T00:00:00Z' })
       return deliver('legiscan:1713', flags)
     }
 
     beforeEach(async () => {
       const db = getDb(env.DB)
+      await seedBill({ id: 'l9', billNumber: 'S9', state: 'NJ', externalId: 'legiscan:9', matchType: 'keyword', statusRank: 900 })
+      central.set('legiscan:9', { number: 'S9', relatedBills: [identical('A190', 190), identical('S1713', 1713)], statusRank: 900 })
+      central.set('legiscan:190', { ...central.get('legiscan:190')!, relatedBills: [identical('S1713', 1713), identical('S9', 9)] })
+      central.set('legiscan:1713', { ...central.get('legiscan:1713')!, relatedBills: [identical('A190', 190), identical('S9', 9)] })
       await db.insert(associationConfig).values({ key: 'tag_taxonomy', value: JSON.stringify([{ name: 'Energy' }, { name: 'Labor' }]) })
       await db.update(bills).set({ tags: JSON.stringify(['Labor']) }).where(eq(bills.id, 'a190'))
       await db.update(bills).set({ textR2Key: 'bills/legiscan:1713.html' }).where(eq(bills.id, 'b1713'))

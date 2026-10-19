@@ -92,8 +92,9 @@ describe('facet counts count a companion group once', () => {
     })
 
     it("counts a tag through the group's current analysis only", async () => {
-      await seedBill({ id: 'a190', billNumber: 'A190', tags: ['Energy'], aiProcessedAt: '2026-01-01 00:00:00' })
-      await seedBill({ id: 'b1713', billNumber: 'S1713', tags: ['Labor'], aiProcessedAt: '2026-02-01 00:00:00' })
+      await seedBill({ id: 'a190', billNumber: 'A190', tags: ['Energy'], aiProcessedAt: '2026-02-01 00:00:00' })
+      // S1713 is further along, so it leads and its analysis is the group's, though A190's is newer.
+      await seedBill({ id: 'b1713', billNumber: 'S1713', tags: ['Labor'], aiProcessedAt: '2026-01-01 00:00:00', statusRank: 200 })
       await group('a190', 'b1713')
       const f = await facets()
       expect(f.tags.Labor).toBe(1)

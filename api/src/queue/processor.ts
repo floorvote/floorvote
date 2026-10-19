@@ -481,7 +481,11 @@ async function applyCentralBill(
   // is news even when its provider data hasn't: central says so with the match type alone, and nothing here
   // stored it.
   const newlyMatched = !!msg.matchType && !existing?.matchType
-  if (!msg.forceMetadata && !msg.forceAI && !msg.stubOnly && !msg.metadataOnly && !centralHasNewR2Key && !newlyMatched && existing?.providerUpdatedAt === centralBill.updatedAt && (existing?.aiProcessedAt != null || existing?.aiSkipReason != null)) {
+  // A group analysis asks for the analysis of a bill that didn't match (lib/companionAnalysis.ts), such as a
+  // group's lead whose newest text isn't the one its analysis read. Its own delivery already stored that
+  // version without analyzing it, so the version alone can't say whether the analysis is current: the text
+  // hash dedup below does.
+  if (!msg.forceMetadata && !msg.forceAI && !msg.groupAnalysis && !msg.stubOnly && !msg.metadataOnly && !centralHasNewR2Key && !newlyMatched && existing?.providerUpdatedAt === centralBill.updatedAt && (existing?.aiProcessedAt != null || existing?.aiSkipReason != null)) {
     // Calendar reconciliation must still run even when the bill itself hasn't changed,
     // since hearings are updated independently of bill metadata.
     if (msg.calendar && existing && (existing.matchType !== null || existing.priority !== null)) {
@@ -829,9 +833,10 @@ async function applyCentralBill(
   const { id: billInternalId, isNew } = await upsertBill(db, msg.billId, upsertData, aiResult ? undefined : existing)
   if (aiResult && tagsBefore) {
     try {
-      // The group's tags after this analysis: its own when the bill is tracked or
-      // the group has no tracked analysis, the tracked bill's otherwise, so a
-      // pulled companion's analysis records no change to them.
+      // The group's tags after this analysis: its own when the bill leads (or,
+      // while the lead has none, when the fallback rule picks it), another
+      // member's otherwise, so a member's analysis the group doesn't show
+      // records no change to them.
       const tagsAfter = (await loadGroupTeamValues(db, billInternalId)).analysis?.tags ?? []
       await recordFieldChanges(db, [{ billId: billInternalId, field: 'tags', label: 'tags', old: tagsBefore, new: tagsAfter }], null)
     } catch (err) {
@@ -1020,8 +1025,9 @@ function resolveSessionLabel(sessionId: string | null | undefined): string {
 /**
  * Upsert a bill from central. Pass the bill as it was just read (`existing`) to
  * record the tags event for a match type that starts the bill matching: since
- * #554 a group's tags come from a tracked member first, so a bill that starts
- * matching can move them with no analysis to record it. A match type never
+ * #554, while a group's lead has no analysis, its tags come from a tracked
+ * member first, so a bill that starts matching can move them with no analysis
+ * to record it. A match type never
  * goes back to null here, so only null to matching can change a group's tags.
  */
 async function upsertBill(

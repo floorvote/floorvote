@@ -111,10 +111,11 @@ describe('team fields across a companion group', () => {
   })
 
   describe('reading', () => {
-    it("shows every shared value the same on each member's page, the one set most recently", async () => {
+    it("shows every shared value the same on each member's page, the one set most recently, and the lead's analysis", async () => {
       await conflictingValues()
       await group()
-      const expected = { position: 'Support', priority: 'high', committee: 'Labor', summary: 'S1713 summary', tags: ['Labor'] }
+      // A190 leads (equally far along, no texts, and its number comes first), so its analysis shows, though S1713's is newer.
+      const expected = { position: 'Support', priority: 'high', committee: 'Labor', summary: 'A190 summary', tags: ['Energy'] }
       expect(await shown('a190')).toEqual(expected)
       expect(await shown('b1713')).toEqual(expected)
     })
