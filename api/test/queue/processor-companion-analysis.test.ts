@@ -730,10 +730,10 @@ describe('companions that didn\'t match are analyzed through their group', () =>
     })
   })
 
-  describe('a companion that starts matching records the change it makes to its group\'s tags (#562)', () => {
+  describe('a companion that starts matching records no event for the change it makes to its group\'s tags (#562)', () => {
     // Since #554 a group's tags come from a bill the team tracks, so a match type written alone can move them:
     // the companion becomes tracked, and its analysis (which the model made earlier) now speaks for the group.
-    // No analysis runs, so nothing else records it. The event is the same null-actor tags event an analysis writes.
+    // The bill's comment thread shows only changes people made, so no event records the move.
     type TagsEvent = { billId: string; actorUserId: string | null; field: string; label: string; old: string[]; new: string[] }
     const tagsEvents = async (): Promise<TagsEvent[]> => {
       const rows = await getDb(env.DB).select().from(teamEvents).where(eq(teamEvents.type, 'field_changed')).orderBy(teamEvents.createdAt, rowidOf(teamEvents)).all()
@@ -761,48 +761,38 @@ describe('companions that didn\'t match are analyzed through their group', () =>
       expect(await tagsEvents()).toEqual([])
     })
 
-    it('records the group\'s tags before and after, with no actor, when no new analysis runs', async () => {
+    it('records no event when no new analysis runs, though the companion starts matching', async () => {
       const analyses = await analyzedCalls()
       await becomesMatching()
       expect(await analyzedCalls()).toBe(analyses)
       expect((await billRow('b1713')).matchType).toBe('keyword')
-      expect(await tagsEvents()).toEqual([{ billId: 'b1713', actorUserId: null, field: 'tags', label: 'tags', old: ['Labor'], new: ['Energy'] }])
+      expect(await tagsEvents()).toEqual([])
     })
 
-    it('records it when central says the companion was added by hand', async () => {
+    it('records none when central says the companion was added by hand', async () => {
       await becomesMatching({ matchType: 'manual' })
-      expect(await tagsEvents()).toEqual([{ billId: 'b1713', actorUserId: null, field: 'tags', label: 'tags', old: ['Labor'], new: ['Energy'] }])
+      expect(await tagsEvents()).toEqual([])
     })
 
-    it('records it on a metadata-only refresh that carries the match type', async () => {
+    it('records none on a metadata-only refresh that carries the match type', async () => {
       await becomesMatching({ matchType: 'keyword', metadataOnly: true })
       expect((await billRow('b1713')).matchType).toBe('keyword')
-      expect(await tagsEvents()).toEqual([{ billId: 'b1713', actorUserId: null, field: 'tags', label: 'tags', old: ['Labor'], new: ['Energy'] }])
+      expect(await tagsEvents()).toEqual([])
     })
 
-    it('records it on a stub refresh that carries the match type', async () => {
+    it('records none on a stub refresh that carries the match type', async () => {
       await becomesMatching({ matchType: 'keyword', stubOnly: true })
       expect((await billRow('b1713')).matchType).toBe('keyword')
-      expect(await tagsEvents()).toEqual([{ billId: 'b1713', actorUserId: null, field: 'tags', label: 'tags', old: ['Labor'], new: ['Energy'] }])
+      expect(await tagsEvents()).toEqual([])
     })
 
-    it('still completes the delivery when the event can\'t be written', async () => {
-      // The advisory event is the one write that fails: its table is gone.
-      await env.DB.exec('DROP TABLE team_events')
-      const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
-      await becomesMatching()
-      expect((await billRow('b1713')).matchType).toBe('keyword')
-      expect(errors).toHaveBeenCalled()
-      errors.mockRestore()
-    })
-
-    it('records one event, not two, when the delivery also runs a new analysis', async () => {
+    it('records none when the delivery also runs a new analysis', async () => {
       const llm = await import('../../src/lib/llm')
       vi.mocked(llm.processBill).mockResolvedValue({ summary: 'S1713 summary again', tags: ['Energy'], relevanceScore: 5, affectedCitations: [] })
       const analyses = await analyzedCalls()
       await becomesMatching({ matchType: 'keyword', forceAI: true })
       expect(await analyzedCalls()).toBe(analyses + 1)
-      expect(await tagsEvents()).toEqual([{ billId: 'b1713', actorUserId: null, field: 'tags', label: 'tags', old: ['Labor'], new: ['Energy'] }])
+      expect(await tagsEvents()).toEqual([])
     })
 
     it('records nothing when the group\'s tags are the same after the companion matches', async () => {

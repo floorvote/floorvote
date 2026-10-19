@@ -167,7 +167,7 @@ export function EventLines({ event, compact = false, linkChips = false, suppress
       )}
       {event.url && (
         <div style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
-          <span className="material-symbols-outlined" style={{ ...META_ICON_STYLE, color: color.textMuted }}>link_2</span>
+          <span className="material-symbols-outlined" style={{ ...META_ICON_STYLE, color: color.textMuted }}>link</span>
           <a
             href={event.url}
             target="_blank"

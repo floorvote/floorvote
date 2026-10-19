@@ -43,7 +43,7 @@ function patches() {
 
 // The visible sentences: a title line and a description line per switch.
 const SWITCHES = [
-  { key: 'replies', name: /replies on bills you've commented on/i, titles: [/^Replies on bills you've commented on$/], extra: /Email me when someone else comments/ },
+  { key: 'replies', name: /replies on bills you've commented on/i, titles: [/^Replies on bills you've commented on$/], extra: /Notify me in FloorVote and by email when someone else comments/ },
   { key: 'digest', name: /recent bill activity/i, titles: [/^Email digest of recent bill activity$/], extra: undefined },
   { key: 'matches', name: /include newly matched bills/i, titles: [/include newly matched bills/i], extra: undefined },
   { key: 'week-ahead', name: /upcoming hearings and events/i, titles: [/^Email digest of upcoming hearings and events$/], extra: undefined },

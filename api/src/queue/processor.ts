@@ -2,6 +2,7 @@ import { and, eq, inArray, lt, sql } from 'drizzle-orm'
 import { processBill, type ProcessBillResult } from '../lib/llm'
 import { filterTagsToTaxonomy } from '../lib/taxonomy'
 import { centralFetch } from '../lib/centralFetch'
+import { syncTitleKey } from '../lib/companionSuggestion'
 import { recordDeliveryProbe } from '../lib/deliveryProbe'
 import { loadAnalysisInputs, loadBillTextForAi } from '../lib/analysisInputs'
 import { claimLinksEnabled, type ResolvedClaimSource } from '../lib/claimSources'
@@ -13,7 +14,6 @@ import { bills, associationConfig, feedEvents, billTexts, calendarEvents } from 
 import { syncBillSubjects } from '../lib/billSubjects'
 import { syncIdenticalCompanions } from '../lib/companionGroups'
 import { pullCompanions } from '../lib/companionAnalysis'
-import { loadGroupTeamValues, recordFieldChanges, recordGroupTagChanges, snapshotGroupTags } from '../lib/teamFields'
 import { nowDb } from '../lib/dbTime'
 import { addToNewMatchesRow } from '../lib/newMatch'
 import { LEGACY_STATUS_ORDER, LEGISCAN_CODE_WORDS } from '../../../shared/legacyStatusOrder'
@@ -236,6 +236,10 @@ type CentralBill = {
   /** `sastBillId` is central's id for the other bill, and `kind` what the provider's vocabulary makes of the relationship. Both absent from an older central. */
   relatedBills: Array<{ identifier: string; session: string; relationType: string; sastBillId?: number | null; kind?: string }>
   subjects?: string[]
+  /** The bill's chamber as central stores it. Empty for a stub central hasn't fetched. */
+  body?: string | null
+  /** What title-matched companion suggestions match the bill by (#521), or null. Absent from an older central. */
+  titleKey?: string | null
 }
 
 /**
@@ -295,6 +299,9 @@ export async function processCentralNotification(
   const centralBill = await res.json() as CentralBill
 
   await applyCentralBill(msg, env, db, centralBill, fetchedAt)
+  // After every path too, so a state opted into or out of title-matched
+  // suggestions reaches the bill on any delivery (lib/companionSuggestion.ts).
+  await syncTitleKey(db, msg.billId, centralBill)
   // After every path above, including the ones that skip an unchanged bill:
   // a bill's identical companions can change without its provider data
   // changing (a vocabulary edit), and this is cheap when nothing did.
@@ -408,7 +415,7 @@ async function applyCentralBill(
       subjects: centralBill.subjects?.length ? JSON.stringify(centralBill.subjects) : null,
     }
 
-    const { id: stubInternalId } = await upsertBill(db, msg.billId, { ...stubData, updatedAt: nowStub }, existing)
+    const { id: stubInternalId } = await upsertBill(db, msg.billId, { ...stubData, updatedAt: nowStub })
     await syncBillSubjects(db, stubInternalId, centralBill.state, centralBill.subjects ?? [])
     return
   }
@@ -465,7 +472,7 @@ async function applyCentralBill(
       subjects: centralBill.subjects?.length ? JSON.stringify(centralBill.subjects) : null,
     }
 
-    const { id: metadataInternalId } = await upsertBill(db, msg.billId, { ...metadataData, updatedAt: nowMd }, existing)
+    const { id: metadataInternalId } = await upsertBill(db, msg.billId, { ...metadataData, updatedAt: nowMd })
     await syncBillSubjects(db, metadataInternalId, centralBill.state, centralBill.subjects ?? [])
     return
   }
@@ -818,29 +825,7 @@ async function applyCentralBill(
     ...(queueChanges.length > 0 ? { updatedAt: now } : {}),
   }
 
-  // Tags are a team field (lib/teamFields.ts), set only by the analysis. The
-  // group's tags before this one, for the team event recording a change.
-  // The event is advisory history: failing to read or write it is logged and never fails the delivery.
-  const tagsBefore = aiResult && existing
-    ? await loadGroupTeamValues(db, existing.id).then(v => v.analysis?.tags ?? []).catch(err => {
-      console.error(`[processor] reading group tags before the analysis failed for ${msg.billId}:`, err)
-      return null
-    })
-    : []
-  // An analysis records the tags it leaves the group with, including the effect of the match type it
-  // arrives with, so the upsert records a match type's effect only when no analysis runs.
-  const { id: billInternalId, isNew } = await upsertBill(db, msg.billId, upsertData, aiResult ? undefined : existing)
-  if (aiResult && tagsBefore) {
-    try {
-      // The group's tags after this analysis: its own when the bill is tracked or
-      // the group has no tracked analysis, the tracked bill's otherwise, so a
-      // pulled companion's analysis records no change to them.
-      const tagsAfter = (await loadGroupTeamValues(db, billInternalId)).analysis?.tags ?? []
-      await recordFieldChanges(db, [{ billId: billInternalId, field: 'tags', label: 'tags', old: tagsBefore, new: tagsAfter }], null)
-    } catch (err) {
-      console.error(`[processor] recording the tags event failed for ${msg.billId}:`, err)
-    }
-  }
+  const { id: billInternalId, isNew } = await upsertBill(db, msg.billId, upsertData)
   await syncBillSubjects(db, billInternalId, centralBill.state, centralBill.subjects ?? [])
 
   // bill_texts: upsert from normalized versions
@@ -1025,18 +1010,11 @@ function resolveSessionLabel(sessionId: string | null | undefined): string {
   return sessionId
 }
 
-/**
- * Upsert a bill from central. Pass the bill as it was just read (`existing`) to
- * record the tags event for a match type that starts the bill matching: since
- * #554 a group's tags come from a tracked member first, so a bill that starts
- * matching can move them with no analysis to record it. A match type never
- * goes back to null here, so only null to matching can change a group's tags.
- */
+/** Upsert a bill from central. */
 async function upsertBill(
   db: AppDb,
   externalId: string,
   data: Record<string, unknown>,
-  existing?: { id: string; matchType: 'keyword' | 'manual' | null; groupKey: string | null } | undefined,
 ): Promise<{ id: string; isNew: boolean }> {
   // Resolve the stored spelling again just before writing: release 2's migration can rename the
   // row after the delivery began, and the write's conflict target is the spelling, so a stale one
@@ -1046,12 +1024,6 @@ async function upsertBill(
     externalId = stored
     data = { ...data, externalId: stored }
   }
-  const startsMatching = existing?.matchType === null && data.matchType != null && existing.groupKey !== null
-  // The event is advisory history: failing to read or write it is logged and never fails the delivery.
-  const tagsBefore = startsMatching ? await snapshotGroupTags(db, [existing]).catch(err => {
-    console.error(`[processor] reading group tags before the match type change failed for ${externalId}:`, err)
-    return null
-  }) : null
   const id = crypto.randomUUID()
   const now = nowDb()
   // Exclude externalId from the update set (it's the conflict target) and handle matchType separately
@@ -1072,10 +1044,5 @@ async function upsertBill(
     })
     .returning({ id: bills.id })
     .get()
-  if (tagsBefore) {
-    await recordGroupTagChanges(db, tagsBefore).catch(err => {
-      console.error(`[processor] recording group tag changes failed for ${externalId}:`, err)
-    })
-  }
   return { id: returned.id, isNew: returned.id === id }
 }

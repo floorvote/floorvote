@@ -85,7 +85,7 @@ function renderEventCard(event: WeekAheadEvent, appUrl: string): string {
     ? `<div style="font-size:${fontSize.xs}px;color:${color.textMuted};margin-top:2px;">${metaIcon('location_on', appUrl)}${escHtml(location)}</div>`
     : ''
   const linkLine = event.url
-    ? `<div style="font-size:${fontSize.xs}px;margin-top:2px;">${metaIcon('link_2', appUrl)}<a href="${escHtml(event.url)}" style="color:${color.accentBlue};text-decoration:underline;overflow-wrap:anywhere;">${escHtml(formatEventUrl(event.url))}</a></div>`
+    ? `<div style="font-size:${fontSize.xs}px;margin-top:2px;">${metaIcon('link', appUrl)}<a href="${escHtml(event.url)}" style="color:${color.accentBlue};text-decoration:underline;overflow-wrap:anywhere;">${escHtml(formatEventUrl(event.url))}</a></div>`
     : ''
   const chips = event.bills.length > 0
     ? `<div style="display:flex;flex-wrap:wrap;margin-top:3px;">${event.bills.map(renderBillChip).join('')}</div>`

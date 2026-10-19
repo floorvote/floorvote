@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { BillDetail } from './BillDetail'
 import * as api from '../lib/api'
+import { CARD } from '../lib/cardStyle'
 
 // ── Scaffolding copied from BillDetail.statusExplainer.test.tsx ───────────────
 
@@ -560,6 +561,7 @@ describe('the line saying what a companion group shares', () => {
 // comment's own header: the page's header and shares line link to the companion too.
 describe('a comment posted on a companion', () => {
   const GROUP = { ...GROUPED, groupBills: [THIS, COMPANION, THIRD] }
+  const POSTED_ON = 'This comment was posted on S1713, a companion bill in this group.'
   const commentEl = (id: string) => document.getElementById(`comment-${id}`)!
   const badgeIn = (id: string) => within(commentEl(id)).getByRole('link', { name: 'S1713' })
   // The bubble the badge shows on hover or focus is aria-hidden; its screen reader copy is not.
@@ -588,34 +590,118 @@ describe('a comment posted on a companion', () => {
     expect(badgeIn('c2').compareDocumentPosition(within(commentEl('c2')).getByText('c2 text')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it('shows "Posted on S1713" when the pointer hovers the badge, and drops it when the pointer leaves', async () => {
+  it('says the comment was posted on the companion when the pointer hovers the badge, and drops it when the pointer leaves', async () => {
     const user = userEvent.setup()
     renderBillDetail(GROUP)
     await screen.findByText('c2 text')
-    expect(visibleBubbles('Posted on S1713')).toHaveLength(0)
+    expect(visibleBubbles(POSTED_ON)).toHaveLength(0)
     await user.hover(badgeIn('c2'))
-    expect(visibleBubbles('Posted on S1713')).toHaveLength(1)
+    expect(visibleBubbles(POSTED_ON)).toHaveLength(1)
     await user.unhover(badgeIn('c2'))
-    expect(visibleBubbles('Posted on S1713')).toHaveLength(0)
+    expect(visibleBubbles(POSTED_ON)).toHaveLength(0)
   })
 
-  it('shows "Posted on S1713" when the badge takes keyboard focus, and drops it when focus leaves', async () => {
+  it('says the comment was posted on the companion when the badge takes keyboard focus, and drops it when focus leaves', async () => {
     const user = userEvent.setup()
     renderBillDetail(GROUP)
     await screen.findByText('c2 text')
     const badge = badgeIn('c2')
-    expect(visibleBubbles('Posted on S1713')).toHaveLength(0)
+    expect(visibleBubbles(POSTED_ON)).toHaveLength(0)
     for (let i = 0; i < 80 && document.activeElement !== badge; i++) await user.tab()
     expect(document.activeElement).toBe(badge)
-    expect(visibleBubbles('Posted on S1713')).toHaveLength(1)
+    expect(visibleBubbles(POSTED_ON)).toHaveLength(1)
     await user.tab()
-    expect(visibleBubbles('Posted on S1713')).toHaveLength(0)
+    expect(visibleBubbles(POSTED_ON)).toHaveLength(0)
   })
 
-  it('gives a screen reader "Posted on S1713" as the badge\'s description, its name staying the bill number', async () => {
+  it('gives a screen reader the same sentence as the badge\'s description, its name staying the bill number', async () => {
     renderBillDetail(GROUP)
     await screen.findByText('c2 text')
-    expect(badgeIn('c2')).toHaveAccessibleDescription('Posted on S1713')
+    expect(badgeIn('c2')).toHaveAccessibleDescription(POSTED_ON)
+  })
+
+  // The bubble is position:fixed and jsdom has no layout, so placement reads from its transform: a bubble
+  // above its badge is lifted by its own height, and one below it is not.
+  const opensAbove = (bubble: HTMLElement) => bubble.style.transform.includes('translateY(calc(-100%')
+  // The one visible bubble, found by what it is rather than what it says.
+  const theBubble = () => {
+    const found = Array.from(document.body.children).filter(el => el instanceof HTMLElement && el.tagName === 'SPAN' && el.getAttribute('aria-hidden') === 'true')
+    expect(found).toHaveLength(1)
+    return found[0] as HTMLElement
+  }
+
+  it('opens the bubble above the badge, not below it', async () => {
+    const user = userEvent.setup()
+    renderBillDetail(GROUP)
+    await screen.findByText('c2 text')
+    await user.hover(badgeIn('c2'))
+    expect(opensAbove(theBubble())).toBe(true)
+  })
+
+  it('opens the bubble above the badge for a keyboard user too', async () => {
+    const user = userEvent.setup()
+    renderBillDetail(GROUP)
+    await screen.findByText('c2 text')
+    const badge = badgeIn('c2')
+    for (let i = 0; i < 80 && document.activeElement !== badge; i++) await user.tab()
+    expect(opensAbove(theBubble())).toBe(true)
+  })
+
+  it('no longer says "Posted on" anywhere, on the bubble or in the description', async () => {
+    const user = userEvent.setup()
+    renderBillDetail(GROUP)
+    await screen.findByText('c2 text')
+    await user.hover(badgeIn('c2'))
+    expect(screen.queryAllByText(/^Posted on /)).toHaveLength(0)
+  })
+
+  it('keeps the screen reader description equal to the visible bubble text', async () => {
+    const user = userEvent.setup()
+    renderBillDetail(GROUP)
+    await screen.findByText('c2 text')
+    await user.hover(badgeIn('c2'))
+    const bubble = theBubble()
+    const hidden = document.getElementById(badgeIn('c2').getAttribute('aria-describedby')!)
+    expect(hidden).not.toBeNull()
+    expect(hidden!.textContent).toBe(bubble.textContent)
+    expect(badgeIn('c2')).toHaveAccessibleDescription(bubble.textContent!)
+    expect(bubble.textContent).toBe(POSTED_ON)
+  })
+
+  it('names the companion each comment was posted on in a group of three or more, above its badge', async () => {
+    const user = userEvent.setup()
+    renderBillDetail({
+      ...GROUP,
+      comments: [
+        comment('c2', 'b1713', 'S1713', '2026-10-10 13:00:00', 'Ben'),
+        comment('c4', 'c2000', 'H2000', '2026-10-10 14:00:00', 'Cy'),
+      ],
+      commentsTotal: 2,
+      groupingEvents: [],
+    })
+    await screen.findByText('c4 text')
+    const onH2000 = 'This comment was posted on H2000, a companion bill in this group.'
+    const h2000 = within(commentEl('c4')).getByRole('link', { name: 'H2000' })
+    expect(h2000).toHaveAccessibleDescription(onH2000)
+    expect(badgeIn('c2')).toHaveAccessibleDescription(POSTED_ON)
+    await user.hover(h2000)
+    expect(visibleBubbles(onH2000)).toHaveLength(1)
+    expect(visibleBubbles(POSTED_ON)).toHaveLength(0)
+    expect(opensAbove(theBubble())).toBe(true)
+  })
+
+  it('says nothing about a companion on comments posted on the page\'s own bill', async () => {
+    const user = userEvent.setup()
+    renderBillDetail({ ...GROUP, comments: [comment('c1', '42', 'A190', '2026-10-10 12:00:00', 'Ann')], commentsTotal: 1, groupingEvents: [] })
+    await screen.findByText('c1 text')
+    await user.hover(within(commentEl('c1')).getByText('Ann'))
+    expect(screen.queryByText(/a companion bill in this group/)).toBeNull()
+  })
+
+  it('says nothing about a companion on a bill in no group', async () => {
+    renderBillDetail({ ...GROUPED, groupBills: [THIS], groupingEvents: [], comments: [comment('c1', '42', 'A190', '2026-10-10 12:00:00', 'Ann')], commentsTotal: 1 })
+    await screen.findByText('c1 text')
+    expect(screen.queryByText(/a companion bill in this group/)).toBeNull()
   })
 
   it('names the bill each companion comment was posted on, and no other', async () => {
@@ -720,8 +806,81 @@ describe('a comment posted on a companion', () => {
   })
 })
 
+// Where the shares line sits. It describes the comments and position boxes below it, so it lines up with
+// the "Comments" heading in the comments card and sits closer to those boxes than to the bill card above.
+// jsdom has no layout, so both read from the computed styles that place them.
+describe('where the line saying what a companion group shares sits', () => {
+  const DOCUMENT = {
+    supplementId: 1, typeId: 1, type: 'Fiscal Note', date: null, dateResolved: null, dateInferred: false,
+    title: 'Fiscal note', description: 'A fiscal note', mime: null, url: 'https://example.com/note', stateLink: null,
+  }
+  const WITH_SECTIONS = { ...GROUPED, comments: [], commentsTotal: 0, groupingEvents: [], supplements: [DOCUMENT] }
+  const line = () => screen.getByTestId('group-shares-line')
+  const px = (value: string) => parseFloat(value) || 0
+  const own = (el: Element) => {
+    const s = getComputedStyle(el)
+    return px(s.marginLeft) + px(s.borderLeftWidth) + px(s.paddingLeft)
+  }
+  // Pixels from the page's left edge to where the comments heading's text starts: every margin, border, and
+  // padding between the line's own container and the heading. jsdom drops the card's border shorthand (its
+  // color is a CSS variable), so the border's width comes from the shared card style.
+  const headingOffset = (heading: HTMLElement, card: HTMLElement, page: HTMLElement) => {
+    let x = 0
+    for (let n: HTMLElement | null = heading; n && n !== card; n = n.parentElement) x += own(n)
+    x += parseFloat(CARD.border) + px(getComputedStyle(card).paddingLeft)
+    for (let n: HTMLElement | null = card.parentElement; n && n !== page; n = n.parentElement) x += own(n)
+    return x
+  }
+  const commentsHeading = () => {
+    const card = document.getElementById('section-comments') as HTMLElement
+    return { card, heading: within(card).getByText(/^Comments/) }
+  }
+
+  it('lines up with the Comments heading, for a group of two', async () => {
+    renderBillDetail({ ...WITH_SECTIONS, groupBills: [THIS, COMPANION] })
+    await screen.findByText('Documents')
+    const { card, heading } = commentsHeading()
+    const offset = headingOffset(heading, card, line().parentElement as HTMLElement)
+    expect(offset).toBeGreaterThan(0)
+    expect(own(line())).toBe(offset)
+  })
+
+  it('lines up the same way for a group of three or more', async () => {
+    renderBillDetail({ ...WITH_SECTIONS, groupBills: [THIS, COMPANION, THIRD] })
+    await screen.findByText('Documents')
+    const { card, heading } = commentsHeading()
+    expect(own(line())).toBe(headingOffset(heading, card, line().parentElement as HTMLElement))
+  })
+
+  it('sits closer to the comments and position boxes below it than to the bill card above it', async () => {
+    renderBillDetail({ ...WITH_SECTIONS, groupBills: [THIS, COMPANION] })
+    await screen.findByText('Documents')
+    const columns = document.querySelector('.bill-detail-columns') as HTMLElement
+    // The columns' top padding adds to the line's bottom margin, and the card has no bottom margin.
+    const above = px(getComputedStyle(line()).marginTop) + px(getComputedStyle(line().previousElementSibling!).marginBottom)
+    const below = px(getComputedStyle(line()).marginBottom) + px(getComputedStyle(columns).paddingTop)
+    expect(below).toBeGreaterThanOrEqual(0)
+    expect(below).toBeLessThan(above)
+  })
+
+  it('stays a single muted line inside the page, with the sentence unchanged', async () => {
+    renderBillDetail({ ...WITH_SECTIONS, groupBills: [THIS, COMPANION] })
+    await screen.findByText('Documents')
+    expect(line()).toHaveTextContent('Comments, votes, and association position are shared with S1713.')
+    expect(line().tagName).toBe('P')
+  })
+
+  it('draws no line for a bill in no group, leaving the card and the columns as they were', async () => {
+    renderBillDetail({ ...WITH_SECTIONS, groupBills: [THIS] })
+    await screen.findByText('Documents')
+    expect(screen.queryByTestId('group-shares-line')).toBeNull()
+    expect(getComputedStyle(document.querySelector('.bill-detail-columns')!).paddingTop).toBe('24px')
+  })
+})
+
 // The commenter's name opens a roles bubble on hover; the badge beside it has its own.
 describe("a companion comment's badge and the commenter's roles bubble", () => {
+  const POSTED_ON = 'This comment was posted on S1713, a companion bill in this group.'
   const COMMENTS = {
     ...GROUPED,
     groupBills: [THIS, COMPANION],
@@ -744,35 +903,35 @@ describe("a companion comment's badge and the commenter's roles bubble", () => {
   }
   const bubbles = (text: string) => screen.queryAllByText(text).filter(el => el.getAttribute('aria-hidden') === 'true')
 
-  it('shows only "Posted on S1713" when the pointer hovers the badge, not the commenter\'s roles', async () => {
+  it('shows only the companion sentence when the pointer hovers the badge, not the commenter\'s roles', async () => {
     const user = userEvent.setup()
     renderWithRoles()
     await screen.findByText('c2 text')
     await user.hover(within(document.getElementById('comment-c2')!).getByRole('link', { name: 'S1713' }))
-    expect(bubbles('Posted on S1713')).toHaveLength(1)
+    expect(bubbles(POSTED_ON)).toHaveLength(1)
     expect(screen.queryByText('Roles')).toBeNull()
     expect(screen.queryByText('Policy lead')).toBeNull()
   })
 
-  it('still shows the roles, and not "Posted on", when the pointer hovers the name', async () => {
+  it('still shows the roles, and not the companion sentence, when the pointer hovers the name', async () => {
     const user = userEvent.setup()
     renderWithRoles()
     await screen.findByText('c2 text')
     await waitFor(() => expect(api.apiFetch).toHaveBeenCalledWith('/users'))
     await user.hover(within(document.getElementById('comment-c2')!).getByText('Ben'))
     expect(await screen.findByText('Policy lead')).toBeInTheDocument()
-    expect(bubbles('Posted on S1713')).toHaveLength(0)
+    expect(bubbles(POSTED_ON)).toHaveLength(0)
   })
 
-  it('closes the "Posted on" bubble when Escape is pressed on the focused badge', async () => {
+  it('closes the companion bubble when Escape is pressed on the focused badge', async () => {
     const user = userEvent.setup()
     renderWithRoles()
     await screen.findByText('c2 text')
     const badge = within(document.getElementById('comment-c2')!).getByRole('link', { name: 'S1713' })
     for (let i = 0; i < 80 && document.activeElement !== badge; i++) await user.tab()
-    expect(bubbles('Posted on S1713')).toHaveLength(1)
+    expect(bubbles(POSTED_ON)).toHaveLength(1)
     await user.keyboard('{Escape}')
-    expect(bubbles('Posted on S1713')).toHaveLength(0)
+    expect(bubbles(POSTED_ON)).toHaveLength(0)
   })
 })
 
@@ -859,7 +1018,7 @@ describe('the grouping lines of a comment thread', () => {
     await screen.findByText('c3 text')
     expect(lines()).toEqual([
       'link_off' + 'Separated from S1713 on October 13. Comments posted on S1713 no longer appear here.',
-      'link_2' + 'Grouped with S1713 as identical bills on October 14. Earlier comments on S1713 now appear here.',
+      'link' + 'Grouped with S1713 as identical bills on October 14. Earlier comments on S1713 now appear here.',
     ])
   })
 

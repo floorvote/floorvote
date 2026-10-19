@@ -10,7 +10,7 @@ import { resolveItemDate } from '../lib/itemDate'
 import { parseHandle, toHandle } from '../lib/billHandle'
 import { DEFAULT_PROVIDER_ID, findProvider, getProvider } from '../providers'
 import { ownerOfState } from '../lib/stateProviders'
-import { relationshipKind, statusFields, vocabularyLabels } from '../lib/vocabulary'
+import { relationshipKind, statusFields, titleCompanionKey, vocabularyLabels } from '../lib/vocabulary'
 import { billExtrasDetail } from '../lib/billExtras'
 import { calendarKind } from '../lib/billCalendar'
 import { calendarCoverage } from '../lib/bodyEvents'
@@ -332,6 +332,9 @@ billsRoutes.get('/:id', async (c) => {
     lastActionDate: bill.lastActionDate ?? null,
     billType: bill.billType ?? null,
     body: bill.body ?? null,
+    // What instances match companion suggestions by (#521), or null where no
+    // suggestion can come from the bill. From the vocabulary, on every read.
+    titleKey: titleCompanionKey(provider, { state: bill.state, billType: bill.billType ?? null, body: bill.body ?? null, title: bill.title }),
     updatedAt: bill.updatedAt,
     stateUrl: bill.stateLink ?? null,
     legiscanUrl: bill.url ?? null,

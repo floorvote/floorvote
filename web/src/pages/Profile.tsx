@@ -169,9 +169,9 @@ export function Profile() {
     setDigestMatchesEnabled(user?.emailDigestMatchesEnabled ?? true)
   }, [user?.emailDigestMatchesEnabled])
 
-  // Reply emails are a per-member switch only: the instance's "Conversation
-  // emails" switch lives on the admin page, and the in-app replies stay on
-  // whatever this says.
+  // Reply notifications, in the app and by email, are a per-member switch. The
+  // instance's "Conversation emails" switch lives on the admin page and gates
+  // only the email.
   const [repliesEnabled, setRepliesEnabled] = useState<boolean>(() => user?.emailRepliesEnabled ?? true)
   const [repliesSaving, setRepliesSaving] = useState(false)
 
@@ -669,7 +669,7 @@ export function Profile() {
             <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, cursor: demoLocked ? 'not-allowed' : 'pointer' }}>
               <div style={{ fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5 }}>
                 <div style={{ fontWeight: fontWeight.bold, color: color.textPrimary }}>Replies on bills you've commented on</div>
-                <div>Email me when someone else comments on a bill I've commented on. Replies still appear in your notifications.</div>
+                <div>Notify me in FloorVote and by email when someone else comments on a bill I've commented on. To stop them on one bill, use Mute comments on that bill.</div>
               </div>
               <span
                 style={{

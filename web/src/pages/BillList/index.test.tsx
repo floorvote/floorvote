@@ -1507,3 +1507,34 @@ describe('BillList new-match dismiss — counts and sidebar chip', () => {
     expect(apiCalls).not.toContain('/bills/bill-new/triage-dismiss')
   })
 })
+
+// The header's columns sit over the rows': one grid template, and the same
+// horizontal padding, so the Priority header is over the Priority control.
+describe('BillList column header alignment', () => {
+  it('uses the rows\' grid template and horizontal padding', async () => {
+    render(<BillList />, { wrapper: Wrapper })
+    await screen.findByText('Early Voting Centers')
+    const header = document.querySelector('.bill-list-header-row') as HTMLElement
+    const row = document.querySelector('.bill-row-grid') as HTMLElement
+    expect(header.style.gridTemplateColumns).toBe('12px minmax(0,1fr) 170px 140px')
+    expect(header.style.gridTemplateColumns).toBe(row.style.gridTemplateColumns)
+    expect(header.style.gap).toBe(row.style.gap)
+    // The header's own box holds the padding the row holds on its own element.
+    const padded = header.parentElement as HTMLElement
+    expect(row.style.padding).toBe('12px 28px 12px 8px')
+    expect(padded.style.paddingLeft).toBe('8px')
+    expect(padded.style.paddingRight).toBe('28px')
+    expect(padded.style.paddingRight).toBe(row.style.paddingRight)
+    expect(padded.style.paddingLeft).toBe(row.style.paddingLeft)
+  })
+
+  it('has its Priority header in the last track and its Position header in the one before', async () => {
+    render(<BillList />, { wrapper: Wrapper })
+    await screen.findByText('Early Voting Centers')
+    const header = document.querySelector('.bill-list-header-row') as HTMLElement
+    const children = [...header.children]
+    expect(children).toHaveLength(4)
+    expect(children[2]).toHaveClass('bill-col-position')
+    expect(children[3]).toHaveTextContent(/^Priority/)
+  })
+})

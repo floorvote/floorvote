@@ -125,5 +125,6 @@ export const vocabulary: ProviderVocabulary = {
   // in the other chamber.
   relationships: {
     default: { 'Cross-filed': 'identical' },
+    identicalStates: ['MD'],
   },
 }

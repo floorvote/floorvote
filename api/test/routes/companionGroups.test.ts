@@ -116,12 +116,23 @@ describe('bill routes across a companion group', () => {
       // Ben commented on both bills, Ann only on A190, so Ann is the one who
       // would miss a reply on S1713 if participants stayed per bill.
       await db().delete(comments).where(eq(comments.id, 'c3'))
-      // In-app only, so no reply email is still sending when the next test resets the database.
-      await db().update(users).set({ emailRepliesEnabled: 0 }).where(eq(users.id, user.ann))
+      // In-app only (the instance's conversation emails are off), so no reply
+      // email is still sending when the next test resets the database.
+      await db().insert(associationConfig).values({ key: 'mention_emails_enabled', value: 'false' })
       const res = await as('ben', '/bills/b1713/comments', { method: 'POST', body: JSON.stringify({ content: '<p>reply</p>' }) })
       expect(res.status).toBe(201)
       const rows = await db().select().from(notifications).where(and(eq(notifications.recipientId, user.ann), eq(notifications.kind, 'reply'))).all()
       expect(rows).toHaveLength(1)
+    })
+
+    it("do not notify a companion's commenter who turned replies off", async () => {
+      await group()
+      await db().delete(comments).where(eq(comments.id, 'c3'))
+      await db().update(users).set({ emailRepliesEnabled: 0 }).where(eq(users.id, user.ann))
+      const res = await as('ben', '/bills/b1713/comments', { method: 'POST', body: JSON.stringify({ content: '<p>reply</p>' }) })
+      expect(res.status).toBe(201)
+      const rows = await db().select().from(notifications).where(and(eq(notifications.recipientId, user.ann), eq(notifications.kind, 'reply'))).all()
+      expect(rows).toHaveLength(0)
     })
   })
 

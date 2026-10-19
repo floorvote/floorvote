@@ -22,14 +22,17 @@ import { SECTION_LABEL, CHROME_TEXT, BILL_TITLE_TEXT } from '../../lib/textStyle
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { billDisplayTitle } from '../../../../shared/billTitle'
 import { voteButtonStyle, type VoteKey } from '../../lib/voteButtonStyle'
-import { CHIP_GRID, CHIP_GRID_MULTISTATE, CHIP_GAP, OUTER_GRID } from './constants'
+import { CHIP_GRID, CHIP_GRID_MULTISTATE, CHIP_GAP, OUTER_GRID, ROW_PADDING_LEFT, ROW_PADDING_RIGHT } from './constants'
+import { groupPlacement, groupGridStyle, groupItemStyle, subgridCellStyle, GROUP_ROW_GAP } from './groupRows'
 import type { Bill, GroupMember } from './types'
 
 // A companion group's bills stack in the cells the row already has (bill number
 // and status), so the pairing reads by position and no column is wider. A group
 // larger than two shows the furthest-along bill, one other, and "+N".
 const GROUP_SHOWN = 2
-const STACK: CSSProperties = { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }
+// The phone row has no columns to share, so a group's numbers and statuses are
+// two columns of one grid, a status on its bill's row (see groupRows.ts).
+const PAIRS: CSSProperties = { display: 'inline-grid', gridTemplateColumns: 'auto auto', columnGap: 6, rowGap: GROUP_ROW_GAP, alignItems: 'center' }
 const MATCHED: CSSProperties = { ...chipOutline(true, false, false), display: 'inline-flex', borderRadius: radius.sm }
 
 export const memberPath = (m: GroupMember) => billUrl({ id: m.id, state: m.state, sessionSlug: m.sessionSlug, billNumber: m.billNumber })
@@ -197,52 +200,54 @@ export const BillRow = memo(function BillRow({
   const group = bill.group
   const { shown, hidden, statuses: shownStatuses } = group ? groupDisplay(group) : { shown: [], hidden: [], statuses: [] }
   const emphasize = !!group && group.some(m => m.matched === true) && group.some(m => m.matched === false)
-  const renderNumbers = () => !group
-    ? <BillBadge billNumber={bill.billNumber} state={bill.state} isDraft={bill.isDraft} />
-    : (
-      <div data-group-stack style={STACK}>
-        {shown.map(m => {
-          const path = memberPath(m)
-          const number = (
-            <BillBadge
-              billNumber={m.billNumber} state={m.state} to={path}
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); goTo(e, path) }}
-            />
-          )
-          return emphasize && m.matched
-            ? <HoverTooltip key={m.id} text="Matches your filters"><span data-matched="true" style={MATCHED}>{number}</span></HoverTooltip>
-            : <span key={m.id} style={{ display: 'inline-flex' }}>{number}</span>
-        })}
-        {hidden.length > 0 && (
-          <HoverTooltip text={`Also ${hidden.map(m => m.billNumber).join(', ')}`} describe>
-            <span style={{ ...CHROME_TEXT, fontWeight: fontWeight.semibold }}>+{hidden.length}</span>
-          </HoverTooltip>
-        )}
+  const placement = group ? groupPlacement({ shown, hidden, statuses: shownStatuses }) : null
+  // A group's pieces are placed on rows of a shared grid (groupRows.ts): `column`
+  // is given only where the grid has two columns (the phone row).
+  const renderGroupNumbers = (column?: number) => placement && [
+    ...shown.map((m, i) => {
+      const path = memberPath(m)
+      const number = (
+        <BillBadge
+          billNumber={m.billNumber} state={m.state} to={path}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); goTo(e, path) }}
+        />
+      )
+      return (
+        <div key={m.id} data-group-item="number" style={groupItemStyle(placement.numberRows[i], column)}>
+          {emphasize && m.matched
+            ? <HoverTooltip text="Matches your filters"><span data-matched="true" style={MATCHED}>{number}</span></HoverTooltip>
+            : <span style={{ display: 'inline-flex' }}>{number}</span>}
+        </div>
+      )
+    }),
+    ...(placement.moreRow !== null ? [(
+      <div key="more" data-group-item="more" style={groupItemStyle(placement.moreRow, column)}>
+        <HoverTooltip text={`Also ${hidden.map(m => m.billNumber).join(', ')}`} describe>
+          <span style={{ ...CHROME_TEXT, fontWeight: fontWeight.semibold }}>+{hidden.length}</span>
+        </HoverTooltip>
       </div>
-    )
+    )] : []),
+  ]
   // The status column's chips filter by their status when clicked. The phone row's don't.
-  const renderStatuses = (interactive: boolean) => !group
-    ? (bill.isDraft
-        ? <DraftChip />
-        : <StatusChip
-            capWidth
-            status={decodeStatus(bill.status)}
-            onClick={interactive ? () => onStatusClick(bill.status) : undefined}
-            isActive={interactive ? filter.status.includes(bill.status) : undefined}
-          />)
-    : (
-      <div style={STACK}>
-        {shownStatuses.map(status => (
-          <StatusChip
-            capWidth
-            key={status}
-            status={decodeStatus(status)}
-            onClick={interactive ? () => onStatusClick(status) : undefined}
-            isActive={interactive ? filter.status.includes(status) : undefined}
-          />
-        ))}
-      </div>
-    )
+  const renderGroupStatuses = (interactive: boolean, column?: number) => placement && shownStatuses.map((status, i) => (
+    <div key={status} data-group-item="status" style={groupItemStyle(placement.statusRows[i], column)}>
+      <StatusChip
+        capWidth
+        status={decodeStatus(status)}
+        onClick={interactive ? () => onStatusClick(status) : undefined}
+        isActive={interactive ? filter.status.includes(status) : undefined}
+      />
+    </div>
+  ))
+  const renderLoneNumber = () => <BillBadge billNumber={bill.billNumber} state={bill.state} isDraft={bill.isDraft} />
+  const renderLoneStatus = (interactive: boolean) => bill.isDraft
+    ? <DraftChip />
+    : <StatusChip
+        capWidth
+        status={decodeStatus(bill.status)}
+        onClick={interactive ? () => onStatusClick(bill.status) : undefined}
+        isActive={interactive ? filter.status.includes(bill.status) : undefined}
+      />
 
   return (
     <div
@@ -279,7 +284,7 @@ export const BillRow = memo(function BillRow({
         boxShadow: hovered && !isSelected ? '0 7px 16px -3px rgba(15,23,42,0.20), 0 -3px 9px -3px rgba(15,23,42,0.15)' : 'none',
         position: 'relative',
         zIndex: hovered && !isSelected ? 2 : 1,
-        padding: '12px 16px 12px 8px',
+        padding: `12px ${ROW_PADDING_RIGHT}px 12px ${ROW_PADDING_LEFT}px`,
         cursor: 'pointer',
         color: 'inherit',
       }}
@@ -298,12 +303,21 @@ export const BillRow = memo(function BillRow({
       ) : <div className="bill-row-checkbox" />}
       {/* Left: chip strip + title + summary + tags */}
       <div>
-        <div className="bill-row-chips-cell" style={{ display: 'grid', gridTemplateColumns: isMultiState ? CHIP_GRID_MULTISTATE : CHIP_GRID, ['--bill-col-w' as string]: isMultiState ? '105px' : '70px', gap: CHIP_GAP, marginBottom: 8, alignItems: 'center', minWidth: 0, overflow: 'visible' } as React.CSSProperties}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            {renderNumbers()}
-          </div>
-          <span className="bill-col-status" style={{ display: 'flex', alignItems: 'center' }}>
-            {renderStatuses(true)}
+        <div
+          className="bill-row-chips-cell"
+          data-group-rows={placement?.rows}
+          style={{
+            display: 'grid', gridTemplateColumns: isMultiState ? CHIP_GRID_MULTISTATE : CHIP_GRID, ['--bill-col-w' as string]: isMultiState ? '105px' : '70px',
+            // A group's chips sit on a grid of rows, closer together than the columns (groupRows.ts).
+            ...(placement ? { columnGap: CHIP_GAP, ...groupGridStyle(placement.rows) } : { gap: CHIP_GAP }),
+            marginBottom: 8, alignItems: 'center', minWidth: 0, overflow: 'visible',
+          } as React.CSSProperties}
+        >
+          {placement
+            ? <div data-group-stack style={subgridCellStyle}>{renderGroupNumbers()}</div>
+            : <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{renderLoneNumber()}</div>}
+          <span className="bill-col-status" style={placement ? subgridCellStyle : { display: 'flex', alignItems: 'center' }}>
+            {placement ? renderGroupStatuses(true) : renderLoneStatus(true)}
           </span>
           <span className="bill-col-year" style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
             {(() => {
@@ -327,8 +341,9 @@ export const BillRow = memo(function BillRow({
         </div>
         {/* Mobile-only: bill number, status, relevance — priority pinned to right edge */}
         <div className="bill-row-mobile-meta">
-          {renderNumbers()}
-          {renderStatuses(false)}
+          {placement
+            ? <div data-group-pairs style={PAIRS}>{renderGroupNumbers(1)}{renderGroupStatuses(false, 2)}</div>
+            : <>{renderLoneNumber()}{renderLoneStatus(false)}</>}
           {bill.relevanceScore != null && (
             <RelevanceChip
               score={bill.relevanceScore}

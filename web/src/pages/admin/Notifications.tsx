@@ -46,7 +46,7 @@ export function Notifications() {
   // Turning a setting OFF stops email for everyone, so confirm first (browser confirm,
   // matching the rest of the app). Turning ON is benign, so it
   // applies immediately. Members can opt out individually of the digest, week-ahead,
-  // and reply emails, but not of mention emails, so the conversation switch's
+  // and reply notifications, but not of mention emails, so the conversation switch's
   // confirm leaves the opt-out sentence off.
   const confirmOff = (label: string, memberCanOptOut = true) =>
     window.confirm(`Turn off ${label} for everyone? This stops it for all members, not just you.${memberCanOptOut ? ' Members can also opt out individually on their Account page.' : ''}`)
@@ -243,7 +243,7 @@ export function Notifications() {
                 <div>
                   <div style={SETTING_BOX_TITLE}>Send conversation emails to members</div>
                   <div style={SETTING_BOX_DESC}>
-                    Covers mentions of a member, a role, @admins, or @everyone in comments, and replies on bills members have commented on, for the whole instance. Members can turn off their own reply emails but not mention emails. In-app notifications are not affected.
+                    Covers mentions of a member, a role, @admins, or @everyone in comments, and replies on bills members have commented on, for the whole instance. Members can turn off their own reply notifications, in the app and by email, but not mention emails. This switch does not affect in-app notifications.
                   </div>
                 </div>
                 <IosToggle

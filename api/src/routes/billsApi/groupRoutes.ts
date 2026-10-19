@@ -5,6 +5,7 @@ import { getDb } from '../../db/client'
 import { bills } from '../../db/schema'
 import { groupByHand, loadGroupBills, planGroupByHand, previewSplit, splitFromGroup, type SplitConflict } from '../../lib/companionGroups'
 import { pullCompanions } from '../../lib/companionAnalysis'
+import { dismissSuggestion } from '../../lib/companionSuggestion'
 import { isHandle } from '../../../../shared/billHandle'
 import type { AppEnv } from '../../types'
 
@@ -93,6 +94,21 @@ export function registerGroupRoutes(router: Hono<AppEnv>) {
     const parts = await previewSplit(db, billId)
     if (!parts) return c.json({ error: 'This bill is in no group' }, 409)
     return c.json({ billNumber: bill.billNumber, parts })
+  })
+
+  // POST /bills/:id/companion-suggestion/dismiss { withBillId } — never suggest
+  // grouping these two from their matching titles again (#521). Accepting a
+  // suggestion is POST /bills/:id/group, so it groups as "Group with…" does.
+  router.post('/:id/companion-suggestion/dismiss', requireAdmin, async (c) => {
+    const db = getDb(c.env.DB)
+    const billId = c.req.param('id')
+    const { withBillId } = await c.req.json().catch(() => ({})) as { withBillId?: unknown }
+    if (typeof withBillId !== 'string' || withBillId === '') return c.json({ error: 'withBillId is required' }, 400)
+    if (withBillId === billId) return c.json({ error: 'A bill cannot be dismissed as its own companion' }, 400)
+    const found = await db.select({ id: bills.id }).from(bills).where(inArray(bills.id, [billId, withBillId])).all()
+    if (found.length < 2) return c.json({ error: 'Not found' }, 404)
+    await dismissSuggestion(db, billId, withBillId, c.get('user').id)
+    return c.json({ ok: true })
   })
 
   // POST /bills/:id/split — take this bill out of its group. The rest follow their own links.

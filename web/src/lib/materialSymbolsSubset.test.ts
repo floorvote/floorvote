@@ -48,4 +48,11 @@ describe('Material Symbols icon subset stays in sync', () => {
     const missing = [...usedIcons].filter(name => !allowlist.has(name)).sort()
     expect(missing, `icons rendered in code but missing from web/index.html icon_names: ${missing.join(', ')}`).toEqual([])
   })
+
+  // GroupingLine picks its glyph in an expression, so the scan above can't see it.
+  it('carries the link glyph that marks companion grouping, and no longer the link_2 variant', () => {
+    expect(allowlist.has('link')).toBe(true)
+    expect(allowlist.has('link_off')).toBe(true)
+    expect(allowlist.has('link_2')).toBe(false)
+  })
 })
