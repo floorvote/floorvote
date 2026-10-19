@@ -464,7 +464,8 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, req
                 ? [{ billId: foreign.billId, billNumber: foreign.billNumber ?? '', state: null as string | null, texts: [foreign.version] }]
                 : [])].map(row => (
                 <div key={row.billId} role="group" aria-label={`${row.billNumber} bill texts`} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <span style={{ minWidth: 52 }}><BillBadge billNumber={row.billNumber} state={row.state} mini /></span>
+                  {/* A flex slot, so no text baseline sets the badge lower than the chips. */}
+                  <span style={{ minWidth: 52, display: 'inline-flex', alignItems: 'center' }}><BillBadge billNumber={row.billNumber} state={row.state} mini /></span>
                   {row.texts.map(t => (
                     <BillTextChip
                       key={t.docId}

@@ -267,6 +267,22 @@ describe('Bill texts on a grouped bill: one row per bill', () => {
     for (const row of rows()) expect(row.style.flexWrap).toBe('wrap')
   })
 
+  // The badge sits in a fixed-width slot. As a plain box, the slot's line box
+  // set the badge on its text baseline, so the badge sat lower than the version
+  // chips. A flex slot centered on its own cross axis lines them up.
+  it("centers each row's badge vertically with its version chips", async () => {
+    const user = userEvent.setup()
+    setup()
+    await openPanel(user)
+    for (const row of rows()) {
+      expect(row.style.alignItems).toBe('center')
+      const slot = row.firstElementChild as HTMLElement
+      expect(slot.textContent).toBe(row.getAttribute('aria-label')!.replace(/ bill texts$/, ''))
+      expect(slot.style.display).toMatch(/^(inline-)?flex$/)
+      expect(slot.style.alignItems).toBe('center')
+    }
+  })
+
   it("opens on the page bill's newest version", async () => {
     const user = userEvent.setup()
     setup()
