@@ -1,6 +1,7 @@
 import type { Env } from '../types'
 import { senderFor } from './email'
 import { PRODUCT_NAME } from '../../../shared/brand'
+import { validEmailList } from '../../../shared/operator'
 
 /**
  * Scheduled jobs run via `ctx.waitUntil(promise)`. If that promise rejects, the
@@ -24,20 +25,18 @@ function escHtml(s: string): string {
 }
 
 /**
- * Email an alert to every address in `env.ALERT_EMAILS` (comma-separated).
+ * Email an alert to every valid address in `env.ALERT_EMAILS` (comma-separated).
+ * An entry that is not an address is logged and skipped, so one typo can't block the rest.
  * ALERT_EMAILS is intentionally separate from superadmin access (central-governed):
  * superadmins have full domain access, which is not the same set as "who should receive ops alerts."
- * Best-effort: never throws. No-ops (just logs) when no recipients are configured.
+ * Best-effort: never throws. No-ops (just logs) when no valid recipient is configured.
  */
 export async function reportJobFailure(env: Env, opts: { job: string; error: unknown }): Promise<void> {
   const { job, error } = opts
-  const recipients = (env.ALERT_EMAILS ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
+  const recipients = validEmailList(env.ALERT_EMAILS, 'ALERT_EMAILS')
 
   if (recipients.length === 0) {
-    console.error(`[job:${job}] failed but ALERT_EMAILS is unset — no alert sent`)
+    console.error(`[job:${job}] failed but ALERT_EMAILS is unset or has no valid address — no alert sent`)
     return
   }
 

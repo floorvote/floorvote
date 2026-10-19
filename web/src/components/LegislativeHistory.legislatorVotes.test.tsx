@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { LegislativeHistory } from './LegislativeHistory'
-import { color } from '../styles/tokens'
+import { color, fontWeight } from '../styles/tokens'
 
 type LegislatorVote = { name: string; vote: string }
 type Vote = {
@@ -344,5 +344,30 @@ describe('long voter lists', () => {
     const dd = screen.getByRole('definition') as HTMLElement
     expect(dd.style.overflowWrap).toBe('anywhere')
     expect(dd.style.minWidth).toBe('0px')
+  })
+})
+
+describe('roll call label weights', () => {
+  it('the summary counts and the expanded group labels use the same font weight', async () => {
+    const user = userEvent.setup()
+    renderVotes([legiscanVote])
+    const summaryWeights = new Set(
+      ['Yea 2', 'Nay 1'].map((t) => screen.getByText(t).style.fontWeight),
+    )
+    await user.click(toggle())
+    const labelWeights = new Set([termFor('Yea'), termFor('Nay')].map((el) => el.style.fontWeight))
+    expect(summaryWeights.size).toBe(1)
+    expect(labelWeights.size).toBe(1)
+    expect([...labelWeights][0]).toBe([...summaryWeights][0])
+  })
+
+  it('uses an existing fontWeight token for both', async () => {
+    const user = userEvent.setup()
+    renderVotes([legiscanVote])
+    const summary = screen.getByText('Yea 2').style.fontWeight
+    await user.click(toggle())
+    const label = termFor('Yea').style.fontWeight
+    expect(Object.values(fontWeight).map(String)).toContain(summary)
+    expect(label).toBe(summary)
   })
 })

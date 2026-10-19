@@ -18,7 +18,8 @@ const row = (over: Row = {}): Row => ({
     fullHours: [5, 13, 23], rawHours: [7, 9], override: false,
     lastRead: new Date(Date.now() - 3 * 3_600_000).toISOString(),
     nextRead: new Date(Date.now() + 2 * 3_600_000).toISOString(),
-    stale: false, lastPass: { billsChecked: 40, billsChanged: 7, billsQueued: 3 },
+    stale: false,
+    lastPass: { at: new Date(Date.now() - 3 * 3_600_000).toISOString(), status: 'ok', error: null, billsChecked: 40, billsChanged: 7, billsQueued: 3 },
   },
   waitingFirstIngest: 0,
   calls: { provider: 'legiscan', count: 1200, coverage: 'full' },
@@ -133,6 +134,41 @@ describe('States page', () => {
     expect(within(rowEl('BB')).getByText(/No recent read/)).toBeInTheDocument()
     expect(within(rowEl('BB')).getByText(/Nothing scheduled/)).toBeInTheDocument()
     expect(within(rowEl('BB')).getByText(/No pass logged/)).toBeInTheDocument()
+  })
+
+  it('shows the last pass\'s time and counts', async () => {
+    await show([merge(row(), { schedule: { lastPass: {
+      at: new Date(Date.now() - 2 * 3_600_000).toISOString(), status: 'ok', error: null, billsChecked: 40, billsChanged: 7, billsQueued: 3,
+    } } })])
+    expect(within(rowEl('RI')).getByText(/Last pass 2 hours ago · 40 checked · 7 changed · 3 queued/)).toBeInTheDocument()
+  })
+
+  it('shows a failed last pass as failed with its time and error, and no counts', async () => {
+    await show([merge(row(), { schedule: { lastPass: {
+      at: new Date(Date.now() - 2 * 3_600_000).toISOString(), status: 'failed', error: 'Error: LIMS is down',
+      billsChecked: 0, billsChanged: 0, billsQueued: 0,
+    } } })])
+    const r = within(rowEl('RI'))
+    expect(r.getByText(/Last pass failed 2 hours ago/)).toBeInTheDocument()
+    expect(r.getByText(/LIMS is down/)).toBeInTheDocument()
+    expect(r.queryByText(/0 checked/)).toBeNull()
+    expect(r.queryByText(/No pass logged/)).toBeNull()
+  })
+
+  it('shows a failed last pass without an error as failed', async () => {
+    await show([merge(row(), { schedule: { lastPass: {
+      at: new Date(Date.now() - 2 * 3_600_000).toISOString(), status: 'failed', error: null, billsChecked: 0, billsChanged: 0, billsQueued: 0,
+    } } })])
+    expect(within(rowEl('RI')).getByText(/Last pass failed 2 hours ago/)).toBeInTheDocument()
+  })
+
+  it('shows a pass that finished with nothing as zero checked, not as failed', async () => {
+    await show([merge(row(), { schedule: { lastPass: {
+      at: new Date(Date.now() - 2 * 3_600_000).toISOString(), status: 'ok', error: null, billsChecked: 0, billsChanged: 0, billsQueued: 0,
+    } } })])
+    const r = within(rowEl('RI'))
+    expect(r.getByText(/0 checked · 0 changed · 0 queued/)).toBeInTheDocument()
+    expect(r.queryByText(/failed/)).toBeNull()
   })
 
   it('shows how many moved bills still wait for their first ingest', async () => {

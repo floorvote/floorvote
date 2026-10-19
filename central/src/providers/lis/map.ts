@@ -570,16 +570,30 @@ function description(rec: LisRecord): string {
   return latestSummary(rec)?.[1] || rec.bill.Bill_description
 }
 
-/** The extras (vocabulary.ts) for one record: the chapter, the emergency flag when set, and every summary but the latest. */
+/** A summary's text as compared for duplicates: trimmed, with runs of whitespace collapsed. Case is kept. */
+const summaryText = (text: string) => text.trim().replace(/\s+/g, ' ')
+
+/**
+ * The extras (vocabulary.ts) for one record: the chapter, the emergency flag
+ * when set, and the earlier summaries. The bill's description is already the
+ * latest summary, so an earlier summary whose text equals it, or equals an
+ * earlier one already kept, is left out (see `summaryText`). A near match
+ * stays: it usually carries a real change in wording.
+ */
 export function lisExtras(rec: LisRecord, sessionYear: number): NonNullable<CentralMeasure['extras']> {
   const extras: Record<string, string> = {}
   const chapter = /^CHAP0*(\d+)$/i.exec(rec.bill.Chapter_id.trim())
   if (chapter) extras.chapter = `Chapter ${chapter[1]} of the ${sessionYear} Acts of Assembly`
   if (yes(rec.bill.Emergency)) extras.emergency = 'Yes'
   const latest = latestSummary(rec)
+  const seen = new Set(latest ? [summaryText(latest[1])] : [])
   for (const s of rec.summaries) {
     const key = SUMMARY_EXTRAS[s[0]]
-    if (key && s !== latest) extras[key] = s[1]
+    if (!key || s === latest) continue
+    const text = summaryText(s[1])
+    if (seen.has(text)) continue
+    seen.add(text)
+    extras[key] = s[1]
   }
   return extras
 }

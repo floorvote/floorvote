@@ -506,6 +506,23 @@ describe('Maryland fails closed', () => {
     expect((await getJson(`/bills/${toHandle(await billId('HB1'))}`)).extras.fields.find((f: any) => f.key === 'statutes').value).toBe('§ 4-504')
   })
 
+  it('serves a bill\'s statutes on several lines as one value, with its line breaks, and no flag extras when no flag is set', async () => {
+    const records = sample()
+    records.find(r => r.BillNumber === 'HB0001')!.Statutes = [
+      { Article: { Code: 'gpu', Title: 'Public Utilities' }, Sections: [{ Section: '4-504' }, { Section: '7-306' }] },
+      { Article: { Code: 'gtg', Title: 'Tax - General' }, Sections: [{ Section: '10-207' }] },
+    ]
+    serve(records)
+    await claim('mga')
+    await syncAndIngest()
+    const fields = (await getJson(`/bills/${toHandle(await billId('HB1'))}`)).extras.fields as { key: string; placement: string; value: string }[]
+    const statutes = fields.filter(f => f.key === 'statutes')
+    expect(statutes).toHaveLength(1)
+    expect(statutes[0]).toMatchObject({ placement: 'detail', value: 'Public Utilities §§ 4-504, 7-306\nTax - General § 10-207' })
+    expect(fields.map(f => f.key)).not.toContain('emergency')
+    expect(fields.map(f => f.key)).not.toContain('constitutionalAmendment')
+  })
+
   it('changes nothing when the session list can\'t be read', async () => {
     const before = await baseline()
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {

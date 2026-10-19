@@ -19,7 +19,7 @@ type SessionRow = {
   sineDie: boolean
 }
 type KwUnion = { state: string; contributingTenants: string[]; keywordCount: number; sampleKeywords: string[] }
-type SyncRow = { id: number; sessionId: number; sessionName: string; state: string; syncedAt: string; billsChecked: number; billsChanged: number; billsQueued: number }
+type SyncRow = { id: number; sessionId: number; sessionName: string; state: string; syncedAt: string; billsChecked: number; billsChanged: number; billsQueued: number; status: 'ok' | 'failed'; error: string | null }
 type ChangeEntry = { billId: number; state: string; billNumber: string; changeType: string; oldValue: string | null; newValue: string | null; detail: string | null; detectedAt: string }
 
 function fmt(d: string | null): string { return d ? new Date(d).toLocaleString() : '—' }
@@ -206,9 +206,17 @@ export default function Sync() {
                       <td style={tdStyle}>{fmt(s.syncedAt)}</td>
                       <td style={tdStyle}>{s.state}</td>
                       <td style={tdStyle}>{s.sessionName}</td>
-                      <td style={tdStyle}>{s.billsChecked.toLocaleString()}</td>
-                      <td style={tdStyle}>{s.billsChanged.toLocaleString()}</td>
-                      <td style={tdStyle}>{s.billsQueued.toLocaleString()}</td>
+                      {s.status === 'failed' ? (
+                        <td colSpan={3} style={{ ...tdStyle, color: 'var(--danger)', overflowWrap: 'anywhere' }}>
+                          Failed{s.error ? `: ${s.error}` : ''}
+                        </td>
+                      ) : (
+                        <>
+                          <td style={tdStyle}>{s.billsChecked.toLocaleString()}</td>
+                          <td style={tdStyle}>{s.billsChanged.toLocaleString()}</td>
+                          <td style={tdStyle}>{s.billsQueued.toLocaleString()}</td>
+                        </>
+                      )}
                     </tr>
                     {isOpen && (
                       <tr>

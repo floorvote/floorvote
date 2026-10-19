@@ -16,9 +16,9 @@ interface Loaded { rules: EventRules | null; committees: Committee[]; events?: U
 interface ConfigurableState { code: string; heading: string; committees: Committee[] }
 
 /**
- * The Calendar page's one gear for which committee events show (#420, #695),
+ * The Calendar page's "Event filters" button for which committee events show (#420, #695),
  * for an instance with a covered state whose provider publishes its own
- * calendar. The gear opens one popover with a section per such state, headed
+ * calendar. The button opens one popover with a section per such state, headed
  * by the state and its body ("DC Council") with a summary of its choice. Each
  * section offers every event or only chosen committees, and each change saves
  * as it is made through the event-rules API. With one such state its section
@@ -157,10 +157,14 @@ export function BodyEventsControl({ onChanged }: { onChanged?: () => void }) {
     return { shown, total: mine.length }
   }
 
+  // The same chrome as the Bills page's Filters button: info fill, blue text and border while a filter is on.
   const trigger: React.CSSProperties = {
-    position: 'relative', width: 34, height: 34, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-    background: pos ? color.countChipBg : 'transparent', border: 'none', borderRadius: radius.md, cursor: ready ? 'pointer' : 'default',
-    color: color.textSecondary, padding: 0, fontFamily: 'inherit',
+    position: 'relative', fontSize: fontSize.sm, padding: '6px 12px', borderRadius: radius.md, border: '1px solid', fontFamily: 'inherit',
+    cursor: ready ? 'pointer' : 'default',
+    background: filtered ? color.bgInfo : pos ? color.countChipBg : color.white,
+    color: filtered ? color.linkBlue : color.textSlate,
+    borderColor: filtered ? color.tagBorderBlue : color.borderDefault,
+    fontWeight: filtered ? fontWeight.medium : fontWeight.normal,
   }
   const row: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: fontSize.sm, color: color.textSlate, padding: '4px 0' }
   const small: React.CSSProperties = { fontSize: fontSize.xs, color: color.textSecondary, lineHeight: 1.5, margin: 0 }
@@ -175,36 +179,27 @@ export function BodyEventsControl({ onChanged }: { onChanged?: () => void }) {
         type="button"
         onClick={ready ? toggleMenu : undefined}
         disabled={!ready}
-        aria-label="Committee events settings"
         aria-haspopup="dialog"
         aria-expanded={!!pos}
         aria-describedby={filtered ? noteId : undefined}
-        title={loadFailed ? 'Could not load which committee events show.' : 'Committee events'}
+        title={loadFailed ? 'Could not load which committee events show.' : undefined}
         style={trigger}
       >
-        <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: fontSize.xxl, lineHeight: 1 }}>settings</span>
-        {filtered && (
-          <>
-            <span data-testid="committee-filter-dot" aria-hidden="true" style={{ position: 'absolute', top: 6, right: 6, width: 8, height: 8, borderRadius: radius.sm, background: color.accentAmber, border: `1.5px solid ${color.surfaceMuted}` }} />
-            <span id={noteId} style={visuallyHidden}>Some committee events are filtered.</span>
-          </>
-        )}
+        Event filters
       </button>
+      {filtered && <span id={noteId} style={visuallyHidden}>Some committee events are filtered.</span>}
       {pos && ready && (
         <PopPanel
           ref={panelRef}
           onClose={() => setPos(null)}
           triggerRef={triggerRef}
-          ariaLabel="Committee events"
+          ariaLabel="Event filters"
           transformOrigin={pos.transformOrigin}
           enterOffsetY={pos.enterOffsetY}
           positionStyle={pos.positionStyle}
         >
           <div ref={menuRef} style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10, minHeight: 0, overflowY: 'auto' }}>
-            <div>
-              <div style={{ fontSize: fontSize.base, fontWeight: fontWeight.semibold, color: color.textPrimary }}>Committee events</div>
-              <p style={{ ...small, marginTop: 2 }}>The legislature&apos;s own calendar, set for each state that publishes one.</p>
-            </div>
+            <div style={{ fontSize: fontSize.base, fontWeight: fontWeight.semibold, color: color.textPrimary }}>Event filters</div>
 
             {states.map(s => {
               const open = sectionOpen(s)

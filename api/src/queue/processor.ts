@@ -415,6 +415,10 @@ async function applyCentralBill(
 
   // Metadata-only path: upsert metadata from central, skip text fetch + AI.
   // Used to refresh denormalized fields (history, sponsors, etc.) without burning AI quota.
+  // It leaves `providerUpdatedAt` out, so the stored version stays what it was (empty for a bill it
+  // creates). A bill whose text changed while a refresh was draining must still look changed to its
+  // regular delivery, which runs the full path; stamping central's version here would have that
+  // delivery skipped and the summary left on the old text (#789).
   if (msg.metadataOnly) {
     const primarySponsorMd = centralBill.sponsors.find(s => s.primary) ?? centralBill.sponsors[0] ?? null
     const coSponsorListMd = centralBill.sponsors
@@ -444,7 +448,6 @@ async function applyCentralBill(
       abstract: centralBill.abstract ?? null,
       url: centralBill.stateUrl ?? null,
       stateUrl: centralBill.stateUrl ?? null,
-      providerUpdatedAt: centralBill.updatedAt,
       sponsor: primarySponsorMd?.name ?? null,
       sponsorParty: primarySponsorMd?.party ?? null,
       sponsorUrl: primarySponsorMd?.url ?? null,

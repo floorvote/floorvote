@@ -178,3 +178,17 @@ export function providersFromEnv(env: EmailProviderEnv): EmailProvider[] {
   const second = fallbackProviderName(env, primary)
   return second ? [providerFor(env, primary), providerFor(env, second)] : [providerFor(env, primary)]
 }
+
+/**
+ * Only the providers that can actually send: `providersFromEnv` without a
+ * Resend that has no key. Central uses this, so an unconfigured sender fails
+ * fast instead of calling Resend with no credentials.
+ */
+export function configuredProviders(env: EmailProviderEnv): EmailProvider[] {
+  return providersFromEnv(env).filter(p => p.name !== 'resend' || Boolean(env.RESEND_API_KEY))
+}
+
+/** Whether any provider can actually send: a Resend key, or the binding. */
+export function hasConfiguredProvider(env: EmailProviderEnv): boolean {
+  return configuredProviders(env).length > 0
+}

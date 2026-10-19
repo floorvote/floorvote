@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { BodyEventsControl } from './BodyEventsControl'
+import { color, fontWeight } from '../../styles/tokens'
 import { ConfigContext, type AppConfig } from '../../context/ConfigContext'
 import * as api from '../../lib/api'
 
@@ -69,68 +70,85 @@ function renderGear(capabilities: AppConfig['capabilities'] = ONE_STATE) {
     </ConfigContext>,
   )
 }
-const gear = () => screen.findByRole('button', { name: 'Committee events settings' })
+const gear = () => screen.findByRole('button', { name: 'Event filters' })
 async function open() {
   const user = userEvent.setup()
   await user.click(await gear())
-  return { user, menu: await screen.findByRole('dialog', { name: 'Committee events' }) }
+  return { user, menu: await screen.findByRole('dialog', { name: 'Event filters' }) }
 }
 const section = (menu: HTMLElement, name: RegExp | string) => within(menu).getByRole('group', { name })
 
 beforeEach(() => { vi.restoreAllMocks() })
 
-describe('the gear (#695)', () => {
-  it('is a gear icon button named "Committee events settings", with no label of its own', async () => {
+describe('the Event filters button', () => {
+  it('is a text button whose accessible name is its visible text, with no gear icon', async () => {
     mockApi(null)
     renderGear()
     const btn = await gear()
     expect(btn).toHaveAttribute('aria-haspopup', 'dialog')
     expect(btn).toHaveAttribute('aria-expanded', 'false')
-    expect(btn.textContent).toBe('settings')
-    expect(btn.textContent).not.toMatch(/events/i)
-    expect(screen.queryByRole('button', { name: /events:/ })).not.toBeInTheDocument()
+    expect(btn).toHaveTextContent('Event filters')
+    expect(btn.querySelector('.material-symbols-outlined')).toBeNull()
+    expect(btn.textContent).not.toContain('settings')
   })
 
   it('renders nothing, and asks for nothing, with no covered state that has bodyEvents', async () => {
     const spy = mockApi(null)
     renderGear(NO_BODY)
     await act(async () => { await Promise.resolve() })
-    expect(screen.queryByRole('button', { name: 'Committee events settings' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Event filters' })).not.toBeInTheDocument()
     expect(spy).not.toHaveBeenCalled()
   })
 
-  it('shows no filtered dot while every state shows every event', async () => {
-    mockApi(null)
-    renderGear(TWO_STATES)
-    await gear()
-    expect(screen.queryByTestId('committee-filter-dot')).not.toBeInTheDocument()
-  })
-
-  it('shows the filtered dot when any state is filtered, and tells a screen reader', async () => {
+  it('has no orange dot, whether or not a state is filtered', async () => {
     mockApi(rulesOf([HEALTH], ['MD']))
     renderGear(TWO_STATES)
     const btn = await gear()
-    await screen.findByTestId('committee-filter-dot')
-    expect(btn).toHaveAccessibleDescription(/filtered/i)
+    await waitFor(() => expect(btn).toHaveAccessibleDescription(/filtered/i))
+    expect(screen.queryByTestId('committee-filter-dot')).not.toBeInTheDocument()
+    expect(btn.querySelector('span[aria-hidden="true"]')).toBeNull()
   })
 
-  it('shows no dot when the saved rules show every state in full', async () => {
+  it('wears the Bills page active-filter style (info fill, blue text and border, medium weight) when any state is filtered, and tells a screen reader', async () => {
+    mockApi(rulesOf([HEALTH], ['MD']))
+    renderGear(TWO_STATES)
+    const btn = await gear()
+    await waitFor(() => expect(btn).toHaveAccessibleDescription(/filtered/i))
+    expect(btn.style.background).toBe(color.bgInfo)
+    expect(btn.style.color).toBe(color.linkBlue)
+    expect(btn.style.borderColor).toBe(color.tagBorderBlue)
+    expect(btn.style.fontWeight).toBe(String(fontWeight.medium))
+  })
+
+  it('wears the plain style while every state shows every event', async () => {
+    mockApi(null)
+    renderGear(TWO_STATES)
+    const btn = await gear()
+    await act(async () => { await Promise.resolve() })
+    expect(btn.style.background).not.toBe(color.bgInfo)
+    expect(btn.style.color).not.toBe(color.linkBlue)
+    expect(btn.style.borderColor).not.toBe(color.tagBorderBlue)
+    expect(btn).not.toHaveAccessibleDescription(/filtered/i)
+  })
+
+  it('wears the plain style when the saved rules show every state in full', async () => {
     mockApi(rulesOf([], ['DC', 'MD']))
     renderGear(TWO_STATES)
-    await gear()
+    const btn = await gear()
     await act(async () => { await Promise.resolve() })
-    expect(screen.queryByTestId('committee-filter-dot')).not.toBeInTheDocument()
+    expect(btn.style.background).not.toBe(color.bgInfo)
   })
 
-  it('gains the dot as soon as a state is filtered, and loses it when all events show again', async () => {
+  it('takes the active style as soon as a state is filtered, and loses it when all events show again', async () => {
     mockApi(null)
     renderGear()
     const { user, menu } = await open()
-    expect(screen.queryByTestId('committee-filter-dot')).not.toBeInTheDocument()
+    const btn = await gear()
+    expect(btn.style.background).not.toBe(color.bgInfo)
     await user.click(within(menu).getByRole('radio', { name: 'Only these committees' }))
-    await screen.findByTestId('committee-filter-dot')
+    await waitFor(() => expect(btn.style.background).toBe(color.bgInfo))
     await user.click(within(menu).getByRole('radio', { name: 'All events' }))
-    await waitFor(() => expect(screen.queryByTestId('committee-filter-dot')).not.toBeInTheDocument())
+    await waitFor(() => expect(btn.style.background).not.toBe(color.bgInfo))
   })
 
   it('counts only a state that has events to configure: an instance with one capable state among others', async () => {
@@ -147,7 +165,8 @@ describe('with one configurable state (#695)', () => {
     mockApi(null)
     renderGear()
     const { menu } = await open()
-    expect(within(menu).getByText('The legislature\'s own calendar, set for each state that publishes one.')).toBeInTheDocument()
+    expect(within(menu).getByText('Event filters')).toBeInTheDocument()
+    expect(within(menu).queryByText(/own calendar/i)).not.toBeInTheDocument()
     const s = section(menu, /DC Council/)
     expect(within(s).getByRole('radio', { name: 'All events' })).toBeChecked()
     expect(within(s).getByRole('radio', { name: 'Only these committees' })).toBeInTheDocument()
@@ -356,7 +375,7 @@ describe('the gear with the keyboard and a screen reader (#695)', () => {
     const btn = await gear()
     btn.focus()
     await user.keyboard('{Enter}')
-    const menu = await screen.findByRole('dialog', { name: 'Committee events' })
+    const menu = await screen.findByRole('dialog', { name: 'Event filters' })
     expect(btn).toHaveAttribute('aria-expanded', 'true')
     expect(menu.contains(document.activeElement)).toBe(true)
     await user.keyboard('{Escape}')
@@ -372,7 +391,7 @@ describe('the gear with the keyboard and a screen reader (#695)', () => {
     const btn = await gear()
     btn.focus()
     await user.keyboard(' ')
-    await screen.findByRole('dialog', { name: 'Committee events' })
+    await screen.findByRole('dialog', { name: 'Event filters' })
     await user.click(btn)
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })

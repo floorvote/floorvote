@@ -154,10 +154,10 @@ describe('Config: who last changed each AI setting', () => {
     expect((await screen.findByTestId('ai-context-changed')).textContent).toMatch(/Last changed by avery@example.com on/)
   })
 
-  it('shows nothing for the claim links setting, as #570 decided', async () => {
+  it('shows nothing for the summary citations setting, as #570 decided', async () => {
     mockConfig({ claim_links_enabled: false, claim_links_changed_at: '2026-10-20 14:05:09', claim_links_changed_by: AVERY })
     renderConfig()
-    await screen.findByRole('switch', { name: /claim links/i })
+    await screen.findByRole('switch', { name: /summary citations/i })
     expect(screen.queryByText(/last changed/i)).toBeNull()
   })
 

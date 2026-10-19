@@ -26,9 +26,8 @@ vi.mock('../lib/centralFetch', () => ({
   centralFetch: vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }),
 }))
 
-vi.mock('../lib/email', () => ({
-  sendMagicLink: vi.fn().mockResolvedValue(undefined),
-}))
+vi.mock('../lib/email', async (importOriginal) =>
+  (await import('../../test/mail')).withFakeSender(await importOriginal<typeof import('../lib/email')>()))
 
 vi.mock('../cron/sync', () => ({
   registerWithCentral: vi.fn().mockResolvedValue(undefined),

@@ -30,7 +30,9 @@ export type Placement = 'top' | 'top-start' | 'top-end' | 'bottom' | 'bottom-sta
 //  - unified `placement`: 'top' centers above; 'top-start'/'top-end' align the
 //    bubble's left/right edge to the anchor (InfoTooltip's old left/right align);
 //    'bottom' centers below; 'bottom-start' sits left-aligned below; 'right' sits
-//    beside, falling back to below when the viewport is too narrow (FilterTooltip).
+//    beside, falling back to above when the viewport is too narrow (FilterTooltip).
+//    Every 'top' placement (the default) flips below the trigger only when the
+//    measured bubble would not fit above it, at the top of the viewport.
 //
 // Two archetypes, selected by `toggletip`:
 //  - Default (toggletip=false) — interactive-element tooltip. `children` is
@@ -83,7 +85,7 @@ interface HoverTooltipProps {
   //    through aria-describedby while closed, so screen readers get it
   //    persistently; while open the button points at the role="tooltip" bubble
   //    instead, the same announcement the ⓘ gives;
-  //  - placement defaults to 'bottom' and maxWidth to 320 (both overridable);
+  //  - maxWidth defaults to 320 (overridable);
   //  - empty `text` renders `children` unchanged.
   // Pass an object for the two variations: `id` names the hidden copy, and
   // `interactive: true` says `children` is already a control (a chip button
@@ -101,7 +103,7 @@ export function HoverTooltip({ text, children, placement: placementProp, maxWidt
   const termToggle = describing && !(typeof describe === 'object' && describe.interactive)
   // Renders as the button + role="tooltip" archetype: the ⓘ, or a plain-text term.
   const asToggletip = toggletip || termToggle
-  const placement = placementProp ?? (describing ? 'bottom' : 'top')
+  const placement = placementProp ?? 'top'
   const maxWidth = maxWidthProp ?? (describing ? 320 : undefined)
   const describeOpts = typeof describe === 'object' ? describe : {}
   const generatedDescribeId = useId()
@@ -130,12 +132,17 @@ export function HoverTooltip({ text, children, placement: placementProp, maxWidt
   // bubble exists but hasn't been measured yet.
   const bubbleRef = useRef<HTMLSpanElement | null>(null)
   const [measuredWidth, setMeasuredWidth] = useState<number | null>(null)
+  // The bubble's measured height decides whether an above-the-trigger placement
+  // has room: a trigger at the top of the viewport flips the bubble below it.
+  const [measuredHeight, setMeasuredHeight] = useState<number | null>(null)
 
   useLayoutEffect(() => {
-    if (!anchor) { setMeasuredWidth(null); return }
+    if (!anchor) { setMeasuredWidth(null); setMeasuredHeight(null); return }
     const el = bubbleRef.current
     if (!el) return
-    setMeasuredWidth(el.getBoundingClientRect().width)
+    const bubbleRect = el.getBoundingClientRect()
+    setMeasuredWidth(bubbleRect.width)
+    setMeasuredHeight(bubbleRect.height)
     // Re-measures whenever a new anchor opens the bubble (anchor is a fresh
     // DOMRect per show()) or the text content changes while already open.
   }, [anchor, text])
@@ -153,10 +160,25 @@ export function HoverTooltip({ text, children, placement: placementProp, maxWidt
     : window.innerWidth
 
   const position = (r: DOMRect) => {
-    // Centered below the anchor, clamped the same way 'top' is — shared by
-    // 'bottom' itself and by 'right' falling back here when there's no room
-    // to the right. tooltipPositionBelow (used by 'bottom-start', out of
-    // scope here) left-aligns instead and carries no such clamp.
+    // A bubble opens above its trigger and drops below only when it would not fit
+    // above (a trigger at the top of the viewport). Before the bubble has been
+    // measured there is nothing to compare, so the first frame is above.
+    const noRoomAbove = measuredHeight != null && measuredHeight > 0 && r.top - measuredHeight - 6 < 8
+
+    // Centered on the anchor and clamped to the viewport (or boundaryRef), above
+    // it or, with no room above, below it. Shared by 'top' itself and by 'right'
+    // falling back here when there's no room to the right.
+    const centered = (r: DOMRect) => {
+      let x = r.left + r.width / 2
+      if (widthForClamp) {
+        x = Math.max(widthForClamp / 2 + 8, Math.min(x, rightLimit - widthForClamp / 2 - 8))
+      }
+      return noRoomAbove
+        ? { position: 'fixed' as const, left: x, top: r.bottom + 6, transform: 'translateX(-50%)' }
+        : tooltipPosition({ x, y: r.top })
+    }
+
+    // Explicitly requested 'bottom': centered below, clamped the same way.
     const centeredBelowClamped = (r: DOMRect) => {
       let x = r.left + r.width / 2
       if (widthForClamp) {
@@ -167,7 +189,7 @@ export function HoverTooltip({ text, children, placement: placementProp, maxWidt
 
     if (placement === 'right') {
       const fitsRight = !widthForClamp || r.right + 8 + widthForClamp <= rightLimit - 8
-      return fitsRight ? tooltipPositionRight(r) : centeredBelowClamped(r)
+      return fitsRight ? tooltipPositionRight(r) : centered(r)
     }
     if (placement === 'bottom-start') return tooltipPositionBelow(r)
     if (placement === 'bottom') return centeredBelowClamped(r)
@@ -183,30 +205,30 @@ export function HoverTooltip({ text, children, placement: placementProp, maxWidt
       // bubble itself can cross the boundary.
       const minLeft = 8
       const maxRightEdge = rightLimit - 8
+      // Above, or with no room above, below the anchor: the same horizontal alignment either way.
+      const vertical = noRoomAbove
+        ? { top: r.bottom + 6, shift: '' }
+        : { top: r.top, shift: ' translateY(calc(-100% - 6px))' }
       if (placement === 'top-start') {
         // Unclamped: left edge at the anchor's left edge (translateX(0%)).
         let left = r.left
         if (widthForClamp) left = Math.min(left, maxRightEdge - widthForClamp)
         left = Math.max(left, minLeft)
-        return { position: 'fixed' as const, left, top: r.top, transform: 'translateX(0%) translateY(calc(-100% - 6px))' }
+        return { position: 'fixed' as const, left, top: vertical.top, transform: `translateX(0%)${vertical.shift}` }
       }
       // 'top-end': unclamped, the `left` CSS value paired with translateX(-100%)
       // targets the bubble's right edge at the anchor's right edge.
       let rightEdge = r.right
       rightEdge = Math.min(rightEdge, maxRightEdge)
       if (widthForClamp) rightEdge = Math.max(rightEdge, minLeft + widthForClamp)
-      return { position: 'fixed' as const, left: rightEdge, top: r.top, transform: 'translateX(-100%) translateY(calc(-100% - 6px))' }
+      return { position: 'fixed' as const, left: rightEdge, top: vertical.top, transform: `translateX(-100%)${vertical.shift}` }
     }
     // 'top' — centered above, clamped so a wide bubble can't spill off-screen or
     // (when boundaryRef is given) past that element's right edge. Prefers the
     // real measured width (see bubbleRef above) over the maxWidth prop, since
     // that's what's actually rendered; maxWidth is only the pre-measurement
     // fallback so the very first frame a bubble opens isn't left unclamped.
-    let x = r.left + r.width / 2
-    if (widthForClamp) {
-      x = Math.max(widthForClamp / 2 + 8, Math.min(x, rightLimit - widthForClamp / 2 - 8))
-    }
-    return tooltipPosition({ x, y: r.top })
+    return centered(r)
   }
 
   const bubble = anchor

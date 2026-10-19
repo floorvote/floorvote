@@ -30,7 +30,7 @@ export function BillListPaneSummary({ summary, listUrl }: { summary: ListSummary
   return (
     <div data-pane-summary style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0, padding: '0 12px 10px 15px' }}>
       <span style={{ ...CHROME_TEXT, flex: '0 1 auto', minWidth: 0 }}>
-        <HoverTooltip text={list} describe placement="bottom" maxWidth={260}>
+        <HoverTooltip text={list} describe maxWidth={260}>
           <span style={{ overflowWrap: 'anywhere' }}>{summary.text}</span>
         </HoverTooltip>
       </span>

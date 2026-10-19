@@ -4,14 +4,16 @@ import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../he
 import { getDb } from '../../src/db/client'
 import { inArray } from 'drizzle-orm'
 import { feedEvents, associationConfig, bills } from '../../src/db/schema'
+import { stubResend } from '../../../shared/emailTestKit'
 import { runDigest } from '../../src/lib/digest'
 
 // #366: members get the same new-match section admins get, under a nested
 // option on their digest switch ("Include newly matched bills", on by default).
 // Seam: the digest job, with outgoing email captured.
 
-let emails: any[]
-const to = (addr: string) => emails.filter(e => e.to[0] === addr)
+let resend: ReturnType<typeof stubResend>
+const sentEmails = (): Array<{ to: string[]; subject: string; html: string }> => resend.calls.map(c => c.body)
+const to = (addr: string) => sentEmails().filter(e => e.to[0] === addr)
 const recent = () => new Date(Date.now() - 3600_000).toISOString().slice(0, 19).replace('T', ' ')
 
 async function member(email: string, opts: { matches?: boolean; digest?: boolean } = {}) {
@@ -33,12 +35,11 @@ async function priorityUpdate(billNumber: string) {
 
 beforeEach(async () => {
   await resetDb(); await applyMigrations()
-  emails = []
-  vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { emails.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
+  resend = stubResend()
   const db = getDb(env.DB)
   await db.insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'email-digest': true }) })
 })
-afterEach(() => { vi.unstubAllGlobals() })
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe("members' digests: new matches", () => {
   it('gives a member with the option on the same capped section an admin gets, and one with it off none', async () => {
@@ -118,7 +119,7 @@ describe("members' digests: new matches", () => {
 
     await runDigest(env as any, getDb(env.DB))
 
-    expect(emails).toHaveLength(0)
+    expect(sentEmails()).toHaveLength(0)
   })
 
   it('sends a member who turned the digest off nothing, whatever the option says', async () => {
@@ -167,9 +168,9 @@ describe('new matches: companion groups', () => {
 
     await runDigest(env as any, getDb(env.DB))
 
-    expect(emails).toHaveLength(1)
-    const html = emails[0].html as string
-    expect(emails[0].subject).toBe('Your daily digest: 1 new match')
+    expect(sentEmails()).toHaveLength(1)
+    const html = sentEmails()[0].html as string
+    expect(sentEmails()[0].subject).toBe('Your daily digest: 1 new match')
     expect(text(html)).toContain('1 new match in the last day')
     expect(text(html)).not.toContain('2 new matches')
     expect(cards(html)).toBe(1)
@@ -201,8 +202,8 @@ describe('new matches: companion groups', () => {
 
     await runDigest(env as any, getDb(env.DB))
 
-    const html = emails[0].html as string
-    expect(emails[0].subject).toBe('Your daily digest: 2 new matches')
+    const html = sentEmails()[0].html as string
+    expect(sentEmails()[0].subject).toBe('Your daily digest: 2 new matches')
     expect(text(html)).toContain('2 new matches in the last day')
     expect(cards(html)).toBe(2)
     expect(html.match(/>New · Set priority</g)).toHaveLength(2)
@@ -215,8 +216,8 @@ describe('new matches: companion groups', () => {
 
     await runDigest(env as any, getDb(env.DB))
 
-    expect(emails[0].subject).toBe('Your daily digest: 1 new match')
-    expect(cards(emails[0].html)).toBe(1)
+    expect(sentEmails()[0].subject).toBe('Your daily digest: 1 new match')
+    expect(cards(sentEmails()[0].html)).toBe(1)
   })
 
   it('counts the group once alongside updated bills, in the contents box and the subject', async () => {
@@ -227,9 +228,9 @@ describe('new matches: companion groups', () => {
 
     await runDigest(env as any, getDb(env.DB))
 
-    expect(emails[0].subject).toBe('Your daily digest: 1 updated bill, 1 new match')
-    expect(text(emails[0].html)).toContain('1 new match')
-    expect(text(emails[0].html)).not.toContain('2 new matches')
+    expect(sentEmails()[0].subject).toBe('Your daily digest: 1 updated bill, 1 new match')
+    expect(text(sentEmails()[0].html)).toContain('1 new match')
+    expect(text(sentEmails()[0].html)).not.toContain('2 new matches')
   })
 
   it('leaves a group out when one member is a new match and another was already triaged', async () => {
@@ -240,7 +241,7 @@ describe('new matches: companion groups', () => {
 
     await runDigest(env as any, getDb(env.DB))
 
-    expect(emails).toHaveLength(0)
+    expect(sentEmails()).toHaveLength(0)
   })
 
   it('lists a group with one member that is a new match and one that is not matched at all as one entry', async () => {
@@ -251,9 +252,9 @@ describe('new matches: companion groups', () => {
 
     await runDigest(env as any, getDb(env.DB))
 
-    expect(emails[0].subject).toBe('Your daily digest: 1 new match')
-    expect(cards(emails[0].html)).toBe(1)
-    expect(emails[0].html).toMatch(/>RI H 101</)
+    expect(sentEmails()[0].subject).toBe('Your daily digest: 1 new match')
+    expect(cards(sentEmails()[0].html)).toBe(1)
+    expect(sentEmails()[0].html).toMatch(/>RI H 101</)
   })
 
   it('caps by cards, not bills, so 11 two-bill groups read as 11 new matches with a link to the rest', async () => {
@@ -266,8 +267,8 @@ describe('new matches: companion groups', () => {
 
     await runDigest(env as any, getDb(env.DB))
 
-    const html = emails[0].html as string
-    expect(emails[0].subject).toBe('Your daily digest: 11 new matches')
+    const html = sentEmails()[0].html as string
+    expect(sentEmails()[0].subject).toBe('Your daily digest: 11 new matches')
     expect(text(html)).toContain('See all 11 new matches')
     expect(cards(html)).toBe(10)
   })
@@ -279,7 +280,7 @@ describe('new matches: companion groups', () => {
 
     await runDigest(env as any, getDb(env.DB))
 
-    expect(emails[0].subject).toBe('Your daily digest: 2 new matches')
-    expect(cards(emails[0].html)).toBe(2)
+    expect(sentEmails()[0].subject).toBe('Your daily digest: 2 new matches')
+    expect(cards(sentEmails()[0].html)).toBe(2)
   })
 })

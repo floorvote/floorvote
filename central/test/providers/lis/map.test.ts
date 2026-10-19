@@ -496,6 +496,57 @@ describe('extras', () => {
     expect(toLisMasterListEntry(hb61, '20261', 1, 'h').description).toBe(hb61.summaries[2][1])
   })
 
+  const withSummaries = (number: string, summaries: [string, string][]): LisRecord => ({ ...record(number, {}, []), summaries })
+  const INTRO = 'SUMMARY AS INTRODUCED'
+  const HOUSE = 'SUMMARY AS PASSED HOUSE'
+  const SENATE = 'SUMMARY AS PASSED SENATE'
+  const PASSED = 'SUMMARY AS PASSED'
+
+  it('leaves out an earlier summary equal to the latest, after trimming and collapsing whitespace', () => {
+    const rec = withSummaries('HB5', [[INTRO, '  A bill to   study\n widgets. '], [HOUSE, 'A bill to study widgets and gadgets.'], [PASSED, 'A bill to study widgets.']])
+    expect(lisExtras(rec, 2026)).toEqual({ summaryPassedHouse: 'A bill to study widgets and gadgets.' })
+  })
+
+  it('shows two equal earlier summaries that differ from the latest once', () => {
+    const rec = withSummaries('HB5', [[INTRO, 'Draft wording.'], [HOUSE, 'Draft  wording.'], [PASSED, 'Final wording.']])
+    const extras = lisExtras(rec, 2026)
+    expect(Object.keys(extras)).toHaveLength(1)
+    expect(Object.values(extras)).toEqual(['Draft wording.'])
+  })
+
+  it('keeps an earlier summary that differs from the latest by one word', () => {
+    const rec = withSummaries('HB5', [[INTRO, 'A bill to study widgets.'], [PASSED, 'A bill to study gadgets.']])
+    expect(lisExtras(rec, 2026)).toEqual({ summaryIntroduced: 'A bill to study widgets.' })
+  })
+
+  it('keeps an earlier summary that differs from the latest only in letter case', () => {
+    const rec = withSummaries('HB5', [[INTRO, 'A bill to study Widgets.'], [PASSED, 'A bill to study widgets.']])
+    expect(lisExtras(rec, 2026)).toEqual({ summaryIntroduced: 'A bill to study Widgets.' })
+  })
+
+  it('shows no summary extras when every summary is the same', () => {
+    const rec = withSummaries('HB5', [[INTRO, 'Same.'], [HOUSE, ' Same.'], [PASSED, 'Same. ']])
+    expect(lisExtras(rec, 2026)).toEqual({})
+  })
+
+  it('shows no summary extras for a bill with one summary, or none', () => {
+    expect(lisExtras(withSummaries('HB5', [[INTRO, 'Only one.']]), 2026)).toEqual({})
+    expect(lisExtras(withSummaries('HB5', []), 2026)).toEqual({})
+  })
+
+  it('compares against the other chamber\'s summary when that is the latest', () => {
+    // On a Senate bill the House summary is the later one, so the Senate one is the earlier.
+    const same = withSummaries('SB7', [[INTRO, 'a'], [SENATE, 'b'], [HOUSE, 'b']])
+    expect(lisExtras(same, 2026)).toEqual({ summaryIntroduced: 'a' })
+    const differs = withSummaries('SB7', [[INTRO, 'a'], [SENATE, 'b'], [HOUSE, 'c']])
+    expect(lisExtras(differs, 2026)).toEqual({ summaryIntroduced: 'a', summaryPassedSenate: 'b' })
+  })
+
+  it('keeps the chapter and the emergency flag when it leaves duplicate summaries out', () => {
+    const rec = { ...withSummaries('HB5', [[INTRO, 'Same.'], [PASSED, 'Same.']]), bill: { ...record('HB5', { Emergency: 'Y', Chapter_id: 'CHAP0012' }, []).bill } }
+    expect(lisExtras(rec, 2026)).toEqual({ chapter: 'Chapter 12 of the 2026 Acts of Assembly', emergency: 'Yes' })
+  })
+
   it('shows the emergency flag only when it is set', () => {
     expect(lisExtras(record('HB5', { Emergency: 'Y' }, []), 2026)).toEqual({ emergency: 'Yes' })
     expect(lisExtras(record('HB5', {}, []), 2026)).toEqual({})

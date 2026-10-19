@@ -129,7 +129,7 @@ EMAIL_PROVIDER = "cloudflare"
 # DEAD_LETTER_QUEUE = "your-tenant-dlq"              # must match the consumer above
 # ADMIN_APP_URL = "https://admin.example.com"       # base URL for admin dashboard magic-link emails; also sent to instances for the superadmin Profile link
 # EMAIL_FROM = "notifications@example.com"           # sender address for admin email
-# ALERT_EMAILS = "ops@example.com"                   # comma-separated ops alert recipients
+# ALERT_EMAILS = "ops@example.com"                   # comma-separated ops alert recipients; an invalid entry is logged and skipped
 # CF_ACCOUNT_ID = "REPLACE_WITH_ACCOUNT_ID"          # required for CF_QUEUES_TOKEN dynamic delivery; also used by D1 anomaly watch
 # CF_FLOORVOTE_ZONE_ID = "REPLACE_WITH_ZONE_ID"      # zone ID (not account ID) — only for Login Activity delivery-status lookups
 # SUPERADMIN_JWT_PUBLIC_KEY = "{...ES256 public JWK JSON...}"  # pairs with private key secret
@@ -189,7 +189,7 @@ namespace_id = "3001"
 # CONGRESS_API_KEY      — Congress.gov API key (optional; with it, Congress's committee meetings from govinfo appear on the body calendar and on the calendars of the bills they take up)
 # ADMIN_SECRET          — protects /admin/* and /tenants/* routes
 # CF_QUEUES_TOKEN       — Cloudflare API token (Queues: Edit) for dynamic per-tenant delivery
-# RESEND_API_KEY        — magic-link email, only if central sends through Resend (not needed with EMAIL_PROVIDER=cloudflare and the EMAIL binding)
+# RESEND_API_KEY        — magic-link email, needed unless central has an EMAIL binding (the binding alone counts as a sender; with both, the link and ops alerts fall back to the second)
 # SUPERADMIN_JWT_PRIVATE_KEY — ES256 private JWK; central is the sole JWT issuer
 # SUPERADMIN_EMAILS     — comma-separated superadmin allowlist
 # CF_ANALYTICS_TOKEN    — Cloudflare API token (Account Analytics: Read, D1: Read)

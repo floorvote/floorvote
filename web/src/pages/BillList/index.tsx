@@ -869,14 +869,12 @@ export function BillList() {
               />
             </HoverTooltip>
           )}
-          <HoverTooltip text="Show only bills you haven't voted on yet">
-            <FilterToggle
-              label={filterDimensionLabel('unvoted')}
-              active={f.unvoted}
-              onToggle={() => f.setUnvoted(!f.unvoted)}
-              count={filterCounts.unvotedCount}
-            />
-          </HoverTooltip>
+          <FilterToggle
+            label={filterDimensionLabel('unvoted')}
+            active={f.unvoted}
+            onToggle={() => f.setUnvoted(!f.unvoted)}
+            count={filterCounts.unvotedCount}
+          />
           {isFilterDimensionVisible('drafts', filterDimensionCtx) && (
             <HoverTooltip text="Show only draft bills — pre-filed, not yet introduced">
               <FilterToggle
@@ -893,16 +891,14 @@ export function BillList() {
             style={{ width: 1, alignSelf: 'stretch', margin: '0 4px', background: color.borderDefault }}
           />
           {isFilterDimensionVisible('state', filterDimensionCtx) && (
-            <HoverTooltip text="Filter by state">
-              <FilterDropdown
-                placeholder={filterDimensionLabel('state')}
-                options={f.uniqueStates.map(s => ({ value: s }))}
-                selected={f.state}
-                onChange={f.setState}
-                multi
-                counts={filterCounts.state}
-              />
-            </HoverTooltip>
+            <FilterDropdown
+              placeholder={filterDimensionLabel('state')}
+              options={f.uniqueStates.map(s => ({ value: s }))}
+              selected={f.state}
+              onChange={f.setState}
+              multi
+              counts={filterCounts.state}
+            />
           )}
           {statusGrouped ? (
             // One Status control, its options under stage headings (#677): a heading selects the whole stage, a status
@@ -948,16 +944,14 @@ export function BillList() {
             </>
           )}
           {f.yearFacetKeys.length > 0 && (
-            <HoverTooltip text="Filter by legislative session year">
-              <FilterDropdown
-                placeholder={filterDimensionLabel('year')}
-                options={f.yearFacetKeys.map(y => ({ value: y }))}
-                selected={f.year.map(String)}
-                onChange={v => f.setYear(v.map(Number).filter(n => !isNaN(n)))}
-                multi
-                counts={facetCounts.year}
-              />
-            </HoverTooltip>
+            <FilterDropdown
+              placeholder={filterDimensionLabel('year')}
+              options={f.yearFacetKeys.map(y => ({ value: y }))}
+              selected={f.year.map(String)}
+              onChange={v => f.setYear(v.map(Number).filter(n => !isNaN(n)))}
+              multi
+              counts={facetCounts.year}
+            />
           )}
           <HoverTooltip text={`Filter by AI-scored relevance to your ${orgNoun}`}>
             <>
@@ -998,33 +992,29 @@ export function BillList() {
               </div>
             </>
           </HoverTooltip>
-          <HoverTooltip text={`Filter by your ${orgNoun}'s official position`}>
-            <FilterDropdown
-              placeholder={filterDimensionLabel('position')}
-              options={f.positionOptions}
-              selected={f.position}
-              onChange={f.setPosition}
-              multi
-              counts={filterCounts.position}
-              anyIsFilter
-            />
-          </HoverTooltip>
-          <HoverTooltip text={`Filter by your ${orgNoun}'s priority level`}>
-            <FilterDropdown
-              placeholder={filterDimensionLabel('priority')}
-              options={[
-                { value: 'high', label: 'High Priority' },
-                { value: 'medium', label: 'Medium Priority' },
-                { value: 'low', label: 'Low Priority' },
-                { value: 'none', label: 'Not set' },
-              ]}
-              selected={f.priority}
-              onChange={f.setPriority}
-              multi
-              counts={filterCounts.priority}
-              anyIsFilter
-            />
-          </HoverTooltip>
+          <FilterDropdown
+            placeholder={filterDimensionLabel('position')}
+            options={f.positionOptions}
+            selected={f.position}
+            onChange={f.setPosition}
+            multi
+            counts={filterCounts.position}
+            anyIsFilter
+          />
+          <FilterDropdown
+            placeholder={filterDimensionLabel('priority')}
+            options={[
+              { value: 'high', label: 'High Priority' },
+              { value: 'medium', label: 'Medium Priority' },
+              { value: 'low', label: 'Low Priority' },
+              { value: 'none', label: 'Not set' },
+            ]}
+            selected={f.priority}
+            onChange={f.setPriority}
+            multi
+            counts={filterCounts.priority}
+            anyIsFilter
+          />
           {f.allTags.length > 0 && (
             <HoverTooltip text="Filter by your team's AI-generated tags">
               <FilterDropdown

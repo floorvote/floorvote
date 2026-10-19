@@ -79,13 +79,18 @@ describe('faded agenda cards keep readable text', () => {
   }
 
   it('long details show the "Show more" control at 4.5:1 on a past card', () => {
-    const ev = richEvent({ date: '2000-01-01', details: 'x'.repeat(200) })
-    for (const mode of MODES) {
-      const rows = textContrasts(renderCard(ev, true), mode)
-      const more = rows.find(r => r.el.textContent === 'Show more')
-      expect(more).toBeDefined()
-      expect(more!.ratio).toBeGreaterThanOrEqual(4.5)
-    }
+    // The control shows only where the clamp hides text, and jsdom lays nothing out.
+    const scroll = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(80)
+    const client = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(36)
+    try {
+      const ev = richEvent({ date: '2000-01-01', details: 'x'.repeat(200) })
+      for (const mode of MODES) {
+        const rows = textContrasts(renderCard(ev, true), mode)
+        const more = rows.find(r => r.el.textContent === 'Show more')
+        expect(more).toBeDefined()
+        expect(more!.ratio).toBeGreaterThanOrEqual(4.5)
+      }
+    } finally { scroll.mockRestore(); client.mockRestore() }
   })
 
   it('a faded card is still visibly distinct from an upcoming one', () => {

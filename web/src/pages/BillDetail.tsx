@@ -14,7 +14,7 @@ import { isUntriagedNewMatch } from '../lib/newMatch'
 import { CompactPositionSelect } from '../components/CompactPositionSelect'
 import { StatusChip } from '../components/StatusChip'
 import { decodeStatus } from '../lib/legislativeStatus'
-import { billTypeExplainer, eventTypeExplainer, statusExplainer as explainStatus, useStateLabels } from '../lib/statusExplainers'
+import { billTypeExplainer, statusExplainer as explainStatus, useStateLabels } from '../lib/statusExplainers'
 import { getNoAnalysisMessage } from '../lib/billDetailCopy'
 import { REGENERATE_PRESERVES_DESCRIPTION } from '../lib/billDetailCopy'
 import { OverflowMenu, type OverflowMenuRow } from '../components/ui/OverflowMenu'
@@ -67,10 +67,11 @@ import { isEditableTarget } from '../lib/isEditableTarget'
 import { BillPicker, type BillOption } from '../components/BillPicker'
 import { editableFieldBox } from '../lib/editableFieldStyle'
 import { CollapsibleSection } from '../components/CollapsibleSection'
-import { ProviderExtrasList } from '../components/ProviderExtras'
+import { ProviderExtrasList, ExtraMetaItem, ExtraDetailList, ExtraFlagItem, placeExtras } from '../components/ProviderExtras'
 import type { BillExtras } from '../../../shared/providerExtras'
 import { RELATIONSHIP_KINDS, RELATIONSHIP_KIND_LABELS, isRelationshipKind, type RelationshipKind } from '../../../shared/relationshipKinds'
 import type { GroupBill, GroupBillLink, GroupingEvent, GroupNote } from '../../../shared/companionGroups'
+import { PartyBadge } from '../components/PartyBadge'
 import { GroupWithDialog } from '../components/GroupWithDialog'
 import { splitConfirmText } from '../lib/splitConfirm'
 import { placeGroupingLines } from '../lib/groupingLine'
@@ -81,13 +82,6 @@ import { pollForAnalysis, analysisOutcomeMessage, regenerateOutcomeMessage, type
 import { MissingRequiredReason, requiredName, useRequiredSubmit } from '../components/RequiredField'
 import { useCommentsMute, CommentsMuteButton, CommentsMutedNote } from '../components/CommentsMuteToggle'
 import { billsListPath } from '../../../shared/billFilter'
-
-function PartyBadge({ party }: { party: string }) {
-  const bg = party === 'D' ? color.bgBlueChip : party === 'R' ? color.bgRedPriority : color.surfaceMuted
-  const partyColor = party === 'D' ? color.linkBlue : party === 'R' ? color.textDanger : color.textSlate500
-  // display:inline-block prevents text-decoration from the parent <a> punching through the chip background
-  return <span style={{ marginLeft: 3, fontSize: fontSize.xs, padding: '1px 4px', borderRadius: radius.sm, background: bg, color: partyColor, fontWeight: fontWeight.bold, display: 'inline-block', textDecoration: 'none' }}>{party}</span>
-}
 
 function SponsorLink({ name, url, party, bold }: { name: string; url: string | null; party: string | null; bold?: boolean }) {
   // Only an http(s) URL becomes a link, whatever central or the instance API sent.
@@ -409,7 +403,7 @@ type Comment = {
 }
 
 type CoSponsor = { name: string; party: string | null; role?: string; district?: string; url: string | null; primary?: boolean }
-type VoteSummaryEntry = { date: string; chamber: string; desc: string; yea: number; nay: number; nv: number; absent: number; passed: number; legislatorVotes?: { personId?: string; name: string; vote: string; url?: string | null }[] }
+type VoteSummaryEntry = { date: string; chamber: string; desc: string; yea: number; nay: number; nv: number; absent: number; passed: number; legislatorVotes?: { personId?: string; name: string; vote: string; url?: string | null; party?: string | null }[] }
 // `kind` is what the bill's provider makes of the legislature's label (`type`). A central that predates kinds sends none.
 type RelatedBill = { billId: number; billNumber: string; type: string; kind?: RelationshipKind; route: { id: string; billNumber: string; sessionSlug: string; state: string } | null }
 
@@ -865,6 +859,9 @@ export function BillDetail() {
     return () => cancelAnimationFrame(rafId)
   }, [location.hash, comments.length])
 
+  // Whether the bill has extras for the "Additional information" fold-out: those placed in `panel`.
+  const hasPanelExtras = placeExtras(bill?.extras?.fields ?? []).panel.length > 0
+
   // Scroll to and flash a section when the URL hash is #section-{name} or open text panel for #text-{docId}
   useEffect(() => {
     const hash = location.hash
@@ -890,7 +887,8 @@ export function BillDetail() {
     if (sectionId === 'section-amendments') setShowAmendments(true)
     if (sectionId === 'section-documents') setShowDocuments(true)
     if (sectionId === 'section-hearings') setShowHearings(true)
-    if (sectionId === 'section-extras') setShowExtras(true)
+    // Only a bill with panel extras has the fold-out. Its others show elsewhere.
+    if (sectionId === 'section-extras' && hasPanelExtras) setShowExtras(true)
 
     // setTimeout gives React one extra tick to flush collapsible expansion before measuring
     const timerId = setTimeout(() => {
@@ -909,7 +907,7 @@ export function BillDetail() {
       }, 1500)
     }, 0)
     return () => clearTimeout(timerId)
-  }, [location.hash, location.key, bill?.id])
+  }, [location.hash, location.key, bill?.id, hasPanelExtras])
 
   // Value-stable key: refresh() hands back a new array every time (a fresh parse
   // of the response, NotificationsContext.tsx), so depending on `notifications` itself
@@ -1409,6 +1407,7 @@ export function BillDetail() {
   // An untriaged new match is an amber state of the priority control. This page
   // keeps its own priority and dismissed state, so it can show the change at once.
   const isNewMatch = isUntriagedNewMatch({ ...bill, priority }) && !triageDismissed
+  const headerCompanions = (bill.groupBills ?? []).filter(g => g.billId !== bill.id)
   return (
     <div className="bill-detail-outer" style={{ padding: '24px 32px', maxWidth: 1100, margin: '0 auto' }}>
       <style>{`
@@ -1424,10 +1423,10 @@ export function BillDetail() {
       <div style={{ ...CARD, padding: '20px 24px' }}>
 
         {/* Chip strip */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: priorityMeta ? 20 : 12 }}>
-          {/* A badge for each bill in the group, this page's bill first, as the
-              bill list's group row shows them. Each companion links to its page. */}
-          <div data-testid="bill-group-badges" style={{ display: 'contents' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: priorityMeta ? 20 : headerCompanions.length > 0 ? 8 : 12 }}>
+          {/* This page's bill alone: the status, sponsors, and referrals here are its own.
+              The group's other bills are on the "Grouped with" line below. */}
+          <div data-testid="bill-header-badge" style={{ display: 'contents' }}>
             <BillBadge
               billNumber={bill.billNumber}
               state={bill.state}
@@ -1440,14 +1439,6 @@ export function BillDetail() {
                 return `https://${instanceDomain}${window.location.pathname}`
               })()}
             />
-            {(bill.groupBills ?? []).filter(g => g.billId !== bill.id).map(g => (
-              <BillBadge
-                key={g.billId}
-                billNumber={g.billNumber}
-                state={g.state}
-                to={billUrl({ id: g.billId, state: g.state, sessionSlug: g.sessionSlug, billNumber: g.billNumber })}
-              />
-            ))}
           </div>
           {bill.isDraft ? <DraftChip /> : (() => {
             const chip = <StatusChip status={decodeStatus(bill.status)} describedBy={statusExplainer ? 'bill-status-explainer' : undefined} onClick={() => navigate(billsListPath({ status: [bill.status] }))} />
@@ -1472,20 +1463,24 @@ export function BillDetail() {
             {isAdmin
               ? (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', position: 'relative' }}>
-                  <HoverTooltip text={isNewMatch ? 'New keyword match — set a priority or dismiss' : "This bill's priority level"}>
-                    <CompactPrioritySelect
-                      billId={bill.id}
-                      current={priority}
-                      onChange={(p, result) => {
-                        setPriority(p)
-                        setPriorityMeta(p ? { setByName: displayName(user!), updatedAt: new Date().toISOString() } : null)
-                        refreshSidebar()
-                        if (result?.promoted) startAnalyzingPoll()
-                      }}
-                      newMatch={isNewMatch}
-                      onDismiss={() => { setTriageDismissed(true); refreshSidebar() }}
-                    />
-                  </HoverTooltip>
+                  {(() => {
+                    const control = (
+                      <CompactPrioritySelect
+                        billId={bill.id}
+                        current={priority}
+                        onChange={(p, result) => {
+                          setPriority(p)
+                          setPriorityMeta(p ? { setByName: displayName(user!), updatedAt: new Date().toISOString() } : null)
+                          refreshSidebar()
+                          if (result?.promoted) startAnalyzingPoll()
+                        }}
+                        newMatch={isNewMatch}
+                        onDismiss={() => { setTriageDismissed(true); refreshSidebar() }}
+                      />
+                    )
+                    // Only a new match's control needs a word: its label alone does not say what to do.
+                    return isNewMatch ? <HoverTooltip text="New keyword match — set a priority or dismiss">{control}</HoverTooltip> : control
+                  })()}
                   {priorityMeta && (
                     <div title={absoluteTime(priorityMeta.updatedAt)} style={{ ...CHROME_TEXT, marginTop: 3, cursor: 'default', position: 'absolute', top: '100%', left: 0, whiteSpace: 'nowrap' }}>
                       Set by {priorityMeta.setByName} · {relativeTime(priorityMeta.updatedAt)}
@@ -1496,9 +1491,7 @@ export function BillDetail() {
               : priority
                 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', position: 'relative' }}>
-                    <HoverTooltip text="This bill's priority level">
-                      <PriorityBadge priority={priority} onClick={() => navigate(billsListPath({ priority: [priority] }))} />
-                    </HoverTooltip>
+                    <PriorityBadge priority={priority} onClick={() => navigate(billsListPath({ priority: [priority] }))} />
                     {priorityMeta && (
                       <div title={absoluteTime(priorityMeta.updatedAt)} style={{ ...CHROME_TEXT, marginTop: 3, cursor: 'default', position: 'absolute', top: '100%', left: 0, whiteSpace: 'nowrap' }}>
                         Set by {priorityMeta.setByName} · {relativeTime(priorityMeta.updatedAt)}
@@ -1624,6 +1617,24 @@ export function BillDetail() {
             })()} />
           </span>
         </div>
+
+        {/* The group's other bills, each with its own status, in the order the group lists them. */}
+        {headerCompanions.length > 0 && (
+          <div data-testid="grouped-with-line" role="group" aria-labelledby="grouped-with-label" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 12px', margin: '0 0 12px', fontSize: fontSize.sm, color: color.textMuted }}>
+            <span id="grouped-with-label">Grouped with</span>
+            {headerCompanions.map(g => (
+              <span key={g.billId} data-testid="grouped-with-member" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                <BillBadge
+                  mini
+                  billNumber={g.billNumber}
+                  state={g.state}
+                  to={billUrl({ id: g.billId, state: g.state, sessionSlug: g.sessionSlug, billNumber: g.billNumber })}
+                />
+                <StatusChip mini capWidth status={decodeStatus(g.status)} />
+              </span>
+            ))}
+          </div>
+        )}
 
         {bill.isDraft && (
           <div style={{ background: color.bgAmberPriority, border: `1px solid ${color.borderAmber}`, borderRadius: radius.md, padding: '10px 14px', marginBottom: 10, fontSize: fontSize.sm, color: color.textAmberWarning }}>
@@ -1767,7 +1778,7 @@ export function BillDetail() {
           const bodyLabel = chamberLabel ? `${chamberLabel} ${typeNoun}` : null
           const typeLabel = null
           // One line for each kind, identical companions first, whatever labels the legislature used.
-          // The header's badges already name the identical bills in the group, so
+          // The header's "Grouped with" line already names the identical bills in the group, so
           // this line lists only the identical bills outside it.
           const groupIds = new Set((bill.groupBills ?? []).map(g => g.billId))
           const listedRelated = bill.relatedBillIds.filter(r => !(r.kind === 'identical' && r.route && groupIds.has(r.route.id)))
@@ -1776,31 +1787,37 @@ export function BillDetail() {
             const ofKind = listedRelated.filter(r => (isRelationshipKind(r.kind) ? r.kind : 'related') === kind)
             if (ofKind.length > 0) grouped.set(kind, ofKind)
           }
-          const hasAny = bodyLabel || typeLabel || (bill.calendar ?? []).some(e => e.kind === 'deadline') || listedRelated.length > 0 || bill.stateUrl || bill.stateLink || bill.legiscanUrl || (bill.subjects ?? []).length > 0
+          const placedExtras = placeExtras(bill.extras?.fields ?? [])
+          const hasAny = bodyLabel || typeLabel || placedExtras.meta.length > 0 || placedExtras.detail.length > 0 || placedExtras.flags.length > 0 || (bill.calendar ?? []).some(e => e.kind === 'deadline') || listedRelated.length > 0 || bill.stateUrl || bill.stateLink || bill.legiscanUrl || (bill.subjects ?? []).length > 0
           if (!hasAny) return null
 
           // Collect all display items, then render with · separators only between items
           const metaItems: React.ReactNode[] = []
           const typeExplainer = billTypeExplainer(stateLabels, bill.billType)
-          if (bodyLabel) metaItems.push(typeExplainer
+          const bodyLabelEl = !bodyLabel ? null : typeExplainer
             ? <span key="body" style={{ whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center' }}>
                 <HoverTooltip text={typeExplainer} describe={{ id: 'bill-type-explainer' }}>{bodyLabel}</HoverTooltip>
               </span>
-            : <span key="body" style={{ whiteSpace: 'nowrap' }}>{bodyLabel}</span>)
+            : <span key="body" style={{ whiteSpace: 'nowrap' }}>{bodyLabel}</span>
+          if (bodyLabelEl) metaItems.push(bodyLabelEl)
+          // The provider's flags (an emergency bill, a constitutional amendment)
+          // are plain meta text right after the body label, which keeps its own wording.
+          for (const f of placedExtras.flags) metaItems.push(<ExtraFlagItem key={`flag-${f.key}`} field={f} />)
           // The bill's next deadline (an executive's time to act, a review
           // period ending, an act expiring), where it's hard to miss.
           const nextDeadline = (bill.calendar ?? []).filter(e => e.kind === 'deadline' && e.date >= todayIso())
             .sort((a, b) => a.date.localeCompare(b.date))[0]
           if (nextDeadline) {
-            const explainer = eventTypeExplainer(stateLabels, nextDeadline.typeId)
             const what = nextDeadline.description || nextDeadline.type
             metaItems.push(
               <span key="deadline" data-testid="next-deadline" style={{ whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 4, color: color.textAmberDark, fontWeight: fontWeight.medium }}>
                 <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: fontSize.base }}>schedule</span>
-                <HoverTooltip text={explainer} describe>{what}</HoverTooltip>: {safeDate(nextDeadline.date) ?? nextDeadline.date}
+                {what}: {safeDate(nextDeadline.date) ?? nextDeadline.date}
               </span>
             )
           }
+          // The provider's own facts: a law number, who asked for the measure.
+          for (const f of placedExtras.meta) metaItems.push(<ExtraMetaItem key={`extra-${f.key}`} field={f} />)
           if (typeLabel) metaItems.push(<span key="type" style={{ whiteSpace: 'nowrap' }}>{typeLabel}</span>)
           grouped.forEach((related, kind) => {
             const label = RELATIONSHIP_KIND_LABELS[kind]
@@ -1858,9 +1875,14 @@ export function BillDetail() {
             separated.push(metaItems[i])
           }
           return (
-            <div style={{ fontSize: fontSize.sm, color: color.textSecondary, marginBottom: 6, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-              {separated}
-            </div>
+            <>
+              {separated.length > 0 && (
+                <div style={{ fontSize: fontSize.sm, color: color.textSecondary, marginBottom: 6, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                  {separated}
+                </div>
+              )}
+              <ExtraDetailList fields={placedExtras.detail} />
+            </>
           )
         })()}
 
@@ -2820,7 +2842,6 @@ export function BillDetail() {
                 const chipColor = isDeadline
                   ? { color: color.textAmberDark, background: color.bgAmberPriority }
                   : { color: color.billBadgeNavy, background: color.bgInfo }
-                const explainer = eventTypeExplainer(stateLabels, entry.typeId)
                 return (
                   <TabularRow
                     key={entry.eventHash || `hearing-${i}`}
@@ -2840,7 +2861,7 @@ export function BillDetail() {
                     content={
                       <div style={{ color: color.textSlate }}>
                         <div style={{ fontWeight: fontWeight.medium, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                          <HoverTooltip text={explainer} describe>{entry.description || entry.type}</HoverTooltip>
+                          {entry.description || entry.type}
                         </div>
                         {entry.location && <div style={{ color: color.textSecondary, fontSize: fontSize.xs, marginTop: 1 }}>{entry.location}</div>}
                       </div>
@@ -2900,17 +2921,17 @@ export function BillDetail() {
         })()}
 
         {/* Additional information: fields only the bill's provider publishes */}
-        {bill.extras && bill.extras.fields.length > 0 && (
+        {bill.extras && hasPanelExtras && (
           <CollapsibleSection
             id="section-extras"
             label={`Additional information from ${bill.extras.providerName}`}
-            count={bill.extras.fields.length}
+            count={placeExtras(bill.extras.fields).panel.length}
             open={showExtras}
             onToggle={() => setShowExtras(v => !v)}
             hasPrev={hasBillText || hasAmendments || hasActions || hasHearings || hasDocuments}
             flashed={flashedSectionId === 'section-extras'}
           >
-            <ProviderExtrasList fields={bill.extras.fields} />
+            <ProviderExtrasList fields={placeExtras(bill.extras.fields).panel} />
           </CollapsibleSection>
         )}
       </div>
@@ -3208,7 +3229,7 @@ export function BillDetail() {
               : position
                 ? (
                   <div>
-                    <PositionBadge position={position} tooltip={`Your ${config?.orgNoun ?? DEFAULT_ORG_NOUN}'s official position on this bill`} />
+                    <PositionBadge position={position} />
                     {positionMeta && (
                       <div title={absoluteTime(positionMeta.updatedAt)} style={{ ...CHROME_TEXT, marginTop: 4, cursor: 'default' }}>
                         Set by {positionMeta.setByName} · {relativeTime(positionMeta.updatedAt)}

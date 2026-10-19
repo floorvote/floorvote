@@ -5,14 +5,15 @@ import { app } from '../index'
 import { resetDb, applyMigrations, seedUser, seedSession, seedAuthEvent } from '../../test/helpers'
 import { getDb } from '../db/client'
 import { users, authEvents } from '../db/schema'
-import { sendMagicLink } from '../lib/email'
+import { resetMail, signInSent, backgroundWork } from '../../test/mail'
 import { ADMIN_SEND_LIMITS, ADMIN_SEND_LIMIT_MESSAGES } from '../lib/adminSendLimits'
 
 vi.mock('../lib/centralFetch', () => ({
   centralFetch: vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }),
 }))
 vi.mock('../cron/sync', () => ({ registerWithCentral: vi.fn().mockResolvedValue(undefined) }))
-vi.mock('../lib/email', () => ({ sendMagicLink: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('../lib/email', async (importOriginal) =>
+  (await import('../../test/mail')).withFakeSender(await importOriginal<typeof import('../lib/email')>()))
 
 const PER_MEMBER = ADMIN_SEND_LIMITS.perMember.max
 const PER_ADMIN = ADMIN_SEND_LIMITS.perAdmin.max
@@ -24,11 +25,14 @@ async function post(path: string, cookie: string, body?: unknown): Promise<Reply
     emailSuppressionMany: async (emails: string[]) =>
       Object.fromEntries(emails.map(e => [e, { suppressed: false }])),
   } as unknown as Fetcher
+  // The link goes out in the background, so wait for it before a test counts what was sent.
+  const bg = backgroundWork()
   const res = await app.request(path, {
     method: 'POST',
     headers: { Cookie: cookie, 'Content-Type': 'application/json' },
     body: JSON.stringify(body ?? {}),
-  }, { ...env, CENTRAL: central })
+  }, { ...env, CENTRAL: central }, bg.ctx)
+  await bg.settle()
   return { status: res.status, body: await res.json() as Reply['body'] }
 }
 
@@ -68,7 +72,7 @@ describe('admin email routes: rate limits', () => {
   }
 
   beforeEach(async () => {
-    vi.mocked(sendMagicLink).mockClear()
+    resetMail()
     await resetDb()
     await applyMigrations()
     adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Ada Admin' })
@@ -82,7 +86,7 @@ describe('admin email routes: rate limits', () => {
         const r = await send(target, adminCookie)
         expect(r.status).toBe(200)
       }
-      expect(sendMagicLink).toHaveBeenCalledTimes(3)
+      expect(signInSent()).toHaveLength(3)
     })
 
     it('stops sending to one member after the per-member limit, with a clear 429', async () => {
@@ -92,7 +96,7 @@ describe('admin email routes: rate limits', () => {
       const blocked = await send(target, adminCookie)
       expect(blocked.status).toBe(429)
       expect(blocked.body.error).toBe(ADMIN_SEND_LIMIT_MESSAGES.perMember)
-      expect(sendMagicLink).toHaveBeenCalledTimes(PER_MEMBER)
+      expect(signInSent()).toHaveLength(PER_MEMBER)
 
       // Another member is a separate bucket.
       const other = await seedPending()
@@ -117,7 +121,7 @@ describe('admin email routes: rate limits', () => {
       const blocked = await send(target, adminCookie)
       expect(blocked.status).toBe(429)
       expect(blocked.body.error).toBe(ADMIN_SEND_LIMIT_MESSAGES.perAdmin)
-      expect(sendMagicLink).not.toHaveBeenCalled()
+      expect(signInSent()).toHaveLength(0)
 
       // A different admin is not held up by this one's sends.
       const otherAdmin = await seedUser({ role: 'admin', email: 'grace@example.com' })
@@ -160,7 +164,7 @@ describe('admin email routes: rate limits', () => {
 
       expect(replies.filter(r => r.status === 200)).toHaveLength(PER_MEMBER)
       expect(replies.filter(r => r.status === 429)).toHaveLength(20 - PER_MEMBER)
-      expect(sendMagicLink).toHaveBeenCalledTimes(PER_MEMBER)
+      expect(signInSent()).toHaveLength(PER_MEMBER)
     })
 
     it('lets exactly the per-admin limit through', async () => {
@@ -173,7 +177,7 @@ describe('admin email routes: rate limits', () => {
 
       expect(replies.filter(r => r.status === 200)).toHaveLength(room)
       expect(replies.filter(r => r.status === 429)).toHaveLength(10 - room)
-      expect(sendMagicLink).toHaveBeenCalledTimes(room)
+      expect(signInSent()).toHaveLength(room)
     })
   })
 

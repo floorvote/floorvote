@@ -6,21 +6,22 @@ import { getDb } from '../../src/db/client'
 import { associationConfig, bills, calendarEvents, calendarEventBills } from '../../src/db/schema'
 import { runWeekAhead } from '../../src/lib/weekAhead'
 import { PRIORITY_COLORS } from '../../../shared/billChipColors'
+import { resetMail, lastBatch } from '../mail'
 
 // A companion group has one priority (#381), so the week-ahead email lists a
 // hearing on any member when the group is prioritized, and marks each bill with
 // the group's priority, by the rule the calendar page applies.
 
-const sendBatch = vi.hoisted(() => vi.fn(async () => ({ sent: 1, failed: 0 })))
-vi.mock('../../src/lib/email', async (importOriginal) => ({ ...await importOriginal<typeof import('../../src/lib/email')>(), senderFor: (e: unknown) => ({ sendBatch: (messages: unknown[]) => (sendBatch as (...a: unknown[]) => unknown)(e, messages) }) }))
+vi.mock('../../src/lib/email', async (importOriginal) =>
+  (await import('../mail')).withFakeSender(await importOriginal<typeof import('../../src/lib/email')>()))
 
 const isoDay = (offsetDays: number) => new Date(Date.now() + offsetDays * 86400_000).toISOString().slice(0, 10)
 const HIGH = `title="${PRIORITY_COLORS.high.label}"`
 
 async function emailed(): Promise<string> {
   await runWeekAhead(env as never, getDb(env.DB))
-  const call = sendBatch.mock.calls.at(-1) as unknown as [unknown, { html: string }[]] | undefined
-  return call?.[1][0].html ?? ''
+  const call = lastBatch()
+  return call?.[0].html ?? ''
 }
 
 describe('the week-ahead email: companion groups', () => {
@@ -32,7 +33,7 @@ describe('the week-ahead email: companion groups', () => {
     await seedSession(await seedUser({ email: 'member@b.com' }))
     const weekday = String(new Date().getUTCDay())
     await db().insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'week-ahead': { enabled: true, settings: { weeklyDay: weekday } } }) })
-    sendBatch.mockClear()
+    resetMail()
     // Ids sort a < b, so the group's key is a's id. Only the house bill holds the priority.
     await seedBill({ id: 'a-house', billNumber: 'HB 101', state: 'DC', priority: 'high', externalId: 'legiscan:1' })
     await seedBill({ id: 'b-senate', billNumber: 'SB 202', state: 'DC', priority: null, externalId: 'legiscan:2' })

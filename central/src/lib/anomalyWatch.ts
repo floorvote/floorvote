@@ -12,6 +12,8 @@ type WatchEnv = Pick<
   | 'RESEND_API_KEY'
   | 'EMAIL_PROVIDER'
   | 'EMAIL'
+  | 'EMAIL_FROM'
+  | 'EMAIL_REPLY_TO'
   | 'ALERT_EMAILS'
 >
 

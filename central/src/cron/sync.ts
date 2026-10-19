@@ -224,6 +224,22 @@ async function runFullPass(
 }
 
 /**
+ * Write one pass's row to session_sync_log. With `tolerate`, a write that fails
+ * is noted and the pass carries on (a snapshot pass's log is a record of it, never
+ * part of it); without, the error throws, as a LegiScan pass's always has.
+ */
+export async function logSyncPass(
+  db: Db, values: typeof sessionSyncLog.$inferInsert, opts: { tolerate: boolean; label: string },
+): Promise<void> {
+  try {
+    await db.insert(sessionSyncLog).values(values)
+  } catch (err) {
+    if (!opts.tolerate) throw err
+    console.error(`[sync] couldn't log the pass of ${opts.label}:`, err)
+  }
+}
+
+/**
  * Reconcile one session's master list against central: upsert bill rows,
  * update each covering tenant's keyword links, queue matched-and-changed bills
  * to the ingestor, and send monitor stubs for the rest. Provider-neutral: any
@@ -263,10 +279,19 @@ export async function applyMasterList(
      * not bills the regular sync found (BillMessage.matchProvenance).
      */
     bulk?: boolean
+    /**
+     * Carry on when the pass's log row can't be written, noting it instead:
+     * the pass has queued and sent everything by then, and a failed log
+     * write must not fail it. The snapshot sync sets this.
+     */
+    tolerateLogFailure?: boolean
   } = {},
 ): Promise<number[]> {
+  const logPass = (values: typeof sessionSyncLog.$inferInsert) =>
+    logSyncPass(db, values, { tolerate: !!opts.tolerateLogFailure, label: session.sessionName })
+
   if (list.length === 0) {
-    await db.insert(sessionSyncLog).values({
+    await logPass({
       syncedAt: nowDb(),
       state: session.state,
       sessionId: session.sessionId,
@@ -575,7 +600,7 @@ export async function applyMasterList(
     }
   }
 
-  await db.insert(sessionSyncLog).values({
+  await logPass({
     syncedAt: nowDb(),
     state: session.state,
     sessionId: session.sessionId,

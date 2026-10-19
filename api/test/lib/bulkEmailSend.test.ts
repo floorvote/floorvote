@@ -6,6 +6,7 @@ import { getDb } from '../../src/db/client'
 import { associationConfig, emailSendStats, feedEvents } from '../../src/db/schema'
 import { runDigest } from '../../src/lib/digest'
 import { runWeekAhead } from '../../src/lib/weekAhead'
+import { fakeBinding, stubResend } from '../../../shared/emailTestKit'
 
 // The digest and the week-ahead email send through the bulk purpose (#708),
 // end to end: real sender, real adapters, with the Cloudflare binding and
@@ -15,35 +16,26 @@ import { runWeekAhead } from '../../src/lib/weekAhead'
 
 const isoDay = (offsetDays: number) => new Date(Date.now() + offsetDays * 86400_000).toISOString().slice(0, 10)
 
-type Binding = { send: ReturnType<typeof vi.fn> }
 /** A Cloudflare binding whose behavior is chosen per recipient. */
-function binding(behave: (to: string) => 'ok' | 'outage' | 'suppressed' = () => 'ok'): Binding {
-  return {
-    send: vi.fn(async (m: { to: string | string[] }) => {
-      const to = Array.isArray(m.to) ? m.to[0] : m.to
-      const how = behave(to)
-      if (how === 'suppressed') throw Object.assign(new Error('suppressed'), { code: 'E_RECIPIENT_SUPPRESSED' })
-      if (how === 'outage') throw Object.assign(new Error('down'), { code: 'E_INTERNAL_SERVER_ERROR' })
-      return { messageId: `cf-${to}` }
-    }),
-  }
+function binding(behave: (to: string) => 'ok' | 'outage' | 'suppressed' = () => 'ok') {
+  return fakeBinding((m) => {
+    const how = behave([m.to].flat()[0])
+    return how === 'outage' ? 'down' : how
+  })
 }
 
 /** Both providers configured, the binding first. Resend is the one a fallback would reach. */
-function bothProviders(EMAIL: Binding, extra: Record<string, string> = {}) {
-  return { ...env, EMAIL_PROVIDER: 'cloudflare', EMAIL, ...extra } as never
+function bothProviders(cf: ReturnType<typeof binding>, extra: Record<string, string> = {}) {
+  return { ...env, EMAIL_PROVIDER: 'cloudflare', EMAIL: cf.binding, ...extra } as never
 }
 
-let resendBodies: any[]
+let resend: ReturnType<typeof stubResend>
+const resendBodies = () => resend.calls.map(c => c.body)
 beforeEach(async () => {
   await resetDb(); await applyMigrations()
-  resendBodies = []
-  vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => {
-    resendBodies.push(JSON.parse(init.body))
-    return new Response(JSON.stringify({ id: 'rs-1' }), { status: 200 })
-  }))
+  resend = stubResend()
 })
-afterEach(() => { vi.unstubAllGlobals() })
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 async function stats() {
   const rows = await getDb(env.DB).select().from(emailSendStats).all()
@@ -87,8 +79,8 @@ describe.each([
     await enable(members)
     const cf = binding(() => 'outage')
     await run(bothProviders(cf))
-    expect(cf.send).toHaveBeenCalledTimes(3)
-    expect(resendBodies).toHaveLength(0)
+    expect(cf.sent).toHaveLength(3)
+    expect(resendBodies()).toHaveLength(0)
     const by = await stats()
     expect(by.cloudflare).toMatchObject({ sent: 0, failed: 3, suppressed: 0 })
     expect(by.resend).toBeUndefined()
@@ -105,28 +97,28 @@ describe.each([
     await enable(members.slice(0, 1))
     const cf = binding()
     await run(bothProviders(cf, { EMAIL_FROM: 'notifications@example.org', EMAIL_FROM_BULK: 'notifications@mail.example.org' }))
-    expect(cf.send.mock.calls[0][0].from).toBe('FloorVote <notifications@mail.example.org>')
+    expect(cf.sent[0].from).toBe('FloorVote <notifications@mail.example.org>')
   })
 
   it('sends from EMAIL_FROM when EMAIL_FROM_BULK is unset', async () => {
     await enable(members.slice(0, 1))
     const cf = binding()
     await run(bothProviders(cf, { EMAIL_FROM: 'notifications@example.org' }))
-    expect(cf.send.mock.calls[0][0].from).toBe('FloorVote <notifications@example.org>')
+    expect(cf.sent[0].from).toBe('FloorVote <notifications@example.org>')
   })
 
   it('sends over Resend from the bulk From address when Resend is the only provider', async () => {
     await enable(members.slice(0, 1))
     await run({ ...env, EMAIL_FROM: 'notifications@example.org', EMAIL_FROM_BULK: 'notifications@mail.example.org' } as never)
-    expect(resendBodies).toHaveLength(1)
-    expect(resendBodies[0].from).toBe('FloorVote <notifications@mail.example.org>')
+    expect(resendBodies()).toHaveLength(1)
+    expect(resendBodies()[0].from).toBe('FloorVote <notifications@mail.example.org>')
   })
 
   it('carries the unsubscribe header and a subject', async () => {
     await enable(members.slice(0, 1))
     const cf = binding()
     await run(bothProviders(cf))
-    const sent = cf.send.mock.calls[0][0]
+    const sent = cf.sent[0]
     expect(sent.headers['List-Unsubscribe']).toContain(`/profile#${unsub}`)
     expect(sent.subject).toMatch(subject)
   })
@@ -135,7 +127,7 @@ describe.each([
     await enable(members)
     const cf = binding(to => (to === 'b@example.com' ? 'suppressed' : 'ok'))
     await run(bothProviders(cf))
-    expect(resendBodies).toHaveLength(0)
+    expect(resendBodies()).toHaveLength(0)
     expect((await stats()).cloudflare).toMatchObject({ sent: 2, failed: 0, suppressed: 1 })
   })
 
@@ -143,14 +135,14 @@ describe.each([
     await enable(members)
     const cf = binding(to => ({ 'a@example.com': 'ok', 'b@example.com': 'suppressed', 'c@example.com': 'outage' } as const)[to as 'a@example.com'])
     await run(bothProviders(cf))
-    expect(resendBodies).toHaveLength(0)
+    expect(resendBodies()).toHaveLength(0)
     expect((await stats()).cloudflare).toMatchObject({ sent: 1, failed: 1, suppressed: 1 })
   })
 
   it('counts Resend sends to Resend when Resend is the only provider', async () => {
     await enable(members)
     await run(env as never)
-    expect(resendBodies.map(b => b.to[0]).sort()).toEqual(members)
+    expect(resendBodies().map(b => b.to[0]).sort()).toEqual(members)
     expect((await stats()).resend).toMatchObject({ sent: 3, failed: 0 })
   })
 
@@ -158,8 +150,8 @@ describe.each([
     await enable(members)
     const cf = binding()
     await run(bothProviders(cf, { DEMO_MODE: 'true' }))
-    expect(cf.send).not.toHaveBeenCalled()
-    expect(resendBodies).toHaveLength(0)
+    expect(cf.sent).toHaveLength(0)
+    expect(resendBodies()).toHaveLength(0)
     expect(Object.keys(await stats())).toEqual([])
     expect(await stamp(stampKey)).toBeTruthy()
   })
@@ -168,14 +160,14 @@ describe.each([
     await enable(members.slice(0, 1))
     const cf = binding()
     await run(bothProviders(cf, { DEMO_MODE: 'false' }))
-    expect(cf.send).toHaveBeenCalledTimes(1)
+    expect(cf.sent).toHaveLength(1)
   })
 
   it('refuses a malformed stored address before any provider, counts nothing for it, and sends the rest', async () => {
     await enable(['a@example.com', 'not-an-address'])
     const cf = binding()
     await run(bothProviders(cf))
-    expect(cf.send).toHaveBeenCalledTimes(1)
+    expect(cf.sent).toHaveLength(1)
     expect((await stats()).cloudflare).toMatchObject({ sent: 1, failed: 0 })
   })
 })
@@ -201,7 +193,7 @@ describe('the digest result', () => {
     const cf = binding()
     const r = await runDigest(bothProviders(cf), getDb(env.DB))
     expect(r).toMatchObject({ recipients: 21, sent: 21, failed: 0 })
-    expect(new Set(cf.send.mock.calls.map(c => c[0].to[0] ?? c[0].to)).size).toBe(21)
+    expect(new Set(cf.sent.map(m => [m.to].flat()[0])).size).toBe(21)
     expect((await stats()).cloudflare).toMatchObject({ sent: 21, failed: 0 })
   })
 })

@@ -25,6 +25,7 @@ import { buildDefaultAiContext, buildDefaultRelevanceQuestion, isAiConfigDefault
 import { DEFAULT_TAXONOMY, serializeTaxonomy, type TaxonomyItem } from '../../../../shared/taxonomy'
 import { absoluteTime } from '../../lib/time'
 import { useUnsavedRegistration } from '../../lib/unsavedText'
+import { settingBox, SETTING_BOX_HEADER, SETTING_BOX_TITLE, SETTING_BOX_DESC } from '../../lib/settingBoxStyle'
 import { MissingRequiredReason, useRequiredSubmit } from '../../components/RequiredField'
 import TagTaxonomyTable from './TagTaxonomyTable'
 import { KeywordMatchSummary } from './KeywordMatchSummary'
@@ -95,10 +96,10 @@ const aiTextareaStyle: React.CSSProperties = {
 // The add-custom-field form's labels keep its compact, muted look.
 const CF_LABEL: React.CSSProperties = { fontWeight: fontWeight.normal, color: color.textSecondary, marginBottom: 2 }
 
-// The scope dialog's text when claim links are turned on, rather than AI instructions saved.
+// The scope dialog's text when summary citations (claim links inside) are turned on, rather than AI instructions saved.
 const CLAIM_LINKS_SCOPE_COPY = {
-  title: 'Claim links turned on',
-  intro: 'New bill summaries will include claim links. Existing summaries get claim links only when the AI is re-run on them. Do you want to re-run it on existing bills?',
+  title: 'Summary citations turned on',
+  intro: 'New bill summaries will include citations. Existing summaries get them only when the AI is re-run on them. Do you want to re-run it on existing bills?',
 }
 
 export function Config() {
@@ -516,8 +517,8 @@ export function Config() {
         '/admin/claim-links',
         { method: 'PUT', body: JSON.stringify({ enabled: next }) },
       )
-      setClaimLinksAnnouncement(next ? 'Claim links turned on.' : 'Claim links turned off.')
-      // Existing summaries get claim links only when re-run, so offer that on
+      setClaimLinksAnnouncement(next ? 'Summary citations turned on.' : 'Summary citations turned off.')
+      // Existing summaries get citations only when re-run, so offer that on
       // turning on, once the save has succeeded and there are bills to re-run.
       if (next && (matchedBillsCount ?? 0) > 0) { setScopeModalReason('claimLinks'); setShowScopeModal(true) }
     } catch (err) {
@@ -918,21 +919,25 @@ export function Config() {
                   </div>
                 )}
                 <div style={{ marginTop: 14 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                    <span data-testid="claim-links-label" style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, color: color.textSlate }}>Claim links</span>
-                    <IosToggle
-                      checked={claimLinks}
-                      disabled={demoLocked}
-                      busy={savingClaimLinks}
-                      onChange={(n) => void handleToggleClaimLinks(n)}
-                      ariaLabel="Claim links"
-                    />
+                  <div data-testid="claim-links-box" style={settingBox(demoLocked)}>
+                    <div data-testid="claim-links-header" style={SETTING_BOX_HEADER}>
+                      <div>
+                        <div data-testid="claim-links-label" style={SETTING_BOX_TITLE}>Summary citations</div>
+                        <div data-testid="claim-links-copy" style={SETTING_BOX_DESC}>
+                          Each statement in a bill summary cites and links to the associated passage in the bill. This will increase AI costs slightly.
+                        </div>
+                      </div>
+                      <IosToggle
+                        checked={claimLinks}
+                        disabled={demoLocked}
+                        busy={savingClaimLinks}
+                        onChange={(n) => void handleToggleClaimLinks(n)}
+                        ariaLabel="Summary citations"
+                      />
+                    </div>
+                    {/* One polite live region for the result and any error. It's seen only when it's an error. */}
+                    <div data-testid="claim-links-status" role="status" aria-live="polite" style={saveClaimLinksError ? { ...hintStyle, color: color.textErrorRed } : SR_ONLY}>{claimLinksAnnouncement}</div>
                   </div>
-                  <div data-testid="claim-links-copy" style={hintStyle}>
-                    Links claims in a bill's summary to the associated passage in the bill. This will increase AI costs slightly.
-                  </div>
-                  {/* One polite live region for the result and any error. It's seen only when it's an error. */}
-                  <div data-testid="claim-links-status" role="status" aria-live="polite" style={saveClaimLinksError ? { ...hintStyle, color: color.textErrorRed } : SR_ONLY}>{claimLinksAnnouncement}</div>
                 </div>
               </div>
 

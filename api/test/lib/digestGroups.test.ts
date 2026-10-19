@@ -4,6 +4,7 @@ import { eq, inArray } from 'drizzle-orm'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, bills, feedEvents } from '../../src/db/schema'
+import { stubResend } from '../../../shared/emailTestKit'
 import { runDigest } from '../../src/lib/digest'
 import { groupByHand, splitFromGroup } from '../../src/lib/companionGroups'
 import { renderDigestEmail, countNewMatches, type DigestEvent, type NewMatchDigestItem } from '../../src/lib/digestEmail'
@@ -128,7 +129,8 @@ describe('renderDigestEmail: companion groups', () => {
 })
 
 describe('runDigest: companion groups', () => {
-  let emails: Array<{ to: string[]; subject: string; html: string }>
+  let resend: ReturnType<typeof stubResend>
+  const sentEmails = (): Array<{ to: string[]; subject: string; html: string }> => resend.calls.map(c => c.body)
   const db = () => getDb(env.DB)
   const ago = (h: number) => new Date(Date.now() - h * 3600_000).toISOString().slice(0, 19).replace('T', ' ')
 
@@ -141,8 +143,7 @@ describe('runDigest: companion groups', () => {
 
   beforeEach(async () => {
     await resetDb(); await applyMigrations()
-    emails = []
-    vi.stubGlobal('fetch', vi.fn(async (_u: string, init: { body: string }) => { emails.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
+    resend = stubResend()
     await db().insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'email-digest': true }) })
     await seedSession(await seedUser({ email: 'ada@example.com', role: 'admin' }))
     // Ids sort a < b < c, so a group's key is its first bill's id.
@@ -151,7 +152,7 @@ describe('runDigest: companion groups', () => {
     await seedBill({ id: 'c-third', billNumber: 'H 303', state: 'RI', session: '2026' })
     await seedBill({ id: 'd-alone', billNumber: 'H 404', state: 'RI', session: '2026', priority: 'low' })
   })
-  afterEach(() => { vi.unstubAllGlobals() })
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
   it('sends one card for a group whose members both changed, and counts it once in the subject', async () => {
     await group('a-house', 'b-senate')
@@ -160,11 +161,11 @@ describe('runDigest: companion groups', () => {
 
     await runDigest(env as never, db())
 
-    expect(emails).toHaveLength(1)
-    expect(emails[0].subject).toBe('Your daily digest: 1 updated bill')
-    expect(cards(emails[0].html)).toBe(1)
-    expect(text(emails[0].html)).toContain('H 101: Action: Passed House committee')
-    expect(text(emails[0].html)).toContain('S 202: Action: Reported from committee')
+    expect(sentEmails()).toHaveLength(1)
+    expect(sentEmails()[0].subject).toBe('Your daily digest: 1 updated bill')
+    expect(cards(sentEmails()[0].html)).toBe(1)
+    expect(text(sentEmails()[0].html)).toContain('H 101: Action: Passed House committee')
+    expect(text(sentEmails()[0].html)).toContain('S 202: Action: Reported from committee')
   })
 
   it('counts 3 member bills of one group and 1 other bill as 2 priority bills', async () => {
@@ -176,9 +177,9 @@ describe('runDigest: companion groups', () => {
 
     await runDigest(env as never, db())
 
-    expect(emails[0].subject).toBe('Your daily digest: 2 updated bills')
-    expect(cards(emails[0].html)).toBe(2)
-    expect(text(emails[0].html)).toContain('2 priority bills were updated in the last day')
+    expect(sentEmails()[0].subject).toBe('Your daily digest: 2 updated bills')
+    expect(cards(sentEmails()[0].html)).toBe(2)
+    expect(text(sentEmails()[0].html)).toContain('2 priority bills were updated in the last day')
   })
 
   it('includes an event on a member with no priority of its own when the group has one', async () => {
@@ -187,10 +188,10 @@ describe('runDigest: companion groups', () => {
 
     await runDigest(env as never, db())
 
-    expect(emails).toHaveLength(1)
-    expect(text(emails[0].html)).toContain('S 202: Action: Reported from committee')
+    expect(sentEmails()).toHaveLength(1)
+    expect(text(sentEmails()[0].html)).toContain('S 202: Action: Reported from committee')
     // The card wears the group's priority.
-    expect(emails[0].html).toContain('High')
+    expect(sentEmails()[0].html).toContain('High')
   })
 
   it('still leaves out a group none of whose members has a priority, and an ungrouped bill without one', async () => {
@@ -201,7 +202,7 @@ describe('runDigest: companion groups', () => {
 
     const result = await runDigest(env as never, db())
 
-    expect(emails).toHaveLength(0)
+    expect(sentEmails()).toHaveLength(0)
     expect(result).toEqual({ ok: true, recipients: 0, sent: 0, failed: 0 })
   })
 
@@ -211,8 +212,8 @@ describe('runDigest: companion groups', () => {
 
     await runDigest(env as never, db())
 
-    expect(text(emails[0].html)).toContain('S 202:')
-    expect(emails[0].subject).toBe('Your daily digest: 1 updated bill')
+    expect(text(sentEmails()[0].html)).toContain('S 202:')
+    expect(sentEmails()[0].subject).toBe('Your daily digest: 1 updated bill')
   })
 
   it('rolls up a group formed by hand the same way a provider\'s group does', async () => {
@@ -223,9 +224,9 @@ describe('runDigest: companion groups', () => {
 
     await runDigest(env as never, db())
 
-    expect(cards(emails[0].html)).toBe(1)
-    expect(text(emails[0].html)).toContain('H 303: Action: Introduced in the Senate')
-    expect(emails[0].subject).toBe('Your daily digest: 1 updated bill')
+    expect(cards(sentEmails()[0].html)).toBe(1)
+    expect(text(sentEmails()[0].html)).toContain('H 303: Action: Introduced in the Senate')
+    expect(sentEmails()[0].subject).toBe('Your daily digest: 1 updated bill')
   })
 
   it('treats the members as separate bills once the group is split, earlier events included', async () => {
@@ -238,9 +239,9 @@ describe('runDigest: companion groups', () => {
 
     await runDigest(env as never, db())
 
-    expect(emails[0].subject).toBe('Your daily digest: 2 updated bills')
-    expect(cards(emails[0].html)).toBe(2)
-    expect(text(emails[0].html)).not.toContain('S 202: Action')
+    expect(sentEmails()[0].subject).toBe('Your daily digest: 2 updated bills')
+    expect(cards(sentEmails()[0].html)).toBe(2)
+    expect(text(sentEmails()[0].html)).not.toContain('S 202: Action')
   })
 
   it('leaves the digest of ungrouped bills as it was', async () => {
@@ -248,9 +249,9 @@ describe('runDigest: companion groups', () => {
 
     await runDigest(env as never, db())
 
-    expect(emails[0].subject).toBe('Your daily digest: 1 updated bill')
-    expect(text(emails[0].html)).toContain('Action: Referred')
-    expect(text(emails[0].html)).not.toContain('H 404: Action')
+    expect(sentEmails()[0].subject).toBe('Your daily digest: 1 updated bill')
+    expect(text(sentEmails()[0].html)).toContain('Action: Referred')
+    expect(text(sentEmails()[0].html)).not.toContain('H 404: Action')
   })
 })
 

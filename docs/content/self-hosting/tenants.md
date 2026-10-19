@@ -113,7 +113,9 @@ OPERATOR_NAME = "Your Operator Name"
 # optional — footer link
 OPERATOR_URL = "https://example.org"
 
-# optional — feedback recipient(s), and who users are told to ask for source
+# optional — feedback recipient(s), and who users are told to ask for source.
+# Comma-separated bare addresses. An entry that isn't a valid address is logged
+# and skipped, so feedback still reaches the rest.
 OPERATOR_CONTACT_EMAILS = "support@example.org"
 
 # optional — where your source is published. If you modify FloorVote and run it
@@ -139,9 +141,13 @@ CF_AIG_GATEWAY = "<your-gateway-slug>"
 GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_THINKING_BUDGET = "0"
 
+# which email provider is tried first: "cloudflare" or "resend". With both
+# configured, the other is the fallback (see "Optional fallbacks" below).
 EMAIL_PROVIDER = "cloudflare"
 
-# who gets cron-failure and email outage alerts
+# who gets cron-failure and email outage alerts. Comma-separated bare addresses
+# (not "Name <address>"). An entry that isn't a valid address is logged and
+# skipped, so the alert still reaches the rest.
 ALERT_EMAILS = "ops@example.org"
 
 # the domain this team is served on
@@ -285,7 +291,11 @@ npx wrangler secret put CF_AIG_TOKEN --env [slug]
 > [!TIP]
 > **Optional fallbacks.** `GEMINI_API_KEY` is only read if you flip `AI_GATEWAY_ENABLED` to `"false"`. You don't set `LEGISCAN_API_KEY` on a tenant — only central calls LegiScan.
 >
-> **`RESEND_API_KEY` is worth setting even on Cloudflare Email Service**, and is required if you set `EMAIL_PROVIDER="resend"`. With both providers configured, login and invite links that the primary fails to send are retried through the other one: Resend when the primary is Cloudflare and `RESEND_API_KEY` is set, Cloudflare when the primary is Resend and the `EMAIL` binding exists. The hourly email-health check alerts `ALERT_EMAILS` through the other provider first, then the primary. With only one provider configured, there is no fallback, and the alert goes through the same provider that is failing. `EMAIL_FROM` must be verified on both providers for fallback to work. Digests and week-ahead mail never fall back.
+> **`RESEND_API_KEY` is worth setting even on Cloudflare Email Service**, and is required if you set `EMAIL_PROVIDER="resend"`. The `EMAIL` binding goes first only with `EMAIL_PROVIDER="cloudflare"`. Otherwise Resend goes first and needs `RESEND_API_KEY`, and a bound `EMAIL` binding is the fallback. With both configured, an email the first provider fails to send is retried once through the other one: Resend when the first is Cloudflare, Cloudflare when the first is Resend.
+>
+> **Which emails fall back.** Sign-in, account, notification, and operator email falls back. That covers login and invite links, the email-change emails, mention and reply emails, and mail to operators and admins (feedback, invite-bounce notices, job alerts, and sample emails). Digests and week-ahead mail never do, so an outage on the first provider can't push a whole recipient list onto the second and use up its quota. An address that can't receive mail (it bounced or reported spam) is never retried through the other provider either.
+>
+> The hourly email-health check alerts `ALERT_EMAILS` through the healthy provider first, then the failing one. With only one provider configured, there is no fallback, and the alert goes through the same provider that is failing. `EMAIL_FROM` must be verified on both providers for fallback to work.
 
 ## Step 7: Bind the tenant on central
 
@@ -376,7 +386,7 @@ Each key is a row, so `INSERT OR REPLACE` also works for a key you set earlier, 
 
 To analyze every bill instead, set the keywords to a single `*`. That is a keyword, not the `["*"]` in `state_coverage`, which means every state. It works only as the sole keyword: in a longer list it is ignored, since it would make every other keyword redundant. Saving it asks for confirmation and shows how many bills it would queue, and every one of them costs AI usage, so treat it as a cost decision.
 
-While you're here, set **What you call your group** under **Labels** (team, association, coalition, or a word of your own) — it drives the labels on the positions section. When you later change your AI instructions, **Save AI instructions** asks whether to apply them to bills that are already analyzed: prioritized bills only, all analyzed bills, or only future bill texts. Under the bill summary instructions, **Claim links** is on by default and saves as soon as you toggle it. Turning it on offers to re-run AI on prioritized or all analyzed bills, since existing summaries get links only when re-analyzed. Turned off, new analyses don't ask the model for claim links and links already stored show as plain text, and turned back on, stored links show again. (A bill re-analyzed while it's off loses its stored links.) See [how much it costs](/overview/how-much-does-it-cost#ai-bill-summaries) for what the links add per analysis.
+While you're here, set **What you call your group** under **Labels** (team, association, coalition, or a word of your own) — it drives the labels on the positions section. When you later change your AI instructions, **Save AI instructions** asks whether to apply them to bills that are already analyzed: prioritized bills only, all analyzed bills, or only future bill texts. Under the bill summary instructions, **Summary citations** is on by default and saves as soon as you toggle it. Turning it on offers to re-run AI on prioritized or all analyzed bills, since existing summaries get citations only when re-analyzed. Turned off, new analyses don't ask the model for citations and links already stored show as plain text, and turned back on, stored links show again. (A bill re-analyzed while it's off loses its stored links.) See [how much it costs](/overview/how-much-does-it-cost#ai-bill-summaries) for what the citations add per analysis.
 
 ## Step 12: Seed the active session(s)
 

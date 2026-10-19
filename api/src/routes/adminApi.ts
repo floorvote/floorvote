@@ -6,7 +6,7 @@ import { hasLoggedInSelect } from '../lib/loginHistory'
 import { pendingInviteBounces } from '../lib/inviteBounces'
 import { users, sessions, magicLinks, associationConfig, bills, comments, commentReactions, memberVotes, notes, feedEvents, officialPositions, roles, userRoles, authEvents } from '../db/schema'
 import { generateToken, hashToken } from '../lib/crypto'
-import { sendMagicLink } from '../lib/email'
+import { sendSignInLinkLogged } from '../lib/signInLink'
 import { registerWithCentral } from '../cron/sync'
 import { matchesKeywords, billMatchText } from '../lib/keywords'
 import { summarizeKeywordMatches } from '../lib/keywordMatchSummary'
@@ -274,10 +274,11 @@ async function deliverLink(c: Context<AppEnv>, db: AppDb, target: { id: string; 
   })
 
   const url = `${c.env.APP_URL}/auth/verify?token=${encodeURIComponent(rawToken)}`
+  const sent = sendSignInLinkLogged(c.env, db, { to: target.email, link: linkType, url, userId: target.id })
   try {
-    c.executionCtx.waitUntil(sendMagicLink(target.email, url, c.env, linkType, db, target.id).catch(console.error))
+    c.executionCtx.waitUntil(sent)
   } catch {
-    sendMagicLink(target.email, url, c.env, linkType, db, target.id).catch(console.error)
+    // No ExecutionContext in test environments — fire and forget
   }
 }
 

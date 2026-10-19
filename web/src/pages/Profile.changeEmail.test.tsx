@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import * as api from '../lib/api'
 import { ApiError } from '../lib/api'
@@ -74,7 +74,7 @@ describe('Profile: change your email', () => {
     const notice = await screen.findByRole('status')
     expect(notice).toHaveTextContent('Link sent to jane@newjob.org.')
     expect(notice).toHaveTextContent('Your email stays jane@oldjob.org until you confirm it. The link expires in 24 hours.')
-    expect(requests(spy)).toEqual([{ email: 'Jane@NewJob.org', turnstileToken: null }])
+    expect(requests(spy)).toEqual([{ email: 'Jane@NewJob.org' }])
     expect(screen.queryByLabelText('New email')).not.toBeInTheDocument()
     expect(screen.getByText('jane@oldjob.org')).toBeInTheDocument()
   })
@@ -102,19 +102,17 @@ describe('Profile: change your email', () => {
     expect(screen.getByLabelText('New email')).toHaveValue('jane@newjob.org')
   })
 
-  it('waits for Turnstile when it is configured, and sends its token', async () => {
+  it('shows no human check and sends no token, even when the instance has a Turnstile site key: the session is the proof', async () => {
     const spy = mockApi({ '/users/me/email-change': () => ({ ok: true, email: 'jane@newjob.org' }) }, 'site-key')
     renderProfile()
     fireEvent.change(await openForm(), { target: { value: 'jane@newjob.org' } })
     const send = screen.getByRole('button', { name: 'Send link' })
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Solve challenge' })).toBeInTheDocument())
-    expect(send).toBeDisabled()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Solve challenge' }))
+    expect(screen.queryByRole('button', { name: 'Solve challenge' })).not.toBeInTheDocument()
     expect(send).toBeEnabled()
     fireEvent.click(send)
     await screen.findByRole('status')
-    expect(requests(spy)).toEqual([{ email: 'jane@newjob.org', turnstileToken: 'solved-token' }])
+    expect(requests(spy)).toEqual([{ email: 'jane@newjob.org' }])
+    expect(spy.mock.calls.some(c => c[0] === '/auth/demo-mode')).toBe(false)
   })
 
   describe.each<Mode>(['light', 'dark'])('Send link button contrast (%s mode)', (mode) => {

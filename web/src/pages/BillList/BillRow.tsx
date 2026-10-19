@@ -22,8 +22,6 @@ import { SECTION_LABEL, CHROME_TEXT, BILL_TITLE_TEXT } from '../../lib/textStyle
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { billDisplayTitle } from '../../../../shared/billTitle'
 import { voteButtonStyle, type VoteKey } from '../../lib/voteButtonStyle'
-import { useConfig } from '../../context/ConfigContext'
-import { DEFAULT_ORG_NOUN } from '../../lib/orgNoun'
 import { CHIP_GRID, CHIP_GRID_MULTISTATE, CHIP_GAP, OUTER_GRID, ROW_PADDING_LEFT, ROW_PADDING_RIGHT } from './constants'
 import { groupPlacement, groupGridStyle, groupItemStyle, subgridCellStyle, GROUP_ROW_GAP } from './groupRows'
 import type { Bill, GroupMember } from './types'
@@ -179,8 +177,6 @@ export const BillRow = memo(function BillRow({
     />
   )
   const billPath = billUrl({ id: bill.id, state: bill.state, sessionSlug: bill.sessionSlug, billNumber: bill.billNumber })
-  const org = useConfig().config?.orgNoun ?? DEFAULT_ORG_NOUN
-  const positionTooltip = `Your ${org}'s official position on this bill`
 
   // Navigate to the bill detail page (optionally to a #section-* anchor).
   // Honors ⌘/Ctrl open-in-new-tab and routes through the prefetch path when
@@ -413,33 +409,29 @@ export const BillRow = memo(function BillRow({
           <span style={{ ...SECTION_LABEL, flexShrink: 0 }}>Position</span>
           {isAdmin
             ? (
-              <HoverTooltip text={positionTooltip}>
-                <CompactPositionSelect
-                  billId={bill.id}
-                  current={bill.position}
-                  options={positionVocabulary}
-                  onChange={(p) => onPositionChange(bill.id, p)}
-                  isFiltered={bill.position != null && filter.position.includes(bill.position)}
-                  size="lg"
-                />
-              </HoverTooltip>
+              <CompactPositionSelect
+                billId={bill.id}
+                current={bill.position}
+                options={positionVocabulary}
+                onChange={(p) => onPositionChange(bill.id, p)}
+                isFiltered={bill.position != null && filter.position.includes(bill.position)}
+                size="lg"
+              />
             )
             : bill.position
               ? (
-                <HoverTooltip text={positionTooltip}>
-                  <button
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPositionClick(bill.position!) }}
-                    onMouseEnter={() => setHoveredChip('position')}
-                    onMouseLeave={() => setHoveredChip(null)}
-                    style={{
-                      background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'inline-flex',
-                      outline: filter.position.includes(bill.position!) ? `2px solid ${color.accentBlue}` : hoveredChip === 'position' ? `2px solid ${color.accentBlueMuted}` : 'none',
-                      outlineOffset: 3, borderRadius: radius.sm,
-                    }}
-                  >
-                    <PositionBadge position={bill.position} />
-                  </button>
-                </HoverTooltip>
+                <button
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPositionClick(bill.position!) }}
+                  onMouseEnter={() => setHoveredChip('position')}
+                  onMouseLeave={() => setHoveredChip(null)}
+                  style={{
+                    background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'inline-flex',
+                    outline: filter.position.includes(bill.position!) ? `2px solid ${color.accentBlue}` : hoveredChip === 'position' ? `2px solid ${color.accentBlueMuted}` : 'none',
+                    outlineOffset: 3, borderRadius: radius.sm,
+                  }}
+                >
+                  <PositionBadge position={bill.position} />
+                </button>
               )
               : <span style={{ fontSize: fontSize.sm, color: color.borderStrong }}>— Not set</span>
           }
@@ -517,26 +509,25 @@ export const BillRow = memo(function BillRow({
       <div className="bill-col-priority">
         {isAdmin
           ? (
-            <HoverTooltip text={isNewMatch ? 'New keyword match — set a priority or dismiss' : "This bill's priority level"}>
-              {renderPriorityControl()}
-            </HoverTooltip>
+            // Only a new match's control needs a word: its label alone does not say what to do.
+            isNewMatch
+              ? <HoverTooltip text="New keyword match — set a priority or dismiss">{renderPriorityControl()}</HoverTooltip>
+              : renderPriorityControl()
           )
           : bill.priority
             ? (
-              <HoverTooltip text="This bill's priority level">
-                <button
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPriorityClick(bill.priority!) }}
-                  onMouseEnter={() => setHoveredChip('priority')}
-                  onMouseLeave={() => setHoveredChip(null)}
-                  style={{
-                    background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'inline-flex',
-                    outline: filter.priority.includes(bill.priority!) ? `2px solid ${color.accentBlue}` : hoveredChip === 'priority' ? `2px solid ${color.accentBlueMuted}` : 'none',
-                    outlineOffset: 2, borderRadius: radius.sm,
-                  }}
-                >
-                  <PriorityBadge priority={bill.priority} />
-                </button>
-              </HoverTooltip>
+              <button
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPriorityClick(bill.priority!) }}
+                onMouseEnter={() => setHoveredChip('priority')}
+                onMouseLeave={() => setHoveredChip(null)}
+                style={{
+                  background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'inline-flex',
+                  outline: filter.priority.includes(bill.priority!) ? `2px solid ${color.accentBlue}` : hoveredChip === 'priority' ? `2px solid ${color.accentBlueMuted}` : 'none',
+                  outlineOffset: 2, borderRadius: radius.sm,
+                }}
+              >
+                <PriorityBadge priority={bill.priority} />
+              </button>
             )
             : isNewMatch
               ? <NewMatchChip />

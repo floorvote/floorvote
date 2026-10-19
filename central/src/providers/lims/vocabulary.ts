@@ -163,53 +163,33 @@ export const vocabulary: ProviderVocabulary = {
 
   calendarName: 'DC Council calendar',
 
-  // Shown on the bill page under "Additional information from DC Council", in
-  // this order. map.ts fills them, and inventory.ts says which feed field each
-  // comes from.
+  // Each says where the bill page shows it (`placement`). The review dates that
+  // repeat the timeline (the Mayor's and Congress's, an act's or law's expiry,
+  // a withdrawal date) aren't extras: each is a history action on the same
+  // day, or a calendar deadline from limsDeadlines. map.ts fills these, and
+  // inventory.ts says which feed field each comes from.
   extras: {
     lawNumber: {
-      label: 'D.C. Law number', display: 'identifier',
+      label: 'D.C. Law number', display: 'identifier', placement: 'meta',
       explainer: 'The number an act takes when it becomes law after Congressional review.',
     },
     actNumber: {
-      label: 'Act number', display: 'identifier',
+      label: 'Act number', display: 'identifier', placement: 'meta',
       explainer: 'The number a measure takes when it is enacted: signed by the Mayor, left unsigned past the Mayor\'s deadline, or passed over a veto.',
     },
     resolutionNumber: {
-      label: 'Resolution number', display: 'identifier',
+      label: 'Resolution number', display: 'identifier', placement: 'meta',
       explainer: 'The number a resolution takes when the Council adopts it.',
     },
     requestedBy: {
-      label: 'Introduced at the request of', display: 'text',
+      label: 'Introduced at the request of', display: 'text', placement: 'meta',
       explainer: 'Who asked for the measure. The Chairman often introduces measures at the request of the Mayor.',
     },
     commentCommittees: {
-      label: 'Committees asked for comments', display: 'text',
+      label: 'Committees asked for comments', display: 'text', placement: 'detail',
       explainer: 'Committees that may comment on the measure. The committee it was referred to, or the full Council, still acts on it.',
     },
-    sentToMayor: { label: 'Sent to the Mayor', display: 'date' },
-    mayorDeadline: {
-      label: 'Mayor\'s deadline', display: 'date',
-      explainer: 'The Mayor has 10 working days to sign or veto an act. Unsigned by then, it takes effect as if signed.',
-    },
-    signedByMayor: { label: 'Signed by the Mayor', display: 'date' },
-    vetoedByMayor: { label: 'Vetoed by the Mayor', display: 'date' },
-    enacted: { label: 'Enacted', display: 'date' },
-    actExpires: {
-      label: 'Act expires', display: 'date',
-      explainer: 'Emergency acts last no more than 90 days, and temporary acts no more than 225.',
-    },
-    sentToCongress: { label: 'Sent to Congress', display: 'date' },
-    projectedLawDate: {
-      label: 'Projected law date', display: 'date',
-      explainer: 'When Congressional review is expected to end. Review counts only days Congress is in session, so this is an estimate.',
-    },
-    lawEffective: { label: 'Law effective', display: 'date' },
-    lawExpires: {
-      label: 'Law expires', display: 'date',
-      explainer: 'A temporary law lasts no more than 225 days.',
-    },
-    withdrawnBy: { label: 'Withdrawn by', display: 'text' },
-    withdrawnOn: { label: 'Withdrawn on', display: 'date' },
+    lawEffective: { label: 'Law effective', display: 'date', placement: 'meta' },
+    withdrawnBy: { label: 'Withdrawn by', display: 'text', placement: 'meta' },
   },
 }
