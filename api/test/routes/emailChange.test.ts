@@ -254,20 +254,27 @@ describe('POST /users/me/email-change: limits', () => {
     expect(sent).toHaveLength(0)
   })
 
-  it('requires Turnstile once it is configured', async () => {
-    const noToken = await request(janeCookie, 'jane@newjob.org', {}, { TURNSTILE_SECRET_KEY: 'secret' })
-    expect(noToken.status).toBe(403)
-    expect(noToken.body).toEqual({ error: 'Verification required.' })
-    expect(sent).toHaveLength(0)
-
-    const siteverify = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ success: true })))
+  it('asks a signed-in member for no Turnstile token, even once Turnstile is configured: the session is the proof, the limits still apply', async () => {
+    const siteverify = vi.spyOn(globalThis, 'fetch')
     try {
-      const ok = await request(janeCookie, 'jane@newjob.org', { turnstileToken: 'solved' }, { TURNSTILE_SECRET_KEY: 'secret' })
+      const ok = await request(janeCookie, 'jane@newjob.org', {}, { TURNSTILE_SECRET_KEY: 'secret' })
       expect(ok.status).toBe(200)
-      expect(siteverify).toHaveBeenCalledWith('https://challenges.cloudflare.com/turnstile/v0/siteverify', expect.anything())
+      expect(sent.some(m => m.to.includes('jane@newjob.org'))).toBe(true)
+      expect(siteverify).not.toHaveBeenCalledWith('https://challenges.cloudflare.com/turnstile/v0/siteverify', expect.anything())
     } finally {
       siteverify.mockRestore()
     }
+  })
+
+  it('still refuses an unauthenticated sign-in request without a token once Turnstile is configured', async () => {
+    await seedUser({ email: 'someone@example.com' })
+    const res = await call('/api/auth/magic-link', { method: 'POST', body: JSON.stringify({ email: 'someone@example.com' }) }, { TURNSTILE_SECRET_KEY: 'secret' })
+    expect(res.status).toBe(403)
+  })
+
+  it('still refuses an unauthenticated email-change request', async () => {
+    const res = await call('/api/users/me/email-change', { method: 'POST', body: JSON.stringify({ email: 'jane@newjob.org' }) }, { TURNSTILE_SECRET_KEY: 'secret' })
+    expect(res.status).toBe(401)
   })
 
   it('keeps one pending change: a second request cancels the first', async () => {

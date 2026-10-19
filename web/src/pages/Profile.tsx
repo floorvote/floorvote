@@ -3,7 +3,6 @@ import { useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useConfig } from '../context/ConfigContext'
 import { SettingsNav } from '../components/SettingsNav'
-import { Turnstile } from '../components/Turnstile'
 import { apiFetch, ApiError } from '../lib/api'
 import { CARD } from '../lib/cardStyle'
 import { CARD_TITLE, FORM_LABEL, HELPER_TEXT } from '../lib/textStyles'
@@ -287,16 +286,11 @@ export function Profile() {
 
   // Change email, inline in the email row. Nothing changes until the new
   // address confirms, so the row only asks for the address and reports where
-  // the link went. The states live in lib/emailChangeState. The request is
-  // gated by Turnstile like the sign-in form, when the instance has a site key.
+  // the link went. The states live in lib/emailChangeState. No human check:
+  // the session already proves who is asking.
   const [emailChange, dispatchEmailChange] = useReducer(emailChangeReducer, EMAIL_CHANGE_IDLE)
-  // null until /auth/demo-mode answers; '' means no widget.
-  const [turnstileSiteKey, setTurnstileSiteKey] = useState<string | null>(null)
-  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
-  const [turnstileKey, setTurnstileKey] = useState(0) // bump for a fresh single-use token
-  const turnstileOk = turnstileSiteKey !== null && (!turnstileSiteKey || !!turnstileToken)
-  const changeEmailReady = emailChange.kind === 'editing' && !emailChange.sending && !!emailChange.value.trim() && turnstileOk
-  const resendReady = emailChange.kind === 'pending' && !emailChange.busy && turnstileOk
+  const changeEmailReady = emailChange.kind === 'editing' && !emailChange.sending && !!emailChange.value.trim()
+  const resendReady = emailChange.kind === 'pending' && !emailChange.busy
   const resendBusy = emailChange.kind === 'pending' && emailChange.busy
   const emailErrorId = useId()
   const emailInputRef = useRef<HTMLInputElement>(null)
@@ -325,11 +319,6 @@ export function Profile() {
     if (demoLocked) return
     dispatchEmailChange({ type: 'open' })
     focusEmail('input')
-    if (turnstileSiteKey === null) {
-      apiFetch<{ turnstileSiteKey?: string }>('/auth/demo-mode')
-        .then((r) => setTurnstileSiteKey(r.turnstileSiteKey ?? ''))
-        .catch(() => setTurnstileSiteKey(''))
-    }
   }
 
   function cancelChangeEmail() {
@@ -349,7 +338,7 @@ export function Profile() {
     try {
       const r = await apiFetch<{ ok: true; email: string }>('/users/me/email-change', {
         method: 'POST',
-        body: JSON.stringify({ email, turnstileToken }),
+        body: JSON.stringify({ email }),
       })
       if (resend) {
         dispatchEmailChange({ type: 'resent', announce: `Link sent again to ${r.email}.` })
@@ -370,10 +359,6 @@ export function Profile() {
         dispatchEmailChange({ type: 'refused', message })
         focusEmail('input')
       }
-    } finally {
-      // Turnstile tokens are single use: remount the widget for the next try.
-      setTurnstileToken(null)
-      setTurnstileKey((k) => k + 1)
     }
   }
 
@@ -595,11 +580,6 @@ export function Profile() {
                 {emailChange.error && (
                   <div id={emailErrorId} role="alert" style={{ fontSize: fontSize.sm, color: color.textErrorRed, marginTop: 6 }}>{emailChange.error}</div>
                 )}
-                {turnstileSiteKey && (
-                  <div style={{ marginTop: 8 }}>
-                    <Turnstile key={turnstileKey} sitekey={turnstileSiteKey} onToken={setTurnstileToken} />
-                  </div>
-                )}
               </form>
             )}
 
@@ -611,11 +591,6 @@ export function Profile() {
               resendRef={resendButtonRef}
               confirmedAnnounce={user?.email ? `Your email is now ${user.email}.` : undefined}
             />
-            {emailChange.kind === 'pending' && turnstileSiteKey && (
-              <div style={{ marginTop: 8 }}>
-                <Turnstile key={turnstileKey} sitekey={turnstileSiteKey} onToken={setTurnstileToken} />
-              </div>
-            )}
           </div>
         </div>
 

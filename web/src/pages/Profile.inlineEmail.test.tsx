@@ -93,7 +93,7 @@ describe('Profile email row: inline change', () => {
       fireEvent.change(input, { target: { value: 'jane@newjob.org' } })
       fireEvent.submit(input.closest('form')!)
       await screen.findByText('→ jane@newjob.org · Link sent')
-      expect(requests(spy)).toEqual([{ email: 'jane@newjob.org', turnstileToken: null }])
+      expect(requests(spy)).toEqual([{ email: 'jane@newjob.org' }])
     })
 
     it('cancels with Escape, sends nothing, and puts focus back on the row button', async () => {
@@ -161,7 +161,7 @@ describe('Profile email row: inline change', () => {
       await sendTo('Jane@NewJob.org')
       fireEvent.click(await screen.findByRole('button', { name: 'Resend' }))
       await waitFor(() => expect(requests(spy)).toHaveLength(2))
-      expect(requests(spy)[1]).toEqual({ email: 'jane@newjob.org', turnstileToken: null })
+      expect(requests(spy)[1]).toEqual({ email: 'jane@newjob.org' })
       await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Link sent again to jane@newjob.org.'))
       expect(screen.getByText('→ jane@newjob.org · Link sent')).toBeInTheDocument()
     })
@@ -215,20 +215,18 @@ describe('Profile email row: inline change', () => {
       await waitFor(() => expect(screen.getByRole('button', { name: 'Change email…' })).toHaveFocus())
     })
 
-    it('Resend waits for a fresh Turnstile token when it is configured', async () => {
+    it('Resend is ready at once and shows no human check, even when Turnstile is configured', async () => {
       const spy = mockApi(OK, 'site-key')
       render(tree())
       fireEvent.change(await openEdit(), { target: { value: 'jane@newjob.org' } })
-      fireEvent.click(await screen.findByRole('button', { name: 'Solve challenge' }))
+      expect(screen.queryByRole('button', { name: 'Solve challenge' })).not.toBeInTheDocument()
       fireEvent.click(screen.getByRole('button', { name: 'Send link' }))
       const resend = await screen.findByRole('button', { name: 'Resend' })
-      await waitFor(() => expect(screen.getByRole('button', { name: 'Solve challenge' })).toBeInTheDocument())
-      expect(resend).toBeDisabled()
-      fireEvent.click(screen.getByRole('button', { name: 'Solve challenge' }))
+      expect(screen.queryByRole('button', { name: 'Solve challenge' })).not.toBeInTheDocument()
       expect(resend).toBeEnabled()
       fireEvent.click(resend)
       await waitFor(() => expect(requests(spy)).toHaveLength(2))
-      expect(requests(spy)[1]).toEqual({ email: 'jane@newjob.org', turnstileToken: 'solved-token' })
+      expect(requests(spy)[1]).toEqual({ email: 'jane@newjob.org' })
     })
   })
 
