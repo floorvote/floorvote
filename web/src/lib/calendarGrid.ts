@@ -46,6 +46,15 @@ export interface CalendarEvent {
   details: string | null
   url: string | null
   status: 'confirmed' | 'cancelled'
+  /** A body event's committee, from the legislature's own calendar; null for no committee, and for every other event (#695). */
+  committee?: string | null
+  committeeId?: string | null
+  /** The committee a body event is held jointly with. */
+  jointWith?: string | null
+  /** The state whose legislature holds a body event. */
+  bodyState?: string | null
+  /** A prioritized bill brings this body event back though the instance's rules hide its committee. */
+  shownByPriority?: boolean
 }
 
 export interface DayCell {

@@ -24,12 +24,14 @@ const META_ICON_STYLE: CSSProperties = { fontSize: fontSize.sm, lineHeight: 1 }
  * `linkChips` makes the chips deep-link to the bill (agenda/popover); off in the
  * month cell where the whole card is the click target.
  */
-export function EventLines({ event, compact = false, linkChips = false, suppressHover = false, clampDetails = false }: {
+export function EventLines({ event, compact = false, linkChips = false, suppressHover = false, clampDetails = false, pastTitle = false }: {
   event: CalendarEvent
   compact?: boolean
   linkChips?: boolean
   suppressHover?: boolean
   clampDetails?: boolean
+  /** A past event's title wears the secondary text color (cancelled titles keep their own). */
+  pastTitle?: boolean
 }) {
   const [showAll, setShowAll] = useState(false)
   const { time, text, location, cancelled } = eventBodyModel(event, compact)
@@ -51,7 +53,9 @@ export function EventLines({ event, compact = false, linkChips = false, suppress
     ...EVENT_META_STYLE, marginTop: 4, whiteSpace: 'pre-line', lineHeight: 1.5,
     ...(clampDetails && !showAll ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } as CSSProperties : {}),
   }
-  const cancelStyle: CSSProperties = cancelled ? { color: color.textMuted, textDecoration: 'line-through' } : {}
+  const cancelStyle: CSSProperties = cancelled
+    ? { color: color.textMuted, textDecoration: 'line-through' }
+    : pastTitle ? { color: color.textSecondary } : {}
 
   const billChips = (wrap: boolean) => (
     <div style={{
@@ -152,7 +156,7 @@ export function EventLines({ event, compact = false, linkChips = false, suppress
             href={event.url}
             target="_blank"
             rel="noopener noreferrer"
-            style={{ fontSize: fontSize.xs, color: color.accentBlue, textDecoration: 'underline', overflowWrap: 'anywhere' }}
+            style={{ fontSize: fontSize.xs, color: color.linkBlue, textDecoration: 'underline', overflowWrap: 'anywhere' }}
           >
             {formatEventUrl(event.url)}
           </a>
@@ -166,7 +170,7 @@ export function EventLines({ event, compact = false, linkChips = false, suppress
             <button
               type="button"
               onClick={() => setShowAll(v => !v)}
-              style={{ marginTop: 2, padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontSize: fontSize.xs, color: color.accentBlue }}
+              style={{ marginTop: 2, padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontSize: fontSize.xs, color: color.linkBlue }}
             >
               {showAll ? 'Show less' : 'Show more'}
             </button>

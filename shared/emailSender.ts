@@ -18,8 +18,10 @@
  * Adding a purpose: add its message type to `PurposeMessage` and its rule to
  * `RULES`. Today: sign-in (tenant login, admin-sent login and invite links, the
  * invite queue), account (the email-change emails and the "this wasn't me"
- * report), notification (mentions and replies), and bulk (the digest and the
- * week-ahead email). #709 and #710 move the rest.
+ * report), notification (mentions and replies), bulk (the digest and the
+ * week-ahead email), operator (feedback, invite-bounce notices, job alerts, and
+ * sample emails), and outage-alert (the email-health alert, which tries the
+ * healthy provider first). #710 moves central's.
  *
  * Tests pass in-memory providers through `SenderOptions.providers`; the real
  * adapters live in `./emailProviders`.
@@ -72,7 +74,13 @@ export type NotificationMessage = BaseMessage & { purpose: 'notification' }
 /** A digest or week-ahead email. Carries its unsubscribe header in `headers`. */
 export type BulkMessage = BaseMessage & { purpose: 'bulk' }
 
-export type PurposeMessage = SignInMessage | AccountMessage | NotificationMessage | BulkMessage
+/** Feedback, invite-bounce notices, job alerts, and sample emails: mail to an operator or admin about the system itself. */
+export type OperatorMessage = BaseMessage & { purpose: 'operator' }
+
+/** The email-health alert, which says a provider is failing. */
+export type OutageAlertMessage = BaseMessage & { purpose: 'outage-alert' }
+
+export type PurposeMessage = SignInMessage | AccountMessage | NotificationMessage | BulkMessage | OperatorMessage | OutageAlertMessage
 
 export type SendResult =
   | { ok: true; provider: ProviderName; messageId?: string; attempts: Attempt[] }
@@ -143,6 +151,12 @@ type Rule<M> = {
   /** Report attempts to the health recorder. */
   counts: boolean
   from: 'default' | 'bulk'
+  /**
+   * Which configured provider goes first. Defaults to the sender's order, the
+   * primary first. 'alternate-first' swaps the first two, for a message about
+   * the primary failing.
+   */
+  order?: 'alternate-first'
   /** Whether demo mode suppresses this message. */
   suppressedInDemo: (m: M) => boolean
 }
@@ -167,6 +181,17 @@ const RULES: Rules = {
   // its quota. Counts each send to the provider that sent it, goes out from the
   // bulk From, and a demo instance never sends it.
   bulk: { fallback: false, counts: true, from: 'bulk', suppressedInDemo: () => true },
+  // Feedback, invite-bounce notices, job alerts, and sample emails. They go to
+  // an operator or admin, so they fall back like any mail someone waits on. They
+  // never count: operator mail keeps arriving during an outage that only
+  // affects member addresses (a verified-only one), so counting it would hide
+  // an outage or fake a recovery. And they send in demo mode, because the
+  // operator of a demo still needs to hear about it.
+  operator: { fallback: true, counts: false, from: 'default', suppressedInDemo: () => false },
+  // The email-health alert. Same as operator mail, except the healthy provider
+  // goes first: the alert is about the provider the sender tries first, so it
+  // can't count on that one to carry the news.
+  'outage-alert': { fallback: true, counts: false, from: 'default', suppressedInDemo: () => false, order: 'alternate-first' },
 }
 
 function ruleFor(message: PurposeMessage): Rule<PurposeMessage> {
@@ -240,7 +265,7 @@ export function createSender(env: SenderEnv, opts: SenderOptions = {}): EmailSen
       return { ok: false, provider: null, error: `Invalid recipient address: ${invalid.join(', ')}`, permanent: true, attempts: [] }
     }
 
-    const [first, second] = providers
+    const [first, second] = rule.order === 'alternate-first' && providers.length > 1 ? [providers[1], providers[0]] : providers
     if (!first) return { ok: false, provider: null, error: 'no email provider configured', permanent: false, attempts: [] }
 
     const email = resolve(message, rule)

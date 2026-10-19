@@ -53,10 +53,29 @@ page's status and confirm calls have their own per-IP keys
 (`email-change-status:<ip>`, `email-change-confirm:<ip>`).
 
 The unauthenticated one-click mute (`POST /api/mute-link`, `api/src/routes/muteLink.ts`)
-also uses `LOGIN_RATE_LIMITER`, under `mute-link:<ip>`. The key is the IP alone, not
-IP plus token, so a flooder can't dodge the cap by varying the token. The check runs
-before the body-size check and before the token is read, so a 429 reveals nothing
-about whether a token is valid.
+has its own binding, `MUTE_LINK_RATE_LIMITER` (**120 requests / 60s per client IP**),
+under `mute-link:<ip>`. Gmail and Yahoo send RFC 8058 one-click POSTs from their own
+servers, so many members' mutes arrive from a few IPs and would trip login's 10 a
+minute; a limit is per binding, so the mute link needs its own. **Operators: add
+this to each tenant env in `api/wrangler.toml`** (copy the block from
+`api/wrangler.example.toml`; its `namespace_id` must be unique across all your
+limiters, login's included):
+
+```toml
+[[env.<id>.ratelimits]]
+name = "MUTE_LINK_RATE_LIMITER"
+namespace_id = "<unique-integer>"
+  [env.<id>.ratelimits.simple]
+  limit = 120
+  period = 60
+```
+
+Until the binding is added the route falls back to `LOGIN_RATE_LIMITER` (10 / 60s),
+so nothing breaks, but provider bursts can 429 again. If the mute binding is bound
+but errors, the route fails open and does not fall back. The key is the IP alone,
+not IP plus token, so a flooder can't dodge the cap by varying the token. The check
+runs before the body-size check and before the token is read, so a 429 reveals
+nothing about whether a token is valid.
 
 ## 2. Turnstile
 
