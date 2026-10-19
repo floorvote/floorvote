@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 import { drizzle } from 'drizzle-orm/d1'
-import { eq, and, isNull, gt, sql } from 'drizzle-orm'
+import { eq, and, isNull, sql } from 'drizzle-orm'
 import * as schema from '../db/schema'
 import {
   generateToken,
@@ -120,12 +120,13 @@ dashAuthRoutes.post('/login', async (c) => {
     return c.json({ data: { ok: true }, meta: { generatedAt: new Date().toISOString() } })
   }
 
-  // Everything past the sender check runs after the response is sent: the active-link
-  // count, the token, the insert, and the provider round-trip. A listed address then
-  // does only what an unlisted one does (parse, allowlist, in-memory config check, 200),
-  // so neither the timing nor a database failure tells them apart. One job, one catch:
-  // a failure anywhere in it is logged, never thrown into the response, and the promise
-  // handed to waitUntil never rejects. The email goes out only after the link is stored.
+  // Everything past the sender check runs after the response is sent: the token, the
+  // capped insert (count and insert in one statement), and the provider round-trip. A
+  // listed address then does only what an unlisted one does (parse, allowlist, in-memory
+  // config check, 200), so neither the timing nor a database failure tells them apart.
+  // One job, one catch: a failure anywhere in it is logged, never thrown into the
+  // response, and the promise handed to waitUntil never rejects. The email goes out only
+  // after the link is stored.
   c.executionCtx.waitUntil(
     issueMagicLink(c.env, email).catch((err) =>
       console.error('Admin /login: background sign-in work failed', err),
@@ -137,30 +138,28 @@ dashAuthRoutes.post('/login', async (c) => {
 async function issueMagicLink(env: DashEnv['Bindings'], email: string): Promise<void> {
   const db = drizzle(env.DB, { schema })
 
-  // Per-address active-link cap (finding D4): refuse silently (the response is already
-  // the same 200, no enumeration) once too many unused, unexpired links exist for this
-  // address, so a known superadmin email can't be email-bombed and Resend quota can't be
-  // burned. Expired/used links don't count.
-  const activeLinks = await db
-    .select({ id: schema.magicLinks.id })
-    .from(schema.magicLinks)
-    .where(and(
-      eq(schema.magicLinks.email, email),
-      isNull(schema.magicLinks.usedAt),
-      gt(sql`datetime(${schema.magicLinks.expiresAt})`, sql`datetime('now')`),
-    ))
-    .all()
-  if (activeLinks.length >= MAX_ACTIVE_ADMIN_LINKS) return
-
   const rawToken = await generateToken()
   const tokenHash = await hashToken(rawToken)
   const expiresAt = new Date(Date.now() + MAGIC_LINK_TTL_MS).toISOString()
-  await db.insert(schema.magicLinks).values({
-    id: crypto.randomUUID(),
-    email,
-    tokenHash,
-    expiresAt,
-  })
+
+  // Per-address active-link cap (finding D4): refuse silently (the response is already
+  // the same 200, no enumeration) once too many unused, unexpired links exist for this
+  // address, so a known superadmin email can't be email-bombed and Resend quota can't be
+  // burned. Expired/used links don't count. The count and the insert are ONE statement,
+  // so the cap holds however requests interleave: the response no longer waits for a
+  // read-then-insert, so a client's next request can arrive before this one has
+  // inserted, and a separate count would read a stale number. One D1 round trip, and the
+  // email goes out only when this statement wrote the row (`changes` is the rows the
+  // statement itself inserted; `rows_written` would also count the index writes).
+  const result = await db.run(sql`
+    INSERT INTO magic_links (id, email, token_hash, expires_at)
+    SELECT ${crypto.randomUUID()}, ${email}, ${tokenHash}, ${expiresAt}
+    WHERE (
+      SELECT COUNT(*) FROM magic_links
+      WHERE email = ${email} AND used_at IS NULL AND datetime(expires_at) > datetime('now')
+    ) < ${MAX_ACTIVE_ADMIN_LINKS}
+  `)
+  if (((result as any)?.meta?.changes ?? 0) !== 1) return
 
   const url = `${env.ADMIN_APP_URL}/admin/dash/auth/callback?token=${encodeURIComponent(rawToken)}`
   await sendAdminMagicLink(email, url, env)
