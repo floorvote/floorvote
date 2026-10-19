@@ -715,8 +715,8 @@ describe('a comment posted on a companion', () => {
 })
 
 // Where the shares line sits. It describes the comments and position boxes below it, so it lines up with
-// the section titles of the bill card above and sits closer to those boxes than to that card. jsdom has no
-// layout, so both read from the computed styles that place them.
+// the "Comments" heading in the comments card and sits closer to those boxes than to the bill card above.
+// jsdom has no layout, so both read from the computed styles that place them.
 describe('where the line saying what a companion group shares sits', () => {
   const DOCUMENT = {
     supplementId: 1, typeId: 1, type: 'Fiscal Note', date: null, dateResolved: null, dateInferred: false,
@@ -729,28 +729,35 @@ describe('where the line saying what a companion group shares sits', () => {
     const s = getComputedStyle(el)
     return px(s.marginLeft) + px(s.borderLeftWidth) + px(s.paddingLeft)
   }
-  // Pixels from the bill card's outer left edge to where a section title's text starts. jsdom drops the card's
-  // border shorthand (its color is a CSS variable), so the border's width comes from the shared card style.
-  const titleOffset = (title: HTMLElement, card: HTMLElement) => {
+  // Pixels from the page's left edge to where the comments heading's text starts: every margin, border, and
+  // padding between the line's own container and the heading. jsdom drops the card's border shorthand (its
+  // color is a CSS variable), so the border's width comes from the shared card style.
+  const headingOffset = (heading: HTMLElement, card: HTMLElement, page: HTMLElement) => {
     let x = 0
-    for (let n: HTMLElement | null = title; n && n !== card; n = n.parentElement) x += own(n)
-    return x + parseFloat(CARD.border) + px(getComputedStyle(card).paddingLeft)
+    for (let n: HTMLElement | null = heading; n && n !== card; n = n.parentElement) x += own(n)
+    x += parseFloat(CARD.border) + px(getComputedStyle(card).paddingLeft)
+    for (let n: HTMLElement | null = card.parentElement; n && n !== page; n = n.parentElement) x += own(n)
+    return x
+  }
+  const commentsHeading = () => {
+    const card = document.getElementById('section-comments') as HTMLElement
+    return { card, heading: within(card).getByText(/^Comments/) }
   }
 
-  it("lines up with the section titles of the bill card above it, for a group of two", async () => {
+  it('lines up with the Comments heading, for a group of two', async () => {
     renderBillDetail({ ...WITH_SECTIONS, groupBills: [THIS, COMPANION] })
-    const title = await screen.findByText('Documents')
-    const card = line().previousElementSibling as HTMLElement
-    expect(card.contains(title)).toBe(true)
-    expect(titleOffset(title, card)).toBeGreaterThan(0)
-    expect(own(line())).toBe(titleOffset(title, card))
+    await screen.findByText('Documents')
+    const { card, heading } = commentsHeading()
+    const offset = headingOffset(heading, card, line().parentElement as HTMLElement)
+    expect(offset).toBeGreaterThan(0)
+    expect(own(line())).toBe(offset)
   })
 
   it('lines up the same way for a group of three or more', async () => {
     renderBillDetail({ ...WITH_SECTIONS, groupBills: [THIS, COMPANION, THIRD] })
-    const title = await screen.findByText('Documents')
-    const card = line().previousElementSibling as HTMLElement
-    expect(own(line())).toBe(titleOffset(title, card))
+    await screen.findByText('Documents')
+    const { card, heading } = commentsHeading()
+    expect(own(line())).toBe(headingOffset(heading, card, line().parentElement as HTMLElement))
   })
 
   it('sits closer to the comments and position boxes below it than to the bill card above it', async () => {
@@ -919,7 +926,7 @@ describe('the grouping lines of a comment thread', () => {
     await screen.findByText('c3 text')
     expect(lines()).toEqual([
       'link_off' + 'Separated from S1713 on October 13. Comments posted on S1713 no longer appear here.',
-      'link_2' + 'Grouped with S1713 as identical bills on October 14. Earlier comments on S1713 now appear here.',
+      'link' + 'Grouped with S1713 as identical bills on October 14. Earlier comments on S1713 now appear here.',
     ])
   })
 

@@ -241,7 +241,9 @@ describe('replying to a bill notifies its other commenters', () => {
     expect(sent()[0].html).toContain('/profile#setting-email-replies')
   })
 
-  it('stops reply emails but not the in-app reply when the member turned the setting off', async () => {
+  // "Replies on bills you've commented on" (users.emailRepliesEnabled) governs
+  // the whole reply fan-out, in the app and by email. Mentions are separate.
+  it('sends a member who turned the setting off neither a reply notification nor a reply email', async () => {
     await member('Ivy', { emailRepliesEnabled: false })
     await comment('ivy', '<p>First</p>')
     await comment('ben', '<p>Second</p>')
@@ -250,20 +252,72 @@ describe('replying to a bill notifies its other commenters', () => {
     const commentId = await comment('ann', '<p>Third</p>')
 
     expect(emailedTo()).toEqual(['ben@example.com'])
-    expect((await inbox('ivy')).notifications.filter(n => n.commentId === commentId).map(n => n.kind)).toEqual(['reply'])
+    expect((await inbox('ivy')).notifications.filter(n => n.commentId === commentId)).toEqual([])
+    expect((await inbox('ivy')).unreadCount).toBe(0)
+    expect((await inbox('ben')).notifications.filter(n => n.commentId === commentId).map(n => n.kind)).toEqual(['reply'])
   })
 
-  it('lets a member switch reply emails off and on from their profile', async () => {
+  it('still notifies a member who turned the setting off of a mention, in the app and by email', async () => {
+    await member('Ivy', { emailRepliesEnabled: false })
+    await comment('ivy', '<p>First</p>')
+    send.mockClear()
+
+    const commentId = await comment('ann', `<p>${mention(ids.ivy, 'Ivy')} thoughts?</p>`)
+
+    expect((await inbox('ivy')).notifications.filter(n => n.commentId === commentId).map(n => n.kind)).toEqual(['mention'])
+    expect(sent().map(m => m.to[0])).toEqual(['ivy@example.com'])
+    expect(sent()[0].subject).toMatch(/mentioned/)
+  })
+
+  it('still notifies a member who turned the setting off of a role mention', async () => {
+    const team = await seedRole('Team')
+    await member('Ivy', { emailRepliesEnabled: false })
+    await seedUserRole(ids.ivy, team)
+    await comment('ivy', '<p>First</p>')
+
+    const commentId = await comment('ann',
+      `<p><span data-type="mention" data-id="role:${team}" data-label="Team">@Team</span></p>`)
+
+    expect((await inbox('ivy')).notifications.filter(n => n.commentId === commentId).map(n => n.kind)).toEqual(['mention'])
+  })
+
+  it('keeps gating the mention email of a member who turned the setting off on the instance switch', async () => {
+    await member('Ivy', { emailRepliesEnabled: false })
+    await comment('ivy', '<p>First</p>')
+    await getDb(env.DB).insert(associationConfig).values({ key: 'mention_emails_enabled', value: 'false' })
+    send.mockClear()
+
+    const commentId = await comment('ann', `<p>${mention(ids.ivy, 'Ivy')} thoughts?</p>`)
+
+    expect((await inbox('ivy')).notifications.filter(n => n.commentId === commentId).map(n => n.kind)).toEqual(['mention'])
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('sends nothing to a member who turned the setting off and also muted the bill', async () => {
+    await member('Ivy', { emailRepliesEnabled: false })
+    await comment('ivy', '<p>First</p>')
+    expect((await request(`/api/bills/${billId}/mute`, 'PUT', 'ivy')).status).toBe(200)
+    send.mockClear()
+
+    const commentId = await comment('ann', '<p>Second</p>')
+
+    expect((await inbox('ivy')).notifications.filter(n => n.commentId === commentId)).toEqual([])
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('lets a member switch replies off and on from their profile', async () => {
     await comment('ben', '<p>First</p>')
     expect((await request('/api/users/me', 'PATCH', 'ben', { emailRepliesEnabled: false })).status).toBe(200)
     expect(((await (await request('/api/auth/me', 'GET', 'ben')).json()) as { emailRepliesEnabled: boolean }).emailRepliesEnabled).toBe(false)
     send.mockClear()
-    await comment('ann', '<p>Second</p>')
+    const whileOff = await comment('ann', '<p>Second</p>')
     expect(send).not.toHaveBeenCalled()
+    expect((await inbox('ben')).notifications.filter(n => n.commentId === whileOff)).toEqual([])
 
     await request('/api/users/me', 'PATCH', 'ben', { emailRepliesEnabled: true })
-    await comment('ann', '<p>Third</p>')
+    const whileOn = await comment('ann', '<p>Third</p>')
     expect(emailedTo()).toEqual(['ben@example.com'])
+    expect((await inbox('ben')).notifications.filter(n => n.commentId === whileOn).map(n => n.kind)).toEqual(['reply'])
   })
 
   it('stops reply emails but not in-app replies when the instance turned conversation emails off', async () => {

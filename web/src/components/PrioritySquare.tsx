@@ -12,15 +12,17 @@ import { PRIORITY_MARKER_RING, prioritySquareRadius } from '../../../shared/prio
  * `ring` adds a white halo so the square reads on a dark chip (navy BillBadge);
  * omit it on light backgrounds (the Feed row).
  */
-export function PrioritySquare({ size, color, ring = false, style }: {
+export function PrioritySquare({ size, color, ring = false, style, 'data-testid': testId }: {
   size: number
   color: string
   ring?: boolean
   style?: CSSProperties
+  'data-testid'?: string
 }) {
   return (
     <span
       aria-hidden="true"
+      data-testid={testId}
       style={{
         display: 'inline-block',
         width: size,

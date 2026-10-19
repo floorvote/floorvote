@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { and, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { resetDb, applyMigrations, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { processCentralNotification } from '../../src/queue/processor'
@@ -8,9 +8,9 @@ import { associationConfig, bills, teamEvents } from '../../src/db/schema'
 import { rowidOf } from '../../src/db/rowid'
 import type { TenantQueueMessage } from '../../src/types'
 
-// Tags are a team field, and only the AI analysis sets them. Each analysis
-// that changes them records a structured team event with no actor, so a
-// future bill history can show when FloorVote retagged a bill.
+// The bill's comment thread shows only changes people made, so an analysis
+// that retags a bill (or a bill that starts matching and so moves its group's
+// tags) records no team event. The new tags still land on the bill.
 
 vi.mock('../../src/lib/llm', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/lib/llm')>()
@@ -28,7 +28,7 @@ const centralBill = {
 }
 const testEnv = { ...env, TENANT_ID: 'test-org', CENTRAL_API_URL: 'https://central.test' }
 
-describe('processor: tag team events', () => {
+describe('processor: tags are not recorded as team events', () => {
   const db = () => getDb(env.DB)
 
   async function analyze(tags: string[], matchType: 'keyword' | null = 'keyword') {
@@ -37,12 +37,16 @@ describe('processor: tag team events', () => {
     const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID, matchType, forceAI: true }
     await processCentralNotification(msg, testEnv as never, db())
   }
-  async function tagEvents() {
-    const bill = await db().select({ id: bills.id }).from(bills).where(eq(bills.externalId, BILL_ID)).get()
+  /** Every field_changed team event on any bill, so one recorded on a companion would show too. */
+  async function fieldEvents() {
     const rows = await db().select().from(teamEvents)
-      .where(and(eq(teamEvents.billId, bill!.id), eq(teamEvents.type, 'field_changed')))
+      .where(eq(teamEvents.type, 'field_changed'))
       .orderBy(teamEvents.createdAt, rowidOf(teamEvents)).all()
-    return rows.map(r => ({ actorUserId: r.actorUserId, ...JSON.parse(r.metadata) as Record<string, unknown> }))
+    return rows.map(r => ({ billId: r.billId, actorUserId: r.actorUserId, ...JSON.parse(r.metadata) as Record<string, unknown> }))
+  }
+  async function tagsOf(externalId: string) {
+    const row = await db().select({ tags: bills.tags }).from(bills).where(eq(bills.externalId, externalId)).get()
+    return JSON.parse(row!.tags ?? '[]') as string[]
   }
 
   beforeEach(async () => {
@@ -58,16 +62,18 @@ describe('processor: tag team events', () => {
     ))
   })
 
-  it('records the tags an analysis sets, with no actor', async () => {
+  it('records no event for the tags an analysis sets, though the bill gets them', async () => {
     await analyze(['Energy'])
-    expect(await tagEvents()).toEqual([{ actorUserId: null, field: 'tags', label: 'tags', old: [], new: ['Energy'] }])
+    expect(await fieldEvents()).toEqual([])
+    expect(await tagsOf(BILL_ID)).toEqual(['Energy'])
   })
 
-  it('records a re-analysis that changes the tags, and none that keeps them', async () => {
+  it('records no event for a re-analysis that changes the tags, though the bill gets them', async () => {
     await analyze(['Energy'])
     await analyze(['Energy'])
     await analyze(['Energy', 'Labor'])
-    expect((await tagEvents()).slice(1)).toEqual([{ actorUserId: null, field: 'tags', label: 'tags', old: ['Energy'], new: ['Energy', 'Labor'] }])
+    expect(await fieldEvents()).toEqual([])
+    expect(await tagsOf(BILL_ID)).toEqual(['Energy', 'Labor'])
   })
 
   describe('in a companion group', () => {
@@ -77,31 +83,23 @@ describe('processor: tag team events', () => {
       await seedBill({ id: 'comp', billNumber: 'S77', state: 'NJ', externalId: 'legiscan:77', matchType: 'keyword' })
     })
 
-    it("records the group's tags before and after, not the bill's own, for a tracked bill", async () => {
+    it("records no event when the group's tags move from a tracked companion's to the bill's own", async () => {
       await analyze(['Energy'])
       const own = await db().select({ id: bills.id, groupKey: bills.groupKey }).from(bills).where(eq(bills.externalId, BILL_ID)).get()
       expect(own!.groupKey).not.toBeNull()
       // The tracked companion is analyzed later, so the group shows its tags.
       await db().update(bills).set({ tags: JSON.stringify(['Labor']), tenantSummary: 'S77 summary', aiProcessedAt: '2026-01-01 00:00:00' }).where(eq(bills.id, 'comp'))
       await db().update(bills).set({ aiProcessedAt: '2025-12-01 00:00:00' }).where(eq(bills.id, own!.id))
-      // A4242's own tags don't change, but the group's do, from S77's to A4242's.
       await analyze(['Energy'])
-      expect((await tagEvents()).slice(1)).toEqual([{ actorUserId: null, field: 'tags', label: 'tags', old: ['Labor'], new: ['Energy'] }])
+      expect(await fieldEvents()).toEqual([])
     })
 
-    it("records the analysis of a bill that didn't match when the group has no tracked analysis", async () => {
+    it("records no event for the analysis of a bill that didn't match when the group has no tracked analysis", async () => {
       // Grouped first, with no analysis of either bill.
       await processCentralNotification({ tenantId: 'test-org', billId: BILL_ID, matchType: null, metadataOnly: true }, testEnv as never, db())
       expect((await db().select({ groupKey: bills.groupKey }).from(bills).where(eq(bills.externalId, BILL_ID)).get())!.groupKey).not.toBeNull()
       await analyze(['Energy'], null)
-      expect(await tagEvents()).toEqual([{ actorUserId: null, field: 'tags', label: 'tags', old: [], new: ['Energy'] }])
-    })
-
-    it("records nothing for a bill that didn't match when the group's tracked analysis keeps its tags", async () => {
-      await db().update(bills).set({ tags: JSON.stringify(['Labor']), tenantSummary: 'S77 summary', aiProcessedAt: '2026-01-01 00:00:00' }).where(eq(bills.id, 'comp'))
-      await processCentralNotification({ tenantId: 'test-org', billId: BILL_ID, matchType: null, metadataOnly: true }, testEnv as never, db())
-      await analyze(['Energy'], null)
-      expect(await tagEvents()).toEqual([])
+      expect(await fieldEvents()).toEqual([])
     })
   })
 })

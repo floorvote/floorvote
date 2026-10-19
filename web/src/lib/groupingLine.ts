@@ -67,21 +67,18 @@ export function placeGroupingLines(
   return { before, after }
 }
 
-/** A line of a comment thread's activity: a grouping line, a team field change, or a run of changes folded into one. */
+/** A line of a comment thread's activity: a grouping line or a team field change. */
 export type ThreadLine =
   | { kind: 'grouping'; key: string; event: GroupingEvent }
   | { kind: 'change'; key: string; event: FieldChangeEvent }
-  | { kind: 'fold'; key: string; actorName: string | null; events: FieldChangeEvent[] }
 
 /**
  * Where each line of a bill's activity goes in a comment thread ordered by time,
  * as `placeGroupingLines` places a grouping line: before the first comment posted
  * after it, or after them all (a comment at the very second of one sits above
  * it). Grouping lines and team field changes share one time order, a grouping
- * line first on a tie. Within each gap between comments, consecutive changes by
- * the same person fold into one line, since a gap holds no comment to read them
- * against: a grouping line that shows ends a run, and a comment always does. The
- * same person is the same actor id, and FloorVote (no actor) is one actor.
+ * line first on a tie. Every change is its own line, however many one person
+ * makes in a row.
  */
 export function placeThreadLines(
   comments: readonly { id: string; createdAt: string }[],
@@ -97,33 +94,10 @@ export function placeThreadLines(
     const at = dbTsToEpoch(event.createdAt)
     add(comments.find(c => dbTsToEpoch(c.createdAt) > at)?.id ?? null, at, { kind: 'change', key: event.id, event })
   }
-  const fold = (gap: string | null) => foldRuns((gaps.get(gap) ?? []).sort((a, b) => a.at - b.at).map(item => item.line))
+  const inOrder = (gap: string | null) => (gaps.get(gap) ?? []).sort((a, b) => a.at - b.at).map(item => item.line)
   const before = new Map<string, ThreadLine[]>()
-  for (const gap of gaps.keys()) if (gap !== null) before.set(gap, fold(gap))
-  return { before, after: fold(null) }
-}
-
-// The same person: the actor's id, with FloorVote (no actor name) as one actor.
-const actorOf = (e: FieldChangeEvent) => e.actorName === null ? null : (e.actorId ?? e.actorName)
-
-function foldRuns(lines: ThreadLine[]): ThreadLine[] {
-  const out: ThreadLine[] = []
-  let run: FieldChangeEvent[] = []
-  const flush = () => {
-    if (run.length === 1) out.push({ kind: 'change', key: run[0].id, event: run[0] })
-    else if (run.length > 1) out.push({ kind: 'fold', key: `fold-${run[0].id}`, actorName: run[0].actorName, events: run })
-    run = []
-  }
-  for (const line of lines) {
-    if (line.kind === 'change' && (run.length === 0 || actorOf(run[0]) === actorOf(line.event))) run.push(line.event)
-    else {
-      flush()
-      if (line.kind === 'change') run.push(line.event)
-      else out.push(line)
-    }
-  }
-  flush()
-  return out
+  for (const gap of gaps.keys()) if (gap !== null) before.set(gap, inOrder(gap))
+  return { before, after: inOrder(null) }
 }
 
 // "A1", "A1 and A2", "A1, A2, and A3"

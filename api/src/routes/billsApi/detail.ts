@@ -25,7 +25,7 @@ import { isReplyParticipant } from '../../lib/replies'
 import { findCompanionSuggestion } from '../../lib/companionSuggestion'
 import { claimLinksEnabled, readClaimSources } from '../../lib/claimSources'
 import type { GroupingEvent, GroupingEventMetadata, GroupingEventType } from '../../../../shared/companionGroups'
-import { FIELD_CHANGED, type FieldChangedMetadata, type FieldChangeEvent } from '../../../../shared/teamFields'
+import { FIELD_CHANGED, type FieldChangedMetadata, type FieldChangeEvent, type TeamField } from '../../../../shared/teamFields'
 
 type CentralBillRich = {
   billType?: string | null
@@ -80,12 +80,17 @@ async function firstCommentTimes(db: ReturnType<typeof getDb>, billIds: string[]
 
 /**
  * The field changes a bill page's comment thread shows lines for, oldest first, from the `field_changed`
- * team events of the bill's group. An event whose metadata can't be read is skipped rather than failing
- * the page. A bulk edit that selected two bills of a group wrote the same change on each, which the group
+ * team events of the bill's group. The thread shows only changes people made, so an event with no actor
+ * is left out, and so is a tags change, which the AI analysis once recorded (with no actor) and no longer
+ * does: older rows stay in `team_events`. An event whose metadata can't be read is skipped rather than
+ * failing the page. A bulk edit that selected two bills of a group wrote the same change on each, which the group
  * made once, so a change identical to one already read (same time, actor, field, and values) is dropped,
  * keeping the one made on this bill. Timestamps come in two shapes (see dbTsToEpoch), so the order is
  * settled here, on top of the read's order, which breaks a tie by the order the events were written.
  */
+// The fields a person sets, which the thread has lines for. A row for any other (the analysis's tags) is skipped.
+const RECORDED_FIELDS: ReadonlySet<string> = new Set<TeamField>(['position', 'priority', 'customField'])
+
 function readFieldEvents(
   rows: ReadonlyArray<{ id: string; billId: string; actorId: string | null; actorName: string | null; createdAt: string; metadata: string }>,
   billId: string,
@@ -96,14 +101,16 @@ function readFieldEvents(
   const read: FieldChangeEvent[] = []
   const seen = new Map<string, number>()
   for (const row of [...rows].sort((a, b) => dbTsToEpoch(a.createdAt) - dbTsToEpoch(b.createdAt))) {
+    if (row.actorId === null || row.actorName === null) continue
     let meta: FieldChangedMetadata
     try { meta = JSON.parse(row.metadata) as FieldChangedMetadata } catch { continue }
     if (!meta || typeof meta !== 'object' || typeof meta.field !== 'string') continue
+    if (!RECORDED_FIELDS.has(meta.field)) continue
     const event: FieldChangeEvent = {
       id: row.id,
       createdAt: row.createdAt,
       actorId: row.actorId,
-      actorName: row.actorName ?? null,
+      actorName: row.actorName,
       billId: row.billId,
       billNumber: billNumberOf.get(row.billId) ?? '',
       field: meta.field,
@@ -113,9 +120,7 @@ function readFieldEvents(
       new: meta.new ?? null,
       ...(meta.fieldId !== undefined && typeOf.has(meta.fieldId) ? { fieldType: typeOf.get(meta.fieldId) } : {}),
     }
-    // Tags compare as sets, as when the change was recorded.
-    const norm = (v: string | string[] | null) => JSON.stringify(Array.isArray(v) ? [...v].sort() : v)
-    const key = [dbTsToEpoch(row.createdAt), row.actorId, event.field, event.fieldId, norm(event.old), norm(event.new)].join('|')
+    const key = [dbTsToEpoch(row.createdAt), row.actorId, event.field, event.fieldId, JSON.stringify(event.old), JSON.stringify(event.new)].join('|')
     const at = seen.get(key)
     if (at === undefined) {
       seen.set(key, read.length)
@@ -220,7 +225,8 @@ export async function buildBillDetail(
     // The team events its comment thread shows lines for, in one ordered read. Its own grouping events
     // say where its group formed or split (a companion's are about the companion). The field changes are
     // the group's, made on any member: a value is shared, so a change to it is one the whole group made.
-    // A deactivated member's are hidden, as their comments are (activeUser), and FloorVote's, with no user row, stay.
+    // A deactivated member's are hidden, as their comments are (activeUser). Only changes people made reach the
+    // thread (readFieldEvents leaves out one with no actor).
     db.select({ id: teamEvents.id, type: teamEvents.type, billId: teamEvents.billId, actorId: teamEvents.actorUserId, createdAt: teamEvents.createdAt, metadata: teamEvents.metadata, actorName: userDisplayNameSql })
       .from(teamEvents)
       .leftJoin(users, eq(teamEvents.actorUserId, users.id))

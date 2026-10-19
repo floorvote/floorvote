@@ -4,13 +4,20 @@
 // bill in its companion group. Voting, writing a private note, reacting, and
 // being mentioned do not make anyone one. The fan-out runs on create only, so
 // editing a comment never notifies. The bill page decides whether to offer Mute
-// with the same rule (`isReplyParticipant`), so the control and the emails agree.
+// with the same rule (`isReplyParticipant`) plus the member's setting, so the
+// control and the notifications agree.
 //
-// Each participant gets a `reply` notification in the app, and one email unless
-// they turned reply emails off or an admin turned conversation emails off for
-// the instance. The email goes out from the request, like mention emails, with
-// threading headers keyed to the bill so a bill's replies group into one
-// conversation in a mail client.
+// A member's "Replies on bills you've commented on" setting
+// (`users.emailRepliesEnabled`) governs the whole fan-out: a member with it off
+// gets no reply notification in the app and no reply email, on any bill.
+// Mentions are separate and unchanged: a mention always arrives in the app, and
+// its email is gated only by the instance's conversation emails.
+//
+// Each remaining participant gets a `reply` notification in the app, and one
+// email unless an admin turned conversation emails off for the instance. The
+// email goes out from the request, like mention emails, with threading headers
+// keyed to the bill so a bill's replies group into one conversation in a mail
+// client.
 //
 // A member who muted the bill (#355) gets neither. Each reply email carries a
 // one-click List-Unsubscribe and a footer link, both signed for that member and
@@ -45,7 +52,7 @@ interface ReplyEnv {
   ASSOCIATION_NAME?: string
 }
 
-type Participant = { id: string; email: string; emailReplies: boolean }
+type Participant = { id: string; email: string }
 
 /**
  * The comment rows that make their author a reply participant: live comments on
@@ -60,8 +67,8 @@ function participantComments(billId: string): SQL {
 /**
  * Whether the member would get reply notifications for the bill's conversation:
  * they have a live comment on the bill or in its companion group. A mute, their
- * reply-email setting, and who wrote the next comment don't change it. The bill
- * page offers Mute to a participant.
+ * reply setting, and who wrote the next comment don't change it, so the bill
+ * page checks the setting itself before it offers Mute to a participant.
  */
 export async function isReplyParticipant(db: Db, userId: string, billId: string): Promise<boolean> {
   const row = await db.select({ id: comments.id }).from(comments)
@@ -72,13 +79,13 @@ export async function isReplyParticipant(db: Db, userId: string, billId: string)
 /**
  * The members to notify about a new comment: everyone else with a live comment
  * on the bill or another bill in its companion group, minus the author and
- * anyone who muted any bill in the group. Deactivated members and members
- * without a login session are skipped, as role mentions skip them. The
- * caller removes anyone the comment mentions.
+ * anyone who muted any bill in the group or turned their reply setting off.
+ * Deactivated members and members without a login session are skipped, as role
+ * mentions skip them. The caller removes anyone the comment mentions.
  */
 async function replyRecipients(db: Db, billId: string, authorUserId: string): Promise<Participant[]> {
   const rows = await db
-    .selectDistinct({ id: users.id, email: users.email, emailReplies: users.emailRepliesEnabled })
+    .selectDistinct({ id: users.id, email: users.email })
     .from(comments)
     .innerJoin(users, eq(comments.userId, users.id))
     .where(and(
@@ -86,13 +93,16 @@ async function replyRecipients(db: Db, billId: string, authorUserId: string): Pr
       // who commented on any of its bills.
       participantComments(billId),
       ne(users.id, authorUserId),
+      // The member's "Replies on bills you've commented on" setting covers the
+      // app as well as email. A mention doesn't come through here.
+      eq(users.emailRepliesEnabled, 1),
       activeUser,
       exists(db.select({ id: sessions.id }).from(sessions).where(eq(sessions.userId, users.id))),
       // A mute on any bill in the group silences the whole conversation.
       notExists(db.select({ userId: billMutes.userId }).from(billMutes).where(and(eq(billMutes.userId, users.id), inGroupOf(billMutes.billId, billId)))),
     ))
     .all()
-  return rows.map(r => ({ id: r.id, email: r.email, emailReplies: r.emailReplies === 1 }))
+  return rows
 }
 
 /**
@@ -115,8 +125,8 @@ export async function notifyParticipantsOfReply(
 
   // writeNotifications splits the rows to stay under D1's parameter limit and
   // reports who was actually written, so a retried fan-out emails nobody twice.
-  // Members who muted the bill were already left out of `recipients`, so mute
-  // silences the app as well as the email.
+  // Members who muted the bill or turned their reply setting off were already
+  // left out of `recipients`, so both silence the app as well as the email.
   const written = await writeNotifications(db, recipients.map(p => ({
     recipientId: p.id,
     kind: 'reply',
@@ -126,7 +136,7 @@ export async function notifyParticipantsOfReply(
     data: {},
   })))
 
-  const toEmail = recipients.filter(p => written.has(p.id) && p.emailReplies)
+  const toEmail = recipients.filter(p => written.has(p.id))
   if (toEmail.length === 0 || !(await mentionEmailsEnabled(db))) return
 
   const emailTask = sendReplyEmails(db, toEmail, comment, authorUserId, billId, env)

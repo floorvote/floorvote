@@ -2,7 +2,7 @@ import { and, inArray, isNotNull, sql, type SQL } from 'drizzle-orm'
 import { billCustomFieldValues, bills, customFieldDefinitions, officialPositions, teamEvents } from '../db/schema'
 import { chunk } from './chunk'
 import { nowDb } from './dbTime'
-import { FIELD_CHANGED, teamValueText, type FieldChangedMetadata, type TeamField } from '../../../shared/teamFields'
+import { FIELD_CHANGED, teamValueText, type FieldChangedMetadata } from '../../../shared/teamFields'
 import type { ReplacedTeamValue } from '../../../shared/companionGroups'
 import type { AppDb } from '../types'
 
@@ -285,18 +285,14 @@ export function groupHasNoPriority(of: BillsTable): SQL {
 // ── Recording changes ───────────────────────────────────────────────────────
 
 /** A team field set on one bill: the group's value before and after. */
-export type FieldChange = Omit<FieldChangedMetadata, 'old' | 'new'> & {
-  billId: string
-  old: string | string[] | null
-  new: string | string[] | null
-}
+export type FieldChange = FieldChangedMetadata & { billId: string }
 
 /**
  * Record each change that changed something as a structured team event on
- * the bill where it was set. A null actor means FloorVote set it (an
- * analysis's tags). Tags compare as sets.
+ * the bill where it was set, by the person who made it. The analysis's tags are
+ * not recorded: the bill's comment thread shows only changes people made.
  */
-export async function recordFieldChanges(db: AppDb, changes: readonly FieldChange[], actorUserId: string | null): Promise<void> {
+export async function recordFieldChanges(db: AppDb, changes: readonly FieldChange[], actorUserId: string): Promise<void> {
   const now = nowDb()
   const events = changes.filter(c => !sameValue(c.old, c.new)).map(({ billId, ...change }) => {
     const metadata: FieldChangedMetadata = {
@@ -317,45 +313,8 @@ export async function recordFieldChanges(db: AppDb, changes: readonly FieldChang
   }
 }
 
-/**
- * The tags each group reads before a write to its members' `match_type`, for
- * `recordGroupTagChanges`. A group's tags come from a tracked member first, so
- * a bill starting or stopping to match can move them with no analysis to
- * record it. Only bills in a group are read: a bill in no group reads its own
- * tags, whatever its match type. One bill stands for each group, the one with the
- * smallest id among those given, and is the one the event is recorded on, so a
- * cleanup always records on the same bill.
- */
-export type GroupTagsSnapshot = ReadonlyMap<string, string[]>
-
-export async function snapshotGroupTags(db: AppDb, members: readonly { id: string; groupKey: string | null }[]): Promise<GroupTagsSnapshot> {
-  const standIn = new Map<string, string>()
-  for (const m of members) {
-    if (m.groupKey === null) continue
-    const held = standIn.get(m.groupKey)
-    if (held === undefined || m.id < held) standIn.set(m.groupKey, m.id)
-  }
-  const values = await loadTeamValuesOf(db, [...standIn.values()])
-  return new Map([...standIn.values()].map(id => [id, values.get(id)?.analysis?.tags ?? []]))
-}
-
-/**
- * Record, as a null-actor `field_changed` event (the one an analysis writes
- * for tags), each group in `before` whose tags differ now, once per group, on
- * the bill that stood for it. Each costs a few small queries per 90 members, doubled
- * by the snapshot, which a rare admin cleanup can afford. A group whose tags are unchanged records none.
- */
-export async function recordGroupTagChanges(db: AppDb, before: GroupTagsSnapshot): Promise<void> {
-  if (before.size === 0) return
-  const after = await loadTeamValuesOf(db, [...before.keys()])
-  await recordFieldChanges(db, [...before].map(([billId, old]) => ({
-    billId, field: 'tags' as const, label: 'tags', old, new: after.get(billId)?.analysis?.tags ?? [],
-  })), null)
-}
-
-function sameValue(a: string | string[] | null, b: string | string[] | null): boolean {
-  if (Array.isArray(a) && Array.isArray(b)) return JSON.stringify([...a].sort()) === JSON.stringify([...b].sort())
-  return JSON.stringify(a) === JSON.stringify(b)
+function sameValue(a: string | null, b: string | null): boolean {
+  return a === b
 }
 
 // ── Grouping ────────────────────────────────────────────────────────────────

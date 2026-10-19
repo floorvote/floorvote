@@ -8,17 +8,18 @@ import { syncIdenticalCompanions } from '../../src/lib/companionGroups'
 import { centralFetch } from '../../src/lib/centralFetch'
 
 // A bill's team activity, as the bill page's comment thread reads it: every
-// field_changed team event on the bill or its companion group, oldest first,
-// with the actor's name (null for FloorVote). Grouped and split events stay in
-// groupingEvents.
+// field_changed team event a person made on the bill or its companion group,
+// oldest first, with the actor's name. The thread shows only changes people
+// made, so an older AI tags event (no actor) is left out. Grouped and split
+// events stay in groupingEvents.
 
 vi.mock('../../src/lib/centralFetch', () => ({ centralFetch: vi.fn() }))
 
 type FieldEvent = {
   id: string
   createdAt: string
-  actorId: string | null
-  actorName: string | null
+  actorId: string
+  actorName: string
   billId: string
   billNumber: string
   field: string
@@ -97,11 +98,20 @@ describe('a bill page\'s team activity', () => {
       expect((await detail('h9')).fieldEvents).toEqual([])
     })
 
-    it('names FloorVote by a null actor, as the AI analysis writes tags', async () => {
-      await fieldEvent('e1', 'h9', null, '2026-10-10 12:00:00', { field: 'tags', label: 'tags', old: [], new: ['Energy', 'Labor'] })
-      expect((await detail('h9')).fieldEvents).toEqual([
-        { id: 'e1', createdAt: '2026-10-10 12:00:00', actorId: null, actorName: null, billId: 'h9', billNumber: 'H9', field: 'tags', label: 'tags', old: [], new: ['Energy', 'Labor'] },
-      ])
+    it('leaves out a tags change, which the AI analysis wrote with no actor before the thread stopped showing them', async () => {
+      await fieldEvent('robot', 'h9', null, '2026-10-10 12:00:00', { field: 'tags', label: 'tags', old: [], new: ['Energy', 'Labor'] })
+      await fieldEvent('ann-change', 'h9', user.ann, '2026-10-11 12:00:00', priorityChange(null, 'low'))
+      expect((await detail('h9')).fieldEvents.map(e => e.id)).toEqual(['ann-change'])
+    })
+
+    it('leaves out a tags change even when a person is named as its actor', async () => {
+      await fieldEvent('odd', 'h9', user.ann, '2026-10-10 12:00:00', { field: 'tags', label: 'tags', old: ['Energy'], new: ['Labor'] })
+      expect((await detail('h9')).fieldEvents).toEqual([])
+    })
+
+    it('leaves out a change no one made (no actor), whatever the field', async () => {
+      await fieldEvent('system', 'h9', null, '2026-10-10 12:00:00', priorityChange(null, 'high'))
+      expect((await detail('h9')).fieldEvents).toEqual([])
     })
 
     it('breaks a same-second tie by the order the events were written', async () => {
@@ -185,12 +195,13 @@ describe('a bill page\'s team activity', () => {
       expect((await detail('h9')).fieldEvents.map(e => e.id)).toEqual(['ben-change'])
     })
 
-    it('leaves them out of a companion group\'s changes too, and keeps FloorVote\'s', async () => {
+    it('leaves them out of a companion group\'s changes too, and still leaves out the AI\'s tags', async () => {
       await group()
       await fieldEvent('ben-on-companion', 'b1713', user.ben, '2026-10-10 12:00:00', priorityChange(null, 'low'))
+      await fieldEvent('ann-on-companion', 'b1713', user.ann, '2026-10-10 13:00:00', priorityChange('low', 'high'))
       await fieldEvent('robot', 'b1713', null, '2026-10-11 12:00:00', { field: 'tags', label: 'tags', old: [], new: ['Energy'] })
       await deactivate('ben')
-      expect((await detail('a190')).fieldEvents.map(e => e.id)).toEqual(['robot'])
+      expect((await detail('a190')).fieldEvents.map(e => e.id)).toEqual(['ann-on-companion'])
     })
 
     it('does not count them in what is served, so a run of three with one of them hidden is two', async () => {
@@ -252,12 +263,6 @@ describe('a bill page\'s team activity', () => {
       await fieldEvent('b-what', 'b1713', user.ann, '2026-10-12 12:00:00', priorityChange('low', 'medium'))
       await fieldEvent('b-field', 'b1713', user.ann, '2026-10-12 12:00:00', { field: 'position', label: 'position', old: 'low', new: 'high' })
       expect((await detail('a190')).fieldEvents.map(e => e.id).sort()).toEqual(['a1', 'b-field', 'b-what', 'b-when', 'b-who'])
-    })
-
-    it('treats tags written in a different order as the same change when collapsing a bulk edit', async () => {
-      await fieldEvent('t1', 'a190', null, '2026-10-12 12:00:00', { field: 'tags', label: 'tags', old: [], new: ['Energy', 'Labor'] })
-      await fieldEvent('t2', 'b1713', null, '2026-10-12 12:00:00', { field: 'tags', label: 'tags', old: [], new: ['Labor', 'Energy'] })
-      expect((await detail('a190')).fieldEvents).toHaveLength(1)
     })
 
     it('keeps grouped and split events in groupingEvents only, and does not repeat a companion\'s', async () => {

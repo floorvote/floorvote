@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import type { FieldChangeEvent } from '../../../shared/teamFields'
-import { fieldChangeText, foldText } from './activityLine'
+import { fieldChangeText } from './activityLine'
 
 // The sentence an activity line in a bill's comment thread reads, for each
-// kind of team field change: priority, position, a custom field, and tags.
+// kind of team field change a person makes: priority, position, and a custom field.
 const change = (over: Partial<FieldChangeEvent>): FieldChangeEvent => ({
   id: 'e', createdAt: '2026-10-14 12:00:00', actorId: 'u1', actorName: 'David Park', billId: 'a190', billNumber: 'A190',
   field: 'priority', label: 'priority', old: null, new: null, ...over,
@@ -75,44 +75,5 @@ describe('fieldChangeText', () => {
     it('reads a field whose definition is gone by the name it had', () => {
       expect(fieldChangeText(field({ label: 'Old committee', fieldType: undefined, old: null, new: 'Labor' }))).toBe('David Park set Old committee to "Labor"')
     })
-  })
-
-  describe('tags', () => {
-    const tags = (over: Partial<FieldChangeEvent>) => change({ field: 'tags', label: 'tags', ...over })
-
-    it('lists the tags it added', () => {
-      expect(fieldChangeText(tags({ old: [], new: ['Energy'] }))).toBe('David Park added the tag Energy')
-      expect(fieldChangeText(tags({ old: [], new: ['Energy', 'Labor'] }))).toBe('David Park added the tags Energy and Labor')
-      expect(fieldChangeText(tags({ old: [], new: ['Energy', 'Labor', 'Health care'] }))).toBe('David Park added the tags Energy, Labor, and Health care')
-    })
-
-    it('lists the tags it removed', () => {
-      expect(fieldChangeText(tags({ old: ['Energy', 'Labor'], new: ['Energy'] }))).toBe('David Park removed the tag Labor')
-      expect(fieldChangeText(tags({ old: ['Energy', 'Labor'], new: [] }))).toBe('David Park removed the tags Energy and Labor')
-    })
-
-    it('says both when it added some and removed others, and leaves the tags that stayed out', () => {
-      expect(fieldChangeText(tags({ old: ['Energy', 'Labor'], new: ['Energy', 'Housing'] }))).toBe('David Park added the tag Housing and removed the tag Labor')
-    })
-
-    it('reads a null old or new list as empty', () => {
-      expect(fieldChangeText(tags({ old: null, new: ['Energy'] }))).toBe('David Park added the tag Energy')
-      expect(fieldChangeText(tags({ old: ['Energy'], new: null }))).toBe('David Park removed the tag Energy')
-    })
-  })
-
-  it('names FloorVote when the change has no actor', () => {
-    expect(fieldChangeText(change({ actorName: null, actorId: null, field: 'tags', label: 'tags', old: [], new: ['Energy'] }))).toBe('FloorVote added the tag Energy')
-  })
-})
-
-describe('foldText', () => {
-  it('counts the changes and names who made them', () => {
-    expect(foldText('David Park', 3)).toBe('3 changes by David Park')
-    expect(foldText('David Park', 2)).toBe('2 changes by David Park')
-  })
-
-  it('names FloorVote for changes with no actor', () => {
-    expect(foldText(null, 4)).toBe('4 changes by FloorVote')
   })
 })

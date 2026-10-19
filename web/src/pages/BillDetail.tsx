@@ -80,7 +80,7 @@ import { useMultiState } from '../context/ConfigContext'
 import { AnalysisBox, AnalysisProgressChip, DIMMED_WHILE_RUNNING } from '../components/AnalysisBox'
 import { pollForAnalysis, analysisOutcomeMessage, regenerateOutcomeMessage, type AnalysisSnapshot } from '../lib/analysisPoll'
 import { MissingRequiredReason, requiredName, useRequiredSubmit } from '../components/RequiredField'
-import { useCommentsMute, CommentsMuteButton, CommentsMutedNote } from '../components/CommentsMuteToggle'
+import { useCommentsMute, CommentsMuteButton } from '../components/CommentsMuteToggle'
 
 function PartyBadge({ party }: { party: string }) {
   const bg = party === 'D' ? color.bgBlueChip : party === 'R' ? color.bgRedPriority : color.surfaceMuted
@@ -690,13 +690,15 @@ export function BillDetail() {
   const [voteCounts, setVoteCounts] = useState(prefetchedBill?.voteCounts ?? { support: 0, oppose: 0, neutral: 0, total: 0 })
   const [comments, setComments] = useState<Comment[]>(prefetchedBill?.comments ?? [])
   const commentsMute = useCommentsMute({ billId: bill?.id ?? '', initialMuted: bill?.commentsMuted ?? false })
-  // Mute shows to a participant, and to anyone already muted (so they can unmute).
-  // The page's own just-posted comment counts without a refetch. Reading the
-  // loaded `commentsMuted` rather than the live toggle keeps the button in place
-  // after a non-participant unmutes.
-  const canMuteComments = !!bill && (bill.commentsParticipant || bill.commentsMuted || commentsMute.muted || comments.some(c => c.userId === user?.id))
+  // Mute shows to a participant, and to anyone already muted (so they can unmute),
+  // while their "Replies on bills you've commented on" setting is on. With it off
+  // they get no replies on any bill, so the control is hidden and any mute they
+  // set earlier stays on file. The page's own just-posted comment counts without
+  // a refetch. Reading the loaded `commentsMuted` rather than the live toggle
+  // keeps the button in place after a non-participant unmutes.
+  const canMuteComments = !!bill && !!user?.emailRepliesEnabled && (bill.commentsParticipant || bill.commentsMuted || commentsMute.muted || comments.some(c => c.userId === user?.id))
   // The lines of the bill's activity (where its companion group formed or split, and changes to its team
-  // fields), placed among the comments by time, runs of changes by one person folded.
+  // fields), placed among the comments by time, each change its own line.
   const thread = useMemo(() => placeThreadLines(comments, bill?.groupingEvents ?? [], bill?.fieldEvents ?? []), [comments, bill?.groupingEvents, bill?.fieldEvents])
   const hasActivity = thread.before.size > 0 || thread.after.length > 0
   // The badge of a companion bill in this bill's group, saying on hover or focus what was done on it. One for a
@@ -2971,11 +2973,12 @@ export function BillDetail() {
         const companions = (bill.groupBills ?? []).filter(g => g.billId !== bill.id)
         const suggestion = isAdmin ? bill.companionSuggestion ?? null : null
         if (companions.length === 0 && !suggestion) return null
-        // Indented to the section titles in the bill card above (its border and its 24px of padding), and set
-        // closer to the comments and position boxes they describe than to that card: 32px above the first line,
-        // and the columns' 24px of top padding less 8px below the last.
+        // Indented to the comments heading below them (the card's 1px border and 16px of padding), so the lines
+        // and the heading start at the same x, and set closer to the comments and position boxes they describe
+        // than to the bill card above: 32px above the first line, and the columns' 24px of top padding less 8px
+        // below the last.
         const lineStyle = (first: boolean, last: boolean): React.CSSProperties => ({
-          margin: `${first ? 32 : 4}px 0 ${last ? -8 : 0}px 25px`, fontSize: fontSize.sm, lineHeight: 1.6, color: color.textMuted,
+          margin: `${first ? 32 : 4}px 0 ${last ? -8 : 0}px 17px`, fontSize: fontSize.sm, lineHeight: 1.6, color: color.textMuted,
         })
         const actionStyle = (disabled: boolean): React.CSSProperties => ({
           background: 'none', border: 'none', padding: 0, font: 'inherit', color: color.linkBlue,
@@ -3075,7 +3078,6 @@ export function BillDetail() {
               </div>
               {canMuteComments && <CommentsMuteButton muted={commentsMute.muted} pending={commentsMute.pending} onToggle={commentsMute.toggle} />}
             </div>
-            {commentsMute.muted && <CommentsMutedNote />}
             {comments.map((comment, idx) => (
               <Fragment key={comment.id}>
               {thread.before.get(comment.id)?.map(line => <ThreadLineView key={line.key} line={line} positionLabel={threadPositionLabel} renderBill={renderChangeBill} />)}
