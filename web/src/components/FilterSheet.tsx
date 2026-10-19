@@ -6,7 +6,8 @@ import type { CustomFieldDef } from '../pages/BillList/types'
 import { FilterSheetVirtualList } from './FilterSheetVirtualList'
 import { useStageFilterUseful } from '../lib/capabilities'
 import { STAGE_FILTER_LABEL, filterDimensionLabel, hiddenFilterDimensions, isFilterDimensionVisible, isStatusGroupedByStage, type FilterDimensionContext } from '../lib/filterDimensions'
-import type { StatusStageGroup } from '../lib/statusGroups'
+import { stageCheckState, toggleStageSelection, type StatusStageGroup } from '../lib/statusGroups'
+import { TriStateCheckbox } from './TriStateCheckbox'
 import { STAGE_HEADING_HINT } from '../pages/BillList/FilterPanel'
 import { activeFilters, decodeSubjectFilter, withBillFilter } from '../../../shared/billFilter'
 import { filterableCustomFields } from '../lib/customFieldFilters'
@@ -323,6 +324,13 @@ export function FilterSheet({
     }),
     { hidden: hiddenFilterDimensions(filterDimensionCtx) },
   )
+
+  // A heading's checkbox toggles its whole stage: the stage, and the statuses too when unchecking clears ones chosen one by one.
+  function toggleStage(group: StatusStageGroup) {
+    const next = toggleStageSelection(group, status, stage)
+    if (next.stage.length !== stage.length) onStageChange(next.stage)
+    if (next.status.length !== status.length) onStatusChange(next.status)
+  }
 
   function toggleItem(arr: string[], val: string, setter: (v: string[]) => void) {
     setter(arr.includes(val) ? arr.filter(v => v !== val) : [...arr, val])
@@ -670,26 +678,25 @@ export function FilterSheet({
           {dimension === 'status' && groupedStatus && (
             <div>
               {groupedStatus.map(group => {
-                const pressed = group.stage !== null && stage.includes(group.stage)
+                const check = stageCheckState(group, status, stage)
+                const lit = check !== 'off'
                 return (
                   <div key={group.stage ?? 'other'} style={{ marginBottom: 16 }}>
                     <h3 style={{ margin: '0 0 8px', fontSize: fontSize.base, fontWeight: fontWeight.semibold, color: color.textPrimary }}>
                       {group.stage !== null ? (
-                        // A heading selects the whole stage, and says so; Other has no stage to select, so it is plain text.
-                        <button
-                          type="button"
-                          aria-pressed={pressed}
+                        // A heading's checkbox selects the whole stage, and says so; Other has no stage to select, so it is plain text.
+                        <label
                           title={STAGE_HEADING_HINT}
-                          onClick={() => toggleItem(stage, group.stage as string, onStageChange)}
                           style={{
                             display: 'inline-flex', alignItems: 'center', gap: 8, maxWidth: '100%', textAlign: 'left', cursor: 'pointer',
-                            padding: '6px 0', background: 'none', border: 'none', borderBottom: `2px solid ${pressed ? color.linkBlue : 'transparent'}`,
-                            font: 'inherit', color: pressed ? color.linkBlue : 'inherit', overflowWrap: 'anywhere',
+                            padding: '6px 0', borderBottom: `2px solid ${check === 'on' ? color.linkBlue : 'transparent'}`,
+                            font: 'inherit', color: lit ? color.linkBlue : 'inherit', overflowWrap: 'anywhere',
                           }}
                         >
+                          <TriStateCheckbox state={check} onToggle={() => toggleStage(group)} />
                           {group.label}
                           {group.count !== null && <span style={COUNT_BADGE}>{group.count.toLocaleString()}</span>}
-                        </button>
+                        </label>
                       ) : group.label}
                     </h3>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>

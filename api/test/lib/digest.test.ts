@@ -327,7 +327,7 @@ describe('runDigest', () => {
     const html: string = calls.find(c => c.to[0] === 'admin@e.com').html
     expect(html).toContain('Lets counties start mail ballot processing early.')
     expect(html.match(/padding:0 14px 10px 14px/g) ?? []).toHaveLength(1)
-    expect(html).toContain('>New match<')
+    expect(html).toContain('>New · Set priority<')
   })
 
   it('no digest, to an admin or a member, ever says "keyword"', async () => {

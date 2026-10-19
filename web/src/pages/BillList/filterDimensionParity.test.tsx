@@ -643,7 +643,7 @@ describe('Status grouped by Stage — where Stage was offered', () => {
     expect(screen.queryByRole('button', { name: stageName })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: statusName }))
     expect(screen.getByRole('checkbox', { name: /^2|Engrossed/ })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /^Enacted/ })).toBeNull()
+    expect(screen.queryByRole('checkbox', { name: /^Enacted/ })).toBeNull()
     cleanup()
     renderConfiguredMobile(['legiscan'])
     expect(screen.queryByRole('button', { name: stageName })).toBeNull()
@@ -654,19 +654,19 @@ describe('Status grouped by Stage — where Stage was offered', () => {
     await renderConfiguredDesktop(['legiscan', 'mga'])
     expect(screen.queryByRole('button', { name: stageName })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: statusName }))
-    expect(screen.getByRole('button', { name: /^Enacted/ })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('checkbox', { name: /^Enacted/ })).toHaveAttribute('aria-checked', 'false')
     cleanup()
     renderConfiguredMobile(['legiscan', 'mga'])
     expect(screen.queryByRole('button', { name: stageName })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: statusName }))
-    expect(screen.getByRole('button', { name: /^Enacted/ })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('checkbox', { name: /^Enacted/ })).toHaveAttribute('aria-checked', 'false')
   })
 
   it('groups Status until config names the providers, as Stage was shown before central had answered', async () => {
     await renderConfiguredDesktop(undefined)
     expect(screen.queryByRole('button', { name: stageName })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: statusName }))
-    expect(screen.getByRole('button', { name: /^Enacted/ })).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: /^Enacted/ })).toBeInTheDocument()
   })
 
   it('shows the grouped control and a Stage chip on LegiScan for a link that carries a stage, and the chip can be removed', async () => {
@@ -681,7 +681,20 @@ describe('Status grouped by Stage — where Stage was offered', () => {
     cleanup()
     renderConfiguredMobile(['legiscan'], ['enacted'])
     fireEvent.click(screen.getByRole('button', { name: statusName }))
-    expect(screen.getByRole('button', { name: /^Enacted/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('checkbox', { name: /^Enacted/ })).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('says "Filter by current legislative status" on hover of the grouped Status control, and nothing longer', async () => {
+    await renderConfiguredDesktop(['legiscan', 'mga'])
+    fireEvent.pointerEnter(screen.getByRole('button', { name: statusName }), { pointerType: 'mouse' })
+    expect(await screen.findByText('Filter by current legislative status')).toBeInTheDocument()
+    expect(screen.queryByText(/grouped by common stage/)).toBeNull()
+  })
+
+  it('says the same on hover of the flat Status control', async () => {
+    await renderConfiguredDesktop(['legiscan'])
+    fireEvent.pointerEnter(screen.getByRole('button', { name: statusName }), { pointerType: 'mouse' })
+    expect(await screen.findByText('Filter by current legislative status')).toBeInTheDocument()
   })
 
   it('stays on the two separate dropdowns, with no error, when the API sends no statusGroups', async () => {

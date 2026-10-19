@@ -48,13 +48,18 @@ const ALL_BILLS_KEY = '__all_bills__'
 // loaded count (a number), an in-flight count (renders a neutral placeholder,
 // never 0 — a wrong zero reads as "no matches"), or a failed count (renders
 // nothing at all, rather than a misleading number).
-function ViewCountBadge({ count, failed }: { count: number | undefined; failed: boolean }) {
+function ViewCountBadge({ count, failed, inView = false }: { count: number | undefined; failed: boolean; inView?: boolean }) {
   if (failed) return null
-  return (
-    <span style={{ ...countBadge(), marginLeft: 'auto', flexShrink: 0 }}>
+  const chip = (describedAs?: string) => (
+    <span aria-description={describedAs} style={{ ...countBadge(), marginLeft: 'auto', flexShrink: 0 }}>
       {count === undefined ? '…' : count.toLocaleString()}
     </span>
   )
+  if (count === undefined || !inView) return chip()
+  // Hovering the count says what it counts. The envelope's hover is about the digest, so the count lives here.
+  // HoverTooltip, not `title`, which never fires on touch.
+  const text = `${count.toLocaleString()} ${count === 1 ? 'bill matches' : 'bills match'} this view`
+  return <HoverTooltip text={text}>{chip(text)}</HoverTooltip>
 }
 
 export function ViewSwitcher({
@@ -489,14 +494,12 @@ export function ViewSwitcher({
                       </HoverTooltip>
                     </span>
                   )}
-                  <ViewCountBadge count={viewCounts[v.id]} failed={failedCounts.has(v.id)} />
+                  <ViewCountBadge count={viewCounts[v.id]} failed={failedCounts.has(v.id)} inView />
                   {digestControl && (() => {
                     const on = v.subscribed === true
-                    const count = failedCounts.has(v.id) ? undefined : viewCounts[v.id]
-                    const now = count === undefined ? '' : ` · ${count.toLocaleString()} ${count === 1 ? 'bill' : 'bills'} now`
                     const when = `your ${digestControl.cadence} digest`
                     return (
-                      <HoverTooltip text={`${on ? 'Remove this view from' : 'Include this view in'} ${when}${now}`}>
+                      <HoverTooltip text={`Monitor bills in this view via your ${digestControl.cadence} email digest`}>
                         <button
                           onClick={() => clickEnvelope(v)}
                           aria-label={`${on ? `Remove "${v.name}" from` : `Include "${v.name}" in`} ${when}`}

@@ -4,7 +4,7 @@ import { PRIORITY_COLORS } from '../../../shared/billChipColors'
 import { buildBillCardModel, billCardRowText, CARD_STYLE } from '../../../shared/billCardModel'
 import { prioritySquareRadius } from '../../../shared/priorityMarker'
 import { emailIconSrc } from '../../../shared/emailIcons'
-import { renderBillCardOpen, BILL_CARD_CLOSE } from './emailBillCard'
+import { renderBillCardOpen, BILL_CARD_CLOSE, type BillCardChip } from './emailBillCard'
 import { renderEmailShell, emailButton, emailFooterLink, formatDateRange } from './emailShell'
 import { billUrl } from '../../../shared/sessionSlug'
 import { billsListPath } from '../../../shared/billFilter'
@@ -267,7 +267,7 @@ const UPDATES_ID = 'digest-updates'
 const NEW_MATCHES_ID = 'digest-new-matches'
 const viewSectionId = (i: number) => `digest-view-${i}`
 
-// A bill that entered a view, as the chip says. A view's cards carry no "Set priority" link, which is the triage worklist's.
+// A bill that entered a view, as the chip says. A view's cards carry no "Set priority" pill, which is the triage worklist's.
 const VIEW_ENTRY_CHIP = { label: 'New in view', bg: color.bgAmberPriority, text: color.textAmberWarning }
 
 // Section opener: a 2px rule in the section's color, then its header (and an
@@ -301,12 +301,16 @@ function renderContentsBox(rows: { href: string; ruleColor: string; text: string
 </table>`
 }
 
-const NEW_MATCH_CHIP = { label: 'New match', bg: color.bgAmberPriority, text: color.textAmberWarning }
+// The app's amber new-match pill (web's CompactPrioritySelect and NewMatchChip): the same fill, text, and border tokens.
+const AMBER_PILL = { bg: color.bgAmberPriority, text: color.textAmberDark, border: color.borderAmber }
+// A member can't set a priority, so theirs reads "New match" and goes nowhere.
+const NEW_MATCH_CHIP = { label: 'New match', ...AMBER_PILL }
 
 // A new match as the same card an updated bill gets, minus activity rows: badge,
-// title and summary preview (none when the bill has no summary yet), with a
-// "New match" chip where the priority chip goes.
-function renderNewMatchCard(card: NewMatchCard, appUrl: string, forMember: boolean, chip: { label: string; bg: string; text: string } = NEW_MATCH_CHIP): string {
+// title and summary preview (none when the bill has no summary yet), with the
+// amber pill where the priority chip goes: "New · Set priority" linking to the
+// bill page for an admin, a plain "New match" for a member.
+function renderNewMatchCard(card: NewMatchCard, appUrl: string, forMember: boolean, chip?: BillCardChip): string {
   const it = card.head
   const hrefOf = (m: NewMatchDigestItem) => `${appUrl}${billUrl({ id: m.billId, state: m.billState, session: m.billSession, sessionSlug: m.billSessionSlug, billNumber: m.billNumber })}`
   const model = buildBillCardModel({
@@ -317,11 +321,10 @@ function renderNewMatchCard(card: NewMatchCard, appUrl: string, forMember: boole
   const billHref = hrefOf(it)
   // A companion group's other matched bills, as badges beside the first.
   const otherBadges = card.members.slice(1).map(m => ({ text: m.billState ? `${m.billState} ${m.billNumber}` : m.billNumber, href: hrefOf(m) }))
-  // The bill page is where the amber "New · Set priority" dropdown is. A member
-  // can't set a priority, so their cards carry no link.
-  const setPriority = forMember ? '' : `
-    <tr style="background:${color.white};"><td colspan="3" style="padding:8px 14px 10px 14px;border-top:1px solid ${CARD_STYLE.rowBorder};font-size:${fontSize.sm}px;"><a href="${escHtml(billHref)}" style="color:${color.accentBlue};font-weight:${fontWeight.semibold};text-decoration:none;">Set priority</a></td></tr>`
-  return `${renderBillCardOpen({ model, billHref, appUrl, chip, otherBadges })}${setPriority}${BILL_CARD_CLOSE}`
+  // The bill page is where the amber "New · Set priority" dropdown is, so an admin's pill links there. A member
+  // can't set a priority, so their pill is a plain label. A caller's own chip (a view's "New in view") wins.
+  const pill = chip ?? (forMember ? NEW_MATCH_CHIP : { label: 'New · Set priority', ...AMBER_PILL, href: billHref })
+  return `${renderBillCardOpen({ model, billHref, appUrl, chip: pill, otherBadges })}${BILL_CARD_CLOSE}`
 }
 
 // New-match section (admins always, members who haven't opted out). Not

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
-import { render, screen, within, fireEvent } from '@testing-library/react'
+import { render, screen, within, fireEvent, cleanup } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { FilterSheet } from './FilterSheet'
 import type { SubjectGroup } from '../pages/BillList/FilterPanel'
@@ -786,21 +787,79 @@ describe('FilterSheet — Status grouped by Stage', () => {
   it('opens a list with a heading button for each stage and the statuses under it, with a count beside each', () => {
     renderSheet(grouped())
     fireEvent.click(screen.getByRole('button', { name: /^status/i }))
-    const heading = screen.getByRole('button', { name: /^Enacted/ })
-    expect(within(heading).getByText('5')).toBeInTheDocument()
+    const heading = screen.getByRole('checkbox', { name: /^Enacted/ })
+    expect(within(heading.closest('label')!).getByText('5')).toBeInTheDocument()
     expect(within(screen.getByRole('button', { name: /^Signed/ })).getByText('3')).toBeInTheDocument()
-    expect(within(screen.getByRole('button', { name: /^In committee/ })).getByText('2')).toBeInTheDocument()
+    expect(within(screen.getByRole('checkbox', { name: /^In committee/ }).closest('label')!).getByText('2')).toBeInTheDocument()
     // Headings come in stage order, with Other last and without a button.
     const labels = screen.getAllByRole('heading', { level: 3 }).map(h => (h.textContent ?? '').replace(/\d+$/, ''))
     expect(labels).toEqual(['Enacted', 'In committee', 'Other'])
-    expect(screen.queryByRole('button', { name: /^Other/ })).toBeNull()
+    expect(screen.queryByRole('checkbox', { name: /^Other/ })).toBeNull()
   })
 
-  it('announces a heading as pressed when its stage is chosen', () => {
+  it('draws a heading as a checkbox, checked when its stage is chosen', () => {
     renderSheet(grouped({ stage: ['enacted'] }))
     fireEvent.click(screen.getByRole('button', { name: /^status/i }))
-    expect(screen.getByRole('button', { name: /^Enacted/ })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: /^In committee/ })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('checkbox', { name: /^Enacted/ })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('checkbox', { name: /^In committee/ })).toHaveAttribute('aria-checked', 'false')
+  })
+
+  const openStatus = () => fireEvent.click(screen.getByRole('button', { name: /^status/i }))
+
+  it('checks a heading when every status under it is chosen, and draws it mixed when only some are', () => {
+    renderSheet(grouped({ status: ['Chaptered', 'Signed', 'In Committee'] }))
+    openStatus()
+    expect(screen.getByRole('checkbox', { name: /^Enacted/ })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('checkbox', { name: /^In committee/ })).toHaveAttribute('aria-checked', 'true')
+    cleanup()
+    renderSheet(grouped({ status: ['Signed'] }))
+    openStatus()
+    const box = screen.getByRole('checkbox', { name: /^Enacted/ }) as HTMLInputElement
+    expect(box.indeterminate).toBe(true)
+    expect(box).toHaveAttribute('aria-checked', 'mixed')
+    expect((screen.getByRole('checkbox', { name: /^In committee/ }) as HTMLInputElement).indeterminate).toBe(false)
+  })
+
+  it('selects the whole stage from a mixed heading, keeping the statuses chosen', () => {
+    const onStageChange = vi.fn()
+    const onStatusChange = vi.fn()
+    renderSheet(grouped({ status: ['Signed'], onStageChange, onStatusChange }))
+    openStatus()
+    fireEvent.click(screen.getByRole('checkbox', { name: /^Enacted/ }))
+    expect(onStageChange).toHaveBeenLastCalledWith(['enacted'])
+    expect(onStatusChange).not.toHaveBeenCalled()
+  })
+
+  it('clears a stage and the statuses chosen one by one under it when its checked heading is tapped', () => {
+    const onStageChange = vi.fn()
+    const onStatusChange = vi.fn()
+    renderSheet(grouped({ stage: ['enacted'], status: ['Signed', 'In Committee'], onStageChange, onStatusChange }))
+    openStatus()
+    fireEvent.click(screen.getByRole('checkbox', { name: /^Enacted/ }))
+    expect(onStageChange).toHaveBeenLastCalledWith([])
+    expect(onStatusChange).toHaveBeenLastCalledWith(['In Committee'])
+  })
+
+  it('clears the statuses of a stage chosen only status by status when its checked heading is tapped', () => {
+    const onStageChange = vi.fn()
+    const onStatusChange = vi.fn()
+    renderSheet(grouped({ status: ['Chaptered', 'Signed'], onStageChange, onStatusChange }))
+    openStatus()
+    fireEvent.click(screen.getByRole('checkbox', { name: /^Enacted/ }))
+    expect(onStatusChange).toHaveBeenLastCalledWith([])
+    expect(onStageChange).not.toHaveBeenCalled()
+  })
+
+  it('toggles a heading from the keyboard with Space and with Enter', async () => {
+    const user = userEvent.setup()
+    const onStageChange = vi.fn()
+    renderSheet(grouped({ onStageChange }))
+    openStatus()
+    screen.getByRole('checkbox', { name: /^Enacted/ }).focus()
+    await user.keyboard(' ')
+    expect(onStageChange).toHaveBeenLastCalledWith(['enacted'])
+    await user.keyboard('{Enter}')
+    expect(onStageChange).toHaveBeenCalledTimes(2)
   })
 
   it('writes a stage through the stage callback, and takes it back on a second tap', () => {
@@ -808,9 +867,9 @@ describe('FilterSheet — Status grouped by Stage', () => {
     const onStatusChange = vi.fn()
     const { unmount } = renderSheet(grouped({ onStageChange, onStatusChange, stage: ['in_committee'] }))
     fireEvent.click(screen.getByRole('button', { name: /^status/i }))
-    fireEvent.click(screen.getByRole('button', { name: /^Enacted/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /^Enacted/ }))
     expect(onStageChange).toHaveBeenLastCalledWith(['in_committee', 'enacted'])
-    fireEvent.click(screen.getByRole('button', { name: /^In committee/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /^In committee/ }))
     expect(onStageChange).toHaveBeenLastCalledWith([])
     expect(onStatusChange).not.toHaveBeenCalled()
     unmount()
@@ -831,7 +890,7 @@ describe('FilterSheet — Status grouped by Stage', () => {
   it('says a heading selects every status in its stage', () => {
     renderSheet(grouped())
     fireEvent.click(screen.getByRole('button', { name: /^status/i }))
-    expect(screen.getByRole('button', { name: /^Enacted/ })).toHaveAttribute('title', 'All statuses in this stage.')
+    expect(screen.getByRole('checkbox', { name: /^Enacted/ }).closest('label')).toHaveAttribute('title', 'All statuses in this stage.')
   })
 
   it('shows the stage chip and the status chip in one chip group on the sheet', () => {
@@ -878,12 +937,12 @@ describe('FilterSheet — Status grouped by Stage', () => {
   it('groups it on LegiScan when a link or a saved view applied a stage, so the stage can be removed', () => {
     renderWithProviders(['legiscan'], grouped({ stage: ['enacted'] }))
     fireEvent.click(screen.getByRole('button', { name: /^status/i }))
-    expect(screen.getByRole('button', { name: /^Enacted/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('checkbox', { name: /^Enacted/ })).toHaveAttribute('aria-checked', 'true')
   })
 
   it('groups it until config names the providers, as Stage was shown before central had answered', () => {
     renderWithProviders(undefined, grouped())
     fireEvent.click(screen.getByRole('button', { name: /^status/i }))
-    expect(screen.getByRole('button', { name: /^Enacted/ })).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: /^Enacted/ })).toBeInTheDocument()
   })
 })

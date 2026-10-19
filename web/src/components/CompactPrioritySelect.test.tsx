@@ -195,4 +195,66 @@ describe('CompactPrioritySelect', () => {
       expect(fontSizeOf(screen.getByRole('combobox'))).toBe('10px')
     })
   })
+
+  // The native <select> is as wide as its widest option, so "Dismiss (reviewed, no priority)" stretched the closed
+  // new-match chip past the bill table's priority column. The closed control sizes to its own text instead: a hidden
+  // copy of the selected label sets the width, and the select fills it. jsdom has no layout, so these assert the
+  // sizing contract through style.
+  describe('the closed control sizes to its own text', () => {
+    const sizer = () => screen.getByTestId('priority-select-sizer')
+    const selectEl = () => screen.getByRole('combobox')
+
+    it('sizes the new-match chip by "New · Set priority", not by the longest option', () => {
+      render(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} newMatch onDismiss={vi.fn()} />)
+      expect(sizer()).toHaveTextContent(/^New · Set priority$/)
+      expect(sizer().textContent).not.toMatch(/Dismiss/)
+    })
+
+    it('lets the select fill that width instead of asking for its widest option', () => {
+      render(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} newMatch onDismiss={vi.fn()} />)
+      expect(selectEl().style.width).toMatch(/^0(px)?$/)
+      expect(selectEl().style.minWidth).toBe('100%')
+      expect(selectEl().parentElement!.style.display).toBe('inline-grid')
+      expect(sizer().parentElement).toBe(selectEl().parentElement)
+    })
+
+    it('copies the select\'s font and padding onto the sizer, so the two measure alike', () => {
+      render(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} newMatch onDismiss={vi.fn()} />)
+      for (const prop of ['fontSize', 'fontWeight', 'fontFamily', 'padding'] as const) {
+        expect(sizer().style[prop]).toBe(selectEl().style[prop])
+      }
+      expect(sizer().style.border).toMatch(/1px solid/)
+    })
+
+    it('does the same in the mini size', () => {
+      render(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} newMatch onDismiss={vi.fn()} mini />)
+      expect(sizer().style.padding).toBe(selectEl().style.padding)
+      expect(sizer().style.fontSize).toBe('10px')
+    })
+
+    it('tracks the selected label: a set priority, a plain empty one, and a custom placeholder', () => {
+      const { rerender } = render(<CompactPrioritySelect billId="b1" current="medium" onChange={vi.fn()} newMatch onDismiss={vi.fn()} />)
+      expect(sizer()).toHaveTextContent(/^Medium Priority$/)
+      rerender(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} />)
+      expect(sizer()).toHaveTextContent(/^Set priority$/)
+      rerender(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} placeholder="Pick one" />)
+      expect(sizer()).toHaveTextContent(/^Pick one$/)
+      rerender(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} newMatch onDismiss={vi.fn()} />)
+      expect(sizer()).toHaveTextContent(/^New · Set priority$/)
+    })
+
+    it('keeps the sizer out of the accessibility tree, and the select\'s accessible name and options intact', () => {
+      render(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} newMatch onDismiss={vi.fn()} />)
+      expect(sizer()).toHaveAttribute('aria-hidden', 'true')
+      expect(screen.queryByText('New · Set priority', { selector: '[aria-hidden="true"]' })).not.toBeNull()
+      expect(screen.getByRole('combobox', { name: 'Priority (new match: set a priority or dismiss)' })).toBeInTheDocument()
+      expect(optionLabels()).toContain('Dismiss (reviewed, no priority)')
+    })
+
+    it('leaves clicks to the select: the sizer cannot be hit', () => {
+      render(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} newMatch onDismiss={vi.fn()} />)
+      expect(sizer().style.pointerEvents).toBe('none')
+      expect(sizer().style.visibility).toBe('hidden')
+    })
+  })
 })

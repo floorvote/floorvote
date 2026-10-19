@@ -56,12 +56,13 @@ describe("members' digests: new matches", () => {
     expect(onHtml).not.toContain('NM 101')
     expect(onHtml).toContain('See all 12 new matches')
     // Same list in the same order as the admin's. Counts each card's badge, not
-    // every mention: an admin's cards also link to the bill from "Set priority".
+    // every mention: an admin's cards also link to the bill from the pill.
     const listed = (html: string) => [...html.matchAll(/>[^<>]*?(NM \d+)</g)].map(m => m[1])
     expect(listed(onHtml)).toEqual(listed(adminHtml))
     expect(listed(onHtml).length).toBeGreaterThanOrEqual(10)
-    expect(adminHtml.match(/>Set priority</g)).toHaveLength(10)
-    expect(onHtml).not.toContain('>Set priority<')
+    expect(adminHtml.match(/>New · Set priority</g)).toHaveLength(10)
+    expect(onHtml).not.toContain('Set priority')
+    expect(onHtml.match(/>New match</g)).toHaveLength(10)
     // The member with it off still gets the updates, and nothing else.
     expect(to('off@e.com')).toHaveLength(1)
     expect(to('off@e.com')[0].html).toContain('PRI 1')
@@ -174,7 +175,7 @@ describe('new matches: companion groups', () => {
     expect(cards(html)).toBe(1)
     expect(html).toMatch(/>RI H 101</)
     expect(html).toMatch(/>RI S 202</)
-    expect(html.match(/>Set priority</g)).toHaveLength(1)
+    expect(html.match(/>New · Set priority</g)).toHaveLength(1)
     expect(html).not.toContain('See all')
   })
 
@@ -190,7 +191,7 @@ describe('new matches: companion groups', () => {
     expect(text(html)).toContain('1 new match in the last day')
     expect(cards(html)).toBe(1)
     expect(html).toMatch(/>RI S 202</)
-    expect(html).not.toContain('>Set priority<')
+    expect(html).not.toContain('Set priority')
   })
 
   it('counts a group and an ungrouped new match as two, and leaves the ungrouped one as it was', async () => {
@@ -204,7 +205,7 @@ describe('new matches: companion groups', () => {
     expect(emails[0].subject).toBe('Your daily digest: 2 new matches')
     expect(text(html)).toContain('2 new matches in the last day')
     expect(cards(html)).toBe(2)
-    expect(html.match(/>Set priority</g)).toHaveLength(2)
+    expect(html.match(/>New · Set priority</g)).toHaveLength(2)
     expect(html).toMatch(/>RI H 404</)
   })
 

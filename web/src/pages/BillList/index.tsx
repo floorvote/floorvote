@@ -903,7 +903,7 @@ export function BillList() {
           {statusGrouped ? (
             // One Status control, its options under stage headings (#677): a heading selects the whole stage, a status
             // one status, and the counts beside them are the facets' own.
-            <HoverTooltip text="Filter by current legislative status, grouped by common stage, which compares bills across states whose statuses differ">
+            <HoverTooltip text="Filter by current legislative status">
               <FilterDropdown
                 placeholder={filterDimensionLabel('status')}
                 options={[]}
