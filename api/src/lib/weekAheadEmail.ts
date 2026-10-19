@@ -90,19 +90,29 @@ function renderEventCard(event: WeekAheadEvent, appUrl: string): string {
   const chips = event.bills.length > 0
     ? `<div style="display:flex;flex-wrap:wrap;margin-top:3px;">${event.bills.map(renderBillChip).join('')}</div>`
     : ''
-  const detailsLine = event.details
-    ? `<div style="font-size:${fontSize.xs}px;color:${color.textMuted};margin-top:4px;white-space:pre-line;line-height:1.5;">${escHtml(event.details)}</div>`
-    : ''
-
   // The whole card links to the agenda, which scroll-and-flashes this event.
   // Prefer eventHash (hearings may be merged under a different id in the agenda);
   // fall back to the DB id for custom events. The agenda resolver matches either.
   const href = `${appUrl}/calendar?focusEvent=${encodeURIComponent(event.eventHash ?? event.id)}`
+  const shownDetails = event.details ? truncateDetails(event.details) : null
+  const detailsLine = shownDetails
+    ? `<div style="font-size:${fontSize.xs}px;color:${color.textMuted};margin-top:4px;white-space:pre-line;line-height:1.5;">${escHtml(shownDetails.text)}${shownDetails.cut ? ` <a href="${escHtml(href)}" style="color:${color.accentBlue};text-decoration:underline;">Read more</a>` : ''}</div>`
+    : ''
   return `<a href="${escHtml(href)}" style="text-decoration:none;color:inherit;display:block;">
   <div style="display:flex;align-items:flex-start;gap:8px;background:${color.white};border:1px solid ${color.borderDefault};border-radius:${radius.lg}px;box-shadow:0 1px 3px rgba(0,0,0,0.04);margin-bottom:8px;padding:10px 12px;">
   ${sourceTile}
   <div style="flex:1;min-width:0;">${titleLine}${timeLine}${locationLine}${linkLine}${chips}${detailsLine}</div>
 </div></a>`
+}
+
+/** The longest `details` text a card shows. The calendar keeps the whole text (#774). */
+export const WEEK_AHEAD_DETAILS_MAX_CHARS = 300
+
+function truncateDetails(details: string): { text: string; cut: boolean } {
+  if (details.length <= WEEK_AHEAD_DETAILS_MAX_CHARS) return { text: details, cut: false }
+  const head = details.slice(0, WEEK_AHEAD_DETAILS_MAX_CHARS)
+  const lastSpace = head.search(/\s\S*$/)
+  return { text: `${(lastSpace > WEEK_AHEAD_DETAILS_MAX_CHARS / 2 ? head.slice(0, lastSpace) : head).trimEnd()}…`, cut: true }
 }
 
 /** The most body events (the legislature's own calendar) one email lists. A
@@ -130,6 +140,44 @@ export function capBodyEvents(days: WeekAheadDay[], cap: number = WEEK_AHEAD_BOD
     }),
   })).filter(day => day.events.length > 0)
   return { days: capped, omitted }
+}
+
+/** The size the email aims under, below Gmail's ~102 KB clip with room for the footer. */
+export const WEEK_AHEAD_BYTE_BUDGET = 90 * 1024
+
+/**
+ * Keep the rendered email under `budget` bytes (#774). Events with a
+ * prioritized bill (date-field events carry theirs) come first, each group
+ * earliest first, and the email keeps the longest run of them that fits;
+ * the rest are counted in `omitted`, added to the count already left out.
+ */
+export function fitToBudget(
+  days: WeekAheadDay[],
+  omitted: number,
+  render: (days: WeekAheadDay[], omitted: number) => string,
+  budget: number = WEEK_AHEAD_BYTE_BUDGET,
+): { days: WeekAheadDay[]; omitted: number } {
+  const bytes = (d: WeekAheadDay[], o: number) => new TextEncoder().encode(render(d, o)).length
+  if (bytes(days, omitted) <= budget) return { days, omitted }
+  const all = days.flatMap(d => d.events)
+  const prioritized = (e: WeekAheadEvent) => e.bills.some(b => b.priority)
+  const order = [...all.filter(prioritized), ...all.filter(e => !prioritized(e))]
+  const rank = new Map(order.map((e, i) => [e, i]))
+  const keep = (k: number) => {
+    const kept = days
+      .map(d => ({ ...d, events: d.events.filter(e => rank.get(e)! < k) }))
+      .filter(d => d.events.length > 0)
+    return { kept, omitted: omitted + all.length - k }
+  }
+  let lo = 0, hi = all.length - 1  // all.length already failed
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2)
+    const c = keep(mid)
+    if (bytes(c.kept, c.omitted) <= budget) lo = mid
+    else hi = mid - 1
+  }
+  const c = keep(lo)
+  return { days: c.kept, omitted: c.omitted }
 }
 
 function formatDateRangeLabel(days: WeekAheadDay[]): string {
