@@ -87,6 +87,31 @@ describe('migration 0113: a group\'s tags follow its lead bill', () => {
     })
   })
 
+  describe('the backfill\'s cost', () => {
+    // The first backfill looked up each group's lead inside the lookup of its
+    // analysis, for every grouped bill, which ran out of D1's CPU limit on an
+    // instance with thousands of groups. The backfill must read each bill's
+    // newest text with one index lookup and look up nothing inside another
+    // lookup, so its work grows with the number of grouped bills, not faster.
+    it('nests no lookup inside another', async () => {
+      await resetDb()
+      await applyMigrations()
+      const backfill = parseMigration(migration0113, '0113_group_lead_analysis').queries.at(-1)!
+      expect(backfill).toMatch(/^\s*(--[^\n]*\n\s*)*WITH members AS/)
+      const { results } = await env.DB.prepare(`EXPLAIN QUERY PLAN ${backfill}`).all<{ id: number; parent: number; detail: string }>()
+      const byId = new Map(results.map(r => [r.id, r]))
+      const correlated = results.filter(r => r.detail.startsWith('CORRELATED'))
+      for (const row of correlated) {
+        let up = byId.get(row.parent)
+        while (up) {
+          expect(up.detail.startsWith('CORRELATED'), `${row.detail} sits inside ${up.detail}`).toBe(false)
+          up = byId.get(up.parent)
+        }
+      }
+      expect(results.some(r => /SEARCH t USING COVERING INDEX idx_bill_texts_bill_date/.test(r.detail))).toBe(true)
+    })
+  })
+
   describe('running it again', () => {
     // Wrangler records an applied migration and never runs it twice, but an
     // operator re-running the file by hand, or a partial apply retried, must

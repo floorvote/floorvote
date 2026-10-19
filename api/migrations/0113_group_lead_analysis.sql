@@ -29,6 +29,10 @@
 -- CREATE TRIGGER at the first END that follows a semicolon and is followed by
 -- one, with whitespace between, and the test helpers split this file the
 -- same way (shared/sqlStatements.ts).
+-- The covering index for a bill's newest text date (0114 also names it), so
+-- the triggers and the backfill below read each bill's texts from the index.
+CREATE INDEX IF NOT EXISTS idx_bill_texts_bill_date ON bill_texts (bill_id, date);
+
 DROP TRIGGER IF EXISTS bills_group_tags_insert;
 DROP TRIGGER IF EXISTS bills_group_tags_update;
 DROP TRIGGER IF EXISTS bills_group_tags_delete;
@@ -132,13 +136,30 @@ BEGIN
   WHERE group_key = (SELECT group_key FROM bills WHERE id = OLD.bill_id);
 END;
 
-UPDATE bills SET group_tags = COALESCE((SELECT g.tags FROM bills g WHERE g.group_key = bills.group_key
-      AND (g.ai_processed_at IS NOT NULL OR g.tenant_summary IS NOT NULL OR g.tags <> '[]')
-      ORDER BY g.id = (SELECT l.id FROM bills l WHERE l.group_key = g.group_key
-        ORDER BY l.status_rank DESC,
-          (SELECT MAX(NULLIF(t.date, '')) FROM bill_texts t WHERE t.bill_id = l.id) DESC NULLS LAST,
-          substr(l.bill_number, 1, min(CASE WHEN instr(l.bill_number, '0') = 0 THEN 99999 ELSE instr(l.bill_number, '0') END, CASE WHEN instr(l.bill_number, '1') = 0 THEN 99999 ELSE instr(l.bill_number, '1') END, CASE WHEN instr(l.bill_number, '2') = 0 THEN 99999 ELSE instr(l.bill_number, '2') END, CASE WHEN instr(l.bill_number, '3') = 0 THEN 99999 ELSE instr(l.bill_number, '3') END, CASE WHEN instr(l.bill_number, '4') = 0 THEN 99999 ELSE instr(l.bill_number, '4') END, CASE WHEN instr(l.bill_number, '5') = 0 THEN 99999 ELSE instr(l.bill_number, '5') END, CASE WHEN instr(l.bill_number, '6') = 0 THEN 99999 ELSE instr(l.bill_number, '6') END, CASE WHEN instr(l.bill_number, '7') = 0 THEN 99999 ELSE instr(l.bill_number, '7') END, CASE WHEN instr(l.bill_number, '8') = 0 THEN 99999 ELSE instr(l.bill_number, '8') END, CASE WHEN instr(l.bill_number, '9') = 0 THEN 99999 ELSE instr(l.bill_number, '9') END) - 1) ASC,
-          CAST(substr(l.bill_number, min(CASE WHEN instr(l.bill_number, '0') = 0 THEN 99999 ELSE instr(l.bill_number, '0') END, CASE WHEN instr(l.bill_number, '1') = 0 THEN 99999 ELSE instr(l.bill_number, '1') END, CASE WHEN instr(l.bill_number, '2') = 0 THEN 99999 ELSE instr(l.bill_number, '2') END, CASE WHEN instr(l.bill_number, '3') = 0 THEN 99999 ELSE instr(l.bill_number, '3') END, CASE WHEN instr(l.bill_number, '4') = 0 THEN 99999 ELSE instr(l.bill_number, '4') END, CASE WHEN instr(l.bill_number, '5') = 0 THEN 99999 ELSE instr(l.bill_number, '5') END, CASE WHEN instr(l.bill_number, '6') = 0 THEN 99999 ELSE instr(l.bill_number, '6') END, CASE WHEN instr(l.bill_number, '7') = 0 THEN 99999 ELSE instr(l.bill_number, '7') END, CASE WHEN instr(l.bill_number, '8') = 0 THEN 99999 ELSE instr(l.bill_number, '8') END, CASE WHEN instr(l.bill_number, '9') = 0 THEN 99999 ELSE instr(l.bill_number, '9') END)) AS INTEGER) ASC,
-          l.id ASC LIMIT 1) DESC,
-        g.match_type IS NOT NULL DESC, COALESCE(g.ai_processed_at, '') DESC, g.id DESC LIMIT 1), '[]')
-WHERE group_key IS NOT NULL;
+-- The backfill, one pass over the grouped bills rather than the triggers'
+-- per-row lookups, which ran out of D1's CPU limit on an instance with
+-- thousands of groups. It reads each grouped bill's newest text date once,
+-- from the covering index, ranks each group's members by the lead rule,
+-- gives every member its group's analysis by the order the triggers use, and
+-- writes only the rows that change.
+WITH members AS (
+  SELECT b.id, b.group_key, b.tags, b.match_type, b.ai_processed_at,
+    (b.ai_processed_at IS NOT NULL OR b.tenant_summary IS NOT NULL OR b.tags <> '[]') AS has_analysis,
+    ROW_NUMBER() OVER (PARTITION BY b.group_key ORDER BY b.status_rank DESC,
+      (SELECT MAX(NULLIF(t.date, '')) FROM bill_texts t WHERE t.bill_id = b.id) DESC NULLS LAST,
+      substr(b.bill_number, 1, min(CASE WHEN instr(b.bill_number, '0') = 0 THEN 99999 ELSE instr(b.bill_number, '0') END, CASE WHEN instr(b.bill_number, '1') = 0 THEN 99999 ELSE instr(b.bill_number, '1') END, CASE WHEN instr(b.bill_number, '2') = 0 THEN 99999 ELSE instr(b.bill_number, '2') END, CASE WHEN instr(b.bill_number, '3') = 0 THEN 99999 ELSE instr(b.bill_number, '3') END, CASE WHEN instr(b.bill_number, '4') = 0 THEN 99999 ELSE instr(b.bill_number, '4') END, CASE WHEN instr(b.bill_number, '5') = 0 THEN 99999 ELSE instr(b.bill_number, '5') END, CASE WHEN instr(b.bill_number, '6') = 0 THEN 99999 ELSE instr(b.bill_number, '6') END, CASE WHEN instr(b.bill_number, '7') = 0 THEN 99999 ELSE instr(b.bill_number, '7') END, CASE WHEN instr(b.bill_number, '8') = 0 THEN 99999 ELSE instr(b.bill_number, '8') END, CASE WHEN instr(b.bill_number, '9') = 0 THEN 99999 ELSE instr(b.bill_number, '9') END) - 1) ASC,
+      CAST(substr(b.bill_number, min(CASE WHEN instr(b.bill_number, '0') = 0 THEN 99999 ELSE instr(b.bill_number, '0') END, CASE WHEN instr(b.bill_number, '1') = 0 THEN 99999 ELSE instr(b.bill_number, '1') END, CASE WHEN instr(b.bill_number, '2') = 0 THEN 99999 ELSE instr(b.bill_number, '2') END, CASE WHEN instr(b.bill_number, '3') = 0 THEN 99999 ELSE instr(b.bill_number, '3') END, CASE WHEN instr(b.bill_number, '4') = 0 THEN 99999 ELSE instr(b.bill_number, '4') END, CASE WHEN instr(b.bill_number, '5') = 0 THEN 99999 ELSE instr(b.bill_number, '5') END, CASE WHEN instr(b.bill_number, '6') = 0 THEN 99999 ELSE instr(b.bill_number, '6') END, CASE WHEN instr(b.bill_number, '7') = 0 THEN 99999 ELSE instr(b.bill_number, '7') END, CASE WHEN instr(b.bill_number, '8') = 0 THEN 99999 ELSE instr(b.bill_number, '8') END, CASE WHEN instr(b.bill_number, '9') = 0 THEN 99999 ELSE instr(b.bill_number, '9') END)) AS INTEGER) ASC,
+      b.id ASC) AS lead_rank
+  FROM bills b
+  WHERE b.group_key IS NOT NULL
+),
+group_values AS (
+  SELECT id,
+    CASE WHEN FIRST_VALUE(has_analysis) OVER pick THEN FIRST_VALUE(tags) OVER pick ELSE '[]' END AS tags
+  FROM members
+  WINDOW pick AS (PARTITION BY group_key ORDER BY has_analysis DESC, lead_rank = 1 DESC,
+    match_type IS NOT NULL DESC, COALESCE(ai_processed_at, '') DESC, id DESC)
+)
+UPDATE bills SET group_tags = group_values.tags
+FROM group_values
+WHERE bills.id = group_values.id AND bills.group_tags IS NOT group_values.tags;
