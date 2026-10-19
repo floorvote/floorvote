@@ -608,7 +608,7 @@ export function Profile() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
               <div style={{ fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5 }}>
                 <div style={{ fontWeight: fontWeight.bold, color: color.textPrimary }}>Replies on bills you've commented on</div>
-                <div>Email me when someone else comments on a bill I've commented on. Replies still appear in your notifications.</div>
+                <div>Notify me in FloorVote and by email when someone else comments on a bill I've commented on. To stop them on one bill, use Mute comments on that bill.</div>
               </div>
               <label
                 style={{
