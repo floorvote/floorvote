@@ -224,6 +224,8 @@ export const bills = sqliteTable('bills', {
   //   WHERE ai_processed_at IS NOT NULL GROUP BY 1 ORDER BY 1 DESC
   // To ask what is still stuck, use the predicate in lib/healStalledAi.ts.
   aiHealAttempts: integer('ai_heal_attempts').notNull().default(0),
+  // When a pulled lead's request to central was last renewed (lib/companionAnalysis.ts, migration 0118).
+  fetchRenewedAt: text('fetch_renewed_at'),
   textStatus: text('text_status'),
   newMatchAt: text('new_match_at'),
   // Where the keyword match came from, as central declared it (MatchProvenance

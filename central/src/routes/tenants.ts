@@ -624,6 +624,37 @@ tenantsRoutes.post('/fetch-bills/:tenantId', guardCallerTenantParam(), async (c)
   return c.json({ ok: true, tenantId, queued: due.length })
 })
 
+// POST /tenants/renew-fetch-requests/:tenantId — keep the tenant's fetch-bills requests alive.
+// Body: { billIds: number[] }. An instance calls it, at most weekly per bill, for a pulled
+// companion that leads a group it tracks a bill in (api/src/lib/companionAnalysis.ts), so the
+// sync keeps ingesting the bill's new texts while it leads (lib/fetchRequests.ts). It stamps
+// fetch_requested_at on the tenant's existing links to the listed bills, and queues nothing for
+// a bill whose detail is current, so a renewal costs no provider call and no delivery. A LegiScan
+// bill whose change hash moved while no request was live (one pulled before #801, or whose
+// request lapsed) is fetched once, within the budget untracked bills' fetches share.
+tenantsRoutes.post('/renew-fetch-requests/:tenantId', guardCallerTenantParam(), async (c) => {
+  const db = drizzle(c.env.DB, { schema })
+  const tenantId = c.req.param('tenantId')
+  const body = await c.req.json<{ billIds?: unknown }>().catch(() => ({} as { billIds?: unknown }))
+  if (body.billIds !== undefined && !Array.isArray(body.billIds)) return c.json({ error: 'billIds must be a list' }, 400)
+  const requested = [...new Set((body.billIds ?? []).filter((n: unknown): n is number => Number.isInteger(n) && (n as number) > 0))]
+  if (requested.length > REPROCESS_LIMIT) {
+    return c.json({ error: `too many billIds (max ${REPROCESS_LIMIT})` }, 400)
+  }
+
+  const now = nowDb()
+  const linked: number[] = []
+  for (let i = 0; i < requested.length; i += 90) {
+    const part = requested.slice(i, i + 90)
+    const rows = await db.update(schema.billTenants).set({ fetchRequestedAt: now })
+      .where(and(eq(schema.billTenants.tenantId, tenantId), inArray(schema.billTenants.billId, part)))
+      .returning({ billId: schema.billTenants.billId })
+    linked.push(...rows.map(r => r.billId))
+  }
+  const refreshed = await refreshRequestedBills(db, c.env.INGESTOR_QUEUE, linked)
+  return c.json({ ok: true, tenantId, renewed: linked.length, fetched: refreshed.size })
+})
+
 tenantsRoutes.get('/:tenantId/upcoming-hearings', guardCallerTenantParam(), async (c) => {
   const tenantId = c.req.param('tenantId')
   const daysRaw = Number(c.req.query('days') ?? '30')

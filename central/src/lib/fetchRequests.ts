@@ -14,8 +14,11 @@ import type { Db } from '../types'
  * sends a bill no instance tracks only stubs, so central would keep the texts
  * it fetched when it was asked. While the request is recent, the sync instead
  * ingests the bill whenever its change hash moves, so the instance gets its new
- * texts. Central can't see the instance's groups, so the request ends after
- * FETCH_REQUEST_DAYS without another ask, or when the link goes.
+ * texts. While the bill leads a group, the instance renews the request weekly
+ * through POST /tenants/renew-fetch-requests, which queues nothing for a bill
+ * that is current. Central can't see the instance's groups, so the request
+ * ends after FETCH_REQUEST_DAYS without another ask or renewal, or when the
+ * link goes.
  *
  * A LegiScan ingest costs a getBill against the monthly budget, so these spend
  * the share untracked bills' fetches get (lib/stubRefresh.ts) and claim one

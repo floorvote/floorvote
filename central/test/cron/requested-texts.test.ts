@@ -25,6 +25,7 @@ vi.mock('../../src/lib/queuesRest', () => ({
 const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
 
+import { app } from '../../src/index-legiscan'
 import { applyMasterList } from '../../src/cron/sync'
 import { processIngestorQueue } from '../../src/queue/processor'
 import { FETCH_REQUEST_DAYS } from '../../src/lib/fetchRequests'
@@ -149,5 +150,50 @@ describe('the sync ingests a bill an instance asked for, which no instance track
     await seedHeld(70, daysAgo(1), 'lims')
     const messages = await pass([entry(70, 'new')], { ...SESSION, provider: 'lims' })
     expect(messages.filter(m => m.billId === 70)).toHaveLength(1)
+  })
+})
+
+// An instance renews its request for a pulled lead while the lead is grouped
+// (POST /tenants/renew-fetch-requests, from api/src/lib/companionAnalysis.ts).
+// Renewing stamps the request and fetches nothing for a bill that is current,
+// so it costs no provider call and no delivery.
+describe('an instance renews its request for a bill that leads its group', () => {
+  async function renew(billIds: number[], tenant = TENANT) {
+    const ingest = { send: vi.fn().mockResolvedValue(undefined), sendBatch: vi.fn().mockResolvedValue(undefined) }
+    const res = await app.fetch(new Request(`http://central/api/tenants/renew-fetch-requests/${tenant}`, {
+      method: 'POST', headers: { 'x-admin-secret': 'sek', 'content-type': 'application/json' }, body: JSON.stringify({ billIds }),
+    }), { ...(env as any), ADMIN_SECRET: 'sek', INGESTOR_QUEUE: ingest })
+    expect(res.status).toBe(200)
+    return [...ingest.send.mock.calls.map(c => c[0]), ...ingest.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body))]
+  }
+  const requestedAt = async (billId: number) =>
+    (await db().select({ at: billTenants.fetchRequestedAt }).from(billTenants).where(eq(billTenants.billId, billId)).get())?.at ?? null
+
+  it('keeps a bill whose first ask is past the request window getting its new texts', async () => {
+    await seedHeld(70, daysAgo(FETCH_REQUEST_DAYS + 1))
+    await renew([70])
+    const messages = await pass([entry(70, 'new')])
+    expect(messages).toContainEqual({ billId: 70, queuedBy: 'legiscan' })
+  })
+
+  it('fetches a bill never asked for whose change hash moved while central kept only its stub', async () => {
+    // A lead pulled before #801: its link has no request, and the sync moved its change hash without ingesting it.
+    await seedHeld(70, null)
+    await db().update(bills).set({ changeHash: 'new' }).where(eq(bills.billId, 70))
+    expect(await renew([70])).toEqual([{ billId: 70, queuedBy: 'legiscan' }])
+  })
+
+  it('stamps the request on a current bill and spends no provider call, queuing nothing', async () => {
+    await seedHeld(70, null)
+    expect(await renew([70])).toEqual([])
+    expect(legiscan.getBill).not.toHaveBeenCalled()
+    expect(await requestedAt(70)).not.toBeNull()
+  })
+
+  it("stamps only the asking instance's own links", async () => {
+    await seedHeld(70, null)
+    await db().insert(tenants).values({ tenantId: 't-other', name: 't-other', stateCoverage: '["DC"]', active: true })
+    await renew([70], 't-other')
+    expect(await requestedAt(70)).toBeNull()
   })
 })
