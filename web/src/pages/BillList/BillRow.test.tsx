@@ -47,7 +47,6 @@ function renderRow(isAdmin: boolean, opts: { onVote?: (billId: string, pos: 'sup
       <BillRow
         bill={makeBill(opts.bill)}
         index={0}
-        selectedTags={[]}
         onTagClick={vi.fn()}
         isAdmin={isAdmin}
         positionVocabulary={['Support', 'Oppose']}
@@ -58,11 +57,7 @@ function renderRow(isAdmin: boolean, opts: { onVote?: (billId: string, pos: 'sup
         onPriorityChange={vi.fn()}
         onPositionChange={vi.fn()}
         onVote={opts.onVote}
-        filterStatuses={[]}
-        filterPriorities={[]}
-        filterPositions={[]}
-        filterYears={[]}
-        filterMinRelevance={0}
+        filter={{ status: [], priority: [], position: [], year: [], minRelevance: 0, tag: [] }}
         sortedPaths={[]}
         isMultiState={false}
         isSelectionMode={false}
@@ -360,23 +355,29 @@ describe('BillRow tooltips escape the row stacking context', () => {
     expect(container.contains(bubble)).toBe(false)
   })
 
-  // Scope to the desktop column rather than taking the first matching combobox:
-  // each control also renders a mobile-meta duplicate, and the two are wrapped
-  // differently, so an index-based lookup silently targets the wrong one.
-  it('renders the position-select tooltip outside the row subtree', () => {
-    const { container } = renderRow(true)
-    // Walk up from the control, not down from the column: the column's first
-    // span is its "Position" label, not the tooltip wrapper.
-    const wrapper = container.querySelector('.bill-col-position select')!.closest('span')!
-    fireEvent.pointerEnter(wrapper, { pointerType: 'mouse' })
-    expect(container.contains(screen.getByText(/official position on this bill/i))).toBe(false)
+  // The position and priority controls are labeled by their column, so a bubble
+  // saying "Your association's official position on this bill" or "This bill's
+  // priority level" only restated the label. They are gone, for both roles.
+  it('shows no hover bubble over the admin position select', () => {
+    renderRow(true)
+    fireEvent.pointerEnter(document.querySelector('.bill-col-position select')!, { pointerType: 'mouse' })
+    expect(screen.queryByText(/official position on this bill/i)).toBeNull()
   })
 
-  it('renders the priority-select tooltip outside the row subtree', () => {
-    const { container } = renderRow(true)
-    const wrapper = container.querySelector('.bill-col-priority span')!
-    fireEvent.pointerEnter(wrapper, { pointerType: 'mouse' })
-    expect(container.contains(screen.getByText(/priority level/i))).toBe(false)
+  it('shows no hover bubble over the admin priority select', () => {
+    renderRow(true)
+    fireEvent.pointerEnter(document.querySelector('.bill-col-priority select')!, { pointerType: 'mouse' })
+    expect(screen.queryByText(/priority level/i)).toBeNull()
+  })
+
+  it('shows no hover bubble over a member\'s position or priority chip', () => {
+    renderRow(false, { bill: { position: 'Support', priority: 'high' } })
+    const position = document.querySelector('.bill-col-position button') ?? document.querySelector('.bill-col-position span')!
+    fireEvent.pointerEnter(position, { pointerType: 'mouse' })
+    const priority = document.querySelector('.bill-col-priority button')!
+    fireEvent.pointerEnter(priority, { pointerType: 'mouse' })
+    expect(screen.queryByText(/official position on this bill/i)).toBeNull()
+    expect(screen.queryByText(/priority level/i)).toBeNull()
   })
 })
 
@@ -402,5 +403,15 @@ describe('BillRow untitled draft title', () => {
     renderRow(false, { bill: { title: '', isDraft: false, abstract: 'Filed bill abstract' } })
     expect(screen.getByText('Filed bill abstract')).toBeInTheDocument()
     expect(screen.queryByText('Untitled draft')).toBeNull()
+  })
+})
+
+// Grouping Status by Stage changes the filter control only (#677). A row shows the provider's status and no stage text,
+// even when the bill it is given carries a stage (the list reads the stage only to filter and sort).
+describe('BillRow shows Status only, never a stage', () => {
+  it('draws no stage text or stage chip for a bill with a stage', () => {
+    const { container } = renderRow(true, { bill: { status: 'Became Law', ...({ statusStage: 'enacted', statusRank: 705 } as object) } })
+    expect(screen.getAllByText('Became Law').length).toBeGreaterThan(0)
+    expect(container.textContent ?? '').not.toMatch(/\bEnacted\b|\bStage\b/i)
   })
 })

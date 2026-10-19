@@ -5,6 +5,7 @@ import { Notifications } from './Notifications'
 import * as api from '../../lib/api'
 import * as AuthContext from '../../context/AuthContext'
 import { ConfigContext } from '../../context/ConfigContext'
+import { settingBox, SETTING_BOX_TITLE } from '../../lib/settingBoxStyle'
 
 function mockConfig(over: Record<string, unknown> = {}) {
   vi.spyOn(api, 'apiFetch').mockImplementation(async (path: string, init?: RequestInit) => {
@@ -107,6 +108,18 @@ describe('Notifications page', () => {
     const h1s = screen.getAllByRole('heading', { level: 1 })
     expect(h1s).toHaveLength(1)
     expect(h1s[0]).toHaveTextContent('Team notifications')
+  })
+
+  it('boxes each switch with the shared setting-box styles', async () => {
+    mockConfig()
+    render(<MemoryRouter><Notifications /></MemoryRouter>)
+    const sw = await screen.findByRole('switch', { name: /conversation emails/i })
+    const styleOf = (el: React.ReactElement) => render(el).container.firstElementChild!.getAttribute('style')
+    const box = sw.closest('[style*="12px 14px"]') as HTMLElement
+    expect(box).not.toBeNull()
+    expect(box.getAttribute('style')).toBe(styleOf(<div style={settingBox(false)} />))
+    const title = screen.getByText('Send conversation emails to members')
+    expect(title.getAttribute('style')).toBe(styleOf(<div style={SETTING_BOX_TITLE} />))
   })
 
   describe('named after the org noun', () => {

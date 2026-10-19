@@ -13,6 +13,8 @@ import { billUrl } from '../../../shared/sessionSlug'
 import { filedSlug } from '../lib/sessionSlug'
 import { collectPriorityLegiscanIds, backfillCalendar } from '../lib/calendarBackfill'
 import { nowDb } from '../lib/dbTime'
+import { loadEventRules, parseFacets } from '../lib/eventRules'
+import { eventMatchesRules } from '../../../shared/eventRules'
 import { PRODUCT_NAME } from '../../../shared/brand'
 import { billDisplayTitle } from '../../../shared/billTitle'
 import { importUid, importEventHash, type ImportRow } from '../lib/calendarImport'
@@ -100,6 +102,7 @@ function fieldEventResult(f: DateFieldEvent) {
     date: f.date, time: null, location: null,
     description: f.title, details: null, url: null,
     status: 'confirmed', fieldName: f.fieldName,
+    committee: null, committeeId: null, jointWith: null, bodyState: null, shownByPriority: false,
     bills: [{ id: f.bill.id, billNumber: f.bill.billNumber, billTitle: f.bill.billTitle, state: f.bill.state, priority: f.bill.priority, isDraft: f.bill.isDraft }],
   }
 }
@@ -115,7 +118,7 @@ calendarRouter.get('/events', requireAuth, async (c) => {
   const rows = await db
     .select({
       id: calendarEvents.id, uid: calendarEvents.uid, source: calendarEvents.source,
-      kind: calendarEvents.kind,
+      kind: calendarEvents.kind, ruleFacets: calendarEvents.ruleFacets,
       sequence: calendarEvents.sequence, billId: calendarEvents.billId,
       eventHash: calendarEvents.eventHash,
       date: calendarEvents.date, time: calendarEvents.time,
@@ -181,6 +184,10 @@ calendarRouter.get('/events', requireAuth, async (c) => {
     date: string | null; time: string | null; location: string | null
     description: string | null; details: string | null; url: string | null
     status: string; bills: EventBill[]
+    /** A body event's committee (null for none, and for every other event), the committee it is held jointly with, and the state whose legislature holds it, from its rule_facets. */
+    committee: string | null; committeeId: string | null; jointWith: string | null; bodyState: string | null
+    /** A body event the instance's rules hide that a prioritized bill brings back, so the calendar says why it shows. */
+    shownByPriority: boolean
     /** The companion groups the entry's bills belong to, each with every bill in it, so the popover can link to them. Absent on a date-field event. */
     groups?: EventGroup[]
   }
@@ -191,8 +198,11 @@ calendarRouter.get('/events', requireAuth, async (c) => {
       : (r.billNumber
           ? [{ id: r.billId!, billNumber: r.billNumber, billTitle: billDisplayTitle({ title: r.billTitle, isDraft: r.billIsDraft }), state: r.billState, priority: r.priority, isDraft: r.billIsDraft ?? false, groupKey: r.billGroupKey }]
           : [])
+    const facets = r.source === 'body' ? parseFacets(r.ruleFacets) : null
     return {
       id: r.id, uid: r.uid, source: r.source, kind: r.kind, billId: r.billId,
+      committee: facets?.committee ?? null, committeeId: facets?.committeeId ?? null, jointWith: facets?.jointWith ?? null, bodyState: facets?.state ?? null,
+      shownByPriority: false,
       eventHash: r.eventHash, eventHashes: r.eventHash ? [r.eventHash] : [],
       date: r.date, time: r.time, location: r.location,
       description: r.description, details: r.details, url: r.url,
@@ -259,6 +269,18 @@ calendarRouter.get('/events', requireAuth, async (c) => {
     e.groups = keys.map(key => ({ key, bills: [...(membersOf.get(key) ?? [])].sort(compareBillNumbers) }))
     for (const b of e.bills) {
       b.priority = priorityWorn({ priority: b.priority as 'high' | 'medium' | 'low' | null, groupKey: b.groupKey ?? null }, groupPriorities)
+    }
+  }
+
+  // A body event the rules hide that a prioritized bill brings back says so, so its committee isn't read as one the instance chose.
+  const bodyRows = new Map(rows.filter(r => r.source === 'body').map(r => [r.id, parseFacets(r.ruleFacets)]))
+  if (bodyRows.size > 0) {
+    const { rules, settled } = await loadEventRules(db, null)
+    if (rules && settled) {
+      for (const e of result) {
+        const facets = bodyRows.get(e.id)
+        if (facets && e.bills.some(b => b.priority) && !eventMatchesRules(facets, rules, { tracked: e.bills.length > 0, prioritized: false })) e.shownByPriority = true
+      }
     }
   }
 

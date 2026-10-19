@@ -54,8 +54,3 @@ export function billTypeExplainer(labels: StateLabels | null, billType: string |
   const value = billType?.trim().toLowerCase()
   return (value && labels?.billTypes?.find(t => t.value.toLowerCase() === value)?.explainer) || null
 }
-
-/** The explainer for a calendar entry's event type, by its type id. */
-export function eventTypeExplainer(labels: StateLabels | null, typeId: number | null | undefined): string | null {
-  return (typeId != null && labels?.eventTypes?.find(t => t.typeId === typeId)?.explainer) || null
-}

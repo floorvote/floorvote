@@ -6,7 +6,7 @@ description: "Optionally add a Cloudflare Turnstile human-check to FloorVote's l
 
 Every login form already has an always-on, per-IP rate limiter. On top of that, you can add a [Cloudflare Turnstile](https://developers.cloudflare.com/turnstile/) human-check on the login screens. It's **optional and off by default** — skip this page entirely and login still works.
 
-Turnstile protects the unauthenticated login requests (`POST /api/auth/magic-link` on each tenant, and `POST /admin/dash/auth/login` on the central dashboard), and a signed-in member's request to change their email from the Account page (`POST /api/users/me/email-change`). It has two halves, both set through configuration — no code changes:
+Turnstile protects the unauthenticated login requests (`POST /api/auth/magic-link` on each tenant, and `POST /admin/dash/auth/login` on the central dashboard). A signed-in member's request to change their email is not gated: the session already proves who is asking, and the request keeps its rate limits. It has two halves, both set through configuration — no code changes:
 
 1. **Public sitekey** — a `TURNSTILE_SITE_KEY` **var** on each worker (`[env.<id>.vars]` in `api/wrangler.toml`, `[env.legiscan.vars]` in `central/wrangler.toml`). The login form shows the widget **only when this is set**; unset means no widget.
 2. **Secret key** — the `TURNSTILE_SECRET_KEY` worker **secret**. The server checks the token only when this is set (and then fails closed: a missing or invalid token returns a 403). Unset means the check is skipped.

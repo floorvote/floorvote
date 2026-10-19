@@ -108,7 +108,7 @@ export function ChangeHistoryTooltip({ changes, lastActionDate, relativeTime }: 
   return (
     // A toggletip, like the ⓘ and the term explainers: the trigger is a button, so a
     // click, tap, Enter, or Space pins the log open or closed and Escape closes it.
-    <HoverTooltip toggletip placement="bottom" maxWidth={360} text={panel}>
+    <HoverTooltip toggletip maxWidth={360} text={panel}>
       {trigger}
     </HoverTooltip>
   )

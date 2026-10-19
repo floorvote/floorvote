@@ -124,9 +124,10 @@ describe('provider extras', () => {
     expect(bill.extras).toEqual({
       providerName: 'Example Legislature',
       fields: [
-        { key: 'lawNumber', label: 'Law number', explainer: 'The number the measure took when it became law.', display: 'identifier', value: 'L26-0042' },
-        { key: 'effectiveDate', label: 'Effective date', explainer: null, display: 'date', value: '2026-06-01' },
-        { key: 'packet', label: 'Introduction packet', explainer: null, display: 'link', value: 'https://legislature.example/packets/B26-0001.pdf' },
+        { key: 'lawNumber', label: 'Law number', explainer: 'The number the measure took when it became law.', display: 'identifier', placement: 'meta', value: 'L26-0042' },
+        { key: 'effectiveDate', label: 'Effective date', explainer: null, display: 'date', placement: 'panel', value: '2026-06-01' },
+        { key: 'packet', label: 'Introduction packet', explainer: null, display: 'link', placement: 'panel', value: 'https://legislature.example/packets/B26-0001.pdf' },
+        { key: 'becameLaw', label: 'Became law', explainer: 'The measure was signed into law.', display: 'text', placement: 'flag', value: 'Yes' },
       ],
     })
     // A bill whose provider published none of its extras has no panel.
@@ -153,8 +154,9 @@ describe('provider extras', () => {
     expect(queued).toEqual([enacted])
 
     expect((await centralGet(`/bills/legiscan:${enacted}`)).extras.fields).toEqual([
-      { key: 'lawNumber', label: 'Law number', explainer: 'The number the measure took when it became law.', display: 'identifier', value: 'L26-0043' },
-      { key: 'withdrawnBy', label: 'Withdrawn by', explainer: null, display: 'text', value: 'Councilmember Example' },
+      { key: 'lawNumber', label: 'Law number', explainer: 'The number the measure took when it became law.', display: 'identifier', placement: 'meta', value: 'L26-0043' },
+      { key: 'withdrawnBy', label: 'Withdrawn by', explainer: null, display: 'text', placement: 'detail', value: 'Councilmember Example' },
+      { key: 'becameLaw', label: 'Became law', explainer: 'The measure was signed into law.', display: 'text', placement: 'flag', value: 'Yes' },
     ])
     // Extras aren't change-detected: no change-log entry, and the tenant's
     // ingest notification carries no changes.
@@ -165,7 +167,7 @@ describe('provider extras', () => {
     expect(sent[0].changes ?? []).toEqual([])
 
     // A record that stops sending them clears them.
-    exampleFeed.records[0] = { ...exampleFeed.records[0], LawNumber: null, WithdrawnBy: null }
+    exampleFeed.records[0] = { ...exampleFeed.records[0], LawNumber: null, WithdrawnBy: null, Signed: null }
     await syncAndIngest()
     expect((await centralGet(`/bills/legiscan:${enacted}`)).extras).toBeNull()
   })
@@ -175,7 +177,7 @@ describe('provider extras', () => {
     await ingest({ stageDirections: 'Exit, pursued by a bear' })
 
     const fields = (await centralGet(`/bills/legiscan:${enacted}`)).extras.fields as { key: string }[]
-    expect(fields.map(f => f.key)).toEqual(['lawNumber', 'effectiveDate', 'packet'])
+    expect(fields.map(f => f.key)).toEqual(['lawNumber', 'effectiveDate', 'packet', 'becameLaw'])
   })
 
   it('drop impossible dates and values that aren\'t strings, and the rest of the ingest still runs', async () => {
@@ -183,9 +185,36 @@ describe('provider extras', () => {
     for (const [effectiveDate, withdrawnBy] of [['2026-13-01', 42], ['0000-00-00', true], ['2026-02-30', { name: 'x' }]] as const) {
       const tenantQueue = await ingest({ effectiveDate, withdrawnBy: withdrawnBy as never })
       const fields = (await centralGet(`/bills/legiscan:${enacted}`)).extras.fields as { key: string }[]
-      expect(fields.map(f => f.key), effectiveDate).toEqual(['lawNumber', 'packet'])
+      expect(fields.map(f => f.key), effectiveDate).toEqual(['lawNumber', 'packet', 'becameLaw'])
       // The ingest reached its tenant notification.
       expect(sentToTenant(tenantQueue).map((m: any) => m.billId), effectiveDate).toEqual([`legiscan:${enacted}`])
     }
+  })
+
+  it('serve each field\'s placement, one of each, and "panel" for a vocabulary entry that gives none', async () => {
+    const { enacted } = await builtEnacted()
+    const fields = (await centralGet(`/bills/legiscan:${enacted}`)).extras.fields as { key: string; placement: string }[]
+    expect(Object.fromEntries(fields.map(f => [f.key, f.placement]))).toEqual({
+      lawNumber: 'meta', effectiveDate: 'panel', packet: 'panel', becameLaw: 'flag',
+    })
+    expect(example.vocabulary.extras!.effectiveDate.placement).toBeUndefined()
+  })
+
+  it('serve a placement only a vocabulary declares, never one a stored value carries', async () => {
+    const { enacted, ingest } = await builtEnacted()
+    await ingest({ withdrawnBy: 'Example Member' })
+    const fields = (await centralGet(`/bills/legiscan:${enacted}`)).extras.fields as { key: string; placement: string }[]
+    expect(fields.map(f => [f.key, f.placement])).toEqual([
+      ['lawNumber', 'meta'], ['effectiveDate', 'panel'], ['packet', 'panel'], ['withdrawnBy', 'detail'], ['becameLaw', 'flag'],
+    ])
+  })
+
+  it('do not serve a row stored under a key the vocabulary has since dropped', async () => {
+    const { enacted } = await builtEnacted()
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.billExtras).values({ billId: enacted, provider: 'example', key: 'sentToMayor', value: '2026-04-13' })
+    const fields = (await centralGet(`/bills/legiscan:${enacted}`)).extras.fields as { key: string }[]
+    expect(fields.map(f => f.key)).not.toContain('sentToMayor')
+    expect(fields.map(f => f.key)).toEqual(['lawNumber', 'effectiveDate', 'packet', 'becameLaw'])
   })
 })

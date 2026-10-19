@@ -1,6 +1,7 @@
 import { eq, and, inArray, isNotNull } from 'drizzle-orm'
 import { DEFAULT_PROVIDER_ID, getProvider, type Provider, type SessionRef, type SyncEntry } from '../providers'
-import { sessions, bills, billTenants, tenants, keywordRegistry, sessionSyncLog } from '../db/schema'
+import { sessions, bills, billTenants, billSasts, tenants, keywordRegistry, sessionSyncLog } from '../db/schema'
+import { relationshipKind } from '../lib/vocabulary'
 import { matchesUnion, billMatchText } from '../lib/keywords'
 import { decideMode, getCurrentEtHour } from '../lib/sync-schedule'
 import { nowDb } from '../lib/dbTime'
@@ -14,6 +15,48 @@ import { queueCalendarRechecks } from '../lib/billCalendar'
 
 const BATCH = 80
 const FLUSH_BATCH = 500
+
+/**
+ * For the listed bills, the instances that track an identical companion of each
+ * (a bill the provider names as the same measure, linked to the instance with a
+ * match type). An instance groups such companions (#374), and a companion it
+ * didn't match is analyzed through the group, so its actions and hearings belong
+ * in the group's card and calendar (#637): it gets full deliveries, not stubs.
+ * Read from the links as they stood before the pass.
+ */
+async function trackedCompanionTenants(
+  db: Db,
+  provider: Provider,
+  state: string,
+  billIds: number[],
+): Promise<Map<number, Set<string>>> {
+  const out = new Map<number, Set<string>>()
+  for (let i = 0; i < billIds.length; i += BATCH) {
+    const chunk = billIds.slice(i, i + BATCH)
+    const pairs: Array<[number, number]> = []
+    for (const r of await db.select({ billId: billSasts.billId, other: billSasts.sastBillId, type: billSasts.type })
+      .from(billSasts).where(inArray(billSasts.billId, chunk)).all()) {
+      if (relationshipKind(provider, state, r.type) === 'identical') pairs.push([r.billId, r.other])
+    }
+    for (const r of await db.select({ billId: billSasts.billId, other: billSasts.sastBillId, type: billSasts.type })
+      .from(billSasts).where(inArray(billSasts.sastBillId, chunk)).all()) {
+      if (relationshipKind(provider, state, r.type) === 'identical') pairs.push([r.other, r.billId])
+    }
+    if (pairs.length === 0) continue
+    const others = [...new Set(pairs.map(p => p[1]))]
+    const tracked = new Map<number, string[]>()
+    for (let j = 0; j < others.length; j += BATCH) {
+      for (const l of await db.select({ billId: billTenants.billId, tenantId: billTenants.tenantId })
+        .from(billTenants).where(and(inArray(billTenants.billId, others.slice(j, j + BATCH)), isNotNull(billTenants.matchType))).all()) {
+        tracked.set(l.billId, [...(tracked.get(l.billId) ?? []), l.tenantId])
+      }
+    }
+    for (const [bill, other] of pairs) {
+      for (const t of tracked.get(other) ?? []) out.set(bill, (out.get(bill) ?? new Set()).add(t))
+    }
+  }
+  return out
+}
 
 /** The states active instances cover, which are the states central keeps in sync. */
 export async function loadTrackedStates(
@@ -181,6 +224,22 @@ async function runFullPass(
 }
 
 /**
+ * Write one pass's row to session_sync_log. With `tolerate`, a write that fails
+ * is noted and the pass carries on (a snapshot pass's log is a record of it, never
+ * part of it); without, the error throws, as a LegiScan pass's always has.
+ */
+export async function logSyncPass(
+  db: Db, values: typeof sessionSyncLog.$inferInsert, opts: { tolerate: boolean; label: string },
+): Promise<void> {
+  try {
+    await db.insert(sessionSyncLog).values(values)
+  } catch (err) {
+    if (!opts.tolerate) throw err
+    console.error(`[sync] couldn't log the pass of ${opts.label}:`, err)
+  }
+}
+
+/**
  * Reconcile one session's master list against central: upsert bill rows,
  * update each covering tenant's keyword links, queue matched-and-changed bills
  * to the ingestor, and send monitor stubs for the rest. Provider-neutral: any
@@ -220,10 +279,19 @@ export async function applyMasterList(
      * not bills the regular sync found (BillMessage.matchProvenance).
      */
     bulk?: boolean
+    /**
+     * Carry on when the pass's log row can't be written, noting it instead:
+     * the pass has queued and sent everything by then, and a failed log
+     * write must not fail it. The snapshot sync sets this.
+     */
+    tolerateLogFailure?: boolean
   } = {},
 ): Promise<number[]> {
+  const logPass = (values: typeof sessionSyncLog.$inferInsert) =>
+    logSyncPass(db, values, { tolerate: !!opts.tolerateLogFailure, label: session.sessionName })
+
   if (list.length === 0) {
-    await db.insert(sessionSyncLog).values({
+    await logPass({
       syncedAt: nowDb(),
       state: session.state,
       sessionId: session.sessionId,
@@ -288,6 +356,15 @@ export async function applyMasterList(
       .limit(1).get()
     if (held) seeded.add(tenantId)
   }
+
+  // Only a changed bill an instance doesn't hold by hand can need a full ingest for its companion's sake: it
+  // doesn't match there now, or this pass's keywords drop its match (a title that changed). The reverse lookup has
+  // no index on the companion's side, so it is kept to those bills: most passes list none.
+  const companionCandidates = list
+    .filter(e => existing.get(e.bill_id)?.changeHash !== e.change_hash
+      && coveringTenants.some(t => existingLinks.get(`${e.bill_id}:${t.tenantId}`) !== 'manual'))
+    .map(e => e.bill_id)
+  const companionTracked = await trackedCompanionTenants(db, getProvider(session.provider), session.state, companionCandidates)
 
   const now = nowDb()
   const billStmts: any[] = []
@@ -389,7 +466,11 @@ export async function applyMasterList(
       // before the other provider ingested it, whose change hash is still this
       // provider's. It's queued each pass until that ingest clears carried_from.
       const carriedAndTracked = ((prevMatchType ?? null) !== null || newMatchType !== null) && !!stored?.carriedFrom
-      if (justMatched || alreadyMatchedAndChanged || carriedAndTracked) {
+      // A bill the instance didn't match, whose identical companion it tracks, is in a companion group
+      // there: its changes go as a full ingest (with the changes and calendar), which instances apply to
+      // group members as they do to tracked bills (#637). A stub carries neither.
+      const trackedCompanion = newMatchType === null && billChanged && !!companionTracked.get(entry.bill_id)?.has(t.tenantId)
+      if (justMatched || alreadyMatchedAndChanged || carriedAndTracked || trackedCompanion) {
         toQueue.add(entry.bill_id)
       }
 
@@ -519,7 +600,7 @@ export async function applyMasterList(
     }
   }
 
-  await db.insert(sessionSyncLog).values({
+  await logPass({
     syncedAt: nowDb(),
     state: session.state,
     sessionId: session.sessionId,

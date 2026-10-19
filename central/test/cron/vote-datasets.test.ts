@@ -152,9 +152,9 @@ describe('weekly LegiScan member votes', () => {
 
     // Cy never sponsored anything; the dataset's people/ file gives the name.
     expect(await legislatorVotes(102, 31)).toEqual([
-      { personId: '1', name: 'Ann Able', vote: 'Yea', url: null },
-      { personId: '2', name: 'Bo Baker', vote: 'Nay', url: null },
-      { personId: '3', name: 'Cy Carter', vote: 'Yea', url: null },
+      { personId: '1', name: 'Ann Able', vote: 'Yea', url: null, party: null },
+      { personId: '2', name: 'Bo Baker', vote: 'Nay', url: null, party: 'D' },
+      { personId: '3', name: 'Cy Carter', vote: 'Yea', url: null, party: 'D' },
     ])
     // About two calls for the session, both counted toward the budget.
     expect(await callsLogged()).toEqual({ getDatasetList: 1, getDatasetRaw: 1 })
@@ -166,7 +166,7 @@ describe('weekly LegiScan member votes', () => {
     await db.run(sql`UPDATE people SET name = 'Ann Able-Smith', person_hash = 'ph-1-newer' WHERE people_id = 1`)
     await checkVoteDatasets(mockEnv(), db)
     await deliverQueued()
-    expect((await legislatorVotes(102, 31))?.[0]).toEqual({ personId: '1', name: 'Ann Able-Smith', vote: 'Yea', url: null })
+    expect((await legislatorVotes(102, 31))?.[0]).toEqual({ personId: '1', name: 'Ann Able-Smith', vote: 'Yea', url: null, party: null })
   })
 
   it('checks only sessions instances cover: one list call for RI, none for MA', async () => {
@@ -233,8 +233,8 @@ describe('weekly LegiScan member votes', () => {
     await deliverQueued()
 
     expect(await legislatorVotes(102, 32)).toEqual([
-      { personId: '2', name: 'Bo Baker', vote: 'Yea', url: null },
-      { personId: '4', name: 'Di Dunn', vote: 'Nay', url: null },
+      { personId: '2', name: 'Bo Baker', vote: 'Yea', url: null, party: 'D' },
+      { personId: '4', name: 'Di Dunn', vote: 'Nay', url: null, party: 'D' },
     ])
     expect((await legislatorVotes(102, 31))?.map(v => (v as { vote: string }).vote)).toEqual(['Yea', 'Nay', 'Yea'])
 
@@ -252,7 +252,7 @@ describe('weekly LegiScan member votes', () => {
     await checkVoteDatasets(mockEnv(), db)
     await deliverQueued()
 
-    expect(await legislatorVotes(103, 33)).toEqual([{ personId: '1', name: 'Ann Able', vote: 'Yea', url: null }])
+    expect(await legislatorVotes(103, 33)).toEqual([{ personId: '1', name: 'Ann Able', vote: 'Yea', url: null, party: null }])
     expect(await legislatorVotes(102, 31)).toHaveLength(4)
   })
 

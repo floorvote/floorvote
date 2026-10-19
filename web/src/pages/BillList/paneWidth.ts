@@ -8,16 +8,57 @@ export type PaneColumnKey = 'status' | 'year' | 'lastAction' | 'relevance'
 /** One column the pane can show: it appears once the pane is `at` px wide. */
 export interface PaneColumn { key: PaneColumnKey; label: string; at: number }
 
+// Grid tracks, the Bills page's own (constants.ts CHIP_GRID): the bill number,
+// then each column that shows. Header and rows share this template so every
+// cell sits under its header. `status` is as wide as the status chip's cap
+// (STATUS_CHIP_MAX_WIDTH), so a capped chip fits its track (#404).
+const BILL_TRACK = '70px'
+const BILL_TRACK_MULTISTATE = '105px'
+const COLUMN_TRACKS: Record<PaneColumnKey, string> = {
+  status: '100px',
+  year: '90px',
+  lastAction: '130px',
+  relevance: 'auto',
+}
+
+// What a row needs before a column fits without being squeezed: the row's
+// padding (15px left, 12px right, BillListPane's PaneRow), the 8px gap between
+// tracks, the wider multi-state bill track (so a multi-state list fits too), and
+// the fixed tracks. Relevance's track is `auto`: it needs room for its
+// "Relevance" header and a "10/10" chip.
+const ROW_PADDING = 27
+const TRACK_GAP = 8
+const RELEVANCE_MIN = 80
+
+function trackWidth(key: PaneColumnKey): number {
+  return key === 'relevance' ? RELEVANCE_MIN : parseInt(COLUMN_TRACKS[key], 10)
+}
+
+/** The narrowest pane that shows these columns unsqueezed, rounded up to 10px. */
+function widthNeeded(keys: PaneColumnKey[]): number {
+  const tracks = [parseInt(BILL_TRACK_MULTISTATE, 10), ...keys.map(trackWidth)]
+  const need = ROW_PADDING + tracks.reduce((n, t) => n + t, 0) + (tracks.length - 1) * TRACK_GAP
+  return Math.ceil(need / 10) * 10
+}
+
+const FIRST_STEP: PaneColumnKey[] = ['status', 'year']
+const YEAR_STEP = widthNeeded(FIRST_STEP)
+const LAST_ACTION_STEP = widthNeeded([...FIRST_STEP, 'lastAction'])
+const RELEVANCE_STEP = widthNeeded([...FIRST_STEP, 'lastAction', 'relevance'])
+
 /**
  * The pane's columns, in the order they appear as it widens, and their headers
- * (the Bills page's words). Priority and position stay out: they are controls,
- * and the pane only reads. The status chip is capped to that track's width (#404).
+ * (the Bills page's words). Each step wider shows something new: Status and Year
+ * together at the first breakpoint (so it is more than the status moving left),
+ * then Last action, then Relevance. Priority and position stay out: they are
+ * controls, and the pane only reads. The status chip is capped to that track's
+ * width (#404).
  */
 export const PANE_COLUMNS: PaneColumn[] = [
-  { key: 'status', label: 'Status', at: 400 },
-  { key: 'year', label: 'Year', at: 480 },
-  { key: 'lastAction', label: 'Last action', at: 560 },
-  { key: 'relevance', label: 'Relevance', at: 640 },
+  { key: 'status', label: 'Status', at: YEAR_STEP },
+  { key: 'year', label: 'Year', at: YEAR_STEP },
+  { key: 'lastAction', label: 'Last action', at: LAST_ACTION_STEP },
+  { key: 'relevance', label: 'Relevance', at: RELEVANCE_STEP },
 ]
 
 export const PANE_DEFAULT_WIDTH = 300
@@ -53,19 +94,6 @@ const NO_COLUMNS: PaneColumn[] = []
 export function visiblePaneColumns(width: number): PaneColumn[] {
   const count = PANE_COLUMNS.filter(c => width >= c.at).length
   return count === 0 ? NO_COLUMNS : COLUMN_SETS[count - 1]
-}
-
-// Grid tracks, the Bills page's own (constants.ts CHIP_GRID): the bill number,
-// then each column that shows. Header and rows share this template so every
-// cell sits under its header. `status` is as wide as the status chip's cap
-// (STATUS_CHIP_MAX_WIDTH), so a capped chip fits its track (#404).
-const BILL_TRACK = '70px'
-const BILL_TRACK_MULTISTATE = '105px'
-const COLUMN_TRACKS: Record<PaneColumnKey, string> = {
-  status: '100px',
-  year: '90px',
-  lastAction: '130px',
-  relevance: 'auto',
 }
 
 export function paneGridTemplate(columns: PaneColumn[], multiState: boolean): string {

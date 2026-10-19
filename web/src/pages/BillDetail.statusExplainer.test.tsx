@@ -215,7 +215,7 @@ describe('the status chip on a bill page', () => {
     })
   })
 
-  it('opens the hover bubble below the chip, so it can\'t clip past the top of the page', async () => {
+  it('opens the hover bubble above the chip, flipping below it only at the top of the page, where it would clip', async () => {
     renderBillDetail({ state: 'DC', billNumber: 'B26-0403', status: 'Under Mayoral Review' })
     await waitFor(() => expect(screen.getByRole('button', { name: 'Under Mayoral Review' })).toHaveAccessibleDescription(EXPLAINER))
     vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(RECT)
@@ -272,28 +272,30 @@ describe('deadlines and explainers on a bill page', () => {
     { eventHash: 'h1', typeId: 1, type: 'Hearing', kind: 'hearing', date: day(2), time: null, location: 'Room 412', description: 'Public Hearing' },
   ]
 
-  it('shows the next deadline under the title, explained, and lists deadlines with the hearings', async () => {
+  it('shows the next deadline under the title with no hover, and lists deadlines with the hearings', async () => {
     renderBillDetail({ state: 'MD', billNumber: 'B26-0400', billType: 'Emergency Bill', status: 'Introduced', calendar })
     const chip = await screen.findByTestId('next-deadline')
     expect(chip).toHaveTextContent('Congressional review ends')
-    await waitFor(() => expect(within(chip).getByRole('button', { name: 'Congressional review ends' })).toHaveAccessibleDescription(DEADLINE_EXPLAINER))
-    expect(screen.queryByRole('button', { name: /^About / })).toBeNull()
-    fireEvent.pointerEnter(within(chip).getByRole('button', { name: 'Congressional review ends' }), { pointerType: 'mouse' })
-    expect(bubbleWith(DEADLINE_EXPLAINER)).toBeDefined()
+    // The event type's definition ("a date the law sets...") restated what the label says: no hover, no description, no control.
+    expect(within(chip).queryByRole('button')).toBeNull()
+    expect(within(chip).getByText(/Congressional review ends/)).not.toHaveAttribute('aria-describedby')
+    fireEvent.pointerEnter(within(chip).getByText(/Congressional review ends/), { pointerType: 'mouse' })
+    expect(screen.queryByText(DEADLINE_EXPLAINER)).toBeNull()
     expect(screen.getByText('Hearings and deadlines')).toBeInTheDocument()
   })
 
-  it('explains the bill type and each calendar entry from the state\'s labels', async () => {
+  it('explains the bill type from the state\'s labels, and shows each calendar entry as plain text', async () => {
     renderBillDetail({ state: 'MD', billNumber: 'B26-0400', body: 'C', billType: 'Emergency Bill', status: 'Introduced', calendar })
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Public Hearing' })).toHaveAccessibleDescription(HEARING_EXPLAINER))
-    expect(screen.queryByRole('button', { name: /^About / })).toBeNull()
-    fireEvent.pointerEnter(screen.getByRole('button', { name: 'Public Hearing' }), { pointerType: 'mouse' })
-    expect(bubbleWith(HEARING_EXPLAINER)).toBeDefined()
-    fireEvent.pointerLeave(screen.getByRole('button', { name: 'Public Hearing' }), { pointerType: 'mouse' })
-    await waitFor(() => {
-      fireEvent.pointerEnter(screen.getByRole('button', { name: 'Council Emergency Bill' }), { pointerType: 'mouse' })
-      expect(bubbleWith(TYPE_EXPLAINER)).toBeDefined()
-    })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Council Emergency Bill' })).toHaveAccessibleDescription(TYPE_EXPLAINER))
+    // The hearing's definition ("a committee meeting on the bill, where the public can usually...") is gone.
+    const hearing = screen.getByText('Public Hearing')
+    expect(screen.queryByRole('button', { name: 'Public Hearing' })).toBeNull()
+    expect(hearing).not.toHaveAttribute('aria-describedby')
+    fireEvent.pointerEnter(hearing, { pointerType: 'mouse' })
+    expect(screen.queryByText(HEARING_EXPLAINER)).toBeNull()
+    expect(Array.from(document.body.querySelectorAll('span')).some(el => el.style.position === 'fixed')).toBe(false)
+    fireEvent.pointerEnter(screen.getByRole('button', { name: 'Council Emergency Bill' }), { pointerType: 'mouse' })
+    expect(bubbleWith(TYPE_EXPLAINER)).toBeDefined()
   })
 
   it('opens and closes the bill type\'s explainer on click, with the pointer cursor', async () => {
@@ -307,20 +309,16 @@ describe('deadlines and explainers on a bill page', () => {
     expect(bubbleWith(TYPE_EXPLAINER)).toBeUndefined()
   })
 
-  it('opens the next deadline\'s and a calendar entry\'s explainers on click, and closes on Escape', async () => {
+  it('opens nothing when the next deadline or a calendar entry is clicked', async () => {
     renderBillDetail({ state: 'MD', billNumber: 'B26-0405', body: 'C', billType: 'Emergency Bill', status: 'Introduced', calendar })
     const chip = await screen.findByTestId('next-deadline')
-    const deadline = await waitFor(() => within(chip).getByRole('button', { name: 'Congressional review ends' }))
-    fireEvent.click(deadline)
-    expect(bubbleWith(DEADLINE_EXPLAINER)).toBeDefined()
-    fireEvent.keyDown(deadline, { key: 'Escape' })
-    expect(bubbleWith(DEADLINE_EXPLAINER)).toBeUndefined()
-    const hearing = screen.getByRole('button', { name: 'Public Hearing' })
-    fireEvent.click(hearing)
-    expect(bubbleWith(HEARING_EXPLAINER)).toBeDefined()
+    fireEvent.click(within(chip).getByText(/Congressional review ends/))
+    fireEvent.click(screen.getByText('Public Hearing'))
+    expect(screen.queryByText(DEADLINE_EXPLAINER)).toBeNull()
+    expect(screen.queryByText(HEARING_EXPLAINER)).toBeNull()
   })
 
-  it('opens the bill type\'s hover bubble below, with no info button and a described label', async () => {
+  it('opens the bill type\'s hover bubble above, flipping below at the top of the page, with no info button and a described label', async () => {
     renderBillDetail({ state: 'MD', billNumber: 'B26-0402', body: 'C', billType: 'Emergency Bill', status: 'Introduced', calendar })
     await waitFor(() => expect(document.getElementById('bill-type-explainer')).toHaveTextContent(TYPE_EXPLAINER))
     const label = screen.getByText('Council Emergency Bill')
