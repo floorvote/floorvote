@@ -113,7 +113,9 @@ OPERATOR_NAME = "Your Operator Name"
 # optional — footer link
 OPERATOR_URL = "https://example.org"
 
-# optional — feedback recipient(s), and who users are told to ask for source
+# optional — feedback recipient(s), and who users are told to ask for source.
+# Comma-separated bare addresses. An entry that isn't a valid address is logged
+# and skipped, so feedback still reaches the rest.
 OPERATOR_CONTACT_EMAILS = "support@example.org"
 
 # optional — where your source is published. If you modify FloorVote and run it
@@ -143,7 +145,9 @@ GEMINI_THINKING_BUDGET = "0"
 # configured, the other is the fallback (see "Optional fallbacks" below).
 EMAIL_PROVIDER = "cloudflare"
 
-# who gets cron-failure and email outage alerts
+# who gets cron-failure and email outage alerts. Comma-separated bare addresses
+# (not "Name <address>"). An entry that isn't a valid address is logged and
+# skipped, so the alert still reaches the rest.
 ALERT_EMAILS = "ops@example.org"
 
 # the domain this team is served on

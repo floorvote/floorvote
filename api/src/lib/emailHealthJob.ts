@@ -5,7 +5,7 @@ import { senderFor } from './email'
 import { primaryProviderName, fallbackProviderName, type ProviderName } from '../../../shared/emailProviders'
 import { decideEmailHealth, windowStartHour, OK_STATE, type HealthDecision, type HealthState, type HourStat } from './emailHealth'
 import { toDbTs } from './dbTime'
-import { parseEmailList } from '../../../shared/operator'
+import { validEmailList } from '../../../shared/operator'
 import { PRODUCT_NAME } from '../../../shared/brand'
 
 /**
@@ -63,9 +63,9 @@ type AlertInput = {
 
 /** Returns whether the alert was sent. Never throws. */
 async function sendHealthAlert(env: Env, a: AlertInput): Promise<boolean> {
-  const recipients = parseEmailList(env.ALERT_EMAILS)
+  const recipients = validEmailList(env.ALERT_EMAILS, 'ALERT_EMAILS')
   if (recipients.length === 0) {
-    console.error(`[email-health] ${a.primary} ${a.decision} but ALERT_EMAILS is unset — no alert sent`)
+    console.error(`[email-health] ${a.primary} ${a.decision} but ALERT_EMAILS is unset or has no valid address — no alert sent`)
     return false
   }
   if (!a.alternate) {

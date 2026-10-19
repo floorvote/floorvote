@@ -236,3 +236,96 @@ describe('POST /feedback: operator mail through the sender', () => {
     expect(resend.calls).toHaveLength(0)
   })
 })
+
+// One malformed OPERATOR_CONTACT_EMAILS entry must not block feedback to the
+// good addresses (#781). The real sender rejects a whole message over one bad
+// address, so before this the member's feedback failed with a 500.
+describe('POST /feedback: a malformed OPERATOR_CONTACT_EMAILS entry', () => {
+  async function post(contacts: string | undefined, extra: Record<string, unknown> = {}) {
+    const userId = await seedUser({ email: 'tester@example.com' })
+    const token = await seedSession(userId)
+    return app.request('/api/feedback', {
+      method: 'POST',
+      headers: { Cookie: `session=${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'Great tool!' }),
+    }, { ...env, OPERATOR_CONTACT_EMAILS: contacts, APP_URL: 'http://localhost:5173', ...extra })
+  }
+
+  let errorSpy: ReturnType<typeof vi.spyOn>
+  beforeEach(() => {
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+  const logged = () => errorSpy.mock.calls.map(c => c.map(String).join(' ')).join('\n')
+  const viaCloudflare = (cf: ReturnType<typeof fakeBinding>) => ({ EMAIL_PROVIDER: 'cloudflare', EMAIL: cf.binding })
+
+  it('sends to the valid address, answers 200, and logs the invalid entry', async () => {
+    const cf = fakeBinding('ok')
+    const res = await post('a@x.org, not-an-address', viaCloudflare(cf))
+    expect(res.status).toBe(200)
+    expect(cf.sent).toHaveLength(1)
+    expect(cf.sent[0].to).toEqual(['a@x.org'])
+    expect(logged()).toContain('not-an-address')
+    expect(logged()).toContain('OPERATOR_CONTACT_EMAILS')
+  })
+
+  it('sends to the valid addresses around an invalid one, in order', async () => {
+    const cf = fakeBinding('ok')
+    await post('a@x.org, oops, b@y.org', viaCloudflare(cf))
+    expect(cf.sent[0].to).toEqual(['a@x.org', 'b@y.org'])
+  })
+
+  it('answers 500, calls no provider, and logs the entries and the failure, when every entry is invalid', async () => {
+    const cf = fakeBinding('ok')
+    const resend = stubResend()
+    const res = await post('oops, also@oops', { ...bothBindingFirst(cf.binding) })
+    expect(res.status).toBe(500)
+    expect(cf.sent).toHaveLength(0)
+    expect(resend.calls).toHaveLength(0)
+    expect(logged()).toContain('also@oops')
+    expect(logged()).toContain('feedback send failed')
+  })
+
+  it('sends to every address, with nothing logged about addresses, when all are valid', async () => {
+    const cf = fakeBinding('ok')
+    const res = await post('a@x.org, b@y.org', viaCloudflare(cf))
+    expect(res.status).toBe(200)
+    expect(cf.sent[0].to).toEqual(['a@x.org', 'b@y.org'])
+    expect(logged()).not.toContain('OPERATOR_CONTACT_EMAILS')
+  })
+
+  it('ignores blank entries and trims the rest', async () => {
+    const cf = fakeBinding('ok')
+    await post(' a@x.org ,, , b@y.org ,', viaCloudflare(cf))
+    expect(cf.sent[0].to).toEqual(['a@x.org', 'b@y.org'])
+  })
+
+  it('sends to a duplicated address once, ignoring case', async () => {
+    const cf = fakeBinding('ok')
+    await post('A@x.org, a@x.org, b@y.org', viaCloudflare(cf))
+    expect(cf.sent[0].to).toEqual(['A@x.org', 'b@y.org'])
+  })
+
+  it('drops the display-name form, and sends to the bare address beside it', async () => {
+    const cf = fakeBinding('ok')
+    const res = await post('Support <support@x.org>, b@y.org', viaCloudflare(cf))
+    expect(res.status).toBe(200)
+    expect(cf.sent[0].to).toEqual(['b@y.org'])
+    expect(logged()).toContain('Support <support@x.org>')
+  })
+
+  it('keeps an upper-case address as written', async () => {
+    const cf = fakeBinding('ok')
+    await post('SUPPORT@X.ORG, oops', viaCloudflare(cf))
+    expect(cf.sent[0].to).toEqual(['SUPPORT@X.ORG'])
+  })
+
+  it('falls back to the second provider for the valid address when the first is down', async () => {
+    const cf = fakeBinding('down')
+    const resend = stubResend()
+    const res = await post('oops, a@x.org', { ...bothBindingFirst(cf.binding) })
+    expect(res.status).toBe(200)
+    expect(resend.calls[0].body.to).toEqual(['a@x.org'])
+  })
+})
+

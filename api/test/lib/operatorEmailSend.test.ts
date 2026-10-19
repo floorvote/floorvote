@@ -93,6 +93,50 @@ describe('job alerts', () => {
   })
 })
 
+// Through the real sender, which rejects a whole message over one malformed
+// address: before #781, one typo in ALERT_EMAILS blocked the alert to the good
+// addresses too.
+describe('job alerts: a malformed ALERT_EMAILS entry', () => {
+  let errorSpy: ReturnType<typeof vi.spyOn>
+  beforeEach(() => { errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {}) })
+  const fail = (e: never) => reportJobFailure(e, { job: 'digest', error: new Error('boom') })
+  const logged = () => errorSpy.mock.calls.map(c => c.map(String).join(' ')).join('\n')
+
+  it('still reaches the valid address, through the first provider, and logs the invalid entry', async () => {
+    const cf = fakeBinding('ok')
+    const resend = stubResend()
+    await fail(bothProviders(cf.binding, { ALERT_EMAILS: 'ops@example.test, not-an-address' }))
+    expect(cf.sent).toHaveLength(1)
+    expect(cf.sent[0].to).toEqual(['ops@example.test'])
+    expect(resend.calls).toHaveLength(0)
+    expect(logged()).toContain('not-an-address')
+  })
+
+  it('still falls back to the second provider for the valid address when the first is down', async () => {
+    const cf = fakeBinding('down')
+    const resend = stubResend('ok', { headers: QUOTA })
+    await fail(bothProviders(cf.binding, { ALERT_EMAILS: 'oops, ops@example.test, ops2@example.test' }))
+    expect(resend.calls).toHaveLength(1)
+    expect(resend.calls[0].body.to).toEqual(['ops@example.test', 'ops2@example.test'])
+  })
+
+  it('calls no provider, does not throw, and logs the entries and that no alert went out, when every entry is invalid', async () => {
+    const cf = fakeBinding('ok')
+    const resend = stubResend()
+    await expect(fail(bothProviders(cf.binding, { ALERT_EMAILS: 'oops, also@oops' }))).resolves.toBeUndefined()
+    expect(cf.sent).toHaveLength(0)
+    expect(resend.calls).toHaveLength(0)
+    expect(logged()).toContain('also@oops')
+    expect(logged()).toContain('no alert sent')
+  })
+
+  it('writes nothing to email health when it sends to the valid address', async () => {
+    stubResend('ok', { headers: QUOTA })
+    await fail(bothProviders(fakeBinding('ok').binding, { ALERT_EMAILS: 'ops@example.test, oops' }))
+    expect(await healthWrites()).toEqual(NOTHING)
+  })
+})
+
 describe('invite-bounce notices', () => {
   async function bounceFor(inviterEmail = 'admin@example.test', memberEmail = 'typo@example.test') {
     const inviterId = await seedUser({ role: 'admin', email: inviterEmail })

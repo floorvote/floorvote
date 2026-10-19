@@ -95,3 +95,70 @@ describe('reportJobFailure', () => {
     expect(mail.send).not.toHaveBeenCalled()
   })
 })
+
+// One malformed entry in ALERT_EMAILS must not block the alert to the good
+// addresses (#781): the caller sends to the valid ones, logs the dropped ones,
+// and fails (as it does for an unset ALERT_EMAILS) only when none are left.
+describe('reportJobFailure: a malformed ALERT_EMAILS entry', () => {
+  let errorSpy: ReturnType<typeof vi.spyOn>
+  beforeEach(() => { errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {}) })
+  const logged = () => errorSpy.mock.calls.map(c => c.map(String).join(' ')).join('\n')
+  const fail = (over: Record<string, unknown>) => reportJobFailure(env(over), { job: 'digest', error: new Error('boom') })
+
+  it('sends to the valid address and logs the invalid entry', async () => {
+    await fail({ ALERT_EMAILS: 'ops@example.com, not-an-address' })
+    expect(mail.send).toHaveBeenCalledOnce()
+    expect(mail.send.mock.calls[0][0]).toMatchObject({ purpose: 'operator', to: ['ops@example.com'] })
+    expect(logged()).toContain('not-an-address')
+    expect(logged()).toContain('ALERT_EMAILS')
+  })
+
+  it('sends to the valid addresses around an invalid one, in order', async () => {
+    await fail({ ALERT_EMAILS: 'a@example.com, oops, b@example.com' })
+    expect(mail.send.mock.calls[0][0].to).toEqual(['a@example.com', 'b@example.com'])
+  })
+
+  it('sends nothing, and logs both the entries and that no alert went out, when every entry is invalid', async () => {
+    await expect(fail({ ALERT_EMAILS: 'oops, also@oops' })).resolves.toBeUndefined()
+    expect(mail.send).not.toHaveBeenCalled()
+    expect(logged()).toContain('oops')
+    expect(logged()).toContain('also@oops')
+    expect(logged()).toContain('[job:digest] failed but ALERT_EMAILS')
+    expect(logged()).toContain('no alert sent')
+  })
+
+  it('sends to all of them, and logs nothing about addresses, when every entry is valid', async () => {
+    await fail({ ALERT_EMAILS: 'a@example.com, b@example.com' })
+    expect(mail.send.mock.calls[0][0].to).toEqual(['a@example.com', 'b@example.com'])
+    expect(errorSpy).not.toHaveBeenCalled()
+  })
+
+  it('ignores blank entries and trims the rest without logging', async () => {
+    await fail({ ALERT_EMAILS: ' a@example.com ,, , b@example.com ,' })
+    expect(mail.send.mock.calls[0][0].to).toEqual(['a@example.com', 'b@example.com'])
+    expect(errorSpy).not.toHaveBeenCalled()
+  })
+
+  it('sends to a duplicated address once, ignoring case', async () => {
+    await fail({ ALERT_EMAILS: 'Ops@example.com, ops@example.com, b@example.com' })
+    expect(mail.send.mock.calls[0][0].to).toEqual(['Ops@example.com', 'b@example.com'])
+  })
+
+  it('drops the display-name form and sends to the bare address beside it', async () => {
+    await fail({ ALERT_EMAILS: 'Ops <ops@example.com>, b@example.com' })
+    expect(mail.send.mock.calls[0][0].to).toEqual(['b@example.com'])
+    expect(logged()).toContain('Ops <ops@example.com>')
+  })
+
+  it('keeps an upper-case address as written', async () => {
+    await fail({ ALERT_EMAILS: 'OPS@EXAMPLE.COM, oops' })
+    expect(mail.send.mock.calls[0][0].to).toEqual(['OPS@EXAMPLE.COM'])
+  })
+
+  it('runJob alerts the valid addresses when its job throws', async () => {
+    await runJob(env({ ALERT_EMAILS: 'oops, ops@example.com' }), 'demo-reset', async () => { throw new Error('boom') })
+    expect(mail.send).toHaveBeenCalledOnce()
+    expect(mail.send.mock.calls[0][0].to).toEqual(['ops@example.com'])
+  })
+})
+

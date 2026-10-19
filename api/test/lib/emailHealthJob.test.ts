@@ -70,6 +70,37 @@ describe('runEmailHealth', () => {
     expect(err.mock.calls.some(c => String(c[0]).includes('no independent alert path'))).toBe(true)
   })
 
+  // The real sender rejects a whole message over one malformed address, so
+  // before #781 one typo in ALERT_EMAILS swallowed the outage alert.
+  it('alerts the valid address, through resend, when ALERT_EMAILS also holds a malformed entry', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const db = getDb(env.DB)
+    await recordSendStats(db, 'cloudflare', { sent: 0, failed: 3, suppressed: 0, lastError: ERR }, LAST_HOUR)
+    const { e, cf } = jobEnv({ ALERT_EMAILS: 'ops@example.test, not-an-address' })
+    expect(await runEmailHealth(e, db, NOW)).toBe('trip')
+    expect(cf.sent).toHaveLength(0)
+    expect(resend.calls).toHaveLength(1)
+    expect(resend.calls[0].body.to).toEqual(['ops@example.test'])
+    expect(err.mock.calls.some(c => String(c[0]).includes('not-an-address'))).toBe(true)
+    const [state] = await db.select().from(emailAlertState).all()
+    expect(state).toMatchObject({ status: 'failing', lastAlertedAt: '2026-09-23 21:00:00' })
+  })
+
+  it('sends nothing, calls no provider, and logs the entries when every ALERT_EMAILS entry is malformed', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const db = getDb(env.DB)
+    await recordSendStats(db, 'cloudflare', { sent: 0, failed: 3, suppressed: 0, lastError: ERR }, LAST_HOUR)
+    const { e, cf } = jobEnv({ ALERT_EMAILS: 'oops, also@oops' })
+    expect(await runEmailHealth(e, db, NOW)).toBe('trip')
+    expect(cf.sent).toHaveLength(0)
+    expect(resend.calls).toHaveLength(0)
+    const logged = err.mock.calls.map(c => c.map(String).join(' ')).join('\n')
+    expect(logged).toContain('also@oops')
+    expect(logged).toContain('no alert sent')
+    const [state] = await db.select().from(emailAlertState).all()
+    expect(state).toMatchObject({ status: 'failing', lastAlertedAt: null })
+  })
+
   it('records state even when ALERT_EMAILS is unset, and sends nothing', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const db = getDb(env.DB)

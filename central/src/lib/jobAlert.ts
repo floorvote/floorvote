@@ -1,6 +1,7 @@
 import type { Env } from '../types'
 import { centralSender } from './sender'
 import { PRODUCT_NAME } from '../../../shared/brand'
+import { validEmailList } from '../../../shared/operator'
 
 // Structural subset of the env that jobAlert needs, so callers and tests can
 // pass a minimal env rather than a full `Env`.
@@ -25,15 +26,14 @@ export function escHtml(s: string): string {
 }
 
 /**
- * The configured ops-alert recipients (`env.ALERT_EMAILS`, comma-separated).
+ * The configured ops-alert recipients (`env.ALERT_EMAILS`, comma-separated),
+ * valid addresses only: an entry that isn't one is logged and skipped, so a
+ * single typo can't make the sender reject the alert to every good address.
  * ALERT_EMAILS is intentionally separate from SUPERADMIN_EMAILS: superadmins have
  * full domain access, which is not the same set as "who should receive ops alerts."
  */
 function alertRecipients(env: AlertEnv): string[] {
-  return (env.ALERT_EMAILS ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
+  return validEmailList(env.ALERT_EMAILS, 'ALERT_EMAILS')
 }
 
 /**
@@ -45,9 +45,14 @@ function alertRecipients(env: AlertEnv): string[] {
 export async function sendOpsAlert(env: AlertEnv, msg: { subject: string; text: string; html: string }): Promise<void> {
   const recipients = alertRecipients(env)
   if (recipients.length === 0) {
-    console.error(`[ops-alert] "${msg.subject}" suppressed — ALERT_EMAILS is unset`)
+    console.error(`[ops-alert] "${msg.subject}" suppressed — ALERT_EMAILS is unset or has no valid address`)
     return
   }
+  await sendTo(env, recipients, msg)
+}
+
+/** The send itself, to recipients already chosen, so a caller that checked them once doesn't parse (and log) the setting again. */
+async function sendTo(env: AlertEnv, recipients: string[], msg: { subject: string; text: string; html: string }): Promise<void> {
   try {
     const r = await centralSender(env).send({ purpose: 'operator', to: recipients, subject: msg.subject, html: msg.html, text: msg.text })
     if (!r.ok) console.error(`[ops-alert] "${msg.subject}" not sent: ${r.error}`)
@@ -57,15 +62,15 @@ export async function sendOpsAlert(env: AlertEnv, msg: { subject: string; text: 
 }
 
 /**
- * Email a cron-failure alert to every address in `env.ALERT_EMAILS`.
- * Best-effort: never throws. No-ops (just logs) when no recipients are configured.
+ * Email a cron-failure alert to every valid address in `env.ALERT_EMAILS`.
+ * Best-effort: never throws. No-ops (just logs) when no valid recipient is configured.
  */
 export async function reportJobFailure(env: AlertEnv, opts: { job: string; error: unknown }): Promise<void> {
   const { job, error } = opts
   const recipients = alertRecipients(env)
 
   if (recipients.length === 0) {
-    console.error(`[job:${job}] failed but ALERT_EMAILS is unset — no alert sent`)
+    console.error(`[job:${job}] failed but ALERT_EMAILS is unset or has no valid address — no alert sent`)
     return
   }
 
@@ -90,5 +95,5 @@ export async function reportJobFailure(env: AlertEnv, opts: { job: string; error
     </div>
   `
 
-  await sendOpsAlert(env, { subject, text, html })
+  await sendTo(env, recipients, { subject, text, html })
 }

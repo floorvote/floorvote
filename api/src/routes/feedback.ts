@@ -3,7 +3,7 @@ import { requireAuth } from '../middleware/auth'
 import { senderFor, resolveAssocName } from '../lib/email'
 import { renderFeedbackEmail } from '../lib/feedbackEmail'
 import { describeSendFailure } from '../lib/emailErrors'
-import { parseEmailList } from '../../../shared/operator'
+import { validEmailList } from '../../../shared/operator'
 import { getDb } from '../db/client'
 import type { AppEnv } from '../types'
 
@@ -23,9 +23,9 @@ feedbackRouter.post('/', async (c) => {
   const user = c.get('user')
 
   try {
-    const recipients = parseEmailList(c.env.OPERATOR_CONTACT_EMAILS)
+    const recipients = validEmailList(c.env.OPERATOR_CONTACT_EMAILS, 'OPERATOR_CONTACT_EMAILS')
     if (recipients.length === 0) {
-      throw new Error('Feedback not configured — OPERATOR_CONTACT_EMAILS is empty')
+      throw new Error('Feedback not configured — OPERATOR_CONTACT_EMAILS is empty or has no valid address')
     }
     const { subject, html } = renderFeedbackEmail({
       fromEmail: user.email,
