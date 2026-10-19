@@ -31,9 +31,12 @@ vi.mock('../components/RichTextEditor', () => ({
   RichTextEditor: () => <textarea data-testid="comment-composer" defaultValue="" />,
 }))
 
+// The member's "Replies on bills you've commented on" setting rides on the
+// signed-in user, so the test flips it here.
+const authMock = vi.hoisted(() => ({ emailRepliesEnabled: true }))
 vi.mock('../hooks/useAuth', () => ({
   useAuth: () => ({
-    user: { id: 'u1', email: 'a@b.c', name: 'Alice', role: 'member', subtitle: null },
+    user: { id: 'u1', email: 'a@b.c', name: 'Alice', role: 'member', subtitle: null, emailRepliesEnabled: authMock.emailRepliesEnabled },
     loading: false,
   }),
 }))
@@ -72,6 +75,7 @@ let apiSpy: MockInstance<typeof api.apiFetch>
 
 beforeEach(() => {
   vi.restoreAllMocks()
+  authMock.emailRepliesEnabled = true
   routerMock.params = { billId: '42' }
   routerMock.location = { state: null, pathname: '/bills/42', hash: '', search: '' }
   routerMock.loaderData = makeBill('42', 'HB 1')
@@ -90,10 +94,16 @@ const muteCalls = () => apiSpy.mock.calls
   .filter(([path]) => path === '/bills/42/mute')
   .map(([, init]) => (init as RequestInit | undefined)?.method)
 
+const MUTE_TIP = "You're notified of new comments here because you've commented on this bill. Mute to stop for this bill only. Mentions still reach you."
+const UNMUTE_TIP = "You've muted this bill, so you won't be notified of new comments here. Mentions still reach you."
+
 // Mute sits with the comments, for a participant (someone who would get reply
-// notifications: they commented on the bill or its companion group). A member
-// who already has a mute always gets Unmute. The route decides who counts, as
-// `commentsParticipant`, with the helper the reply emails use.
+// notifications: they commented on the bill or its companion group) whose
+// "Replies on bills you've commented on" setting is on. A member who already
+// has a mute gets Unmute while the setting is on. With the setting off the
+// control is hidden entirely, since replies are off for every bill. The route
+// decides who counts, as `commentsParticipant`, with the helper the reply
+// emails use.
 describe('BillDetail mute comments', () => {
   it('mutes the bill\'s comments from the comments section', async () => {
     routerMock.loaderData = { ...makeBill('42', 'HB 1'), commentsParticipant: true }
@@ -105,7 +115,6 @@ describe('BillDetail mute comments', () => {
 
     expect(muteCalls()).toEqual(['PUT'])
     expect(await within(commentsSection()).findByRole('button', { name: 'Unmute comments' })).toBeInTheDocument()
-    expect(within(commentsSection()).getByText(/mentions still reach you/i)).toBeInTheDocument()
   })
 
   it('unmutes a muted bill', async () => {
@@ -136,7 +145,7 @@ describe('BillDetail mute comments', () => {
 
     expect(muteCalls()).toEqual(['PUT'])
     expect(await within(commentsSection()).findByRole('button', { name: 'Mute comments' })).toBeInTheDocument()
-    expect(within(commentsSection()).queryByText(/mentions still reach you/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(UNMUTE_TIP)).not.toBeInTheDocument()
   })
 
   it('shows no mute control to a member who has not commented on the bill or its group', async () => {
@@ -156,7 +165,7 @@ describe('BillDetail mute comments', () => {
     await user.click(within(commentsSection()).getByRole('button', { name: 'Unmute comments' }))
 
     expect(muteCalls()).toEqual(['DELETE'])
-    expect(within(commentsSection()).queryByText(/mentions still reach you/i)).not.toBeInTheDocument()
+    expect(await within(commentsSection()).findByRole('button', { name: 'Mute comments' })).toHaveAccessibleDescription(MUTE_TIP)
   })
 
   it('keeps the control on the page after a non-participant unmutes, so the click does not make it vanish', async () => {
@@ -209,5 +218,116 @@ describe('BillDetail mute comments', () => {
     await screen.findByText('Bill HB 1')
 
     expect(within(commentsSection()).queryByRole('button', { name: /mute comments/i })).not.toBeInTheDocument()
+  })
+
+  describe('when the member turned "Replies on bills you\'ve commented on" off', () => {
+    beforeEach(() => { authMock.emailRepliesEnabled = false })
+
+    it('hides Mute from a participant', async () => {
+      routerMock.loaderData = { ...makeBill('42', 'HB 1'), commentsParticipant: true }
+      render(<MemoryRouter><BillDetail /></MemoryRouter>)
+      await screen.findByText('Bill HB 1')
+
+      expect(within(commentsSection()).queryByRole('button', { name: /mute comments/i })).not.toBeInTheDocument()
+    })
+
+    it('hides Unmute from a member who muted the bill earlier', async () => {
+      routerMock.loaderData = { ...makeBill('42', 'HB 1'), commentsMuted: true, commentsParticipant: true }
+      render(<MemoryRouter><BillDetail /></MemoryRouter>)
+      await screen.findByText('Bill HB 1')
+
+      expect(within(commentsSection()).queryByRole('button', { name: /mute comments/i })).not.toBeInTheDocument()
+    })
+
+    it('hides Unmute from a muted member who never commented', async () => {
+      routerMock.loaderData = { ...makeBill('42', 'HB 1'), commentsMuted: true, commentsParticipant: false }
+      render(<MemoryRouter><BillDetail /></MemoryRouter>)
+      await screen.findByText('Bill HB 1')
+
+      expect(within(commentsSection()).queryByRole('button', { name: /mute comments/i })).not.toBeInTheDocument()
+    })
+
+    it('hides Mute from a member whose own comment is on the page', async () => {
+      routerMock.loaderData = {
+        ...makeBill('42', 'HB 1'),
+        comments: [{ id: 'c1', userId: 'u1', userName: 'Alice', userTitle: null, content: '<p>Just posted</p>', createdAt: '2025-01-02 00:00:00', reactions: [] }],
+        commentsTotal: 1,
+      }
+      render(<MemoryRouter><BillDetail /></MemoryRouter>)
+      await screen.findByText('Bill HB 1')
+
+      expect(within(commentsSection()).queryByRole('button', { name: /mute comments/i })).not.toBeInTheDocument()
+    })
+
+    it('shows Mute again once the setting is back on', async () => {
+      routerMock.loaderData = { ...makeBill('42', 'HB 1'), commentsParticipant: true }
+      const { rerender } = render(<MemoryRouter><BillDetail /></MemoryRouter>)
+      await screen.findByText('Bill HB 1')
+      expect(within(commentsSection()).queryByRole('button', { name: /mute comments/i })).not.toBeInTheDocument()
+
+      authMock.emailRepliesEnabled = true
+      rerender(<MemoryRouter><BillDetail /></MemoryRouter>)
+
+      expect(within(commentsSection()).getByRole('button', { name: 'Mute comments' })).toBeInTheDocument()
+    })
+  })
+
+  describe('the hover on the button', () => {
+    it('explains Mute, on hover and to a screen reader', async () => {
+      routerMock.loaderData = { ...makeBill('42', 'HB 1'), commentsParticipant: true }
+      const user = userEvent.setup()
+      render(<MemoryRouter><BillDetail /></MemoryRouter>)
+      await screen.findByText('Bill HB 1')
+      const button = within(commentsSection()).getByRole('button', { name: 'Mute comments' })
+
+      expect(button).toHaveAccessibleDescription(MUTE_TIP)
+      await user.hover(button)
+
+      // The visible bubble, plus the screen-reader copy the button points to.
+      expect(screen.getAllByText(MUTE_TIP)).toHaveLength(2)
+    })
+
+    it('explains Unmute, on hover and to a screen reader', async () => {
+      routerMock.loaderData = { ...makeBill('42', 'HB 1'), commentsMuted: true, commentsParticipant: true }
+      const user = userEvent.setup()
+      render(<MemoryRouter><BillDetail /></MemoryRouter>)
+      await screen.findByText('Bill HB 1')
+      const button = within(commentsSection()).getByRole('button', { name: 'Unmute comments' })
+
+      expect(button).toHaveAccessibleDescription(UNMUTE_TIP)
+      await user.hover(button)
+
+      expect(screen.getAllByText(UNMUTE_TIP)).toHaveLength(2)
+    })
+
+    it('swaps the explanation when the member mutes', async () => {
+      routerMock.loaderData = { ...makeBill('42', 'HB 1'), commentsParticipant: true }
+      const user = userEvent.setup()
+      render(<MemoryRouter><BillDetail /></MemoryRouter>)
+      await screen.findByText('Bill HB 1')
+
+      await user.click(within(commentsSection()).getByRole('button', { name: 'Mute comments' }))
+
+      const unmute = await within(commentsSection()).findByRole('button', { name: 'Unmute comments' })
+      expect(unmute).toHaveAccessibleDescription(UNMUTE_TIP)
+      expect(screen.queryByText(MUTE_TIP)).not.toBeInTheDocument()
+    })
+
+    it('shows no bubble until the pointer is on the button', async () => {
+      routerMock.loaderData = { ...makeBill('42', 'HB 1'), commentsParticipant: true }
+      render(<MemoryRouter><BillDetail /></MemoryRouter>)
+      await screen.findByText('Bill HB 1')
+
+      expect(screen.getAllByText(MUTE_TIP)).toHaveLength(1)
+    })
+  })
+
+  it('has no muted-note line under the heading, muted or not', async () => {
+    routerMock.loaderData = { ...makeBill('42', 'HB 1'), commentsMuted: true, commentsParticipant: true }
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await screen.findByText('Bill HB 1')
+
+    expect(within(commentsSection()).queryByText(/you won't be notified of new comments on this bill/i)).not.toBeInTheDocument()
+    expect(commentsSection().querySelectorAll('p')).toHaveLength(0)
   })
 })
