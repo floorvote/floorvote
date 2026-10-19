@@ -31,7 +31,12 @@ function centralBill(handle: string) {
   return {
     billId: handle, sessionId: '1', state: 'NJ', number, title: `${number} title`, abstract: null, status: 'Introduced',
     statusRank: rank, statusDate: null, lastAction: null, updatedAt: '2026-10-01T00:00:00Z', stateUrl: null,
-    textHash: null, textR2Key: null, texts: [], actions: [], sponsors: [], votes: [],
+    // Central holds the lead's text, as it does for a lead pulled before #801.
+    ...(handle === 'legiscan:1713'
+      ? { textHash: 'hash-7001', textR2Key: 'bills/legiscan:1713.html',
+          texts: [{ docId: '7001', note: 'Introduced', date: '2026-01-01', links: [{ url: 'https://example.gov/7001.html', mediaType: 'text/html' }] }] }
+      : { textHash: null, textR2Key: null, texts: [] }),
+    actions: [], sponsors: [], votes: [],
     relatedBills: [{ identifier: related, sastBillId: relatedId, kind: 'identical', session: '1', relationType: 'same-as' }],
   }
 }
@@ -85,6 +90,30 @@ describe("a tracked member's delivery renews the request for its group's pulled 
     await setBill('b1713', { fetchRenewedAt: toDbTs(new Date(Date.now() - 8 * 86400_000)) })
     await deliver('legiscan:190')
     expect(renewals()).toHaveLength(2)
+  })
+
+  it("renews it on the lead's own delivery, with no delivery of its tracked member", async () => {
+    await deliver('legiscan:1713')
+    expect(renewals()).toEqual([{ billIds: [1713] }])
+  })
+
+  it("holds the lead's own delivery to the same weekly claim", async () => {
+    await deliver('legiscan:190')
+    await deliver('legiscan:1713')
+    expect(renewals()).toHaveLength(1)
+  })
+
+  it('reports a refused renewal as an error naming the bill', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    fetchMock.mockImplementation(async (url: string) => {
+      if (String(url).includes(RENEW)) return { ok: false, status: 403, json: async () => ({}), text: async () => '' }
+      if (String(url).includes('/tenants/')) return { ok: true, status: 200, json: async () => ({ ok: true }), text: async () => '' }
+      const handle = decodeURIComponent(String(url).split('/bills/')[1] ?? '')
+      return { ok: true, json: async () => centralBill(handle) }
+    })
+    await deliver('legiscan:190')
+    expect(error.mock.calls.map(c => c.join(' '))).toContainEqual(expect.stringMatching(/renew-fetch-requests.*403.*legiscan:1713/))
+    error.mockRestore()
   })
 
   it('renews nothing once the lead is tracked', async () => {
