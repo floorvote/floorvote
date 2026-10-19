@@ -2,7 +2,7 @@ import { and, eq, gt, inArray, exists, sql } from 'drizzle-orm'
 import { feedEvents, bills, users, sessions, associationConfig } from '../db/schema'
 import { renderDigestEmail, digestSubject, digestCadence, digestCardKey, countUpdatedBills, countNewMatches, countViewBills, type DigestEvent, type NewMatchDigestItem, type ViewDigestSection } from './digestEmail'
 import { buildViewSections, DIGEST_CATEGORIES } from './digestViews'
-import { sendBatch, unsubscribeHeaders } from './email'
+import { senderFor, unsubscribeHeaders } from './email'
 import { nowDb } from './dbTime'
 import { getNewMatchMinRelevance, routineNewMatchWhere } from './newMatch'
 import { groupHasPriority, loadGroupPriorities, priorityWorn } from './teamFields'
@@ -28,8 +28,8 @@ export type DigestResult = { ok: true; recipients: number; sent: number; failed:
 export async function runDigest(
   env: Env, db: AppDb, opts: { ignoreSchedule?: boolean } = {},
 ): Promise<DigestResult> {
-  // Note: demo instances never actually send — sendBatch suppresses all
-  // notification email when DEMO_MODE is set. The digest still shows as enabled
+  // Note: demo instances never actually send — the bulk purpose is suppressed
+  // when DEMO_MODE is set. The digest still shows as enabled
   // (read-only) in the demo UI.
   const modules = await readModules(db)
   if (!isModuleEnabled(modules, 'email-digest')) return { ok: true, recipients: 0, sent: 0, failed: 0 }
@@ -149,7 +149,8 @@ export async function runDigest(
   })
   if (messages.length === 0) { await stampLastDigest(db, now); return { ok: true, recipients: 0, sent: 0, failed: 0 } }
 
-  const { sent, failed } = await sendBatch(env, messages, 'digest', db, { bulk: true })
+  const { sent, failed } = await senderFor(env, db).sendBatch(messages.map(m => ({ purpose: 'bulk' as const, ...m })))
+  console.log(`[digest] sent ${sent}, failed ${failed}`)
   await stampLastDigest(db, now)
   return { ok: true, recipients: messages.length, sent, failed }
 }

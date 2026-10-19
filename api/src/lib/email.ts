@@ -24,8 +24,9 @@ import { PermanentSendError } from './emailErrors'
 // The shared purpose-level sender (shared/emailSender.ts) is replacing this
 // module's send functions, one kind of email at a time (#705). Sign-in links
 // go through it via sendMagicLink below, and the account and notification
-// emails (email change, mentions, replies) through `senderFor`. sendEmail,
-// sendBatch, and sendFeedback remain for the emails not yet moved; they use
+// emails (email change, mentions, replies) and the bulk ones (digest,
+// week-ahead) through `senderFor`. sendEmail and sendFeedback remain for the
+// emails not yet moved, and sendBatch for no caller (#711 deletes it); they use
 // the same provider adapters (shared/emailProviders.ts).
 
 /**

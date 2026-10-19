@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   createSender, resolveFrom, resolveFromBulk, resolveReplyTo,
-  type SignInMessage, type SignInEvent, type AccountMessage, type NotificationMessage, type HealthRecorder, type SenderEnv,
+  type SignInMessage, type SignInEvent, type AccountMessage, type NotificationMessage, type BulkMessage, type HealthRecorder, type SenderEnv,
 } from './emailSender'
 import type { Attempt, EmailProvider, OutgoingEmail, ProviderName } from './emailProviders'
 
@@ -487,5 +487,222 @@ describe('purposes apart: one rule does not leak into another', () => {
       signIn({ link: 'login' }), account(), notification(),
     ])
     expect(r).toMatchObject({ sent: 1, failed: 0, skipped: 2 })
+  })
+})
+
+// The bulk purpose (the digest and the week-ahead email, #708) never falls
+// back, so an outage can't burn the other provider's quota. It sends from the
+// bulk From address, counts each send to the provider that sent it, and a demo
+// instance never sends it.
+const bulk = (overrides: Partial<BulkMessage> = {}): BulkMessage => ({
+  purpose: 'bulk', to: ['jane@example.com'], subject: 'Your daily digest', html: '<p>Three bills moved</p>',
+  headers: { 'List-Unsubscribe': '<https://x.test/profile#setting-email-digest>' },
+  ...overrides,
+})
+
+describe('bulk purpose: never falls back', () => {
+  it('makes one attempt on the first provider and none on the second when the first has an outage', async () => {
+    const first = memoryProvider('cloudflare', 'temporary'), second = memoryProvider('resend')
+    const r = await createSender(env, { providers: [first, second] }).send(bulk())
+    expect(r).toMatchObject({ ok: false, provider: 'cloudflare', permanent: false })
+    expect(first.sent).toHaveLength(1)
+    expect(second.sent).toHaveLength(0)
+    expect(r.attempts.map(a => `${a.provider}:${a.ok}`)).toEqual(['cloudflare:false'])
+  })
+
+  it('makes no attempt on the second provider when the first adapter throws', async () => {
+    const second = memoryProvider('resend')
+    const r = await createSender(env, { providers: [memoryProvider('cloudflare', 'throw'), second] }).send(bulk())
+    expect(r).toMatchObject({ ok: false, provider: 'cloudflare', permanent: false })
+    expect(second.sent).toHaveLength(0)
+  })
+
+  it('counts every failure of a batch to the first provider and never touches the second', async () => {
+    const recorder = memoryRecorder()
+    const first = memoryProvider('cloudflare', 'temporary'), second = memoryProvider('resend')
+    const messages = Array.from({ length: 11 }, (_, i) => bulk({ to: [`u${i}@example.com`] }))
+    const r = await createSender(env, { recorder, providers: [first, second] }).sendBatch(messages)
+    expect(r).toMatchObject({ sent: 0, failed: 11, skipped: 0 })
+    expect(first.sent).toHaveLength(11)
+    expect(second.sent).toHaveLength(0)
+    expect(recorder.calls).toHaveLength(1)
+    expect(recorder.calls[0]).toHaveLength(11)
+    expect(recorder.calls[0].every(a => a.provider === 'cloudflare' && !a.ok)).toBe(true)
+  })
+
+  it('sends through the first provider alone when it works, even with a second configured', async () => {
+    const first = memoryProvider('cloudflare'), second = memoryProvider('resend')
+    expect(await createSender(env, { providers: [first, second] }).send(bulk())).toMatchObject({ ok: true, provider: 'cloudflare' })
+    expect(first.sent).toHaveLength(1)
+    expect(second.sent).toHaveLength(0)
+  })
+
+  it('reports a single provider down as one temporary failure', async () => {
+    const first = memoryProvider('resend', 'temporary')
+    const r = await createSender(env, { providers: [first] }).send(bulk())
+    expect(r).toMatchObject({ ok: false, provider: 'resend', permanent: false })
+    expect(first.sent).toHaveLength(1)
+  })
+})
+
+describe('bulk purpose: the bulk From address', () => {
+  const withBulk: SenderEnv = { ...env, EMAIL_FROM_BULK: 'notifications@mail.example.org' }
+
+  it('sends from EMAIL_FROM_BULK when it is set', async () => {
+    const first = memoryProvider('cloudflare')
+    await createSender(withBulk, { providers: [first] }).send(bulk())
+    expect(first.sent[0].from).toBe('FloorVote <notifications@mail.example.org>')
+  })
+
+  it('sends from EMAIL_FROM when EMAIL_FROM_BULK is unset', async () => {
+    const first = memoryProvider('cloudflare')
+    await createSender(env, { providers: [first] }).send(bulk())
+    expect(first.sent[0].from).toBe('FloorVote <notifications@example.org>')
+  })
+
+  it('sends from the example.com fallback when neither is set', async () => {
+    const first = memoryProvider('cloudflare')
+    await createSender({ DEMO_MODE: 'false' }, { providers: [first] }).send(bulk())
+    expect(first.sent[0].from).toBe('FloorVote <notifications@example.com>')
+  })
+
+  it('keeps the default Reply-To on the transactional address, not the bulk one', async () => {
+    const first = memoryProvider('cloudflare')
+    await createSender(withBulk, { providers: [first] }).send(bulk())
+    expect(first.sent[0].replyTo).toBe('notifications@example.org')
+  })
+
+  it('uses the bulk From for every message of a batch', async () => {
+    const first = memoryProvider('cloudflare')
+    await createSender(withBulk, { providers: [first] }).sendBatch([bulk({ to: ['a@example.com'] }), bulk({ to: ['b@example.com'] })])
+    expect(first.sent.map(e => e.from)).toEqual(Array(2).fill('FloorVote <notifications@mail.example.org>'))
+  })
+
+  it('leaves the other purposes on the default From when EMAIL_FROM_BULK is set', async () => {
+    const first = memoryProvider('cloudflare')
+    await createSender(withBulk, { providers: [first] }).sendBatch([bulk(), notification(), account(), signIn()])
+    const bySubject = Object.fromEntries(first.sent.map(e => [e.subject, e.from]))
+    expect(bySubject['Your daily digest']).toBe('FloorVote <notifications@mail.example.org>')
+    expect(bySubject['[HB 1] New comment']).toBe('FloorVote <notifications@example.org>')
+    expect(bySubject['Confirm your new email']).toBe('FloorVote <notifications@example.org>')
+    expect(bySubject['Your sign-in link']).toBe('FloorVote <notifications@example.org>')
+  })
+
+  it('forwards the unsubscribe header and derives a text part', async () => {
+    const first = memoryProvider('cloudflare')
+    await createSender(env, { providers: [first] }).send(bulk())
+    expect(first.sent[0].headers).toEqual({ 'List-Unsubscribe': '<https://x.test/profile#setting-email-digest>' })
+    expect(first.sent[0].text).toContain('Three bills moved')
+  })
+})
+
+describe('bulk purpose: health counting', () => {
+  it('counts a send that worked to the provider that sent it', async () => {
+    const recorder = memoryRecorder()
+    await createSender(env, { recorder, providers: [memoryProvider('cloudflare'), memoryProvider('resend')] }).send(bulk())
+    expect(recorder.calls).toEqual([[expect.objectContaining({ provider: 'cloudflare', ok: true })]])
+  })
+
+  it('counts a suppressed recipient as permanent, so it is suppressed and not failed, with no retry', async () => {
+    const recorder = memoryRecorder()
+    const first = memoryProvider('cloudflare', 'permanent'), second = memoryProvider('resend')
+    const r = await createSender(env, { recorder, providers: [first, second] }).send(bulk())
+    expect(r).toMatchObject({ ok: false, provider: 'cloudflare', permanent: true })
+    expect(second.sent).toHaveLength(0)
+    expect(recorder.calls).toEqual([[expect.objectContaining({ provider: 'cloudflare', ok: false, permanent: true })]])
+  })
+
+  it('counts nothing when no recorder is supplied, and still sends', async () => {
+    const first = memoryProvider('cloudflare')
+    expect(await createSender(env, { providers: [first] }).send(bulk())).toMatchObject({ ok: true })
+    expect(first.sent).toHaveLength(1)
+  })
+
+  it('still reports the send as delivered when the recorder throws', async () => {
+    const recorder: HealthRecorder = { async record() { throw new Error('d1 is down') } }
+    expect(await createSender(env, { recorder, providers: [memoryProvider('cloudflare')] }).send(bulk())).toMatchObject({ ok: true })
+  })
+
+  it('counts a mixed batch per message, each to the provider that sent it, in one recorder call', async () => {
+    const first: EmailProvider = {
+      name: 'cloudflare',
+      async send(email) {
+        if (email.to[0].startsWith('gone')) return { ok: false, provider: 'cloudflare', error: 'E_RECIPIENT_SUPPRESSED: gone', permanent: true }
+        if (email.to[0].startsWith('flaky')) return { ok: false, provider: 'cloudflare', error: 'outage', permanent: false }
+        return { ok: true, provider: 'cloudflare', messageId: 'cf' }
+      },
+    }
+    const second = memoryProvider('resend')
+    const recorder = memoryRecorder()
+    const r = await createSender(env, { recorder, providers: [first, second] }).sendBatch([
+      bulk({ to: ['ok@example.com'] }), bulk({ to: ['gone@example.com'] }), bulk({ to: ['flaky@example.com'] }), bulk({ to: ['not-an-address'] }),
+    ])
+    expect(r).toMatchObject({ sent: 1, failed: 3, skipped: 0 })
+    expect(r.results.map(x => (x.ok ? `ok:${x.provider}` : `fail:${x.permanent ? 'permanent' : 'temporary'}`))).toEqual([
+      'ok:cloudflare', 'fail:permanent', 'fail:temporary', 'fail:permanent',
+    ])
+    // The flaky recipient is not retried on the second provider, and the bad address never reaches one.
+    expect(second.sent).toHaveLength(0)
+    expect(recorder.calls).toHaveLength(1)
+    expect(recorder.calls[0].map(a => `${a.provider}:${a.ok}:${!a.ok && a.permanent}`).sort()).toEqual([
+      'cloudflare:false:false', 'cloudflare:false:true', 'cloudflare:true:false',
+    ])
+  })
+})
+
+describe('bulk purpose: demo mode and addresses', () => {
+  it('is suppressed in demo mode by the rule alone: no provider, no count, and not a failure', async () => {
+    const first = memoryProvider('cloudflare'), recorder = memoryRecorder()
+    const r = await createSender({ ...env, DEMO_MODE: 'true' }, { recorder, providers: [first] }).send(bulk())
+    expect(r).toMatchObject({ ok: true, provider: null, skipped: 'demo-mode' })
+    expect(first.sent).toHaveLength(0)
+    expect(recorder.calls.flat()).toHaveLength(0)
+  })
+
+  it('suppresses a whole batch in demo mode', async () => {
+    const first = memoryProvider('cloudflare'), recorder = memoryRecorder()
+    const r = await createSender({ ...env, DEMO_MODE: 'true' }, { recorder, providers: [first] }).sendBatch([bulk({ to: ['a@example.com'] }), bulk({ to: ['b@example.com'] })])
+    expect(r).toMatchObject({ sent: 0, failed: 0, skipped: 2 })
+    expect(first.sent).toHaveLength(0)
+    expect(recorder.calls.flat()).toHaveLength(0)
+  })
+
+  it('sends when demo mode is off', async () => {
+    const first = memoryProvider('cloudflare')
+    expect(await createSender({ ...env, DEMO_MODE: 'false' }, { providers: [first] }).send(bulk())).toMatchObject({ ok: true })
+    expect(first.sent).toHaveLength(1)
+  })
+
+  it('fails an invalid address as permanent without calling a provider', async () => {
+    const first = memoryProvider('cloudflare')
+    const r = await createSender(env, { providers: [first] }).send(bulk({ to: ['jane@example.gov;'] }))
+    expect(r).toMatchObject({ ok: false, provider: null, permanent: true })
+    expect(first.sent).toHaveLength(0)
+  })
+
+  it('sends more messages than the concurrency bound, each exactly once, all from the bulk From', async () => {
+    const first = memoryProvider('cloudflare')
+    const messages = Array.from({ length: 21 }, (_, i) => bulk({ to: [`u${i}@example.com`] }))
+    const r = await createSender({ ...env, EMAIL_FROM_BULK: 'notifications@mail.example.org' }, { providers: [first] }).sendBatch(messages)
+    expect(r.sent).toBe(21)
+    expect(new Set(first.sent.map(e => e.to[0])).size).toBe(21)
+    expect(first.sent.every(e => e.from === 'FloorVote <notifications@mail.example.org>')).toBe(true)
+  })
+
+  it('returns an empty batch without counting', async () => {
+    const recorder = memoryRecorder()
+    expect(await createSender(env, { recorder, providers: [memoryProvider('cloudflare')] }).sendBatch([])).toEqual({ sent: 0, failed: 0, skipped: 0, results: [] })
+    expect(recorder.calls).toHaveLength(0)
+  })
+})
+
+describe('purposes apart: bulk does not leak into the others', () => {
+  it('falls back for a notification while a bulk message in the same batch does not', async () => {
+    const first = memoryProvider('cloudflare', 'temporary'), second = memoryProvider('resend')
+    const r = await createSender({ ...env, DEMO_MODE: 'false' }, { providers: [first, second] }).sendBatch([
+      bulk({ to: ['digest@example.com'] }), notification({ to: ['note@example.com'] }),
+    ])
+    expect(r.results.map(x => (x.ok ? `ok:${x.provider}` : 'fail'))).toEqual(['fail', 'ok:resend'])
+    expect(second.sent.map(e => e.to[0])).toEqual(['note@example.com'])
   })
 })

@@ -2,7 +2,7 @@ import { and, eq, ne, isNull, isNotNull, gte, lt, exists, or, sql } from 'drizzl
 import { alias } from 'drizzle-orm/sqlite-core'
 import { calendarEvents, calendarEventBills, bills, users, sessions, associationConfig } from '../db/schema'
 import { renderWeekAheadEmail, capBodyEvents, type WeekAheadEvent, type WeekAheadDay } from './weekAheadEmail'
-import { sendBatch, unsubscribeHeaders } from './email'
+import { senderFor, unsubscribeHeaders } from './email'
 import { nowDb } from './dbTime'
 import { prioritizedBillEntry, billEntryGroupKey } from './calendarVisibility'
 import { loadDateFieldEvents } from './dateFieldEvents'
@@ -219,12 +219,9 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
   const html = renderWeekAheadEmail({ days, assocName, appUrl: env.APP_URL, omitted })
 
   const headers = unsubscribeHeaders(env.APP_URL, 'setting-week-ahead')
-  await sendBatch(
-    env,
-    recipients.map(r => ({ to: [r.email], subject, html, headers })),
-    'week-ahead',
-    db,
-    { bulk: true },
+  const { sent, failed } = await senderFor(env, db).sendBatch(
+    recipients.map(r => ({ purpose: 'bulk' as const, to: [r.email], subject, html, headers })),
   )
+  console.log(`[week-ahead] sent ${sent}, failed ${failed}`)
   await stampLastWeekAhead(db, nowDb())
 }

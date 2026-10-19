@@ -29,7 +29,7 @@ api/src/lib/replies.ts        renderReplyEmail() (sets In-Reply-To and Reference
 api/src/lib/inviteBounceEmail.ts
                               renderInviteBounceEmail() + notifyInviteBounces() (hourly, after the bounce check)
 api/src/lib/email.ts          renderMagicLinkEmail() + buildSignInMessage() (login/invite) + sendMagicLink, and the
-                              older sendEmail/sendBatch/sendFeedback for emails not yet moved to the shared sender
+                              older sendEmail/sendBatch/sendFeedback (sendBatch has no caller left) for emails not yet moved to the shared sender
 api/src/lib/sampleEmails.ts   renderSampleEmail() registry + sendSampleEmail()  ← single source for QA + previews + tests
 shared/emailSender.ts         createSender(): send a message by purpose (see "Sending" below)
 shared/emailProviders.ts      the Resend and Cloudflare send_email adapters
@@ -58,10 +58,19 @@ the other provider is configured. A permanent one never does.
 | Sign-in | tenant login, admin-sent login and invite links, the invite queue | yes | yes, when a recorder is supplied | invites suppressed, login sends |
 | Account | the email-change confirmation link, the notice to the old address, the "this wasn't me" report | yes | yes, when a recorder is supplied | suppressed |
 | Notification | mentions, replies (a reply keeps its thread and one-click mute headers) | yes | yes, when a recorder is supplied | suppressed |
+| Bulk | the digest, the week-ahead email | **never** | yes, when a recorder is supplied | suppressed |
+
+Bulk mail never falls back, so an outage on the first provider can't push a whole
+recipient list onto the second and burn its quota. It sends from the bulk From
+address (`EMAIL_FROM_BULK`, else `EMAIL_FROM`), keeps the default Reply-To, and
+counts each send to the provider that sent it. The digest and the week-ahead
+email send their batch with `senderFor(env, db).sendBatch`, and a batch's
+`sent`, `failed`, and `skipped` count messages. Their "last sent" stamp is
+written whatever the batch returned.
 
 The API supplies `emailHealthRecorder(db)`, and central supplies none, so central
 counts nothing. A sign-in message carries its `auth_events` writer, called once
-per attempt. Other emails still use `sendEmail` and `sendBatch` until they move.
+per attempt. Other emails still use `sendEmail` until they move, and `sendBatch` has no caller left.
 
 The email-change confirmation turns the sender's verdict into the member's
 answer: a permanent failure is "That address can't receive email" (400), and a
