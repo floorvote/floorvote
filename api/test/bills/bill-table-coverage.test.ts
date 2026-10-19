@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { sqliteTable, text } from 'drizzle-orm/sqlite-core'
 import * as schema from '../../src/db/schema'
-import { billLinkedTables, coverageProblems, schemaTableNames } from './billTableCoverage'
+import { billLinkedTables, cascadeClaimProblems, coverageProblems, schemaTableNames } from './billTableCoverage'
 import { TREATMENT } from './billTableTreatment'
 
 // Link (POST /bills/:id/link) and draft delete (DELETE /bills/:id) in
@@ -26,6 +26,19 @@ describe('bill-linked table coverage for draft Link and delete', () => {
     const withNew = { ...schema, billWatchers }
     const problems = coverageProblems(billLinkedTables(withNew), TREATMENT, schemaTableNames(withNew))
     expect(problems.join('\n')).toContain('bill_watchers')
+  })
+
+  it('fails naming a table that references bills under a column name the pattern misses', () => {
+    const filedRef = sqliteTable('filed_refs', { id: text('id').primaryKey(), filedBillRef: text('filed_bill_ref').references(() => schema.bills.id) })
+    const withNew = { ...schema, filedRef }
+    const problems = coverageProblems(billLinkedTables(withNew), TREATMENT, schemaTableNames(withNew))
+    expect(problems.join('\n')).toContain('filed_refs')
+  })
+
+  it('checks that every cascade claim has a cascading foreign key to bills', () => {
+    expect(cascadeClaimProblems(schema, TREATMENT)).toEqual([])
+    const mislabeled = { ...TREATMENT, calendar_event_bills: { link: 'cascade', delete: 'cascade', reason: 'x' } } as const
+    expect(cascadeClaimProblems(schema, mislabeled).join('\n')).toContain('calendar_event_bills')
   })
 
   it('fails naming a classified table that no longer exists', () => {
