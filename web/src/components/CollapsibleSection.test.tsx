@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
-import { CollapsibleSection } from './CollapsibleSection'
+import { render, screen, fireEvent, act } from '@testing-library/react'
+import { CollapsibleSection, OPEN_PAINT_ROOM } from './CollapsibleSection'
+import { CLAIM_GLOW } from '../lib/claimGlow'
 
 function mockMatchMedia(matches: boolean) {
   vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
@@ -137,5 +138,135 @@ describe('CollapsibleSection', () => {
     expect((screen.getByText('body content').parentElement as HTMLElement).style.transition).toBe('')
     // chevron (rotate transition)
     expect(screen.getByText('▼').style.transition).toBe('')
+  })
+
+  // The clip box (the grid row's only child) hides the body while the row
+  // animates. Once a section is fully open the clip box makes room around the
+  // body (padding, cancelled by a negative margin so nothing moves), so a
+  // shadow inside the body (the claim quote box's glow, #696) shows whole
+  // while anything wider than that is still clipped.
+  describe('clipping', () => {
+    function clipOf(): HTMLElement {
+      return bodyOf().firstElementChild as HTMLElement
+    }
+    function roomOf(): number {
+      const el = clipOf()
+      expect(el.style.overflow).toBe('hidden')
+      const pad = parseFloat(el.style.padding) || 0
+      const margin = parseFloat(el.style.margin) || 0
+      // The negative margin cancels the padding, so the body doesn't move.
+      expect(margin + pad).toBe(0)
+      return pad
+    }
+    function endRowsTransition(target: HTMLElement = bodyOf()) {
+      // jsdom's TransitionEvent lacks propertyName, so build the event by hand.
+      const ev = new Event('transitionend', { bubbles: true })
+      Object.defineProperty(ev, 'propertyName', { value: 'grid-template-rows' })
+      act(() => { target.dispatchEvent(ev) })
+    }
+
+    it('leaves room for the whole claim glow: its halo, its blur, and the floating shadow under it', () => {
+      // shadow.md is `0 2px 8px`: 2px down plus an 8px blur.
+      expect(OPEN_PAINT_ROOM).toBeGreaterThanOrEqual(Math.max(CLAIM_GLOW.haloSpread, CLAIM_GLOW.blur, 2 + 8))
+    })
+
+    it('makes no room while closed, so a closed section shows nothing', () => {
+      render(
+        <CollapsibleSection label="Bill texts" open={false} onToggle={() => {}}>
+          <p>body content</p>
+        </CollapsibleSection>,
+      )
+      expect(roomOf()).toBe(0)
+    })
+
+    it('makes room in a section that mounts open', () => {
+      render(
+        <CollapsibleSection label="Bill texts" open onToggle={() => {}}>
+          <p>body content</p>
+        </CollapsibleSection>,
+      )
+      expect(roomOf()).toBe(OPEN_PAINT_ROOM)
+    })
+
+    it('makes no room while the row animates open, then makes it once it has opened', () => {
+      const { rerender } = render(
+        <CollapsibleSection label="Bill texts" open={false} onToggle={() => {}}>
+          <p>body content</p>
+        </CollapsibleSection>,
+      )
+      rerender(
+        <CollapsibleSection label="Bill texts" open onToggle={() => {}}>
+          <p>body content</p>
+        </CollapsibleSection>,
+      )
+      expect(roomOf()).toBe(0)
+      endRowsTransition()
+      expect(roomOf()).toBe(OPEN_PAINT_ROOM)
+    })
+
+    it('ignores a transition that ends inside the body', () => {
+      const { rerender } = render(
+        <CollapsibleSection label="Bill texts" open={false} onToggle={() => {}}>
+          <p>body content</p>
+        </CollapsibleSection>,
+      )
+      rerender(
+        <CollapsibleSection label="Bill texts" open onToggle={() => {}}>
+          <p>body content</p>
+        </CollapsibleSection>,
+      )
+      endRowsTransition(screen.getByText('body content'))
+      expect(roomOf()).toBe(0)
+    })
+
+    it('makes room after the animation time even if no transition event arrives', () => {
+      vi.useFakeTimers()
+      try {
+        const { rerender } = render(
+          <CollapsibleSection label="Bill texts" open={false} onToggle={() => {}}>
+            <p>body content</p>
+          </CollapsibleSection>,
+        )
+        rerender(
+          <CollapsibleSection label="Bill texts" open onToggle={() => {}}>
+            <p>body content</p>
+          </CollapsibleSection>,
+        )
+        expect(roomOf()).toBe(0)
+        act(() => { vi.advanceTimersByTime(1000) })
+        expect(roomOf()).toBe(OPEN_PAINT_ROOM)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('drops the room as soon as it starts to close', () => {
+      const { rerender } = render(
+        <CollapsibleSection label="Bill texts" open onToggle={() => {}}>
+          <p>body content</p>
+        </CollapsibleSection>,
+      )
+      rerender(
+        <CollapsibleSection label="Bill texts" open={false} onToggle={() => {}}>
+          <p>body content</p>
+        </CollapsibleSection>,
+      )
+      expect(roomOf()).toBe(0)
+    })
+
+    it('makes room at once under reduced motion, where nothing animates', () => {
+      mockMatchMedia(true)
+      const { rerender } = render(
+        <CollapsibleSection label="Bill texts" open={false} onToggle={() => {}}>
+          <p>body content</p>
+        </CollapsibleSection>,
+      )
+      rerender(
+        <CollapsibleSection label="Bill texts" open onToggle={() => {}}>
+          <p>body content</p>
+        </CollapsibleSection>,
+      )
+      expect(roomOf()).toBe(OPEN_PAINT_ROOM)
+    })
   })
 })
