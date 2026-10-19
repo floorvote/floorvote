@@ -163,7 +163,7 @@ function renderBillDetail(overrides: Record<string, unknown>, config: Record<str
     if (path === '/roles' || path === '/users') return [] as never
     return {} as never
   })
-  render(<MemoryRouter><BillDetail /></MemoryRouter>)
+  return render(<MemoryRouter><BillDetail /></MemoryRouter>)
 }
 
 beforeEach(() => {
@@ -225,65 +225,151 @@ describe('the personal note of a grouped bill', () => {
   })
 })
 
-// The header's badges, one for each bill in the group, this page's bill first.
-const link = (billId: string, billNumber: string, state = 'NJ', sessionSlug = '2026') => ({ billId, billNumber, state, sessionSlug })
-const THIS = link('42', 'A190')
-const COMPANION = link('b1713', 'S1713', 'NJ', '2025-2026')
-const THIRD = link('c2000', 'H2000', 'NJ', '2026')
+// The header's first row holds this page's bill alone: its badge and its status. The group's other bills
+// sit on a quieter "Grouped with" line below it, each with its own status, since the status, sponsors, and
+// referrals above and below belong to this bill only.
+const link = (billId: string, billNumber: string, state = 'NJ', sessionSlug = '2026', status = '') => ({ billId, billNumber, state, sessionSlug, status })
+const THIS = link('42', 'A190', 'NJ', '2026', 'Introduced')
+const COMPANION = link('b1713', 'S1713', 'NJ', '2025-2026', 'Passed')
+const THIRD = link('c2000', 'H2000', 'NJ', '2026', 'Vetoed')
 
 describe('the header of a grouped bill', () => {
-  const header = () => screen.getByTestId('bill-group-badges')
+  // The header's first row: the page bill's badge wrapper sits in it, with the status chip beside it.
+  const firstRow = () => screen.getByTestId('bill-header-badge').parentElement!
+  const groupedWith = () => screen.getByTestId('grouped-with-line')
+  const members = () => within(groupedWith()).getAllByTestId('grouped-with-member')
 
-  it("shows a navy badge for this bill, not a link, then the companion's, linking to its canonical bill page", async () => {
-    renderBillDetail({ ...GROUPED, groupBills: [THIS, COMPANION] })
-    await screen.findByText('c1 text')
-    const badges = within(header())
-    expect(badges.getByText('A190').closest('a')).toBeNull()
-    expect(badges.getByRole('link', { name: 'S1713' })).toHaveAttribute('href', '/NJ/2025-2026/S1713')
-    expect(badges.getAllByRole('link')).toHaveLength(1)
-    // This bill's badge comes first.
-    expect(badges.getByText('A190').compareDocumentPosition(badges.getByText('S1713')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-  })
-
-  it('shows a badge for every bill in a group of three or more, each companion linking to its own page', async () => {
+  it("shows only this bill's badge and status in the first row, with no link to a companion", async () => {
     renderBillDetail({ ...GROUPED, groupBills: [THIS, COMPANION, THIRD] })
     await screen.findByText('c1 text')
-    const badges = within(header())
-    expect(badges.getAllByRole('link').map(a => [a.textContent, a.getAttribute('href')])).toEqual([
-      ['S1713', '/NJ/2025-2026/S1713'],
-      ['H2000', '/NJ/2026/H2000'],
-    ])
-    expect(badges.getByText('A190')).toBeInTheDocument()
+    const row = within(firstRow())
+    expect(row.getByText('A190').closest('a')).toBeNull()
+    expect(row.getByRole('button', { name: 'Introduced' })).toBeInTheDocument()
+    expect(row.queryByText('S1713')).toBeNull()
+    expect(row.queryByText('H2000')).toBeNull()
+    expect(row.queryByRole('link')).toBeNull()
+    // The page bill's badge comes first in the row, its status after.
+    expect(row.getByText('A190').compareDocumentPosition(row.getByText('Introduced')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it('keeps the order the group bills arrive in, this bill first', async () => {
+  it('puts a "Grouped with" line below the first row, above the title', async () => {
+    renderBillDetail({ ...GROUPED, groupBills: [THIS, COMPANION] })
+    await screen.findByText('c1 text')
+    expect(within(groupedWith()).getByText('Grouped with')).toBeInTheDocument()
+    expect(firstRow().contains(groupedWith())).toBe(false)
+    expect(firstRow().compareDocumentPosition(groupedWith()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(groupedWith().compareDocumentPosition(screen.getByRole('heading', { level: 1 })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("lists the companion as a badge linking to its canonical bill page, followed by its own status", async () => {
+    renderBillDetail({ ...GROUPED, groupBills: [THIS, COMPANION] })
+    await screen.findByText('c1 text')
+    const [member] = members()
+    const badge = within(member).getByRole('link', { name: 'S1713' })
+    expect(badge).toHaveAttribute('href', '/NJ/2025-2026/S1713')
+    expect(within(member).getAllByRole('link')).toHaveLength(1)
+    expect(within(member).getByText('Passed')).toBeInTheDocument()
+    expect(badge.compareDocumentPosition(within(member).getByText('Passed')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // The page bill is not listed in its own line.
+    expect(within(groupedWith()).queryByText('A190')).toBeNull()
+  })
+
+  it("gives each companion of a group of three its own status, not this bill's", async () => {
+    renderBillDetail({ ...GROUPED, groupBills: [THIS, COMPANION, THIRD] })
+    await screen.findByText('c1 text')
+    expect(members().map(m => [within(m).getByRole('link').textContent, within(m).getByRole('link').getAttribute('href'), m.textContent])).toEqual([
+      ['S1713', '/NJ/2025-2026/S1713', 'S1713Passed'],
+      ['H2000', '/NJ/2026/H2000', 'H2000Vetoed'],
+    ])
+    expect(within(groupedWith()).queryByText('Introduced')).toBeNull()
+  })
+
+  it('keeps the order the group bills arrive in, this bill left out', async () => {
     renderBillDetail({ ...GROUPED, groupBills: [THIS, THIRD, COMPANION] })
     await screen.findByText('c1 text')
-    expect(Array.from(header().children).map(el => el.textContent)).toEqual(['A190', 'H2000', 'S1713'])
+    expect(members().map(m => within(m).getByRole('link').textContent)).toEqual(['H2000', 'S1713'])
   })
 
-  it('shows one badge, not a link, for a bill in no group', async () => {
+  it("decodes a companion's status stored as a code, as the page's own status is", async () => {
+    renderBillDetail({ ...GROUPED, status: '1', groupBills: [{ ...THIS, status: '1' }, { ...COMPANION, status: '4' }] })
+    await screen.findByText('c1 text')
+    expect(within(members()[0]).getByText('Passed')).toBeInTheDocument()
+    expect(within(firstRow()).getByRole('button', { name: 'Introduced' })).toBeInTheDocument()
+  })
+
+  it('shows no status pill for a companion whose status is empty, but still lists its badge', async () => {
+    renderBillDetail({ ...GROUPED, groupBills: [THIS, { ...COMPANION, status: '' }] })
+    await screen.findByText('c1 text')
+    expect(members()[0].textContent).toBe('S1713')
+    expect(within(members()[0]).getByRole('link', { name: 'S1713' })).toBeInTheDocument()
+  })
+
+  it("draws a companion's badge and status small, below the first row's sizes, and its status as plain text", async () => {
+    renderBillDetail({ ...GROUPED, groupBills: [THIS, COMPANION] })
+    await screen.findByText('c1 text')
+    const inLine = within(groupedWith()).getByRole('link', { name: 'S1713' })
+    const pageBadge = within(firstRow()).getByText('A190').closest('span')!
+    expect(parseFloat(inLine.style.fontSize)).toBeLessThan(parseFloat(pageBadge.style.fontSize))
+    const miniStatus = within(members()[0]).getByText('Passed')
+    const pageStatus = within(firstRow()).getByText('Introduced')
+    expect(parseFloat(miniStatus.style.fontSize)).toBeLessThan(parseFloat(pageStatus.style.fontSize))
+    // Not a second control beside the badge's link: filtering the list by a companion's status is the page status's job.
+    expect(miniStatus.closest('button')).toBeNull()
+    expect(miniStatus.closest('a')).toBeNull()
+  })
+
+  it('lets the line wrap, so a long status on a narrow screen drops to the next row', async () => {
+    renderBillDetail({ ...GROUPED, groupBills: [THIS, COMPANION, THIRD] })
+    await screen.findByText('c1 text')
+    expect(groupedWith().style.flexWrap).toBe('wrap')
+    members().forEach(m => expect(m.style.whiteSpace).toBe('nowrap'))
+  })
+
+  it('shows one badge in the first row and no "Grouped with" line for a bill in no group', async () => {
     renderBillDetail({ ...GROUPED, groupBills: [THIS], groupingEvents: [], comments: [], commentsTotal: 0 })
     await screen.findByText('Test Bill')
-    // Unchanged from before groups showed here: one badge, no link, and no wrapper to find it by.
     expect(screen.getAllByText('A190')).toHaveLength(1)
     expect(screen.getByText('A190').closest('a')).toBeNull()
+    expect(screen.queryByTestId('grouped-with-line')).toBeNull()
+    expect(screen.queryByText('Grouped with')).toBeNull()
     expect(screen.queryByRole('link', { name: 'S1713' })).toBeNull()
+    expect(within(firstRow()).getByRole('button', { name: 'Introduced' })).toBeInTheDocument()
   })
 
-  it('shows the one badge when the response carries no group bills at all', async () => {
+  it('shows no line when the response carries no group bills at all', async () => {
     renderBillDetail({ ...GROUPED, groupBills: undefined, groupingEvents: [] })
     await screen.findByText('Test Bill')
     expect(screen.getAllByText('A190')).toHaveLength(1)
     expect(screen.getByText('A190').closest('a')).toBeNull()
+    expect(screen.queryByTestId('grouped-with-line')).toBeNull()
   })
 
-  it('leaves a draft bill header as it was: its one dashed badge and the draft chip', async () => {
+  it('leaves a draft bill header as it was: its one dashed badge and the draft chip, with no line', async () => {
     renderBillDetail({ billNumber: 'D1', isDraft: true, state: 'NJ', groupBills: [link('42', 'D1')], groupingEvents: [], comments: [], commentsTotal: 0 })
     await screen.findByText('Test Bill')
     expect(screen.getAllByText('D1')).toHaveLength(1)
     expect(screen.getByText('D1').closest('a')).toBeNull()
     expect(screen.getAllByText(/Draft/).length).toBeGreaterThan(0)
+    expect(screen.queryByTestId('grouped-with-line')).toBeNull()
+  })
+
+  it('keeps the first row the same for a grouped bill as for a bill in no group', async () => {
+    const first = renderBillDetail({ ...GROUPED, groupBills: [THIS, COMPANION], groupingEvents: [], comments: [], commentsTotal: 0 })
+    await screen.findByText('Test Bill')
+    const grouped = Array.from(firstRow().children).map(el => el.textContent)
+    first.unmount()
+    renderBillDetail({ ...GROUPED, groupBills: [THIS], groupingEvents: [], comments: [], commentsTotal: 0 })
+    await screen.findByText('Test Bill')
+    expect(Array.from(firstRow().children).map(el => el.textContent)).toEqual(grouped)
+  })
+
+  it('still offers an admin the group controls in the overflow menu: "Group with…" and "Split from group"', async () => {
+    const user = userEvent.setup()
+    renderBillDetail({ ...GROUPED, groupBills: [THIS, COMPANION] })
+    await screen.findByText('c1 text')
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    expect(await screen.findByRole('menuitem', { name: /Group with/ })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: /Split from group/ })).toBeInTheDocument()
   })
 
   it('shows no "Companion:" line, even when the response still carries legacy companion ids', async () => {
@@ -342,7 +428,7 @@ describe('the line saying what a companion group shares', () => {
     expect(columns).not.toBeNull()
     expect(columns.contains(line())).toBe(false)
     expect(line().compareDocumentPosition(columns) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(screen.getByTestId('bill-group-badges').compareDocumentPosition(line()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByTestId('grouped-with-line').compareDocumentPosition(line()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     // The comments and the position live in that two-column area, below the line.
     expect(line().compareDocumentPosition(document.getElementById('section-comments')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
@@ -456,9 +542,9 @@ describe('the line saying what a companion group shares', () => {
     renderBillDetail({ ...GROUPED, ...NO_COMMENTS, groupBills: [THIS, COMPANION] })
     await screen.findByText('Test Bill')
     const inLine = within(line()).getByRole('link', { name: 'S1713' })
-    const inHeader = within(screen.getByTestId('bill-group-badges')).getByRole('link', { name: 'S1713' })
-    expect(parseFloat(inLine.style.fontSize)).toBeLessThan(parseFloat(inHeader.style.fontSize))
-    // Navy fill, as the header's.
+    const inHeader = within(screen.getByTestId('grouped-with-line')).getByRole('link', { name: 'S1713' })
+    // The same mini badge as the header's "Grouped with" line: same size, same navy fill.
+    expect(parseFloat(inLine.style.fontSize)).toBe(parseFloat(inHeader.style.fontSize))
     expect(inLine.style.background).toBe(inHeader.style.background)
   })
 })
@@ -484,8 +570,8 @@ describe('a comment posted on a companion', () => {
     const inLine = within(screen.getByTestId('group-shares-line')).getByRole('link', { name: 'S1713' })
     expect(badge.style.background).toBe(inLine.style.background)
     expect(parseFloat(badge.style.fontSize)).toBe(parseFloat(inLine.style.fontSize))
-    const inHeader = within(screen.getByTestId('bill-group-badges')).getByRole('link', { name: 'S1713' })
-    expect(parseFloat(badge.style.fontSize)).toBeLessThan(parseFloat(inHeader.style.fontSize))
+    const pageBadge = within(screen.getByTestId('bill-header-badge')).getByText('A190').closest('span')!
+    expect(parseFloat(badge.style.fontSize)).toBeLessThan(parseFloat(pageBadge.style.fontSize))
   })
 
   it("puts the badge after the commenter's name, inside the comment header", async () => {
