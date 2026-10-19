@@ -147,9 +147,9 @@ export function Profile() {
     setDigestMatchesEnabled(user?.emailDigestMatchesEnabled ?? true)
   }, [user?.emailDigestMatchesEnabled])
 
-  // Reply emails are a per-member switch only: the instance's "Conversation
-  // emails" switch lives on the admin page, and the in-app replies stay on
-  // whatever this says.
+  // Reply notifications, in the app and by email, are a per-member switch. The
+  // instance's "Conversation emails" switch lives on the admin page and gates
+  // only the email.
   const [repliesEnabled, setRepliesEnabled] = useState<boolean>(() => user?.emailRepliesEnabled ?? true)
   const [repliesSaving, setRepliesSaving] = useState(false)
 
