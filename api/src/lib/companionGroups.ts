@@ -59,7 +59,7 @@ export function inGroupsOf(column: SQLiteColumn, billIds: readonly string[]): SQ
  * Just `billId` for an ungrouped bill, and empty for a bill that doesn't exist.
  */
 export async function loadGroupBills(db: AppDb, billId: string): Promise<GroupBillLink[]> {
-  const found = await db.select({ billId: bills.id, billNumber: bills.billNumber, state: bills.state, session: bills.session, sessionSlug: bills.sessionSlug })
+  const found = await db.select({ billId: bills.id, billNumber: bills.billNumber, state: bills.state, session: bills.session, sessionSlug: bills.sessionSlug, status: bills.status })
     .from(bills).where(inGroupOf(bills.id, billId)).all()
   const rows = found.map(({ session, sessionSlug, ...rest }) => ({ ...rest, sessionSlug: filedSlug({ session, sessionSlug }) ?? '' }))
   return rows.sort((a, b) => (a.billId === billId ? -1 : b.billId === billId ? 1 : compareBillNumbers(a, b)))

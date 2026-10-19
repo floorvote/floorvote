@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { MODULES, isModuleEnabled, getModuleSetting, visibleModuleSettings, digestCadenceDescription, digestMatchesLabel, weekAheadCadenceDescription, moduleKindLabel } from './modules'
+import { MODULES, isModuleEnabled, getModuleSetting, visibleModuleSettings, digestCadenceDescription, digestMatchesLabel, weekAheadCadenceDescription, moduleKindLabel, digestFrequency } from './modules'
 import type { ModuleDef } from './modules'
 
 describe('MODULES registry', () => {
@@ -210,5 +210,39 @@ describe('digestMatchesLabel', () => {
 
   it('still names the configured period when the digest module is turned off', () => {
     expect(digestMatchesLabel(cfg({ frequency: 'weekly' }, false))).toBe(weekly)
+  })
+})
+
+// #449: the digest description names saved views once a member has included one,
+// and the Views menu words its hover from the same cadence.
+describe('digestCadenceDescription with saved views', () => {
+  const daily = { 'email-digest': { enabled: true } }
+  const weekly = { 'email-digest': { enabled: true, settings: { frequency: 'weekly', weeklyDay: '3' } } }
+
+  it('is as it was with no view included, or when the argument is left off', () => {
+    expect(digestCadenceDescription(daily)).toBe('A daily summary of recent activity on priority bills.')
+    expect(digestCadenceDescription(daily, false)).toBe('A daily summary of recent activity on priority bills.')
+  })
+
+  it('adds "and bills in saved views" when a view is included', () => {
+    expect(digestCadenceDescription(daily, true)).toBe('A daily summary of recent activity on priority bills and bills in saved views.')
+  })
+
+  it('adds it to a weekly description too, ahead of the day', () => {
+    expect(digestCadenceDescription(weekly, true)).toBe('A weekly summary of recent activity on priority bills and bills in saved views, sent every Wednesday morning.')
+  })
+
+  it('adds it to the description of a digest the admin turned off, without a cadence', () => {
+    expect(digestCadenceDescription({ 'email-digest': { enabled: false } }, true)).toBe('A summary of recent activity on priority bills and bills in saved views.')
+  })
+})
+
+describe('digestFrequency', () => {
+  it('is weekly only for a weekly digest, and daily for anything else', () => {
+    expect(digestFrequency({ 'email-digest': { enabled: true, settings: { frequency: 'weekly' } } })).toBe('weekly')
+    expect(digestFrequency({ 'email-digest': { enabled: true, settings: { frequency: 'daily' } } })).toBe('daily')
+    expect(digestFrequency({ 'email-digest': { enabled: true } })).toBe('daily')
+    expect(digestFrequency({ 'email-digest': { enabled: true, settings: { frequency: 'hourly' } } })).toBe('daily')
+    expect(digestFrequency(undefined)).toBe('daily')
   })
 })

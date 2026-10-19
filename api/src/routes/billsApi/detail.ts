@@ -31,7 +31,7 @@ type CentralBillRich = {
   statusDate?: string | null
   legiscanUrl?: string | null
   sponsors?: Array<{ name: string; party: string | null; role: string | null; primary: boolean; personId: string | null; url: string | null }>
-  votes?: Array<{ id: string; motionText: string; date: string; result: string; chamber: string; counts: Array<{ option: string; value: number }>; legislatorVotes?: Array<{ personId: string; name: string; vote: string; url?: string | null }> }>
+  votes?: Array<{ id: string; motionText: string; date: string; result: string; chamber: string; counts: Array<{ option: string; value: number }>; legislatorVotes?: Array<{ personId: string; name: string; vote: string; url?: string | null; party?: string | null }> }>
   relatedBills?: Array<{ identifier: string; sastBillId?: number; session: string; relationType: string; kind?: string }>
   calendar?: Array<{ eventHash: string; typeId: number; type: string; kind?: string | null; date: string; time: string | null; location: string | null; description: string | null }>
   supplements?: Array<{ supplementId: number; typeId: number; type: string; date: string | null; dateResolved: string | null; dateInferred: boolean; title: string | null; description: string | null; mime: string | null; url: string | null; stateLink: string | null }>
@@ -426,7 +426,7 @@ export async function buildBillDetail(
       absent: v.counts.find(c => c.option === 'absent')?.value ?? 0,
       passed: v.result === 'pass' ? 1 : 0,
       // Each voter's profile link as central sent it, if it is an http(s) URL.
-      legislatorVotes: (v.legislatorVotes ?? []).map(l => ({ ...l, url: httpUrl(typeof l.url === 'string' ? l.url : null) })),
+      legislatorVotes: (v.legislatorVotes ?? []).map(l => ({ ...l, url: httpUrl(typeof l.url === 'string' ? l.url : null), party: typeof l.party === 'string' && l.party.trim() ? l.party.trim() : null })),
     })) ?? undefined,
     subjects: subjectsSuppressed ? [] : parseSubjects(bill.subjects),
     calendar: env.DEMO_MODE === 'true'

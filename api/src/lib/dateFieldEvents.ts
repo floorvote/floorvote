@@ -1,7 +1,9 @@
 import { and, eq, gte, lte } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/sqlite-core'
 import { bills, billCustomFieldValues, customFieldDefinitions } from '../db/schema'
 import { prioritizedDateFieldValue } from './calendarVisibility'
 import { isCalendarDate } from './customFieldValues'
+import { loadGroupPriorities, priorityWorn, type BillsTable } from './teamFields'
 import { billDisplayTitle } from '../../../shared/billTitle'
 import type { AppDb } from '../types'
 
@@ -11,11 +13,13 @@ import type { AppDb } from '../types'
  * bill page, bulk edits, the demo reset), so these events are never stored:
  * every reader asks here and merges the result into the events it returns.
  * Which values qualify is `prioritizedDateFieldValue`, so the calendar, the
- * feed, the dashboard count, and the week-ahead email always agree.
+ * feed, the dashboard count, and the week-ahead email always agree. A value is
+ * a group's (#376), so a companion group projects its current value once, linked to
+ * the member holding it and keyed by the group, wearing the group's priority (#639).
  */
 
 export interface DateFieldEvent {
-  /** `cf-{fieldId}-{billId}`: from the field and the bill, never the date, so a changed date moves the same event. Also the feed UID. */
+  /** `cf-{fieldId}-{billId}` for a bill in no group, `cf-{fieldId}-group-{groupKey}` for a grouped one: from the field and the bill or group, never the date or the member holding the value, so a changed date or a value moving to another member moves the same event. Also the feed UID. */
   id: string
   fieldName: string
   /** YYYY-MM-DD, as stored. */
@@ -46,26 +50,31 @@ export function dateFieldSequence(valueUpdatedAt: string): number {
  * broken event, since the server stores free text.
  */
 export async function loadDateFieldEvents(db: AppDb, { from, to }: { from: string; to: string }): Promise<DateFieldEvent[]> {
+  // `p` and `me` are the aliases `prioritizedDateFieldValue` expects.
+  const p = alias(billCustomFieldValues, 'p')
+  const me = alias(bills, 'me') as unknown as BillsTable
   const rows = await db
     .select({
       fieldId: customFieldDefinitions.id, fieldName: customFieldDefinitions.name,
-      value: billCustomFieldValues.value, updatedAt: billCustomFieldValues.updatedAt,
-      billId: bills.id, billNumber: bills.billNumber, billTitle: bills.title, state: bills.state,
-      session: bills.session, sessionSlug: bills.sessionSlug, priority: bills.priority, isDraft: bills.isDraft,
+      value: p.value, updatedAt: p.updatedAt,
+      billId: me.id, billNumber: me.billNumber, billTitle: me.title, state: me.state,
+      session: me.session, sessionSlug: me.sessionSlug, priority: me.priority, groupKey: me.groupKey, isDraft: me.isDraft,
     })
-    .from(billCustomFieldValues)
-    .innerJoin(customFieldDefinitions, eq(billCustomFieldValues.fieldId, customFieldDefinitions.id))
-    .innerJoin(bills, eq(billCustomFieldValues.billId, bills.id))
+    .from(p)
+    .innerJoin(customFieldDefinitions, eq(p.fieldId, customFieldDefinitions.id))
+    .innerJoin(me, eq(p.billId, me.id))
     .where(and(
-      prioritizedDateFieldValue,
+      prioritizedDateFieldValue(me),
       // Stored values and both bounds are YYYY-MM-DD, so strings compare in date order.
-      gte(billCustomFieldValues.value, from),
-      lte(billCustomFieldValues.value, to),
+      gte(p.value, from),
+      lte(p.value, to),
     ))
     .all()
+  // The group's priority, read once apart from the rows, as for the other calendar readers.
+  const groupPriorities = await loadGroupPriorities(db, rows.map(r => r.groupKey))
 
   return rows.filter(r => isCalendarDate(r.value)).map(r => ({
-    id: `cf-${r.fieldId}-${r.billId}`,
+    id: r.groupKey === null ? `cf-${r.fieldId}-${r.billId}` : `cf-${r.fieldId}-group-${r.groupKey}`,
     fieldName: r.fieldName,
     date: r.value,
     title: `${r.fieldName}: ${r.billNumber}`,
@@ -73,7 +82,7 @@ export async function loadDateFieldEvents(db: AppDb, { from, to }: { from: strin
     bill: {
       id: r.billId, billNumber: r.billNumber, billTitle: billDisplayTitle({ title: r.billTitle, isDraft: r.isDraft }),
       state: r.state, session: r.session, sessionSlug: r.sessionSlug,
-      priority: r.priority, isDraft: r.isDraft,
+      priority: priorityWorn(r, groupPriorities), isDraft: r.isDraft,
     },
   }))
 }

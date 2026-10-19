@@ -4,9 +4,10 @@ import { eq } from 'drizzle-orm'
 import { resetDb, applyMigrations, seedUser, seedAuthEvent } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, authEvents, users } from '../../src/db/schema'
+import { fakeBinding, stubResend, type BindingOutcomes } from '../../../shared/emailTestKit'
 
 // The hourly scheduled run end to end: the real bounce check against a stubbed
-// central delivery lookup, then the bounce notification through a stubbed
+// central delivery lookup, then the bounce notification through a fake
 // Cloudflare send binding. The other hourly jobs are stubbed out so the only
 // email sent is the bounce notification.
 vi.mock('../../src/lib/healStalledAi', () => ({
@@ -25,18 +26,18 @@ const MEMBERS_URL = `${APP}/admin/members`
 type Delivery = Record<string, { status: string; isSpam: boolean; errorCause?: string }>
 type Sent = { to: string[]; subject: string; html: string; text: string }
 
-function stubs(delivery: Delivery | (() => Promise<unknown>)) {
+function stubs(delivery: Delivery | (() => Promise<unknown>), outcomes: BindingOutcomes = 'ok') {
   const emailDeliveryStatus = vi.fn(typeof delivery === 'function' ? delivery : async () => delivery)
-  const send = vi.fn(async (_msg: Sent) => ({ messageId: `cf-${crypto.randomUUID()}` }))
+  const cf = fakeBinding(outcomes)
   const e = {
     ...env,
     APP_URL: APP,
     EMAIL_PROVIDER: 'cloudflare',
-    EMAIL: { send },
+    EMAIL: cf.binding,
     EMAIL_FROM: 'notifications@example.test',
     CENTRAL: { emailDeliveryStatus },
   }
-  return { e, send, emailDeliveryStatus }
+  return { e, cf, emailDeliveryStatus }
 }
 
 async function runHourly(e: unknown, scheduledTime = NOW) {
@@ -46,13 +47,13 @@ async function runHourly(e: unknown, scheduledTime = NOW) {
   await waitOnExecutionContext(ctx)
 }
 
-const sentTo = (send: ReturnType<typeof stubs>['send']) =>
-  send.mock.calls.map(([m]) => m.to.join(',')).sort()
+const sentTo = (cf: ReturnType<typeof stubs>['cf']) =>
+  cf.sent.map(m => [m.to].flat().join(',')).sort()
 
-const mailFor = (send: ReturnType<typeof stubs>['send'], to: string): Sent => {
-  const hits = send.mock.calls.map(([m]) => m).filter(m => m.to.includes(to))
+const mailFor = (cf: ReturnType<typeof stubs>['cf'], to: string): Sent => {
+  const hits = cf.sent.filter(m => [m.to].flat().includes(to))
   expect(hits).toHaveLength(1)
-  return hits[0]
+  return hits[0] as Sent
 }
 
 /** The CTA's href, decoded from the one link to Members in the email. */
@@ -79,17 +80,17 @@ describe('hourly run: emailing the inviter about bounced invites', () => {
     await resetDb(); await applyMigrations()
     ownerId = await seedUser({ role: 'owner', email: 'owner@example.test', name: 'Olive Owner' })
   })
-  afterEach(() => { vi.restoreAllMocks() })
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
   it('sends the inviting Admin one email naming the address and the reason', async () => {
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.test' })
     await seedPendingInvite('typo@example.test', adminId, 'm-1')
-    const { e, send } = stubs({ 'm-1': bounced('550 5.1.1 user unknown') })
+    const { e, cf } = stubs({ 'm-1': bounced('550 5.1.1 user unknown') })
 
     await runHourly(e)
 
-    expect(sentTo(send)).toEqual(['admin@example.test'])
-    const mail = mailFor(send, 'admin@example.test')
+    expect(sentTo(cf)).toEqual(['admin@example.test'])
+    const mail = mailFor(cf, 'admin@example.test')
     expect(mail.subject).toBe("An invite couldn't be delivered")
     expect(mail.html).toContain('typo@example.test')
     expect(mail.html).toContain('550 5.1.1 user unknown')
@@ -99,11 +100,11 @@ describe('hourly run: emailing the inviter about bounced invites', () => {
 
   it('sends an inviting Owner the email directly', async () => {
     await seedPendingInvite('typo@example.test', ownerId, 'm-1')
-    const { e, send } = stubs({ 'm-1': bounced('user unknown') })
+    const { e, cf } = stubs({ 'm-1': bounced('user unknown') })
 
     await runHourly(e)
 
-    expect(sentTo(send)).toEqual(['owner@example.test'])
+    expect(sentTo(cf)).toEqual(['owner@example.test'])
   })
 
   it('lists several bounces for the same inviter in one email', async () => {
@@ -111,7 +112,7 @@ describe('hourly run: emailing the inviter about bounced invites', () => {
     await seedPendingInvite('one@example.test', adminId, 'm-1')
     await seedPendingInvite('two@example.test', adminId, 'm-2')
     await seedPendingInvite('three@example.test', adminId, 'm-3')
-    const { e, send } = stubs({
+    const { e, cf } = stubs({
       'm-1': bounced('reason one'),
       'm-2': bounced('reason two'),
       'm-3': bounced('reason three'),
@@ -119,8 +120,8 @@ describe('hourly run: emailing the inviter about bounced invites', () => {
 
     await runHourly(e)
 
-    expect(send).toHaveBeenCalledOnce()
-    const mail = mailFor(send, 'admin@example.test')
+    expect(cf.sent).toHaveLength(1)
+    const mail = mailFor(cf, 'admin@example.test')
     expect(mail.subject).toBe("3 invites couldn't be delivered")
     for (const [addr, reason] of [['one', 'reason one'], ['two', 'reason two'], ['three', 'reason three']]) {
       expect(mail.html).toContain(`${addr}@example.test`)
@@ -133,13 +134,13 @@ describe('hourly run: emailing the inviter about bounced invites', () => {
     const b = await seedUser({ role: 'admin', email: 'b@example.test' })
     await seedPendingInvite('x@example.test', a, 'm-1')
     await seedPendingInvite('y@example.test', b, 'm-2')
-    const { e, send } = stubs({ 'm-1': bounced('rx'), 'm-2': bounced('ry') })
+    const { e, cf } = stubs({ 'm-1': bounced('rx'), 'm-2': bounced('ry') })
 
     await runHourly(e)
 
-    expect(sentTo(send)).toEqual(['a@example.test', 'b@example.test'])
-    expect(mailFor(send, 'a@example.test').html).not.toContain('y@example.test')
-    expect(mailFor(send, 'b@example.test').html).not.toContain('x@example.test')
+    expect(sentTo(cf)).toEqual(['a@example.test', 'b@example.test'])
+    expect(mailFor(cf, 'a@example.test').html).not.toContain('y@example.test')
+    expect(mailFor(cf, 'b@example.test').html).not.toContain('x@example.test')
   })
 
   it.each([
@@ -153,22 +154,22 @@ describe('hourly run: emailing the inviter about bounced invites', () => {
     await seedUser({ role: 'admin', email: 'bystander-admin@example.test' })
     const inviterId = await seedUser({ ...inviter, email: 'inviter@example.test' })
     await seedPendingInvite('typo@example.test', inviterId, 'm-1')
-    const { e, send } = stubs({ 'm-1': bounced('user unknown') })
+    const { e, cf } = stubs({ 'm-1': bounced('user unknown') })
 
     await runHourly(e)
 
-    expect(sentTo(send)).toEqual(['owner2@example.test', 'owner@example.test'])
-    expect(mailFor(send, otherOwner).html).toContain('typo@example.test')
+    expect(sentTo(cf)).toEqual(['owner2@example.test', 'owner@example.test'])
+    expect(mailFor(cf, otherOwner).html).toContain('typo@example.test')
   })
 
   it('never checks or emails about a member with no inviter (one who joined another way)', async () => {
     await seedPendingInvite('no-inviter@example.test', null, 'm-1')
-    const { e, send, emailDeliveryStatus } = stubs({ 'm-1': bounced('r1') })
+    const { e, cf, emailDeliveryStatus } = stubs({ 'm-1': bounced('r1') })
 
     await runHourly(e)
 
     expect(emailDeliveryStatus).not.toHaveBeenCalled()
-    expect(send).not.toHaveBeenCalled()
+    expect(cf.sent).toHaveLength(0)
     expect(await getDb(env.DB).select().from(authEvents).where(eq(authEvents.event, 'email_bounced')).all()).toHaveLength(0)
   })
 
@@ -176,11 +177,11 @@ describe('hourly run: emailing the inviter about bounced invites', () => {
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.test' })
     const memberId = await seedPendingInvite('typo@exmaple.test', adminId, 'm-old')
     await getDb(env.DB).update(users).set({ email: 'typo@example.test' }).where(eq(users.id, memberId))
-    const { e, send } = stubs({ 'm-old': bounced('user unknown') })
+    const { e, cf } = stubs({ 'm-old': bounced('user unknown') })
 
     await runHourly(e)
 
-    expect(send).not.toHaveBeenCalled()
+    expect(cf.sent).toHaveLength(0)
   })
 
   it('sends nothing, and still records the bounce, when there is no active Owner to fall back to', async () => {
@@ -188,11 +189,11 @@ describe('hourly run: emailing the inviter about bounced invites', () => {
     const formerAdmin = await seedUser({ role: 'member', email: 'former-admin@example.test' })
     await getDb(env.DB).update(users).set({ deactivatedAt: '2026-09-01 00:00:00' }).where(eq(users.id, ownerId))
     await seedPendingInvite('orphan@example.test', formerAdmin, 'm-1')
-    const { e, send } = stubs({ 'm-1': bounced('r1') })
+    const { e, cf } = stubs({ 'm-1': bounced('r1') })
 
     await runHourly(e)
 
-    expect(send).not.toHaveBeenCalled()
+    expect(cf.sent).toHaveLength(0)
     expect(await getDb(env.DB).select().from(authEvents).where(eq(authEvents.event, 'email_bounced')).all()).toHaveLength(1)
     expect(warn.mock.calls.map(c => c.join(' ')).join('\n')).toContain('no active Owner')
   })
@@ -202,15 +203,15 @@ describe('hourly run: emailing the inviter about bounced invites', () => {
     const formerAdmin = await seedUser({ role: 'member', email: 'former-admin@example.test' })
     await seedPendingInvite('mine@example.test', ownerId, 'm-1')
     await seedPendingInvite('orphan@example.test', formerAdmin, 'm-2')
-    const { e, send } = stubs({ 'm-1': bounced('r1'), 'm-2': bounced('r2') })
+    const { e, cf } = stubs({ 'm-1': bounced('r1'), 'm-2': bounced('r2') })
 
     await runHourly(e)
 
-    expect(sentTo(send)).toEqual(['owner2@example.test', 'owner@example.test'])
-    const mine = mailFor(send, 'owner@example.test')
+    expect(sentTo(cf)).toEqual(['owner2@example.test', 'owner@example.test'])
+    const mine = mailFor(cf, 'owner@example.test')
     expect(mine.html).toContain('mine@example.test')
     expect(mine.html).toContain('orphan@example.test')
-    const other = mailFor(send, 'owner2@example.test')
+    const other = mailFor(cf, 'owner2@example.test')
     expect(other.html).toContain('orphan@example.test')
     expect(other.html).not.toContain('mine@example.test')
   })
@@ -221,11 +222,11 @@ describe('hourly run: emailing the inviter about bounced invites', () => {
     await seedAuthEvent(memberId, 'email_sent', {
       email: 'typo@example.test', linkType: 'login', provider: 'cloudflare', messageId: 'm-2', createdAt: HOUR_AGO,
     })
-    const { e, send } = stubs({ 'm-1': bounced('user unknown'), 'm-2': bounced('user unknown') })
+    const { e, cf } = stubs({ 'm-1': bounced('user unknown'), 'm-2': bounced('user unknown') })
 
     await runHourly(e)
 
-    const mail = mailFor(send, 'admin@example.test')
+    const mail = mailFor(cf, 'admin@example.test')
     expect(mail.subject).toBe("An invite couldn't be delivered")
     expect(mail.html.match(/typo@example\.test/g)).toHaveLength(1)
     expect(new URL(membersLink(mail.html)).searchParams.get('search')).toBe('typo@example.test')
@@ -235,46 +236,46 @@ describe('hourly run: emailing the inviter about bounced invites', () => {
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.test' })
     await seedPendingInvite('ok@example.test', adminId, 'm-1')
     await seedPendingInvite('slow@example.test', adminId, 'm-2')
-    const { e, send } = stubs({
+    const { e, cf } = stubs({
       'm-1': { status: 'delivered', isSpam: false },
       'm-2': { status: 'deferred', isSpam: false },
     })
 
     await runHourly(e)
 
-    expect(send).not.toHaveBeenCalled()
+    expect(cf.sent).toHaveLength(0)
   })
 
   it('sends nothing when there is nothing to check', async () => {
-    const { e, send, emailDeliveryStatus } = stubs({})
+    const { e, cf, emailDeliveryStatus } = stubs({})
 
     await runHourly(e)
 
     expect(emailDeliveryStatus).not.toHaveBeenCalled()
-    expect(send).not.toHaveBeenCalled()
+    expect(cf.sent).toHaveLength(0)
   })
 
   it('sends nothing and does not throw when the delivery lookup fails', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.test' })
     await seedPendingInvite('typo@example.test', adminId, 'm-1')
-    const { e, send } = stubs(async () => { throw new Error('central unavailable') })
+    const { e, cf } = stubs(async () => { throw new Error('central unavailable') })
 
     await runHourly(e)
 
-    expect(send).not.toHaveBeenCalled()
+    expect(cf.sent).toHaveLength(0)
   })
 
   it('never notifies a bounce twice across consecutive runs', async () => {
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.test' })
     await seedPendingInvite('typo@example.test', adminId, 'm-1')
-    const { e, send } = stubs({ 'm-1': bounced('user unknown') })
+    const { e, cf } = stubs({ 'm-1': bounced('user unknown') })
 
     await runHourly(e)
     await runHourly(e, NOW + 3600_000)
     await runHourly(e, NOW + 2 * 3600_000)
 
-    expect(send).toHaveBeenCalledOnce()
+    expect(cf.sent).toHaveLength(1)
   })
 
   it('notifies only the new bounce when a later run finds another', async () => {
@@ -285,13 +286,13 @@ describe('hourly run: emailing the inviter about bounced invites', () => {
       { 'm-1': bounced('r1'), 'm-2': { status: 'deferred', isSpam: false } },
       { 'm-2': bounced('r2') },
     ]
-    const { e, send } = stubs(async () => runs.shift())
+    const { e, cf } = stubs(async () => runs.shift())
 
     await runHourly(e)
     await runHourly(e, NOW + 3600_000)
 
-    expect(send).toHaveBeenCalledTimes(2)
-    const [first, second] = send.mock.calls.map(([m]) => m)
+    expect(cf.sent).toHaveLength(2)
+    const [first, second] = cf.sent
     expect(first.html).toContain('first@example.test')
     expect(first.html).not.toContain('second@example.test')
     expect(second.html).toContain('second@example.test')
@@ -304,29 +305,32 @@ describe('hourly run: emailing the inviter about bounced invites', () => {
     const b = await seedUser({ role: 'admin', email: 'b@example.test' })
     await seedPendingInvite('x@example.test', a, 'm-1')
     await seedPendingInvite('y@example.test', b, 'm-2')
-    const { e, send } = stubs({ 'm-1': bounced('rx'), 'm-2': bounced('ry') })
-    send.mockImplementationOnce(async () => { throw Object.assign(new Error('provider down'), { code: 'E_INTERNAL' }) })
+    // The first send fails on the binding, and the second goes through.
+    const { e, cf } = stubs({ 'm-1': bounced('rx'), 'm-2': bounced('ry') }, ['down', 'ok'])
+    // Operator mail falls back (#709), so both providers are down for that one: the binding failed above, and Resend answers 500.
+    const resend = stubResend('down', { status: 500, body: 'down' })
 
     await runHourly(e)
 
     const recorded = await getDb(env.DB).select().from(authEvents).where(eq(authEvents.event, 'email_bounced')).all()
     expect(recorded.map(r => r.email).sort()).toEqual(['x@example.test', 'y@example.test'])
-    // The other recipient's email still went out.
-    expect(send).toHaveBeenCalledTimes(2)
+    // The other recipient's email still went out, and the failed one was tried on the second provider.
+    expect(cf.sent).toHaveLength(2)
+    expect(resend.calls).toHaveLength(1)
     expect(error.mock.calls.map(c => c.join(' ')).join('\n')).toContain('[invite-bounces]')
 
     await runHourly(e, NOW + 3600_000)
-    expect(send).toHaveBeenCalledTimes(2)
+    expect(cf.sent).toHaveLength(2)
   })
 
   it('links to Members with the address searched when exactly one address bounced', async () => {
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.test' })
     await seedPendingInvite('first.last+tag@example.test', adminId, 'm-1')
-    const { e, send } = stubs({ 'm-1': bounced('user unknown') })
+    const { e, cf } = stubs({ 'm-1': bounced('user unknown') })
 
     await runHourly(e)
 
-    const url = new URL(membersLink(mailFor(send, 'admin@example.test').html))
+    const url = new URL(membersLink(mailFor(cf, 'admin@example.test').html))
     expect(url.origin + url.pathname).toBe(MEMBERS_URL)
     expect(url.searchParams.get('search')).toBe('first.last+tag@example.test')
   })
@@ -335,11 +339,11 @@ describe('hourly run: emailing the inviter about bounced invites', () => {
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.test' })
     await seedPendingInvite('one@example.test', adminId, 'm-1')
     await seedPendingInvite('two@example.test', adminId, 'm-2')
-    const { e, send } = stubs({ 'm-1': bounced('r1'), 'm-2': bounced('r2') })
+    const { e, cf } = stubs({ 'm-1': bounced('r1'), 'm-2': bounced('r2') })
 
     await runHourly(e)
 
-    expect(membersLink(mailFor(send, 'admin@example.test').html)).toBe(MEMBERS_URL)
+    expect(membersLink(mailFor(cf, 'admin@example.test').html)).toBe(MEMBERS_URL)
   })
 
   it('decides the search parameter per recipient, by the addresses in their own email', async () => {
@@ -347,23 +351,23 @@ describe('hourly run: emailing the inviter about bounced invites', () => {
     const formerAdmin = await seedUser({ role: 'member', email: 'former-admin@example.test' })
     await seedPendingInvite('mine@example.test', adminId, 'm-1')
     await seedPendingInvite('orphan@example.test', formerAdmin, 'm-2')
-    const { e, send } = stubs({ 'm-1': bounced('r1'), 'm-2': bounced('r2') })
+    const { e, cf } = stubs({ 'm-1': bounced('r1'), 'm-2': bounced('r2') })
 
     await runHourly(e)
 
-    expect(new URL(membersLink(mailFor(send, 'admin@example.test').html)).searchParams.get('search')).toBe('mine@example.test')
-    expect(new URL(membersLink(mailFor(send, 'owner@example.test').html)).searchParams.get('search')).toBe('orphan@example.test')
+    expect(new URL(membersLink(mailFor(cf, 'admin@example.test').html)).searchParams.get('search')).toBe('mine@example.test')
+    expect(new URL(membersLink(mailFor(cf, 'owner@example.test').html)).searchParams.get('search')).toBe('orphan@example.test')
   })
 
   it('HTML-escapes the address and the reason', async () => {
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.test' })
     const evil = '<b>x</b>&"y"@example.test'
     await seedPendingInvite(evil, adminId, 'm-1')
-    const { e, send } = stubs({ 'm-1': bounced('<script>alert(1)</script> & 550 "rejected"') })
+    const { e, cf } = stubs({ 'm-1': bounced('<script>alert(1)</script> & 550 "rejected"') })
 
     await runHourly(e)
 
-    const { html } = mailFor(send, 'admin@example.test')
+    const { html } = mailFor(cf, 'admin@example.test')
     expect(html).not.toContain('<script>')
     expect(html).not.toContain('<b>x</b>')
     expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt; &amp; 550')
@@ -375,14 +379,14 @@ describe('hourly run: emailing the inviter about bounced invites', () => {
   it('shows the instance name and links to the instance', async () => {
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.test' })
     await seedPendingInvite('typo@example.test', adminId, 'm-1')
-    const { e, send } = stubs({ 'm-1': bounced('user unknown') })
+    const { e, cf } = stubs({ 'm-1': bounced('user unknown') })
 
     await getDb(env.DB).update(associationConfig).set({ value: JSON.stringify('Sample Instance') })
       .where(eq(associationConfig.key, 'association_name'))
 
     await runHourly(e)
 
-    const { html } = mailFor(send, 'admin@example.test')
+    const { html } = mailFor(cf, 'admin@example.test')
     expect(html).toContain('Sample Instance')
     expect(html).toContain('/email-icons/wordmark.png')
   })

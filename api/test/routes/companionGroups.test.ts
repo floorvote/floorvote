@@ -20,7 +20,7 @@ vi.mock('../../src/lib/centralFetch', () => ({ centralFetch: vi.fn() }))
 type Detail = {
   comments: Array<{ id: string; billId: string; billNumber: string; content: string }>
   commentsTotal: number
-  groupBills: Array<{ billId: string; billNumber: string; state: string; sessionSlug: string }>
+  groupBills: Array<{ billId: string; billNumber: string; state: string; sessionSlug: string; status: string }>
   companionBillIds?: unknown
   groupingEvents: Array<{ type: string; actorName: string | null; with: Array<{ billId: string; billNumber: string }>; createdAt: string; commentBills?: Array<{ billId: string; billNumber: string }> }>
   myVote: string | null
@@ -145,12 +145,12 @@ describe('bill routes across a companion group', () => {
     it('carry each bill\'s state and session slug with its id and number, the page\'s bill first, for a group of two', async () => {
       await group()
       expect((await detail('ann', 'a190')).groupBills).toEqual([
-        { billId: 'a190', billNumber: 'A190', state: 'NJ', sessionSlug: '2026' },
-        { billId: 'b1713', billNumber: 'S1713', state: 'NJ', sessionSlug: '2025-2026' },
+        { billId: 'a190', billNumber: 'A190', state: 'NJ', sessionSlug: '2026', status: '' },
+        { billId: 'b1713', billNumber: 'S1713', state: 'NJ', sessionSlug: '2025-2026', status: '' },
       ])
       expect((await detail('ann', 'b1713')).groupBills).toEqual([
-        { billId: 'b1713', billNumber: 'S1713', state: 'NJ', sessionSlug: '2025-2026' },
-        { billId: 'a190', billNumber: 'A190', state: 'NJ', sessionSlug: '2026' },
+        { billId: 'b1713', billNumber: 'S1713', state: 'NJ', sessionSlug: '2025-2026', status: '' },
+        { billId: 'a190', billNumber: 'A190', state: 'NJ', sessionSlug: '2026', status: '' },
       ])
     })
 
@@ -162,6 +162,22 @@ describe('bill routes across a companion group', () => {
       expect(d.groupBills.map(b => b.sessionSlug)).toEqual(['2025-2026', '2026', '2024'])
     })
 
+    it("carry each bill's own status, not the page's bill's, so the header can label each companion", async () => {
+      await seedBill({ id: 'c2000', billNumber: 'H2000', state: 'NJ', sessionSlug: '2024', externalId: 'legiscan:2000', status: '4' })
+      await db().update(bills).set({ status: '2' }).where(eq(bills.id, 'a190'))
+      await db().update(bills).set({ status: '3' }).where(eq(bills.id, 'b1713'))
+      await syncIdenticalCompanions(db(), 'legiscan:1713', [{ sastBillId: 190, kind: 'identical' }, { sastBillId: 2000, kind: 'identical' }])
+      expect((await detail('ann', 'a190')).groupBills.map(b => [b.billNumber, b.status])).toEqual([['A190', '2'], ['H2000', '4'], ['S1713', '3']])
+      expect((await detail('ann', 'b1713')).groupBills.map(b => [b.billNumber, b.status])).toEqual([['S1713', '3'], ['A190', '2'], ['H2000', '4']])
+    })
+
+    it("carry the status of a bill grouped by hand in the group response too", async () => {
+      await db().update(bills).set({ status: '3' }).where(eq(bills.id, 'b1713'))
+      const res = await as('ada', '/bills/a190/group', { method: 'POST', body: JSON.stringify({ withBillId: 'b1713' }) })
+      expect(res.status).toBe(200)
+      expect(((await res.json()) as { groupBills: Array<{ billNumber: string; status: string }> }).groupBills.map(b => [b.billNumber, b.status])).toEqual([['A190', ''], ['S1713', '3']])
+    })
+
     it('carry a bill from another state with that state, since a hand-made group can cross states', async () => {
       await seedBill({ id: 'g5000', billNumber: 'TX5000', state: 'TX', session: '2027', sessionSlug: '2027', externalId: 'legiscan:5000' })
       expect((await as('ada', '/bills/a190/group', { method: 'POST', body: JSON.stringify({ withBillId: 'g5000' }) })).status).toBe(200)
@@ -169,7 +185,7 @@ describe('bill routes across a companion group', () => {
     })
 
     it('are the page\'s bill alone for a bill in no group', async () => {
-      expect((await detail('ann', 'a190')).groupBills).toEqual([{ billId: 'a190', billNumber: 'A190', state: 'NJ', sessionSlug: '2026' }])
+      expect((await detail('ann', 'a190')).groupBills).toEqual([{ billId: 'a190', billNumber: 'A190', state: 'NJ', sessionSlug: '2026', status: '' }])
     })
 
     it('are the page\'s bill alone again once the group splits', async () => {

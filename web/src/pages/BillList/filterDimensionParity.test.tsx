@@ -21,20 +21,25 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, fireEvent, within, cleanup, waitFor } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
-import { FILTER_DIMENSIONS, filterDimensionLabel, type FilterDimensionContext } from '../../lib/filterDimensions'
+import { FILTER_DIMENSIONS, STAGE_FILTER_LABEL, filterDimensionLabel, type FilterDimensionContext } from '../../lib/filterDimensions'
 import { filterableCustomFields, customFieldFilterKind } from '../../lib/customFieldFilters'
 import { FilterSheet } from '../../components/FilterSheet'
 import { ConfigContext, type AppConfig } from '../../context/ConfigContext'
 import type { SubjectGroup } from './FilterPanel'
 import type { CustomFieldDef } from './types'
+import { serializeBillFilter, parseBillFilter } from '../../../../shared/billFilter'
 
 // --- Desktop harness (BillList), adapted from index.test.tsx ---------------
 // Role and known states are mutable so each test can drive the two
 // conditional dimensions without duplicating the mock setup.
 const authState = vi.hoisted(() => ({ role: 'member' as 'member' | 'admin' }))
-const facetState = vi.hoisted(() => ({ states: ['RI'] as string[] }))
+const facetState = vi.hoisted(() => ({
+  states: ['RI'] as string[],
+  // The facets' statusGroups (#677). Absent is an older API, which leaves the page on its two separate dropdowns.
+  statusGroups: undefined as Record<string, { stage: string | null; rank: number }> | undefined,
+}))
 // draftCount is the filtered badge number; hasDrafts is the unfiltered
 // tenant-wide existence signal that now drives visibility (see
 // lib/filterDimensions.ts) — kept independent so a test can put them at odds
@@ -79,8 +84,8 @@ vi.mock('../../lib/api', () => {
     if (path.startsWith('/bills/facets')) {
       const stateCounts = Object.fromEntries(facetState.states.map(s => [s, 1]))
       return {
-        status: { '2': 1 }, priority: {}, session: {}, year: { '2026': 1 }, state: stateCounts, position: {},
-        tags: { Education: 1 }, subjects: { 'RI:Roads': 1 }, customFields: {}, myBillsCount: 0, newMatchesCount: 3,
+        status: { '2': 1 }, stage: { enacted: 1 }, ...(facetState.statusGroups ? { statusGroups: facetState.statusGroups } : {}), priority: {}, sessionName: {}, year: { '2026': 1 }, state: stateCounts, position: {},
+        tag: { Education: 1 }, subject: { 'RI:Roads': 1 }, field: {}, myBillsCount: 0, newMatchesCount: 3,
         draftCount: draftState.draftCount,
         hasDrafts: draftState.hasDrafts,
       } as T
@@ -127,6 +132,7 @@ class FakeIntersectionObserver {
 beforeEach(() => {
   authState.role = 'member'
   facetState.states = ['RI']
+  facetState.statusGroups = undefined
   draftState.draftCount = 2
   draftState.hasDrafts = true
   cfDefsState.defs = []
@@ -167,17 +173,17 @@ function renderMobile(
     <FilterSheet
       isOpen
       onClose={() => {}}
-      statuses={[]} stages={[]} priorities={[]} positions={[]} tags={[]} subjects={[]} sessions={[]} states={[]}
+      status={[]} stage={[]} priority={[]} position={[]} tag={[]} subject={[]} year={[]} state={[]}
       minRelevance={0} myBills={false}
       isAdmin={ctx.isAdmin}
       newMatches={ctx.newMatches ?? false}
       newMatchesCount={ctx.newMatchesCount ?? 3}
-      unvotedOnly={false}
+      unvoted={false}
       drafts={ctx.drafts ?? false}
       draftCount={ctx.draftCount ?? 3}
       hasDrafts={ctx.hasDrafts ?? true}
-      matchAny={false}
-      onMatchAnyChange={() => {}}
+      match="all"
+      onMatchChange={() => {}}
       uniqueStates={ctx.uniqueStates}
       isMultiState={ctx.isMultiState}
       statusOptions={[{ value: 'active', label: 'Active' }]}
@@ -186,16 +192,16 @@ function renderMobile(
       positionOptions={[{ value: 'support', label: 'Support' }]}
       tagOptions={['Education']}
       subjectGroups={subjectGroups}
-      sessionOptions={[{ value: '2026', label: '2026' }]}
-      totalSessionCount={1}
+      yearOptions={[{ value: '2026', label: '2026' }]}
+      totalYearCount={1}
       stateOptions={ctx.uniqueStates.map(s => ({ value: s, label: s }))}
       customFieldDefs={ctx.customFieldDefs ?? []}
-      cfFilters={{}}
-      onCfFilterChange={() => {}}
+      field={{}}
+      onFieldChange={() => {}}
       onStatusChange={() => {}} onStageChange={() => {}} onPriorityChange={() => {}} onPositionChange={() => {}}
-      onTagChange={() => {}} onSubjectChange={() => {}} onSessionChange={() => {}} onStateChange={() => {}}
+      onTagChange={() => {}} onSubjectChange={() => {}} onYearChange={() => {}} onStateChange={() => {}}
       onMinRelevanceChange={() => {}} onMyBillsChange={() => {}} onNewMatchesChange={() => {}}
-      onUnvotedOnlyChange={() => {}}
+      onUnvotedChange={() => {}}
       onDraftsChange={() => {}}
       onClearAll={() => {}}
     />,
@@ -563,7 +569,8 @@ describe('dimension scope classification', () => {
 
   it('treats every value dimension as a bill fact', () => {
     const bill = FILTER_DIMENSIONS.filter(d => d.scope === 'bill').map(d => d.key).sort()
-    expect(bill).toEqual(['position', 'priority', 'session', 'stage', 'state', 'status', 'subjects', 'tags'])
+    // Stage is a grouping inside Status (#677), not a dimension of its own.
+    expect(bill).toEqual(['position', 'priority', 'state', 'status', 'subject', 'tag', 'year'])
   })
 
   it('registers unvoted so the bills page can set it, not only clear it', () => {
@@ -588,10 +595,10 @@ describe('dimension scope classification', () => {
   })
 })
 
-// The Stage filter is hidden when every covered state is on LegiScan, whose
-// status field almost never carries the in-committee codes. Config tells which
-// providers own the covered states (`attribution.providers`).
-describe('Stage dimension — hidden when every covered state is on LegiScan', () => {
+// Status is grouped under stage headings where Stage was offered (#677): some covered state's provider is not LegiScan,
+// or a stage filter is already applied. Config tells which providers own the covered states (`attribution.providers`).
+// Everywhere else the Status list stays flat, as before, and there is no Stage control.
+describe('Status grouped by Stage — where Stage was offered', () => {
   const credit = (id: string) => ({ id, name: id, url: 'https://example.com', note: 'n' })
   const withConfig = (providers: string[] | undefined, ui: ReactNode) => (
     <ConfigContext value={{
@@ -601,56 +608,191 @@ describe('Stage dimension — hidden when every covered state is on LegiScan', (
       {ui}
     </ConfigContext>
   )
-  const stageName = new RegExp(`^${filterDimensionLabel('stage')}$`)
-  const renderConfiguredDesktop = async (providers: string[] | undefined, initialUrl?: string) => {
+  const GROUPS = { '2': { stage: 'enacted', rank: 701 } }
+  const stageName = new RegExp(`^${STAGE_FILTER_LABEL}$`)
+  // The control, not the column header of the same name: the desktop trigger reads "Status (2)" with picks, the phone row "Status2".
+  const statusName = new RegExp(`^${filterDimensionLabel('status')}( \\(\\d+\\)| ?\\d*)$`)
+  const renderConfiguredDesktop = async (providers: string[] | undefined, initialUrl?: string, groups: typeof GROUPS | null = GROUPS) => {
+    facetState.statusGroups = groups ?? undefined
     render(withConfig(providers, <BillList />), { wrapper: (props) => <Wrapper {...props} initialUrl={initialUrl} /> })
     await screen.findByText('Default bill')
+    // The facets reply decides between the one grouped control and the two an older API leaves, so wait for it.
+    await new Promise(resolve => setTimeout(resolve, 0))
   }
-  const renderConfiguredMobile = (providers: string[] | undefined, stages: string[] = []) => render(withConfig(providers,
+  const sheetGroups = [{ stage: 'enacted' as const, label: 'Enacted', count: 1, options: [{ value: 'active', label: 'Active' }] }]
+  const renderConfiguredMobile = (providers: string[] | undefined, stages: string[] = [], groups: typeof sheetGroups | null = sheetGroups) => render(withConfig(providers,
     <FilterSheet
       isOpen onClose={() => {}}
-      statuses={[]} stages={stages} priorities={[]} positions={[]} tags={[]} subjects={[]} sessions={[]} states={[]}
-      minRelevance={0} myBills={false} isAdmin={false} newMatches={false} newMatchesCount={0} unvotedOnly={false}
-      drafts={false} draftCount={0} hasDrafts={false} matchAny={false} onMatchAnyChange={() => {}}
+      status={[]} stage={stages} priority={[]} position={[]} tag={[]} subject={[]} year={[]} state={[]}
+      minRelevance={0} myBills={false} isAdmin={false} newMatches={false} newMatchesCount={0} unvoted={false}
+      drafts={false} draftCount={0} hasDrafts={false} match="all" onMatchChange={() => {}}
       uniqueStates={['RI']} isMultiState={false}
       statusOptions={[{ value: 'active', label: 'Active' }]}
       stageOptions={[{ value: 'enacted', label: 'Enacted' }]}
-      priorityOptions={[]} positionOptions={[]} tagOptions={[]} subjectGroups={[]} sessionOptions={[]} totalSessionCount={0}
-      stateOptions={[{ value: 'RI', label: 'RI' }]} customFieldDefs={[]} cfFilters={{}} onCfFilterChange={() => {}}
+      statusGroups={groups}
+      priorityOptions={[]} positionOptions={[]} tagOptions={[]} subjectGroups={[]} yearOptions={[]} totalYearCount={0}
+      stateOptions={[{ value: 'RI', label: 'RI' }]} customFieldDefs={[]} field={{}} onFieldChange={() => {}}
       onStatusChange={() => {}} onStageChange={() => {}} onPriorityChange={() => {}} onPositionChange={() => {}}
-      onTagChange={() => {}} onSubjectChange={() => {}} onSessionChange={() => {}} onStateChange={() => {}}
+      onTagChange={() => {}} onSubjectChange={() => {}} onYearChange={() => {}} onStateChange={() => {}}
       onMinRelevanceChange={() => {}} onMyBillsChange={() => {}} onNewMatchesChange={() => {}}
-      onUnvotedOnlyChange={() => {}} onDraftsChange={() => {}} onClearAll={() => {}}
+      onUnvotedChange={() => {}} onDraftsChange={() => {}} onClearAll={() => {}}
     />))
 
-  it('hides Stage on both surfaces when LegiScan owns every state', async () => {
+  it('has no Stage control on either surface when LegiScan owns every state, and the Status list stays flat', async () => {
     await renderConfiguredDesktop(['legiscan'])
     expect(screen.queryByRole('button', { name: stageName })).toBeNull()
-    expect(screen.getByRole('button', { name: filterDimensionLabel('status') })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: statusName }))
+    expect(screen.getByRole('checkbox', { name: /^2|Engrossed/ })).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: /^Enacted/ })).toBeNull()
     cleanup()
     renderConfiguredMobile(['legiscan'])
     expect(screen.queryByRole('button', { name: stageName })).toBeNull()
-    expect(screen.getByRole('button', { name: filterDimensionLabel('status') })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: statusName })).toBeInTheDocument()
   })
 
-  it('shows Stage until config names the providers, as before central has answered', () => {
-    renderConfiguredMobile(undefined)
-    expect(screen.getByRole('button', { name: stageName })).toBeInTheDocument()
-  })
-
-  it('shows Stage on both surfaces when any covered state is on another provider', async () => {
+  it('shows one grouped Status control, and no separate Stage control, when any covered state is on another provider', async () => {
     await renderConfiguredDesktop(['legiscan', 'mga'])
-    expect(screen.getByRole('button', { name: stageName })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: stageName })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: statusName }))
+    expect(screen.getByRole('checkbox', { name: /^Enacted/ })).toHaveAttribute('aria-checked', 'false')
     cleanup()
     renderConfiguredMobile(['legiscan', 'mga'])
-    expect(screen.getByRole('button', { name: stageName })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: stageName })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: statusName }))
+    expect(screen.getByRole('checkbox', { name: /^Enacted/ })).toHaveAttribute('aria-checked', 'false')
   })
 
-  it('keeps a stage filter from a saved view or URL applied and visible so it can be turned off', async () => {
+  it('groups Status until config names the providers, as Stage was shown before central had answered', async () => {
+    await renderConfiguredDesktop(undefined)
+    expect(screen.queryByRole('button', { name: stageName })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: statusName }))
+    expect(screen.getByRole('checkbox', { name: /^Enacted/ })).toBeInTheDocument()
+  })
+
+  it('shows the grouped control and a Stage chip on LegiScan for a link that carries a stage, and the chip can be removed', async () => {
     await renderConfiguredDesktop(['legiscan'], '/bills?stage=enacted')
-    expect(screen.getByRole('button', { name: new RegExp(filterDimensionLabel('stage')) })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: stageName })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Status (1)' })).toBeInTheDocument()
+    const chip = screen.getByText('Stage: Enacted')
+    fireEvent.click(within(chip.closest('span')!).getByRole('button', { name: '×' }))
+    await waitFor(() => expect(screen.queryByText('Stage: Enacted')).toBeNull())
+    // With the stage gone, LegiScan's Status list is flat again.
+    expect(screen.getByRole('button', { name: statusName })).toBeInTheDocument()
     cleanup()
     renderConfiguredMobile(['legiscan'], ['enacted'])
-    expect(screen.getByRole('button', { name: new RegExp(`^${filterDimensionLabel('stage')}`) })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: statusName }))
+    expect(screen.getByRole('checkbox', { name: /^Enacted/ })).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('says "Filter by current legislative status" on hover of the grouped Status control, and nothing longer', async () => {
+    await renderConfiguredDesktop(['legiscan', 'mga'])
+    fireEvent.pointerEnter(screen.getByRole('button', { name: statusName }), { pointerType: 'mouse' })
+    expect(await screen.findByText('Filter by current legislative status')).toBeInTheDocument()
+    expect(screen.queryByText(/grouped by common stage/)).toBeNull()
+  })
+
+  it('says the same on hover of the flat Status control', async () => {
+    await renderConfiguredDesktop(['legiscan'])
+    fireEvent.pointerEnter(screen.getByRole('button', { name: statusName }), { pointerType: 'mouse' })
+    expect(await screen.findByText('Filter by current legislative status')).toBeInTheDocument()
+  })
+
+  it('stays on the two separate dropdowns, with no error, when the API sends no statusGroups', async () => {
+    await renderConfiguredDesktop(['legiscan', 'mga'], undefined, null)
+    expect(screen.getByRole('button', { name: stageName })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: statusName })).toBeInTheDocument()
+    cleanup()
+    renderConfiguredMobile(['legiscan', 'mga'], [], null)
+    expect(screen.getByRole('button', { name: stageName })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: statusName })).toBeInTheDocument()
+  })
+
+  it('draws the Stage chip of an older API\'s two dropdowns in the one Status chip group', async () => {
+    await renderConfiguredDesktop(['legiscan', 'mga'], '/bills?stage=enacted&status=2', null)
+    expect(screen.getByRole('button', { name: /^Stage \(1\)/ })).toBeInTheDocument()
+    expect(screen.getByText('Stage: Enacted')).toBeInTheDocument()
+  })
+})
+
+// Serialization parity. The desktop toolbar and the phone sheet are two controls over the one bill filter, so the
+// same picks on each must leave the same value in the URL, and that value is the shared serialize of the filter:
+// the same string the list, the facets, and a bulk action send. Registry-driven labels alone would let one
+// surface write a filter under another key, or in another order, and nothing would notice.
+describe('filter UI parity — both surfaces serialize the same bill filter', () => {
+  function Probe() {
+    const loc = useLocation()
+    return <div data-testid="url-search">{loc.search}</div>
+  }
+  const urlSearch = () => screen.getByTestId('url-search').textContent ?? ''
+
+  async function renderWithProbe(initialUrl = '/bills') {
+    render(
+      <Wrapper initialUrl={initialUrl}><BillList /><Probe /></Wrapper>,
+    )
+    await screen.findByText('Default bill')
+  }
+
+  // One pick on a surface: open the dimension, then choose the option.
+  // The two surfaces word a few options differently ("High Priority" and "High"), which is label parity's concern, not this one's.
+  type Pick = { dimension: Parameters<typeof filterDimensionLabel>[0]; desktop: string; phone: string }
+  const desktopPick = ({ dimension, desktop }: Pick) => {
+    // The toolbar comes before the list's column headers, which carry some of the same words.
+    fireEvent.click(screen.getAllByRole('button', { name: new RegExp(`^${filterDimensionLabel(dimension)}`) })[0])
+    fireEvent.click(screen.getByText(desktop))
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+  }
+  const phonePick = ({ dimension, phone }: Pick) => {
+    fireEvent.click(document.querySelector('.mobile-filter-btn') as HTMLElement)
+    // The sheet is the last thing BillList renders, after the toolbar and the list's column headers.
+    const rows = screen.getAllByRole('button', { name: new RegExp(`^${filterDimensionLabel(dimension)}`) })
+    fireEvent.click(rows[rows.length - 1])
+    const options = screen.getAllByText(phone)
+    fireEvent.click(options[options.length - 1])
+    fireEvent.click(screen.getByRole('button', { name: /back to filters/i }))
+    fireEvent.click(screen.getByRole('button', { name: /close filters/i }))
+  }
+
+  // Picks chosen so their natural order (priority first, then year) is not the shared serialize's (year first).
+  const PICKS: Pick[] = [
+    { dimension: 'priority', desktop: 'High Priority', phone: 'High' },
+    { dimension: 'year', desktop: '2026', phone: '2026' },
+  ]
+
+  it('writes the same URL from the same picks on desktop and on the phone sheet', async () => {
+    await renderWithProbe()
+    PICKS.forEach(desktopPick)
+    const desktop = urlSearch()
+    cleanup()
+
+    await renderWithProbe()
+    PICKS.forEach(phonePick)
+    expect(urlSearch()).toBe(desktop)
+  })
+
+  it('writes the shared serialize of the value, in its one key order, from either surface', async () => {
+    const expected = `?${serializeBillFilter(parseBillFilter('year=2026&priority=high'))}`
+    expect(expected).toBe('?year=2026&priority=high')
+
+    await renderWithProbe()
+    PICKS.forEach(desktopPick)
+    expect(urlSearch()).toBe(expected)
+    cleanup()
+
+    await renderWithProbe()
+    PICKS.forEach(phonePick)
+    expect(urlSearch()).toBe(expected)
+  })
+
+  it('reads a URL in any key order as the same value on both, and writes it back canonically', async () => {
+    await renderWithProbe('/bills?priority=high&year=2026')
+    // Nothing is touched, so the URL stays as given until a control writes it. A pick on either surface rewrites it.
+    desktopPick({ dimension: 'priority', desktop: 'Medium Priority', phone: 'Medium' })
+    const desktop = urlSearch()
+    expect(desktop).toBe('?year=2026&priority=high&priority=medium')
+    cleanup()
+
+    await renderWithProbe('/bills?priority=high&year=2026')
+    phonePick({ dimension: 'priority', desktop: 'Medium Priority', phone: 'Medium' })
+    expect(urlSearch()).toBe(desktop)
   })
 })

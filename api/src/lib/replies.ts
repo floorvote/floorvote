@@ -27,7 +27,8 @@ import { getDb } from '../db/client'
 import { users, bills, sessions, comments, billMutes } from '../db/schema'
 import { writeNotifications } from './notifications'
 import { mentionEmailsEnabled, tiptapToEmailHtml } from './mentions'
-import { sendBatch, resolveAssocName, type EmailMessage } from './email'
+import { senderFor, resolveAssocName } from './email'
+import type { NotificationMessage } from '../../../shared/emailSender'
 import { activeUser } from './accountDeletion'
 import { muteLinkTokens } from './billMutes'
 import { displayName } from './displayName'
@@ -259,7 +260,7 @@ async function sendReplyEmails(
 
   // Each recipient's email differs only in its mute links, which are signed for them.
   const muteLinkToken = await muteLinkTokens(db)
-  const messages: EmailMessage[] = await Promise.all(recipients.map(async (p): Promise<EmailMessage> => {
+  const messages: NotificationMessage[] = await Promise.all(recipients.map(async (p): Promise<NotificationMessage> => {
     const token = await muteLinkToken(p.id, billId)
     const html = renderReplyEmail({
       appUrl: env.APP_URL,
@@ -269,8 +270,9 @@ async function sendReplyEmails(
       instanceName,
       muteUrl: muteBillPageUrl(env.APP_URL, token),
     })
-    return { to: [p.email], subject, html, headers: { ...threadHeaders, ...muteUnsubscribeHeaders(env.APP_URL, token) } }
+    return { purpose: 'notification', to: [p.email], subject, html, headers: { ...threadHeaders, ...muteUnsubscribeHeaders(env.APP_URL, token) } }
   }))
   console.log(`[replies] sending email to ${messages.length} recipient(s) for bill ${bill.billNumber}`)
-  await sendBatch(env, messages, `replies ${bill.billNumber}`, db)
+  const { sent, failed } = await senderFor(env, db).sendBatch(messages)
+  console.log(`[replies ${bill.billNumber}] sent ${sent}, failed ${failed}`)
 }

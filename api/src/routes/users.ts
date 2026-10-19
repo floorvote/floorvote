@@ -14,7 +14,6 @@ import { authEventActor, authEventActorName, authReqContext } from '../lib/authE
 import { getCookie } from 'hono/cookie'
 import { hashToken } from '../lib/crypto'
 import { checkRateLimit } from '../../../shared/rateLimit'
-import { verifyTurnstile } from '../../../shared/turnstile'
 import { isSuperadminRequest } from '../lib/superadminRequest'
 import { requestEmailChange, EMAIL_CHANGE_ERRORS } from '../lib/emailChange'
 import { isSuperadminUser, SUPERADMIN_PROFILE_MANAGED_ERROR } from '../lib/superadminProfile'
@@ -173,21 +172,18 @@ usersRouter.post('/me/deactivate', async (c) => {
   return c.json({ ok: true })
 })
 
-// POST /users/me/email-change  { email, turnstileToken }
+// POST /users/me/email-change  { email }
 // Ask to change your own sign-in email. Nothing changes until the change is
 // confirmed from the new address (lib/emailChange.ts). No re-authentication,
-// by decision: the session is the proof. Limited per IP and gated by
-// Turnstile the way the sign-in form is, plus three requests per member a day.
+// by decision: the session is the proof. No Turnstile either: the member is
+// signed in, so there is no anonymous sender to screen. Limited per IP, plus
+// three requests per member a day.
 usersRouter.post('/me/email-change', async (c) => {
   const ip = c.req.header('CF-Connecting-IP') || 'unknown'
   if (!(await checkRateLimit(c.env.LOGIN_RATE_LIMITER, `email-change:${ip}`))) {
     return c.json({ error: 'Too many requests. Please wait a moment and try again.' }, 429)
   }
-  const body = await c.req.json<{ email?: unknown; turnstileToken?: unknown }>().catch(() => ({} as { email?: unknown; turnstileToken?: unknown }))
-  const turnstileToken = typeof body.turnstileToken === 'string' ? body.turnstileToken : undefined
-  if (!(await verifyTurnstile(c.env.TURNSTILE_SECRET_KEY, turnstileToken, ip))) {
-    return c.json({ error: 'Verification required.' }, 403)
-  }
+  const body = await c.req.json<{ email?: unknown }>().catch(() => ({} as { email?: unknown }))
 
   const db = getDb(c.env.DB)
   const currentUser = c.get('user')

@@ -1,0 +1,59 @@
+{
+  "committeeMeeting": {
+    "chamber": "House",
+    "committees": [
+      {
+        "name": "House Education and Workforce Subcommittee on Higher Education and Workforce Development",
+        "systemCode": "hsed13",
+        "url": "https://api.congress.gov/v3/committee/house/hsed13?format=json"
+      }
+    ],
+    "congress": 119,
+    "date": "2026-09-16T14:15:00Z",
+    "eventId": "119558",
+    "location": {
+      "building": "Rayburn House Office Building",
+      "room": "2175"
+    },
+    "meetingDocuments": [
+      {
+        "description": "Hearing Notice",
+        "documentType": "Support Document",
+        "format": "PDF",
+        "name": "Hearing Notice",
+        "url": "https://www.congress.gov/119/meeting/house/119558/documents/HHRG-119-ED13-20260916-SD001.pdf"
+      }
+    ],
+    "meetingStatus": "Scheduled",
+    "title": "“Who Gets the Scholarship? How the Global Shift in College Sports Affects Americans”",
+    "type": "Hearing",
+    "updateDate": "2026-10-08T04:03:49Z",
+    "videos": [
+      {
+        "name": "Who Gets the Scholarship? How the Global Shift in College Sports Affects Americans",
+        "url": "https://www.congress.gov/event/119th-Congress/house-event/119558"
+      }
+    ],
+    "witnessDocuments": [
+      {
+        "documentType": "Witness Biography",
+        "format": "PDF",
+        "url": "https://www.congress.gov/119/meeting/house/119558/witnesses/HHRG-119-ED13-Bio-McEnroeP-20260916.pdf"
+      }
+    ],
+    "witnesses": [
+      {
+        "name": "Mr. Patrick McEnroe",
+        "organization": "ESPN",
+        "position": "Broadcaster"
+      }
+    ]
+  },
+  "request": {
+    "chamber": "house",
+    "congress": "119",
+    "contentType": "application/json",
+    "eventId": "119558",
+    "format": "json"
+  }
+}

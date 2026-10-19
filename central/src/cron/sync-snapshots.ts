@@ -1,12 +1,12 @@
 import { eq, and, or, inArray, notInArray, lt, gt, isNull, isNotNull, asc, sql } from 'drizzle-orm'
-import { sessions, bills, billTenants, tenants, people, providerRecords } from '../db/schema'
+import { sessions, bills, billTenants, tenants, people, providerRecords, sessionSyncLog } from '../db/schema'
 import { decideMode, getCurrentEtHour } from '../lib/sync-schedule'
 import { nowDb } from '../lib/dbTime'
 import { terminalStatuses } from '../lib/vocabulary'
 import { providerContext } from '../lib/providerContext'
 import { ingestQueueFor, providerConfigured } from '../lib/providerRouting'
 import { loadStateOwners, ownerOfState, statesOwnedBy } from '../lib/stateProviders'
-import { applyMasterList } from './sync'
+import { applyMasterList, logSyncPass } from './sync'
 import { assignSessionSlugs } from '../lib/sessionSlugs'
 import { carriedBillIds, carriedPeopleIds, withCarriedBillIds, withCarriedPeople } from '../lib/carriedIds'
 import type { Provider, ProviderContext, ProviderPerson, ProviderRecord, StoredSession, SyncSession } from '../providers'
@@ -30,6 +30,9 @@ const BATCH = 80
 const FLUSH_BATCH = 200
 /** Stored records read per query when a feed answers 304. */
 const STORED_PAGE = 500
+
+/** The longest error message a failed pass's log row keeps. */
+const ERROR_LOG_MAX = 500
 
 export interface SnapshotPassReport { sessionId: number; sessionName: string; records: number; queued: number; refreshed: number }
 
@@ -97,11 +100,47 @@ export async function runSnapshotSync(
     } catch (err) {
       console.error(`[sync-${provider.id}] ${session.sessionName} failed:`, err)
       errors.push(err instanceof Error ? err : new Error(String(err)))
+      await logOutcome(db, session, { status: 'failed', error: errorMessage(err) })
     }
   }
   if (errors.length === 1) throw errors[0]
   if (errors.length > 1) throw new AggregateError(errors, `[sync-${provider.id}] ${errors.length} sessions failed: ${errors.map(e => e.message).join('; ')}`)
   return reports
+}
+
+/**
+ * An error's message for the log, cut to ERROR_LOG_MAX characters. A failed
+ * query's own message is the SQL and every bound value (a stored record's JSON,
+ * say), so the database's error under it is logged instead.
+ */
+function errorMessage(err: unknown): string {
+  let e: unknown = err
+  while (e instanceof Error && e.message.startsWith('Failed query:') && e.cause instanceof Error) e = e.cause
+  const message = e instanceof Error ? e.message : String(e)
+  return message.length > ERROR_LOG_MAX ? `${message.slice(0, ERROR_LOG_MAX - 1)}…` : message
+}
+
+/**
+ * One row in session_sync_log for a pass's outcome: zero counts for an empty
+ * answer, which finished with nothing to count, or the error for a pass that
+ * failed. A pass that has records logs its counts through applyMasterList, as a
+ * LegiScan full pass does. The States page reads these rows. A pass that fails
+ * after applyMasterList logged its counts adds a failed row beside that one, and
+ * it is the newer, so the pass reads as failed.
+ */
+function logOutcome(
+  db: Db, session: SessionRow, outcome: { status: 'ok' } | { status: 'failed'; error: string },
+): Promise<void> {
+  return logSyncPass(db, {
+    syncedAt: nowDb(),
+    state: session.state,
+    sessionId: session.sessionId,
+    sessionName: session.sessionName,
+    billsChecked: 0,
+    billsChanged: 0,
+    billsQueued: 0,
+    ...outcome,
+  }, { tolerate: true, label: `${session.state} ${session.sessionName} (${outcome.status})` })
 }
 
 /**
@@ -270,8 +309,12 @@ async function runSnapshotPass(
       ? withChanges(await storedRecords(db, provider.id, session.sessionId), listed)
       : listed
   if (snapshot.partial) console.log(`[sync-${provider.id}] ${session.sessionName}: ${listed.length} records changed since its last read; matching them with its stored records`)
-  // An empty answer is nothing new.
-  if (records.length === 0) return { records: 0, queued: 0, refreshed: 0 }
+  // An empty answer is nothing new, and a pass that finished all the same, unless the
+  // provider lost the state meanwhile (a pass with records logs nothing then, either).
+  if (records.length === 0) {
+    if (await ownerOfState(db, session.state) === provider.id) await logOutcome(db, session, { status: 'ok' })
+    return { records: 0, queued: 0, refreshed: 0 }
+  }
 
   // Only what the provider just listed is written. A record read from
   // storage is never written back: a forced run may have stored a newer one
@@ -282,7 +325,7 @@ async function runSnapshotPass(
   const queue = ingestQueueFor(provider, env)
   // Every bill a cutover moved here gets its first ingest, tracked or not.
   const queued = new Set(await applyMasterList(session, entries, covering, env, db, queue,
-    { deferQueuedUpdates: true, ingestMovedBills: true }))
+    { deferQueuedUpdates: true, ingestMovedBills: true, tolerateLogFailure: true }))
   const newEtag = snapshot.unchanged ? storedEtag : snapshot.etag ?? null
   if (await ownerOfState(db, session.state) === provider.id) {
     const still = storedEtag === null ? isNull(sessions.snapshotEtag) : eq(sessions.snapshotEtag, storedEtag)
