@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { BillDetail } from './BillDetail'
 import * as api from '../lib/api'
+import { CARD } from '../lib/cardStyle'
 
 // Companion suggestions from matching titles (#521): an admin's bill page shows
 // "Possibly the same as SB200." above the comments, where a grouped bill names
@@ -222,6 +223,22 @@ describe('the companion suggestion line', () => {
     renderBillDetail({ groupBills: [{ billId: '42', billNumber: 'A190', state: 'PA', sessionSlug: '2026' }, { billId: 'h300', billNumber: 'HB300', state: 'PA', sessionSlug: '2026' }] })
     expect(await screen.findByTestId('companion-suggestion-line')).toBeInTheDocument()
     expect(screen.getByTestId('group-shares-line')).toBeInTheDocument()
+  })
+
+  // The shares line lines up with the comments heading (the card's 1px border and 16px of padding), and the
+  // suggestion line under it keeps the same inset, alone or beside it.
+  it('starts at the same inset as the comments heading, alone and under the shares line', async () => {
+    const inset = (el: Element) => parseFloat(getComputedStyle(el).marginLeft)
+    renderBillDetail()
+    const alone = await screen.findByTestId('companion-suggestion-line')
+    const card = document.getElementById('section-comments') as HTMLElement
+    const headingOffset = parseFloat(CARD.border) + parseFloat(getComputedStyle(card).paddingLeft)
+    expect(inset(alone)).toBe(headingOffset)
+    cleanup()
+    renderBillDetail({ groupBills: [{ billId: '42', billNumber: 'A190', state: 'PA', sessionSlug: '2026' }, { billId: 'h300', billNumber: 'HB300', state: 'PA', sessionSlug: '2026' }] })
+    const shares = await screen.findByTestId('group-shares-line')
+    expect(inset(shares)).toBe(headingOffset)
+    expect(inset(screen.getByTestId('companion-suggestion-line'))).toBe(headingOffset)
   })
 })
 
