@@ -614,6 +614,8 @@ describe('runSync → wildcard stateCoverage', () => {
     const syncedSessionIds = logRows.map(r => r.sessionId)
     expect(syncedSessionIds).toContain(7001)
     expect(syncedSessionIds).toContain(7002)
+    // A LegiScan pass names no status, so its rows read ok (0045).
+    expect(logRows.every(r => r.status === 'ok' && r.error === null)).toBe(true)
   })
 
   it('does not sync sessions when no sessions exist in DB even with wildcard tenant', async () => {

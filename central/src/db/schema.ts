@@ -391,6 +391,10 @@ export const sessionSyncLog = sqliteTable('session_sync_log', {
   billsChecked: integer('bills_checked').notNull().default(0),
   billsChanged: integer('bills_changed').notNull().default(0),
   billsQueued:  integer('bills_queued').notNull().default(0),
+  /** 'failed' for a snapshot provider's pass that threw; 'ok' for every pass that finished (0045). */
+  status:       text('status', { enum: ['ok', 'failed'] }).notNull().default('ok'),
+  /** The message of the error that ended a failed pass, truncated; null for a pass that finished (0045). */
+  error:        text('error'),
 }, (t) => [
   index('idx_session_sync_log_session_synced').on(t.sessionId, t.syncedAt),
   index('idx_session_sync_log_state_synced').on(t.state, t.syncedAt),

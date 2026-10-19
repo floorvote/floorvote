@@ -24,7 +24,7 @@ type StateRow = {
     lastRead: string | null
     nextRead: string | null
     stale: boolean
-    lastPass: { billsChecked: number; billsChanged: number; billsQueued: number } | null
+    lastPass: { at: string | null; status: 'ok' | 'failed'; error: string | null; billsChecked: number; billsChanged: number; billsQueued: number } | null
   }
   waitingFirstIngest: number
   calls: { provider: string; count: number; coverage: CallCoverage }
@@ -112,11 +112,20 @@ const columns: Column<StateRow>[] = [
           <div style={line}>{s.lastRead ? `Last read ${relative(s.lastRead)}` : 'Never read'}</div>
           {s.stale && <div style={{ ...line, color: 'var(--warning)' }}>No recent read</div>}
           <div style={line}>{s.nextRead ? `Next read ${relative(s.nextRead)}` : 'Nothing scheduled'}</div>
-          <div style={{ ...line, ...muted }}>
-            {s.lastPass
-              ? `${s.lastPass.billsChecked} checked · ${s.lastPass.billsChanged} changed · ${s.lastPass.billsQueued} queued`
-              : 'No pass logged'}
-          </div>
+          {!s.lastPass && <div style={{ ...line, ...muted }}>No pass logged</div>}
+          {s.lastPass?.status === 'ok' && (
+            <div style={{ ...line, ...muted }}>
+              {`${s.lastPass.at ? `Last pass ${relative(s.lastPass.at)} · ` : ''}${s.lastPass.billsChecked} checked · ${s.lastPass.billsChanged} changed · ${s.lastPass.billsQueued} queued`}
+            </div>
+          )}
+          {s.lastPass?.status === 'failed' && (
+            <>
+              <div style={{ ...line, color: 'var(--danger)' }}>
+                {s.lastPass.at ? `Last pass failed ${relative(s.lastPass.at)}` : 'Last pass failed'}
+              </div>
+              {s.lastPass.error && <div style={{ ...line, ...muted, overflowWrap: 'anywhere' }}>{s.lastPass.error}</div>}
+            </>
+          )}
         </>
       )
     },

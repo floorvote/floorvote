@@ -67,8 +67,11 @@ export interface StateRow {
     nextRead: string | null
     /** No read in 48 hours, or none at all. */
     stale: boolean
-    /** The last pass's counts, from the sync log. Null when the owner has none logged. */
-    lastPass: { billsChecked: number; billsChanged: number; billsQueued: number } | null
+    /**
+     * The last pass the sync log holds for the owner: when it ran, whether it finished or failed (with
+     * the error's message), and its counts, which are zeros for a failed pass. Null when the owner has none logged.
+     */
+    lastPass: { at: string | null; status: 'ok' | 'failed'; error: string | null; billsChecked: number; billsChanged: number; billsQueued: number } | null
   }
   /** Moved bills (`bills.carried_from`) still waiting for the new provider's first ingest. */
   waitingFirstIngest: number
@@ -174,14 +177,19 @@ export async function loadStateRows(db: Db, env: Env, now: Date = new Date()): P
   // Each state's latest logged pass among its owner's sessions. Each owned session's newest
   // pass is one lookup in idx_session_sync_log_session_synced, so this reads a row per session
   // rather than the whole log; the newest of those per state is picked here.
-  const passes = new Map<string, { id: number; state: string; synced_at: string; bills_checked: number; bills_changed: number; bills_queued: number }>()
-  for (const r of await db.all<{ id: number; state: string; synced_at: string; bills_checked: number; bills_changed: number; bills_queued: number }>(sql`
-    SELECT l.id, l.state, l.synced_at, l.bills_checked, l.bills_changed, l.bills_queued
+  type Pass = { id: number; state: string; synced_at: string; bills_checked: number; bills_changed: number; bills_queued: number; status: 'ok' | 'failed'; error: string | null; ok_at: string | null }
+  const passes = new Map<string, Pass>()
+  // The newest pass that finished, per state: a failed pass is the last pass but not a read.
+  const lastOk = new Map<string, string>()
+  for (const r of await db.all<Pass>(sql`
+    SELECT l.id, l.state, l.synced_at, l.bills_checked, l.bills_changed, l.bills_queued, l.status, l.error,
+      (SELECT MAX(l3.synced_at) FROM session_sync_log l3 WHERE l3.session_id = s.session_id AND l3.status = 'ok') AS ok_at
     FROM sessions s
     JOIN session_sync_log l ON l.id = (
       SELECT l2.id FROM session_sync_log l2 WHERE l2.session_id = s.session_id
       ORDER BY l2.synced_at DESC, l2.id DESC LIMIT 1)
     WHERE s.provider = COALESCE((SELECT provider FROM state_providers WHERE state = s.state), ${DEFAULT_PROVIDER_ID})`)) {
+    if (r.ok_at && r.ok_at > (lastOk.get(r.state) ?? '')) lastOk.set(r.state, r.ok_at)
     const best = passes.get(r.state)
     if (!best || r.synced_at > best.synced_at || (r.synced_at === best.synced_at && r.id > best.id)) passes.set(r.state, r)
   }
@@ -213,7 +221,7 @@ export async function loadStateRows(db: Db, env: Env, now: Date = new Date()): P
       : null
 
     // Schedule.
-    const lastReads = [...owned.map(s => iso(s.lastSyncedAt)), iso(passes.get(state)?.synced_at)].filter((d): d is string => !!d).sort()
+    const lastReads = [...owned.map(s => iso(s.lastSyncedAt)), iso(lastOk.get(state))].filter((d): d is string => !!d).sort()
     const lastRead = lastReads.at(-1) ?? null
     const pass = passes.get(state)
     const hoursOf = (pick: (s: SessionRow) => string | null, fallback: number[]) =>
@@ -237,7 +245,7 @@ export async function loadStateRows(db: Db, env: Env, now: Date = new Date()): P
         lastRead,
         nextRead: nextRead(active, snapshot, now),
         stale: !lastRead || now.getTime() - new Date(lastRead).getTime() > STALE_MS,
-        lastPass: pass ? { billsChecked: pass.bills_checked, billsChanged: pass.bills_changed, billsQueued: pass.bills_queued } : null,
+        lastPass: pass ? { at: iso(pass.synced_at), status: pass.status, error: pass.error, billsChecked: pass.bills_checked, billsChanged: pass.bills_changed, billsQueued: pass.bills_queued } : null,
       },
       waitingFirstIngest: waiting.get(state) ?? 0,
       calls: { provider: ownerId, count: callsByProvider.get(ownerId) ?? 0, coverage: CALL_LOGGING[ownerId] ?? 'none' },

@@ -263,10 +263,25 @@ export async function applyMasterList(
      * not bills the regular sync found (BillMessage.matchProvenance).
      */
     bulk?: boolean
+    /**
+     * Carry on when the pass's log row can't be written, noting it instead:
+     * the pass has queued and sent everything by then, and a failed log
+     * write must not fail it. The snapshot sync sets this.
+     */
+    tolerateLogFailure?: boolean
   } = {},
 ): Promise<number[]> {
+  const logPass = async (values: typeof sessionSyncLog.$inferInsert) => {
+    try {
+      await db.insert(sessionSyncLog).values(values)
+    } catch (err) {
+      if (!opts.tolerateLogFailure) throw err
+      console.error(`[sync] couldn't log the pass of ${session.sessionName}:`, err)
+    }
+  }
+
   if (list.length === 0) {
-    await db.insert(sessionSyncLog).values({
+    await logPass({
       syncedAt: nowDb(),
       state: session.state,
       sessionId: session.sessionId,
@@ -575,7 +590,7 @@ export async function applyMasterList(
     }
   }
 
-  await db.insert(sessionSyncLog).values({
+  await logPass({
     syncedAt: nowDb(),
     state: session.state,
     sessionId: session.sessionId,
