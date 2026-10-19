@@ -319,6 +319,50 @@ describe('runSync → runFullPass', () => {
     expect(tenantSendBatch).not.toHaveBeenCalled()
   })
 
+  it('stubs and does not queue changed unmatched bills, fully ingested or not (LegiScan declares no ingestAll)', async () => {
+    const db = drizzle(env.DB, { schema })
+    const etHour = getCurrentEtHour()
+    await db.insert(sessions).values({
+      sessionId: 9202, state: 'DC', stateId: 51, yearStart: 2025, yearEnd: 2026,
+      sessionTitle: 'T', sessionName: 'T',
+      fullSyncHoursEt: JSON.stringify([etHour]), rawSyncHoursEt: JSON.stringify([]),
+    })
+    await db.insert(tenants).values({
+      tenantId: 'test-mon3', name: 'T', stateCoverage: JSON.stringify(['DC']), active: true,
+    })
+    // 53 has had a full ingest, 54 never has, and 55 is new to central.
+    await db.insert(bills).values([
+      { billId: 53, changeHash: 'old', sessionId: 9202, state: 'DC', stateId: 51, billNumber: 'B53', title: 'Bridge Naming',
+        textsFetchedAt: '2026-01-01 00:00:00', detailHash: 'old' },
+      { billId: 54, changeHash: 'old', sessionId: 9202, state: 'DC', stateId: 51, billNumber: 'B54', title: 'Road Naming' },
+    ])
+    await db.insert(billTenants).values([
+      { billId: 53, tenantId: 'test-mon3', matchType: null },
+      { billId: 54, tenantId: 'test-mon3', matchType: null },
+    ])
+    const entry = (id: number, title: string) => ({ bill_id: id, number: `B${id}`, change_hash: 'new', title,
+      description: 'rename', status: 1, status_date: '2025-01-01',
+      last_action: 'reported', last_action_date: '2025-02-01', url: `https://x/${id}` })
+    vi.mocked(legiscan.getMasterListBySession).mockResolvedValue(
+      [entry(53, 'Bridge Naming'), entry(54, 'Road Naming'), entry(55, 'Tunnel Naming')] as any)
+
+    const ingestorSendBatch = vi.fn().mockResolvedValue(undefined)
+    const tenantSendBatch = vi.fn().mockResolvedValue(undefined)
+    const mockEnv = {
+      ...(env as any),
+      INGESTOR_QUEUE: { sendBatch: ingestorSendBatch, send: vi.fn() },
+      TENANT_QUEUE_TEST_MON3: { sendBatch: tenantSendBatch, send: vi.fn() },
+    }
+    await runSync(mockEnv, db)
+
+    const queued = ingestorSendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body))
+      .filter((b: any) => b.calendarRecheck === undefined)
+    expect(queued).toEqual([])
+    const stubs = tenantSendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body))
+    expect(stubs.map((m: any) => m.billId).sort()).toEqual(['legiscan:53', 'legiscan:54', 'legiscan:55'])
+    expect(stubs.every((m: any) => m.stubOnly)).toBe(true)
+  })
+
   it('delivers stubs via HTTP for a tenant without a static binding (dynamic queueId)', async () => {
     const db = drizzle(env.DB, { schema })
     const etHour = getCurrentEtHour()

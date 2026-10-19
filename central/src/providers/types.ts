@@ -242,6 +242,17 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
   readonly detailsRefresh?: { maxAge: string; perPass: number }
 
   /**
+   * For a provider whose full ingest is cheap (no metered budget): every
+   * changed bill of its states gets a full ingest, tracked or not, in place of
+   * a monitor stub, so every covering instance holds full bills. Bills that
+   * have never had a full ingest are queued at most `perPass` per pass, so a
+   * backfill or a new session's first pass drains over several passes; a
+   * changed bill already fully ingested is queued without a cap. LegiScan
+   * declares nothing: a getBill per untracked bill would spend its budget.
+   */
+  readonly ingestAll?: { perPass: number }
+
+  /**
    * Whether the provider's measure carries the bill's whole set of roll calls,
    * every time. Core's ingest then replaces the bill's roll calls: a roll call
    * the bill holds that the measure doesn't name is deleted, with its member

@@ -34,6 +34,9 @@ export const lis: Provider<'LIS_API_KEY'> = {
   states: [LIS_STATE],
   // A cutover queues thousands of bills; their own queue keeps them from holding up LegiScan's.
   ingestQueue: 'LIS_INGESTOR_QUEUE',
+  // A full ingest reads the bill from the stored snapshot, so every bill gets one (#835).
+  // Without LIS_API_KEY it carries no texts, and the bill still counts as fully ingested.
+  ingestAll: { perPass: 500 },
   // A bill's record carries every vote (VOTE.CSV is read whole or the pass fails).
   replacesRollCalls: true,
 

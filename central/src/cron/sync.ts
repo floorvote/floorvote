@@ -286,6 +286,12 @@ export async function applyMasterList(
      * write must not fail it. The snapshot sync sets this.
      */
     tolerateLogFailure?: boolean
+    /**
+     * The provider's Provider.ingestAll: queue every changed bill for a full
+     * ingest, tracked or not, in place of a monitor stub, and up to `perPass`
+     * bills that have never had one. The snapshot sync passes its provider's.
+     */
+    ingestAll?: { perPass: number }
   } = {},
 ): Promise<number[]> {
   const logPass = (values: typeof sessionSyncLog.$inferInsert) =>
@@ -319,7 +325,7 @@ export async function applyMasterList(
 
   // Load existing bills + bill_tenants links in chunks
   const billIds = list.map(b => b.bill_id)
-  const existing = new Map<number, { changeHash: string; carriedFrom: string | null }>()
+  const existing = new Map<number, { changeHash: string; carriedFrom: string | null; ingested: boolean }>()
   const existingLinks = new Map<string, string | null>()
   /**
    * Covering instances that already follow the session's state: they held a
@@ -333,9 +339,17 @@ export async function applyMasterList(
   const requestCutoff = fetchRequestCutoff()
   for (let i = 0; i < billIds.length; i += BATCH) {
     const chunk = billIds.slice(i, i + BATCH)
-    const rows = await db.select({ billId: bills.billId, changeHash: bills.changeHash, carriedFrom: bills.carriedFrom })
-      .from(bills).where(inArray(bills.billId, chunk)).all()
-    for (const r of rows) existing.set(r.billId, { changeHash: r.changeHash, carriedFrom: r.carriedFrom })
+    const rows = await db.select({
+      billId: bills.billId, changeHash: bills.changeHash, carriedFrom: bills.carriedFrom,
+      textsFetchedAt: bills.textsFetchedAt, detailHash: bills.detailHash,
+    }).from(bills).where(inArray(bills.billId, chunk)).all()
+    for (const r of rows) {
+      existing.set(r.billId, {
+        changeHash: r.changeHash, carriedFrom: r.carriedFrom,
+        // Every ingest stamps both (queue/processor.ts); a bill only a sync pass wrote has neither.
+        ingested: r.textsFetchedAt !== null || r.detailHash !== null,
+      })
+    }
 
     const links = await db.select({
       billId: billTenants.billId,
@@ -384,6 +398,10 @@ export async function applyMasterList(
   const carried = new Set<number>()
   /** Of those, the untracked ones, queued only for that ingest. */
   const untrackedFirst = new Set<number>()
+  /** Bills queued only for `ingestAll`, which go after the ones instances track. */
+  const ingestAllOnly = new Set<number>()
+  /** Never-ingested bills `ingestAll` has queued this pass, up to its `perPass`. */
+  let firstIngests = 0
   const stubMessagesByTenant = new Map<string, NotificationMessage[]>()
   const queueIdByTenant = new Map(coveringTenants.map(t => [t.tenantId, t.queueId]))
   /** Bills listed with the change hash central holds, by that hash, for calendar rechecks. */
@@ -446,6 +464,8 @@ export async function applyMasterList(
     }
 
     const haystack = billMatchText({ title: entry.title, description: entry.description, billNumber: entry.number })
+    /** Instances due a monitor stub for this bill, sent unless `ingestAll` queues its full ingest. */
+    const stubFor: string[] = []
     for (const t of coveringTenants) {
       const kws = keywordsByTenant.get(t.tenantId) ?? []
       const matched = kws.length > 0 ? matchesUnion(haystack, kws).matched : false
@@ -513,14 +533,29 @@ export async function applyMasterList(
       // first time) OR when an existing null-linked bill changed. Bypasses the ingestor
       // (no LegiScan call) — the tenant fetches metadata from central /bills/:id.
       const shouldStub = newMatchType === null && (!linkExists || billChanged)
-      if (shouldStub) {
-        const msgs = stubMessagesByTenant.get(t.tenantId) ?? []
-        msgs.push({
-          tenantId: t.tenantId,
-          billId: toHandle(entry.bill_id),
-          stubOnly: true,
-        })
-        stubMessagesByTenant.set(t.tenantId, msgs)
+      if (shouldStub) stubFor.push(t.tenantId)
+    }
+
+    // With `ingestAll`, a changed bill that has had a full ingest is queued
+    // for another, and one that never has is queued while the pass is under
+    // `perPass` of them, changed or not, so the rest wait for later passes.
+    // The ingest notifies every linked instance with its own match type
+    // (queue/processor.ts), so a queued bill's stubs are left out. A bill a
+    // cutover moved here is left to `ingestMovedBills` below.
+    if (opts.ingestAll && !stored?.carriedFrom && !toQueue.has(entry.bill_id)) {
+      const queue = stored?.ingested ? billChanged : firstIngests < opts.ingestAll.perPass
+      if (queue) {
+        if (!stored?.ingested) firstIngests++
+        toQueue.add(entry.bill_id)
+        ingestAllOnly.add(entry.bill_id)
+        unchanged.delete(entry.bill_id)
+      }
+    }
+    if (!(opts.ingestAll && toQueue.has(entry.bill_id))) {
+      for (const tenantId of stubFor) {
+        const msgs = stubMessagesByTenant.get(tenantId) ?? []
+        msgs.push({ tenantId, billId: toHandle(entry.bill_id), stubOnly: true })
+        stubMessagesByTenant.set(tenantId, msgs)
       }
     }
 
@@ -583,13 +618,14 @@ export async function applyMasterList(
     return []
   }
 
-  // Untracked first ingests go last, so the bills instances track don't wait
-  // behind them. A moved bill's message names this provider, so one left over
+  // Untracked first ingests go last, and `ingestAll`'s before them, so the
+  // bills instances track don't wait behind either. A moved bill's message names this provider, so one left over
   // after an undo is skipped without a provider call (queue/processor.ts), and
   // the provider the bill has then queues its own. An untracked one's is also
   // skipped once the bill has had its first ingest, so a copy queued while an
   // earlier one waits costs nothing.
-  const queueIds = [...toQueue].sort((a, b) => Number(untrackedFirst.has(a)) - Number(untrackedFirst.has(b)))
+  const rank = (billId: number) => untrackedFirst.has(billId) ? 2 : ingestAllOnly.has(billId) ? 1 : 0
+  const queueIds = [...toQueue].sort((a, b) => rank(a) - rank(b))
   for (let i = 0; i < queueIds.length; i += 100) {
     await ingestorQueue.sendBatch(
       queueIds.slice(i, i + 100)

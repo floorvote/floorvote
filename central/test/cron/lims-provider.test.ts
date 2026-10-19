@@ -7,6 +7,7 @@ import details0400Raw from '../fixtures/lims/details-B26-0400.json?raw'
 import detailsHnRaw from '../fixtures/lims/details-HN26-0171.json?raw'
 import detailsReprogRaw from '../fixtures/lims/details-REPROG26-0153.json?raw'
 import membersRaw from '../fixtures/lims/members-26.json?raw'
+import { listedOnlyDetails } from '../helpers/limsListedOnly'
 
 // DC from LIMS at the main seam (#294): LIMS's recorded responses in, with the
 // network stubbed at fetch, and central's bill API, its labels, and the
@@ -52,6 +53,10 @@ function recordedFeed(): Record<string, () => Response> {
     'LegislationDetails/B26-0400': () => json(JSON.parse(details0400Raw)),
     'LegislationDetails/HN26-0171': () => json(JSON.parse(detailsHnRaw)),
     'LegislationDetails/REPROG26-0153': () => json(JSON.parse(detailsReprogRaw)),
+    'LegislationDetails/B26-0001': () => json(listedOnlyDetails('B26-0001', 80)),
+    'LegislationDetails/B26-0769': () => json(listedOnlyDetails('B26-0769', 81)),
+    'LegislationDetails/PR26-0808': () => json(listedOnlyDetails('PR26-0808', 82)),
+    'LegislationDetails/GBM26-0061': () => json(listedOnlyDetails('GBM26-0061', 83)),
   }
   for (const [name, id] of Object.entries(CATEGORY_IDS)) {
     routes[`BulkData/${id}/26`] = () => json(Object.values(bulk).filter(r => r.legislationCategory === name))
@@ -102,7 +107,8 @@ describe('DC from LIMS', () => {
     await claimDc()
     const { run, messages } = await syncAndIngest()
     for (const m of messages) expect(m.retry).not.toHaveBeenCalled()
-    expect(queuedIds(run).sort()).toEqual([B0400, HN, REPROG].sort())
+    // Every listed bill: LIMS declares ingestAll (#835).
+    expect(queuedIds(run).sort()).toEqual(Object.keys(bulk).map(n => limsBillId(n)!).sort())
     expect(run.ingestor.sendBatch).not.toHaveBeenCalled()
 
     const bill = await getJson(`/bills/${toHandle(B0400)}`)
@@ -209,6 +215,7 @@ describe('DC from LIMS', () => {
 
   it('stages an expired act as enacted, after Official Law', async () => {
     feed['BulkData/1/26'] = () => json([{ ...bulk['B26-0001'], status: 'Expired' }])
+    feed['LegislationDetails/B26-0001'] = () => json({ ...listedOnlyDetails('B26-0001', 80), status: 'Expired' })
     await claimDc()
     await syncAndIngest()
     expect(await getJson(`/bills/${toHandle(limsBillId('B26-0001')!)}`))

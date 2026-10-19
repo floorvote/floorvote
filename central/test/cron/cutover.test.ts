@@ -8,6 +8,7 @@ import details0400Raw from '../fixtures/lims/details-B26-0400.json?raw'
 import detailsHnRaw from '../fixtures/lims/details-HN26-0171.json?raw'
 import detailsReprogRaw from '../fixtures/lims/details-REPROG26-0153.json?raw'
 import membersRaw from '../fixtures/lims/members-26.json?raw'
+import { listedOnlyDetails } from '../helpers/limsListedOnly'
 
 // Cutting DC over from LegiScan to LIMS at the main seam (#296): a central
 // whose DC bills came from LegiScan and are tracked by an instance, LIMS's
@@ -128,6 +129,9 @@ function recordedFeed(): Record<string, () => Response> {
     'LegislationDetails/B26-0001': () => json(details0001()),
     'LegislationDetails/HN26-0171': () => json(JSON.parse(detailsHnRaw)),
     'LegislationDetails/REPROG26-0153': () => json(JSON.parse(detailsReprogRaw)),
+    'LegislationDetails/B26-0769': () => json(listedOnlyDetails('B26-0769', 81)),
+    'LegislationDetails/PR26-0808': () => json(listedOnlyDetails('PR26-0808', 82)),
+    'LegislationDetails/GBM26-0061': () => json(listedOnlyDetails('GBM26-0061', 83)),
   }
   for (const [name, id] of Object.entries(CATEGORY_IDS)) {
     routes[`BulkData/${id}/26`] = () => json(Object.values(bulk).filter(r => r.legislationCategory === name))
@@ -908,7 +912,8 @@ describe('a moved bill no instance tracks', () => {
     // consumer spends no LegiScan call.
     const waiting = await drain(run.limsQueue, run)
     for (const m of waiting.filter(m => m.body.billId === B0001 || m.body.billId === B0400)) expect(m.ack).toHaveBeenCalled()
-    expect(calls.filter(u => u.includes('LegislationDetails/B26-0'))).toEqual([])
+    // (A bill new to LIMS, queued for its full ingest by ingestAll (#835), still costs its LIMS call.)
+    expect(calls.filter(u => /LegislationDetails\/B26-0(001|400)$/.test(u))).toEqual([])
     expect(legiscanCalls('getBill')).toEqual([])
 
     // LegiScan's next full pass queues only the tracked bill, on its own

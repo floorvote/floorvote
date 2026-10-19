@@ -41,6 +41,9 @@ export const lims: Provider<'LIMS_API_KEY' | 'LIMS_CATEGORIES'> = {
   configured: env => !!env.LIMS_API_KEY,
   // LIMS answers 429 above about two concurrent requests.
   ingestQueue: 'LIMS_INGESTOR_QUEUE',
+  // A full ingest is one LegislationDetails call, unmetered and paced on that queue, so every
+  // bill gets one (#835). 200 a pass is about three and a half minutes of calls.
+  ingestAll: { perPass: 200 },
 
   /**
    * The current Council Period, plus the previous one while it is within a

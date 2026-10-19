@@ -61,6 +61,11 @@ function makeEnv(extra: Record<string, unknown> = {}) {
   }
 }
 
+/** Stand in for the ingestor having run on every bill: it stamps each one fully ingested at its change hash. */
+async function markIngested() {
+  await env.DB.prepare(`UPDATE bills SET texts_fetched_at = datetime('now'), detail_hash = change_hash`).run()
+}
+
 beforeEach(async () => {
   await clearDb()
   vi.clearAllMocks()
@@ -86,7 +91,7 @@ describe('the DC sync pass', () => {
     expect(lims.getCouncilPeriods).not.toHaveBeenCalled()
   })
 
-  it('seeds the Council Period and members, links bills, and queues matches to the LIMS queue', async () => {
+  it('seeds the Council Period and members, links bills, and queues every bill to the LIMS queue, matches first', async () => {
     const db = drizzle(env.DB, { schema })
     const { env: e, limsQueue } = makeEnv()
 
@@ -103,8 +108,10 @@ describe('the DC sync pass', () => {
     expect(links.get(limsBillId('HN26-0171')!)).toBe('keyword')
     expect(links.get(limsBillId('B26-0001')!)).toBeNull()
 
-    const queued = limsQueue.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body.billId)).sort()
-    expect(queued).toEqual([B0400, limsBillId('HN26-0171')!].sort())
+    // LIMS declares ingestAll (#835): every bill gets a full ingest, the tracked ones ahead of the rest.
+    const queued = limsQueue.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body.billId))
+    expect(queued.slice(0, 2).sort()).toEqual([B0400, limsBillId('HN26-0171')!].sort())
+    expect(queued.slice(2).sort()).toEqual([limsBillId('B26-0001')!, limsBillId('B26-0769')!].sort())
     expect(e.INGESTOR_QUEUE.sendBatch).not.toHaveBeenCalled()
     expect(lims.getBulkData).toHaveBeenCalledTimes(2)
   })
@@ -113,7 +120,7 @@ describe('the DC sync pass', () => {
     const db = drizzle(env.DB, { schema })
     const first = makeEnv()
     await runLimsSync(first.env, db)
-    // Stand in for the ingestor having run: it writes the same change_hash back.
+    await markIngested()
     const second = makeEnv()
     await runLimsSync(second.env, db)
     expect(second.limsQueue.sendBatch).not.toHaveBeenCalled()
@@ -321,10 +328,10 @@ describe('the stored LIMS record', () => {
     expect(built.rawJson).toBe(listed.rawJson)
     expect(built.rawHash).toBe(listed.rawHash)
 
-    // An unchanged listing queues nothing and leaves the details alone.
+    // An unchanged listing doesn't queue the ingested bill again and leaves the details alone.
     const again = makeEnv()
     await runLimsSync(again.env, db)
-    expect(again.limsQueue.sendBatch).not.toHaveBeenCalled()
+    expect(again.limsQueue.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body.billId))).not.toContain(B0400)
     expect((await record()).detailsJson).toBe(built.detailsJson)
 
     // A changed listing replaces the BulkData record and its hash, and the
@@ -571,7 +578,7 @@ describe('POST /api/admin/lims-sync', () => {
       }), e)
       expect(res.status).toBe(200)
       const body = await res.json() as { ok: boolean; passes: { sessionId: number; records: number; queued: number }[] }
-      expect(body.passes).toEqual([expect.objectContaining({ sessionId: limsSessionId(26), records: 4, queued: 2 })])
+      expect(body.passes).toEqual([expect.objectContaining({ sessionId: limsSessionId(26), records: 4, queued: 4 })])
       expect(limsQueue.sendBatch).toHaveBeenCalled()
       expect(lims.getMembers).toHaveBeenCalled()
     } finally {
