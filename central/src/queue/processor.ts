@@ -448,8 +448,11 @@ export async function ingestMeasure(
       // change, so instances still see it moved and fetch it again.
       // So is a quiet first full ingest.
       updatedAt:          detectedChanges.length > 0 || textHashChanged || carriedFrom || quietFirst ? now : sql`updated_at`,
-      textsFetchedAt:     now,
-      detailHash:         holdBackChangeHash ? '' : bill.change_hash,
+      // A quiet first full ingest stamps both only once everything below is
+      // written (after the roll calls), so one that fails partway is retried
+      // as quiet as it began.
+      textsFetchedAt:     quietFirst ? null : now,
+      detailHash:         quietFirst ? null : holdBackChangeHash ? '' : bill.change_hash,
     },
     setWhere: eq(bills.provider, provider.id),
   }).returning({ billId: bills.billId })
@@ -704,6 +707,12 @@ export async function ingestMeasure(
   // One write for every member vote of the bill: a Virginia budget bill has
   // thousands, and one query each would pass D1's per-invocation query limit.
   if (memberVotes.length > 0) await writeMemberVotes(env.DB, memberVotes, { replace: true })
+
+  if (quietFirst) {
+    await db.update(bills)
+      .set({ textsFetchedAt: now, detailHash: holdBackChangeHash ? '' : bill.change_hash })
+      .where(and(eq(bills.billId, bill.bill_id), eq(bills.provider, provider.id)))
+  }
 
   // Only once everything above is written does a cutover's first ingest stop
   // being one, so an ingest that fails partway is retried as quiet as it began.

@@ -32,6 +32,21 @@ vi.mock('../../src/lib/sync-schedule', async () => {
   return { ...actual, getCurrentEtHour: vi.fn(() => 5) }
 })
 vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('no network in this test') }))
+/** Set to make the next ingest fail partway, after its bills upsert and before its calendar write. */
+const failNextIngest = { on: false }
+vi.mock('../../src/lib/committees', async () => {
+  const actual = await vi.importActual<typeof import('../../src/lib/committees')>('../../src/lib/committees')
+  return {
+    ...actual,
+    upsertCommittees: vi.fn(async (...args: Parameters<typeof actual.upsertCommittees>) => {
+      if (failNextIngest.on) {
+        failNextIngest.on = false
+        throw new Error('ingest killed partway')
+      }
+      return actual.upsertCommittees(...args)
+    }),
+  }
+})
 
 import { runSnapshotSync } from '../../src/cron/sync-snapshots'
 import { processIngestorQueue } from '../../src/queue/processor'
@@ -211,6 +226,46 @@ describe('a never-ingested bill', () => {
     expect(logged!.n).toBe(0)
     // Queued by the provider, as a first full ingest.
     expect(sent[0]).toMatchObject({ billId: id, queuedBy: 'example', firstFullIngest: true })
+  })
+
+  it('stays quiet when its first ingest fails partway and is retried', async () => {
+    const meeting = { Id: 'm1', Date: '2026-01-20', Title: 'Committee hearing', Removed: false }
+    feed([{ ...rec(1), Meetings: [meeting] }])
+    await pass(cheap(0))
+    const { bodies: sent } = await pass(cheap(10), { ingest: false })
+    const [id] = await allBillIds()
+
+    const team = mockQueue()
+    const e = { ...(env as any), [tenantQueueBindingName('team')]: team }
+    const db = drizzle(env.DB, { schema })
+    failNextIngest.on = true
+    const first = sent.map(body => ({ body, ack: vi.fn(), retry: vi.fn() }))
+    await processIngestorQueue({ messages: first } as any, e, db)
+    expect(first[0].retry).toHaveBeenCalled()
+    // The failed attempt leaves the bill not yet fully ingested.
+    expect(await ingested()).toEqual([])
+
+    const retry = sent.map(body => ({ body, ack: vi.fn(), retry: vi.fn() }))
+    await processIngestorQueue({ messages: retry } as any, e, db)
+    expect(retry[0].retry).not.toHaveBeenCalled()
+    const msg = bodies(team).find(m => m.billId === `legiscan:${id}` && !m.stubOnly)
+    expect(msg.changes).toBeUndefined()
+    expect(msg.calendar?.changes ?? []).toEqual([])
+    const logged = await env.DB.prepare('SELECT COUNT(*) AS n FROM bill_change_log WHERE bill_id = ?').bind(id).first<{ n: number }>()
+    expect(logged!.n).toBe(0)
+    expect(await ingested()).toEqual([id])
+  })
+
+  it('leaves a tracked bill\'s first ingest to its match, loud, even while it waits', async () => {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.keywordRegistry).values({ tenantId: 'team', keyword: 'library' })
+    feed([rec(1, 'Library Hours Act of 2026')])
+    // The match's ingest is queued and hasn't landed by the next pass.
+    const matched = await pass(cheap(10), { ingest: false })
+    expect(matched.bodies).toHaveLength(1)
+    expect(matched.bodies[0].firstFullIngest).toBeUndefined()
+    const next = await pass(cheap(10), { ingest: false })
+    expect(next.queued).toEqual([])
   })
 
   it('reports changes as usual once it has had its first ingest', async () => {

@@ -551,6 +551,7 @@ export async function applyMasterList(
       if (shouldStub) stubFor.push(t.tenantId)
       if (newMatchType === null) untracked.push(t.tenantId)
     }
+    const tracked = untracked.length < coveringTenants.length
 
     // With `ingestAll`, a changed bill that has had a full ingest is queued
     // for another. One that never has is a candidate for a first full ingest,
@@ -565,7 +566,9 @@ export async function applyMasterList(
       ingestAllOnly.add(entry.bill_id)
     }
     const tries = stored?.firstIngestTries ?? 0
-    if (ingestAllFree && !stored?.ingested && tries <= FIRST_INGEST_TRIES) {
+    // A bill any instance tracks gets its first ingest from the match path,
+    // which reports its changes, never a quiet one from here.
+    if (ingestAllFree && !stored?.ingested && !tracked && tries <= FIRST_INGEST_TRIES) {
       firstCandidates.push({ billId: entry.bill_id, tries, stubFor, untracked })
     } else if (!(opts.ingestAll && toQueue.has(entry.bill_id))) {
       for (const tenantId of stubFor) pushStub(tenantId, entry.bill_id)
