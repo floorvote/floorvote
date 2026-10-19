@@ -12,7 +12,7 @@ import { associationConfig } from '../../src/db/schema'
 import { resetDb, applyMigrations, seedBill, seedUser, seedSession } from '../helpers'
 
 const sendBatch = vi.hoisted(() => vi.fn(async () => ({ sent: 1, failed: 0 })))
-vi.mock('../../src/lib/email', async (importOriginal) => ({ ...await importOriginal<typeof import('../../src/lib/email')>(), sendBatch }))
+vi.mock('../../src/lib/email', async (importOriginal) => ({ ...await importOriginal<typeof import('../../src/lib/email')>(), senderFor: (e: unknown) => ({ sendBatch: (messages: unknown[]) => (sendBatch as (...a: unknown[]) => unknown)(e, messages) }) }))
 
 // A pulled companion (#378) is analyzed because it shares a group with a tracked
 // bill, and holds no match type or priority of its own. A group is one policy

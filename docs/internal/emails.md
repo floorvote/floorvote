@@ -28,9 +28,54 @@ api/src/lib/replies.ts        renderReplyEmail() (sets In-Reply-To and Reference
                               List-Unsubscribe that mutes the bill, only when APP_URL is https)
 api/src/lib/inviteBounceEmail.ts
                               renderInviteBounceEmail() + notifyInviteBounces() (hourly, after the bounce check)
-api/src/lib/email.ts          renderMagicLinkEmail() (login/invite) + sendEmail/sendMagicLink/sendFeedback
+api/src/lib/email.ts          renderMagicLinkEmail() + buildSignInMessage() (login/invite) + sendMagicLink, and the
+                              older sendEmail/sendBatch/sendFeedback (sendBatch has no caller left) for emails not yet moved to the shared sender
 api/src/lib/sampleEmails.ts   renderSampleEmail() registry + sendSampleEmail()  ← single source for QA + previews + tests
+shared/emailSender.ts         createSender(): send a message by purpose (see "Sending" below)
+shared/emailProviders.ts      the Resend and Cloudflare send_email adapters
+api/src/lib/emailHealthRecorder.ts
+                              the API's health recorder: email_send_stats and Resend usage
 ```
+
+## Sending
+
+Email is moving onto one sender, shared by the API and central (#705). A caller
+names the email's **purpose**, and `createSender(env, { recorder })` decides the
+rest from it: fallback to the other provider, health counting, the From address,
+and demo-mode suppression. It refuses a malformed address before calling any
+provider. `send` never throws. Its result says whether the email went out, which
+provider sent it, and, for a failure, whether it is **permanent** (the address
+can't receive mail) or temporary.
+
+Each provider adapter sends one message and classifies its own failures. A
+Cloudflare `E_RECIPIENT_SUPPRESSED` is permanent. Every Resend failure is
+temporary, because Resend reports suppression later, by webhook. A temporary
+failure falls back once to the other provider, when the purpose allows it and
+the other provider is configured. A permanent one never does.
+
+| Purpose | Emails | Falls back | Counts toward email health | Demo mode |
+|---|---|---|---|---|
+| Sign-in | tenant login, admin-sent login and invite links, the invite queue | yes | yes, when a recorder is supplied | invites suppressed, login sends |
+| Account | the email-change confirmation link, the notice to the old address, the "this wasn't me" report | yes | yes, when a recorder is supplied | suppressed |
+| Notification | mentions, replies (a reply keeps its thread and one-click mute headers) | yes | yes, when a recorder is supplied | suppressed |
+| Bulk | the digest, the week-ahead email | **never** | yes, when a recorder is supplied | suppressed |
+
+Bulk mail never falls back, so an outage on the first provider can't push a whole
+recipient list onto the second and burn its quota. It sends from the bulk From
+address (`EMAIL_FROM_BULK`, else `EMAIL_FROM`), keeps the default Reply-To, and
+counts each send to the provider that sent it. The digest and the week-ahead
+email send their batch with `senderFor(env, db).sendBatch`, and a batch's
+`sent`, `failed`, and `skipped` count messages. Their "last sent" stamp is
+written whatever the batch returned.
+
+The API supplies `emailHealthRecorder(db)`, and central supplies none, so central
+counts nothing. A sign-in message carries its `auth_events` writer, called once
+per attempt. Other emails still use `sendEmail` until they move, and `sendBatch` has no caller left.
+
+The email-change confirmation turns the sender's verdict into the member's
+answer: a permanent failure is "That address can't receive email" (400), and a
+temporary one, meaning both providers failed, is "try again" (502). The pending
+change is deleted either way.
 
 ## The shell contract
 
