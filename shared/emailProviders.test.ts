@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import {
-  resendProvider, cloudflareProvider, providersFromEnv, primaryProviderName, fallbackProviderName,
+  resendProvider, cloudflareProvider, providersFromEnv, primaryProviderName, fallbackProviderName, hasConfiguredProvider, configuredProviders,
   type OutgoingEmail, type CloudflareEmailBinding,
 } from './emailProviders'
 
@@ -200,5 +200,58 @@ describe('provider selection from env', () => {
     expect(fallbackProviderName({}, 'cloudflare')).toBeNull()
     expect(fallbackProviderName({ EMAIL }, 'resend')).toBe('cloudflare')
     expect(fallbackProviderName({}, 'resend')).toBeNull()
+  })
+})
+
+describe('hasConfiguredProvider', () => {
+  const EMAIL = binding(() => ({}))
+
+  it('is false when nothing is configured, though providersFromEnv still lists Resend', () => {
+    expect(hasConfiguredProvider({})).toBe(false)
+    expect(hasConfiguredProvider({ EMAIL_PROVIDER: 'cloudflare' })).toBe(false)
+    expect(hasConfiguredProvider({ EMAIL_PROVIDER: 'resend' })).toBe(false)
+  })
+
+  it('is false for a blank Resend key', () => {
+    expect(hasConfiguredProvider({ RESEND_API_KEY: '' })).toBe(false)
+  })
+
+  it('is true with only a Resend key', () => {
+    expect(hasConfiguredProvider({ RESEND_API_KEY: 'test-api-key' })).toBe(true)
+  })
+
+  it('is true with only the binding, whichever provider is chosen', () => {
+    expect(hasConfiguredProvider({ EMAIL })).toBe(true)
+    expect(hasConfiguredProvider({ EMAIL_PROVIDER: 'cloudflare', EMAIL })).toBe(true)
+    expect(hasConfiguredProvider({ EMAIL_PROVIDER: 'resend', EMAIL })).toBe(true)
+  })
+
+  it('is true with both', () => {
+    expect(hasConfiguredProvider({ RESEND_API_KEY: 'test-api-key', EMAIL })).toBe(true)
+  })
+})
+
+describe('configuredProviders', () => {
+  const EMAIL = binding(() => ({}))
+
+  it('is empty when nothing is configured', () => {
+    expect(configuredProviders({})).toEqual([])
+    expect(configuredProviders({ EMAIL_PROVIDER: 'cloudflare' })).toEqual([])
+    expect(configuredProviders({ RESEND_API_KEY: '' })).toEqual([])
+  })
+
+  it('keeps both, primary first, when both are configured', () => {
+    expect(configuredProviders({ EMAIL_PROVIDER: 'cloudflare', EMAIL, RESEND_API_KEY: 'test-api-key' }).map(p => p.name)).toEqual(['cloudflare', 'resend'])
+    expect(configuredProviders({ EMAIL, RESEND_API_KEY: 'test-api-key' }).map(p => p.name)).toEqual(['resend', 'cloudflare'])
+  })
+
+  it('drops a keyless Resend even when it is the primary, leaving the binding', () => {
+    expect(configuredProviders({ EMAIL_PROVIDER: 'resend', EMAIL }).map(p => p.name)).toEqual(['cloudflare'])
+    expect(configuredProviders({ EMAIL }).map(p => p.name)).toEqual(['cloudflare'])
+  })
+
+  it('has Resend alone when only the key is set', () => {
+    expect(configuredProviders({ RESEND_API_KEY: 'test-api-key' }).map(p => p.name)).toEqual(['resend'])
+    expect(configuredProviders({ EMAIL_PROVIDER: 'cloudflare', RESEND_API_KEY: 'test-api-key' }).map(p => p.name)).toEqual(['resend'])
   })
 })

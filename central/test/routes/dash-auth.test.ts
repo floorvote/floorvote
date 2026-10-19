@@ -278,7 +278,7 @@ describe('POST /admin/dash/auth/login — sender gate (Cloudflare Email or Resen
   }
 
   function stubResendFetch() {
-    return vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, status: 200, text: () => Promise.resolve('') } as Response)
+    return vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ id: 'resend-1' }), { status: 200 }))
   }
 
   const okBody = async (res: Response) => {
@@ -344,13 +344,59 @@ describe('POST /admin/dash/auth/login — sender gate (Cloudflare Email or Resen
     expect(fetchSpy).toHaveBeenCalledTimes(1)
   })
 
-  it('sends nothing when a binding exists but EMAIL_PROVIDER is not cloudflare and no Resend key is set', async () => {
+  it('sends through the binding when EMAIL_PROVIDER is not cloudflare and no Resend key is set: a bound binding counts as a configured sender', async () => {
     const { sent, binding } = fakeBinding()
     const fetchSpy = stubResendFetch()
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const res = await login('admin@example.com', { ...BASE_ENV, EMAIL_PROVIDER: 'resend', EMAIL: binding })
     expect(res.status).toBe(200)
-    expect(sent).toHaveLength(0)
+    expect(sent).toHaveLength(1)
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('sends the link through Resend when the binding, tried first, is down', async () => {
+    const down = fakeBinding({ fail: true })
+    const fetchSpy = stubResendFetch()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const res = await login('admin@example.com', { ...BASE_ENV, RESEND_API_KEY: 'rk_test', EMAIL_PROVIDER: 'cloudflare', EMAIL: down.binding })
+    expect(res.status).toBe(200)
+    expect(await okBody(res)).toEqual({ ok: true })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    const body = JSON.parse(String((fetchSpy.mock.calls[0][1] as RequestInit).body))
+    expect(body.to).toEqual(['admin@example.com'])
+    expect(body.html).toMatch(/auth\/callback\?token=/)
+  })
+
+  it('sends the link through the binding when Resend, tried first, is down', async () => {
+    const { sent, binding } = fakeBinding()
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('upstream', { status: 503 }))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const res = await login('admin@example.com', { ...BASE_ENV, RESEND_API_KEY: 'rk_test', EMAIL: binding })
+    expect(res.status).toBe(200)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(sent).toHaveLength(1)
+    expect(sent[0].to).toEqual(['admin@example.com'])
+  })
+
+  it('still answers the plain 200 with the link stored when both providers are down', async () => {
+    const down = fakeBinding({ fail: true })
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('upstream', { status: 503 }))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const res = await login('admin@example.com', { ...BASE_ENV, RESEND_API_KEY: 'rk_test', EMAIL_PROVIDER: 'cloudflare', EMAIL: down.binding })
+    expect(res.status).toBe(200)
+    expect(await okBody(res)).toEqual({ ok: true })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    const db = drizzle(env.DB, { schema })
+    expect((await db.select().from(schema.magicLinks).all()).length).toBe(1)
+  })
+
+  it('sends nothing when a blank Resend key is the only thing configured', async () => {
+    const fetchSpy = stubResendFetch()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const res = await login('admin@example.com', { ...BASE_ENV, RESEND_API_KEY: '' })
+    expect(res.status).toBe(200)
     expect(fetchSpy).not.toHaveBeenCalled()
     expect(warn).toHaveBeenCalledTimes(1)
   })
@@ -446,7 +492,7 @@ describe('POST /admin/dash/auth/login — sender gate (Cloudflare Email or Resen
   })
 
   it('logs a Resend send failure without leaking it to the response', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false, status: 500, text: () => Promise.resolve('resend-internal-detail') } as Response)
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('resend-internal-detail', { status: 500 }))
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     const res = await login('admin@example.com', { ...BASE_ENV, RESEND_API_KEY: 'rk_test' })
     expect(res.status).toBe(200)
@@ -635,7 +681,7 @@ describe('POST /admin/dash/auth/login — the send is off the response path (#67
   })
 
   it('logs a Resend failure from the background the same way', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false, status: 500, text: () => Promise.resolve('resend-internal-detail') } as Response)
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('resend-internal-detail', { status: 500 }))
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     const { res, settle } = post('admin@example.com', { ...TEST_ENV, RESEND_API_KEY: 'rk_test', EMAIL: undefined, EMAIL_PROVIDER: undefined })
     const response = await res
