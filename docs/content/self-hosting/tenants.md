@@ -530,7 +530,7 @@ The script reads the same configuration `new-instance.sh` does (`scripts/.env.op
 
 Registration stores the team's keywords and state coverage and provisions its queue, but doesn't itself queue any bills. Delivery is driven by the hourly **central cron**, and timing depends on whether central already tracks the state:
 
-- **State already tracked by another team:** the next full-sync pass links this team's bills and queues the keyword matches. Full passes run three times a day for LegiScan states and hourly for Maryland, Virginia, and DC, so within ~10 hours — no seeding required.
+- **State already tracked by another team:** the next full-sync pass links this team's bills and queues the keyword matches. Full passes run three times a day for LegiScan states and hourly for Maryland, Virginia, and DC, so within ~10 hours for LegiScan states and within the hour for the others — no seeding required.
 - **Brand-new state, not seeded:** central discovers the session on its once-a-day pass, then bills flow — worst case ~24 hours.
 - **Want bills immediately:** run the seed in Step 12.
 
