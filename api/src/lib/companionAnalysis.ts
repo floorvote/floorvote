@@ -1,9 +1,9 @@
-import { and, eq, isNull, lt, or } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import { bills } from '../db/schema'
 import { centralFetch } from './centralFetch'
 import { inGroupOf } from './companionGroups'
 import { nowDb, toDbTs } from './dbTime'
-import { HEAL_MIN_AGE_MS } from './healStalledAi'
+import { HEAL_MAX_ATTEMPTS, HEAL_MIN_AGE_MS } from './healStalledAi'
 import { pickLead, readNewestTexts } from './groupLead'
 import { isHandle, parseHandle } from '../../../shared/billHandle'
 import type { AppDb, Env, TenantQueueMessage } from '../types'
@@ -55,9 +55,11 @@ export const MAX_COMPANION_ANALYSES_PER_DELIVERY = 10
  * lead is a pulled companion that was analyzed (or permanently skipped) on a
  * text other than its newest, it is queued the same way, as a group analysis,
  * under the same cap. Its claim also takes an attempt older than the heal's age
- * floor, which the heal (for unanalyzed bills only) never retries: a lost
- * message, or an analysis the text hash deduplicated, is tried again at most
- * once a floor, and never loops.
+ * floor, which the heal (for unanalyzed bills only) never retries, so a lost
+ * message or a failed analysis is tried again at most once a floor, and each
+ * such retry counts toward the heal's attempt cap (`ai_heal_attempts`, which a
+ * successful analysis resets). An analysis the text hash deduplicates records
+ * the newest text as read (queue/processor.ts), so it isn't queued again.
  */
 export async function pullCompanions(env: Env, db: AppDb, msg: TenantQueueMessage): Promise<void> {
   // A demo never calls the model, and has no central to fetch from.
@@ -97,7 +99,7 @@ export async function pullCompanions(env: Env, db: AppDb, msg: TenantQueueMessag
   const inFlight = (m: { aiAttemptedAt: string | null }) => m.aiAttemptedAt !== null && m.aiAttemptedAt >= stalledBefore
   let room = MAX_COMPANION_ANALYSES_PER_DELIVERY - [...waiting, ...(staleLead ? [staleLead] : [])].filter(inFlight).length
   if (staleLead && !inFlight(staleLead) && room > 0) {
-    if (await queueAnalysis(env, db, staleLead.id, staleLead.externalId!, stalledBefore)) room--
+    if (await queueAnalysis(env, db, staleLead.id, staleLead.externalId!, { before: stalledBefore, staleAgainst: leadText!.docId })) room--
   }
   const toFetch: number[] = []
   for (const bill of waiting) {
@@ -114,13 +116,27 @@ export async function pullCompanions(env: Env, db: AppDb, msg: TenantQueueMessag
 /**
  * Queue the bill's analysis once: only the delivery that stamps its attempt
  * does, and it returns true. The attempt must be unclaimed, or, with
- * `reclaimBefore`, claimed before then.
+ * `reclaim`, claimed before `reclaim.before` with fewer than the heal's
+ * attempts used, each such reclaim counting one, and only while the bill's
+ * analysis still hasn't read `reclaim.staleAgainst` (one that finished since
+ * the caller read the bill makes it current).
  */
-async function queueAnalysis(env: Env, db: AppDb, billId: string, externalId: string, reclaimBefore?: string): Promise<boolean> {
+async function queueAnalysis(
+  env: Env, db: AppDb, billId: string, externalId: string,
+  reclaim?: { before: string; staleAgainst: string },
+): Promise<boolean> {
   if (!env.BILL_QUEUE) return false
-  const unclaimed = reclaimBefore === undefined ? isNull(bills.aiAttemptedAt) : or(isNull(bills.aiAttemptedAt), lt(bills.aiAttemptedAt, reclaimBefore))
-  const claimed = await db.update(bills).set({ aiAttemptedAt: nowDb() })
-    .where(and(eq(bills.id, billId), unclaimed)).run()
+  const claimed = reclaim === undefined
+    ? await db.update(bills).set({ aiAttemptedAt: nowDb() })
+      .where(and(eq(bills.id, billId), isNull(bills.aiAttemptedAt))).run()
+    : await db.update(bills).set({
+      aiAttemptedAt: nowDb(),
+      aiHealAttempts: sql`CASE WHEN ${bills.aiAttemptedAt} IS NULL THEN ${bills.aiHealAttempts} ELSE ${bills.aiHealAttempts} + 1 END`,
+    }).where(and(
+      eq(bills.id, billId),
+      sql`(${bills.aiAttemptedAt} IS NULL OR (${bills.aiAttemptedAt} < ${reclaim.before} AND ${bills.aiHealAttempts} < ${HEAL_MAX_ATTEMPTS}))`,
+      sql`${bills.lastAiTextDocId} IS NOT ${reclaim.staleAgainst}`,
+    )).run()
   if ((claimed.meta?.changes ?? 0) !== 1) return false
   try {
     await env.BILL_QUEUE.send({ tenantId: env.TENANT_ID, billId: externalId, groupAnalysis: true } satisfies TenantQueueMessage)

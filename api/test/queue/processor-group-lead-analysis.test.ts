@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { resetDb, applyMigrations, seedBill, seedBillText } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { processCentralNotification } from '../../src/queue/processor'
-import { bills } from '../../src/db/schema'
+import { bills, billTexts } from '../../src/db/schema'
+import { HEAL_MAX_ATTEMPTS } from '../../src/lib/healStalledAi'
+import { loadTeamValuesOf } from '../../src/lib/teamFields'
 import { MAX_COMPANION_ANALYSES_PER_DELIVERY } from '../../src/lib/companionAnalysis'
 import { toDbTs } from '../../src/lib/dbTime'
 import type { TenantQueueMessage } from '../../src/types'
@@ -25,7 +27,7 @@ vi.mock('../../src/lib/llm', async (importOriginal) => {
 
 type Related = { identifier: string; sastBillId: number; kind: string }
 type Text = { docId: string; date: string }
-type Served = { number: string; relatedBills: Related[]; statusRank: number; texts: Text[]; textHash?: string }
+type Served = { number: string; relatedBills: Related[]; statusRank: number; texts: Text[]; textHash?: string; noHash?: boolean }
 
 // What central serves for each bill, keyed by its handle.
 const central = new Map<string, Served>()
@@ -45,7 +47,7 @@ function centralBill(handle: string) {
     lastAction: null,
     updatedAt: '2026-10-01T00:00:00Z',
     stateUrl: null,
-    textHash: b.texts.length > 0 ? (b.textHash ?? `hash-${handle}-${b.texts.map(t => t.docId).join('-')}`) : null,
+    textHash: b.texts.length > 0 && !b.noHash ? (b.textHash ?? `hash-${handle}-${b.texts.map(t => t.docId).join('-')}`) : null,
     textR2Key: b.texts.length > 0 ? `bills/${handle}.html` : null,
     texts: b.texts.map(t => ({ docId: t.docId, note: 'Introduced', date: t.date, links: [{ url: `https://example.gov/${t.docId}.html`, mediaType: 'text/html' }] })),
     actions: [],
@@ -220,6 +222,124 @@ describe("a pulled lead is analyzed again when its newest text isn't the one it 
       for (let i = 0; i < MAX_COMPANION_ANALYSES_PER_DELIVERY; i++) await setBill(`c${i}`, { aiAttemptedAt: recent })
       await deliver('legiscan:190')
       expect(queued).toEqual([])
+    })
+  })
+
+  // Central sends a bill that didn't match only stub messages when it changes, and the stub path stored no
+  // texts, so a pulled member's newest text never reached the lead rule or the stale-lead check (review M1).
+  describe('a stub or metadata delivery of a grouped bill brings its texts', () => {
+    const textsOf = async (id: string) => (await getDb(env.DB).select({ docId: billTexts.docId }).from(billTexts).where(eq(billTexts.billId, id)).all()).map(t => t.docId).sort()
+
+    beforeEach(async () => {
+      // The instance knows only S1713's first text, which its analysis read. Central has the newer one.
+      await getDb(env.DB).delete(billTexts).where(and(eq(billTexts.billId, 'b1713'), eq(billTexts.docId, '7002')))
+      expect(await textsOf('b1713')).toEqual(['7001'])
+    })
+
+    it("queues the lead's analysis when its change arrives as a stub, the shape central sends a bill that didn't match", async () => {
+      await deliver('legiscan:1713', { stubOnly: true })
+      expect(await textsOf('b1713')).toEqual(['7001', '7002'])
+      expect(leadQueued()).toEqual([{ tenantId: 'test-org', billId: 'legiscan:1713', groupAnalysis: true }])
+    })
+
+    it('does the same for a metadata-only delivery', async () => {
+      await deliver('legiscan:1713', { metadataOnly: true })
+      expect(await textsOf('b1713')).toEqual(['7001', '7002'])
+      expect(leadQueued()).toHaveLength(1)
+    })
+
+    it("lets a member's new text from a stub decide the lead", async () => {
+      // Equally far along, with texts of the same date: A190 leads by its number until S1713's stub brings a newer text.
+      await setBill('b1713', { statusRank: 100 })
+      central.set('legiscan:1713', { ...central.get('legiscan:1713')!, statusRank: 100 })
+      const leadOfGroup = async () => (await loadTeamValuesOf(getDb(env.DB), ['a190'])).get('a190')!.analysis!.billId
+      expect(await leadOfGroup()).toBe('a190')
+      await deliver('legiscan:1713', { stubOnly: true })
+      expect(await leadOfGroup()).toBe('b1713')
+    })
+
+    it('drops a text central no longer lists, as the full path does', async () => {
+      await seedBillText('b1713', { docId: '7009', date: '2026-02-01' })
+      // Stored from an older copy than this delivery's.
+      await getDb(env.DB).update(billTexts).set({ updatedAt: '2026-01-01 00:00:00' }).where(eq(billTexts.docId, '7009'))
+      await deliver('legiscan:1713', { stubOnly: true })
+      expect(await textsOf('b1713')).toEqual(['7001', '7002'])
+    })
+
+    it('leaves the texts of a bill in no group alone, as before', async () => {
+      await seedBill({ id: 'solo', billNumber: 'S5', state: 'NJ', externalId: 'legiscan:5', matchType: null })
+      central.set('legiscan:5', { number: 'S5', statusRank: 100, texts: [{ docId: '9501', date: '2026-01-01' }], relatedBills: [] })
+      await deliver('legiscan:5', { stubOnly: true })
+      expect(await textsOf('solo')).toEqual([])
+    })
+  })
+
+  // A queued analysis that wrote nothing left the lead stale and its claim stamped, so a delivery past the
+  // floor queued it again, hourly, forever (review M2).
+  describe('a lead analysis that runs no model', () => {
+    const pastTheFloor = () => setBill('b1713', { aiAttemptedAt: toDbTs(new Date(Date.now() - 2 * 60 * 60 * 1000)) })
+
+    it('records the newest text as read and clears the claim when the text hash deduplicates it, so nothing re-queues', async () => {
+      central.set('legiscan:1713', { ...central.get('legiscan:1713')!, textHash: 'hash-old' })
+      await deliver('legiscan:190')
+      await drain()
+      expect(await analyzedBills()).toEqual([])
+      expect(await billRow('b1713')).toMatchObject({ lastAiTextDocId: '7002', aiAttemptedAt: null, tenantSummary: 'S1713 first summary' })
+      await pastTheFloor()
+      await setBill('b1713', { aiAttemptedAt: null })
+      await deliver('legiscan:190')
+      expect(queued).toEqual([])
+    })
+
+    it('does the same when central lists texts but sends no text hash', async () => {
+      central.set('legiscan:1713', { ...central.get('legiscan:1713')!, noHash: true })
+      await deliver('legiscan:190')
+      await drain()
+      expect(await analyzedBills()).toEqual([])
+      expect(await billRow('b1713')).toMatchObject({ lastAiTextDocId: '7002', aiAttemptedAt: null })
+      await deliver('legiscan:190')
+      expect(queued).toEqual([])
+    })
+
+    it("leaves an unanalyzed companion's claim to the heal when central sends no text hash, so the drain ends", async () => {
+      await seedBill({ id: 'c1', billNumber: 'C1', state: 'NJ', externalId: 'legiscan:3100', matchType: null, statusRank: 100, textR2Key: 'bills/legiscan:3100.html' })
+      await setBill('c1', { groupKey: 'a190' })
+      central.set('legiscan:3100', { number: 'C1', statusRank: 100, texts: [{ docId: '8100', date: '2026-01-01' }], relatedBills: [identical('A190', 190)], noHash: true })
+      const a = central.get('legiscan:190')!
+      central.set('legiscan:190', { ...a, relatedBills: [...a.relatedBills, identical('C1', 3100)] })
+      await setBill('b1713', { lastAiTextDocId: '7002' })
+      await deliver('legiscan:190')
+      await drain()
+      const c1 = await billRow('c1')
+      expect(c1.aiProcessedAt).toBeNull()
+      expect(c1.aiAttemptedAt).not.toBeNull()
+    })
+  })
+
+  // A lead whose analysis keeps failing was retried, with a model call, about hourly with no cap (review M2).
+  describe('a lead whose analysis keeps failing', () => {
+    it("stops reclaiming it after the heal's attempt cap", async () => {
+      await setBill('b1713', { aiAttemptedAt: toDbTs(new Date(Date.now() - 2 * 60 * 60 * 1000)), aiHealAttempts: HEAL_MAX_ATTEMPTS })
+      await deliver('legiscan:190')
+      expect(queued).toEqual([])
+    })
+
+    it('counts each reclaim toward the cap', async () => {
+      await setBill('b1713', { aiAttemptedAt: toDbTs(new Date(Date.now() - 2 * 60 * 60 * 1000)), aiHealAttempts: HEAL_MAX_ATTEMPTS - 1 })
+      await deliver('legiscan:190')
+      expect(leadQueued()).toHaveLength(1)
+      expect((await billRow('b1713')).aiHealAttempts).toBe(HEAL_MAX_ATTEMPTS)
+    })
+
+    it('makes at most the first try and the capped retries, however many deliveries come', async () => {
+      const llm = await import('../../src/lib/llm')
+      vi.mocked(llm.processBill).mockRejectedValue(new Error('model unavailable'))
+      for (let i = 0; i < HEAL_MAX_ATTEMPTS + 4; i++) {
+        await deliver('legiscan:190')
+        await drain()
+        await setBill('b1713', { aiAttemptedAt: toDbTs(new Date(Date.now() - 2 * 60 * 60 * 1000)) })
+      }
+      expect((await analyzedBills()).length).toBe(1 + HEAL_MAX_ATTEMPTS)
     })
   })
 })
