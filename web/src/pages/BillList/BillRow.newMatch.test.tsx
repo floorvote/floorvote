@@ -101,6 +101,16 @@ describe('BillRow: an admin sees a new match as an amber state of the priority d
     expect(onTriageDismiss).not.toHaveBeenCalled()
   })
 
+  it('announces a successful Dismiss in a polite live region', async () => {
+    apiFetchMock.mockResolvedValue({ ok: true })
+    renderRow(true, NEW_MATCH)
+    const region = screen.getByTestId('dismiss-announcement')
+    expect(region).toHaveAttribute('aria-live', 'polite')
+    expect(region).toHaveTextContent('')
+    fireEvent.change(prioritySelects()[0], { target: { value: 'dismiss' } })
+    await waitFor(() => expect(region).toHaveTextContent('Dismissed'))
+  })
+
   it('choosing Dismiss calls triage-dismiss and reports it, without setting a priority', async () => {
     apiFetchMock.mockResolvedValue({ ok: true })
     const { onPriorityChange, onTriageDismiss } = renderRow(true, NEW_MATCH)

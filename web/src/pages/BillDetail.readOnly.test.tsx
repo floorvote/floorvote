@@ -407,6 +407,16 @@ describe('BillDetail: a new match as a state of the priority dropdown', () => {
     expect(optionLabels(after)).toEqual(['Set priority', 'High Priority', 'Medium Priority', 'Low Priority'])
   })
 
+  it('announces a successful Dismiss in a polite live region', async () => {
+    makeMockApiFetch(NEW)
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    const select = await screen.findByRole('combobox', { name: /priority/i })
+    const region = screen.getByTestId('dismiss-announcement')
+    expect(region).toHaveAttribute('aria-live', 'polite')
+    fireEvent.change(select, { target: { value: 'dismiss' } })
+    await waitFor(() => expect(region).toHaveTextContent('Dismissed'))
+  })
+
   it('is not amber once the bill has been triaged', async () => {
     renderBillDetail({ demoLocked: false, overrides: { ...NEW, triagedAt: '2025-01-06 00:00:00' } })
     const select = await screen.findByRole('combobox', { name: /priority/i })

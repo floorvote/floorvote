@@ -10,6 +10,7 @@ import { DraftChip } from '../components/DraftChip'
 import { PositionBadge } from '../components/PositionBadge'
 import { PriorityBadge } from '../components/PriorityBadge'
 import { CompactPrioritySelect } from '../components/CompactPrioritySelect'
+import { DismissAnnouncement } from '../components/DismissAnnouncement'
 import { NewMatchChip } from '../components/NewMatchChip'
 import { isUntriagedNewMatch } from '../lib/newMatch'
 import { CompactPositionSelect } from '../components/CompactPositionSelect'
@@ -691,6 +692,7 @@ export function BillDetail() {
   // no spinner. Mirrors applyBillData; the effect re-applies it as the source of truth.
   const [bill, setBill] = useState<BillDetailData | null>(prefetchedBill)
   const [triageDismissed, setTriageDismissed] = useState(false)
+  const [dismissAnnouncement, setDismissAnnouncement] = useState('')
   const [loading, setLoading] = useState(() => prefetchedBill ? false : true)
   const [error, setError] = useState<string | null>(null)
   usePageTitle(bill ? `${bill.state} ${bill.billNumber} — ${billDisplayTitle(bill) || bill.abstract || ''}` : null)
@@ -1521,6 +1523,7 @@ export function BillDetail() {
 
       {/* Static info block */}
       <div style={{ ...CARD, padding: '20px 24px' }}>
+        <DismissAnnouncement message={dismissAnnouncement} />
 
         {/* Chip strip */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: priorityMeta ? 20 : headerCompanions.length > 0 ? 8 : 12 }}>
@@ -1575,7 +1578,7 @@ export function BillDetail() {
                           if (result?.promoted) startAnalyzingPoll()
                         }}
                         newMatch={isNewMatch}
-                        onDismiss={() => { setTriageDismissed(true); refreshSidebar() }}
+                        onDismiss={() => { setTriageDismissed(true); setDismissAnnouncement('Dismissed'); refreshSidebar() }}
                       />
                     )
                     // Only a new match's control needs a word: its label alone does not say what to do.
