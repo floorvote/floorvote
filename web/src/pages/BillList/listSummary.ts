@@ -63,6 +63,8 @@ export function buildListSummary({ values, view, customFieldDefs = [], isMultiSt
     year: unique(filter.year.map(Number)),
     tag: unique([...filter.tag]),
     subject: unique(filter.subject.map(s => encodeSubjectFilter(s.state, s.name))),
+    committee: unique([...filter.committee]),
+    committeeScope: filter.committeeScope,
     field,
     minRelevance: filter.minRelevance ?? 0,
     positionOptions: [{ value: 'none', label: 'Not set' }],

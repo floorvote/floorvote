@@ -320,6 +320,19 @@ export const billSubjects = sqliteTable('bill_subjects', {
   index('idx_bill_subjects_name').on(t.state, t.subjectName),
 ])
 
+/** The committees a bill was referred to, from central (#471, migration 0116). `isCurrent` marks the one it is pending in. */
+export const billCommittees = sqliteTable('bill_committees', {
+  billId:      text('bill_id').notNull().references(() => bills.id, { onDelete: 'cascade' }),
+  committeeId: text('committee_id').notNull(),
+  state:       text('state').notNull(),
+  name:        text('name').notNull(),
+  chamber:     text('chamber'),
+  isCurrent:   integer('is_current', { mode: 'boolean' }).notNull().default(false),
+}, (t) => [
+  primaryKey({ columns: [t.billId, t.committeeId] }),
+  index('idx_bill_committees_committee').on(t.committeeId, t.billId),
+])
+
 export const memberVotes = sqliteTable('member_votes', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull(),

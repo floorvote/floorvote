@@ -21,6 +21,7 @@ import { billUrl } from '../../lib/sessionSlug'
 import { orgPositionLabel, DEFAULT_ORG_NOUN } from '../../lib/orgNoun'
 import { BillRow } from './BillRow'
 import { FilterDropdown, SortHeader, sortDescription, SubjectFilterDropdown } from './FilterPanel'
+import { COMMITTEE_FILTER_HINT, CommitteeFilterDropdown } from './CommitteeFilter'
 import { PAGE_SIZE, OUTER_GRID, CHIP_GRID, CHIP_GRID_MULTISTATE, CHIP_GAP, ROW_PADDING_LEFT, ROW_PADDING_RIGHT } from './constants'
 import type { Bill, CustomFieldDef, FacetCounts, NormalizedSession } from './types'
 import { useBillSort } from '../../hooks/useBillSort'
@@ -667,6 +668,8 @@ export function BillList() {
     year: f.year,
     tag: f.tag,
     subject: f.subject,
+    committee: f.committee,
+    committeeScope: f.committeeScope,
     field: f.field,
     minRelevance: f.minRelevance,
     positionOptions: f.positionOptions,
@@ -681,6 +684,7 @@ export function BillList() {
     onRemoveYear: y => f.setYear(prev => prev.filter(x => x !== y)),
     onRemoveTag: tag => f.handleTagClick(tag),
     onRemoveSubject: subject => f.handleSubjectsChange(f.subject.filter(s => s !== subject)),
+    onRemoveCommittee: c => f.setCommittee(prev => prev.filter(x => x !== c)),
     onRemoveField: (fieldId, v) => f.setField(fieldId, (f.field[fieldId] ?? []).filter(x => x !== v)),
     onRemoveMinRelevance: () => f.setMinRelevance(0),
   })
@@ -1040,6 +1044,18 @@ export function BillList() {
               />
             </HoverTooltip>
           )}
+          {(f.committeeGroups.length > 0 || f.committee.length > 0) && (
+            <HoverTooltip maxWidth={280} text={COMMITTEE_FILTER_HINT}>
+              <CommitteeFilterDropdown
+                groups={f.committeeGroups}
+                selected={f.committee}
+                onChange={f.setCommittee}
+                scope={f.committeeScope}
+                onScopeChange={f.setCommitteeScope}
+                showStates={f.isMultiState}
+              />
+            </HoverTooltip>
+          )}
           {/* Custom field filters — binary and dropdown only. Which types are
               filterable, and what control each gets, is decided once in
               lib/customFieldFilters.ts and shared with the mobile FilterSheet
@@ -1269,6 +1285,11 @@ export function BillList() {
         positionOptions={positionVocabulary.map(p => ({ value: p, label: p }))}
         tagOptions={f.allTags}
         subjectGroups={f.subjectGroups}
+        committee={f.committee}
+        committeeScope={f.committeeScope}
+        committeeGroups={f.committeeGroups}
+        onCommitteeChange={f.setCommittee}
+        onCommitteeScopeChange={f.setCommitteeScope}
         yearOptions={f.yearFacetKeys.map(y => ({ value: y, label: y }))}
         totalYearCount={f.yearFacetKeys.length}
         stateOptions={f.uniqueStates.map(s => ({ value: s, label: s }))}

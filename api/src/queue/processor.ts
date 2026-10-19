@@ -12,6 +12,7 @@ import { hearingUid } from '../lib/hearingUid'
 import { matchesKeywords, billMatchText } from '../lib/keywords'
 import { bills, associationConfig, feedEvents, billTexts, calendarEvents } from '../db/schema'
 import { syncBillSubjects } from '../lib/billSubjects'
+import { syncBillCommittees, type CentralCommittee } from '../lib/billCommittees'
 import { syncIdenticalCompanions } from '../lib/companionGroups'
 import { pullCompanions } from '../lib/companionAnalysis'
 import { nowDb } from '../lib/dbTime'
@@ -236,6 +237,9 @@ type CentralBill = {
   /** `sastBillId` is central's id for the other bill, and `kind` what the provider's vocabulary makes of the relationship. Both absent from an older central. */
   relatedBills: Array<{ identifier: string; session: string; relationType: string; sastBillId?: number | null; kind?: string }>
   subjects?: string[]
+  /** The committee the bill is pending in, and its referrals, each named by central's committee row (#471). */
+  committee?: CentralCommittee | null
+  referrals?: CentralCommittee[]
   /** The bill's chamber as central stores it. Empty for a stub central hasn't fetched. */
   body?: string | null
   /** What title-matched companion suggestions match the bill by (#521), or null. Absent from an older central. */
@@ -368,6 +372,7 @@ async function applyCentralBill(
           })
           .where(eq(bills.id, existing.id))
         await syncBillSubjects(db, existing.id, centralBill.state, centralBill.subjects ?? [])
+        await syncBillCommittees(db, existing.id, centralBill.state, centralBill.committee, centralBill.referrals)
       }
       return
     }
@@ -418,6 +423,7 @@ async function applyCentralBill(
 
     const { id: stubInternalId } = await upsertBill(db, msg.billId, { ...stubData, updatedAt: nowStub })
     await syncBillSubjects(db, stubInternalId, centralBill.state, centralBill.subjects ?? [])
+    await syncBillCommittees(db, stubInternalId, centralBill.state, centralBill.committee, centralBill.referrals)
     return
   }
 
@@ -475,6 +481,7 @@ async function applyCentralBill(
 
     const { id: metadataInternalId } = await upsertBill(db, msg.billId, { ...metadataData, updatedAt: nowMd })
     await syncBillSubjects(db, metadataInternalId, centralBill.state, centralBill.subjects ?? [])
+    await syncBillCommittees(db, metadataInternalId, centralBill.state, centralBill.committee, centralBill.referrals)
     return
   }
 
@@ -847,6 +854,7 @@ async function applyCentralBill(
 
   const { id: billInternalId, isNew } = await upsertBill(db, msg.billId, upsertData)
   await syncBillSubjects(db, billInternalId, centralBill.state, centralBill.subjects ?? [])
+  await syncBillCommittees(db, billInternalId, centralBill.state, centralBill.committee, centralBill.referrals)
 
   await syncBillTexts(db, billInternalId, centralBill.texts, fetchedAt, now)
 

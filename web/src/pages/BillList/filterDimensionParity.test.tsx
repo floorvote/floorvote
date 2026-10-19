@@ -85,7 +85,10 @@ vi.mock('../../lib/api', () => {
       const stateCounts = Object.fromEntries(facetState.states.map(s => [s, 1]))
       return {
         status: { '2': 1 }, stage: { enacted: 1 }, ...(facetState.statusGroups ? { statusGroups: facetState.statusGroups } : {}), priority: {}, sessionName: {}, year: { '2026': 1 }, state: stateCounts, position: {},
-        tag: { Education: 1 }, subject: { 'RI:Roads': 1 }, field: {}, myBillsCount: 0, newMatchesCount: 3,
+        tag: { Education: 1 }, subject: { 'RI:Roads': 1 },
+        committee: { 101: 3, 102: 9 },
+        committeeInfo: { 101: { name: 'Judiciary', state: 'RI', chamber: 'S' }, 102: { name: 'Rules', state: 'RI', chamber: 'S' } },
+        field: {}, myBillsCount: 0, newMatchesCount: 3,
         draftCount: draftState.draftCount,
         hasDrafts: draftState.hasDrafts,
       } as T
@@ -192,6 +195,11 @@ function renderMobile(
       positionOptions={[{ value: 'support', label: 'Support' }]}
       tagOptions={['Education']}
       subjectGroups={subjectGroups}
+      committee={[]}
+      committeeScope="any"
+      committeeGroups={[{ state: 'RI', options: [{ value: '101', label: 'Judiciary (Senate)', count: 3, procedural: false }] }]}
+      onCommitteeChange={() => {}}
+      onCommitteeScopeChange={() => {}}
       yearOptions={[{ value: '2026', label: '2026' }]}
       totalYearCount={1}
       stateOptions={ctx.uniqueStates.map(s => ({ value: s, label: s }))}
@@ -570,7 +578,7 @@ describe('dimension scope classification', () => {
   it('treats every value dimension as a bill fact', () => {
     const bill = FILTER_DIMENSIONS.filter(d => d.scope === 'bill').map(d => d.key).sort()
     // Stage is a grouping inside Status (#677), not a dimension of its own.
-    expect(bill).toEqual(['position', 'priority', 'state', 'status', 'subject', 'tag', 'year'])
+    expect(bill).toEqual(['committee', 'position', 'priority', 'state', 'status', 'subject', 'tag', 'year'])
   })
 
   it('registers unvoted so the bills page can set it, not only clear it', () => {
@@ -780,6 +788,30 @@ describe('filter UI parity — both surfaces serialize the same bill filter', ()
 
     await renderWithProbe()
     PICKS.forEach(phonePick)
+    expect(urlSearch()).toBe(expected)
+  })
+
+  // The Committee filter (#471): a committee and the switch to its current committee, from either surface.
+  it('writes the same committee filter from the desktop menu and from the phone sheet', async () => {
+    const expected = '?committee=101&committeeScope=current'
+
+    await renderWithProbe()
+    fireEvent.click(screen.getAllByRole('button', { name: new RegExp(`^${filterDimensionLabel('committee')}`) })[0])
+    fireEvent.click(screen.getByText('Judiciary (Senate)'))
+    fireEvent.click(screen.getByRole('radio', { name: 'Current committee' }))
+    expect(urlSearch()).toBe(expected)
+    cleanup()
+
+    await renderWithProbe()
+    fireEvent.click(document.querySelector('.mobile-filter-btn') as HTMLElement)
+    const rows = screen.getAllByRole('button', { name: new RegExp(`^${filterDimensionLabel('committee')}`) })
+    fireEvent.click(rows[rows.length - 1])
+    const options = screen.getAllByText('Judiciary (Senate)')
+    fireEvent.click(options[options.length - 1])
+    const switches = screen.getAllByRole('radio', { name: 'Current committee' })
+    fireEvent.click(switches[switches.length - 1])
+    fireEvent.click(screen.getByRole('button', { name: /back to filters/i }))
+    fireEvent.click(screen.getByRole('button', { name: /close filters/i }))
     expect(urlSearch()).toBe(expected)
   })
 

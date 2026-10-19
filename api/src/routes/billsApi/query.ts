@@ -87,6 +87,18 @@ export function subjectMembership(values: readonly SubjectValue[], t: BillsTable
 }
 
 /**
+ * The committee filter (#471) as a condition on one bill: some committee picked is one the bill was referred to, or
+ * under the current scope the one it is pending in. The ids are bound as one JSON list, so any number of them binds
+ * one value.
+ */
+export function committeeMembership(ids: readonly string[], scope: 'current' | 'any', t: BillsTable = bills): SQL {
+  return sql`EXISTS (
+    SELECT 1 FROM bill_committees bc
+    WHERE bc.bill_id = ${t.id} AND bc.committee_id IN (SELECT value FROM json_each(${JSON.stringify(ids)}))${scope === 'current' ? sql` AND bc.is_current = 1` : sql``}
+  )`
+}
+
+/**
  * Status filter values, with each bare LegiScan progress code (7 to 12) also
  * matching the word central now sends for it. Bills held the codes until
  * migration 0076 rewrote them, and saved views and links can still name them.

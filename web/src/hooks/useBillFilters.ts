@@ -11,6 +11,7 @@ import { knownStates, knownStatuses, knownStatusGroups, knownTagsCache } from '.
 import { normalizeViewQuery } from '../lib/savedViews'
 import { STATUS_STAGES } from '../../../shared/statusStages'
 import { groupStatusOptions, type StatusGroupInfo } from '../lib/statusGroups'
+import { committeeGroups as groupCommittees } from '../lib/committeeGroups'
 
 type SearchParams = ReturnType<typeof useSearchParams>[0]
 type SetSearchParams = ReturnType<typeof useSearchParams>[1]
@@ -88,6 +89,8 @@ export function useBillFilters(opts: {
   const match = filter.match
   const tag = useMemo(() => [...filter.tag], [filter.tag])
   const subject = useMemo(() => filter.subject.map(s => encodeSubjectFilter(s.state, s.name)), [filter.subject])
+  const committee = useMemo(() => [...filter.committee], [filter.committee])
+  const committeeScope = filter.committeeScope
   const field = useMemo(
     () => Object.fromEntries(Object.entries(filter.field).map(([id, values]) => [id, [...values]])) as Record<string, string[]>,
     [filter.field],
@@ -114,6 +117,9 @@ export function useBillFilters(opts: {
   const setDrafts = useMemo(() => part<boolean>(f => f.drafts, drafts => ({ drafts })), [part])
   const setMatch = useMemo(() => part<BillFilter['match']>(f => f.match, match => ({ match })), [part])
   const setTag = useMemo(() => part<string[]>(f => [...f.tag], tag => ({ tag })), [part])
+  const setCommittee = useMemo(() => part<string[]>(f => [...f.committee], committee => ({ committee })), [part])
+  const setCommitteeScope = useMemo(
+    () => part<BillFilter['committeeScope']>(f => f.committeeScope, committeeScope => ({ committeeScope })), [part])
 
   const setField = useCallback((fieldId: string, values: string[]) => {
     commit(prev => {
@@ -316,6 +322,12 @@ export function useBillFilters(opts: {
       }))
   }, [facetCounts.subject])
 
+  // The Committee filter's options (#471): by state, procedural committees last (lib/committeeGroups.ts).
+  const committeeGroups = useMemo(
+    () => groupCommittees(facetCounts.committee ?? {}, facetCounts.committeeInfo ?? {}),
+    [facetCounts.committee, facetCounts.committeeInfo],
+  )
+
   const uniqueStates = [...new Set([...knownStates, ...Object.keys(facetCounts.state)])].sort((a, b) => {
     if (a === 'US') return -1
     if (b === 'US') return 1
@@ -340,6 +352,7 @@ export function useBillFilters(opts: {
     match, setMatch,
     tag, setTag,
     subject, subjectGroups,
+    committee, setCommittee, committeeScope, setCommitteeScope, committeeGroups,
     field, setField,
     filter,
     handleTagClick, handleTagsChange, handleSubjectsChange, handleStatusClick, handlePriorityClick,
