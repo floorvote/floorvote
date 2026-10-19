@@ -99,6 +99,15 @@ describe('Profile Notifications section', () => {
     expect(within(section).queryByRole('switch', { name: /mention/i })).not.toBeInTheDocument()
   })
 
+  it('says the replies setting covers both the app and email, and points to Mute for one bill', async () => {
+    mockConfig({})
+    render(<MemoryRouter><Profile /></MemoryRouter>)
+    const section = (screen.getByRole('heading', { level: 2, name: 'Notifications' })).parentElement as HTMLElement
+
+    expect(within(section).getByText("Notify me in FloorVote and by email when someone else comments on a bill I've commented on. To stop them on one bill, use Mute comments on that bill.")).toBeInTheDocument()
+    expect(within(section).queryByText(/replies still appear in your notifications/i)).not.toBeInTheDocument()
+  })
+
   it.each([
     ['setting-email-replies', /replies on bills you've commented on/i],
     ['setting-email-digest', /recent bill activity/i],

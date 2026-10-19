@@ -574,7 +574,10 @@ describe('muting comments on a bill', () => {
       expect(await participantOnPage('ben')).toBe(true)
     })
 
-    it('offers Mute to a participant who turned reply emails off, who still gets reply notifications in the app', async () => {
+    // The page hides Mute for a member whose "Replies on bills you've commented
+    // on" setting is off (it reads the setting from the signed-in user), so the
+    // route keeps reporting participation by comments alone.
+    it('still reports a member who turned replies off as a participant, though they are notified of nothing', async () => {
       await member('Dee')
       await getDb(env.DB).update(users).set({ emailRepliesEnabled: 0 }).where(eq(users.id, ids.dee))
       await comment('dee', '<p>Quiet one</p>')
@@ -582,7 +585,7 @@ describe('muting comments on a bill', () => {
 
       expect(await participantOnPage('dee')).toBe(true)
       const commentId = await comment('ann', '<p>Reply</p>')
-      expect(await inboxFor('dee', commentId)).toEqual(['reply'])
+      expect(await inboxFor('dee', commentId)).toEqual([])
       expect(emailedTo()).not.toContain('dee@example.com')
     })
 

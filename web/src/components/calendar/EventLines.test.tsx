@@ -94,15 +94,16 @@ describe('EventLines — full variant stacked layout', () => {
     const tc = container.textContent ?? ''
     expect(tc.indexOf('Judiciary hearing')).toBeLessThan(tc.indexOf('schedule'))
     expect(tc.indexOf('schedule')).toBeLessThan(tc.indexOf('location_on'))
-    expect(tc.indexOf('location_on')).toBeLessThan(tc.indexOf('link_2'))
-    expect(tc.indexOf('link_2')).toBeLessThan(tc.indexOf('Agenda: testimony'))
+    expect(tc.indexOf('location_on')).toBeLessThan(tc.indexOf('link'))
+    expect(tc.indexOf('link')).toBeLessThan(tc.indexOf('Agenda: testimony'))
   })
 
-  it('renders the schedule, location_on, and link_2 meta icons', () => {
+  it('renders the schedule, location_on, and link meta icons', () => {
     full()
     expect(screen.getByText('schedule')).toBeInTheDocument()
     expect(screen.getByText('location_on')).toBeInTheDocument()
-    expect(screen.getByText('link_2')).toBeInTheDocument()
+    expect(screen.getByText('link')).toBeInTheDocument()
+    expect(screen.queryByText('link_2')).not.toBeInTheDocument()
   })
 
   it('shows the link with scheme + www stripped but links to the real URL', () => {

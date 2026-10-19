@@ -13,7 +13,7 @@ export const THREAD_LINE_STYLE: CSSProperties = { display: 'flex', alignItems: '
 export function GroupingLine({ event }: { event: GroupingEvent }) {
   return (
     <div role="note" style={THREAD_LINE_STYLE}>
-      <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: fontSize.lg }}>{event.type === 'grouped' ? 'link_2' : 'link_off'}</span>
+      <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: fontSize.lg }}>{event.type === 'grouped' ? 'link' : 'link_off'}</span>
       <span>{groupingLineText(event)}</span>
     </div>
   )
