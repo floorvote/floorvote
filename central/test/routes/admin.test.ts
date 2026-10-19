@@ -784,3 +784,39 @@ describe('POST /admin/refetch-fragment-texts', () => {
     expect(sendBatch, 'dryRun must not queue anything').not.toHaveBeenCalled()
   })
 })
+
+// POST /admin/refetch-bill-text/:billId
+describe('POST /admin/refetch-bill-text/:billId', () => {
+  it('returns 401 without admin secret', async () => {
+    const { env: mockEnv, send } = envWithMockedQueue()
+    const res = await app.request('/api/admin/refetch-bill-text/9001', { method: 'POST' }, mockEnv)
+    expect(res.status).toBe(401)
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('returns 400 for a non-numeric bill id', async () => {
+    const { env: mockEnv, send } = envWithMockedQueue()
+    const res = await app.request(
+      '/api/admin/refetch-bill-text/abc',
+      { method: 'POST', headers: { 'x-admin-secret': 'test-secret' } },
+      mockEnv,
+    )
+    expect(res.status).toBe(400)
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('queues the bill with forceTextRefetch and without skipFetch, so it fetches the bill and ignores the retry cap', async () => {
+    const { env: mockEnv, send } = envWithMockedQueue()
+    const res = await app.request(
+      '/api/admin/refetch-bill-text/9001',
+      { method: 'POST', headers: { 'x-admin-secret': 'test-secret' } },
+      mockEnv,
+    )
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ ok: true, billId: 9001, queued: true })
+    expect(send).toHaveBeenCalledTimes(1)
+    const body = send.mock.calls[0][0]
+    expect(body).toMatchObject({ billId: 9001, forceTextRefetch: true })
+    expect(body.skipFetch).toBeUndefined()
+  })
+})
