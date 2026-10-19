@@ -14,7 +14,7 @@ import { filterableCustomFields } from '../lib/customFieldFilters'
 import { buildActiveFilterGroups } from '../pages/BillList/activeFilterGroups'
 import { GroupOperator } from '../pages/BillList/GroupOperator'
 import { CommitteeScopeSwitch, ProceduralTag } from '../pages/BillList/CommitteeFilter'
-import type { CommitteeGroup } from '../lib/committeeGroups'
+import { committeeLabelsOf, type CommitteeGroup } from '../lib/committeeGroups'
 import type { ReactNode } from 'react'
 
 interface FilterSheetProps {
@@ -397,7 +397,7 @@ export function FilterSheet({
     state, status, stage, position, priority,
     year: year.map(Number),
     tag, subject, committee, committeeScope, field, minRelevance,
-    committeeLabels: Object.fromEntries(committeeGroups.flatMap(g => g.options.map(o => [o.value, o.label]))),
+    committeeLabels: committeeLabelsOf(committeeGroups),
     positionOptions,
     customFieldDefs,
     isMultiState,

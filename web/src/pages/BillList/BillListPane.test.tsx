@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, within, waitFor, act } from '@testing-library/react'
+import { render, screen, fireEvent, within, waitFor, act, cleanup } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { color } from '../../styles/tokens'
 import { decodeStatus } from '../../lib/legislativeStatus'
@@ -458,6 +458,23 @@ describe('BillListPane: filter and sort summary', () => {
     const tip = await screen.findByRole('tooltip')
     for (const label of ['Year: 2026', 'Relevance 5+', 'Team: Alpha']) expect(tip).toHaveTextContent(label)
     expect(tip).toHaveTextContent(/high/i)
+  })
+
+  it('names a picked committee in the active filters from the facets, and asks the facets only when one is picked', async () => {
+    hoisted.respond = (path) => {
+      if (path.startsWith('/bills/facets')) return { committee: { c1: 3 }, committeeInfo: { c1: { name: 'Judiciary', state: 'RI', chamber: 'S' } } }
+      return path.startsWith('/bills?') ? page([PLAIN, GROUP3], { total: 2 }) : {}
+    }
+    sessionStorage.setItem('lastBillsUrl', '/bills?year=2026')
+    await paneReady()
+    expect(hoisted.calls.some(c => c.startsWith('/bills/facets'))).toBe(false)
+    cleanup()
+    hoisted.calls = []
+    sessionStorage.setItem('lastBillsUrl', '/bills?committee=c1')
+    const pane = await paneReady()
+    await waitFor(() => expect(hoisted.calls.filter(c => c.startsWith('/bills/facets'))).toEqual(['/bills/facets?committee=c1']))
+    hover(within(pane).getByRole('button', { name: /1 filter · Sorted by/ }))
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Referred to Judiciary (Senate)')
   })
 
   it('shows the same list on keyboard focus, and Escape closes it', async () => {

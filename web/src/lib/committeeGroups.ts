@@ -37,3 +37,8 @@ export function committeeGroups(counts: Record<string, number>, info: CommitteeI
       options: options.sort((x, y) => Number(x.procedural) - Number(y.procedural) || y.count - x.count || x.label.localeCompare(y.label)),
     }))
 }
+
+/** Each committee's label by id, as the chips and the split pane's summary name them. */
+export function committeeLabelsOf(groups: readonly CommitteeGroup[]): Record<string, string> {
+  return Object.fromEntries(groups.flatMap(g => g.options.map(o => [o.value, o.label])))
+}

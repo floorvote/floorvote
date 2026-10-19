@@ -11,7 +11,7 @@ import { knownStates, knownStatuses, knownStatusGroups, knownTagsCache } from '.
 import { normalizeViewQuery } from '../lib/savedViews'
 import { STATUS_STAGES } from '../../../shared/statusStages'
 import { groupStatusOptions, type StatusGroupInfo } from '../lib/statusGroups'
-import { committeeGroups as groupCommittees } from '../lib/committeeGroups'
+import { committeeGroups as groupCommittees, committeeLabelsOf } from '../lib/committeeGroups'
 
 type SearchParams = ReturnType<typeof useSearchParams>[0]
 type SetSearchParams = ReturnType<typeof useSearchParams>[1]
@@ -329,7 +329,7 @@ export function useBillFilters(opts: {
   )
   // Each committee's label by id, for the chips.
   const committeeLabels = useMemo(
-    () => Object.fromEntries(committeeGroups.flatMap(g => g.options.map(o => [o.value, o.label]))) as Record<string, string>,
+    () => committeeLabelsOf(committeeGroups),
     [committeeGroups],
   )
 

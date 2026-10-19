@@ -14,7 +14,8 @@ import { LastActionChip } from '../../components/LastActionChip'
 import { SECTION_LABEL, CHROME_TEXT, SR_ONLY, BILL_TITLE_TEXT } from '../../lib/textStyles'
 import { color, fontSize, fontWeight } from '../../styles/tokens'
 import { billDisplayTitle } from '../../../../shared/billTitle'
-import { billsApiParamsFromSearch, billsQueryFromSearch, searchFromListUrl } from './billsQuery'
+import { billsApiParamsFromSearch, billsFacetParams, billsQueryFromSearch, searchFromListUrl } from './billsQuery'
+import { committeeGroups, committeeLabelsOf } from '../../lib/committeeGroups'
 import { buildListSummary } from './listSummary'
 import { BillListPaneSummary } from './BillListPaneSummary'
 import { peekBillsListCache, peekCustomFieldDefs } from './index'
@@ -22,7 +23,7 @@ import { groupDisplay, memberPath, formatYearChip } from './BillRow'
 import { groupPlacement, groupGridStyle, groupItemStyle, subgridCellStyle, GROUP_ROW_GAP } from './groupRows'
 import { PANE_MIN_WIDTH, paneGridTemplate, visiblePaneColumns, type PaneColumn } from './paneWidth'
 import { PaneResizeHandle, useBillListPaneWidth } from './BillListPaneResize'
-import type { Bill } from './types'
+import type { Bill, FacetCounts } from './types'
 import type { SavedView } from './ViewSwitcher'
 
 // Viewport width at which a bill page shows this pane beside it. At 1440 with
@@ -337,12 +338,29 @@ export function BillListPane() {
 
   // The summary is of the list the pane shows: the same resolved query its
   // request is built from, so the line and the rows cannot disagree.
-  const summary = useMemo(() => resolved && buildListSummary({
-    values: billsQueryFromSearch(resolved.search),
+  const values = useMemo(() => resolved && billsQueryFromSearch(resolved.search), [resolved])
+  // The facets name a picked committee, which the list's own reply does not, so they are asked for once per resolved
+  // query and only when one is picked. Until they land the summary reads a committee by its id.
+  const [committeeLabels, setCommitteeLabels] = useState<Record<string, string>>({})
+  useEffect(() => {
+    setCommitteeLabels({})
+    const filter = values?.filter
+    if (!filter || filter.committee.length === 0) return
+    let cancelled = false
+    apiFetch<FacetCounts>(`/bills/facets?${billsFacetParams(filter)}`)
+      .then(facets => {
+        if (!cancelled) setCommitteeLabels(committeeLabelsOf(committeeGroups({}, facets.committeeInfo ?? {}, filter.committee)))
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [values])
+  const summary = useMemo(() => resolved && values && buildListSummary({
+    values,
     view: resolved.view,
     customFieldDefs: peekCustomFieldDefs(),
     isMultiState: multiState,
-  }), [resolved, multiState])
+    committeeLabels,
+  }), [resolved, values, multiState, committeeLabels])
 
   // Bring the current bill into view only when it is off-screen, and only when
   // the bill changes (or the list first arrives) — never when a page
