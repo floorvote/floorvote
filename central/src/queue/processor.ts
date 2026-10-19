@@ -351,7 +351,7 @@ export async function ingestMeasure(
         .set({ fetchError: `hash-refetch ${t.text_hash} attempt ${attempt}: ${row?.fetchError ?? 'no state_link'}` })
         .where(eq(billTexts.docId, t.doc_id))
       if (attempt >= HASH_REFETCH_ATTEMPTS) {
-        console.warn(`[processor-ls] giving up refetching doc ${t.doc_id} of bill ${bill.bill_id} for its new text hash after ${attempt} attempts; a newer hash or a manually queued forced ingest lifts the cap`)
+        console.warn(`[processor-ls] giving up refetching doc ${t.doc_id} of bill ${bill.bill_id} for its new text hash after ${attempt} attempts; a newer hash or POST /admin/refetch-bill-text/:billId lifts the cap`)
       } else {
         holdBackChangeHash = true
       }
