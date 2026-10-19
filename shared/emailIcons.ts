@@ -70,7 +70,7 @@ export const EMAIL_ICON_NEEDS: EmailIconNeed[] = dedupe([
   // agenda card's meta color (color.textMuted).
   { icon: 'schedule', hex: color.textMuted, fill: false },
   { icon: 'location_on', hex: color.textMuted, fill: false },
-  { icon: 'link_2', hex: color.textMuted, fill: false },
+  { icon: 'link', hex: color.textMuted, fill: false },
 ])
 
 /** Parse the `icon_names=` allowlist out of web/index.html. */

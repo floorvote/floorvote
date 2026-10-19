@@ -157,6 +157,7 @@ describe('renderWeekAheadEmail', () => {
     const html = render()
     expect(html).toContain('email-icons/schedule__667386.png')
     expect(html).toContain('email-icons/location_on__667386.png')
-    expect(html).toContain('email-icons/link_2__667386.png')
+    expect(html).toContain('email-icons/link__667386.png')
+    expect(html).not.toContain('link_2')
   })
 })

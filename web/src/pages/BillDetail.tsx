@@ -2939,10 +2939,10 @@ export function BillDetail() {
         const companions = (bill.groupBills ?? []).filter(g => g.billId !== bill.id)
         if (companions.length === 0) return null
         return (
-          // Indented to the section titles in the bill card above (its border and its 24px of padding), and set
-          // closer to the comments and position boxes it describes than to that card: 32px above, and the
-          // columns' 24px of top padding less 8px below.
-          <p data-testid="group-shares-line" style={{ margin: '32px 0 -8px 25px', fontSize: fontSize.sm, lineHeight: 1.6, color: color.textMuted }}>
+          // Indented to the comments heading below it (the card's 1px border and 16px of padding), so the line
+          // and the heading start at the same x, and set closer to the comments and position boxes it describes
+          // than to the bill card above: 32px above, and the columns' 24px of top padding less 8px below.
+          <p data-testid="group-shares-line" style={{ margin: '32px 0 -8px 17px', fontSize: fontSize.sm, lineHeight: 1.6, color: color.textMuted }}>
             {upperFirst(groupSharedThings(config?.orgNoun ?? DEFAULT_ORG_NOUN, customFieldDefs.length > 0))} are shared with{' '}
             {companions.map((g, i) => (
               <Fragment key={g.billId}>
