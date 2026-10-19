@@ -49,6 +49,8 @@ import { HoverTooltip } from '../components/HoverTooltip'
 import { SubjectsTrigger, SubjectsPanel } from '../components/SubjectsDisclosure'
 import { ChangeHistoryTooltip, type ChangeRecord } from '../components/ChangeHistoryTooltip'
 import { RichTextEditor } from '../components/RichTextEditor'
+import { CommentAttachments } from '../components/CommentAttachments'
+import type { AttachmentLimits, AttachmentSummary } from '../lib/attachments'
 import { CommentContent } from '../components/CommentContent'
 import { CustomFieldsSection, type CustomFieldDef } from '../components/CustomFieldsSection'
 import { useDemo } from '../context/DemoContext'
@@ -403,6 +405,8 @@ type Comment = {
   content: string
   createdAt: string
   reactions: { emoji: string; count: number; userReacted: boolean; reactors: { name: string; title: string | null }[] }[]
+  /** Files attached to the comment (#465). Absent from a server that predates them. */
+  attachments?: AttachmentSummary[]
 }
 
 type CoSponsor = { name: string; party: string | null; role?: string; district?: string; url: string | null; primary?: boolean }
@@ -733,7 +737,8 @@ export function BillDetail() {
   }
   const [openPickerFor, setOpenPickerFor] = useState<string | null>(null)
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
-  const [config, setConfig] = useState<{ positionVocabulary: string[]; instanceDomains: Record<string, string>; orgNoun: string } | null>(null)
+  const [config, setConfig] = useState<{ positionVocabulary: string[]; instanceDomains: Record<string, string>; orgNoun: string; attachments: AttachmentLimits | null } | null>(null)
+  const commentAttachments = demoMode ? null : config?.attachments ?? null
   // How the thread's activity lines word the position, as the position card does, and mark a change made on a companion.
   const threadPositionLabel = orgPositionLabel(config?.orgNoun ?? DEFAULT_ORG_NOUN).toLowerCase()
   const renderChangeBill = (e: FieldChangeEvent) => bill && e.billId !== bill.id && e.billNumber
@@ -1073,8 +1078,8 @@ export function BillDetail() {
     applyBillData(prefetchedBill)
     const today = todayIso()
     if ((prefetchedBill.calendar ?? []).some(e => e.date >= today)) setShowHearings(true)
-    apiFetch<{ associationName: string; positionVocabulary: string[]; instanceDomains: Record<string, string>; orgNoun: string }>('/config')
-      .then(cfg => setConfig({ positionVocabulary: cfg.positionVocabulary, instanceDomains: cfg.instanceDomains ?? {}, orgNoun: cfg.orgNoun }))
+    apiFetch<{ associationName: string; positionVocabulary: string[]; instanceDomains: Record<string, string>; orgNoun: string; attachments?: AttachmentLimits | null }>('/config')
+      .then(cfg => setConfig({ positionVocabulary: cfg.positionVocabulary, instanceDomains: cfg.instanceDomains ?? {}, orgNoun: cfg.orgNoun, attachments: cfg.attachments ?? null }))
       .catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [billKey])
@@ -1207,11 +1212,11 @@ export function BillDetail() {
     refreshSidebar()
   }
 
-  async function handlePostComment(content: string) {
+  async function handlePostComment(content: string, attachmentIds: string[] = []) {
     if (!bill || !content.trim()) return
-    const result = await apiFetch<{ id: string; content: string; createdAt: string }>(`/bills/${bill.id}/comments`, {
+    const result = await apiFetch<{ id: string; content: string; createdAt: string; attachments?: AttachmentSummary[] }>(`/bills/${bill.id}/comments`, {
       method: 'POST',
-      body: JSON.stringify({ content }),
+      body: JSON.stringify(attachmentIds.length > 0 ? { content, attachmentIds } : { content }),
     })
     setComments((prev) => [...prev, {
       id: result.id,
@@ -1221,6 +1226,7 @@ export function BillDetail() {
       content: result.content,
       createdAt: result.createdAt,
       reactions: [],
+      attachments: result.attachments ?? [],
     }])
     setNewCommentIds((prev) => new Set([...prev, result.id]))
   }
@@ -3241,6 +3247,7 @@ export function BillDetail() {
                   )
                   : <div style={{ margin: '0 0 8px' }}><CommentContent content={comment.content} users={usersData} roles={rolesData} fontSize={COMMENT_STYLE.bodySize} /></div>
                 }
+                <CommentAttachments attachments={comment.attachments} />
                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center', position: 'relative' }}>
                   {comment.reactions.map((r) => (
                     <span key={r.emoji} style={{ position: 'relative', display: 'inline-block' }}
@@ -3334,7 +3341,10 @@ export function BillDetail() {
                   bill's draft text across the spinner-less prefetch navigation
                   (BillDetail stays mounted and just swaps data). */}
               <RichTextEditor
-                key={bill.id}
+                // Attachments are read when the editor is created, so the key also
+                // remounts it once /config says they are on. Never on a demo, whatever /config says.
+                key={`${bill.id}:${commentAttachments ? 'files' : 'text'}`}
+                attachments={commentAttachments}
                 onSubmit={handlePostComment}
                 placeholder="Add a comment…"
                 submitLabel="Post"

@@ -29,6 +29,7 @@ import { settingBox, SETTING_BOX_HEADER, SETTING_BOX_TITLE, SETTING_BOX_DESC } f
 import { MissingRequiredReason, useRequiredSubmit } from '../../components/RequiredField'
 import TagTaxonomyTable from './TagTaxonomyTable'
 import { KeywordMatchSummary } from './KeywordMatchSummary'
+import { AttachmentStorage } from './AttachmentStorage'
 import { rowsFromTaxonomy, rowsToTaxonomy, type TaxonomyRow } from './taxonomyRows'
 
 type ChangedBy = { id: string; name: string | null; email: string } | null
@@ -1392,6 +1393,9 @@ export function Config() {
         </div>
 
       </div>
+
+      {/* File attachments: storage against the quota (shown only while attachments are on) */}
+      <AttachmentStorage />
 
       {/* Labels */}
       <div style={sectionCard}>

@@ -30,9 +30,9 @@ Statements in an AI summary can now link to the bill text behind them, as summar
 
 **Deploying.** Deploy central before the instances. An instance on an older central keeps working and simply doesn't ask for claim sources. An instance that hasn't been upgraded shows its claim source counts as unavailable in central's dashboard until it is. The instance migration only adds nullable columns.
 
-## Comment attachments (server side)
+## Comment attachments
 
-The API can now hold files attached to comments: upload, check, download, and cleanup (#465). The app doesn't offer attaching yet, so members see no change in this release. The feature stays off, and nothing needs doing, until you set it up.
+Members can attach files to comments (#465): from a paperclip in the comment toolbar, by dropping files on the composer, or by pasting. Posted comments list their files with a Download link, and admins see storage used against the quota in Settings. The feature stays off, and nothing needs doing, until you set it up.
 
 **To turn it on for an instance** (optional, and never on a demo instance, where it stays off regardless): create a private R2 bucket (no public access, no `r2.dev` URL), bind it as `ATTACHMENTS_BUCKET` (`api/wrangler.example.toml` has the block), and deploy as usual. Uploads stream through the instance's Worker, so the bucket needs no CORS rule and no API token. Several instances may share one bucket, since each stores its files under its `TENANT_ID`.
 
