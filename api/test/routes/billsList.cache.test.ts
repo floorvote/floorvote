@@ -2,10 +2,11 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { bills, memberVotes } from '../../src/db/schema'
+import { bills, memberVotes, officialPositions, billSubjects, customFieldDefinitions, billCustomFieldValues } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
 import { app } from '../../src/index'
 import { cacheKeyFor, getCachedPage, putCachedPage, listCacheTtl } from '../../src/lib/listCache'
+import { BILL_FILTER_DEFS, EMPTY_BILL_FILTER, parseBillFilter } from '../../../shared/billFilter'
 
 type ListBody = {
   bills: Array<{
@@ -38,11 +39,10 @@ function makeList(tenantId: string) {
 
 describe('listCache helper (direct put/get)', () => {
   const baseParams = {
-    statuses: [], stages: [], priorities: [], positionValues: [], sessions: [], years: [],
-    states: [], tagFilters: [], subjectFilters: [], q: undefined, minRelevance: undefined,
-    cfParamMap: {}, sort: 'default', dir: 'desc' as const, page: 1, pageSize: 50,
-    drafts: false,
+    filter: EMPTY_BILL_FILTER, sort: 'default', dir: 'desc' as const, page: 1, pageSize: 50,
   }
+  const withFilter = (qs: string) => ({ ...baseParams, filter: parseBillFilter(qs) })
+  const keyOf = (qs: string) => cacheKeyFor({ TENANT_ID: 'test-org' }, withFilter(qs)).url
 
   it('round-trips a stored page', async () => {
     const e = { TENANT_ID: 'test-org', LIST_CACHE_TTL: '60' }
@@ -69,8 +69,8 @@ describe('listCache helper (direct put/get)', () => {
 
   it('normalizes multi-value filter order into the same key', () => {
     const e = { TENANT_ID: 'test-org' }
-    const k1 = cacheKeyFor(e, { ...baseParams, statuses: ['Passed', 'Introduced'] })
-    const k2 = cacheKeyFor(e, { ...baseParams, statuses: ['Introduced', 'Passed'] })
+    const k1 = cacheKeyFor(e, withFilter('status=Passed&status=Introduced'))
+    const k2 = cacheKeyFor(e, withFilter('status=Introduced&status=Passed'))
     expect(k1.url).toBe(k2.url)
   })
 
@@ -78,6 +78,42 @@ describe('listCache helper (direct put/get)', () => {
     const k1 = cacheKeyFor({ TENANT_ID: 'tenant-a' }, baseParams)
     const k2 = cacheKeyFor({ TENANT_ID: 'tenant-b' }, baseParams)
     expect(k1.url).not.toBe(k2.url)
+  })
+
+  it('gives params that differ only in the match mode different keys (#687)', () => {
+    expect(keyOf('status=Passed&priority=high&match=any')).not.toBe(keyOf('status=Passed&priority=high'))
+  })
+
+  it('gives two equal bill filters the same key, however their query strings were written', () => {
+    expect(keyOf('priority=high&status=Passed&match=any')).toBe(keyOf('match=any&status=Passed&priority=high'))
+    expect(keyOf('field.area=b&field.area=a&field.zone=x')).toBe(keyOf('field.zone=x&field.area=a&field.area=b'))
+    expect(keyOf('subject=NJ:Taxes&subject=UT:Elections')).toBe(keyOf('subject=UT:Elections&subject=NJ:Taxes'))
+    expect(keyOf('status=Passed&match=all')).toBe(keyOf('status=Passed'))
+  })
+
+  it('leaves no filter out of the key: every filter the shared module names changes it when it is set', () => {
+    // One value per filter, taken from the module's own definitions so a filter added to it must be added here too.
+    const SET: Record<string, string> = {
+      status: 'status=Passed', stage: 'stage=passed', year: 'year=2026', sessionName: 'sessionName=2026', state: 'state=NJ',
+      position: 'position=Support', priority: 'priority=high', tag: 'tag=Clerk', subject: 'subject=UT:Elections',
+      minRelevance: 'minRelevance=5', search: 'search=election', myBills: 'myBills=1', unvoted: 'unvoted=1', newMatches: 'newMatches=1',
+      drafts: 'drafts=1', match: 'match=any', field: 'field.area=North',
+    }
+    expect(Object.keys(SET).sort()).toEqual(BILL_FILTER_DEFS.map(d => d.name).sort())
+    const unfiltered = keyOf('')
+    for (const [name, qs] of Object.entries(SET)) {
+      expect(keyOf(qs), `the key with ${name} set`).not.toBe(unfiltered)
+      expect(parseBillFilter(qs)[name as keyof typeof EMPTY_BILL_FILTER], `${qs} sets ${name}`).not.toEqual(EMPTY_BILL_FILTER[name as keyof typeof EMPTY_BILL_FILTER])
+    }
+    // And each one's key is its own.
+    const keys = new Set(Object.values(SET).map(keyOf))
+    expect(keys.size).toBe(Object.keys(SET).length)
+  })
+
+  it('gives a different page, sort, direction, and page size a different key', () => {
+    const k = (over: Partial<typeof baseParams>) => cacheKeyFor({ TENANT_ID: 'test-org' }, { ...baseParams, ...over }).url
+    const base = k({})
+    for (const over of [{ page: 2 }, { pageSize: 25 }, { sort: 'bill' }, { dir: 'asc' as const }]) expect(k(over)).not.toBe(base)
   })
 })
 
@@ -190,5 +226,77 @@ describe('GET /bills default-list caching', () => {
     const hb1b = second.bills.find(b => b.billNumber === 'HB 1')!
     // No caching → shared rows reflect the direct mutation.
     expect(hb1b.title).toBe('NOW FRESH')
+  })
+
+  // The key is the whole bill filter, so a request that sets a filter never reads the page of one that doesn't (#687).
+  describe('a cache entry belongs to one bill filter', () => {
+    it('does not serve a match=any request the page of the same filters that must all match', async () => {
+      const all = await list(token, '?status=Passed&priority=high')
+      expect(all.pagination.total).toBe(0)
+      const any = await list(token, '?status=Passed&priority=high&match=any')
+      expect(any.pagination.total).toBe(2)
+      expect(any.bills.map(b => b.billNumber).sort()).toEqual(['HB 1', 'SB 2'])
+    })
+
+    it('does not serve a request that must all match the page of match=any, the other way round', async () => {
+      const any = await list(token, '?status=Passed&priority=high&match=any')
+      expect(any.pagination.total).toBe(2)
+      const all = await list(token, '?status=Passed&priority=high')
+      expect(all.pagination.total).toBe(0)
+      expect(all.bills).toEqual([])
+    })
+
+    it('serves a repeat of a match=any request from its own entry', async () => {
+      await list(token, '?status=Passed&priority=high&match=any')
+      await seedBill({ billNumber: 'HB 3', title: 'Third Bill', priority: 'high', status: 'Introduced' })
+      const again = await list(token, '?status=Passed&priority=high&match=any')
+      expect(again.pagination.total).toBe(2)
+    })
+
+    it('shares an entry between two orders of the same picks', async () => {
+      await list(token, '?status=Passed&status=Introduced')
+      await seedBill({ billNumber: 'HB 3', title: 'Third Bill', status: 'Introduced' })
+      const flipped = await list(token, '?status=Introduced&status=Passed')
+      expect(flipped.pagination.total).toBe(2)
+    })
+
+    // Each filter: prime the page of the list with no filter, add a bill only that filter keeps, and ask for it. It is
+    // served fresh only when the filter is in the key.
+    const anchor = { billNumber: 'ZZ 9', title: 'Zebra Act' }
+    const KEPT_BY: Array<[string, () => Promise<unknown>]> = [
+      ['status=Vetoed', () => seedBill({ ...anchor, status: 'Vetoed' })],
+      ['stage=vetoed', () => seedBill({ ...anchor, statusStage: 'vetoed' })],
+      ['year=2031', () => seedBill({ ...anchor, yearStart: 2031 })],
+      ['sessionName=2031', () => seedBill({ ...anchor, session: '2031' })],
+      ['state=ZZ', () => seedBill({ ...anchor, state: 'ZZ' })],
+      ['priority=medium', () => seedBill({ ...anchor, priority: 'medium' })],
+      ['tag=Clerk', () => seedBill({ ...anchor, tags: ['Clerk'] })],
+      ['minRelevance=9', () => seedBill({ ...anchor, relevanceScore: 9 })],
+      ['search=zebra', () => seedBill(anchor)],
+      ['drafts=1', () => seedBill({ ...anchor, isDraft: true })],
+      ['position=Oppose', async () => {
+        const id = await seedBill(anchor)
+        await getDb(env.DB).insert(officialPositions).values({ id: 'p1', billId: id, position: 'Oppose', setBy: userId })
+      }],
+      ['subject=ZZ:Parks', async () => {
+        const id = await seedBill(anchor)
+        await getDb(env.DB).insert(billSubjects).values({ billId: id, subjectName: 'Parks', state: 'ZZ' })
+      }],
+      ['field.area=North', async () => {
+        const db = getDb(env.DB)
+        await db.insert(customFieldDefinitions).values({ id: 'cf-area', name: 'Area', slug: 'area', type: 'dropdown', options: JSON.stringify(['North']), multiple: false })
+        const id = await seedBill(anchor)
+        await db.insert(billCustomFieldValues).values({ billId: id, fieldId: 'cf-area', value: 'North', setBy: userId })
+      }],
+    ]
+    for (const [qs, seed] of KEPT_BY) {
+      it(`does not serve ${qs} the page of the list with no filter`, async () => {
+        const unfiltered = await list(token)
+        expect(unfiltered.pagination.total).toBe(2)
+        await seed()
+        const filtered = await list(token, `?${qs}`)
+        expect(filtered.bills.map(b => b.billNumber)).toEqual(['ZZ 9'])
+      })
+    }
   })
 })

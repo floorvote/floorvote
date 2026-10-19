@@ -33,7 +33,7 @@ type ListBody = {
 }
 
 type FacetsBody = {
-  subjects: Record<string, number>
+  subject: Record<string, number>
   subjectStates: string[]
   billStates?: string[]
 }
@@ -137,9 +137,9 @@ describe('GET /bills — subject filtering', () => {
     const res = await app.request('/api/bills/facets', { headers: { Cookie: `session=${token}` } }, env)
     const body = await res.json() as FacetsBody
 
-    expect(body.subjects['UT:Election Law']).toBe(2)
-    expect(body.subjects['UT:Referenda']).toBe(1)
-    expect(body.subjects['NJ:Education']).toBe(1)
+    expect(body.subject['UT:Election Law']).toBe(2)
+    expect(body.subject['UT:Referenda']).toBe(1)
+    expect(body.subject['NJ:Education']).toBe(1)
   })
 
   // subjectStates answers "which states have subjects at all", so the web app
@@ -154,7 +154,7 @@ describe('GET /bills — subject filtering', () => {
     const res = await app.request('/api/bills/facets?state=UT', { headers: { Cookie: `session=${token}` } }, env)
     const body = await res.json() as FacetsBody
 
-    expect(body.subjects['NJ:Education']).toBeUndefined()
+    expect(body.subject['NJ:Education']).toBeUndefined()
     expect(body.subjectStates).toEqual(['NJ', 'UT'])
   })
 
@@ -196,8 +196,8 @@ describe('GET /bills — subject suppression', () => {
     const res = await app.request('/api/bills/facets', { headers: { Cookie: `session=${token}` } }, env)
     const body = await res.json() as FacetsBody
 
-    expect(body.subjects['NJ:State and Local Government']).toBeUndefined()
-    expect(body.subjects['UT:Election Administration']).toBe(1)
+    expect(body.subject['NJ:State and Local Government']).toBeUndefined()
+    expect(body.subject['UT:Election Administration']).toBe(1)
   })
 
   it('subjectStates leaves out a suppressed state', async () => {
@@ -391,7 +391,7 @@ describe('GET /bills/facets — billStates', () => {
       const { state, env: counted } = countingEnv()
       expect((await facets(counted)).billStates).toEqual(['UT'])
       expect((await facets(counted, '?state=UT')).billStates).toEqual(['UT'])
-      expect((await facets(counted, '?q=anything')).billStates).toEqual(['UT'])
+      expect((await facets(counted, '?search=anything')).billStates).toEqual(['UT'])
       expect(state.stateReads).toBe(1)
     })
 

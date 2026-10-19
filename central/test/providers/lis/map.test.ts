@@ -430,6 +430,30 @@ describe('buildLisBill', () => {
     expect(mint(lisRollCallKey('20261', 'HB5', 'SHARED'))).toBe(va[0].roll_call_id)
   })
 
+  it('gives Abstain its own vote id, apart from Not Voting and every other word', async () => {
+    const history: [string, string, string][] = [['2026-02-17', 'H Read third time and passed House (1-Y 1-N 1-A)', 'RC1']]
+    const rec = { ...record('HB5', {}, history), votes: { RC1: 'H0001Y,H0002N,H0003X,H0004A' } }
+    const [vote] = (await buildLisBill(rec, '20261', 1, 'h', SESSION, ids())).votes
+    const mv = vote.member_votes!
+    const byText = Object.fromEntries(mv.map(m => [m.vote_text, m.vote_id]))
+    expect(byText).toEqual({ Yea: 1, Nay: 2, 'Not Voting': 3, Abstain: 5 })
+    expect(new Set(mv.map(m => m.vote_id)).size).toBe(4)
+    // Abstain's id differs from Not Voting's, and from the Absent id (4) LegiScan and LIMS use.
+    expect(byText.Abstain).not.toBe(byText['Not Voting'])
+    expect(byText.Abstain).not.toBe(4)
+  })
+
+  it('counts an abstention in the tally\'s not-voting number, as the per-member words show it', async () => {
+    const history: [string, string, string][] = [['2026-02-17', 'H Read third time and passed House (2-Y 1-N 2-A)', 'RC1']]
+    const rec = { ...record('HB5', {}, history), votes: { RC1: 'H0001Y,H0002Y,H0003N,H0004X,H0005A' } }
+    const [vote] = (await buildLisBill(rec, '20261', 1, 'h', SESSION, ids())).votes
+    // The roll_calls row has no abstain column, so nv holds Not Voting and Abstain together.
+    expect(vote.nv).toBe(2)
+    const words = vote.member_votes!.map(m => m.vote_text)
+    expect(words.filter(w => w === 'Not Voting' || w === 'Abstain')).toHaveLength(vote.nv)
+    expect(vote.yea + vote.nay + vote.nv + vote.absent).toBe(vote.total)
+  })
+
   it('leaves a voice vote out as a roll call, since no member has a recorded vote', async () => {
     // A block voice vote in the files: the Senate roll, every member "X" (not voting), and no count in the history line.
     const roll = (code: string) => ['S0019', 'S0062', 'S0067', 'S0068'].map(m => `${m}${code}`).join(',')

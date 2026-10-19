@@ -5,7 +5,10 @@ import type { SubjectGroup } from '../pages/BillList/FilterPanel'
 import type { CustomFieldDef } from '../pages/BillList/types'
 import { FilterSheetVirtualList } from './FilterSheetVirtualList'
 import { useStageFilterUseful } from '../lib/capabilities'
-import { filterDimensionLabel, isFilterDimensionVisible, type FilterDimensionContext } from '../lib/filterDimensions'
+import { STAGE_FILTER_LABEL, filterDimensionLabel, hiddenFilterDimensions, isFilterDimensionVisible, isStatusGroupedByStage, type FilterDimensionContext } from '../lib/filterDimensions'
+import type { StatusStageGroup } from '../lib/statusGroups'
+import { STAGE_HEADING_HINT } from '../pages/BillList/FilterPanel'
+import { activeFilters, decodeSubjectFilter, withBillFilter } from '../../../shared/billFilter'
 import { filterableCustomFields } from '../lib/customFieldFilters'
 import { buildActiveFilterGroups } from '../pages/BillList/activeFilterGroups'
 import { GroupOperator } from '../pages/BillList/GroupOperator'
@@ -13,21 +16,23 @@ import { GroupOperator } from '../pages/BillList/GroupOperator'
 interface FilterSheetProps {
   isOpen: boolean
   onClose: () => void
-  statuses: string[]
-  stages: string[]
-  priorities: string[]
-  positions: string[]
-  tags: string[]
-  subjects: string[]
-  sessions: string[]
-  states: string[]
+  status: string[]
+  stage: string[]
+  priority: string[]
+  position: string[]
+  tag: string[]
+  subject: string[]
+  year: string[]
+  state: string[]
   minRelevance: number
   myBills: boolean
+  /** The search box's text. The sheet has no control for it, but a search is an active filter, so it shows Reset. */
+  search?: string
   /** Admin-gates the New matches toggle — same check as desktop's `isAdmin`. */
   isAdmin: boolean
   newMatches: boolean
   newMatchesCount?: number
-  unvotedOnly: boolean
+  unvoted: boolean
   unvotedCount?: number
   drafts: boolean
   draftCount?: number
@@ -35,12 +40,12 @@ interface FilterSheetProps {
    *  desktop reads as `facetCounts.hasDrafts`, used only to decide whether
    *  the Drafts dimension appears (see lib/filterDimensions.ts). */
   hasDrafts?: boolean
-  /** Whether active bill-fact filter groups combine with AND (false, the
-   *  default) or OR (true) — same state desktop reads/writes as `f.matchAny`
-   *  / `f.setMatchAny`. Rendered between groups in this sheet's active-chip
+  /** Whether active bill-fact filter groups combine with AND ('all', the
+   *  default) or OR ('any') — same value desktop reads/writes as `f.match`
+   *  / `f.setMatch`. Rendered between groups in this sheet's active-chip
    *  summary via `GroupOperator`, identically to desktop's chip row. */
-  matchAny: boolean
-  onMatchAnyChange: (v: boolean) => void
+  match: 'all' | 'any'
+  onMatchChange: (v: 'all' | 'any') => void
   /** Distinct states the tenant's bills span — same value desktop passes as
    *  `f.uniqueStates`, used only to decide whether the State dimension
    *  appears (see lib/filterDimensions.ts). */
@@ -50,33 +55,39 @@ interface FilterSheetProps {
   isMultiState: boolean
   statusOptions: { value: string; label: string }[]
   stageOptions: { value: string; label: string }[]
+  /**
+   * The statuses under stage headings, in place of the two lists above: the Status row then opens a list with a
+   * heading for each stage, and there is no Stage row (#677). Null for an API that sends no statusGroups, which
+   * leaves a Status row and a Stage row, as before. The sheet still keeps Status flat where Stage was never offered.
+   */
+  statusGroups?: StatusStageGroup[] | null
   priorityOptions: { value: string; label: string }[]
   positionOptions: { value: string; label: string }[]
   tagOptions: string[]
   subjectGroups: SubjectGroup[]
-  sessionOptions: { value: string; label: string }[]
-  totalSessionCount?: number
+  yearOptions: { value: string; label: string }[]
+  totalYearCount?: number
   stateOptions: { value: string; label: string }[]
   /** All tenant custom field defs (unfiltered) — same value desktop reads as
    *  `customFieldDefs`. This component decides filterability itself via
    *  lib/customFieldFilters.ts, mirroring desktop exactly. */
   customFieldDefs: CustomFieldDef[]
   /** Currently-selected values per custom field id — same shape as desktop's
-   *  `f.cfFilters`. */
-  cfFilters: Record<string, string[]>
-  onCfFilterChange: (fieldId: string, values: string[]) => void
+   *  `f.field`. */
+  field: Record<string, string[]>
+  onFieldChange: (fieldId: string, values: string[]) => void
   onStatusChange: (v: string[]) => void
   onStageChange: (v: string[]) => void
   onPriorityChange: (v: string[]) => void
   onPositionChange: (v: string[]) => void
   onTagChange: (v: string[]) => void
   onSubjectChange: (v: string[]) => void
-  onSessionChange: (v: string[]) => void
+  onYearChange: (v: string[]) => void
   onStateChange: (v: string[]) => void
   onMinRelevanceChange: (v: number) => void
   onMyBillsChange: (v: boolean) => void
   onNewMatchesChange: (v: boolean) => void
-  onUnvotedOnlyChange: (v: boolean) => void
+  onUnvotedChange: (v: boolean) => void
   onDraftsChange: (v: boolean) => void
   onClearAll: () => void
   counts?: {
@@ -84,10 +95,10 @@ interface FilterSheetProps {
     stage?: Record<string, number>
     priority: Record<string, number>
     position: Record<string, number>
-    session: Record<string, number>
-    tags: Record<string, number>
+    year: Record<string, number>
+    tag: Record<string, number>
     state?: Record<string, number>
-    customFields?: Record<string, Record<string, number>>
+    field?: Record<string, Record<string, number>>
   }
 }
 
@@ -101,21 +112,21 @@ interface FilterSheetProps {
 //
 // Dropdown-type custom fields are drill-down dimensions too, but they're
 // dynamic (tenant-defined, a variable count) rather than fixed registry
-// entries — represented here as `cf:<fieldId>` rather than as one more member
+// entries — represented here as `field.<fieldId>` rather than as one more member
 // of the static union. Binary custom fields, like the two toggles above,
 // never become a `dimension` value at all — they stay direct controls.
-type StaticDimensionKey = 'status' | 'stage' | 'priority' | 'position' | 'session' | 'tags' | 'subjects' | 'state'
-type CustomFieldDimensionKey = `cf:${string}`
+type StaticDimensionKey = 'status' | 'stage' | 'priority' | 'position' | 'year' | 'tag' | 'subject' | 'state'
+type CustomFieldDimensionKey = `field.${string}`
 type DimensionKey = StaticDimensionKey | CustomFieldDimensionKey
 
 function isCustomFieldDimension(key: DimensionKey): key is CustomFieldDimensionKey {
-  return key.startsWith('cf:')
+  return key.startsWith('field.')
 }
 function customFieldDimensionKey(fieldId: string): CustomFieldDimensionKey {
-  return `cf:${fieldId}`
+  return `field.${fieldId}`
 }
 function customFieldIdFromDimension(key: CustomFieldDimensionKey): string {
-  return key.slice('cf:'.length)
+  return key.slice('field.'.length)
 }
 
 function SheetChip({ label, active, onClick, count }: { label: string; active: boolean; onClick: () => void; count?: number }) {
@@ -136,6 +147,10 @@ function SheetChip({ label, active, onClick, count }: { label: string; active: b
         display: 'inline-flex',
         alignItems: 'center',
         gap: 4,
+        // A long label wraps inside the chip rather than widening the list past a phone's width.
+        maxWidth: '100%',
+        textAlign: 'left',
+        overflowWrap: 'anywhere',
       }}
     >
       {label}
@@ -243,13 +258,13 @@ function useDrilldownFocus(dimension: DimensionKey | null, isOpen: boolean) {
 
 export function FilterSheet({
   isOpen, onClose,
-  statuses, stages, priorities, positions, tags, subjects, sessions, states, minRelevance, myBills,
-  isAdmin, newMatches, newMatchesCount, unvotedOnly, unvotedCount, drafts, draftCount, hasDrafts, uniqueStates, isMultiState,
-  matchAny, onMatchAnyChange,
-  statusOptions, stageOptions, priorityOptions, positionOptions, tagOptions, subjectGroups, sessionOptions, totalSessionCount, stateOptions,
-  customFieldDefs, cfFilters, onCfFilterChange,
-  onStatusChange, onStageChange, onPriorityChange, onPositionChange, onTagChange, onSubjectChange, onSessionChange, onStateChange,
-  onMinRelevanceChange, onMyBillsChange, onNewMatchesChange, onUnvotedOnlyChange, onDraftsChange,
+  status, stage, priority, position, tag, subject, year, state, minRelevance, myBills, search = '',
+  isAdmin, newMatches, newMatchesCount, unvoted, unvotedCount, drafts, draftCount, hasDrafts, uniqueStates, isMultiState,
+  match, onMatchChange,
+  statusOptions, stageOptions, statusGroups, priorityOptions, positionOptions, tagOptions, subjectGroups, yearOptions, totalYearCount, stateOptions,
+  customFieldDefs, field, onFieldChange,
+  onStatusChange, onStageChange, onPriorityChange, onPositionChange, onTagChange, onSubjectChange, onYearChange, onStateChange,
+  onMinRelevanceChange, onMyBillsChange, onNewMatchesChange, onUnvotedChange, onDraftsChange,
   onClearAll, counts,
 }: FilterSheetProps) {
   useEffect(() => {
@@ -287,17 +302,27 @@ export function FilterSheet({
 
   if (!isOpen) return null
 
-  const filterDimensionCtx: FilterDimensionContext = { uniqueStates, isAdmin, isMultiState, hasDrafts: hasDrafts ?? false, draftsActive: drafts, newMatchesActive: newMatches, stageUseful, stageActive: stages.length > 0 }
-  const stageVisible = isFilterDimensionVisible('stage', filterDimensionCtx)
+  const filterDimensionCtx: FilterDimensionContext = { uniqueStates, isAdmin, isMultiState, hasDrafts: hasDrafts ?? false, draftsActive: drafts, newMatchesActive: newMatches, stageUseful, stageActive: stage.length > 0 }
+  // Where Stage was offered, Status is grouped under stage headings when the API says which stage each status is in.
+  const stageOffered = isStatusGroupedByStage(filterDimensionCtx)
+  const groupedStatus = stageOffered && statusGroups ? statusGroups : null
   const stateVisible = isFilterDimensionVisible('state', filterDimensionCtx)
   const newMatchesVisible = isFilterDimensionVisible('newMatches', filterDimensionCtx)
   const draftsVisible = isFilterDimensionVisible('drafts', filterDimensionCtx)
 
-  // Must mirror useBillFilters' totalActiveFilters (the mobile filter
-  // button's badge count) term for term — a mismatch is exactly the bug that
-  // orphaned `unvoted` on mobile (see task-7-report.md, Critical 1): the
-  // button badge counted it, this sheet's own "Reset filters" gate didn't.
-  const totalActive = statuses.length + stages.length + priorities.length + positions.length + tags.length + subjects.length + sessions.length + states.length + (minRelevance > 0 ? 1 : 0) + (myBills ? 1 : 0) + (unvotedOnly ? 1 : 0) + (newMatchesVisible && newMatches ? 1 : 0) + (draftsVisible && drafts ? 1 : 0) + Object.values(cfFilters).reduce((sum, v) => sum + v.length, 0)
+  // The one list of active filters, read from the shared module as the page's badge, Reset, chips, and summary read
+  // it: this sheet holds the filter as separate props, so it gathers them into the shared value and asks. A filter
+  // this instance does not offer is left out by the registry.
+  const activeList = activeFilters(
+    withBillFilter({
+      status, stage, priority, position, tag, year,
+      state,
+      subject: subject.flatMap(v => decodeSubjectFilter(v) ?? []),
+      minRelevance: minRelevance > 0 ? minRelevance : null,
+      myBills, unvoted, newMatches, drafts, field, search,
+    }),
+    { hidden: hiddenFilterDimensions(filterDimensionCtx) },
+  )
 
   function toggleItem(arr: string[], val: string, setter: (v: string[]) => void) {
     setter(arr.includes(val) ? arr.filter(v => v !== val) : [...arr, val])
@@ -309,12 +334,12 @@ export function FilterSheet({
   const STATIC_DIMENSION_LABELS: Record<StaticDimensionKey, string> = {
     state: filterDimensionLabel('state'),
     status: filterDimensionLabel('status'),
-    stage: filterDimensionLabel('stage'),
+    stage: STAGE_FILTER_LABEL,
     priority: filterDimensionLabel('priority'),
     position: filterDimensionLabel('position'),
-    session: filterDimensionLabel('session'),
-    tags: filterDimensionLabel('tags'),
-    subjects: filterDimensionLabel('subjects'),
+    year: filterDimensionLabel('year'),
+    tag: filterDimensionLabel('tag'),
+    subject: filterDimensionLabel('subject'),
   }
 
   // Which custom field types are filterable, and what control each gets, is
@@ -339,37 +364,31 @@ export function FilterSheet({
     ? filterableCFs.find(cf => cf.def.id === customFieldIdFromDimension(dimension))
     : undefined
 
-  const sessionVisible = (totalSessionCount ?? sessionOptions.length) > 0
+  const yearVisible = (totalYearCount ?? yearOptions.length) > 0
 
   // Same groups (and same AND/OR operator) desktop shows in its active-chip
   // row above the sticky header (index.tsx) — built from this component's
-  // own props rather than threaded in whole, since matchAny/onMatchAnyChange
+  // own props rather than threaded in whole, since match/onMatchChange
   // are the only two new props this task adds (see FilterSheetProps above).
   // Removal callbacks translate directly to this component's existing
   // onXChange setters; the sheet needs no additional wiring from index.tsx.
   const activeFilterGroups = buildActiveFilterGroups({
-    filterStates: states,
-    filterStatuses: statuses,
-    filterStages: stages,
-    filterPositions: positions,
-    filterPriorities: priorities,
-    filterYears: sessions.map(Number),
-    selectedTags: tags,
-    selectedSubjects: subjects,
-    cfFilters,
-    filterMinRelevance: minRelevance,
+    state, status, stage, position, priority,
+    year: year.map(Number),
+    tag, subject, field, minRelevance,
     positionOptions,
     customFieldDefs,
     isMultiState,
-    onRemoveState: s => onStateChange(states.filter(x => x !== s)),
-    onRemoveStatus: s => onStatusChange(statuses.filter(x => x !== s)),
-    onRemoveStage: s => onStageChange(stages.filter(x => x !== s)),
-    onRemovePosition: p => onPositionChange(positions.filter(x => x !== p)),
-    onRemovePriority: p => onPriorityChange(priorities.filter(x => x !== p)),
-    onRemoveYear: y => onSessionChange(sessions.filter(s => s !== String(y))),
-    onRemoveTag: tag => onTagChange(tags.filter(x => x !== tag)),
-    onRemoveSubject: subject => onSubjectChange(subjects.filter(x => x !== subject)),
-    onRemoveCf: (fieldId, v) => onCfFilterChange(fieldId, (cfFilters[fieldId] ?? []).filter(x => x !== v)),
+    active: activeList,
+    onRemoveState: s => onStateChange(state.filter(x => x !== s)),
+    onRemoveStatus: s => onStatusChange(status.filter(x => x !== s)),
+    onRemoveStage: s => onStageChange(stage.filter(x => x !== s)),
+    onRemovePosition: p => onPositionChange(position.filter(x => x !== p)),
+    onRemovePriority: p => onPriorityChange(priority.filter(x => x !== p)),
+    onRemoveYear: y => onYearChange(year.filter(v => v !== String(y))),
+    onRemoveTag: t => onTagChange(tag.filter(x => x !== t)),
+    onRemoveSubject: v => onSubjectChange(subject.filter(x => x !== v)),
+    onRemoveField: (fieldId, v) => onFieldChange(fieldId, (field[fieldId] ?? []).filter(x => x !== v)),
     onRemoveMinRelevance: () => onMinRelevanceChange(0),
   })
 
@@ -416,7 +435,7 @@ export function FilterSheet({
             </div>
           )}
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            {totalActive > 0 && (
+            {activeList.length > 0 && (
               <button
                 onClick={onClearAll}
                 style={{ fontSize: fontSize.sm, color: color.linkBlue, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
@@ -470,9 +489,9 @@ export function FilterSheet({
                 <SectionLabel title={filterDimensionLabel('unvoted')} />
                 <SheetChip
                   label={filterDimensionLabel('unvoted')}
-                  active={unvotedOnly}
+                  active={unvoted}
                   count={unvotedCount ?? 0}
-                  onClick={() => onUnvotedOnlyChange(!unvotedOnly)}
+                  onClick={() => onUnvotedChange(!unvoted)}
                 />
               </div>
 
@@ -514,15 +533,15 @@ export function FilterSheet({
                   My bills / New matches above (see lib/customFieldFilters.ts).
                   Zero filterable binary fields renders nothing here at all. */}
               {toggleCustomFields.map(({ def }) => {
-                const isActive = (cfFilters[def.id] ?? []).includes('1')
+                const isActive = (field[def.id] ?? []).includes('1')
                 return (
                   <div key={def.id} style={{ marginBottom: 20 }}>
                     <SectionLabel title={def.name} />
                     <SheetChip
                       label={def.name}
                       active={isActive}
-                      count={counts?.customFields?.[def.id]?.['1'] ?? 0}
-                      onClick={() => onCfFilterChange(def.id, isActive ? [] : ['1'])}
+                      count={counts?.field?.[def.id]?.['1'] ?? 0}
+                      onClick={() => onFieldChange(def.id, isActive ? [] : ['1'])}
                     />
                   </div>
                 )
@@ -581,35 +600,40 @@ export function FilterSheet({
                 <div data-testid="sheet-active-filter-chips" style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 20, alignItems: 'center' }}>
                   {activeFilterGroups.flatMap((g, i) => i === 0
                     ? g.chips
-                    : [<GroupOperator key={`op-${g.key}`} matchAny={matchAny} onToggle={() => onMatchAnyChange(!matchAny)} />, ...g.chips])}
+                    : [<GroupOperator key={`op-${g.key}`} match={match} onToggle={() => onMatchChange(match === 'any' ? 'all' : 'any')} />, ...g.chips])}
                 </div>
               )}
 
               <div style={{ marginBottom: 20 }}>
                 <SectionLabel title="Filters" />
                 {stateVisible && (
-                  <DimensionRow label={STATIC_DIMENSION_LABELS.state} selectedCount={states.length} onClick={() => setDimension('state')} buttonRef={rowRef('state')} />
+                  <DimensionRow label={STATIC_DIMENSION_LABELS.state} selectedCount={state.length} onClick={() => setDimension('state')} buttonRef={rowRef('state')} />
                 )}
-                {statusOptions.length > 0 && (
-                  <DimensionRow label={STATIC_DIMENSION_LABELS.status} selectedCount={statuses.length} onClick={() => setDimension('status')} buttonRef={rowRef('status')} />
+                {(groupedStatus ? groupedStatus.length > 0 : statusOptions.length > 0) && (
+                  <DimensionRow
+                    label={STATIC_DIMENSION_LABELS.status}
+                    selectedCount={status.length + (groupedStatus ? stage.length : 0)}
+                    onClick={() => setDimension('status')}
+                    buttonRef={rowRef('status')}
+                  />
                 )}
-                {stageVisible && stageOptions.length > 0 && (
-                  <DimensionRow label={STATIC_DIMENSION_LABELS.stage} selectedCount={stages.length} onClick={() => setDimension('stage')} buttonRef={rowRef('stage')} />
+                {stageOffered && !groupedStatus && stageOptions.length > 0 && (
+                  <DimensionRow label={STATIC_DIMENSION_LABELS.stage} selectedCount={stage.length} onClick={() => setDimension('stage')} buttonRef={rowRef('stage')} />
                 )}
                 {priorityOptions.length > 0 && (
-                  <DimensionRow label={STATIC_DIMENSION_LABELS.priority} selectedCount={priorities.length} onClick={() => setDimension('priority')} buttonRef={rowRef('priority')} />
+                  <DimensionRow label={STATIC_DIMENSION_LABELS.priority} selectedCount={priority.length} onClick={() => setDimension('priority')} buttonRef={rowRef('priority')} />
                 )}
                 {positionOptions.length > 0 && (
-                  <DimensionRow label={STATIC_DIMENSION_LABELS.position} selectedCount={positions.length} onClick={() => setDimension('position')} buttonRef={rowRef('position')} />
+                  <DimensionRow label={STATIC_DIMENSION_LABELS.position} selectedCount={position.length} onClick={() => setDimension('position')} buttonRef={rowRef('position')} />
                 )}
-                {sessionVisible && (
-                  <DimensionRow label={STATIC_DIMENSION_LABELS.session} selectedCount={sessions.length} onClick={() => setDimension('session')} buttonRef={rowRef('session')} />
+                {yearVisible && (
+                  <DimensionRow label={STATIC_DIMENSION_LABELS.year} selectedCount={year.length} onClick={() => setDimension('year')} buttonRef={rowRef('year')} />
                 )}
                 {tagOptions.length > 0 && (
-                  <DimensionRow label={STATIC_DIMENSION_LABELS.tags} selectedCount={tags.length} onClick={() => setDimension('tags')} buttonRef={rowRef('tags')} />
+                  <DimensionRow label={STATIC_DIMENSION_LABELS.tag} selectedCount={tag.length} onClick={() => setDimension('tag')} buttonRef={rowRef('tag')} />
                 )}
                 {subjectGroups.length > 0 && (
-                  <DimensionRow label={STATIC_DIMENSION_LABELS.subjects} selectedCount={subjects.length} onClick={() => setDimension('subjects')} buttonRef={rowRef('subjects')} />
+                  <DimensionRow label={STATIC_DIMENSION_LABELS.subject} selectedCount={subject.length} onClick={() => setDimension('subject')} buttonRef={rowRef('subject')} />
                 )}
                 {/* Dropdown custom fields — a drill-down dimension like Status
                     or Tags, dynamic per tenant (see lib/customFieldFilters.ts). */}
@@ -619,7 +643,7 @@ export function FilterSheet({
                     <DimensionRow
                       key={def.id}
                       label={def.name}
-                      selectedCount={(cfFilters[def.id] ?? []).length}
+                      selectedCount={(field[def.id] ?? []).length}
                       onClick={() => setDimension(cfDimension)}
                       buttonRef={rowRef(cfDimension)}
                     />
@@ -635,22 +659,64 @@ export function FilterSheet({
                 <SheetChip
                   key={opt.value}
                   label={opt.label}
-                  active={states.includes(opt.value)}
-                  onClick={() => toggleItem(states, opt.value, onStateChange)}
+                  active={state.includes(opt.value)}
+                  onClick={() => toggleItem(state, opt.value, onStateChange)}
                   count={counts?.state?.[opt.value] ?? 0}
                 />
               ))}
             </div>
           )}
 
-          {dimension === 'status' && (
+          {dimension === 'status' && groupedStatus && (
+            <div>
+              {groupedStatus.map(group => {
+                const pressed = group.stage !== null && stage.includes(group.stage)
+                return (
+                  <div key={group.stage ?? 'other'} style={{ marginBottom: 16 }}>
+                    <h3 style={{ margin: '0 0 8px', fontSize: fontSize.base, fontWeight: fontWeight.semibold, color: color.textPrimary }}>
+                      {group.stage !== null ? (
+                        // A heading selects the whole stage, and says so; Other has no stage to select, so it is plain text.
+                        <button
+                          type="button"
+                          aria-pressed={pressed}
+                          title={STAGE_HEADING_HINT}
+                          onClick={() => toggleItem(stage, group.stage as string, onStageChange)}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 8, maxWidth: '100%', textAlign: 'left', cursor: 'pointer',
+                            padding: '6px 0', background: 'none', border: 'none', borderBottom: `2px solid ${pressed ? color.linkBlue : 'transparent'}`,
+                            font: 'inherit', color: pressed ? color.linkBlue : 'inherit', overflowWrap: 'anywhere',
+                          }}
+                        >
+                          {group.label}
+                          {group.count !== null && <span style={COUNT_BADGE}>{group.count.toLocaleString()}</span>}
+                        </button>
+                      ) : group.label}
+                    </h3>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {group.options.map(opt => (
+                        <SheetChip
+                          key={opt.value}
+                          label={opt.label}
+                          active={status.includes(opt.value)}
+                          onClick={() => toggleItem(status, opt.value, onStatusChange)}
+                          count={counts?.status[opt.value] ?? 0}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {dimension === 'status' && !groupedStatus && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {statusOptions.map(opt => (
                 <SheetChip
                   key={opt.value}
                   label={opt.label}
-                  active={statuses.includes(opt.value)}
-                  onClick={() => toggleItem(statuses, opt.value, onStatusChange)}
+                  active={status.includes(opt.value)}
+                  onClick={() => toggleItem(status, opt.value, onStatusChange)}
                   count={counts?.status[opt.value] ?? 0}
                 />
               ))}
@@ -663,8 +729,8 @@ export function FilterSheet({
                 <SheetChip
                   key={opt.value}
                   label={opt.label}
-                  active={stages.includes(opt.value)}
-                  onClick={() => toggleItem(stages, opt.value, onStageChange)}
+                  active={stage.includes(opt.value)}
+                  onClick={() => toggleItem(stage, opt.value, onStageChange)}
                   count={counts?.stage?.[opt.value] ?? 0}
                 />
               ))}
@@ -677,8 +743,8 @@ export function FilterSheet({
                 <SheetChip
                   key={opt.value}
                   label={opt.label}
-                  active={priorities.includes(opt.value)}
-                  onClick={() => toggleItem(priorities, opt.value, onPriorityChange)}
+                  active={priority.includes(opt.value)}
+                  onClick={() => toggleItem(priority, opt.value, onPriorityChange)}
                   count={counts?.priority[opt.value] ?? 0}
                 />
               ))}
@@ -691,35 +757,35 @@ export function FilterSheet({
                 <SheetChip
                   key={opt.value}
                   label={opt.label}
-                  active={positions.includes(opt.value)}
-                  onClick={() => toggleItem(positions, opt.value, onPositionChange)}
+                  active={position.includes(opt.value)}
+                  onClick={() => toggleItem(position, opt.value, onPositionChange)}
                   count={counts?.position[opt.value] ?? 0}
                 />
               ))}
             </div>
           )}
 
-          {dimension === 'session' && (
+          {dimension === 'year' && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {sessionOptions.map(opt => (
+              {yearOptions.map(opt => (
                 <SheetChip
                   key={opt.value}
                   label={opt.label}
-                  active={sessions.includes(opt.value)}
-                  onClick={() => toggleItem(sessions, opt.value, onSessionChange)}
-                  count={counts?.session[opt.value] ?? 0}
+                  active={year.includes(opt.value)}
+                  onClick={() => toggleItem(year, opt.value, onYearChange)}
+                  count={counts?.year[opt.value] ?? 0}
                 />
               ))}
             </div>
           )}
 
-          {dimension === 'tags' && (
+          {dimension === 'tag' && (
             <FilterSheetVirtualList
-              ariaLabel={STATIC_DIMENSION_LABELS.tags}
+              ariaLabel={STATIC_DIMENSION_LABELS.tag}
               searchPlaceholder="Search tags…"
-              groups={[{ key: 'tags', options: tagOptions.map(tag => ({ value: tag, label: tag, count: counts?.tags[tag] ?? 0 })) }]}
-              selected={tags}
-              onToggle={(value) => toggleItem(tags, value, onTagChange)}
+              groups={[{ key: 'tag', options: tagOptions.map(t => ({ value: t, label: t, count: counts?.tag[t] ?? 0 })) }]}
+              selected={tag}
+              onToggle={(value) => toggleItem(tag, value, onTagChange)}
             />
           )}
 
@@ -727,13 +793,14 @@ export function FilterSheet({
               useBillFilters' subjectGroups), so this section groups its
               options under a state heading whenever more than one state is
               present — handled inside FilterSheetVirtualList. */}
-          {dimension === 'subjects' && (
+          {dimension === 'subject' && (
             <FilterSheetVirtualList
-              ariaLabel={STATIC_DIMENSION_LABELS.subjects}
+              ariaLabel={STATIC_DIMENSION_LABELS.subject}
               searchPlaceholder="Search subjects…"
               groups={subjectGroups.map(group => ({ key: group.state, heading: group.state, options: group.options }))}
-              selected={subjects}
-              onToggle={(value) => toggleItem(subjects, value, onSubjectChange)}
+              selected={subject}
+              onToggle={(value) => toggleItem(subject, value, onSubjectChange)}
+              limitSubjects
             />
           )}
 
@@ -743,14 +810,14 @@ export function FilterSheet({
           {activeDimensionCustomField && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {(activeDimensionCustomField.def.options ?? []).map(opt => {
-                const selected = cfFilters[activeDimensionCustomField.def.id] ?? []
+                const selected = field[activeDimensionCustomField.def.id] ?? []
                 return (
                   <SheetChip
                     key={opt}
                     label={opt}
                     active={selected.includes(opt)}
-                    onClick={() => toggleItem(selected, opt, v => onCfFilterChange(activeDimensionCustomField.def.id, v))}
-                    count={counts?.customFields?.[activeDimensionCustomField.def.id]?.[opt] ?? 0}
+                    onClick={() => toggleItem(selected, opt, v => onFieldChange(activeDimensionCustomField.def.id, v))}
+                    count={counts?.field?.[activeDimensionCustomField.def.id]?.[opt] ?? 0}
                   />
                 )
               })}
