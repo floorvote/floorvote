@@ -540,9 +540,10 @@ const ELLIPSIS = /\s*(?:\.{3,}|\u2026)\s*/
 function segmentsOf(item: ClaimSource, doc: string, normDoc: () => Norm): ClaimSource[] {
   if (!ELLIPSIS.test(item.quote)) return [item]
   const segments = item.quote.split(ELLIPSIS).filter(s => s.trim().length > 0)
-  if (segments.length < 2) return [item]
+  if (segments.length === 0) return [item]
   const whole = resolveDirectly(item.quote, doc, normDoc)
   if ('status' in whole && whole.status !== 'ungrounded') return [item]
+  // A lone leading or trailing ellipsis (one segment) is not a stitch: the passage without it.
   return segments.map(quote => ({ ...item, quote }))
 }
 

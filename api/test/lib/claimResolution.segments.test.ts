@@ -58,6 +58,16 @@ describe('a quote stitched from several passages', () => {
     expect(items[0].matched).toBe(quote)
   })
 
+  it('resolves a quote with a lone leading or trailing ellipsis as the passage without it', () => {
+    const lead = resolve('\u2026 shall adopt rules governing the location, lighting, and surveillance')
+    expect(lead.items).toHaveLength(1)
+    expect(lead.items[0].status).toBe('exact')
+    expect(lead.items[0].quote).toBe('shall adopt rules governing the location, lighting, and surveillance')
+    const trail = resolve('Section 4. A drop box shall be emptied by two employees ...')
+    expect(trail.items[0].status).toBe('exact')
+    expect(trail.items[0].matched).toBe('Section 4. A drop box shall be emptied by two employees')
+  })
+
   it('counts each segment toward the cap on items searched', () => {
     const quote = Array.from({ length: 120 }, () => S3).join(' ... ')
     const { items, capped } = resolve(quote)

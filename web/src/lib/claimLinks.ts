@@ -332,6 +332,13 @@ function squash(text: string): string {
     .replace(/\s+/g, '')
 }
 
+function insideMark(node: Node): boolean {
+  for (let n = node.parentNode; n; n = n.parentNode) {
+    if (n.nodeType === Node.ELEMENT_NODE && (n as Element).hasAttribute('data-fv-passage')) return true
+  }
+  return false
+}
+
 function unmarkable(node: Node): boolean {
   for (let n = node.parentNode; n; n = n.parentNode) {
     if (n.nodeType === Node.ELEMENT_NODE && UNMARKABLE.has((n as Element).tagName.toUpperCase())) return true
@@ -457,6 +464,8 @@ function markOne(doc: Document, html: string, passage: Passage, target: boolean)
     parts.push({ node, from, to })
   }
   if (parts.length === 0) return false
+  // A passage the claim cites twice is already marked: that is found, and left as it is.
+  if (parts.every(({ node }) => insideMark(node))) return true
 
   parts.forEach(({ node, from, to }, i) => {
     const mid = from > 0 ? node.splitText(from) : node

@@ -84,6 +84,13 @@ describe('markPassage with several passages', () => {
     expect(doc.getElementById(PASSAGE_ID)!.textContent).toBe(P2)
   })
 
+  it('marks a passage that repeats once, without nesting or a second id', () => {
+    const doc = parseDoc(markPassage(BILL, [passageIn(P2), passageIn(P2), passageIn(P3)])!)
+    expect(marksOf(doc).map(m => m.textContent)).toEqual([P2, P3])
+    expect(doc.querySelector('mark mark')).toBeNull()
+    expect(doc.querySelectorAll(`[id="${PASSAGE_ID}"]`)).toHaveLength(1)
+  })
+
   it('is null when none is found', () => {
     expect(markPassage(BILL, [{ quoteAt: { start: 0, end: 1 }, matched: 'Nothing here.' }])).toBeNull()
   })
