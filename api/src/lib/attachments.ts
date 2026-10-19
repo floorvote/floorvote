@@ -174,16 +174,19 @@ export async function uploadAttachment(
   // refusing the write) refuses the upload and deletes whatever landed.
   const body = input.body
   let put: R2Object | null
-  // The deadline: past it, a body still arriving is cancelled (while its head
-  // is read) or its pipe aborted (after), and the upload is refused.
+  // The deadline: one timer, cleared when the upload settles. Past it, a body
+  // still arriving is cancelled (while its head is read) or its pipe aborted
+  // (after), and the race below refuses the upload.
   const stop = new AbortController()
-  const deadline = AbortSignal.timeout(opts.deadlineMs ?? UPLOAD_DEADLINE_MS)
   let reader: ReadableStreamDefaultReader<Uint8Array> | null = null
-  const onDeadline = () => {
-    stop.abort(deadline.reason)
-    reader?.cancel(deadline.reason).catch(() => {})
-  }
-  deadline.addEventListener('abort', onDeadline, { once: true })
+  let markTimedOut!: () => void
+  const timedOut = new Promise<'timeout'>(resolve => { markTimedOut = () => resolve('timeout') })
+  const timer = setTimeout(() => {
+    const reason = new Error('upload deadline passed')
+    stop.abort(reason)
+    reader?.cancel(reason).catch(() => {})
+    markTimedOut()
+  }, opts.deadlineMs ?? UPLOAD_DEADLINE_MS)
   try {
     reader = body.getReader()
     const first = await readHead(reader, Math.min(SNIFF_BYTES, size + 1))
@@ -223,10 +226,6 @@ export async function uploadAttachment(
     // in workerd), so the deadline is also raced here. Past it the request
     // returns, which ends the invocation and the put with it. The refused row
     // stays until the purge, which deletes the key in case any bytes landed.
-    const timedOut = new Promise<'timeout'>(resolve => {
-      if (deadline.aborted) resolve('timeout')
-      deadline.addEventListener('abort', () => resolve('timeout'), { once: true })
-    })
     const outcome = await Promise.race([Promise.allSettled([putting, feeding]), timedOut])
     if (outcome === 'timeout') return refuse(incomplete, true)
     const [stored, fed] = outcome
@@ -237,7 +236,7 @@ export async function uploadAttachment(
     await (reader ? reader.cancel() : body.cancel()).catch(() => {})
     return refuse(incomplete, true)
   } finally {
-    deadline.removeEventListener('abort', onDeadline)
+    clearTimeout(timer)
   }
   if (!put || put.size !== size) return refuse(incomplete, true)
 
