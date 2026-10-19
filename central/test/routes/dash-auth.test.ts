@@ -142,6 +142,8 @@ describe('POST /admin/dash/auth/login', () => {
       })
     }
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, status: 200, text: () => Promise.resolve('') } as Response)
+    // The cap is checked in the background work now, so the request needs a context to settle.
+    const { ctx, settle } = makeCtx()
     const res = await app.fetch(
       new Request('http://central/admin/dash/auth/login', {
         method: 'POST',
@@ -149,8 +151,10 @@ describe('POST /admin/dash/auth/login', () => {
         body: JSON.stringify({ email: 'admin@example.com' }),
       }),
       TEST_ENV,
+      ctx,
     )
     expect(res.status).toBe(200)
+    await settle()
     expect(fetchSpy).not.toHaveBeenCalled()
     const links = await db.select().from(schema.magicLinks).all()
     expect(links.length).toBe(5)
@@ -626,7 +630,7 @@ describe('POST /admin/dash/auth/login — the send is off the response path (#67
     expect(g.sent).toHaveLength(1)
   })
 
-  it('hands nothing to waitUntil for an unlisted address, a capped one, or an unconfigured sender', async () => {
+  it('hands nothing to waitUntil for an unlisted address or an unconfigured sender, and one job for a capped one that sends and inserts nothing', async () => {
     const g = gatedBinding()
     g.release()
     const outsider = post('outsider@example.com', CF(g.binding))
@@ -640,9 +644,13 @@ describe('POST /admin/dash/auth/login — the send is off the response path (#67
         expiresAt: new Date(Date.now() + 60_000).toISOString(),
       })
     }
+    // The cap is read in the background job, so the response can't know about it: a
+    // capped address hands the same one job over as a listed one, and the job stops.
     const capped = post('admin@example.com', CF(g.binding))
     await capped.res
-    expect(capped.ctx.waitUntil).not.toHaveBeenCalled()
+    await capped.settle()
+    expect(capped.ctx.waitUntil).toHaveBeenCalledTimes(1)
+    expect((await db.select().from(schema.magicLinks).all()).length).toBe(5)
 
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     const bare = post('admin@example.com', { ...TEST_ENV, RESEND_API_KEY: undefined, EMAIL: undefined, EMAIL_PROVIDER: undefined })
@@ -651,14 +659,15 @@ describe('POST /admin/dash/auth/login — the send is off the response path (#67
     expect(g.sent).toHaveLength(0)
   })
 
-  it('has stored the link before it answers, and the emailed token is that link', async () => {
+  it('stores the link and emails its token once the context settles', async () => {
     const g = gatedBinding()
     const { res, settle } = post('admin@example.com', CF(g.binding))
     await answered(res)
-    const db = drizzle(env.DB, { schema })
-    expect((await db.select().from(schema.magicLinks).all()).length).toBe(1)
     g.release()
     await settle()
+    const db = drizzle(env.DB, { schema })
+    expect((await db.select().from(schema.magicLinks).all()).length).toBe(1)
+    expect(g.sent).toHaveLength(1)
     const m = (g.sent[0].text ?? '').match(/auth\/callback\?token=([0-9a-zA-Z%_-]+)/)
     expect(m).not.toBeNull()
     const link = await db.select().from(schema.magicLinks).where(eq(schema.magicLinks.tokenHash, await hashToken(decodeURIComponent(m![1])))).get()
@@ -731,6 +740,351 @@ describe('POST /admin/dash/auth/login — the send is off the response path (#67
     }
     expect(new Set(bodies).size).toBe(1)
     expect(new Set(heads).size).toBe(1)
+  })
+
+  // #773: the active-link count, the token, and the insert run in the same background
+  // job as the send, so a listed address's response does only what an unlisted one does.
+  describe('the whole listed branch (count, token, insert, send) is off the response path (#773)', () => {
+    type Kind = 'select' | 'insert'
+
+    /**
+     * The real test D1 behind a wrapper that can hold, fail, or never finish a statement
+     * by kind, and records which kinds were issued, so a test can look at the state while
+     * the database round-trip is still in flight.
+     */
+    function controlledDb(opts: { hold?: Kind[]; fail?: Kind[]; never?: boolean } = {}) {
+      const started: string[] = []
+      const releases: Partial<Record<Kind, () => void>> = {}
+      const gates: Partial<Record<Kind, Promise<void>>> = {}
+      for (const k of opts.hold ?? []) gates[k] = new Promise<void>((resolve) => { releases[k] = resolve })
+      const kindOf = (sql: string): string => (/^\s*select/i.test(sql) ? 'select' : /^\s*insert/i.test(sql) ? 'insert' : 'other')
+      const real = env.DB as any
+      const wrap = (stmt: any, kind: string): any => new Proxy(stmt, {
+        get(t, p) {
+          if (p === 'bind') return (...a: unknown[]) => wrap(t.bind(...a), kind)
+          if (p === 'all' || p === 'run' || p === 'raw' || p === 'first') {
+            return async (...a: unknown[]) => {
+              started.push(kind)
+              if (opts.never) await new Promise(() => {})
+              const gate = gates[kind as Kind]
+              if (gate) await gate
+              if (opts.fail?.includes(kind as Kind)) {
+                // Fail on a later turn, as a real round-trip would, so the caller has
+                // attached its handler: a promise rejected at once reads as unhandled.
+                await new Promise((r) => setTimeout(r, 0))
+                throw new Error(`d1-${kind}-boom-detail`)
+              }
+              return t[p](...a)
+            }
+          }
+          const v = Reflect.get(t, p)
+          return typeof v === 'function' ? v.bind(t) : v
+        },
+      })
+      const DB = new Proxy(real, {
+        get(t, p) {
+          if (p === 'prepare') return (sql: string) => wrap(t.prepare(sql), kindOf(sql))
+          const v = Reflect.get(t, p)
+          return typeof v === 'function' ? v.bind(t) : v
+        },
+      })
+      return { DB, started, release: (k: Kind) => releases[k]?.() }
+    }
+
+    const insertCapRows = async (n: number) => {
+      const db = drizzle(env.DB, { schema })
+      for (let i = 0; i < n; i++) {
+        await db.insert(schema.magicLinks).values({
+          id: crypto.randomUUID(), email: 'admin@example.com', tokenHash: await hashToken(`cap773-${i}-${'q'.repeat(60)}`),
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        })
+      }
+    }
+    const linkCount = async () => (await drizzle(env.DB, { schema }).select().from(schema.magicLinks).all()).length
+
+    /** Everything a caller can see of a response, with the timestamp (which differs per call) removed. */
+    async function seen(res: Response) {
+      const text = (await res.text()).replace(/"generatedAt":"[^"]*"/, '"generatedAt":"T"')
+      return JSON.stringify({ status: res.status, text, headers: [...res.headers.entries()].sort() })
+    }
+
+    /** Every logged argument, walking error causes, so a wrapped D1 error still shows its message. */
+    const loggedText = (spy: { mock: { calls: unknown[][] } }) =>
+      spy.mock.calls.flatMap((args) => args.flatMap((a) => {
+        const out: string[] = [String(a)]
+        for (let e: any = a; e instanceof Error && e.cause; e = e.cause) out.push(String((e.cause as Error).message ?? e.cause))
+        return out
+      })).join('\n')
+
+    const tokenIn = (m: Sent) => decodeURIComponent((m.text ?? '').match(/auth\/callback\?token=([0-9a-zA-Z%_-]+)/)![1])
+
+    it('answers while the active-link select is still blocked, then stores the link and sends once it is released', async () => {
+      const d = controlledDb({ hold: ['select'] })
+      const g = gatedBinding(); g.release()
+      const { res, ctx, settle } = post('admin@example.com', { ...CF(g.binding), DB: d.DB })
+      const response = await answered(res)
+      expect(response.status).toBe(200)
+      expect(ctx.waitUntil).toHaveBeenCalledTimes(1)
+      expect(g.sent).toHaveLength(0)
+      expect(await linkCount()).toBe(0)
+      d.release('select')
+      await settle()
+      expect(await linkCount()).toBe(1)
+      expect(g.sent).toHaveLength(1)
+    })
+
+    it('answers while the link insert is still blocked, with nothing sent before the link is stored', async () => {
+      const d = controlledDb({ hold: ['insert'] })
+      const g = gatedBinding(); g.release()
+      const { res, settle } = post('admin@example.com', { ...CF(g.binding), DB: d.DB })
+      await answered(res)
+      await new Promise((r) => setTimeout(r, 50))
+      expect(d.started).toContain('insert') // the job reached the insert and is waiting on it
+      expect(g.sent).toHaveLength(0)
+      expect(await linkCount()).toBe(0)
+      d.release('insert')
+      await settle()
+      expect(await linkCount()).toBe(1)
+      expect(g.sent).toHaveLength(1)
+    })
+
+    it('answers while the send is still blocked, with the link already stored', async () => {
+      const d = controlledDb()
+      const g = gatedBinding()
+      const { res, settle } = post('admin@example.com', { ...CF(g.binding), DB: d.DB })
+      await answered(res)
+      await new Promise((r) => setTimeout(r, 50))
+      expect(g.didStart()).toBe(true)
+      expect(await linkCount()).toBe(1)
+      expect(g.sent).toHaveLength(0)
+      g.release()
+      await settle()
+      expect(g.sent).toHaveLength(1)
+    })
+
+    it('answers while the select, the insert, and the send are all blocked at once, then finishes in order, one waitUntil job', async () => {
+      const d = controlledDb({ hold: ['select', 'insert'] })
+      const g = gatedBinding()
+      const { res, ctx, settle } = post('admin@example.com', { ...CF(g.binding), DB: d.DB })
+      const response = await answered(res)
+      expect(response.status).toBe(200)
+      expect(ctx.waitUntil).toHaveBeenCalledTimes(1)
+      expect(await linkCount()).toBe(0)
+      expect(g.sent).toHaveLength(0)
+      d.release('select')
+      await new Promise((r) => setTimeout(r, 50))
+      expect(await linkCount()).toBe(0)
+      d.release('insert')
+      await new Promise((r) => setTimeout(r, 50))
+      expect(await linkCount()).toBe(1)
+      expect(g.sent).toHaveLength(0)
+      g.release()
+      await settle()
+      expect(g.sent).toHaveLength(1)
+      const link = await drizzle(env.DB, { schema }).select().from(schema.magicLinks).where(eq(schema.magicLinks.tokenHash, await hashToken(tokenIn(g.sent[0])))).get()
+      expect(link?.email).toBe('admin@example.com')
+    })
+
+    it('answers even when every D1 statement never finishes: nothing else on the listed path awaits the database', async () => {
+      const d = controlledDb({ never: true })
+      const g = gatedBinding(); g.release()
+      const { res } = post('admin@example.com', { ...CF(g.binding), DB: d.DB })
+      const response = await answered(res)
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({ data: { ok: true } })
+    })
+
+    it('issues no D1 statement for an unlisted address, an unconfigured sender, a bad email, a 429, or a 403', async () => {
+      const d = controlledDb()
+      const g = gatedBinding(); g.release()
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const cfg = { ...CF(g.binding), DB: d.DB }
+      expect((await post('outsider@example.com', cfg).res).status).toBe(200)
+      expect((await post('admin@example.com', { ...cfg, RESEND_API_KEY: undefined, EMAIL: undefined, EMAIL_PROVIDER: undefined }).res).status).toBe(200)
+      expect((await post('not-an-email', cfg).res).status).toBe(400)
+      const limited = post('admin@example.com', { ...cfg, LOGIN_RATE_LIMITER: { limit: async () => ({ success: false }) } })
+      expect((await limited.res).status).toBe(429)
+      expect(limited.ctx.waitUntil).not.toHaveBeenCalled()
+      const unverified = post('admin@example.com', { ...cfg, TURNSTILE_SECRET_KEY: 'test-secret' })
+      expect((await unverified.res).status).toBe(403)
+      expect(unverified.ctx.waitUntil).not.toHaveBeenCalled()
+      expect(d.started).toEqual([])
+      expect(g.sent).toHaveLength(0)
+    })
+
+    it('still runs the rate limiter and Turnstile before the branch, even with a database that never answers', async () => {
+      const d = controlledDb({ never: true })
+      const g = gatedBinding(); g.release()
+      const limited = post('admin@example.com', { ...CF(g.binding), DB: d.DB, LOGIN_RATE_LIMITER: { limit: async () => ({ success: false }) } })
+      expect((await answered(limited.res)).status).toBe(429)
+      const unverified = post('admin@example.com', { ...CF(g.binding), DB: d.DB, TURNSTILE_SECRET_KEY: 'test-secret' })
+      expect((await answered(unverified.res)).status).toBe(403)
+      expect(limited.ctx.waitUntil).not.toHaveBeenCalled()
+      expect(unverified.ctx.waitUntil).not.toHaveBeenCalled()
+      expect(d.started).toEqual([])
+    })
+
+    it('logs a failing active-link select from the background, returns the plain 200, sends nothing, and never rejects', async () => {
+      const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const d = controlledDb({ fail: ['select'] })
+      const g = gatedBinding(); g.release()
+      const { res, settle } = post('admin@example.com', { ...CF(g.binding), DB: d.DB })
+      const response = await answered(res)
+      expect(response.status).toBe(200)
+      expect(await response.clone().text()).not.toContain('d1-select-boom-detail')
+      await expect(settle()).resolves.toBeDefined()
+      expect(loggedText(err)).toContain('d1-select-boom-detail')
+      expect(g.sent).toHaveLength(0)
+      expect(await linkCount()).toBe(0)
+    })
+
+    it('logs a failing link insert from the background, returns the plain 200, and sends no token for a link that was never stored', async () => {
+      const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const d = controlledDb({ fail: ['insert'] })
+      const g = gatedBinding(); g.release()
+      const { res, settle } = post('admin@example.com', { ...CF(g.binding), DB: d.DB })
+      const response = await answered(res)
+      expect(response.status).toBe(200)
+      expect(await response.clone().text()).not.toContain('d1-insert-boom-detail')
+      await expect(settle()).resolves.toBeDefined()
+      expect(loggedText(err)).toContain('d1-insert-boom-detail')
+      expect(g.sent).toHaveLength(0)
+      expect(await linkCount()).toBe(0)
+    })
+
+    it('logs a D1 failure without leaking it, for a Resend sender too', async () => {
+      const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('{}', { status: 200 }))
+      const d = controlledDb({ fail: ['select'] })
+      const { res, settle } = post('admin@example.com', { ...TEST_ENV, RESEND_API_KEY: 'rk_test', EMAIL: undefined, EMAIL_PROVIDER: undefined, DB: d.DB })
+      const response = await answered(res)
+      expect(response.status).toBe(200)
+      await expect(settle()).resolves.toBeDefined()
+      expect(err).toHaveBeenCalledTimes(1)
+      expect(fetchSpy).not.toHaveBeenCalled()
+    })
+
+    it('still refuses a sixth link with no email and no insert, and the response is the one a listed address gets', async () => {
+      const g = gatedBinding(); g.release()
+      const listed = post('admin@example.com', CF(g.binding))
+      const listedSeen = await seen(await answered(listed.res))
+      await listed.settle()
+      expect(g.sent).toHaveLength(1)
+
+      await insertCapRows(4) // 1 stored by the login above + 4 = 5 active
+      expect(await linkCount()).toBe(5)
+      const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const capped = post('admin@example.com', CF(g.binding))
+      const cappedSeen = await seen(await answered(capped.res))
+      await capped.settle()
+      expect(cappedSeen).toBe(listedSeen)
+      expect(g.sent).toHaveLength(1) // no sixth email
+      expect(await linkCount()).toBe(5) // no sixth link
+      expect(err).not.toHaveBeenCalled() // a refusal is not a failure
+    })
+
+    it('refuses a sixth link even while the capped address answers with the select still blocked', async () => {
+      await insertCapRows(5)
+      const d = controlledDb({ hold: ['select'] })
+      const g = gatedBinding(); g.release()
+      const { res, settle } = post('admin@example.com', { ...CF(g.binding), DB: d.DB })
+      expect((await answered(res)).status).toBe(200)
+      d.release('select')
+      await settle()
+      expect(g.sent).toHaveLength(0)
+      expect(await linkCount()).toBe(5)
+      expect(d.started).not.toContain('insert')
+    })
+
+    it('counts only unused, unexpired links toward the cap, from the background', async () => {
+      const db = drizzle(env.DB, { schema })
+      for (let i = 0; i < 5; i++) {
+        await db.insert(schema.magicLinks).values({
+          id: crypto.randomUUID(), email: 'admin@example.com', tokenHash: await hashToken(`stale773-${i}-${'w'.repeat(60)}`),
+          expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        })
+      }
+      const g = gatedBinding(); g.release()
+      const { res, settle } = post('admin@example.com', CF(g.binding))
+      await answered(res)
+      await settle()
+      expect(g.sent).toHaveLength(1)
+      expect(await linkCount()).toBe(6)
+    })
+
+    it('gives listed, unlisted, capped, no-sender, and D1-failure requests byte-identical status, body shape, and headers', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const g = gatedBinding(); g.release()
+      const cfg = CF(g.binding)
+      const results: Record<string, string> = {}
+
+      results.listed = await seen(await answered(post('admin@example.com', cfg).res))
+      results.unlisted = await seen(await answered(post('outsider@example.com', cfg).res))
+      results.noSender = await seen(await answered(post('admin@example.com', { ...cfg, RESEND_API_KEY: undefined, EMAIL: undefined, EMAIL_PROVIDER: undefined }).res))
+      results.selectFails = await seen(await answered(post('admin@example.com', { ...cfg, DB: controlledDb({ fail: ['select'] }).DB }).res))
+      results.insertFails = await seen(await answered(post('admin@example.com', { ...cfg, DB: controlledDb({ fail: ['insert'] }).DB }).res))
+      results.neverAnswers = await seen(await answered(post('admin@example.com', { ...cfg, DB: controlledDb({ never: true }).DB }).res))
+      await insertCapRows(5)
+      results.capped = await seen(await answered(post('admin@example.com', cfg).res))
+
+      expect(Object.keys(results)).toHaveLength(7)
+      expect(JSON.parse(results.listed).status).toBe(200)
+      expect(new Set(Object.values(results)).size).toBe(1)
+    })
+
+    it('hands one promise to waitUntil that resolves, never rejects, when D1 or the send fails', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      for (const cfg of [
+        { ...CF(gatedBinding().binding), DB: controlledDb({ fail: ['select'] }).DB },
+        { ...CF(gatedBinding().binding), DB: controlledDb({ fail: ['insert'] }).DB },
+        CF({ send: () => { throw new Error('sync-throw-detail') } }),
+      ]) {
+        const { res, ctx, settle } = post('admin@example.com', cfg)
+        await answered(res)
+        expect(ctx.waitUntil).toHaveBeenCalledTimes(1)
+        await expect(settle()).resolves.toHaveLength(1)
+      }
+    })
+
+    it('stores the link and emails a token that matches it, for each of two sequential requests', async () => {
+      const g = gatedBinding(); g.release()
+      for (let i = 0; i < 2; i++) {
+        const { res, settle } = post('admin@example.com', CF(g.binding))
+        await answered(res)
+        await settle()
+      }
+      expect(g.sent).toHaveLength(2)
+      const db = drizzle(env.DB, { schema })
+      for (const m of g.sent) {
+        const link = await db.select().from(schema.magicLinks).where(eq(schema.magicLinks.tokenHash, await hashToken(tokenIn(m)))).get()
+        expect(link?.email).toBe('admin@example.com')
+      }
+      expect(tokenIn(g.sent[0])).not.toBe(tokenIn(g.sent[1]))
+    })
+
+    // The count is read, then the link inserted: two requests in flight together can
+    // both read the same count. The same window existed when the count ran on the
+    // response path; moving it into the background doesn't widen it, it's still one
+    // select, a token, and one insert. The cap can overshoot by at most the number of
+    // requests racing, and the rate limiter bounds those per IP.
+    it('lets two concurrent logins that both read four active links overshoot the cap by at most the requests racing, and every emailed token is stored', async () => {
+      await insertCapRows(4)
+      const g = gatedBinding(); g.release()
+      const a = post('admin@example.com', CF(g.binding))
+      const b = post('admin@example.com', CF(g.binding))
+      await Promise.all([answered(a.res), answered(b.res)])
+      await Promise.all([a.settle(), b.settle()])
+      const count = await linkCount()
+      expect(count).toBeGreaterThanOrEqual(5)
+      expect(count).toBeLessThanOrEqual(6)
+      expect(g.sent).toHaveLength(count - 4)
+      const db = drizzle(env.DB, { schema })
+      for (const m of g.sent) {
+        const link = await db.select().from(schema.magicLinks).where(eq(schema.magicLinks.tokenHash, await hashToken(tokenIn(m)))).get()
+        expect(link).toBeTruthy()
+      }
+    })
   })
 })
 

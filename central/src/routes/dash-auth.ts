@@ -120,11 +120,26 @@ dashAuthRoutes.post('/login', async (c) => {
     return c.json({ data: { ok: true }, meta: { generatedAt: new Date().toISOString() } })
   }
 
-  const db = drizzle(c.env.DB, { schema })
+  // Everything past the sender check runs after the response is sent: the active-link
+  // count, the token, the insert, and the provider round-trip. A listed address then
+  // does only what an unlisted one does (parse, allowlist, in-memory config check, 200),
+  // so neither the timing nor a database failure tells them apart. One job, one catch:
+  // a failure anywhere in it is logged, never thrown into the response, and the promise
+  // handed to waitUntil never rejects. The email goes out only after the link is stored.
+  c.executionCtx.waitUntil(
+    issueMagicLink(c.env, email).catch((err) =>
+      console.error('Admin /login: background sign-in work failed', err),
+    ),
+  )
+  return c.json({ data: { ok: true }, meta: { generatedAt: new Date().toISOString() } })
+})
 
-  // Per-address active-link cap (finding D4): refuse silently (still 200, no
-  // enumeration) once too many unused, unexpired links exist for this address,
-  // so a known superadmin email can't be email-bombed and Resend quota can't be
+async function issueMagicLink(env: DashEnv['Bindings'], email: string): Promise<void> {
+  const db = drizzle(env.DB, { schema })
+
+  // Per-address active-link cap (finding D4): refuse silently (the response is already
+  // the same 200, no enumeration) once too many unused, unexpired links exist for this
+  // address, so a known superadmin email can't be email-bombed and Resend quota can't be
   // burned. Expired/used links don't count.
   const activeLinks = await db
     .select({ id: schema.magicLinks.id })
@@ -135,9 +150,7 @@ dashAuthRoutes.post('/login', async (c) => {
       gt(sql`datetime(${schema.magicLinks.expiresAt})`, sql`datetime('now')`),
     ))
     .all()
-  if (activeLinks.length >= MAX_ACTIVE_ADMIN_LINKS) {
-    return c.json({ data: { ok: true }, meta: { generatedAt: new Date().toISOString() } })
-  }
+  if (activeLinks.length >= MAX_ACTIVE_ADMIN_LINKS) return
 
   const rawToken = await generateToken()
   const tokenHash = await hashToken(rawToken)
@@ -149,16 +162,9 @@ dashAuthRoutes.post('/login', async (c) => {
     expiresAt,
   })
 
-  const url = `${c.env.ADMIN_APP_URL}/admin/dash/auth/callback?token=${encodeURIComponent(rawToken)}`
-  // The provider round-trip, the largest part of this request, runs after the
-  // response is sent, so a listed address answers about as fast as an unlisted
-  // one (which returns above without it). A failed send is logged, never thrown
-  // into the response, and the promise handed to waitUntil never rejects.
-  c.executionCtx.waitUntil(
-    sendAdminMagicLink(email, url, c.env).catch((err) => console.error('sendAdminMagicLink failed', err)),
-  )
-  return c.json({ data: { ok: true }, meta: { generatedAt: new Date().toISOString() } })
-})
+  const url = `${env.ADMIN_APP_URL}/admin/dash/auth/callback?token=${encodeURIComponent(rawToken)}`
+  await sendAdminMagicLink(email, url, env)
+}
 
 // GET /admin/dash/auth/callback?token=... — two-step verify (scanner pre-fetch
 // protection, mirrors the tenant /auth/verify). This GET does NOT consume the
