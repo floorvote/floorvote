@@ -44,7 +44,7 @@ import * as mgaClient from '../../src/providers/mga/client'
 import { LIS_FILES, LIS_FILES_BASE, type LisFile, type LisFiles } from '../../src/providers/lis/client'
 import { loadStateRows } from '../../src/lib/stateRows'
 import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
-import { app } from '../../src/index-legiscan'
+import { app } from '../../src/index'
 import { getCurrentEtHour } from '../../src/lib/sync-schedule'
 
 const db = () => drizzle(env.DB, { schema })

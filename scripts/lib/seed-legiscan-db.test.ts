@@ -50,7 +50,7 @@ describe('sessionUpsertSql', () => {
   // Central's real sessions table: every central migration, in filename order.
   const migrated = () => {
     const db = new DatabaseSync(':memory:')
-    const dir = join(__dirname, '../../central/migrations-legiscan')
+    const dir = join(__dirname, '../../central/migrations')
     for (const file of readdirSync(dir).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(join(dir, file), 'utf8'))
     return db
   }

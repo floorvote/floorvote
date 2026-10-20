@@ -21,7 +21,7 @@ vi.mock('../../src/providers/legiscan/client', async () => {
 const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
 
-import worker from '../../src/index-legiscan'
+import worker from '../../src/index'
 import { runSnapshotSync } from '../../src/cron/sync-snapshots'
 import { checkVoteDatasets } from '../../src/cron/vote-datasets'
 import { mga } from '../../src/providers/mga'

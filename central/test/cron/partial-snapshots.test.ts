@@ -128,7 +128,7 @@ async function storedTitles() {
 }
 
 async function centralGet(path: string) {
-  const { app } = await import('../../src/index-legiscan')
+  const { app } = await import('../../src/index')
   const res = await app.fetch(new Request(`http://central/api${path}`, { headers: { 'x-admin-secret': 'test-secret' } }), env as any)
   expect(res.status).toBe(200)
   return res.json() as Promise<any>
@@ -171,7 +171,7 @@ beforeEach(async () => {
   const db = drizzle(env.DB, { schema })
   await db.insert(schema.tenants).values({ tenantId: 'team', name: 'Team', stateCoverage: '["ZZ"]', active: true })
   await db.insert(schema.keywordRegistry).values([{ tenantId: 'team', keyword: 'library' }])
-  const { app } = await import('../../src/index-legiscan')
+  const { app } = await import('../../src/index')
   const claim = await app.fetch(new Request('http://central/api/admin/state-providers/ZZ', {
     method: 'POST', headers: { 'x-admin-secret': 'test-secret', 'content-type': 'application/json' },
     body: JSON.stringify({ provider: 'example' }),

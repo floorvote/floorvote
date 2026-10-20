@@ -5,7 +5,7 @@ import * as schema from '../../src/db/schema'
 import { clearDb } from '../helpers/migrations'
 import { revokeSuperadminJti, isSuperadminJtiRevoked, pruneRevokedSuperadminJtis } from '../../src/lib/superadminRevocation'
 import { pruneCallLogs } from '../../src/lib/pruneCallLogs'
-import worker from '../../src/index-legiscan'
+import worker from '../../src/index'
 
 // The retention job rides central's hourly cron, once a day with the other daily
 // jobs, and as its own job: if it fails, the rest of that cron still runs.

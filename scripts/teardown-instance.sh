@@ -25,7 +25,7 @@
 #        (the [[env.legiscan.services]] block with entrypoint = "CentralApi")
 #   AFTER running:
 #     3. Redeploy central so it drops the now-dangling binding:
-#        cd central && npm run deploy:legiscan
+#        cd central && npm run deploy:central
 #
 # Chicken-and-egg notes:
 #   - Can't delete a Worker while it's a queue consumer → remove the consumer first
@@ -150,7 +150,7 @@ echo "Remaining manual steps:"
 echo "  1. Remove the [env.${TENANT_ID}] block from api/wrangler.toml (if not already)."
 echo "  2. Remove the ${CENTRALAPI_BINDING} CentralApi binding from central/wrangler.toml."
 echo "  3. Redeploy central to drop the dangling binding:"
-echo "       cd central && npm run deploy:legiscan"
+echo "       cd central && npm run deploy:central"
 echo ""
 echo "When re-spinning up '$TENANT_ID' later:"
 echo "  - LegiScan cache is intact in central R2 + bills table — seeding hits the cache, not LegiScan."

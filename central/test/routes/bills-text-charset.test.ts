@@ -2,7 +2,7 @@ import { env } from 'cloudflare:test'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
-import { app } from '../../src/index-legiscan'
+import { app } from '../../src/index'
 import { clearDb } from '../helpers/migrations'
 
 // Both endpoints read the same R2 object: GET /bills/:id/text (JSON, read by the

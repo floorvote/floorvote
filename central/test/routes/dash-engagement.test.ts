@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { env } from 'cloudflare:test'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
-import { app } from '../../src/index-legiscan'
+import { app } from '../../src/index'
 import { clearDb } from '../helpers/migrations'
 
 // Freeze the clock so the hardcoded seed statDates (2026-05-27/28) always fall

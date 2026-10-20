@@ -118,7 +118,7 @@ async function tick(hour: number) {
 }
 
 async function billCalendar() {
-  const { app } = await import('../../src/index-legiscan')
+  const { app } = await import('../../src/index')
   const res = await app.fetch(new Request(`http://central/api/bills/legiscan:${BILL}`, { headers: { 'x-admin-secret': 'test-secret' } }), e())
   expect(res.status).toBe(200)
   return ((await res.json()) as any).calendar.map((c: any) => [c.kind, c.date, c.description])
@@ -352,7 +352,7 @@ describe('a provider that publishes event ids', () => {
       env.DB.prepare(`INSERT INTO tenants (tenant_id, name, state_coverage, active) VALUES ('zz', 'ZZ team', '["ZZ"]', 1)`),
       env.DB.prepare(`INSERT INTO keyword_registry (tenant_id, keyword) VALUES ('zz', 'library')`),
     ])
-    const { app } = await import('../../src/index-legiscan')
+    const { app } = await import('../../src/index')
     const claim = await app.fetch(new Request('http://central/api/admin/state-providers/ZZ', {
       method: 'POST', headers: { 'x-admin-secret': 'test-secret', 'content-type': 'application/json' },
       body: JSON.stringify({ provider: 'example' }),
@@ -374,7 +374,7 @@ describe('a provider that publishes event ids', () => {
     expect(changes(removed)).toEqual([['hearing_cancelled', 'id:M-301']])
     expect(removed.calendar.events).toEqual([])
 
-    const { app } = await import('../../src/index-legiscan')
+    const { app } = await import('../../src/index')
     const res = await app.fetch(new Request(`http://central/api/bills/legiscan:${removed.billId}`, { headers: { 'x-admin-secret': 'test-secret' } }), zzEnv())
     expect(((await res.json()) as any).calendar).toEqual([])
   })

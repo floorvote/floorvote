@@ -12,7 +12,8 @@
 #   WRANGLER_BACKUP_PREFIX=myorg-       # optional, for several checkouts
 #     → ~/backups/myorg-central-wrangler.toml
 #
-# Runs as npm's postdeploy:legiscan hook, so it fires only after the whole deploy
+# Runs as npm's postdeploy:central hook (postdeploy:legiscan for the old
+# deploy:legiscan alias), so it fires only after the whole deploy
 # chain (build, migrate, deploy, smoke) has succeeded.
 set -uo pipefail
 cd "$(dirname "$0")/.."

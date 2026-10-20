@@ -1,6 +1,6 @@
 import { env, createExecutionContext } from 'cloudflare:test'
 import { describe, it, expect } from 'vitest'
-import { app as lsApp, TenantApi as LsTenantApi } from '../../src/index-legiscan'
+import { app as lsApp, TenantApi as LsTenantApi } from '../../src/index'
 
 describe('LegiScan TenantApi entrypoint', () => {
   it('rejects a direct app request that omits the secret', async () => {

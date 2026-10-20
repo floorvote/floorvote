@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm'
 import * as schema from '../../src/db/schema'
 import { clearDb } from '../helpers/migrations'
 import { getSetting, getSettingNumber, setSetting } from '../../src/lib/settings'
-import migration0020 from '../../migrations-legiscan/0020_legiscan_limit_10k.sql?raw'
+import migration0020 from '../../migrations/0020_legiscan_limit_10k.sql?raw'
 
 beforeEach(async () => { await clearDb() })
 

@@ -80,7 +80,7 @@ export function mainSeam(provider: Provider, opts: {
 
   /** A request to central's API (`/api` is added), as an operator with the admin secret. */
   async function central(method: string, path: string, run = makeRun(), body?: unknown): Promise<Response> {
-    const { app } = await import('../../src/index-legiscan')
+    const { app } = await import('../../src/index')
     return app.fetch(new Request(`http://central/api${path}`, {
       method,
       headers: { 'x-admin-secret': ADMIN_SECRET, 'content-type': 'application/json' },

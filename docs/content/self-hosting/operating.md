@@ -88,7 +88,7 @@ Pull the latest code and redeploy. Always use the deploy scripts so migrations a
 ```bash
 git pull origin main
 npm ci
-cd central && npm ci && npm run deploy:legiscan
+cd central && npm ci && npm run deploy:central
 
 # Repeat for each tenant
 cd ../api && npm run deploy:tenant -- org-nj

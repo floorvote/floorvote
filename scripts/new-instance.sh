@@ -730,7 +730,7 @@ TOML
     log_ok "Appended ${CENTRALAPI_BINDING} CentralApi binding to central/wrangler.toml"
   fi
   cd "$CENTRAL_DIR"
-  npm run deploy:legiscan
+  npm run deploy:central
   log_ok "Central deployed with ${CENTRALAPI_BINDING} binding"
   # Committed only now: a binding naming a worker that does not exist fails this
   # deploy with `code: 10143`, and that bad binding should not already be in

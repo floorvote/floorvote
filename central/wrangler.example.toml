@@ -1,10 +1,12 @@
 # central/wrangler.example.toml — example configuration for the central worker.
 # Copy to central/wrangler.toml and fill in your resource IDs.
 #
-# Central pulls legislative data from LegiScan. It is configured as the
-# `legiscan` wrangler environment and deployed with `npm run deploy:legiscan`
-# (`npm run deploy` is an alias). The worker is named after the top-level name
-# plus the environment: "floorvote-central-legiscan".
+# Central pulls legislative data from LegiScan and from any opt-in providers
+# (see "Opt-in providers" below). It is configured as the `legiscan` wrangler
+# environment, a name kept from when LegiScan was its only source, and deployed
+# with `npm run deploy:central` (`npm run deploy` is an alias). The worker is
+# named after the top-level name plus the environment:
+# "floorvote-central-legiscan".
 
 name = "floorvote-central"
 compatibility_date = "2026-06-18"
@@ -15,7 +17,9 @@ enabled = true
 head_sampling_rate = 1
 
 [env.legiscan]
-main = "src/index-legiscan.ts"
+main = "src/index.ts"
+# Older configs name src/index-legiscan.ts and migrations-legiscan, aliases that
+# still work for now. Switch them to src/index.ts and migrations.
 # routes = [{ pattern = "admin.example.com", custom_domain = true }]
 # workers_dev = true
 
@@ -23,7 +27,7 @@ main = "src/index-legiscan.ts"
 binding = "DB"
 database_name = "central-bills-ls"
 database_id = "REPLACE_WITH_D1_DATABASE_ID"
-migrations_dir = "migrations-legiscan"
+migrations_dir = "migrations"
 
 [[env.legiscan.r2_buckets]]
 binding = "BILLS_BUCKET"

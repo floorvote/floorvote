@@ -14,7 +14,7 @@ import { clearDb } from '../helpers/migrations'
 const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
 
-import { app } from '../../src/index-legiscan'
+import { app } from '../../src/index'
 import { checkVoteDatasets, loadVoteDataset, datasetUnzip, VOTE_DATASET_DEFER_SECONDS, VOTE_DATASET_RETRY_SECONDS } from '../../src/cron/vote-datasets'
 import { processIngestorQueue } from '../../src/queue/processor'
 import type { IngestorMessage } from '../../src/types'

@@ -206,7 +206,7 @@ describe('the seeded calendar', () => {
   // Central's real schema: every central migration, in filename order.
   const migrated = () => {
     const db = new DatabaseSync(':memory:')
-    const dir = join(__dirname, '../../central/migrations-legiscan')
+    const dir = join(__dirname, '../../central/migrations')
     for (const file of readdirSync(dir).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(join(dir, file), 'utf8'))
     return db
   }
@@ -245,7 +245,7 @@ describe('the seeded detail marker', () => {
   // a getBill on detail central already holds (central/src/lib/stubRefresh.ts).
   const migrated = () => {
     const db = new DatabaseSync(':memory:')
-    const dir = join(__dirname, '../../central/migrations-legiscan')
+    const dir = join(__dirname, '../../central/migrations')
     for (const file of readdirSync(dir).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(join(dir, file), 'utf8'))
     return db
   }

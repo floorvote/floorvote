@@ -152,7 +152,7 @@ Congress (`US`) syncs from GovInfo's Bill Status bulk data once an operator clai
 
 ### Memory
 
-A snapshot pass holds a whole session in memory, so the cron runs the snapshot providers one after another, each as its own job (`central/src/index-legiscan.ts`), and `storeRecords` writes changed records a batch at a time. Virginia's 2026 regular session (3,646 bills, 16 MB of CSVs) is the largest snapshot. Its pass, from reading the files to storing every record, completes in a 40 MB V8 heap (Node's `--max-old-space-size`, the mapping bundled with esbuild and run on the real files), against a Worker's 128 MB. Before these changes it needed 72 MB. Each bill's history is stored as one string, as its votes are, since as 65,000 small arrays it was half of what a pass held.
+A snapshot pass holds a whole session in memory, so the cron runs the snapshot providers one after another, each as its own job (`central/src/index.ts`), and `storeRecords` writes changed records a batch at a time. Virginia's 2026 regular session (3,646 bills, 16 MB of CSVs) is the largest snapshot. Its pass, from reading the files to storing every record, completes in a 40 MB V8 heap (Node's `--max-old-space-size`, the mapping bundled with esbuild and run on the real files), against a Worker's 128 MB. Before these changes it needed 72 MB. Each bill's history is stored as one string, as its votes are, since as 65,000 small arrays it was half of what a pass held.
 
 The GovInfo full read (19,690 bills, 54 MB of zips, 248 MB of XML) is bigger on the wire and smaller in memory: it holds one file at a time and a compact record per bill, and completes in a 48 MB V8 heap (the provider bundled with esbuild and run in Node over the real 119th Congress zips). Each record's strings are copied out of the file's text, since V8 keeps a slice's whole parent string alive and 19,690 records would otherwise hold all 248 MB of XML (the same read then runs out of memory at 128 MB). Measured in `wrangler dev`, the read takes about 7 seconds and 5.5 seconds of CPU (the whole workerd process, every thread), against a production central's 60-second `cpu_ms`. Central's own pass over the result (ids, 19,690 stored records, matching, and the monitor stubs) adds about 1,600 D1 calls and 200 queue sends, well inside a Worker's 10,000 subrequests.
 
@@ -252,7 +252,7 @@ Every producer sends a bill to its provider's queue (`groupByIngestQueue`, readi
 
 1. Create the queue in Cloudflare (`wrangler queues create central-mga-ingestor`, or `central-lis-ingestor`, or `central-lims-ingestor`).
 2. Uncomment the provider's producer and consumer in your gitignored `central/wrangler.toml`, with `max_concurrency = 1`.
-3. Deploy central (`npm run deploy:legiscan`).
+3. Deploy central (`npm run deploy:central`).
 4. Then claim the state, or run the cutover.
 
 A small state, or one no instance tracks yet, can use the shared queue. Bills queued before a binding exists stay on the shared queue until they drain, and the provider's next pass queues new work on its own queue.

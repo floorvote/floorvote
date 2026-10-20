@@ -32,7 +32,7 @@ vi.mock('../../src/lib/sync-schedule', async () => {
 })
 vi.stubGlobal('fetch', vi.fn())
 
-import { app } from '../../src/index-legiscan'
+import { app } from '../../src/index'
 import { runSnapshotSync } from '../../src/cron/sync-snapshots'
 import { runSync } from '../../src/cron/sync'
 import { lims as limsProvider } from '../../src/providers/lims'

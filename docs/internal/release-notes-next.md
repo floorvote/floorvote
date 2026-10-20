@@ -58,3 +58,34 @@ Members can attach files to comments (#465): from a paperclip in the comment too
 **Limits.** 25 MB a file, 10 files a comment, 30 uploads a member an hour, and 5 GB for the instance. Programs, scripts, web pages (HTML, SVG, JavaScript), macro-enabled Office files, and archives are refused, by name and by the file's first bytes. Files download only for a signed-in member of the instance, while their comment shows. Uploads that never finish are deleted after an hour, uploads never posted after a day, a deleted comment's files 30 days after the delete, by the hourly cron, which also removes within the hour any file whose comment was removed with its member's account. The admin data export lists the files (not their contents).
 
 **Deploying.** Migration `0115` adds the `comment_attachments` table and touches no existing table.
+
+## Central's provider-neutral names
+
+Central runs LegiScan and every opt-in provider, so its entry file, migrations folder, and npm scripts drop the LegiScan name. Nothing breaks: the old names keep working as aliases for now, and a later release removes them.
+
+| Old name | New name |
+|---|---|
+| `src/index-legiscan.ts` | `src/index.ts` |
+| `migrations-legiscan/` | `migrations/` |
+| `npm run deploy:legiscan` | `npm run deploy:central` |
+| `npm run migrate:legiscan:remote` | `npm run migrate:central:remote` |
+| `npm run migrate:legiscan:local` | `npm run migrate:central:local` |
+| `npm run smoke:legiscan` | `npm run smoke:central` |
+
+**Switch your `central/wrangler.toml`** before the aliases go. Under `[env.legiscan]`, set:
+
+```toml
+main = "src/index.ts"
+```
+
+and under `[[env.legiscan.d1_databases]]`:
+
+```toml
+migrations_dir = "migrations"
+```
+
+Then deploy with `npm run deploy:central`. Both sets of names build the same worker and list the same migration files, and wrangler records an applied migration by its filename alone, so a database migrated under the old names has nothing new to apply under the new ones.
+
+- **What doesn't change.** The `legiscan` wrangler environment (`--env legiscan`), the deployed worker's name (`floorvote-central-legiscan`), your D1 database, bucket, and queue names, and the bill handle prefix all stay as they are.
+- **`migrations-legiscan` is now a symlink to `migrations`.** A checkout without symlink support (Git for Windows with `core.symlinks` off) gets a plain file in its place, and wrangler then finds no migrations under the old name without saying so. Switch to `migrations_dir = "migrations"`, or check out on macOS, Linux, or WSL.
+- **A fork that sets `SMOKE_BASE_URL` inline on `smoke:legiscan`** should move that to `smoke:central`, which `deploy:central` and `npm run deploy` now run. `smoke:legiscan` runs `smoke:central`.

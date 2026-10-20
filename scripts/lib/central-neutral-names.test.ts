@@ -6,7 +6,7 @@
 // runs the same commands it did before, and wrangler itself sees the same
 // migrations and builds the same worker through either set of names.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { existsSync, lstatSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -216,52 +216,60 @@ describe('a local deploy rehearsal with wrangler', () => {
   })
   afterAll(() => { rmSync(tmp, { recursive: true, force: true }) })
 
-  function wrangler(args: string[]): { status: number | null; out: string } {
-    const r = spawnSync(process.execPath, [WRANGLER, ...args], {
-      cwd: tmp,
-      encoding: 'utf8',
-      env: { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false', WRANGLER_LOG_PATH: join(tmp, 'logs'), NO_COLOR: '1' },
-      timeout: 120_000,
+  function wrangler(args: string[]): Promise<{ status: number | null; out: string }> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [WRANGLER, ...args], {
+        cwd: tmp,
+        env: { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false', WRANGLER_LOG_PATH: join(tmp, 'logs'), NO_COLOR: '1' },
+      })
+      let out = ''
+      child.stdout.on('data', (d: Buffer) => { out += d })
+      child.stderr.on('data', (d: Buffer) => { out += d })
+      child.on('error', reject)
+      child.on('close', status => resolve({ status, out }))
     })
-    return { status: r.status, out: `${r.stdout}\n${r.stderr}` }
   }
 
   // The migration names wrangler's table lists, in order.
   const pending = (out: string) => [...out.matchAll(/│ (\d{4}_\S+\.sql) /g)].map(m => m[1])
 
-  function migrations(command: 'list' | 'apply', config: string, persist: string) {
-    const r = wrangler(['d1', 'migrations', command, 'central-bills-ls', '--local', '-c', config, '--persist-to', join(tmp, persist)])
+  async function migrations(command: 'list' | 'apply', config: string, persist: string) {
+    const r = await wrangler(['d1', 'migrations', command, 'central-bills-ls', '--local', '-c', config, '--persist-to', join(tmp, persist)])
     expect(r.status, r.out).toBe(0)
     return r.out
   }
 
-  it('sees the same migrations through either folder, and a database migrated through one has nothing to apply through the other', () => {
+  // Each wrangler call starts miniflare, several seconds apiece, so this makes
+  // four, two at a time: an apply under each config, then a list under the other.
+  it('applies the same migrations through either folder, and a database migrated through one has nothing to apply through the other', async () => {
     const files = sqlFiles(NEUTRAL_DIR)
     expect(files.length).toBeGreaterThan(0)
-    expect(pending(migrations('list', oldConfig, 'fresh'))).toEqual(files)
-    expect(pending(migrations('list', neutralConfig, 'fresh'))).toEqual(files)
+    // wrangler prints the pending table, then the results table.
+    const applied = (out: string) => [...new Set(pending(out))]
 
-    // An existing self-hoster's database, migrated under the old config.
-    migrations('apply', oldConfig, 'old')
-    for (const config of [neutralConfig, oldConfig]) {
-      const out = migrations('list', config, 'old')
-      expect(pending(out)).toEqual([])
-      expect(out).toContain('No migrations to apply')
-    }
+    // An existing self-hoster's database, migrated under the old config, and a
+    // new self-hoster's, migrated under the neutral one.
+    const [viaOld, viaNeutral] = await Promise.all([
+      migrations('apply', oldConfig, 'old'),
+      migrations('apply', neutralConfig, 'neutral'),
+    ])
+    expect(applied(viaOld)).toEqual(files)
+    expect(applied(viaNeutral)).toEqual(files)
 
-    // A new self-hoster's database, migrated under the neutral config.
-    migrations('apply', neutralConfig, 'neutral')
-    for (const config of [oldConfig, neutralConfig]) {
-      const out = migrations('list', config, 'neutral')
+    const [oldListedByNeutral, neutralListedByOld] = await Promise.all([
+      migrations('list', neutralConfig, 'old'),
+      migrations('list', oldConfig, 'neutral'),
+    ])
+    for (const out of [oldListedByNeutral, neutralListedByOld]) {
       expect(pending(out)).toEqual([])
       expect(out).toContain('No migrations to apply')
     }
   }, 300_000)
 
-  it('builds the same worker from either entry file', () => {
-    function build(config: string, name: string) {
+  it('builds the same worker from either entry file', async () => {
+    async function build(config: string, name: string) {
       const outdir = join(tmp, `build-${name}`)
-      const r = wrangler(['deploy', '--dry-run', '-c', config, '--outdir', outdir, '--metafile', join(outdir, 'meta.json')])
+      const r = await wrangler(['deploy', '--dry-run', '-c', config, '--outdir', outdir, '--metafile', join(outdir, 'meta.json')])
       expect(r.status, r.out).toBe(0)
       const meta = JSON.parse(readFileSync(join(outdir, 'meta.json'), 'utf8')) as {
         inputs: Record<string, unknown>
@@ -270,8 +278,7 @@ describe('a local deploy rehearsal with wrangler', () => {
       const entry = Object.values(meta.outputs).find(o => o.entryPoint)
       return { inputs: Object.keys(meta.inputs).sort(), exports: [...(entry?.exports ?? [])].sort() }
     }
-    const neutral = build(neutralConfig, 'neutral')
-    const old = build(oldConfig, 'old')
+    const [neutral, old] = await Promise.all([build(neutralConfig, 'neutral'), build(oldConfig, 'old')])
 
     expect(neutral.exports).toEqual(expect.arrayContaining(['default', 'TenantApi', 'StatsApi']))
     expect(old.exports).toEqual(neutral.exports)
