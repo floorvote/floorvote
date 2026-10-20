@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { eq, inArray } from 'drizzle-orm'
-import { clearDb, seedUser, seedBill, seedComment } from '../helpers'
+import { clearDb, seedUser, seedSession, seedBill, seedComment, appFetch } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills, comments, feedEvents, memberVotes, notes, officialPositions } from '../../src/db/schema'
 import { draftDeleteVerdicts, draftDeleteStatements, deleteCleared } from '../../src/lib/draftDelete'
@@ -78,7 +78,7 @@ describe('draft delete: engagement that arrives between the check and the batch'
     expect(result).toEqual({ deleted: [clean], skipped: [{ id: late, reason: 'engaged' }] })
   })
 
-  it('reports the drafts the batch kept as engaged when the re-check read fails, rather than failing the request', async () => {
+  it('reports the drafts the batch kept as error when the re-check read fails, rather than failing the request', async () => {
     const late = await draft(1)
     const clean = await draft(2)
     await draftDeleteVerdicts(db(), [late, clean])
@@ -97,9 +97,36 @@ describe('draft delete: engagement that arrives between the check and the batch'
 
     const result = await deleteCleared(flaky, [late, clean])
 
-    expect(result).toEqual({ deleted: [clean], skipped: [{ id: late, reason: 'engaged' }] })
+    expect(result).toEqual({ deleted: [clean], skipped: [{ id: late, reason: 'error' }] })
     expect(await exists(clean)).toBe(false)
     expect(await exists(late)).toBe(true)
+  })
+
+  it('answers the single delete with a 500, not a 409, when the batch kept the draft and the re-check read fails', async () => {
+    const adminToken = await seedSession(adminId)
+    const kept = await draft(1)
+    // The trigger makes the batch skip this bill without an error, as a draft that gained engagement would be skipped.
+    await env.DB.exec(`CREATE TRIGGER keep_one_draft BEFORE DELETE ON bills WHEN OLD.id = '${kept}' BEGIN SELECT RAISE(IGNORE); END`)
+    try {
+      // The real D1 runs the batch. Every statement prepared after it fails.
+      let batched = false
+      const flakyDb = new Proxy(env.DB, {
+        get(target, key) {
+          const value = Reflect.get(target, key, target)
+          if (key === 'batch') return async (...args: unknown[]) => { const out = await (value as (...a: unknown[]) => Promise<unknown>).apply(target, args); batched = true; return out }
+          if (key === 'prepare' && batched) return () => { throw new Error('read failed') }
+          return typeof value === 'function' ? value.bind(target) : value
+        },
+      })
+
+      const res = await appFetch(`/api/bills/${kept}`, { method: 'DELETE', headers: { Cookie: `session=${adminToken}` } }, { ...env, DB: flakyDb })
+
+      expect(res.status).toBe(500)
+      expect(await res.json()).toEqual({ error: 'internal_error' })
+      expect(await exists(kept)).toBe(true)
+    } finally {
+      await env.DB.exec('DROP TRIGGER keep_one_draft')
+    }
   })
 
   it('reports a draft filed or deleted after the check under the reason a fresh check gives it', async () => {

@@ -151,15 +151,17 @@ export async function deleteCleared(
   const skipped: Array<{ id: string; reason: DraftSkipReason }> = []
   if (left.length > 0) {
     // The batch has run, so a failed read here must not fail the request: earlier chunks and this
-    // one's deleted drafts are already gone. The drafts it kept are reported as engaged, the usual cause.
+    // one's deleted drafts are already gone. We then cannot say why the batch kept the rest, so they
+    // are reported as `error`: kept whole, and worth retrying.
     const fresh = await draftDeleteVerdicts(db, left).catch((err: unknown) => {
       console.error('draft delete re-check failed', err)
-      return new Map<string, DraftDeleteVerdict>()
+      return null
     })
     for (const id of left) {
-      const verdict = fresh.get(id)
+      const verdict = fresh?.get(id)
+      if (!verdict) skipped.push({ id, reason: 'error' })
       // 'delete' again means the guard and the fresh check disagree: report it as kept, not as gone.
-      skipped.push({ id, reason: !verdict || verdict === 'delete' ? 'engaged' : verdict })
+      else skipped.push({ id, reason: verdict === 'delete' ? 'engaged' : verdict })
     }
   }
   return { deleted, skipped }

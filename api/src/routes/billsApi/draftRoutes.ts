@@ -41,6 +41,8 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
     if (refusal === 'not_found') return c.json({ error: 'Bill not found' }, 404)
     if (refusal === 'not_draft') return c.json({ error: 'Only draft bills can be deleted' }, 403)
     if (refusal === 'engaged') return c.json({ error: 'This draft has engagement; link it to a filed bill instead.' }, 409)
+    // The batch kept the draft for a reason we could not read back: not deleted, and not known to be engaged.
+    if (refusal === 'error') return c.json({ error: 'internal_error' }, 500)
 
     return new Response(null, { status: 204 })
   })
