@@ -130,6 +130,17 @@ describe('the Committee menu looks like the Subject menu', () => {
     expect(radios.style.background).toBe(header.style.background)
   })
 
+  it('is wide enough to show the chamber after a long committee name, and never wider than the screen', () => {
+    const { menu } = renderMenu()
+    expect(menu.style.width).toBe('400px')
+    expect(menu.style.maxWidth).toBe('90vw')
+  })
+
+  it('separates the gray scope radios from the first gray state header with a divider', () => {
+    const { menu } = renderMenu()
+    expect(within(menu).getByRole('radiogroup').style.borderBottom).toBe(`1px solid ${color.borderDefault}`)
+  })
+
   it('gives the scope radios that gray on a single-state instance too', () => {
     const { menu } = renderMenu({ groups: [GROUPS[0]], showStates: false })
     expect(within(menu).getByRole('radiogroup').style.background).toBe(color.surfaceMuted)
@@ -327,6 +338,40 @@ describe('the Committee menu keyboard', () => {
     fireEvent.scroll(list)
     expect(list.scrollTop).toBeGreaterThan(0)
     expect(nameOf(focused())).toBe('Committee 199')
+  })
+
+  it('drops a move to a committee not yet rendered when the menu closes, so reopening focuses the checked radio', () => {
+    const { menu } = renderMenu({ groups: makeGroups({ NJ: 200 }), showStates: false })
+    const list = within(menu).getByTestId('committee-options')
+    const boxes = within(menu).getAllByRole('checkbox')
+    const lastRendered = boxes[boxes.length - 1]
+    lastRendered.focus()
+    // The list is scrolled, but its row is not rendered until the scroll lands: the move is pending.
+    fireEvent.keyDown(lastRendered, { key: 'ArrowDown' })
+    expect(list.scrollTop).toBeGreaterThan(0)
+    fireEvent.keyDown(focused(), { key: 'Escape' })
+    expect(screen.queryByRole('group', { name: 'Committee' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /^Committee/ }))
+    expect(focused()).toBe(screen.getByRole('radio', { name: 'Any referral' }))
+    // Scrolling the reopened list to where the dropped move was heading must not pull focus there.
+    const reopened = screen.getByTestId('committee-options')
+    reopened.scrollTop = 800
+    fireEvent.scroll(reopened)
+    expect(focused()).toBe(screen.getByRole('radio', { name: 'Any referral' }))
+  })
+
+  it('drops a move to a committee not yet rendered when the search changes, leaving focus in the search box', () => {
+    const { menu } = renderMenu({ groups: makeGroups({ NJ: 200 }), showStates: false })
+    const list = within(menu).getByTestId('committee-options')
+    const boxes = within(menu).getAllByRole('checkbox')
+    const lastRendered = boxes[boxes.length - 1]
+    lastRendered.focus()
+    fireEvent.keyDown(lastRendered, { key: 'ArrowDown' })
+    const search = within(menu).getByPlaceholderText(SEARCH)
+    search.focus()
+    fireEvent.change(search, { target: { value: 'Committee' } })
+    fireEvent.scroll(list)
+    expect(focused()).toBe(search)
   })
 
   it('closes on Escape from the search box and returns focus to the button', () => {

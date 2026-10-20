@@ -50,7 +50,8 @@ const HEADER_ROW_HEIGHT = 24
 const LIST_HEIGHT = 280
 /** The search box above the list, and the scope switch under it, so the menu's tallest height holds the whole list. */
 const CHROME_HEIGHT = 90
-const MENU_WIDTH = 320
+/** The old menu's widest size: wide enough that a long name still shows the " (Senate)" or " (House)" that tells same-named committees apart. */
+const MENU_WIDTH = 400
 
 /**
  * The Committee filter (#471): each committee with its bill count, under its state on a multi-state instance, and a
@@ -93,6 +94,11 @@ export function CommitteeFilterDropdown({ groups, selected, onChange, scope, onS
     optionHeight: OPTION_ROW_HEIGHT,
     getScrollElement: () => scrollRef.current,
   })
+
+  // A move still waiting for its row is dropped when the menu closes, so it cannot pull focus on a later render.
+  useEffect(() => {
+    if (!open) pendingFocus.current = null
+  }, [open])
 
   useEffect(() => {
     if (!open) return
@@ -209,14 +215,14 @@ export function CommitteeFilterDropdown({ groups, selected, onChange, scope, onS
               aria-label="Search committees"
               placeholder="Search committees…"
               value={search}
-              onChange={e => setSearch(e.target.value)}
+              onChange={e => { pendingFocus.current = null; setSearch(e.target.value) }}
               style={{
                 width: '100%', boxSizing: 'border-box', fontSize: fontSize.sm, padding: '6px 10px',
                 border: `1px solid ${color.borderDefault}`, borderRadius: radius.md,
               }}
             />
           </div>
-          <CommitteeScopeSwitch scope={scope} onScopeChange={onScopeChange} name="committee-scope-desktop" />
+          <CommitteeScopeSwitch scope={scope} onScopeChange={onScopeChange} name="committee-scope-desktop" style={{ borderBottom: `1px solid ${color.borderDefault}` }} />
           {rows.length === 0 ? (
             <div style={{ padding: '16px 12px', fontSize: fontSize.sm, color: color.textMuted }}>
               {search.trim() ? <>No committees match &ldquo;{search.trim()}&rdquo;.</> : 'No committees.'}
