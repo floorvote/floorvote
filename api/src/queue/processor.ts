@@ -508,7 +508,7 @@ async function applyCentralBill(
     // since hearings are updated independently of bill metadata.
     if (msg.calendar && existing && (existing.matchType !== null || existing.priority !== null || existing.groupKey !== null)) {
       const nowEarly = nowDb()
-      await reconcileCalendar(db, existing.id, msg, false, nowEarly)
+      await reconcileCalendar(db, env, existing.id, msg, false, nowEarly)
     }
     return
   }
@@ -913,12 +913,13 @@ async function applyCentralBill(
 
   // Mirror hearings for tracked bills and group members (priority filtering happens at read time, by the group's priority).
   if (msg.calendar && (derivedMatchType !== null || existing?.priority != null || existing?.groupKey != null)) {
-    await reconcileCalendar(db, billInternalId, msg, isNew, now)
+    await reconcileCalendar(db, env, billInternalId, msg, isNew, now)
   }
 }
 
 async function reconcileCalendar(
   db: AppDb,
+  env: Env,
   billInternalId: string,
   msg: TenantQueueMessage,
   isNew: boolean,
@@ -926,6 +927,12 @@ async function reconcileCalendar(
 ): Promise<void> {
   const block = msg.calendar
   if (!block) return
+
+  // A demo's hearings come only from its seed (disclosed fiction that central's
+  // calendar never lists), and the reset re-derives them. Reconciling against
+  // central cancels every one of them and rewrites any it does match, so a
+  // delivery leaves a demo's calendar alone (#884).
+  if (env.DEMO_MODE === 'true') return
 
   const incomingUids = new Set<string>()
   const changedUids = new Set<string>()
