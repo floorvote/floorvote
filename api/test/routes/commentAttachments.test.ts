@@ -3,7 +3,7 @@ import { env } from 'cloudflare:test'
 import { eq, isNull } from 'drizzle-orm'
 import { clearDb, appFetch, stubFetch, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { commentAttachments, feedEvents } from '../../src/db/schema'
+import { commentAttachments, comments, feedEvents } from '../../src/db/schema'
 import { purgeAttachments, uploadAttachment, UPLOAD_DEADLINE_MS } from '../../src/lib/attachments'
 
 // The test config binds ATTACHMENTS_BUCKET, which is all the feature needs.
@@ -116,6 +116,44 @@ describe('comment attachments', () => {
     it('still refuses a blank comment with no files', async () => {
       expect((await blank(member)).status).toBe(400)
       expect((await blank(member, [])).status).toBe(400)
+    })
+
+    it('refuses a blank post whose files another post already claimed, and leaves nothing behind', async () => {
+      const { id } = await attached(member, 'Once.pdf', PDF)
+      // Two posts naming the same upload at once: both pass the check, one claims the file.
+      const [a, b] = await Promise.all([blank(member, [id]), blank(member, [id])])
+      expect([a.status, b.status].sort()).toEqual([201, 409])
+      const lost = a.status === 409 ? a : b
+      expect(await errorOf(lost)).toBe('Those files were already attached')
+      const db = getDb(env.DB)
+      expect(await db.select().from(comments).all()).toHaveLength(1)
+      expect(await db.select().from(feedEvents).where(eq(feedEvents.type, 'comment_added')).all()).toHaveLength(1)
+    })
+
+    it('shows "Attached ..." in the notifications panel for a reply and a reaction', async () => {
+      const text = await appFetch(`http://localhost/api/bills/${billId}/comments`, json(other, 'POST', { content: '<p>First</p>' }), env)
+      expect(text.status).toBe(201)
+      const { id } = await attached(member, 'Report.pdf', PDF)
+      const posted = await (await blank(member, [id])).json() as { id: string }
+      const react = await appFetch(`http://localhost/api/comments/${posted.id}/reactions`, json(other, 'POST', { emoji: '👍' }), env)
+      expect(react.status).toBe(200)
+      type N = { kind: string; commentPreview: string; commentHtml: string }
+      const inbox = async (token: string) => (await (await appFetch('http://localhost/api/notifications', json(token, 'GET'), env)).json() as { notifications: N[] }).notifications
+      const reply = (await inbox(other)).find(n => n.kind === 'reply')!
+      expect(reply.commentPreview).toBe('Attached Report.pdf')
+      expect(reply.commentHtml).toBe('<p>Attached Report.pdf</p>')
+      const reaction = (await inbox(member)).find(n => n.kind === 'reaction')!
+      expect(reaction.commentPreview).toBe('Attached Report.pdf')
+      expect(reaction.commentHtml).toBe('<p>Attached Report.pdf</p>')
+    })
+
+    it('lets the author clear the text of a comment that has files, but not of one without', async () => {
+      const { id } = await attached(member, 'Report.pdf', PDF)
+      const withFile = await (await postComment(member, billId, [id])).json() as { id: string }
+      const edit = (cid: string) => appFetch(`http://localhost/api/comments/${cid}`, json(member, 'PATCH', { content: '' }), env)
+      expect((await edit(withFile.id)).status).toBe(200)
+      const plain = await (await appFetch(`http://localhost/api/bills/${billId}/comments`, json(member, 'POST', { content: '<p>Just text</p>' }), env)).json() as { id: string }
+      expect((await edit(plain.id)).status).toBe(400)
     })
 
     it('refuses a blank comment whose file is not attachable', async () => {

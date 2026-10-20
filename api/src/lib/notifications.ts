@@ -15,6 +15,8 @@ import { filedSlug } from './sessionSlug'
 import { stripHtml } from './stripHtml'
 import { chunk, D1_MAX_PARAMS } from './chunk'
 import { nowDb } from './dbTime'
+import { attachmentSummaryText, loadCommentAttachments } from './attachments'
+import { sanitizeCommentHtml } from './sanitizeHtml'
 import { activeUser } from './accountDeletion'
 import { userDisplayNameSql } from './displayName'
 import { userTitleSql } from './userTitle'
@@ -170,6 +172,28 @@ const LIST_LIMIT = 50
 // The ReactionRow headline names at most two reactors and counts the rest.
 const REACTORS_NAMED = 2
 
+
+/**
+ * The preview and body a notification shows for a comment. A file-only comment
+ * has no text, so it reads "Attached report.pdf" (from `fileBodies`) instead.
+ */
+function commentBody(commentId: string, content: string, fileBodies: Map<string, string>) {
+  const html = stripHtml(content) ? content : fileBodies.get(commentId) ?? content
+  return { commentPreview: stripHtml(html).slice(0, 150), commentHtml: html }
+}
+
+/** For the comments on a page with no text, their files' summary as HTML, loaded in one query. */
+async function loadFileOnlyBodies(db: Db, rows: { commentId: string; commentContent: string }[]): Promise<Map<string, string>> {
+  const emptyIds = [...new Set(rows.filter(r => !stripHtml(r.commentContent)).map(r => r.commentId))]
+  const out = new Map<string, string>()
+  if (emptyIds.length === 0) return out
+  for (const [id, files] of await loadCommentAttachments(db, emptyIds)) {
+    const text = attachmentSummaryText(files)
+    if (text) out.set(id, sanitizeCommentHtml(`<p>${text}</p>`))
+  }
+  return out
+}
+
 /**
  * A member's newest notifications, rendered for GET /notifications. The unread
  * count covers the rows returned.
@@ -208,6 +232,7 @@ export async function listNotifications(db: Db, recipientId: string): Promise<{ 
     .limit(LIST_LIMIT)
     .all()
   const reactions = await listReactionGroups(db, recipientId)
+  const fileBodies = await loadFileOnlyBodies(db, rows)
 
   // Kind-specific data, parsed once. A row whose data can't be read is dropped.
   type Row = (typeof rows)[number]
@@ -245,8 +270,7 @@ export async function listNotifications(db: Db, recipientId: string): Promise<{ 
           authorTitle: r.actorTitle,
           // The old name for `authorTitle`. Remove in the release after this one.
           authorSubtitle: r.actorTitle,
-          commentPreview: stripHtml(r.commentContent).slice(0, 150),
-          commentHtml: r.commentContent,
+          ...commentBody(r.commentId, r.commentContent, fileBodies),
           sourceType: r.mention.sourceType,
           sourceLabel: r.mention.sourceType === 'role' ? (roleNames.get(r.mention.sourceId) ?? null) : null,
         }
@@ -259,8 +283,7 @@ export async function listNotifications(db: Db, recipientId: string): Promise<{ 
           authorTitle: r.actorTitle,
           // The old name for `authorTitle`. Remove in the release after this one.
           authorSubtitle: r.actorTitle,
-          commentPreview: stripHtml(r.commentContent).slice(0, 150),
-          commentHtml: r.commentContent,
+          ...commentBody(r.commentId, r.commentContent, fileBodies),
         }
     }
   })
@@ -331,11 +354,11 @@ async function listReactionGroups(db: Db, recipientId: string): Promise<Reaction
     reactors.set(r.commentId, list)
   }
 
+  const fileBodies = await loadFileOnlyBodies(db, groups)
   return groups.map(g => ({
     ...notificationBase({ ...g, id: `reaction:${g.commentId}` }),
     kind: 'reaction',
-    commentPreview: stripHtml(g.commentContent).slice(0, 150),
-    commentHtml: g.commentContent,
+    ...commentBody(g.commentId, g.commentContent, fileBodies),
     reactors: reactors.get(g.commentId) ?? [],
     reactorCount: g.reactorCount,
   }))

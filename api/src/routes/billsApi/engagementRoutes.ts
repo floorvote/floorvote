@@ -275,6 +275,12 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
       createdAt: now,
     })
     const attachments = await attachToComment(db, commentId, attachable.ids)
+    if (!text && attachments.length === 0) {
+      // Another post claimed the files first (two tabs, or a retry after a lost
+      // response). Nothing references this row yet, so remove it.
+      await db.delete(comments).where(eq(comments.id, commentId))
+      return c.json({ error: 'Those files were already attached' }, 409)
+    }
 
     // A file-only comment has no body to preview, so notifications and the feed
     // say what was attached instead. This is not stored as the comment's content.
