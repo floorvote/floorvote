@@ -142,6 +142,7 @@ export const FILTER_DIMENSIONS: readonly FilterDimensionDef[] = [
   { key: 'priority',   label: 'Priority',      kind: 'options', scope: 'bill',   isVisible: () => true },
   { key: 'tag',        label: 'Tags',          kind: 'options', scope: 'bill',   isVisible: () => true },
   { key: 'subject',    label: 'Subject',       kind: 'options', scope: 'bill',   isVisible: () => true },
+  { key: 'committee',  label: 'Committee',     kind: 'options', scope: 'bill',   isVisible: () => true },
 ] as const
 
 export type FilterDimensionKey = (typeof FILTER_DIMENSIONS)[number]['key']

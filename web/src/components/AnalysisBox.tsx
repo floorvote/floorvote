@@ -2,7 +2,7 @@ import type React from 'react'
 import { color, fontSize } from '../styles/tokens'
 
 // The single striped shell for an admin-triggered AI run on the bill detail
-// page — used both by the "enable full analysis" empty state and by the AI
+// page — used both by the "enable analysis" empty state and by the AI
 // summary section during a re-generate. It exists as one component so two
 // progress boxes can never render at once, which is exactly what used to
 // happen when re-generate was offered on a bill with nothing to re-generate.

@@ -100,12 +100,14 @@ describe('the week-ahead email, capped at 30 body events (#675)', () => {
   })
 
   it('counts 30 unprioritized events on top of any number of prioritized ones', async () => {
-    // Prioritized: 0 to 39 (any priority level). Unprioritized: 40 to 79.
-    await seedBodyEvents(0, 40, { priorityOf: i => (['high', 'medium', 'low'] as const)[i % 3] })
-    await seedBodyEvents(40, 80)
+    // Prioritized: 0 to 19 (any priority level). Unprioritized: 20 to 59.
+    // Few enough that the 30 still fit the byte budget (#774).
+    await seedBodyEvents(0, 20, { priorityOf: i => (['high', 'medium', 'low'] as const)[i % 3] })
+    await seedBodyEvents(20, 60)
     const html = await emailed()
-    expect(listed(html, 0, 40)).toHaveLength(40)
-    expect(listed(html, 40, 80)).toHaveLength(CAP)
+    expect(listed(html, 0, 20)).toHaveLength(20)
+    expect(listed(html, 20, 60)).toHaveLength(CAP)
+    expect(Buffer.byteLength(html, 'utf8')).toBeLessThan(80 * 1024)  // headroom: the byte budget (#774) cut nothing
     expect(html.match(OVERFLOW)?.[1]).toBe('10')
   })
 

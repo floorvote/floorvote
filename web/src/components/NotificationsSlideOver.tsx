@@ -593,6 +593,9 @@ function RowFrame({
   )
 }
 
+// The ReactionRow headline shows this many emoji, then "+N" for the rest.
+const EMOJI_SHOWN = 4
+
 /**
  * The panel row for a `reaction` notification: one per comment, however many
  * members reacted. It names the newest reactor and counts the rest, and shows
@@ -619,6 +622,9 @@ function ReactionRow({
     : others === 1
     ? `${first} and ${m.reactors[1]?.name ?? 'someone'}`
     : `${first} and ${others} others`
+  const emoji = m.emoji ?? []
+  const shown = emoji.slice(0, EMOJI_SHOWN)
+  const hidden = emoji.length - shown.length
   return (
     <RowFrame
       m={m}
@@ -627,7 +633,16 @@ function ReactionRow({
         <>
           <span style={{ fontWeight: fontWeight.semibold, color: color.textPrimary }}>{who}</span>
           {' '}
-          reacted to your comment
+          reacted
+          {shown.length > 0 && ` ${shown.join(' ')}`}
+          {hidden > 0 && (
+            <>
+              {' '}
+              <span style={{ color: color.textMuted }}>{`+${hidden}`}</span>
+            </>
+          )}
+          {' '}
+          to your comment
         </>
       }
       onCommentMouseOver={onCommentMouseOver}

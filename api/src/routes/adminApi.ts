@@ -1066,7 +1066,7 @@ adminApiRouter.post('/keyword-resync-preview', async (c) => {
 
   if (keywords.length === 0) return c.json({ wouldAdd: 0, wouldDemote: 0, wouldProtect: 0 })
 
-  // wouldAdd: lightweight bills that are unprocessed and would now match
+  // wouldAdd: monitored bills that are unprocessed and would now match
   //
   // Under the match-all list the count must equal what /keyword-resync will queue: every
   // unprocessed bill with an externalId, including ones already marked keyword-matched

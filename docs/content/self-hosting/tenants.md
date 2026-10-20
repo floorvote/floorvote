@@ -358,7 +358,7 @@ They then log in with a magic link sent to that email address.
 
 Now switch from the terminal to a browser. Go to your instance at the `APP_URL` from your Step 3 config block — `https://[slug].[your-domain]` (the custom domain from Step 9). There's no password: enter the founding owner's email from Step 10 and the app emails you a magic link; click it to sign in, then open **Settings → Config**. A new instance starts with no keywords and no AI instructions, so there are two ways to proceed from here:
 
-- **Path 1 (recommended — explore first).** Leave the AI fields and keywords blank, seed the session in Step 12, and every bill arrives as a free monitor stub with no AI cost. Browse and search the real corpus, then come back here and fill in both sections — **and save both, in either order**: keywords in the Bill keywords section, saved with **Save keywords and sync** (this is the button that queues the newly-matching bills for full analysis); and AI context, relevance question, and tag taxonomy in the AI instructions section, saved separately with **Save AI instructions**. Saving only one leaves the other on its blank default — in particular, writing AI instructions and clicking only **Save keywords and sync** leaves those instructions unsaved, silently falling back to the generic default. The free exploration window ends the moment you save the keywords — from then on, re-tuning keywords or instructions means paying for AI a second time on whatever newly matches.
+- **Path 1 (recommended — explore first).** Leave the AI fields and keywords blank, seed the session in Step 12, and every bill arrives as a monitored bill with no AI cost. Browse and search the real corpus, then come back here and fill in both sections — **and save both, in either order**: keywords in the Bill keywords section, saved with **Save keywords and sync** (this is the button that queues the newly matching bills for analysis); and AI context, relevance question, and tag taxonomy in the AI instructions section, saved separately with **Save AI instructions**. Saving only one leaves the other on its blank default — in particular, writing AI instructions and clicking only **Save keywords and sync** leaves those instructions unsaved, silently falling back to the generic default. The free exploration window ends the moment you save the keywords — from then on, re-tuning keywords or instructions means paying for AI a second time on whatever newly matches.
 - **Path 2 (keywords already known).** Write the config now, before seeding, so the Step 12 seed produces AI summaries on its first pass. Use the `wrangler d1 execute` block below to set it directly, or fill in the same fields in **Settings → Config** and save.
 
 You can set these fields directly in the database if you prefer (from `api/`). They live in the `association_config` table:
@@ -382,7 +382,7 @@ wrangler d1 execute floorvote-[slug] --remote --env [slug] \
 
 Each key is a row, so `INSERT OR REPLACE` also works for a key you set earlier, such as `state_coverage` in Step 4b.
 
-**What blank means.** An unset `ai_context`, `relevance_question`, or `tag_taxonomy` falls back to a generic default that names the association and still works — nothing breaks. Unset `keywords` is different: it means no bill matches, so nothing gets a full AI summary — central still links every bill to the team as a free monitor stub (see [When do bills start flowing in?](#when-do-bills-start-flowing-in) below), but none of them get analyzed until you set keywords and sync. To widen what gets analyzed, write broader keywords covering your real scope, or manually promote specific bills once they are in view as stubs. Bear in mind that keyword matching runs on a bill's title, its abstract, and its bill number (so `hb 1019` or `hb*` track a bill or a prefix), and many states copy the title into the abstract verbatim — so in practice you are often matching against six or seven words, and broad keywords buy less coverage than they appear to. The [keyword rules](/overview/what-can-it-do#set-keywords-for-the-topics-you-care-about) (whole words by default, `*` to widen, `#` for a digit) are the same ones the Settings hint describes.
+**What blank means.** An unset `ai_context`, `relevance_question`, or `tag_taxonomy` falls back to a generic default that names the association and still works — nothing breaks. Unset `keywords` is different: it means no bill matches, so no bill is analyzed — central still links every bill to the team as a monitored bill, at no AI cost (see [When do bills start flowing in?](#when-do-bills-start-flowing-in) below), but none are analyzed until you set keywords and sync. To widen what gets analyzed, write broader keywords covering your real scope, or manually promote specific bills once they are in view as monitored bills. Bear in mind that keyword matching runs on a bill's title, its abstract, and its bill number (so `hb 1019` or `hb*` track a bill or a prefix), and many states copy the title into the abstract verbatim — so in practice you are often matching against six or seven words, and broad keywords buy less coverage than they appear to. The [keyword rules](/overview/what-can-it-do#set-keywords-for-the-topics-you-care-about) (whole words by default, `*` to widen, `#` for a digit) are the same ones the Settings hint describes.
 
 To analyze every bill instead, set the keywords to a single `*`. That is a keyword, not the `["*"]` in `state_coverage`, which means every state. It works only as the sole keyword: in a longer list it is ignored, since it would make every other keyword redundant. Saving it asks for confirmation and shows how many bills it would queue, and every one of them costs AI usage, so treat it as a cost decision.
 
@@ -390,10 +390,10 @@ While you're here, set **What you call your group** under **Labels** (team, asso
 
 ## Step 12: Seed the active session(s)
 
-Seeding loads a whole legislative session into the team at once — bills matching its keywords get full AI summaries, and the rest come in as lightweight "monitor" stubs (no AI cost). This means the team mirrors the full session from day one.
+Seeding loads a whole legislative session into the team at once — bills matching its keywords are analyzed, and the rest come in as monitored bills (no AI cost). This means the team mirrors the full session from day one.
 
 > [!TIP]
-> **No keywords yet is the expected case (Path 1 from Step 11).** Seeding uses whatever keywords are already synced to central to decide which bills get full AI versus a stub — with none set, every bill comes in as a stub, which is exactly the free-exploration state Path 1 wants. Save both sections when you're ready, as Step 11 describes.
+> **No keywords yet is the expected case (Path 1 from Step 11).** Seeding uses whatever keywords are already synced to central to decide which bills are analyzed — with none set, every bill comes in as a monitored bill, which is exactly the free-exploration state Path 1 wants. Save both sections when you're ready, as Step 11 describes.
 
 There are two paths, depending on whether central already has the state's bills.
 
@@ -534,7 +534,7 @@ Registration stores the team's keywords and state coverage and provisions its qu
 - **Brand-new state, not seeded:** central discovers the session on its once-a-day pass, then bills flow — worst case ~24 hours.
 - **Want bills immediately:** run the seed in Step 12.
 
-Non-keyword bills arrive as lightweight monitor stubs; keyword and manually-added bills get full AI summaries.
+Non-keyword bills arrive as monitored bills; keyword and manually added bills are analyzed.
 
 ## Hiding subjects
 

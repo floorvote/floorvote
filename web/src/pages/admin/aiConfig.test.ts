@@ -122,6 +122,11 @@ describe('centralSyncWarning', () => {
     expect(healthy).toBeNull()
   })
 
+  it('words the failure messages around analysis, not stubs', () => {
+    expect(centralSyncWarning({ ...base, centralStatus: 'rate_limited' })).toBe('Central was rate-limited, so newly matching bills were not analyzed. Wait a minute and save again.')
+    expect(centralSyncWarning({ ...base, centralStatus: 'failed' })).toBe('Could not reach central, so newly matching bills were not analyzed. Try saving again.')
+  })
+
   it('warns when central could not be reached', () => {
     expect(centralSyncWarning({ ...base, centralStatus: 'failed' })).toMatch(/central/i)
   })
