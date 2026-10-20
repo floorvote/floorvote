@@ -9,6 +9,7 @@ import { MAX_SUBJECT_FILTERS } from '../../../shared/limits'
 import { ConfigContext, type AppConfig } from '../context/ConfigContext'
 import type { StatusStageGroup } from '../lib/statusGroups'
 import { committeeGroups } from '../lib/committeeGroups'
+import { color } from '../styles/tokens'
 
 function makeDefaults(): ComponentProps<typeof FilterSheet> {
   return {
@@ -970,5 +971,14 @@ describe('FilterSheet — Committee options', () => {
     const chips = screen.getAllByRole('button', { pressed: false }).map(b => b.textContent)
     expect(chips.filter(t => /Senate|House/.test(t ?? ''))).toEqual(['Rules (Senate)140', 'Judiciary (Senate)12', 'Calendars (House)3'])
     expect(screen.queryByText('Procedural')).toBeNull()
+  })
+
+  it('puts the scope radios on the same gray as the desktop menu, and still switches the scope', () => {
+    const onCommitteeScopeChange = vi.fn()
+    renderSheet({ committeeGroups: committeeGroups({ 101: 12 }, INFO), onCommitteeScopeChange })
+    fireEvent.click(screen.getByRole('button', { name: /^committee/i }))
+    expect(screen.getByRole('radiogroup').style.background).toBe(color.surfaceMuted)
+    fireEvent.click(screen.getByRole('radio', { name: 'Current committee' }))
+    expect(onCommitteeScopeChange).toHaveBeenCalledWith('current')
   })
 })

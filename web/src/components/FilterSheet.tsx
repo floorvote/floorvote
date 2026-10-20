@@ -830,7 +830,7 @@ export function FilterSheet({
           {/* Committees (#471): the scope switch, then each state's committees by count. */}
           {dimension === 'committee' && (
             <div>
-              <CommitteeScopeSwitch scope={committeeScope} onScopeChange={onCommitteeScopeChange} name="committee-scope-sheet" />
+              <CommitteeScopeSwitch scope={committeeScope} onScopeChange={onCommitteeScopeChange} name="committee-scope-sheet" style={{ borderRadius: radius.md }} />
               {committeeGroups.map(group => (
                 <div key={group.state} style={{ marginTop: 8 }}>
                   {isMultiState && <SectionLabel title={group.state} />}
