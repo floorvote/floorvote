@@ -18,7 +18,7 @@ import { inGroupOf } from '../../lib/companionGroups'
 import { loadGroupTeamValues, recordFieldChanges } from '../../lib/teamFields'
 import { parseStoredItems } from '../../lib/claimSources'
 import { pruneClaimSources } from '../../lib/claimResolution'
-import { draftDeleteVerdicts, draftDeleteStatements } from '../../lib/draftDelete'
+import { deleteDrafts } from '../../lib/draftDelete'
 
 // Latch a bill as triaged. Idempotent: the isNull guard means only the first
 // triage (dismiss or priority-set) records the actor/timestamp, so re-triaging
@@ -36,12 +36,12 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
   router.delete('/:id', requireAdmin, async (c) => {
     const db = getDb(c.env.DB)
     const { id } = c.req.param()
-    const verdict = (await draftDeleteVerdicts(db, [id])).get(id)
-    if (verdict === 'not_found') return c.json({ error: 'Bill not found' }, 404)
-    if (verdict === 'not_draft') return c.json({ error: 'Only draft bills can be deleted' }, 403)
-    if (verdict === 'engaged') return c.json({ error: 'This draft has engagement; link it to a filed bill instead.' }, 409)
+    const { skipped } = await deleteDrafts(db, [id])
+    const refusal = skipped[0]?.reason
+    if (refusal === 'not_found') return c.json({ error: 'Bill not found' }, 404)
+    if (refusal === 'not_draft') return c.json({ error: 'Only draft bills can be deleted' }, 403)
+    if (refusal === 'engaged') return c.json({ error: 'This draft has engagement; link it to a filed bill instead.' }, 409)
 
-    await db.batch(draftDeleteStatements(db, [id]))
     return new Response(null, { status: 204 })
   })
 
