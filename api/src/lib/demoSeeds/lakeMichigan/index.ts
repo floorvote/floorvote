@@ -100,9 +100,14 @@ export const LAKE_MICHIGAN_SEED: DemoSeed = {
       // across metadata refreshes): WI Assembly Environment and Senate Natural Resources, MI House Natural Resources
       // and Senate Natural Resources and Agriculture, IL House Energy & Environment, IN House Environmental Affairs,
       // and the US Senate Environment and Public Works and House Water Resources and Environment subcommittee. The
-      // default `any referral` scope is not written, as the bill list leaves it out of the URL. Not subject-based.
-      id: 'lm-view-environment-committees', name: 'Environment committees', slug: 'environment-committees',
-      query: viewQuery(['4122', '5058', '5004', '4774', '3958', '1290', '2325', '2551'].map((id): [string, string] => ['committee', id])),
+      // default `any referral` scope is not written, as the bill list leaves it out of the URL. Narrowed to the
+      // priorities the seed writes, so it combines two filters. Not subject-based.
+      id: 'lm-view-environment-committees', name: 'Environment committees, high and medium priority',
+      slug: 'environment-committees-high-and-medium-priority',
+      query: viewQuery([
+        ...['4122', '5058', '5004', '4774', '3958', '1290', '2325', '2551'].map((id): [string, string] => ['committee', id]),
+        ['priority', 'high'], ['priority', 'medium'],
+      ]),
     },
   ],
 }
