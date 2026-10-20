@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest'
-import { env, SELF } from 'cloudflare:test'
+import { env } from 'cloudflare:test'
 import { eq, inArray } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { resetDb, applyMigrations, seedUser, seedSession, seedBill, appFetch } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { clearBillStatesCache } from '../../src/lib/billStates'
 import {
@@ -10,7 +10,12 @@ import {
 
 // The harness of the group-aware facet tests (#380): requests against the list and the facets, and the
 // random-fixture suite that checks every facet count against the list. Each random fixture runs in a file of
-// its own, since the Workers test pool slows with the number of requests a file has made.
+// its own, to keep each file's run short for the time-balanced shards in vitest.config.mts.
+//
+// The requests go to the app in process (`appFetch`), not through `SELF.fetch` (#860). Each `SELF.fetch` cost more than
+// the one before it, even for a health check on an empty database, so by the last test of a file one request took many
+// times what the first had, and that last test timed out on a busy machine with no count wrong. See
+// groupFacetsHarnessSpeed.test.ts.
 
 export type Counts = Record<string, number>
 export type Facets = {
@@ -29,12 +34,12 @@ export let ada: string
 export const db = () => getDb(env.DB)
 
 export async function facets(qs = ''): Promise<Facets> {
-  const res = await SELF.fetch(`https://x/api/bills/facets?${qs}`, { headers: { Cookie: cookie } })
+  const res = await appFetch(`https://x/api/bills/facets?${qs}`, { headers: { Cookie: cookie } })
   expect(res.status).toBe(200)
   return await res.json() as Facets
 }
 export async function total(qs = ''): Promise<number> {
-  const res = await SELF.fetch(`https://x/api/bills?pageSize=200&${qs}`, { headers: { Cookie: cookie } })
+  const res = await appFetch(`https://x/api/bills?pageSize=200&${qs}`, { headers: { Cookie: cookie } })
   expect(res.status).toBe(200)
   return ((await res.json()) as { pagination: { total: number } }).pagination.total
 }
