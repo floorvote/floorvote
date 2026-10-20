@@ -8,8 +8,10 @@ ALTER TABLE bills ADD COLUMN first_ingest_queued_at TEXT;
 
 -- Until now a try was counted when a pass queued the bill, so a bill whose message
 -- waited behind a long queue used its tries without its ingest ever running. Start
--- the never-ingested bills over.
-UPDATE bills SET first_ingest_tries = NULL
+-- the never-ingested bills over, and stamp them as waiting, since their messages may
+-- still be in the queue: passes leave them alone, and count them against perPass,
+-- until each message runs or a day passes.
+UPDATE bills SET first_ingest_tries = NULL, first_ingest_queued_at = datetime('now')
 WHERE first_ingest_tries IS NOT NULL AND texts_fetched_at IS NULL AND detail_hash IS NULL;
 
 -- The passes count a provider's waiting bills.

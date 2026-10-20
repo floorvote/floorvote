@@ -57,6 +57,7 @@ import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
 import { example, exampleFeed, type ExampleRecord } from '../providers/example'
 import { PROVIDERS } from '../../src/providers'
 import type { Provider } from '../../src/providers'
+import migration0049 from '../../migrations-legiscan/0049_bill_first_ingest_queued_at.sql?raw'
 
 const rec = (n: number, Title = `Measure ${n} Act of 2026`): ExampleRecord => ({
   Number: `B26-${String(n).padStart(4, '0')}`, Title, Status: 'Introduced', Introduced: '2026-01-13',
@@ -388,7 +389,9 @@ describe('a first full ingest still waiting in the queue (#835 follow-up)', () =
     expect(await ingested()).toEqual([id])
     const sentBefore = bodies(team).length
 
-    // A duplicate, as a pass before this fix queued while the first one waited.
+    // A duplicate, as a pass before this fix queued while the first one waited,
+    // of a bill a pass has stamped as waiting again since (a match's ingest landed it).
+    await env.DB.prepare(`UPDATE bills SET first_ingest_queued_at = datetime('now') WHERE bill_id = ?`).bind(id).run()
     const fetchMeasure = vi.spyOn(example, 'fetchMeasure')
     const dup = first.bodies.map(body => ({ body, ack: vi.fn(), retry: vi.fn() }))
     await processIngestorQueue({ messages: dup } as any, e, db)
@@ -396,6 +399,29 @@ describe('a first full ingest still waiting in the queue (#835 follow-up)', () =
     expect(fetchMeasure).not.toHaveBeenCalled()
     expect(bodies(team)).toHaveLength(sentBefore)
     fetchMeasure.mockRestore()
+    // It holds no slot in the provider's budget.
+    expect((await firstIngestRows()).get(id)!.queuedAt).toBeNull()
+  })
+})
+
+describe('migration 0049', () => {
+  it('holds back the bills an earlier pass already queued, so the first pass after it queues none of them again', async () => {
+    feed([1, 2, 3].map(n => rec(n)))
+    await pass(cheap(0))
+    const [a, b, c] = await allBillIds()
+    // As the old code left them: a and b queued and counted at queue time, their messages still waiting.
+    await env.DB.prepare(`UPDATE bills SET first_ingest_queued_at = NULL, first_ingest_tries = 2 WHERE bill_id IN (?, ?)`).bind(a, b).run()
+    // The migration's data statements (the column and index exist already here).
+    const statements = migration0049.split(';').map(q => q.trim()).filter(q => /^\s*(--[^\n]*\n\s*)*UPDATE/i.test(q))
+    expect(statements).toHaveLength(1)
+    await env.DB.prepare(statements[0]).run()
+
+    // Two still wait, so a perPass of 3 leaves one slot: c.
+    const { queued } = await pass(cheap(3), { ingest: false })
+    expect(queued).toEqual([c])
+    const rows = await firstIngestRows()
+    expect(rows.get(a)!.tries).toBeNull()
+    expect(rows.get(a)!.queuedAt).not.toBeNull()
   })
 })
 

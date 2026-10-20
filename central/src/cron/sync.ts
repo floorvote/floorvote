@@ -654,7 +654,6 @@ export async function applyMasterList(
         ingestAllOnly.add(c.billId)
         firstFull.add(c.billId)
         unchanged.delete(c.billId)
-        billStmts.push(db.update(bills).set({ firstIngestQueuedAt: now }).where(eq(bills.billId, c.billId)))
       } else if (c.tries === FIRST_INGEST_TRIES) {
         for (const tenantId of c.untracked) pushStub(tenantId, c.billId)
         billStmts.push(db.update(bills).set({ firstIngestTries: FIRST_INGEST_TRIES + 1 }).where(eq(bills.billId, c.billId)))
@@ -702,6 +701,13 @@ export async function applyMasterList(
   // provider the bill has then queues its own. An untracked one's is also
   // skipped once the bill has had its first ingest, so a copy queued while an
   // earlier one waits costs nothing.
+  // Stamped as waiting only now the provider still owns the state, just
+  // before the send, so the one failure left is a stamp with no message,
+  // which a day's wait heals.
+  const stamps = [...firstFull].map(billId => db.update(bills).set({ firstIngestQueuedAt: now }).where(eq(bills.billId, billId)))
+  for (let i = 0; i < stamps.length; i += FLUSH_BATCH) {
+    await db.batch(stamps.slice(i, i + FLUSH_BATCH) as [any, ...any[]])
+  }
   const rank = (billId: number) => untrackedFirst.has(billId) ? 2 : ingestAllOnly.has(billId) ? 1 : 0
   const queueIds = [...toQueue].sort((a, b) => rank(a) - rank(b))
   for (let i = 0; i < queueIds.length; i += 100) {

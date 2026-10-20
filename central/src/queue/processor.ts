@@ -106,11 +106,14 @@ async function processBill(msg: BillMessage, env: Env, db: Db): Promise<void> {
     return
   }
   // An ingestAll first full ingest (cron/sync.ts): a copy whose bill has had
-  // one since is skipped. Otherwise the run counts a try and frees the bill
-  // for later passes, once per queued message, whatever its retries.
+  // one since is skipped, and frees the bill's slot in the provider's budget.
+  // Otherwise the run counts a try and frees the bill for later passes, once
+  // per queued message, whatever its retries.
   if (msg.firstFullIngest && known) {
     if (known.textsFetchedAt !== null || known.detailHash !== null) {
       console.log(`[processor-ls] bill ${msg.billId} already had its first full ingest; skipped`)
+      await db.update(bills).set({ firstIngestQueuedAt: null })
+        .where(and(eq(bills.billId, msg.billId), isNotNull(bills.firstIngestQueuedAt)))
       return
     }
     await db.update(bills).set({
