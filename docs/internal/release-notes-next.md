@@ -61,7 +61,7 @@ Members can attach files to comments (#465): from a paperclip in the comment too
 
 ## Draft bills move to the Bills page
 
-Admins create draft bills from the Bills page now. An **Add draft bill** button sits there: one click on a single-state instance, a state menu first on a multi-state one. Right after creating a draft, its page shows a **Discard draft** button that removes it with no confirmation. It only appears on arrival from that button, so a reload, a link, or an ordinary visit never shows it. Settings → Draft bills is gone, and `/admin/drafts` redirects to the Bills page with the Drafts filter on, so old links and bookmarks still land on the draft list.
+Admins create draft bills from the Bills page now. An **Add draft bill** button sits there: one click on a single-state instance, a menu of the instance's states first on a multi-state one (a two-letter state field instead, until the instance has bills). Right after creating a draft, its page shows a **Discard draft** button that removes it with no confirmation. It only appears on arrival from that button, so a reload, a link, or an ordinary visit never shows it. Settings → Draft bills is gone, and `/admin/drafts` redirects to the Bills page with the Drafts filter on, so old links and bookmarks still land on the draft list.
 
 - **Nothing to configure.** No migration and no API change.
 - **A locked demo shows the button disabled,** with the same "Locked in demo mode" hover as the other demo-locked controls.
