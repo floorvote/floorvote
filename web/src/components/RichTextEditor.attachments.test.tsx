@@ -251,6 +251,24 @@ describe('composer attachments, removing and posting', () => {
     expect(screen.queryByRole('listitem', { name: /slow\.pdf/ })).toBeNull()
   })
 
+  it('posts a comment with only a file: Post is enabled with no text', async () => {
+    const { container, onSubmit } = await mount()
+    expect(screen.getByRole('button', { name: 'Post' })).toBeDisabled()
+    await pick(container, pdf('report.pdf'))
+    await screen.findByRole('listitem', { name: /report\.pdf/ })
+    expect(screen.getByRole('button', { name: 'Post' })).toBeEnabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Post' }))
+    expect(onSubmit).toHaveBeenCalledWith('', ['att1'])
+  })
+
+  it('keeps Post disabled for a file that was refused, with no text', async () => {
+    replies = [{ status: 400, body: { error: 'Not allowed' } }]
+    const { container } = await mount()
+    await pick(container, pdf('bad.pdf'))
+    await screen.findByText(/Not allowed/)
+    expect(screen.getByRole('button', { name: 'Post' })).toBeDisabled()
+  })
+
   it('still posts a plain comment with an empty id list', async () => {
     const { onSubmit, editor } = await mount()
     await act(async () => { editor.commands.insertContent('hi') })

@@ -119,6 +119,9 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
   const [hasContent, setHasContent] = useState(false)
   const uploads = useAttachmentUploads(attachments)
   const uploadsRef = useRef(uploads)
+  // Text, or at least one finished file, makes a postable comment.
+  const hasFile = uploads.items.some(i => i.status === 'done' && i.id)
+  const canPost = hasContent || allowEmpty || hasFile
   uploadsRef.current = uploads
   const attachmentsOn = !!attachments
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -278,7 +281,7 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
   const handleSubmit = useCallback(async () => {
     if (!editor || !onSubmit || disabled || posting) return
     const text = editor.getText().trim()
-    if (!text && !allowEmpty) return
+    if (!text && !allowEmpty && !uploadsRef.current.ids().length) return
     // The comment can't post while a file is still going up: it would post without it.
     if (uploadsRef.current.uploading) return
     const html = trimEdgeParagraphs(editor.getHTML())
@@ -492,7 +495,7 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
             type="button"
             onClick={handleSubmit}
             aria-describedby={uploads.uploading ? heldNoteId : undefined}
-            disabled={(!hasContent && !allowEmpty) || disabled || uploads.uploading || posting}
+            disabled={!canPost || disabled || uploads.uploading || posting}
             style={{
               fontSize: fontSize.sm,
               padding: '6px 18px',
@@ -500,8 +503,8 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
               color: color.textOnFill,
               border: 'none',
               borderRadius: radius.md,
-              cursor: ((hasContent || allowEmpty) && !disabled && !uploads.uploading) ? 'pointer' : 'not-allowed',
-              opacity: ((hasContent || allowEmpty) && !disabled && !uploads.uploading) ? 1 : 0.5,
+              cursor: (canPost && !disabled && !uploads.uploading) ? 'pointer' : 'not-allowed',
+              opacity: (canPost && !disabled && !uploads.uploading) ? 1 : 0.5,
               fontWeight: fontWeight.medium,
             }}
           >
