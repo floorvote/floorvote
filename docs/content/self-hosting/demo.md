@@ -51,6 +51,12 @@ curl -X POST "$CENTRAL/api/tenants/reprocess/<tenant-id>" \
 
 `billIds` are central's bill ids for bills the demo already tracks, and `operatorAi` is honored only with `billIds`. Central honors it only on a direct call like this one. A request that arrives through a tenant's service binding, which is everything a demo visitor can reach, has the flag dropped, so no visitor can cause a model call.
 
+Run it after the demo's first reset, so the analysis reads the seed's AI instructions, and again whenever those instructions change.
+
+### Seeding a demo's bills
+
+Seed each covered state's full session (`scripts/seed-legiscan.ts --from-dir` with the whole bulk dataset and `--tenant`), not a slice of it. A seed's companion-bill comments land only when both bills of a pair are in the tenant, and a companion that doesn't match the keywords arrives only as part of its full session, because a demo never pulls companions on its own.
+
 ## Choosing the demo content
 
 The demo's content — its personas, county names, comments, calendar events, keywords, AI context, and tag taxonomy — is data, described by a *seed*. Seeds live in `api/src/lib/demoSeeds/`, one module each, and are registered in `api/src/lib/demoSeeds/index.ts`. `api/src/lib/demoReset.ts` is the machinery that writes a seed to the database; it holds no content of its own.
