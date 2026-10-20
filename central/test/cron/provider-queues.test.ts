@@ -570,6 +570,9 @@ describe('where every other producer queues a bill', () => {
       await d.insert(schema.sessions).values({
         sessionId: 104, state: 'RI', stateId: 39, yearStart: 2026, yearEnd: 2026, sessionName: 'RI 2026', sessionTitle: 'RI 2026',
       })
+      // The check only covers a session central has a roll call for.
+      await d.insert(schema.bills).values({ billId: 1041, sessionId: 104, state: 'RI', stateId: 39, billNumber: 'H1041', title: 'Bill 1041', changeHash: 'h', status: 1 })
+      await d.insert(schema.rollCalls).values({ rollCallId: 10411, billId: 1041, date: '2026-03-01', description: 'Passage', yea: 1, total: 1, passed: 1, chamber: 'H' })
       fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
         const url = new URL(String(input instanceof Request ? input.url : input))
         if (url.searchParams.get('op') === 'getDatasetList') {
