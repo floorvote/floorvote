@@ -225,6 +225,8 @@ export async function deleteCleared(
 
 /** What deleting a selection would take, for the confirm that warns about it. */
 export type DraftDeletePreview = {
+  /** The drafts counted, by id, in id order. A delete names exactly these, so it takes only what the confirm counted. */
+  draftIds: string[]
   /** Drafts in the selection, which a delete would remove. */
   drafts: number
   /** Filed bills in the selection, which a delete leaves alone. */
@@ -247,15 +249,17 @@ export async function previewDraftDelete(db: AppDb, where: SQL): Promise<DraftDe
   const rows = await db.all(sql`WITH sel AS (SELECT m.id, m.is_draft FROM bills m WHERE ${where} LIMIT ${DRAFT_DELETE_PREVIEW_LIMIT}),
     d AS (SELECT id FROM sel WHERE is_draft = 1)
     SELECT
+      (SELECT json_group_array(id) FROM (SELECT id FROM d ORDER BY id)) AS draft_ids,
       (SELECT COUNT(*) FROM d) AS drafts,
       (SELECT COUNT(*) FROM sel WHERE is_draft = 0) AS filed,
       (SELECT COUNT(*) FROM d b WHERE ${ENGAGED_B}) AS engaged,
       (SELECT COUNT(*) FROM member_votes WHERE bill_id IN d) AS votes,
       (SELECT COUNT(*) FROM comments WHERE bill_id IN d AND deleted_at IS NULL) AS comments,
       (SELECT COUNT(*) FROM notes WHERE bill_id IN d AND content <> '') AS notes,
-      (SELECT COUNT(*) FROM official_positions WHERE bill_id IN d) AS positions`) as Array<Record<string, number>>
+      (SELECT COUNT(*) FROM official_positions WHERE bill_id IN d) AS positions`) as Array<Record<string, number> & { draft_ids: string }>
   const r = rows[0]
   return {
+    draftIds: JSON.parse(r.draft_ids) as string[],
     drafts: Number(r.drafts),
     filed: Number(r.filed),
     engagedDrafts: Number(r.engaged),

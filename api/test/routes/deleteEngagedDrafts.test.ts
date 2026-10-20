@@ -8,6 +8,7 @@ import {
   memberVotes, notes, notifications, officialPositions, teamEvents,
 } from '../../src/db/schema'
 import { draftDeleteVerdicts, draftDeleteStatements } from '../../src/lib/draftDelete'
+import { nowDb } from '../../src/lib/dbTime'
 
 // Approved change to #907: an admin may delete a draft that has engagement (votes, positions, live
 // comments, non-empty notes) once they have seen a warning, which the request says with
@@ -17,6 +18,7 @@ import { draftDeleteVerdicts, draftDeleteStatements } from '../../src/lib/draftD
 type Skipped = { id: string; reason: 'not_found' | 'not_draft' | 'engaged' | 'error' }
 type BulkDeleteResult = { deleted: string[]; skipped: Skipped[] }
 type Preview = {
+  draftIds: string[]
   drafts: number
   filed: number
   engagedDrafts: number
@@ -46,7 +48,7 @@ const stored = async (key: string) => (await env.ATTACHMENTS_BUCKET!.head(key)) 
 async function attachFile(commentId: string): Promise<string> {
   const key = `${env.TENANT_ID}/${crypto.randomUUID()}`
   await env.ATTACHMENTS_BUCKET!.put(key, 'file bytes')
-  const now = new Date().toISOString()
+  const now = nowDb()
   await db().insert(commentAttachments).values({
     id: crypto.randomUUID(), commentId, uploaderId: member, r2Key: key, name: 'memo.pdf',
     contentType: 'application/pdf', size: 10, confirmedAt: now, createdAt: now,
@@ -217,6 +219,49 @@ describe('POST /bills/bulk-delete with includeEngaged', () => {
   })
 })
 
+describe('includeEngaged and what must survive it', () => {
+  it('never deletes a bill filed after the check, nor its votes or comment files', async () => {
+    const wasDraft = await draft(1)
+    const { commentIds, keys } = await engage(wasDraft)
+    expect((await draftDeleteVerdicts(db(), [wasDraft], { includeEngaged: true })).get(wasDraft)).toBe('delete')
+    await db().update(bills).set({ isDraft: false }).where(eq(bills.id, wasDraft))
+
+    await db().batch(draftDeleteStatements(db(), [wasDraft], { includeEngaged: true }))
+
+    const left = await rowsOf(wasDraft, commentIds)
+    expect(left.bills).toHaveLength(1)
+    expect(left.votes).toHaveLength(2)
+    expect(left.comments).toHaveLength(3)
+    expect(left.attachments).toHaveLength(2)
+    for (const key of keys) expect(await stored(key)).toBe(true)
+  })
+
+  it('still answers with the drafts deleted when removing the comment files fails, leaving their rows for the purge', async () => {
+    const d = await draft(1)
+    const { commentIds, keys } = await engage(d)
+    const failing = new Proxy(env.ATTACHMENTS_BUCKET!, {
+      get(target, key) {
+        if (key === 'delete') return async () => { throw new Error('R2 unavailable') }
+        const value = Reflect.get(target, key, target)
+        return typeof value === 'function' ? value.bind(target) : value
+      },
+    })
+
+    const res = await appFetch('/api/bills/bulk-delete', {
+      method: 'POST',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [d], includeEngaged: true }),
+    }, { ...env, ATTACHMENTS_BUCKET: failing })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ deleted: [d], skipped: [] })
+    const left = await rowsOf(d, commentIds)
+    expect(left.bills).toEqual([])
+    expect(left.attachments).toHaveLength(2)
+    for (const key of keys) expect(await stored(key)).toBe(true)
+  })
+})
+
 describe('DELETE /bills/:id?includeEngaged=1', () => {
   it('deletes an engaged draft and everything on it, files included', async () => {
     const d = await draft(1)
@@ -233,7 +278,11 @@ describe('DELETE /bills/:id?includeEngaged=1', () => {
     const d = await draft(1)
     await engage(d)
 
-    expect((await deleteOne(d)).status).toBe(409)
+    const refused = await deleteOne(d)
+    expect(refused.status).toBe(409)
+    expect(await refused.json()).toEqual({
+      error: 'This draft has votes, comments, notes, or a position. Link it to its filed bill instead, or delete it with includeEngaged=1.',
+    })
     expect((await deleteOne(d, '?includeEngaged=0')).status).toBe(409)
     expect(await exists(d)).toBe(true)
   })
@@ -254,39 +303,48 @@ describe('DELETE /bills/:id?includeEngaged=1', () => {
 })
 
 describe('POST /bills/bulk-delete with a filter', () => {
-  it('deletes the drafts the filter matches and no others', async () => {
+  it('previews the drafts the filter matches, naming their ids, and no others', async () => {
     const ri1 = await draft(1)
     const ri2 = await draft(2)
-    const tx = await draft(3, 'TX')
-    const filed = await seedBill({ billNumber: 'HB 4', externalId: 'legiscan:4' })
+    await draft(3, 'TX')
+    await seedBill({ billNumber: 'HB 4', externalId: 'legiscan:4' })
 
-    const res = await post({ filter: 'drafts=true&state=RI' })
+    const res = await post({ filter: 'drafts=true&state=RI', preview: true })
 
     expect(res.status).toBe(200)
-    const body = await res.json() as BulkDeleteResult
-    expect([...body.deleted].sort()).toEqual([ri1, ri2].sort())
-    expect(body.skipped).toEqual([])
-    expect(await exists(tx)).toBe(true)
-    expect(await exists(filed)).toBe(true)
+    const body = await res.json() as Preview
+    expect(body.draftIds).toEqual([ri1, ri2].sort())
+    expect(body.drafts).toBe(2)
   })
 
-  it('refuses engaged drafts without includeEngaged and deletes them with it', async () => {
-    const clean = await draft(1)
-    const engaged = await draft(2)
-    await engage(engaged)
+  it('refuses to delete by a filter: a delete names the drafts its preview counted', async () => {
+    const d = await draft(1)
 
-    const first = await post({ filter: 'drafts=true' })
-    expect(await first.json()).toEqual({ deleted: [clean], skipped: [{ id: engaged, reason: 'engaged' }] })
-
-    const second = await post({ filter: 'drafts=true', includeEngaged: true })
-    expect(await second.json()).toEqual({ deleted: [engaged], skipped: [] })
+    for (const body of [{ filter: 'drafts=true' }, { filter: 'drafts=true', includeEngaged: true }]) {
+      const res = await post(body)
+      expect(res.status, JSON.stringify(body)).toBe(400)
+    }
+    expect(await exists(d)).toBe(true)
   })
 
-  it('refuses a filter without the Drafts filter on, and deletes nothing', async () => {
+  it('leaves a draft created after the preview when deleting the ids the preview named', async () => {
+    const counted = await draft(1)
+    await engage(counted)
+    const preview = await (await post({ filter: 'drafts=true', preview: true })).json() as Preview
+    const late = await draft(2)
+    await engage(late)
+
+    const res = await post({ ids: preview.draftIds, includeEngaged: true })
+
+    expect(await res.json()).toEqual({ deleted: [counted], skipped: [] })
+    expect(await exists(late)).toBe(true)
+  })
+
+  it('refuses a filter without the Drafts filter on', async () => {
     const d = await draft(1)
 
     for (const filter of ['', 'state=RI', 'drafts=false']) {
-      const res = await post({ filter })
+      const res = await post({ filter, preview: true })
       expect(res.status, filter).toBe(400)
     }
     expect(await exists(d)).toBe(true)
@@ -294,37 +352,27 @@ describe('POST /bills/bulk-delete with a filter', () => {
 
   it('rejects a body with both ids and a filter, or a filter that is not a query string', async () => {
     const d = await draft(1)
-    for (const body of [{ ids: [d], filter: 'drafts=true' }, { filter: { drafts: true } }]) {
+    for (const body of [{ ids: [d], filter: 'drafts=true', preview: true }, { filter: { drafts: true }, preview: true }]) {
       const res = await post(body)
       expect(res.status, JSON.stringify(body)).toBe(400)
     }
     expect(await exists(d)).toBe(true)
   })
 
-  it('answers 200 with nothing deleted when the filter matches no draft', async () => {
+  it('previews nothing when the filter matches no draft', async () => {
     await draft(1)
-    const res = await post({ filter: 'drafts=true&state=TX' })
-    expect(await res.json()).toEqual({ deleted: [], skipped: [] })
+    const res = await post({ filter: 'drafts=true&state=TX', preview: true })
+    expect(await res.json()).toEqual({ draftIds: [], drafts: 0, filed: 0, engagedDrafts: 0, engagement: { votes: 0, comments: 0, notes: 0, positions: 0 } })
   })
 
-  it('refuses a filter matching more than 1,000 drafts before deleting anything', async () => {
-    await seedManyDrafts(1001)
-
-    const res = await post({ filter: 'drafts=true', includeEngaged: true })
-
-    expect(res.status).toBe(400)
-    expect(await res.json()).toEqual({ error: 'Too many drafts (1,001). Apply more filters to narrow down to 1,000 or fewer.' })
-    expect(await draftCount()).toBe(1001)
-  })
-
-  it('deletes exactly 1,000 drafts the filter matches', async () => {
+  it('names every one of exactly 1,000 drafts the filter matches', async () => {
     await seedManyDrafts(1000)
 
-    const res = await post({ filter: 'drafts=true' })
+    const res = await post({ filter: 'drafts=true', preview: true })
 
     expect(res.status).toBe(200)
-    expect(((await res.json()) as BulkDeleteResult).deleted).toHaveLength(1000)
-    expect(await draftCount()).toBe(0)
+    expect(((await res.json()) as Preview).draftIds).toHaveLength(1000)
+    expect(await draftCount()).toBe(1000)
   })
 })
 
@@ -355,10 +403,11 @@ describe('POST /bills/bulk-delete with preview: true', () => {
     return { engaged1, engaged2, clean, filed }
   }
 
-  const EXPECTED: Preview = {
+  const EXPECTED = (s: { engaged1: string; engaged2: string; clean: string }): Preview => ({
+    draftIds: [s.engaged1, s.engaged2, s.clean].sort(),
     drafts: 3, filed: 1, engagedDrafts: 2,
     engagement: { votes: 3, comments: 3, notes: 1, positions: 1 },
-  }
+  })
 
   it('counts the drafts, the filed bills, and the engagement on the drafts of an id selection', async () => {
     const s = await seedSelection()
@@ -366,16 +415,16 @@ describe('POST /bills/bulk-delete with preview: true', () => {
     const res = await post({ ids: [s.engaged1, s.engaged2, s.clean, s.filed, 'no-such-bill'], preview: true })
 
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual(EXPECTED)
+    expect(await res.json()).toEqual(EXPECTED(s))
   })
 
   it('counts a filter selection the same way', async () => {
-    await seedSelection()
+    const s = await seedSelection()
     await draft(9, 'TX')
 
     const res = await post({ filter: 'drafts=true&state=RI', preview: true })
 
-    expect(await res.json()).toEqual({ ...EXPECTED, filed: 0 })
+    expect(await res.json()).toEqual({ ...EXPECTED(s), filed: 0 })
   })
 
   it('writes nothing', async () => {
@@ -391,7 +440,7 @@ describe('POST /bills/bulk-delete with preview: true', () => {
   it('answers zeros for a selection with no drafts', async () => {
     const filed = await seedBill({ billNumber: 'HB 6', externalId: 'legiscan:6' })
     const res = await post({ ids: [filed], preview: true })
-    expect(await res.json()).toEqual({ drafts: 0, filed: 1, engagedDrafts: 0, engagement: { votes: 0, comments: 0, notes: 0, positions: 0 } })
+    expect(await res.json()).toEqual({ draftIds: [], drafts: 0, filed: 1, engagedDrafts: 0, engagement: { votes: 0, comments: 0, notes: 0, positions: 0 } })
   })
 
   it('refuses more than 1,000 ids, and a filter matching more than 1,000 drafts', async () => {
