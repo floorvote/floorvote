@@ -278,3 +278,67 @@ describe('rateLimitedFetch onRequest', () => {
     errSpy.mockRestore()
   })
 })
+
+describe('rateLimitedFetch retryTransient', () => {
+  it('retries once after a short wait when the request throws, as a dropped connection does', async () => {
+    mockFetch
+      .mockRejectedValueOnce(new Error('Network connection lost.'))
+      .mockResolvedValueOnce(ok('second try'))
+
+    const promise = rateLimitedFetch('https://x.test/drop', undefined, { ratePerSec: 47, retryTransient: true })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(5000)
+    const res = await promise
+
+    expect(mockFetch).toHaveBeenCalledTimes(2)
+    expect(await res.text()).toBe('second try')
+  })
+
+  it('retries once on a 5xx, such as Cloudflare\'s 522', async () => {
+    mockFetch
+      .mockResolvedValueOnce(new Response('origin timed out', { status: 522 }))
+      .mockResolvedValueOnce(ok())
+    const onRequest = vi.fn()
+
+    const promise = rateLimitedFetch('https://x.test/522', undefined, { ratePerSec: 53, retryTransient: true, onRequest })
+    await vi.advanceTimersByTimeAsync(5000)
+    const res = await promise
+
+    expect(res.status).toBe(200)
+    // Both attempts reached the wire.
+    expect(onRequest).toHaveBeenCalledTimes(2)
+  })
+
+  it('gives the second failure back as it came, so the caller fails as before', async () => {
+    mockFetch.mockResolvedValue(new Response('down', { status: 503 }))
+    const promise = rateLimitedFetch('https://x.test/503', undefined, { ratePerSec: 59, retryTransient: true })
+    await vi.advanceTimersByTimeAsync(5000)
+    const res = await promise
+    expect(res.status).toBe(503)
+    expect(mockFetch).toHaveBeenCalledTimes(2)
+
+    mockFetch.mockReset()
+    mockFetch.mockRejectedValue(new Error('Network connection lost.'))
+    const thrown = rateLimitedFetch('https://x.test/drop2', undefined, { ratePerSec: 59, retryTransient: true })
+    const caught = expect(thrown).rejects.toThrow('Network connection lost.')
+    // The bucket paces the first attempt too, since the 503's retry just drew from it.
+    await vi.advanceTimersByTimeAsync(6000)
+    await caught
+    expect(mockFetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not retry a 4xx', async () => {
+    mockFetch.mockResolvedValue(new Response('nope', { status: 404 }))
+    const res = await rateLimitedFetch('https://x.test/404', undefined, { ratePerSec: 61, retryTransient: true })
+    expect(res.status).toBe(404)
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('is off by default, as LegiScan calls it', async () => {
+    mockFetch.mockResolvedValue(new Response('down', { status: 503 }))
+    const res = await rateLimitedFetch('https://x.test/default', undefined, { ratePerSec: 67 })
+    expect(res.status).toBe(503)
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+  })
+})

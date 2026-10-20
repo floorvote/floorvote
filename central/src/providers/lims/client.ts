@@ -199,7 +199,7 @@ async function limsFetch(
       ...(method === 'POST' ? { 'Content-Type': 'application/json' } : {}),
     },
     ...(method === 'POST' ? { body: JSON.stringify(init.body ?? {}) } : {}),
-  }, { ratePerSec: LIMS_RATE_PER_SEC, bucketKey: 'lims', onRequest })
+  }, { ratePerSec: LIMS_RATE_PER_SEC, bucketKey: 'lims', onRequest, retryTransient: true })
   if (!res.ok) throw new Error(`LIMS HTTP ${res.status} for ${path}`)
   const body = await res.text()
   try {

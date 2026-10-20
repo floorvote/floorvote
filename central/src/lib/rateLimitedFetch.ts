@@ -22,6 +22,8 @@
 
 /** Escalating fallback waits, used when a 429 carries no usable `Retry-After`. */
 const RETRY_DELAYS_MS = [2000, 5000, 10000]
+/** The wait before the one retry `retryTransient` makes. */
+const TRANSIENT_RETRY_MS = 5000
 
 export interface RateLimitedFetchOptions {
   /** Sustained outbound request rate, in requests per second. */
@@ -42,6 +44,13 @@ export interface RateLimitedFetchOptions {
    * counted. Throws are swallowed; a broken callback must not break a request.
    */
   onRequest?: () => void
+  /**
+   * Retry once, after TRANSIENT_RETRY_MS, when the request throws (a dropped
+   * connection) or answers 5xx (Cloudflare's 52x included). A second failure
+   * is thrown or returned as it came. Off by default: a LegiScan call spends
+   * its budget, and its caller retries through the queue.
+   */
+  retryTransient?: boolean
 }
 
 interface TokenBucket {
@@ -112,10 +121,21 @@ export async function rateLimitedFetch(
   const { ratePerSec, onRequest } = opts
   const bucketKey = opts.bucketKey ?? `rate:${ratePerSec}`
   const maxRetries = opts.maxRetries ?? RETRY_DELAYS_MS.length
+  let transientLeft = opts.retryTransient ? 1 : 0
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     await acquire(bucketKey, ratePerSec)
-    const res = await fetch(url, init)
+    let res: Response
+    try {
+      res = await fetch(url, init)
+    } catch (err) {
+      if (transientLeft === 0) throw err
+      transientLeft--
+      console.warn(`[rateLimitedFetch] ${url} failed (${err instanceof Error ? err.message : String(err)}); retrying once in ${TRANSIENT_RETRY_MS}ms`)
+      await sleep(TRANSIENT_RETRY_MS)
+      attempt--
+      continue
+    }
     if (onRequest) {
       try {
         onRequest()
@@ -124,6 +144,13 @@ export async function rateLimitedFetch(
       }
     }
 
+    if (res.status >= 500 && transientLeft > 0) {
+      transientLeft--
+      console.warn(`[rateLimitedFetch] ${url} answered ${res.status}; retrying once in ${TRANSIENT_RETRY_MS}ms`)
+      await sleep(TRANSIENT_RETRY_MS)
+      attempt--
+      continue
+    }
     if (res.status !== 429) return res
 
     if (attempt >= maxRetries) {

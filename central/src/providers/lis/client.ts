@@ -42,7 +42,7 @@ function fileUrl(sessionCode: string, name: string): string {
 
 function fetchFile(sessionCode: string, file: LisFile, method: 'GET' | 'HEAD', onRequest?: () => void): Promise<Response> {
   return rateLimitedFetch(fileUrl(sessionCode, LIS_FILES[file]), { method },
-    { ratePerSec: LIS_RATE_PER_SEC, bucketKey: 'lis', onRequest })
+    { ratePerSec: LIS_RATE_PER_SEC, bucketKey: 'lis', onRequest, retryTransient: true })
 }
 
 /**
@@ -105,7 +105,7 @@ export interface LisTextRow {
 
 async function apiGet(operation: string, query: string, apiKey: string, onRequest?: () => void): Promise<unknown> {
   const res = await rateLimitedFetch(`${LIS_API_BASE}/${operation}?${query}`, { headers: { WebAPIKey: apiKey } },
-    { ratePerSec: LIS_RATE_PER_SEC, bucketKey: 'lis', onRequest })
+    { ratePerSec: LIS_RATE_PER_SEC, bucketKey: 'lis', onRequest, retryTransient: true })
   if (!res.ok) throw new Error(`LIS HTTP ${res.status} for ${operation}`)
   try {
     return await res.json()

@@ -88,7 +88,7 @@ export async function getMgaSession(sessionCode: string, etag?: string | null, o
   const headers: Record<string, string> = { Accept: 'application/json' }
   if (etag) headers['If-None-Match'] = etag
   const res = await rateLimitedFetch(sessionUrl(sessionCode), { headers },
-    { ratePerSec: MGA_RATE_PER_SEC, bucketKey: 'mga', onRequest })
+    { ratePerSec: MGA_RATE_PER_SEC, bucketKey: 'mga', onRequest, retryTransient: true })
   if (res.status === 404) return null
   if (res.status === 304 && etag) return { unchanged: true }
   if (!res.ok) throw new Error(`MGA HTTP ${res.status} for ${sessionCode}`)
@@ -108,7 +108,7 @@ export async function getMgaSession(sessionCode: string, etag?: string | null, o
 /** Whether a session's file exists: a regular session appears with its first prefiled bills. */
 export async function mgaSessionExists(sessionCode: string, onRequest?: () => void): Promise<boolean> {
   const res = await rateLimitedFetch(sessionUrl(sessionCode), { method: 'HEAD' },
-    { ratePerSec: MGA_RATE_PER_SEC, bucketKey: 'mga', onRequest })
+    { ratePerSec: MGA_RATE_PER_SEC, bucketKey: 'mga', onRequest, retryTransient: true })
   if (res.status === 404) return false
   if (!res.ok) throw new Error(`MGA HTTP ${res.status} for ${sessionCode}`)
   return true
