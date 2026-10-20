@@ -33,7 +33,7 @@ Admins can make prioritized bills show up in each member's sidebar as a standing
 
 ## Commenting
 
-Team members discuss each bill on its page with comments, reactions, and file attachments, and can keep private notes visible only to them. The same thread shows who changed the bill's priority, position, or custom fields, and when, so a bill's history reads in one place.
+Team members discuss each bill on its page with comments and reactions, plus file attachments where the operator turns them on, and can keep private notes visible only to them. The same thread shows who changed the bill's priority, position, or custom fields, and when, so a bill's history reads in one place.
 
 ## Set positions
 
@@ -65,7 +65,7 @@ Every bill in the states you are tracking is accessible on one page.
 
 ### Search and filter
 
-Search covers bill numbers, titles, abstracts, and AI summaries, and a comma-separated list of bill numbers pulls up a whole batch at once. Filters narrow the list by state, session, status, tag, committee, priority, position, and your custom fields. Where a state publishes its own data, statuses group by stage, so bills compare across states.
+Search covers bill numbers, titles, abstracts, and AI summaries, and a comma-separated list of bill numbers pulls up a whole batch at once. Filters narrow the list by state, session, status, tag, committee (current or any referral), priority, position, and custom fields. Where a state publishes its own data, statuses group by stage, so bills compare across states.
 
 ### Subjects
 
