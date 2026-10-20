@@ -5,7 +5,7 @@ import { requireAdmin } from '../../middleware/auth'
 import { getDb } from '../../db/client'
 import {
   bills, memberVotes, officialPositions, comments, notes, feedEvents, billTexts,
-  billCustomFieldValues, calendarEventBills, notifications, billMutes,
+  billCustomFieldValues, calendarEventBills, notifications, billMutes, teamEvents,
 } from '../../db/schema'
 import type { AppEnv } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
@@ -206,6 +206,8 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
     }
     ops.push(db.update(calendarEventBills).set({ billId: filedBillId }).where(eq(calendarEventBills.billId, draftId)))
     ops.push(db.update(feedEvents).set({ billId: filedBillId }).where(eq(feedEvents.billId, draftId)))
+    // Field-change history cascade-deletes with the draft, so it must move first.
+    ops.push(db.update(teamEvents).set({ billId: filedBillId }).where(eq(teamEvents.billId, draftId)))
     ops.push(db.delete(bills).where(eq(bills.id, draftId)))
 
     await db.batch(ops as unknown as Parameters<typeof db.batch>[0])

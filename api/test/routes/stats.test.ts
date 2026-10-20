@@ -270,6 +270,29 @@ describe('GET /api/stats newMatchesCount', () => {
     const r = await SELF.fetch('http://localhost/api/stats', { headers: { Cookie: `session=${token}` } })
     expect((await r.json() as { newMatchesCount: number }).newMatchesCount).toBe(2)
   })
+
+  const chipAndList = async () => {
+    const headers = { Cookie: `session=${token}` }
+    const stats = await (await SELF.fetch('http://localhost/api/stats', { headers })).json() as { newMatchesCount: number }
+    const list = await (await SELF.fetch('http://localhost/api/bills?newMatches=1', { headers })).json() as { bills: { group?: unknown[] }[]; pagination: { total: number } }
+    return { chip: stats.newMatchesCount, total: list.pagination.total, rows: list.bills }
+  }
+
+  it('shows a group with two new-match members once in the new-matches view, as the chip counts it', async () => {
+    await seedBill({ id: 'a190', billNumber: 'A190', matchType: 'keyword', newMatchAt: '2026-03-01 00:00:00' })
+    await seedBill({ id: 'b1713', billNumber: 'S1713', matchType: 'keyword', newMatchAt: '2026-03-02 00:00:00' })
+    await getDb(env.DB).update(bills).set({ groupKey: 'a190' }).where(inArray(bills.id, ['a190', 'b1713']))
+    const { chip, total, rows } = await chipAndList()
+    expect([chip, total, rows.length]).toEqual([1, 1, 1])
+    expect(rows[0].group).toHaveLength(2)
+  })
+
+  it('counts ungrouped new matches one each, in the chip and the view', async () => {
+    await seedBill({ id: 'x1', billNumber: 'HB 1', matchType: 'keyword', newMatchAt: '2026-03-01 00:00:00' })
+    await seedBill({ id: 'x2', billNumber: 'HB 2', matchType: 'keyword', newMatchAt: '2026-03-02 00:00:00' })
+    const { chip, total, rows } = await chipAndList()
+    expect([chip, total, rows.length]).toEqual([2, 2, 2])
+  })
 })
 
 const isoDay = (offset: number) => new Date(Date.now() + offset * 86400_000).toISOString().slice(0, 10)

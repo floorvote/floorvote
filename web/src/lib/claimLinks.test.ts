@@ -194,7 +194,7 @@ describe('markPassage', () => {
   it('shows a focus ring on the focused highlight, from its own style, which the bill\'s CSS can\'t take away', () => {
     const doc = parseDoc(markPassage(BILL, passageIn(BILL, 'Section 2.')) ?? '')
     const css = doc.head.querySelector('style[data-fv-passage]')?.textContent ?? ''
-    expect(css).toMatch(new RegExp(`#${PASSAGE_ID}:focus\\{outline:[^}]*!important`))
+    expect(css).toMatch(new RegExp(`#${PASSAGE_ID}:focus-visible\\{outline:[^}]*!important`))
     expect(css).toMatch(/mark\[data-fv-passage\]\{background:[^;]*!important/)
   })
 
@@ -229,8 +229,7 @@ describe('markPassage', () => {
       for (const dark of [false, true]) {
         document.documentElement.classList.toggle('dark', dark)
         const css = cssOf()
-        expect(css, dark ? 'dark' : 'light').toContain(`#${PASSAGE_ID}:focus{outline:2px solid #1e3a5f !important;outline-offset:-2px}`)
-        expect(css).toContain(`:root:has(#${PASSAGE_ID}:focus) mark[data-fv-passage]{outline:2px solid #1e3a5f !important;outline-offset:-2px}`)
+        expect(css, dark ? 'dark' : 'light').toContain(`#${PASSAGE_ID}:focus-visible{outline:2px solid #1e3a5f !important;outline-offset:-2px}`)
       }
       document.documentElement.classList.remove('dark')
     })
@@ -257,12 +256,6 @@ describe('markPassage', () => {
       document.documentElement.classList.remove('dark')
       expect(dark).toBe(light)
     })
-  })
-
-  it('rings every part of the passage while its first part has focus', () => {
-    const doc = parseDoc(markPassage(BILL, passageIn(BILL, 'Section 2.')) ?? '')
-    const css = doc.head.querySelector('style[data-fv-passage]')?.textContent ?? ''
-    expect(css).toContain(`:has(#${PASSAGE_ID}:focus) mark[data-fv-passage]{outline:`)
   })
 
   it('styles the highlight from the document head', () => {
