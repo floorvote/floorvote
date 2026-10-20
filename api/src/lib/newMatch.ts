@@ -26,7 +26,7 @@ export async function getNewMatchMinRelevance(db: AppDb): Promise<number> {
 }
 
 /**
- * The one definition of a new match: an un-triaged, fully-analyzed keyword match
+ * The one definition of a new match: an un-triaged, analyzed keyword match
  * at or above the instance's minimum relevance. Shared by the triage list
  * (GET /bills?newMatches=1), its facet count, the "N new" chip, and the digest,
  * so they can't drift. COALESCE(relevance,0) means with the default threshold 0 a

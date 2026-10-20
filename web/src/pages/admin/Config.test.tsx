@@ -134,6 +134,21 @@ function getNounSelect(): HTMLSelectElement {
   return options[0].closest('select') as HTMLSelectElement
 }
 
+describe('Config — keyword intro and sync copy', () => {
+  it('renders the Bill keywords intro word for word', async () => {
+    render(<Config />)
+    expect(await screen.findByText(
+      /All bills from the sessions you follow are monitored and searchable, with their status and latest action kept current\. Bills that match the keywords below are analyzed: they have full bill text available — processed through AI for a summary, tags, and relevance score\. \(Admins can also manually select bills to be analyzed even if those bills don't match keywords\.\)/,
+    )).toBeInTheDocument()
+  })
+
+  it('does not call analysis "full" anywhere on the page', async () => {
+    render(<Config />)
+    await screen.findByText('Bill keywords')
+    expect(document.body.textContent).not.toMatch(/fully analyzed|full analysis|monitored as stubs/i)
+  })
+})
+
 describe('Config — per-section loading skeleton', () => {
   it('shows section title "Bill keywords" immediately while fetch is in flight', () => {
     // Use a promise that never resolves so we can assert the pre-load DOM
@@ -475,7 +490,7 @@ describe('Config — empty keyword list confirm copy', () => {
     await waitFor(() => expect(confirmSpy).toHaveBeenCalled())
     expect(paths).not.toContain('/admin/keyword-resync-preview')
     const confirmMsg = confirmSpy.mock.calls[0][0] as string
-    expect(confirmMsg).toMatch(/no new bills will be captured for full analysis/i)
+    expect(confirmMsg).toMatch(/no new bills will be captured for analysis/i)
     expect(confirmMsg).toMatch(/keep their summaries/i)
     expect(confirmMsg).not.toMatch(/no bills will be added or downgraded/i)
 
@@ -528,7 +543,7 @@ describe('Config — match-all keyword confirm copy', () => {
   it('states the approximate bill count when the list is exactly *', async () => {
     const msg = await confirmFor('  *  \n\n', { wouldAdd: 1897, wouldDemote: 0, wouldProtect: 0 })
     expect(msg).toContain('Every bill in your tracked sessions will be queued for AI analysis (~1,897 bills).')
-    expect(msg).not.toMatch(/additional bills will be fully analyzed/i)
+    expect(msg).not.toMatch(/additional bills will be analyzed/i)
     expect(msg).not.toMatch(/quota|budget|instance/i)
   })
 
@@ -549,7 +564,7 @@ describe('Config — match-all keyword confirm copy', () => {
 
   it('leaves the confirmation unchanged for any other list', async () => {
     const msg = await confirmFor('zoning\n*', { wouldAdd: 897, wouldDemote: 0, wouldProtect: 0 })
-    expect(msg).toContain('897 additional bills will be fully analyzed')
+    expect(msg).toContain('897 additional bills will be analyzed')
     expect(msg).not.toMatch(/every bill in your tracked sessions/i)
   })
 })

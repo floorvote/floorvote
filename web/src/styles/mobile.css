@@ -127,7 +127,7 @@ body.nav-pending * { cursor: wait !important; }
    22.627px = 16 * sqrt(2), so the perpendicular shift is exactly one period. */
 @keyframes stripe-slide { to { background-position: 22.627px 0; } }
 
-/* "Analyzing" box — used in BillDetail for lightweight bills.
+/* "Analyzing" box — used in BillDetail for monitored bills.
    The stripe layer extends 23px past the visible left edge (ceil(16 * sqrt(2)))
    so the gradient's 0% origin sits in the clipped region, hiding the wedge-growth
    artifact that's otherwise visible as a "seam" at the left edge during animation. */

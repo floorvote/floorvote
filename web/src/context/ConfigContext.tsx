@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { apiFetch } from '../lib/api'
 import type { Attribution } from '../../../shared/dataAttribution'
+import type { AttachmentLimits } from '../lib/attachments'
 
 export interface OperatorConfig {
   name: string
@@ -36,6 +37,8 @@ export interface AppConfig {
   /** Where central's admin dashboard lives, once central has said. Absent = unknown, so don't link to it. */
   centralDashboardUrl?: string
   accountDeletionEnabled?: boolean
+  /** Comment attachments (#465): their limits, or null while off (no bucket bound, or a demo). */
+  attachments?: AttachmentLimits | null
   /**
    * What each covered state's data can do, by state, from the provider central
    * reads it from. A state left out has none. Gate features on these, never on

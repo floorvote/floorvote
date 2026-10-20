@@ -5,6 +5,7 @@ import { getDb } from '../db/client'
 import { associationConfig, customFieldDefinitions } from '../db/schema'
 import { ensureAssociationName } from '../lib/associationName'
 import { getAccountDeletionEnabled } from '../lib/accountDeletion'
+import { attachmentsEnabled, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS_PER_COMMENT } from '../lib/attachments'
 import { loadEffectiveTaxonomy } from '../lib/taxonomy'
 import { centralFetch } from '../lib/centralFetch'
 import { readCentralDashboardUrl, readStateAttribution, readStateCapabilities } from '../lib/bodyEvents'
@@ -225,7 +226,10 @@ configRouter.get('/', async (c) => {
   // reset, and on every non-demo tenant.
   const demoResetAt = demoResetAtRow?.value
 
-  return c.json({ associationName, positionVocabulary, state: c.env.STATE ?? '', states, multiState, sessions, orgNoun, instanceDomains, demoMode, demoLocked, demoResetAt, modules, operator, attribution, centralDashboardUrl: centralDashboardUrl ?? undefined, accountDeletionEnabled, tagTaxonomy, demoBanner, capabilities })
+  return c.json({ associationName, positionVocabulary, state: c.env.STATE ?? '', states, multiState, sessions, orgNoun, instanceDomains, demoMode, demoLocked, demoResetAt, modules, operator, attribution, centralDashboardUrl: centralDashboardUrl ?? undefined, accountDeletionEnabled, tagTaxonomy, demoBanner, capabilities,
+    // Comment attachments (#465): their limits, or null while they are off.
+    attachments: attachmentsEnabled(c.env) ? { maxBytes: MAX_ATTACHMENT_BYTES, maxPerComment: MAX_ATTACHMENTS_PER_COMMENT } : null,
+  })
 })
 
 // GET /config/sessions?state=NJ — per-state session list, proxied from central

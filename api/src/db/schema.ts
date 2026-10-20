@@ -224,6 +224,10 @@ export const bills = sqliteTable('bills', {
   //   WHERE ai_processed_at IS NOT NULL GROUP BY 1 ORDER BY 1 DESC
   // To ask what is still stuck, use the predicate in lib/healStalledAi.ts.
   aiHealAttempts: integer('ai_heal_attempts').notNull().default(0),
+  // When central's full message for the bill was last applied (migration 0117),
+  // null for a bill that has only had stubs. Written by the queue processor's
+  // full path alone, and the bill page's test for full or stub.
+  fullyIngestedAt: text('fully_ingested_at'),
   textStatus: text('text_status'),
   newMatchAt: text('new_match_at'),
   // Where the keyword match came from, as central declared it (MatchProvenance
@@ -371,6 +375,24 @@ export const commentReactions = sqliteTable('comment_reactions', {
   deletedAt: text('deleted_at'),
 }, (t) => ({
   uniqReaction: uniqueIndex('comment_reactions_comment_user_emoji_unique').on(t.commentId, t.userId, t.emoji),
+}))
+
+/** A file attached to a comment (#465). See migration 0115 and lib/attachments.ts. */
+export const commentAttachments = sqliteTable('comment_attachments', {
+  id: text('id').primaryKey(),
+  commentId: text('comment_id'),
+  uploaderId: text('uploader_id').notNull(),
+  r2Key: text('r2_key').notNull().unique(),
+  name: text('name').notNull(),
+  contentType: text('content_type').notNull(),
+  size: integer('size').notNull(),
+  checksum: text('checksum'),
+  confirmedAt: text('confirmed_at'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  deletedAt: text('deleted_at'),
+}, (t) => ({
+  commentIdx: index('idx_comment_attachments_comment').on(t.commentId),
+  uploaderIdx: index('idx_comment_attachments_uploader').on(t.uploaderId, t.createdAt),
 }))
 
 export const notes = sqliteTable('notes', {

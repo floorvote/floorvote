@@ -20,6 +20,8 @@
 
 **Role**: a named group of members that an admin defines, which can be @-mentioned together. Avoid: "group"; "team" when meaning a subset of members.
 
+**Attachment**: a file a member attached to a comment (#465), kept in the instance's private R2 bucket with a `comment_attachments` row. It is uploaded and checked before the comment posts, goes with the comment (it can't be added, removed, or deleted on its own once posted, and deleting the comment deletes it), and downloads only for a signed-in member while its comment shows. Off until an operator binds the bucket, and always off on a demo. Avoid: "upload" for a posted file (an upload is one not yet posted); "document," which is a bill text.
+
 **@admins**: a built-in mention, open to every member, that notifies everyone who is an Admin or Owner when the comment is posted, in the app and by email, skipping the author and deactivated members. A person also mentioned directly or through a role is notified once, attributed to the direct mention, then the role, then @admins. Unlike a role, nobody creates or maintains it. Avoid: "admin role" (a role is a named group).
 
 **Invite**: the email that brings a new member into an instance. Avoid: "invitation link" as the name of the email.
@@ -93,6 +95,12 @@
 **Routine match**: a new match the regular sync made by finding a bill new to central, for an instance that already follows the bill's state (it holds links to bills of the state), such as a bill filed mid-session or prefiled for a new session. The only new matches that reach the digest and the feed.
 
 **Bulk match**: a new match from anything that matches bills in bulk: a session seed, a keyword re-run, an operator import or backfill, an instance's first sync of a state it never followed, a provider cutover, or an existing monitored bill that starts to match. It stays in the triage list, where bulk dismiss handles it, and out of the digest and the feed. Avoid: "bulk event," which is a bulk edit's one feed event.
+
+**Analyzed bill**: a bill that matches the instance's keywords or that an admin selected manually, which gets AI analysis: a summary, tags, and a relevance score. Avoid: "fully analyzed."
+
+**Monitored bill**: any other bill of a followed session. It is searchable and its status and latest action are kept current; how complete the rest of its data is depends on its state's provider. Avoid: "lightweight stub."
+
+**Full ingest**: central fetching a bill's history, sponsors, texts, and votes, and an instance applying that message, which stores them whether or not the bill matched. The instance records the time as `fully_ingested_at`, and the bill page decides full or stub from it, not from the match type. A stub-only message never sets it. A full ingest runs no AI, writes no feed event, and mirrors no hearing for a bill with no match type or group. Avoid: "fully analyzed" (analysis is separate) and "lightweight stub."
 
 **New-matches row**: the feed's one summary row a day for routine new matches ("5 new bills matched your keywords"), shown to every member and expandable to the matched bills. It is a bill-less feed event of its own type, written when a routine match above the instance's minimum relevance is recorded (never for a bulk match or one with no provenance), so a match from before the row existed never appears. It lights the feed dot, and a matched bill that already has a priority keeps its normal card instead. Avoid: "new-match event," which is the per-bill matched event that only the analyzed feed scope lists.
 

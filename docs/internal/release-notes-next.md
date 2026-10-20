@@ -37,3 +37,13 @@ The Bills page has a Committee filter. It lists each committee with its number o
 
 - **Instance migration only.** Instance migration 0116 adds an empty `bill_committees` table. Central doesn't change, since it already sends each bill's committees.
 - **Run the refresh after deploying each instance.** An instance stores a bill's committees only when the bill is next delivered, and an analyzed bill that hasn't changed isn't redelivered. Until the refresh runs, the counts and the filter cover only bills delivered since the deploy. Fill every bill at once with `POST /admin/refresh-metadata` on the instance (an admin request). It queues one metadata-only delivery per stored bill, so one central fetch each: about 52,000 on the largest instance. It runs no AI, and it rewrites each bill's stored metadata from central.
+
+## Comment attachments
+
+Members can attach files to comments (#465): from a paperclip in the comment toolbar, by dropping files on the composer, or by pasting. Posted comments list their files with a Download link, and admins see storage used against the quota in Settings. The feature stays off, and nothing needs doing, until you set it up.
+
+**To turn it on for an instance** (optional, and never on a demo instance, where it stays off regardless): create a private R2 bucket (no public access, no `r2.dev` URL), bind it as `ATTACHMENTS_BUCKET` (`api/wrangler.example.toml` has the block), and deploy as usual. Uploads stream through the instance's Worker, so the bucket needs no CORS rule and no API token. Several instances may share one bucket, since each stores its files under its `TENANT_ID`.
+
+**Limits.** 25 MB a file, 10 files a comment, 30 uploads a member an hour, and 5 GB for the instance. Programs, scripts, web pages (HTML, SVG, JavaScript), macro-enabled Office files, and archives are refused, by name and by the file's first bytes. Files download only for a signed-in member of the instance, while their comment shows. Uploads that never finish are deleted after an hour, uploads never posted after a day, a deleted comment's files 30 days after the delete, by the hourly cron, which also removes within the hour any file whose comment was removed with its member's account. The admin data export lists the files (not their contents).
+
+**Deploying.** Migration `0115` adds the `comment_attachments` table and touches no existing table.
