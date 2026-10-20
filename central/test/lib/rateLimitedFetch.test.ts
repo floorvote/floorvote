@@ -328,6 +328,18 @@ describe('rateLimitedFetch retryTransient', () => {
     expect(mockFetch).toHaveBeenCalledTimes(2)
   })
 
+  it('makes its one retry alongside the 429 retries, and only one', async () => {
+    mockFetch
+      .mockResolvedValueOnce(tooMany())
+      .mockResolvedValueOnce(new Response('down', { status: 503 }))
+      .mockResolvedValueOnce(new Response('down again', { status: 503 }))
+    const promise = rateLimitedFetch('https://x.test/mixed', undefined, { ratePerSec: 71, retryTransient: true })
+    await vi.advanceTimersByTimeAsync(2000 + 5000 + 1000)
+    const res = await promise
+    expect(res.status).toBe(503)
+    expect(mockFetch).toHaveBeenCalledTimes(3)
+  })
+
   it('does not retry a 4xx', async () => {
     mockFetch.mockResolvedValue(new Response('nope', { status: 404 }))
     const res = await rateLimitedFetch('https://x.test/404', undefined, { ratePerSec: 61, retryTransient: true })
