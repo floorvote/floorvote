@@ -86,21 +86,26 @@ export function decodeSubjectFiltersChecked(
  * committed, so bills.subjects and bill_subjects would then permanently
  * disagree). Insert is chunked at 30 rows (3 params/row = 90 params) — some
  * bills carry 100+ subjects, well over D1's 100-bound-param cap in one insert.
+ *
+ * The delete and the inserts run as one `db.batch`, which D1 runs as one transaction (#848, as syncBillCommittees
+ * does, #471), so a write that fails leaves the rows it would have replaced. Run as separate statements, an insert
+ * that failed after the delete committed left the bill with no rows, and the retry took the processor's early skip
+ * because upsertBill had already stamped the bill.
  */
 const SUBJECTS_INSERT_CHUNK = 30
 
 export async function syncBillSubjects(
   db: AppDb, billInternalId: string, state: string, subjects: string[],
 ): Promise<void> {
-  await db.delete(billSubjects).where(eq(billSubjects.billId, billInternalId)).run()
   const deduped = dedupeSubjectNames(subjects)
-  if (deduped.length === 0) return
+  const inserts = []
   for (let i = 0; i < deduped.length; i += SUBJECTS_INSERT_CHUNK) {
     const chunk = deduped.slice(i, i + SUBJECTS_INSERT_CHUNK)
-    await db.insert(billSubjects).values(
+    inserts.push(db.insert(billSubjects).values(
       chunk.map(name => ({ billId: billInternalId, subjectName: name, state })),
-    ).run()
+    ))
   }
+  await db.batch([db.delete(billSubjects).where(eq(billSubjects.billId, billInternalId)), ...inserts])
 }
 
 // ── Operator suppression switch ──────────────────────────────────────────
