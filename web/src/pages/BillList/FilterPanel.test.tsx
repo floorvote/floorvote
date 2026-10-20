@@ -62,14 +62,15 @@ function renderPanel(props: Partial<ComponentProps<typeof SubjectFilterDropdown>
 
 // SubjectFilterDropdown's option list is virtualized (@tanstack/react-virtual):
 // with staging heading toward ~13k subject terms, an unvirtualized list hangs
-// the UI. jsdom performs no layout, so the scroll container's real offsetHeight
-// is 0 and the virtualizer would compute a 0-row viewport and render nothing —
+// the UI. jsdom performs no layout, so the scroll container's real
+// clientHeight is 0 and the virtualizer would compute a 0-row viewport and render nothing —
 // not just for the large synthetic lists below, but for every existing small
 // list in this describe block too. Rather than mocking the virtualizer away
 // (which would make it impossible to assert that a 2000-option panel renders
-// only a handful of row nodes), stub offsetHeight on HTMLElement.prototype to a
+// only a handful of row nodes), stub clientHeight on HTMLElement.prototype to a
 // realistic pixel value so the real virtualizer computes a real, bounded range
-// — the same technique used in TanStack Virtual's own jsdom tests.
+// — the same technique used in TanStack Virtual's own jsdom tests. (Before
+// virtual-core 3.19 the viewport was read from offsetHeight; both are stubbed.)
 function makeSubjectGroups(spec: Record<string, number>): SubjectGroup[] {
   return Object.entries(spec).map(([state, count]) => ({
     state,
@@ -81,15 +82,19 @@ function makeSubjectGroups(spec: Record<string, number>): SubjectGroup[] {
   }))
 }
 
-let restoreOffsetHeight: (() => void) | undefined
+let restoreViewportHeight: (() => void) | undefined
 beforeAll(() => {
-  const descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')
-  Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, value: 600 })
-  restoreOffsetHeight = () => {
-    if (descriptor) Object.defineProperty(HTMLElement.prototype, 'offsetHeight', descriptor)
+  const props = ['clientHeight', 'offsetHeight'] as const
+  const descriptors = props.map((prop) => Object.getOwnPropertyDescriptor(HTMLElement.prototype, prop))
+  for (const prop of props) Object.defineProperty(HTMLElement.prototype, prop, { configurable: true, value: 600 })
+  restoreViewportHeight = () => {
+    props.forEach((prop, i) => {
+      const descriptor = descriptors[i]
+      if (descriptor) Object.defineProperty(HTMLElement.prototype, prop, descriptor)
+    })
   }
 })
-afterAll(() => { restoreOffsetHeight?.() })
+afterAll(() => { restoreViewportHeight?.() })
 
 describe('FilterPanel primitives', () => {
   it('always-present dropdown has no top row — just options, nothing pre-checked', () => {
