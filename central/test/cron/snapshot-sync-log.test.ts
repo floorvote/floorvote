@@ -35,7 +35,7 @@ vi.mock('../../src/lib/sync-schedule', async () => {
 const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
 
-import { runSnapshotSync } from '../../src/cron/sync-snapshots'
+import { FAILED_PASSES_BEFORE_ALERT, runHourlySnapshotSync, runSnapshotSync } from '../../src/cron/sync-snapshots'
 import { lims } from '../../src/providers/lims'
 import { mga } from '../../src/providers/mga'
 import { lis } from '../../src/providers/lis'
@@ -490,5 +490,149 @@ describe('the States page after a snapshot pass', () => {
     await runSnapshotSync(mga, e, db())
     const rows = await loadStateRows(db(), e)
     expect(rows.find(r => r.state === 'MD')!.schedule.lastPass).toMatchObject({ status: 'ok', billsChecked: mgaSample.length })
+  })
+})
+
+// The hourly cron alerts on a session only once it has failed several passes
+// in a row: a provider's server drops a connection or answers 522 now and then,
+// and the next pass reads it fine. Every failed pass is still logged.
+describe('the hourly cron\'s alert', () => {
+  let clock = 0
+  // An hour on, so each pass and its stamps sort after the last.
+  const nextHour = () => vi.setSystemTime(clock += 3_600_000)
+  beforeEach(() => { clock = Date.parse('2026-10-20T12:00:00Z'); vi.setSystemTime(clock) })
+  const limsDown = (message = 'Network connection lost.') => vi.mocked(limsClient.getBulkData).mockRejectedValue(new Error(message))
+  const limsUp = () => vi.mocked(limsClient.getBulkData).mockResolvedValue([bulk['B26-0400']])
+  async function hourly(provider: typeof lims, e: any, passes: number) {
+    for (let i = 1; i < passes; i++) { await runHourlySnapshotSync(provider, e, db()); nextHour() }
+    return runHourlySnapshotSync(provider, e, db())
+  }
+
+  it('waits for three failed passes in a row', () => {
+    expect(FAILED_PASSES_BEFORE_ALERT).toBe(3)
+  })
+
+  it('does not throw for a session\'s first failed pass, and still logs it', async () => {
+    limsDown()
+    const { env: e } = makeEnv()
+    await expect(runHourlySnapshotSync(lims, e, db())).resolves.toBeUndefined()
+    expect(await logRows()).toMatchObject([{ state: 'DC', status: 'failed', error: 'Network connection lost.' }])
+  })
+
+  it('does not throw for the pass before the threshold', async () => {
+    limsDown()
+    const { env: e } = makeEnv()
+    await expect(hourly(lims, e, FAILED_PASSES_BEFORE_ALERT - 1)).resolves.toBeUndefined()
+    expect((await logRows()).map(r => r.status)).toEqual(Array(FAILED_PASSES_BEFORE_ALERT - 1).fill('failed'))
+  })
+
+  it('throws on the third failed pass in a row, naming the count, the session, and the error', async () => {
+    limsDown()
+    const { env: e } = makeEnv()
+    const [session] = await (async () => { await runHourlySnapshotSync(lims, e, db()); return sessionRows() })()
+    nextHour()
+    await runHourlySnapshotSync(lims, e, db())
+    nextHour()
+    const err = await runHourlySnapshotSync(lims, e, db()).then(() => null, (x: Error) => x)
+    expect(err).toBeInstanceOf(Error)
+    expect(err!.message).toContain('Network connection lost.')
+    expect(err!.message).toContain('3 passes in a row')
+    expect(err!.message).toContain(session.sessionName)
+  })
+
+  it('keeps the original error\'s stack, so the alert shows where it failed', async () => {
+    limsDown()
+    const { env: e } = makeEnv()
+    const err = await hourly(lims, e, FAILED_PASSES_BEFORE_ALERT).then(() => null, (x: Error) => x)
+    expect(err!.stack).toContain('Network connection lost.')
+    expect((err!.cause as Error).message).toBe('Network connection lost.')
+  })
+
+  it('keeps throwing while the session keeps failing', async () => {
+    limsDown()
+    const { env: e } = makeEnv()
+    await expect(hourly(lims, e, FAILED_PASSES_BEFORE_ALERT)).rejects.toThrow()
+    nextHour()
+    await expect(runHourlySnapshotSync(lims, e, db())).rejects.toThrow('4 passes in a row')
+  })
+
+  it('starts the count again after a pass that finishes', async () => {
+    const { env: e } = makeEnv()
+    limsDown()
+    await hourly(lims, e, FAILED_PASSES_BEFORE_ALERT - 1)
+    nextHour()
+    limsUp()
+    await runHourlySnapshotSync(lims, e, db())
+    nextHour()
+    limsDown()
+    await expect(hourly(lims, e, FAILED_PASSES_BEFORE_ALERT - 1)).resolves.toBeUndefined()
+    nextHour()
+    await expect(runHourlySnapshotSync(lims, e, db())).rejects.toThrow('3 passes in a row')
+  })
+
+  it('counts a pass that logged its counts and then failed as a failure, not a finish', async () => {
+    // The ok row applyMasterList logs is not a finished pass: the session isn't stamped synced.
+    await env.DB.exec(`CREATE TRIGGER no_etag BEFORE UPDATE OF snapshot_etag ON sessions BEGIN SELECT RAISE(ABORT, 'etag write refused'); END`)
+    const { env: e } = makeEnv()
+    await expect(hourly(mga, e, FAILED_PASSES_BEFORE_ALERT - 1)).resolves.toBeUndefined()
+    nextHour()
+    await expect(runHourlySnapshotSync(mga, e, db())).rejects.toThrow('etag write refused')
+    expect((await logRows()).map(r => r.status)).toEqual(['ok', 'failed', 'ok', 'failed', 'ok', 'failed'])
+  })
+
+  it('counts each session\'s failures on their own', async () => {
+    vi.mocked(mgaClient.mgaSessionExists).mockImplementation(async code => code === MGA_CODE || code === MGA_CODE_2)
+    const { env: e } = makeEnv()
+    // The special session fails twice, then the regular session fails once with it.
+    vi.mocked(mgaClient.getMgaSession).mockImplementation(async code => {
+      if (code === MGA_CODE_2) throw new Error('special session 522')
+      return code === MGA_CODE ? mgaFile() : null
+    })
+    await hourly(mga, e, FAILED_PASSES_BEFORE_ALERT - 1)
+    nextHour()
+    vi.mocked(mgaClient.getMgaSession).mockRejectedValue(new Error('every file 522'))
+    const err = await runHourlySnapshotSync(mga, e, db()).then(() => null, (x: Error) => x)
+    // Only the special session has failed three in a row; the regular one's single failure stays quiet.
+    expect(err).toBeInstanceOf(Error)
+    expect(err).not.toBeInstanceOf(AggregateError)
+    const special = (await sessionRows()).find(s => s.sessionTag === MGA_CODE_2)!
+    expect(err!.message).toContain(special.sessionName)
+    expect(err!.message).toContain('3 passes in a row')
+  })
+
+  it('stays quiet when several sessions each fail fewer times than the threshold', async () => {
+    vi.mocked(mgaClient.mgaSessionExists).mockImplementation(async code => code === MGA_CODE || code === MGA_CODE_2)
+    vi.mocked(mgaClient.getMgaSession).mockRejectedValue(new Error('every file 522'))
+    const { env: e } = makeEnv()
+    await expect(hourly(mga, e, FAILED_PASSES_BEFORE_ALERT - 1)).resolves.toBeUndefined()
+    expect((await logRows()).filter(r => r.status === 'failed')).toHaveLength(2 * (FAILED_PASSES_BEFORE_ALERT - 1))
+  })
+
+  it('throws once for several sessions that each reached the threshold', async () => {
+    vi.mocked(mgaClient.mgaSessionExists).mockImplementation(async code => code === MGA_CODE || code === MGA_CODE_2)
+    vi.mocked(mgaClient.getMgaSession).mockRejectedValue(new Error('every file 522'))
+    const { env: e } = makeEnv()
+    await expect(hourly(mga, e, FAILED_PASSES_BEFORE_ALERT)).rejects.toBeInstanceOf(AggregateError)
+  })
+
+  it('counts a thrown value that is not an Error', async () => {
+    vi.mocked(limsClient.getBulkData).mockImplementation(async () => { throw 'plain string failure' })
+    const { env: e } = makeEnv()
+    await expect(hourly(lims, e, FAILED_PASSES_BEFORE_ALERT - 1)).resolves.toBeUndefined()
+    nextHour()
+    await expect(runHourlySnapshotSync(lims, e, db())).rejects.toThrow('plain string failure')
+  })
+
+  it('throws at once for a failure outside a session\'s pass', async () => {
+    // Listing the council periods is the provider's session refresh, before any pass runs.
+    vi.mocked(limsClient.getCouncilPeriods).mockRejectedValue(new Error('periods endpoint down'))
+    const { env: e } = makeEnv()
+    await expect(runHourlySnapshotSync(lims, e, db())).rejects.toThrow('periods endpoint down')
+  })
+
+  it('leaves runSnapshotSync, which "run now" calls, throwing on the first failure', async () => {
+    limsDown()
+    const { env: e } = makeEnv()
+    await expect(runSnapshotSync(lims, e, db(), { force: true })).rejects.toThrow('Network connection lost.')
   })
 })

@@ -1,4 +1,4 @@
-import { eq, and, or, inArray, notInArray, lt, gt, isNull, isNotNull, asc, sql } from 'drizzle-orm'
+import { eq, and, or, inArray, notInArray, lt, gt, gte, isNull, isNotNull, asc, sql } from 'drizzle-orm'
 import { sessions, bills, billTenants, tenants, people, providerRecords, sessionSyncLog } from '../db/schema'
 import { decideMode, getCurrentEtHour } from '../lib/sync-schedule'
 import { nowDb } from '../lib/dbTime'
@@ -47,18 +47,77 @@ export function isSnapshotProvider(provider: Provider | undefined): provider is 
 }
 
 /**
+ * How many passes in a row a session fails before the hourly cron alerts. A
+ * provider's server drops a connection or answers 522 now and then, and the
+ * next pass reads the session fine; the States page shows every failed pass.
+ */
+export const FAILED_PASSES_BEFORE_ALERT = 3
+
+type SessionFailure = { session: SessionRow; error: Error }
+
+/**
  * `force` (the admin "run now" route) ignores the hour of day: the provider
- * refreshes its sessions and every synced session gets a full pass.
+ * refreshes its sessions and every synced session gets a full pass. Any
+ * session that fails is thrown, so the caller sees it at once.
  */
 export async function runSnapshotSync(
   provider: Provider, env: Env, db: Db, opts: { force?: boolean } = {},
 ): Promise<SnapshotPassReport[]> {
-  if (!isSnapshotProvider(provider)) return []
+  const { reports, failures } = await syncSessions(provider, env, db, opts)
+  throwAll(provider, failures.map(f => f.error))
+  return reports
+}
+
+/**
+ * The hourly cron's sync, which throws (and so alerts) only for a session that
+ * has failed FAILED_PASSES_BEFORE_ALERT passes in a row. A failure outside a
+ * session's pass still throws at once.
+ */
+export async function runHourlySnapshotSync(provider: Provider, env: Env, db: Db): Promise<void> {
+  const { failures } = await syncSessions(provider, env, db, {})
+  const alerts: Error[] = []
+  for (const { session, error } of failures) {
+    const inARow = await failedPassesInARow(db, session)
+    if (inARow < FAILED_PASSES_BEFORE_ALERT) {
+      console.warn(`[sync-${provider.id}] ${session.sessionName}: ${inARow} failed in a row; alerting at ${FAILED_PASSES_BEFORE_ALERT}`)
+      continue
+    }
+    const alert = new Error(`${session.state} ${session.sessionName}: ${inARow} passes in a row failed. Latest: ${errorMessage(error)}`, { cause: error })
+    alert.stack = error.stack
+    alerts.push(alert)
+  }
+  throwAll(provider, alerts)
+}
+
+function throwAll(provider: Provider, errors: Error[]): void {
+  if (errors.length === 1) throw errors[0]
+  if (errors.length > 1) throw new AggregateError(errors, `[sync-${provider.id}] ${errors.length} sessions failed: ${errors.map(e => e.message).join('; ')}`)
+}
+
+/**
+ * The session's failed passes since its last finished one, which stamps
+ * last_synced_at. A pass that logs its counts and then fails leaves an ok row,
+ * but no stamp, so it counts as failed here as it does on the States page.
+ */
+async function failedPassesInARow(db: Db, session: SessionRow): Promise<number> {
+  const [row] = await db.select({ n: sql<number>`COUNT(*)` }).from(sessionSyncLog).where(and(
+    eq(sessionSyncLog.sessionId, session.sessionId),
+    eq(sessionSyncLog.status, 'failed'),
+    session.lastSyncedAt ? gte(sessionSyncLog.syncedAt, session.lastSyncedAt) : undefined,
+  )).all()
+  return Number(row?.n ?? 0)
+}
+
+async function syncSessions(
+  provider: Provider, env: Env, db: Db, opts: { force?: boolean },
+): Promise<{ reports: SnapshotPassReport[]; failures: SessionFailure[] }> {
+  const none = { reports: [], failures: [] }
+  if (!isSnapshotProvider(provider)) return none
   const owned = statesOwnedBy(await loadStateOwners(db), provider.id)
-  if (owned.length === 0) return []
+  if (owned.length === 0) return none
   if (!providerConfigured(provider, env)) {
     console.warn(`[sync-${provider.id}] owns ${owned.join(', ')} but isn't configured on this central (missing its API key?); not syncing`)
-    return []
+    return none
   }
 
   const active = await db.select().from(tenants).where(eq(tenants.active, true)).all()
@@ -74,7 +133,7 @@ export async function runSnapshotSync(
       .map(t => ({ tenantId: t.tenantId, stateCoverage: t.stateCoverage, queueId: t.queueId ?? null }))
     if (covering.length > 0) coveringByState.set(state, covering)
   }
-  if (coveringByState.size === 0) return []
+  if (coveringByState.size === 0) return none
 
   const ctx = providerContext(provider, env, db)
   const etHour = getCurrentEtHour()
@@ -83,10 +142,10 @@ export async function runSnapshotSync(
   for (const state of owned) toSync.push(...await sessionsToSync(provider, state, ctx, etHour, force, db))
 
   // A session that fails (a provider failing closed on a bad file, say)
-  // doesn't stop the others. Its errors are thrown together at the end, so
-  // the job still fails and alerts.
+  // doesn't stop the others. Its error goes back to the caller, which decides
+  // whether to throw it.
   const reports: SnapshotPassReport[] = []
-  const errors: Error[] = []
+  const failures: SessionFailure[] = []
   // One budget of first full ingests for all the sessions (Provider.ingestAll).
   const firstIngests = await firstIngestBudget(db, provider)
   for (const session of toSync) {
@@ -101,13 +160,11 @@ export async function runSnapshotSync(
       await db.update(sessions).set({ lastSyncedAt: nowDb() }).where(eq(sessions.sessionId, session.sessionId))
     } catch (err) {
       console.error(`[sync-${provider.id}] ${session.sessionName} failed:`, err)
-      errors.push(err instanceof Error ? err : new Error(String(err)))
+      failures.push({ session, error: err instanceof Error ? err : new Error(String(err)) })
       await logOutcome(db, session, { status: 'failed', error: errorMessage(err) })
     }
   }
-  if (errors.length === 1) throw errors[0]
-  if (errors.length > 1) throw new AggregateError(errors, `[sync-${provider.id}] ${errors.length} sessions failed: ${errors.map(e => e.message).join('; ')}`)
-  return reports
+  return { reports, failures }
 }
 
 /**
