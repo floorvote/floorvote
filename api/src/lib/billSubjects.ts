@@ -87,10 +87,15 @@ export function decodeSubjectFiltersChecked(
  * disagree). Insert is chunked at 30 rows (3 params/row = 90 params) — some
  * bills carry 100+ subjects, well over D1's 100-bound-param cap in one insert.
  *
- * The delete and the inserts run as one `db.batch`, which D1 runs as one transaction (#848, as syncBillCommittees
- * does, #471), so a write that fails leaves the rows it would have replaced. Run as separate statements, an insert
- * that failed after the delete committed left the bill with no rows, and the retry took the processor's early skip
- * because upsertBill had already stamped the bill.
+ * The delete and the inserts run as one `db.batch`, which D1 runs as one
+ * transaction (#848, as syncBillCommittees does, #471), so a write that fails
+ * leaves the rows it would have replaced. Run as separate statements, an insert
+ * that failed after the delete committed left the bill with no rows.
+ *
+ * What is left: on the full delivery path the retry still takes the early skip
+ * (upsertBill already stamped the bill), so after a failed write the rows keep
+ * the previous version's subjects, stale rather than missing, until the bill
+ * next changes.
  */
 const SUBJECTS_INSERT_CHUNK = 30
 
