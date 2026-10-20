@@ -4,7 +4,7 @@ import type { GroupingEvent } from '../../../shared/companionGroups'
 import type { FieldChangeEvent } from '../../../shared/teamFields'
 import { POSITION_FEED_ICON, PRIORITY_COLORS } from '../../../shared/billChipColors'
 import { USER_EVENT_ICONS } from '../../../shared/billCardModel'
-import { fontSize } from '../styles/tokens'
+import { color, fontSize } from '../styles/tokens'
 import { ActivityLine, ThreadLineView } from './ActivityLine'
 
 // The muted line a bill's comment thread shows for a change a person made to a
@@ -49,9 +49,12 @@ describe('ActivityLine', () => {
       expect(occupied).toBe(fontSize.lg)
     })
 
-    it('draws a cleared priority as the square in the feed fallback color', () => {
+    it('draws a cleared priority as a hollow square with a light gray border, not a filled one', () => {
       render(<ActivityLine event={change('p', { old: 'high', new: null })} />)
-      expect(square(screen.getByRole('note'))).toHaveStyle({ background: USER_EVENT_ICONS.priority_set.color })
+      const el = square(screen.getByRole('note'))!
+      expect(el).toHaveStyle({ background: 'transparent' })
+      expect(el.style.border).toBe(`1px solid ${color.borderDefault}`)
+      expect(el.style.background).not.toBe(USER_EVENT_ICONS.priority_set.color)
     })
 
     it.each(Object.keys(POSITION_FEED_ICON))('draws setting the position to %s as the feed\'s filled thumbs-up-down glyph in that position\'s color', (position) => {

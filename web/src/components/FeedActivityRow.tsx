@@ -73,7 +73,7 @@ export function FeedActivityRow({ event, seenAt = null, currentUserId = null }: 
   const content = (
     <>
       {model.square ? (
-        <PrioritySquare size={11} color={model.iconColor} style={{ marginTop: 2 }} />
+        <PrioritySquare size={11} color={model.iconColor} hollow={model.hollow} style={{ marginTop: 2 }} />
       ) : (
         <MaterialIcon name={model.iconName} color={model.iconColor} fill={model.iconFill} />
       )}

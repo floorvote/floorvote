@@ -47,6 +47,13 @@ describe('FeedActivityRow', () => {
     expect(apiFetchMock).not.toHaveBeenCalled()
   })
 
+  it('draws a bulk edit that cleared the priority as a hollow square', () => {
+    const { container } = renderRow(makeEvent({ metadata: { priority: null, count: 3, billIds: ['b1'] } }))
+    const sq = container.querySelector('span[aria-hidden="true"]') as HTMLElement
+    expect(sq).toHaveStyle({ background: 'transparent' })
+    expect(sq.style.border).toContain('1px solid')
+  })
+
   it('lists the affected bills when expanded, each linking to its page, skipping deleted ones', async () => {
     apiFetchMock.mockResolvedValue(BILLS)
     renderRow(makeEvent())

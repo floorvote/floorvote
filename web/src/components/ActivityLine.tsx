@@ -31,7 +31,7 @@ function iconMetadata(event: FieldChangeEvent): Record<string, unknown> {
 
 function ChangeIcon({ icon }: { icon: UserEventIcon }) {
   // The square plus its margins fills the glyph's width, so the line's text starts where it does on every other line.
-  if (icon.square) return <PrioritySquare size={11} color={icon.color} style={{ marginLeft: 2.5, marginRight: 2.5 }} data-testid="priority-square" />
+  if (icon.square) return <PrioritySquare size={11} color={icon.color} hollow={icon.hollow} style={{ marginLeft: 2.5, marginRight: 2.5 }} data-testid="priority-square" />
   return (
     <span
       className="material-symbols-outlined"

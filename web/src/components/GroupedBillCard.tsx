@@ -174,7 +174,7 @@ export function GroupedBillCard({ group, seenAt = null, currentUserId = null }: 
               }}
             >
               {row.square ? (
-                <PrioritySquare size={11} color={row.iconColor} style={{ marginTop: 2 }} />
+                <PrioritySquare size={11} color={row.iconColor} hollow={row.hollow} style={{ marginTop: 2 }} />
               ) : (
                 <MaterialIcon name={row.iconName} color={row.iconColor} fill={row.iconFill} size={14} />
               )}

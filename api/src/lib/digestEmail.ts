@@ -246,7 +246,7 @@ function renderBillCard(events: DigestEvent[], appUrl: string): string {
     // title on the priority square gives a native hover tooltip ("High priority").
     const sqLabel = row.square ? Object.values(PRIORITY_COLORS).find(c => c.fill === row.iconColor)?.label : undefined
     const marker = row.square
-      ? `<span${sqLabel ? ` title="${escHtml(sqLabel)}"` : ''} style="display:inline-block;width:11px;height:11px;border-radius:${prioritySquareRadius(11)}px;background:${row.iconColor};vertical-align:middle;"></span>`
+      ? `<span${sqLabel ? ` title="${escHtml(sqLabel)}"` : ''} style="display:inline-block;width:11px;height:11px;border-radius:${prioritySquareRadius(11)}px;${row.hollow ? `box-sizing:border-box;border:1px solid ${row.iconColor};` : `background:${row.iconColor};`}vertical-align:middle;"></span>`
       : `<img src="${appUrl}/email-icons/${emailIconSrc(row.iconName, row.iconColor, row.iconFill === 1)}" width="14" height="14" alt="" style="display:block;border:0;">`
     return `<tr style="background:${row.bg};">
       <td width="30" style="padding:9px 0 8px 14px;vertical-align:top;${rowBorder}">${marker}</td>

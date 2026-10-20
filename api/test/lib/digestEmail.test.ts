@@ -71,6 +71,11 @@ describe('renderDigestEmail', () => {
     expect(html).toContain('width:11px;height:11px;border-radius:')  // the priority square box
     expect(html).toContain('title="High priority"')                  // native hover tooltip
   })
+  it('draws a cleared priority as an empty square with a light gray border', () => {
+    const html = renderDigestEmail({ events: [ev({ type: 'priority_set', metadata: JSON.stringify({ priority: null }) })], assocName: 'X', appUrl: 'https://x' })
+    expect(html).toContain(`border:1px solid ${color.borderDefault};vertical-align:middle;`)
+    expect(html).not.toContain(`background:${color.borderDefault};vertical-align:middle;`)
+  })
   it('ends a cut comment row with an ellipsis (legacy previews, stored hard-cut at the cap)', () => {
     // Made-up comment, cut mid-word the way the old write site cut real ones.
     const cut = 'The county offices will need extra staffing before this takes effect, and the training schedule is the real constraint o'

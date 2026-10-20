@@ -107,6 +107,9 @@ describe('buildActivityRowModel', () => {
     expect(m.billCount).toBe(34)
     expect(m.userId).toBe('user-1')
   })
+  it('draws a bulk edit that cleared the priority as a hollow square', () => {
+    expect(buildActivityRowModel(event({ metadata: { priority: null, count: 2 } }))).toMatchObject({ square: true, hollow: true, iconColor: color.borderDefault })
+  })
   it('reads a bulk position edit, and a cleared position', () => {
     const set = buildActivityRowModel(event({ type: 'position_set', metadata: { position: 'Support', count: 12, billIds: [] } }))
     expect(set.text).toBe('Ada Admin set position to Support on 12 bills')
@@ -200,8 +203,16 @@ describe('userEventIcon', () => {
     }
   })
 
-  it('falls back to the table\'s priority color, still a square, for a cleared or unknown priority', () => {
-    expect(userEventIcon('priority_set', { priority: null })).toMatchObject({ color: USER_EVENT_ICONS.priority_set.color, square: true })
+  it('draws a cleared priority as a hollow square in the no-priority border color', () => {
+    expect(userEventIcon('priority_set', { priority: null })).toEqual({ name: 'flag', color: color.borderDefault, fill: 1, square: true, hollow: true })
+  })
+
+  it('carries a cleared priority through the card row and the bulk-edit row as hollow too', () => {
+    const row = buildBillCardModel(group([{ type: 'priority_set', metadata: { priority: null }, userName: 'Will' }])).rows[0]
+    expect(row).toMatchObject({ square: true, hollow: true, iconColor: color.borderDefault })
+  })
+
+  it('falls back to the table\'s priority color, still a filled square, for an unknown priority', () => {
     expect(userEventIcon('priority_set', { priority: 'urgent' })).toMatchObject({ color: USER_EVENT_ICONS.priority_set.color, square: true })
     expect(userEventIcon('priority_set', undefined)).toMatchObject({ color: USER_EVENT_ICONS.priority_set.color, square: true })
   })

@@ -27,7 +27,8 @@ export const USER_EVENT_ICONS: Record<string, { name: string; color: string; fil
   custom_field_set: { name: 'edit_note',  color: color.textSecondary },
 }
 
-export type UserEventIcon = { name: string; color: string; fill: 0 | 1; square: boolean }
+/** `hollow` marks a cleared priority: the square is drawn empty, outlined in `color`, like the "no priority" look. */
+export type UserEventIcon = { name: string; color: string; fill: 0 | 1; square: boolean; hollow?: true }
 
 /**
  * The icon a person's change shows with, in one place for every surface that draws it: the feed's card rows,
@@ -38,9 +39,12 @@ export type UserEventIcon = { name: string; color: string; fill: 0 | 1; square: 
 export function userEventIcon(type: string, metadata?: Record<string, unknown> | null): UserEventIcon {
   const cfg = USER_EVENT_ICONS[type] ?? { name: 'circle', color: color.textMuted }
   let iconColor = cfg.color
-  if (type === 'priority_set') iconColor = PRIORITY_COLORS[String(metadata?.priority ?? '')]?.fill ?? iconColor
+  // A cleared priority is an empty square with the border the priority dropdown's "none" has, not a color.
+  const cleared = type === 'priority_set' && metadata != null && metadata.priority == null
+  if (cleared) iconColor = color.borderDefault
+  else if (type === 'priority_set') iconColor = PRIORITY_COLORS[String(metadata?.priority ?? '')]?.fill ?? iconColor
   else if (type === 'position_set') iconColor = POSITION_FEED_ICON[String(metadata?.position ?? '')] ?? iconColor
-  return { name: cfg.name, color: iconColor, fill: cfg.fill ?? 0, square: type === 'priority_set' }
+  return { name: cfg.name, color: iconColor, fill: cfg.fill ?? 0, square: type === 'priority_set', ...(cleared ? { hollow: true as const } : {}) }
 }
 const HEARING_TYPES = new Set(['hearing_added', 'hearing_changed', 'hearing_cancelled'])
 
@@ -50,6 +54,8 @@ export type BillCardRow = {
   userId: string
   /** When true, render a priority square instead of a glyph (priority_set events). */
   square?: boolean
+  /** With `square`: draw it empty, outlined in `iconColor` (a cleared priority). */
+  hollow?: boolean
   /** The bill the row's event is on, so a row in a companion group's card opens its own bill. */
   billId: string | null
   /**
@@ -169,6 +175,7 @@ export function buildBillCardModel(group: GroupedBillEvents): BillCardModel {
         text: userDetailLine(event), bg: color.white, hash: userEventHash(event),
         createdAt: event.createdAt, showTime: true, userId: event.userId, ...ofBill,
         ...(icon.square ? { square: true } : {}),
+        ...(icon.hollow ? { hollow: true } : {}),
       })
     }
   }
@@ -185,6 +192,8 @@ export type ActivityRowModel = {
   text: string; createdAt: string; userId: string
   /** Render a priority square instead of a glyph (priority_set events). */
   square?: boolean
+  /** With `square`: draw it empty, outlined in `iconColor` (a cleared priority). */
+  hollow?: boolean
   /** How many bills the event is about, or null when it doesn't say. */
   billCount: number | null
 }
@@ -208,7 +217,7 @@ export function buildActivityRowModel(event: FeedEvent): ActivityRowModel {
     const priority = String(metadata.priority ?? '')
     const icon = userEventIcon(type, metadata)
     return {
-      ...base, iconName: icon.name, iconFill: icon.fill, square: true, iconColor: icon.color,
+      ...base, iconName: icon.name, iconFill: icon.fill, square: true, iconColor: icon.color, ...(icon.hollow ? { hollow: true } : {}),
       text: `${who} set priority to ${priority}${onBills}`,
     }
   }
