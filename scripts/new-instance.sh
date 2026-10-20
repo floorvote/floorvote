@@ -8,7 +8,8 @@
 #   - Node.js + npm; `npm install` run at repo root
 #   - The LegiScan central Worker (floorvote-central-legiscan) is already deployed
 #   - Shared Cloudflare creds in place (account-level, reused by every tenant):
-#       CF_AIG_TOKEN (AI Gateway "Run" token) — have it ready (prompted below)
+#       CF_AIG_TOKEN (AI Gateway "Run" token) — export it, or have it ready (prompted below)
+#       TURNSTILE_SECRET_KEY — required when TURNSTILE_SITE_KEY is set; export it or be prompted
 #     The central ADMIN_SECRET is loaded from central/.dev.vars (or --admin-secret / prompt).
 #
 # Usage:
@@ -189,14 +190,26 @@ if [[ $PREFLIGHT_ONLY -eq 0 ]]; then
 fi
 
 # Collect per-instance secrets upfront — before the log redirect makes stdout a
-# pipe (wrangler refuses to prompt when stdout is not a TTY). Only CF_AIG_TOKEN is
-# required; GEMINI and RESEND are optional (blank = skip).
+# pipe (wrangler refuses to prompt when stdout is not a TTY). CF_AIG_TOKEN is
+# required, and so is TURNSTILE_SECRET_KEY whenever TURNSTILE_SITE_KEY is set;
+# GEMINI and RESEND are optional (blank = skip). A value already exported in the
+# environment is used without prompting.
 if [[ $FROM_STEP -le 6 && $PREFLIGHT_ONLY -eq 0 ]]; then
   echo
-  read -rsp "CF_AIG_TOKEN (required — AI Gateway 'Run' token): " CF_AIG_TOKEN || \
-    die "could not read CF_AIG_TOKEN — this prompt needs a terminal. Run interactively, or use --preflight-only to validate without it."
-  echo
+  if [[ -z "${CF_AIG_TOKEN:-}" ]]; then
+    read -rsp "CF_AIG_TOKEN (required — AI Gateway 'Run' token): " CF_AIG_TOKEN || \
+      die "could not read CF_AIG_TOKEN — this prompt needs a terminal. Run interactively, export it, or use --preflight-only to validate without it."
+    echo
+  fi
   [[ -n "$CF_AIG_TOKEN" ]] || die "CF_AIG_TOKEN is required"
+  # A sitekey without the secret is the silent failure: the login widget renders,
+  # but the server never verifies it (the gate fails open when the secret is unset).
+  if [[ -n "${TURNSTILE_SITE_KEY:-}" && -z "${TURNSTILE_SECRET_KEY:-}" ]]; then
+    read -rsp "TURNSTILE_SECRET_KEY (required — TURNSTILE_SITE_KEY is set): " TURNSTILE_SECRET_KEY || \
+      die "could not read TURNSTILE_SECRET_KEY — this prompt needs a terminal. Run interactively or export it."
+    echo
+    [[ -n "$TURNSTILE_SECRET_KEY" ]] || die "TURNSTILE_SECRET_KEY is required when TURNSTILE_SITE_KEY is set (otherwise the login check is never enforced)"
+  fi
   echo "  The next two are OPTIONAL. Leave blank to skip."
   echo "  GEMINI_API_KEY is only read if AI_GATEWAY_ENABLED is flipped to false."
   read -rsp "GEMINI_API_KEY (optional): " GEMINI_API_KEY; echo
@@ -299,6 +312,16 @@ preflight() {
   [[ "$ACCOUNT_SUBDOMAIN" == "<your-subdomain>" ]]    && { pf_bad "ACCOUNT_SUBDOMAIN is still the placeholder"; placeholder=1; }
   [[ "$SUPERADMIN_JWT_PUBLIC_KEY" == "<your-ES256-public-JWK>" ]] && { pf_bad "SUPERADMIN_JWT_PUBLIC_KEY is still the placeholder"; placeholder=1; }
   [[ -z "${CF_AIG_GATEWAY:-}" ]] && pf_bad "CF_AIG_GATEWAY is empty (required -- AI silently does nothing without it)"
+  # Turnstile is optional, but only as a pair: the secret without the sitekey
+  # rejects every login (no widget sends a token), and the sitekey without the
+  # secret shows a widget nothing checks. The secret itself is prompted for later.
+  if [[ -n "${TURNSTILE_SITE_KEY:-}" ]]; then
+    pf_ok "Turnstile on (TURNSTILE_SITE_KEY set; TURNSTILE_SECRET_KEY is set in Step 6)"
+  elif [[ -n "${TURNSTILE_SECRET_KEY:-}" ]]; then
+    pf_bad "TURNSTILE_SECRET_KEY is set but TURNSTILE_SITE_KEY is empty -- every login would 403. Set the sitekey in scripts/.env.ops, or unset the secret."
+  else
+    pf_warn "Turnstile off (no TURNSTILE_SITE_KEY) -- login relies on the rate limiter alone"
+  fi
   [[ "$CENTRAL_URL" == *"<your-subdomain>"* ]] && pf_bad "CENTRAL_URL still contains a placeholder: $CENTRAL_URL"
   if [[ $placeholder -eq 1 && $ENV_OPS_LOADED -eq 0 ]]; then
     pf_bad "these are the built-in defaults: this run would provision with the wrong names."
@@ -678,7 +701,10 @@ if step deploy "Deploy tenant worker"; then
 fi
 
 # ── Step 6: Set secrets (worker now exists) ────────────────────────────────────
-# Only CF_AIG_TOKEN is required. No CENTRAL_ADMIN_SECRET, and no superadmin signing
+# CF_AIG_TOKEN is required, plus TURNSTILE_SECRET_KEY when TURNSTILE_SITE_KEY is set.
+# The Turnstile secret is safe to set here: Step 5 already deployed the frontend
+# with the sitekey, so login requests carry the token the secret makes mandatory.
+# No CENTRAL_ADMIN_SECRET, and no superadmin signing
 # key: central is the sole issuer and holds SUPERADMIN_JWT_PRIVATE_KEY, while a tenant
 # only ever verifies, using the public JWK in its vars. Both directions are
 # binding-authenticated (TenantApi outbound, CentralApi inbound).
@@ -686,6 +712,13 @@ if step secrets "Set secrets"; then
   cd "$API_DIR"
   echo "$CF_AIG_TOKEN" | npx wrangler secret put CF_AIG_TOKEN --env "$SLUG"
   log_ok "CF_AIG_TOKEN set"
+  if [[ -n "${TURNSTILE_SITE_KEY:-}" ]]; then
+    [[ -n "${TURNSTILE_SECRET_KEY:-}" ]] || die "TURNSTILE_SITE_KEY is set but TURNSTILE_SECRET_KEY is empty — export it and re-run with --from-step 6"
+    echo "$TURNSTILE_SECRET_KEY" | npx wrangler secret put TURNSTILE_SECRET_KEY --env "$SLUG"
+    log_ok "TURNSTILE_SECRET_KEY set (login check now enforced)"
+  else
+    log "TURNSTILE_SECRET_KEY skipped (no TURNSTILE_SITE_KEY, so Turnstile is off)"
+  fi
   if [[ -n "${GEMINI_API_KEY:-}" ]]; then
     echo "$GEMINI_API_KEY" | npx wrangler secret put GEMINI_API_KEY --env "$SLUG"
     log_ok "GEMINI_API_KEY set (rollback credential)"
