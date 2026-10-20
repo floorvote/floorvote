@@ -35,6 +35,7 @@ const commentEvents: DemoSeedFeedEvent[] = LM_COMMENTS.map((c) => {
       ...(mentioned.length ? { mentionedUserIds: mentioned } : {}),
     },
     daysAgo: c.daysAgo,
+    ...(c.minutesLater !== undefined ? { minutesLater: c.minutesLater } : {}),
   }
 })
 

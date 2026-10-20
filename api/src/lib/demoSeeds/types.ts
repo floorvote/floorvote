@@ -41,6 +41,9 @@ export type DemoSeedComment = {
   /** Sanitized HTML, including span[data-type=mention] markup for @mentions. */
   content: string
   daysAgo: number
+  /** Minutes after the `daysAgo` time of day (negative is earlier). Whole days cannot order a
+   *  change against the comment that explains it, so the seed shifts one of them by minutes. */
+  minutesLater?: number
 }
 
 export type DemoSeedReaction = {
@@ -72,6 +75,9 @@ export type DemoSeedFeedEvent = {
   userId: string
   metadata: Record<string, unknown>
   daysAgo: number
+  /** Minutes after the `daysAgo` time of day (negative is earlier). Whole days cannot order a
+   *  change against the comment that explains it, so the seed shifts one of them by minutes. */
+  minutesLater?: number
 }
 
 /**
@@ -91,6 +97,9 @@ export type DemoSeedFieldChange = {
   old: string | null
   new: string | null
   daysAgo: number
+  /** Minutes after the `daysAgo` time of day (negative is earlier). Whole days cannot order a
+   *  change against the comment that explains it, so the seed shifts one of them by minutes. */
+  minutesLater?: number
 }
 
 export type DemoSeedCalendarEvent = {
@@ -178,7 +187,7 @@ export type DemoSeed = {
   customFields: DemoSeedCustomField[]
 
   priorities: Array<{ externalId: string; priority: 'high' | 'medium' | 'low' }>
-  positions: Array<{ id: string; externalId: string; position: string; setBy: string; daysAgo: number }>
+  positions: Array<{ id: string; externalId: string; position: string; setBy: string; daysAgo: number; minutesLater?: number }>
   votes: Array<{ id: string; externalId: string; userId: string; position: string; daysAgo: number }>
   comments: DemoSeedComment[]
   reactions: DemoSeedReaction[]

@@ -3,6 +3,7 @@ import { env, SELF } from 'cloudflare:test'
 import { clearDb, seedBill, seedUser, seedSession } from '../helpers'
 import { runDemoReset } from '../../src/lib/demoReset'
 import { DEMO_SEEDS } from '../../src/lib/demoSeeds'
+import { LM_COMPANION_BILLS } from '../../src/lib/demoSeeds/lakeMichigan/bills'
 import { centralFetch } from '../../src/lib/centralFetch'
 import type { FieldChangeEvent } from '../../../shared/teamFields'
 
@@ -156,5 +157,55 @@ describe('the lake-michigan seed team field changes', () => {
       if (c.field === 'customField') expect(fields.has(c.fieldId!), c.id).toBe(true)
     }
     expect(new Set(changes.map(c => c.id)).size).toBe(changes.length)
+  })
+
+  // The thread sorts comments and activity lines together by time, so a change reads
+  // as part of the conversation only when the seed dates it among the comments (#879).
+  // `minutesLater` is the sub-day offset that makes same-day ordering possible.
+  type Timed = { daysAgo: number; minutesLater?: number }
+  const minutesAgo = (t: Timed) => t.daysAgo * 1440 - (t.minutesLater ?? 0)
+  const COMPANION_OF = new Map(LM_COMPANION_BILLS.map(c => [c.externalId, c.companionOf]))
+  const billsWithChanges = [...new Set(changes.map(c => c.externalId))]
+  // A change on a group's tracked bill can be explained by a comment on either bill.
+  const groupOf = (externalId: string) =>
+    new Set([externalId, ...LM_COMPANION_BILLS.filter(c => c.companionOf === externalId).map(c => c.externalId)])
+
+  it('dates every bill\'s changes among its comments, with a comment before the first change and one after it', () => {
+    expect(billsWithChanges.length).toBeGreaterThanOrEqual(8)
+    for (const externalId of billsWithChanges) {
+      const earliest = Math.max(...changes.filter(c => c.externalId === externalId).map(minutesAgo))
+      const times = seed.comments.filter(c => c.externalId === externalId).map(minutesAgo)
+      if (times.length < 2) continue
+      expect(times.some(t => t > earliest), `${externalId}: a comment before the first change`).toBe(true)
+      expect(times.some(t => t < earliest), `${externalId}: a comment after the first change`).toBe(true)
+    }
+  })
+
+  it('pairs at least two-thirds of the changes with a comment by the same persona within the hour', () => {
+    const paired = changes.filter(c => seed.comments.some(m =>
+      groupOf(c.externalId).has(m.externalId) && m.userId === c.userId && Math.abs(minutesAgo(m) - minutesAgo(c)) <= 60))
+    expect(paired.length / changes.length).toBeGreaterThanOrEqual(2 / 3)
+  })
+
+  it('times each seeded priority and position, and the position row, at the change that set it', () => {
+    expect(COMPANION_OF.size).toBe(4)
+    for (const externalId of billsWithChanges) {
+      const priority = chain(key({ externalId, field: 'priority' })).at(-1)
+      if (priority) {
+        const event = seed.feedEvents.find(e => e.type === 'priority_set' && e.externalId === externalId)!
+        expect([event.userId, minutesAgo(event)], `${externalId} priority_set`).toEqual([priority.userId, minutesAgo(priority)])
+      }
+      const position = chain(key({ externalId, field: 'position' })).at(-1)
+      if (position) {
+        const event = seed.feedEvents.find(e => e.type === 'position_set' && e.externalId === externalId)!
+        expect([event.userId, minutesAgo(event)], `${externalId} position_set`).toEqual([position.userId, minutesAgo(position)])
+        const row = seed.positions.find(p => p.externalId === externalId)!
+        expect([row.setBy, minutesAgo(row)], `${externalId} official position`).toEqual([position.userId, minutesAgo(position)])
+      }
+      for (const field of changes.filter(c => c.externalId === externalId && c.field === 'customField')) {
+        const value = seed.customFieldValues.find(v => v.externalId === externalId && v.fieldId === field.fieldId)!
+        expect(value.daysAgo, `${externalId} ${field.fieldId}`).toBe(field.daysAgo)
+      }
+    }
   })
 })

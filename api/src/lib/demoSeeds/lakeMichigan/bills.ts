@@ -82,18 +82,18 @@ export const LM_POSITIONS: Array<{ id: string; externalId: string; position: str
   { id: 'lm-pos-2',  externalId: 'legiscan:2055958', position: 'Support', setBy: 'demo-user',   daysAgo: 90 },  // MI HB5308
   { id: 'lm-pos-3',  externalId: 'legiscan:2095619', position: 'Monitor', setBy: 'demo-user',   daysAgo: 60 },  // MI SB0771
   { id: 'lm-pos-4',  externalId: 'legiscan:2006944', position: 'Support', setBy: 'lm-user-ed',  daysAgo: 200 }, // WI AB129 (died — supported anyway)
-  { id: 'lm-pos-5',  externalId: 'legiscan:2006749', position: 'Support', setBy: 'lm-user-ed',  daysAgo: 200 }, // WI AB131
-  { id: 'lm-pos-6',  externalId: 'legiscan:1979645', position: 'Support', setBy: 'lm-user-dep', daysAgo: 420 }, // WI SB56
+  { id: 'lm-pos-5',  externalId: 'legiscan:2006749', position: 'Support', setBy: 'lm-user-ed',  daysAgo: 121, minutesLater: 63 }, // WI AB131
+  { id: 'lm-pos-6',  externalId: 'legiscan:1979645', position: 'Support', setBy: 'lm-user-dep', daysAgo: 402, minutesLater: 3 }, // WI SB56
   { id: 'lm-pos-7',  externalId: 'legiscan:2052600', position: 'Support', setBy: 'lm-user-dep', daysAgo: 180 }, // WI SB628 (died — supported anyway)
   { id: 'lm-pos-8',  externalId: 'legiscan:1906052', position: 'Support', setBy: 'lm-user-dep', daysAgo: 300 }, // IL HB1175
   { id: 'lm-pos-9',  externalId: 'legiscan:1952725', position: 'Support', setBy: 'lm-user-dep', daysAgo: 420 }, // IL HB2516
   { id: 'lm-pos-10', externalId: 'legiscan:2111275', position: 'Support', setBy: 'lm-user-dep', daysAgo: 60 },  // IL SB4025
-  { id: 'lm-pos-11', externalId: 'legiscan:2061476', position: 'Support', setBy: 'demo-user',   daysAgo: 200 }, // IN HB1124
+  { id: 'lm-pos-11', externalId: 'legiscan:2061476', position: 'Support', setBy: 'demo-user',   daysAgo: 4, minutesLater: 94 }, // IN HB1124
   { id: 'lm-pos-12', externalId: 'legiscan:2056216', position: 'Support', setBy: 'lm-user-ed',  daysAgo: 180 }, // IN SB0006
-  { id: 'lm-pos-13', externalId: 'legiscan:1910159', position: 'Support', setBy: 'lm-user-ed',  daysAgo: 500 }, // US HB284
+  { id: 'lm-pos-13', externalId: 'legiscan:1910159', position: 'Support', setBy: 'lm-user-ed',  daysAgo: 6, minutesLater: 3 }, // US HB284
   { id: 'lm-pos-14', externalId: 'legiscan:2150744', position: 'Amend',   setBy: 'lm-user-ed',  daysAgo: 50 },  // US HB8876
   // Monitor, not Support: lm-c-88 asks for the EPA-rule overlap to be sorted before a position.
-  { id: 'lm-pos-15', externalId: 'legiscan:2058690', position: 'Monitor', setBy: 'lm-user-dep', daysAgo: 3 },   // US HB6668
+  { id: 'lm-pos-15', externalId: 'legiscan:2058690', position: 'Monitor', setBy: 'lm-user-dep', daysAgo: 3, minutesLater: 5 },   // US HB6668
 ]
 
 // Team field changes the activity lines show: who set what on a bill, oldest first within
@@ -103,41 +103,45 @@ export const LM_POSITIONS: Array<{ id: string; externalId: string; position: str
 // IN HB1124, US HB284/SB528, HB583/SB508, HB6668/SB3457), so a group's page shows a companion's
 // badge on a line once the companions are delivered. A bill the tenant lacks no-ops.
 type FieldChangeRow = Omit<DemoSeedFieldChange, 'id'>
-const prio = (externalId: string, userId: string, old: string | null, to: string, daysAgo: number): FieldChangeRow =>
-  ({ externalId, userId, field: 'priority', old, new: to, daysAgo })
-const pos = (externalId: string, userId: string, to: string, daysAgo: number): FieldChangeRow =>
-  ({ externalId, userId, field: 'position', old: null, new: to, daysAgo })
-const cf = (externalId: string, userId: string, fieldId: string, old: string | null, to: string, daysAgo: number): FieldChangeRow =>
-  ({ externalId, userId, field: 'customField', fieldId, old, new: to, daysAgo })
+const prio = (externalId: string, userId: string, old: string | null, to: string, daysAgo: number, minutesLater = 0): FieldChangeRow =>
+  ({ externalId, userId, field: 'priority', old, new: to, daysAgo, minutesLater })
+const pos = (externalId: string, userId: string, to: string, daysAgo: number, minutesLater = 0): FieldChangeRow =>
+  ({ externalId, userId, field: 'position', old: null, new: to, daysAgo, minutesLater })
+const cf = (externalId: string, userId: string, fieldId: string, old: string | null, to: string, daysAgo: number, minutesLater = 0): FieldChangeRow =>
+  ({ externalId, userId, field: 'customField', fieldId, old, new: to, daysAgo, minutesLater })
 
+// Each change sits among the bill's comments and, for most, a few minutes from a comment by the
+// same persona that gives the reason (discussion.ts). The comment is the first line of the pair
+// wherever its minutes come earlier. LM_PRIORITIES' feed events (lm-fe-p*), LM_POSITIONS, and
+// the custom field values carry the time of the change that set them.
 const LM_FIELD_CHANGE_ROWS: FieldChangeRow[] = [
-  // WI AB131
-  prio('legiscan:2006749', 'lm-user-dep', null, 'medium', 240),
-  prio('legiscan:2006749', 'lm-user-ed', 'medium', 'high', 205),
-  pos('legiscan:2006749', 'lm-user-ed', 'Support', 200),
-  cf('legiscan:2006749', 'lm-user-ed', 'lm-cf-1', 'Unknown', 'Significant (>$100K)', 200),
-  cf('legiscan:2006749', 'lm-user-ed', 'lm-cf-2', null, 'Contaminants', 200),
-  // WI SB56
-  prio('legiscan:1979645', 'lm-user-dep', 'medium', 'high', 430),
-  pos('legiscan:1979645', 'lm-user-dep', 'Support', 420),
-  cf('legiscan:1979645', 'lm-user-dep', 'lm-cf-1', null, 'Significant (>$100K)', 420),
-  // WI AB129
-  prio('legiscan:2006944', 'lm-user-ed', null, 'low', 215),
-  prio('legiscan:2006944', 'lm-user-dep', 'low', 'medium', 210),
-  cf('legiscan:2006944', 'lm-user-ed', 'lm-cf-2', null, 'Infrastructure', 210),
-  // WI SB628
-  prio('legiscan:2052600', 'lm-user-dep', 'medium', 'low', 185),
+  // WI AB131 (signed 127 days ago, so every change is a post-enactment one)
+  prio('legiscan:2006749', 'lm-user-dep', null, 'medium', 127, 124),
+  prio('legiscan:2006749', 'lm-user-ed', 'medium', 'high', 121, 3),
+  pos('legiscan:2006749', 'lm-user-ed', 'Support', 121, 63),
+  cf('legiscan:2006749', 'lm-user-ed', 'lm-cf-1', 'Unknown', 'Significant (>$100K)', 121, 64),
+  cf('legiscan:2006749', 'lm-user-ed', 'lm-cf-2', null, 'Contaminants', 121, 65),
+  // WI SB56 (signed 405 days ago)
+  prio('legiscan:1979645', 'lm-user-dep', 'medium', 'high', 404, 63),
+  pos('legiscan:1979645', 'lm-user-dep', 'Support', 402, 3),
+  cf('legiscan:1979645', 'lm-user-dep', 'lm-cf-1', null, 'Significant (>$100K)', 402, 4),
+  // WI AB129 (died 141 days ago)
+  prio('legiscan:2006944', 'lm-user-ed', null, 'low', 135, 3),
+  prio('legiscan:2006944', 'lm-user-dep', 'low', 'medium', 133, 3),
+  cf('legiscan:2006944', 'lm-user-ed', 'lm-cf-2', null, 'Infrastructure', 135, 4),
+  // WI SB628 (died 141 days ago)
+  prio('legiscan:2052600', 'lm-user-dep', 'medium', 'low', 136, 3),
   // IN HB1124
-  prio('legiscan:2061476', 'lm-user-la1', null, 'medium', 230),
-  prio('legiscan:2061476', 'demo-user', 'medium', 'high', 150),
-  pos('legiscan:2061476', 'demo-user', 'Support', 200),
-  cf('legiscan:2061476', 'demo-user', 'lm-cf-1', null, 'Minimal (<$10K)', 200),
+  prio('legiscan:2061476', 'lm-user-la1', null, 'medium', 5, 183),
+  prio('legiscan:2061476', 'demo-user', 'medium', 'high', 4, 93),
+  pos('legiscan:2061476', 'demo-user', 'Support', 4, 94),
+  cf('legiscan:2061476', 'demo-user', 'lm-cf-1', null, 'Minimal (<$10K)', 4, 95),
   // US HB284, HB583, HB6668
-  prio('legiscan:1910159', 'lm-user-fed', 'medium', 'high', 520),
-  pos('legiscan:1910159', 'lm-user-ed', 'Support', 500),
-  prio('legiscan:1933798', 'lm-user-fed', 'low', 'medium', 140),
-  prio('legiscan:2058690', 'lm-user-wq', null, 'medium', 100),
-  pos('legiscan:2058690', 'lm-user-dep', 'Monitor', 3),
+  prio('legiscan:1910159', 'lm-user-fed', 'medium', 'high', 8, 4),
+  pos('legiscan:1910159', 'lm-user-ed', 'Support', 6, 3),
+  prio('legiscan:1933798', 'lm-user-fed', 'low', 'medium', 60, 3),
+  prio('legiscan:2058690', 'lm-user-wq', null, 'medium', 14, 3),
+  pos('legiscan:2058690', 'lm-user-dep', 'Monitor', 3, 5),
 ]
 
 export const LM_TEAM_FIELD_CHANGES: DemoSeedFieldChange[] =
@@ -149,12 +153,12 @@ export const LM_CUSTOM_FIELD_VALUES: Array<{ externalId: string; fieldId: string
   { externalId: 'legiscan:2029026', fieldId: 'lm-cf-1', value: 'Moderate ($10K-$100K)', setBy: 'demo-user',   daysAgo: 270 }, // MI HB4427
   { externalId: 'legiscan:2055958', fieldId: 'lm-cf-1', value: 'Minimal (<$10K)',       setBy: 'demo-user',   daysAgo: 90 },  // MI HB5308
   { externalId: 'legiscan:2095619', fieldId: 'lm-cf-1', value: 'Significant (>$100K)',  setBy: 'demo-user',   daysAgo: 60 },  // MI SB0771
-  { externalId: 'legiscan:2006749', fieldId: 'lm-cf-1', value: 'Significant (>$100K)',  setBy: 'lm-user-ed',  daysAgo: 200 }, // WI AB131
-  { externalId: 'legiscan:1979645', fieldId: 'lm-cf-1', value: 'Significant (>$100K)',  setBy: 'lm-user-dep', daysAgo: 420 }, // WI SB56
+  { externalId: 'legiscan:2006749', fieldId: 'lm-cf-1', value: 'Significant (>$100K)',  setBy: 'lm-user-ed',  daysAgo: 121 }, // WI AB131
+  { externalId: 'legiscan:1979645', fieldId: 'lm-cf-1', value: 'Significant (>$100K)',  setBy: 'lm-user-dep', daysAgo: 402 }, // WI SB56
   { externalId: 'legiscan:1906052', fieldId: 'lm-cf-1', value: 'Unknown',               setBy: 'lm-user-dep', daysAgo: 300 }, // IL HB1175
   { externalId: 'legiscan:1952725', fieldId: 'lm-cf-1', value: 'Moderate ($10K-$100K)', setBy: 'lm-user-dep', daysAgo: 420 }, // IL HB2516
   { externalId: 'legiscan:2111275', fieldId: 'lm-cf-1', value: 'Significant (>$100K)',  setBy: 'lm-user-dep', daysAgo: 60 },  // IL SB4025
-  { externalId: 'legiscan:2061476', fieldId: 'lm-cf-1', value: 'Minimal (<$10K)',       setBy: 'demo-user',   daysAgo: 200 }, // IN HB1124
+  { externalId: 'legiscan:2061476', fieldId: 'lm-cf-1', value: 'Minimal (<$10K)',       setBy: 'demo-user',   daysAgo: 4 }, // IN HB1124
   { externalId: 'legiscan:2150744', fieldId: 'lm-cf-1', value: 'Moderate ($10K-$100K)', setBy: 'lm-user-ed',  daysAgo: 50 },  // US HB8876
 
   // Working Group (lm-cf-2) — 12 bills, mapped from each bill's theme
@@ -163,8 +167,8 @@ export const LM_CUSTOM_FIELD_VALUES: Array<{ externalId: string; fieldId: string
   { externalId: 'legiscan:2055958', fieldId: 'lm-cf-2', value: 'Habitat',        setBy: 'demo-user',   daysAgo: 90 },  // MI HB5308 — Invasive Species
   { externalId: 'legiscan:2129983', fieldId: 'lm-cf-2', value: 'Infrastructure', setBy: 'demo-user',   daysAgo: 159 }, // MI HB5674 — Drinking Water
   { externalId: 'legiscan:2095619', fieldId: 'lm-cf-2', value: 'Infrastructure', setBy: 'demo-user',   daysAgo: 60 },  // MI SB0771 — Septic & Wastewater
-  { externalId: 'legiscan:2006944', fieldId: 'lm-cf-2', value: 'Infrastructure', setBy: 'lm-user-ed',  daysAgo: 210 }, // WI AB129 — Drinking Water
-  { externalId: 'legiscan:2006749', fieldId: 'lm-cf-2', value: 'Contaminants',   setBy: 'lm-user-ed',  daysAgo: 200 }, // WI AB131 — PFAS
+  { externalId: 'legiscan:2006944', fieldId: 'lm-cf-2', value: 'Infrastructure', setBy: 'lm-user-ed',  daysAgo: 135 }, // WI AB129 — Drinking Water
+  { externalId: 'legiscan:2006749', fieldId: 'lm-cf-2', value: 'Contaminants',   setBy: 'lm-user-ed',  daysAgo: 121 }, // WI AB131 — PFAS
   { externalId: 'legiscan:1979645', fieldId: 'lm-cf-2', value: 'Infrastructure', setBy: 'lm-user-dep', daysAgo: 420 }, // WI SB56 — Lead Service Lines
   { externalId: 'legiscan:2052600', fieldId: 'lm-cf-2', value: 'Infrastructure', setBy: 'lm-user-dep', daysAgo: 180 }, // WI SB628 — Water Withdrawal
   { externalId: 'legiscan:1906052', fieldId: 'lm-cf-2', value: 'Habitat',        setBy: 'lm-user-dep', daysAgo: 300 }, // IL HB1175 — Great Lakes
@@ -562,20 +566,20 @@ export const LM_ENGAGEMENT_EVENTS: DemoSeedFeedEvent[] = [
   { id: 'lm-fe-p3',  type: 'priority_set', externalId: 'legiscan:2055958', userId: 'demo-user',   metadata: { priority: 'high' },   daysAgo: 100 }, // MI HB5308
   { id: 'lm-fe-p4',  type: 'priority_set', externalId: 'legiscan:2129983', userId: 'demo-user',   metadata: { priority: 'medium' }, daysAgo: 159 }, // MI HB5674
   { id: 'lm-fe-p5',  type: 'priority_set', externalId: 'legiscan:2095619', userId: 'demo-user',   metadata: { priority: 'high' },   daysAgo: 68 },  // MI SB0771
-  { id: 'lm-fe-p6',  type: 'priority_set', externalId: 'legiscan:2006944', userId: 'lm-user-ed',  metadata: { priority: 'medium' }, daysAgo: 210 }, // WI AB129
-  { id: 'lm-fe-p7',  type: 'priority_set', externalId: 'legiscan:2006749', userId: 'lm-user-ed',  metadata: { priority: 'high' },   daysAgo: 210 }, // WI AB131
-  { id: 'lm-fe-p8',  type: 'priority_set', externalId: 'legiscan:1979645', userId: 'lm-user-dep', metadata: { priority: 'high' },   daysAgo: 430 }, // WI SB56
-  { id: 'lm-fe-p9',  type: 'priority_set', externalId: 'legiscan:2052600', userId: 'lm-user-dep', metadata: { priority: 'low' },    daysAgo: 190 }, // WI SB628
+  { id: 'lm-fe-p6',  type: 'priority_set', externalId: 'legiscan:2006944', userId: 'lm-user-dep',  metadata: { priority: 'medium' }, daysAgo: 133, minutesLater: 3 }, // WI AB129
+  { id: 'lm-fe-p7',  type: 'priority_set', externalId: 'legiscan:2006749', userId: 'lm-user-ed',  metadata: { priority: 'high' },   daysAgo: 121, minutesLater: 3 }, // WI AB131
+  { id: 'lm-fe-p8',  type: 'priority_set', externalId: 'legiscan:1979645', userId: 'lm-user-dep', metadata: { priority: 'high' },   daysAgo: 404, minutesLater: 63 }, // WI SB56
+  { id: 'lm-fe-p9',  type: 'priority_set', externalId: 'legiscan:2052600', userId: 'lm-user-dep', metadata: { priority: 'low' },    daysAgo: 136, minutesLater: 3 }, // WI SB628
   { id: 'lm-fe-p10', type: 'priority_set', externalId: 'legiscan:1906052', userId: 'lm-user-dep', metadata: { priority: 'high' },   daysAgo: 310 }, // IL HB1175
   { id: 'lm-fe-p11', type: 'priority_set', externalId: 'legiscan:1952725', userId: 'lm-user-dep', metadata: { priority: 'medium' }, daysAgo: 430 }, // IL HB2516
   { id: 'lm-fe-p12', type: 'priority_set', externalId: 'legiscan:2109237', userId: 'lm-user-dep', metadata: { priority: 'medium' }, daysAgo: 187 }, // IL HB5268
   { id: 'lm-fe-p13', type: 'priority_set', externalId: 'legiscan:2111275', userId: 'lm-user-dep', metadata: { priority: 'high' },   daysAgo: 70 },  // IL SB4025
-  { id: 'lm-fe-p14', type: 'priority_set', externalId: 'legiscan:2061476', userId: 'demo-user',   metadata: { priority: 'high' },   daysAgo: 210 }, // IN HB1124
+  { id: 'lm-fe-p14', type: 'priority_set', externalId: 'legiscan:2061476', userId: 'demo-user',   metadata: { priority: 'high' },   daysAgo: 4, minutesLater: 93 }, // IN HB1124
   { id: 'lm-fe-p15', type: 'priority_set', externalId: 'legiscan:2056216', userId: 'lm-user-ed',  metadata: { priority: 'medium' }, daysAgo: 190 }, // IN SB0006
   { id: 'lm-fe-p16', type: 'priority_set', externalId: 'legiscan:2065860', userId: 'demo-user',   metadata: { priority: 'low' },    daysAgo: 217 }, // IN SB0188
-  { id: 'lm-fe-p17', type: 'priority_set', externalId: 'legiscan:1910159', userId: 'lm-user-ed',  metadata: { priority: 'high' },   daysAgo: 510 }, // US HB284
-  { id: 'lm-fe-p18', type: 'priority_set', externalId: 'legiscan:1933798', userId: 'lm-user-ed',  metadata: { priority: 'medium' }, daysAgo: 567 }, // US HB583
-  { id: 'lm-fe-p19', type: 'priority_set', externalId: 'legiscan:2058690', userId: 'lm-user-ed',  metadata: { priority: 'medium' }, daysAgo: 243 }, // US HB6668
+  { id: 'lm-fe-p17', type: 'priority_set', externalId: 'legiscan:1910159', userId: 'lm-user-fed',  metadata: { priority: 'high' },   daysAgo: 8, minutesLater: 4 }, // US HB284
+  { id: 'lm-fe-p18', type: 'priority_set', externalId: 'legiscan:1933798', userId: 'lm-user-fed',  metadata: { priority: 'medium' }, daysAgo: 60, minutesLater: 3 }, // US HB583
+  { id: 'lm-fe-p19', type: 'priority_set', externalId: 'legiscan:2058690', userId: 'lm-user-wq',  metadata: { priority: 'medium' }, daysAgo: 14, minutesLater: 3 }, // US HB6668
   { id: 'lm-fe-p20', type: 'priority_set', externalId: 'legiscan:2150744', userId: 'lm-user-ed',  metadata: { priority: 'high' },   daysAgo: 60 },  // US HB8876
 
   // Position set — mirrors LM_POSITIONS exactly
@@ -583,17 +587,17 @@ export const LM_ENGAGEMENT_EVENTS: DemoSeedFeedEvent[] = [
   { id: 'lm-fe-o2',  type: 'position_set', externalId: 'legiscan:2055958', userId: 'demo-user',   metadata: { position: 'Support' }, daysAgo: 90 },
   { id: 'lm-fe-o3',  type: 'position_set', externalId: 'legiscan:2095619', userId: 'demo-user',   metadata: { position: 'Monitor' }, daysAgo: 60 },
   { id: 'lm-fe-o4',  type: 'position_set', externalId: 'legiscan:2006944', userId: 'lm-user-ed',  metadata: { position: 'Support' }, daysAgo: 200 },
-  { id: 'lm-fe-o5',  type: 'position_set', externalId: 'legiscan:2006749', userId: 'lm-user-ed',  metadata: { position: 'Support' }, daysAgo: 200 },
-  { id: 'lm-fe-o6',  type: 'position_set', externalId: 'legiscan:1979645', userId: 'lm-user-dep', metadata: { position: 'Support' }, daysAgo: 420 },
+  { id: 'lm-fe-o5',  type: 'position_set', externalId: 'legiscan:2006749', userId: 'lm-user-ed',  metadata: { position: 'Support' }, daysAgo: 121, minutesLater: 63 },
+  { id: 'lm-fe-o6',  type: 'position_set', externalId: 'legiscan:1979645', userId: 'lm-user-dep', metadata: { position: 'Support' }, daysAgo: 402, minutesLater: 3 },
   { id: 'lm-fe-o7',  type: 'position_set', externalId: 'legiscan:2052600', userId: 'lm-user-dep', metadata: { position: 'Support' }, daysAgo: 180 },
   { id: 'lm-fe-o8',  type: 'position_set', externalId: 'legiscan:1906052', userId: 'lm-user-dep', metadata: { position: 'Support' }, daysAgo: 300 },
   { id: 'lm-fe-o9',  type: 'position_set', externalId: 'legiscan:1952725', userId: 'lm-user-dep', metadata: { position: 'Support' }, daysAgo: 420 },
   { id: 'lm-fe-o10', type: 'position_set', externalId: 'legiscan:2111275', userId: 'lm-user-dep', metadata: { position: 'Support' }, daysAgo: 60 },
-  { id: 'lm-fe-o11', type: 'position_set', externalId: 'legiscan:2061476', userId: 'demo-user',   metadata: { position: 'Support' }, daysAgo: 200 },
+  { id: 'lm-fe-o11', type: 'position_set', externalId: 'legiscan:2061476', userId: 'demo-user',   metadata: { position: 'Support' }, daysAgo: 4, minutesLater: 94 },
   { id: 'lm-fe-o12', type: 'position_set', externalId: 'legiscan:2056216', userId: 'lm-user-ed',  metadata: { position: 'Support' }, daysAgo: 180 },
-  { id: 'lm-fe-o13', type: 'position_set', externalId: 'legiscan:1910159', userId: 'lm-user-ed',  metadata: { position: 'Support' }, daysAgo: 500 },
+  { id: 'lm-fe-o13', type: 'position_set', externalId: 'legiscan:1910159', userId: 'lm-user-ed',  metadata: { position: 'Support' }, daysAgo: 6, minutesLater: 3 },
   { id: 'lm-fe-o14', type: 'position_set', externalId: 'legiscan:2150744', userId: 'lm-user-ed',  metadata: { position: 'Amend' },   daysAgo: 50 },
-  { id: 'lm-fe-o15', type: 'position_set', externalId: 'legiscan:2058690', userId: 'lm-user-dep', metadata: { position: 'Monitor' }, daysAgo: 3 },
+  { id: 'lm-fe-o15', type: 'position_set', externalId: 'legiscan:2058690', userId: 'lm-user-dep', metadata: { position: 'Monitor' }, daysAgo: 3, minutesLater: 5 },
 ]
 
 // ── Recent legislative activity (fictional) ─────────────────────────────────

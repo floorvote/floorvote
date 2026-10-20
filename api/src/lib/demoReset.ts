@@ -5,8 +5,8 @@ import { FIELD_CHANGED, type FieldChangedMetadata } from '../../../shared/teamFi
  *  Counts BACKWARD: positive n is the past, and n = 0 is now. This is the seed's
  *  default convention (every `…DaysAgo` / `daysAgo` field). Note the opposite
  *  sign to dateFromNow below. */
-const daysAgoDb = (n: number) =>
-  new Date(Date.now() - n * 86400_000).toISOString().slice(0, 19).replace('T', ' ')
+const daysAgoDb = (n: number, minutesLater = 0) =>
+  new Date(Date.now() - n * 86400_000 + minutesLater * 60_000).toISOString().slice(0, 19).replace('T', ' ')
 
 /**
  * A date-only (YYYY-MM-DD) offset from today, for calendar rows, snapped off the
@@ -238,7 +238,7 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
       `INSERT OR IGNORE INTO official_positions (id, bill_id, position, set_by, created_at)
        SELECT ?, (SELECT id FROM bills WHERE external_id = ? LIMIT 1), ?, ?, ?
        WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
-    ).bind(p.id, p.externalId, p.position, p.setBy, daysAgoDb(p.daysAgo), p.externalId),
+    ).bind(p.id, p.externalId, p.position, p.setBy, daysAgoDb(p.daysAgo, p.minutesLater), p.externalId),
   ))
 
   // Member votes spread across several bills
@@ -257,7 +257,7 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
       `INSERT OR IGNORE INTO comments (id, bill_id, user_id, content, created_at)
        SELECT ?, (SELECT id FROM bills WHERE external_id = ? LIMIT 1), ?, ?, ?
        WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
-    ).bind(c.id, c.externalId, c.userId, c.content, daysAgoDb(c.daysAgo), c.externalId),
+    ).bind(c.id, c.externalId, c.userId, c.content, daysAgoDb(c.daysAgo, c.minutesLater), c.externalId),
   ))
 
   // Mention notifications — one row per (comment, notified user), unread, from
@@ -291,7 +291,7 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
       `INSERT OR IGNORE INTO feed_events (id, type, bill_id, user_id, metadata, created_at)
        SELECT ?, ?, (SELECT id FROM bills WHERE external_id = ? LIMIT 1), ?, ?, ?
        WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
-    ).bind(e.id, e.type, e.externalId, e.userId, JSON.stringify(e.metadata), daysAgoDb(e.daysAgo), e.externalId),
+    ).bind(e.id, e.type, e.externalId, e.userId, JSON.stringify(e.metadata), daysAgoDb(e.daysAgo, e.minutesLater), e.externalId),
   ))
 
   // Mark demo-user as having seen the feed as of now. All seeded feed events carry
@@ -326,7 +326,7 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
       `INSERT OR IGNORE INTO team_events (id, bill_id, type, actor_user_id, metadata, created_at)
        SELECT ?, (SELECT id FROM bills WHERE external_id = ? LIMIT 1), ?, ?, ?, ?
        WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
-    ).bind(c.id, c.externalId, FIELD_CHANGED, c.userId, JSON.stringify(metadata), daysAgoDb(c.daysAgo), c.externalId)
+    ).bind(c.id, c.externalId, FIELD_CHANGED, c.userId, JSON.stringify(metadata), daysAgoDb(c.daysAgo, c.minutesLater), c.externalId)
   }))
 
   // Personal notes for demo-user
