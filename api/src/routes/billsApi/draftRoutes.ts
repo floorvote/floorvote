@@ -84,9 +84,11 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
     if (!state) {
       return c.json({ error: 'This instance tracks multiple states. Include a state when creating a draft.' }, 400)
     }
-    // Custom field values set on the create form, in the same format and under
-    // the same rules as the bill page's PUT /bills/:id/custom-fields. Validated
-    // before anything is written, so a bad value leaves no draft behind.
+    // Custom field values sent with the create request, in the same format and
+    // under the same rules as the bill page's PUT /bills/:id/custom-fields.
+    // No current client sends them (the bill page edits them in place), but the
+    // field stays accepted. Validated before anything is written, so a bad
+    // value leaves no draft behind.
     const cf = 'customFields' in body ? body.customFields : undefined
     if (cf !== undefined && cf !== null && (typeof cf !== 'object' || Array.isArray(cf))) {
       return c.json({ error: 'customFields must be an object of field ID to value' }, 400)

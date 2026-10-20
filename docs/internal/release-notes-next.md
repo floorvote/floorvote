@@ -58,3 +58,10 @@ Members can attach files to comments (#465): from a paperclip in the comment too
 **Limits.** 25 MB a file, 10 files a comment, 30 uploads a member an hour, and 5 GB for the instance. Programs, scripts, web pages (HTML, SVG, JavaScript), macro-enabled Office files, and archives are refused, by name and by the file's first bytes. Files download only for a signed-in member of the instance, while their comment shows. Uploads that never finish are deleted after an hour, uploads never posted after a day, a deleted comment's files 30 days after the delete, by the hourly cron, which also removes within the hour any file whose comment was removed with its member's account. The admin data export lists the files (not their contents).
 
 **Deploying.** Migration `0115` adds the `comment_attachments` table and touches no existing table.
+
+## Draft bills move to the Bills page
+
+Admins create draft bills from the Bills page now. An **Add draft bill** button sits there: one click on a single-state instance, a state menu first on a multi-state one. Right after creating a draft, its page shows a **Discard draft** button that removes it with no confirmation. It only appears on arrival from that button, so a reload, a link, or an ordinary visit never shows it. Settings → Draft bills is gone, and `/admin/drafts` redirects to the Bills page with the Drafts filter on, so old links and bookmarks still land on the draft list.
+
+- **Nothing to configure.** No migration and no API change.
+- **A locked demo shows the button disabled,** with the same "Locked in demo mode" hover as the other demo-locked controls.

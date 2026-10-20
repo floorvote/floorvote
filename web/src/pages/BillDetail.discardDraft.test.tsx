@@ -428,6 +428,23 @@ describe('BillDetail Discard draft', () => {
       expect(deleteCalls()).toHaveLength(0)
     })
 
+    it('is disabled in a locked demo, and clicking it neither prompts nor deletes', async () => {
+      const user = userEvent.setup()
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      demoState.demoLocked = true
+      mockApi()
+      renderPage()
+
+      await pageHasRendered()
+      await user.click(screen.getByRole('button', { name: 'More actions' }))
+      const item = screen.getByRole('menuitem', { name: /Delete this draft bill/ })
+      expect(item).toBeDisabled()
+      await user.click(item)
+
+      expect(confirm).not.toHaveBeenCalled()
+      expect(deleteCalls()).toHaveLength(0)
+    })
+
     it('still deletes after a confirmed prompt on a draft reached without the state', async () => {
       const user = userEvent.setup()
       vi.spyOn(window, 'confirm').mockReturnValue(true)
