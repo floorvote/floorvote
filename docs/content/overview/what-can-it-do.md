@@ -43,7 +43,7 @@ Once the team has talked a bill through, admins can set the team's official posi
 
 Members hear about @-mentions of themselves or their roles, and about replies on bills they've commented on, in the app and by email.
 
-Daily or weekly digests round up changes on prioritized bills and new . A week-ahead email lists upcoming hearings and team events. Each member chooses which emails they get.
+Daily or weekly digests round up changes on prioritized bills and matches. A week-ahead email lists upcoming hearings and team events. Each member chooses which emails they get.
 
 ## Feed
 
@@ -54,6 +54,18 @@ A single feed shows everything happening across your tracked bills and your team
 Every bill in the states you are tracking is accessible on one page.
 
 Search covers bill numbers, titles, abstracts, and AI summaries, and a comma-separated list of bill numbers pulls up a whole batch at once. Filters narrow the list by state, session, status, tag, committee (current or any referral), priority, position, and custom fields. Where a state publishes its own data, statuses group by stage, so bills compare across states.
+
+### Triage new matches
+
+Each newly matched bill waits for an admin to give it a priority or dismiss it, marked "New" until they do. A New matches filter lists what's waiting, a minimum relevance score keeps weak matches out, and the team's feed gets a daily row of new matches.
+
+### Saved views
+
+Save any combination of filters as a named view the whole team shares, such as one per committee, issue area, or member's beat. A view can be bookmarked, sent as a link, or added to a member's email digest.
+
+### Bulk edit bills
+
+Admins can select bills and edit them together—set a priority, record the team's position, or fill in custom fields across the whole selection in one step.
 
 ## Shared calendar
 
@@ -72,22 +84,6 @@ Admins can also restrict voting on a per-member basis, for cases where someone s
 ## Companion bills
 
 When legislators file companion bills in both chambers, FloorVote combines the pair so there's just one place for your team to discuss. Comments, votes, priority, and position are all on that one page, though each bill's status is still being tracked individually. Admins can group or split bills by hand.
-
-### Subjects
-
-Many legislatures label bills with subject terms. FloorVote shows them on each bill and offers a Subject filter, grouped by state because each legislature has its own vocabulary. They're the legislature's labels, separate from your AI tags.
-
-### Saved views
-
-Save any combination of filters as a named view the whole team shares, such as one per committee, issue area, or member's beat. A view can be bookmarked, sent as a link, or added to a member's email digest.
-
-### Bulk edit bills
-
-Admins can select bills and edit them together—set a priority, record the team's position, or fill in custom fields across the whole selection in one step.
-
-### Triage new matches
-
-Each newly matched bill waits for an admin to give it a priority or dismiss it, marked "New" until they do. A New matches filter lists what's waiting, a minimum relevance score keeps weak matches out, and the team's feed gets a daily row of new matches.
 
 ## Try it
 
