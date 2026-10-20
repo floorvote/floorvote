@@ -106,6 +106,20 @@ async function callsLogged(): Promise<Record<string, number>> {
   return counts
 }
 
+let rollCallSeq = 0
+/** A bill of the session with one roll call, so the check has something a load could write. */
+async function addRollCall(sessionId: number, state: string, stateId: number) {
+  const n = ++rollCallSeq
+  await db.insert(schema.bills).values({ billId: 7000 + n, sessionId, state, stateId, billNumber: `B${n}`, title: `Bill ${n}`, changeHash: 'h', status: 1 })
+  await db.insert(schema.rollCalls).values({ rollCallId: 8000 + n, billId: 7000 + n, date: '2025-05-01', description: 'Passage', yea: 1, total: 1, passed: 1, chamber: 'H' })
+}
+
+const queuedSessionIds = () => ingestorSend.mock.calls.map(c => c[0].sessionId as number)
+const checkedAt = async (sessionId: number) =>
+  (await db.select({ at: schema.sessions.votesCheckedAt }).from(schema.sessions)
+    .where(sql`session_id = ${sessionId}`).get())?.at
+const listCalls = () => fetchMock.mock.calls.map(c => new URL(c[0] as string)).filter(u => u.searchParams.get('op') === 'getDatasetList')
+
 const weekPasses = () => db.run(sql`UPDATE sessions SET votes_checked_at = datetime('now', '-7 days')`)
 
 beforeEach(async () => {
@@ -123,11 +137,14 @@ beforeEach(async () => {
   await db.insert(schema.tenants).values({ tenantId: 'acme', name: 'Acme', stateCoverage: JSON.stringify(['RI']), active: true })
   await db.insert(schema.sessions).values([
     { sessionId: 1, state: 'RI', stateId: 39, yearStart: 2026, yearEnd: 2026, sessionName: '2026 Regular', sessionTitle: 'Regular' },
-    // Adjourned: the hourly sync no longer covers it, so neither does the vote load.
-    { sessionId: 2, state: 'RI', stateId: 39, yearStart: 2025, yearEnd: 2025, sessionName: '2025 Regular', sessionTitle: 'Regular', sineDie: 1 },
+    // Adjourned, and its votes already loaded: the dataset hash matches the list's, as it does for
+    // every adjourned session once its catch-up load has run. The 'adjourned sessions' tests reset this.
+    { sessionId: 2, state: 'RI', stateId: 39, yearStart: 2025, yearEnd: 2025, sessionName: '2025 Regular', sessionTitle: 'Regular', sineDie: 1, votesDatasetHash: 'hash-old' },
     // No instance covers MA.
     { sessionId: 3, state: 'MA', stateId: 22, yearStart: 2026, yearEnd: 2026, sessionName: 'MA 2026', sessionTitle: 'Regular' },
   ])
+  // Roll calls, so only the state filter keeps MA out.
+  await addRollCall(3, 'MA', 22)
   await db.insert(schema.bills).values({ billId: 102, sessionId: 1, state: 'RI', stateId: 39, billNumber: 'H102', title: 'Bill 102', changeHash: 'h', status: 1 })
   await db.insert(schema.billTenants).values({ billId: 102, tenantId: 'acme', matchType: 'keyword' })
   // The roll call's totals, as the bill ingest writes them from getBill.
@@ -173,7 +190,7 @@ describe('weekly LegiScan member votes', () => {
     await checkVoteDatasets(mockEnv(), db)
     const ops = fetchMock.mock.calls.map(c => new URL(c[0] as string))
     expect(ops.map(u => [u.searchParams.get('op'), u.searchParams.get('state')])).toEqual([['getDatasetList', 'RI']])
-    // Session 2 is in the list with a hash never loaded, but it adjourned.
+    // Session 2 adjourned, and the hash it last loaded is still the list's.
     expect(ingestorSend.mock.calls.map(c => c[0].sessionId)).toEqual([1])
   })
 
@@ -189,6 +206,9 @@ describe('weekly LegiScan member votes', () => {
       { state: 'DC', provider: 'lims', previousProvider: 'legiscan' },
       { state: 'MD', provider: 'legiscan', previousProvider: 'mga' },
     ])
+    // Each has a roll call, so only the owner and provider filters keep them out.
+    await addRollCall(4, 'DC', 51)
+    await addRollCall(3_000_000_001, 'MD', 20)
 
     await checkVoteDatasets(mockEnv(), db)
 
@@ -257,7 +277,10 @@ describe('weekly LegiScan member votes', () => {
   })
 
   it('runs one dataset load per invocation and defers the rest of the batch', async () => {
-    await db.run(sql`UPDATE sessions SET sine_die = 0 WHERE session_id = 2`)
+    await db.run(sql`UPDATE sessions SET votes_dataset_hash = NULL WHERE session_id = 2`)
+    // Session 2 needs a roll call of its own to be due.
+    await db.insert(schema.bills).values({ billId: 202, sessionId: 2, state: 'RI', stateId: 39, billNumber: 'H202', title: 'Bill 202', changeHash: 'h', status: 4 })
+    await db.insert(schema.rollCalls).values({ rollCallId: 41, billId: 202, date: '2025-05-01', description: 'Passage', yea: 1, total: 1, passed: 1, chamber: 'H' })
     await checkVoteDatasets(mockEnv(), db)
     expect(ingestorSend.mock.calls.map(c => c[0].sessionId)).toEqual([1, 2])
 
@@ -342,6 +365,199 @@ describe('weekly LegiScan member votes', () => {
     await weekPasses()
     await checkVoteDatasets(mockEnv(), db)
     expect(ingestorSend).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 1, hash: 'hash-1' }))
+  })
+})
+
+describe('adjourned sessions', () => {
+  // Session 2 is an RI session that adjourned sine die, never checked. Here it
+  // also has no stored hash, as one that adjourned before the weekly load
+  // existed, and central has a bill of it with a roll call, so there is
+  // something for a load to write.
+  beforeEach(async () => {
+    await db.run(sql`UPDATE sessions SET votes_dataset_hash = NULL WHERE session_id = 2`)
+    await db.insert(schema.bills).values({ billId: 202, sessionId: 2, state: 'RI', stateId: 39, billNumber: 'H202', title: 'Bill 202', changeHash: 'h', status: 4 })
+    await db.insert(schema.rollCalls).values({ rollCallId: 41, billId: 202, date: '2025-05-01', description: 'Passage', yea: 2, nay: 1, total: 3, passed: 1, chamber: 'H' })
+  })
+
+  it('checks an adjourned session that was never loaded and queues its dataset', async () => {
+    await checkVoteDatasets(mockEnv(), db)
+    expect(ingestorSend).toHaveBeenCalledWith({ kind: 'vote-dataset', providerId: 'legiscan', sessionId: 2, key: 'key-2', hash: 'hash-old' })
+    expect(await checkedAt(2)).not.toBeNull()
+  })
+
+  it("loads an adjourned session's votes onto its bill page, with no manual backfill", async () => {
+    const adjourned = datasetZip({
+      votes: [voteFile(41, 202, [[1, 'Yea'], [2, 'Nay'], [3, 'Yea']])],
+      people: [personFile(1, 'Ann Able'), personFile(2, 'Bo Baker'), personFile(3, 'Cy Carter')],
+    })
+    zipBody = () => new Response(chunked(adjourned), { headers: { 'content-type': 'application/zip' } })
+    expect(await legislatorVotes(202, 41)).toEqual([])
+
+    await checkVoteDatasets(mockEnv(), db)
+    // Session 1's load goes first and session 2's is deferred; run until the queue drains.
+    while (ingestorSend.mock.calls.length > 0) await deliverQueued()
+
+    expect(await legislatorVotes(202, 41)).toEqual([
+      { personId: '1', name: 'Ann Able', vote: 'Yea', url: null, party: null },
+      { personId: '2', name: 'Bo Baker', vote: 'Nay', url: null, party: 'D' },
+      { personId: '3', name: 'Cy Carter', vote: 'Yea', url: null, party: 'D' },
+    ])
+    // Loaded once, so the next weekly check finds the hash unchanged and queues nothing.
+    await weekPasses()
+    await checkVoteDatasets(mockEnv(), db)
+    expect(queuedSessionIds()).not.toContain(2)
+  })
+
+  it('marks an adjourned session checked, with nothing queued, when the provider no longer lists its dataset', async () => {
+    datasetList = [{ session_id: 1, state_id: 39, dataset_hash: 'hash-1', dataset_size: 1000, access_key: 'key-1' }]
+    await checkVoteDatasets(mockEnv(), db)
+    expect(queuedSessionIds()).toEqual([1])
+    expect(await checkedAt(2)).not.toBeNull()
+
+    // Checked, so it isn't retried every day: nothing is due until the week passes.
+    ingestorSend.mockClear()
+    fetchMock.mockClear()
+    await checkVoteDatasets(mockEnv(), db)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(ingestorSend).not.toHaveBeenCalled()
+  })
+
+  it('marks an adjourned session checked, and queues nothing, when its stored hash matches', async () => {
+    await db.run(sql`UPDATE sessions SET votes_dataset_hash = 'hash-old' WHERE session_id = 2`)
+    await checkVoteDatasets(mockEnv(), db)
+    expect(queuedSessionIds()).toEqual([1])
+    expect(await checkedAt(2)).not.toBeNull()
+  })
+
+  it('leaves an adjourned session alone until six days after its last check', async () => {
+    await db.run(sql`UPDATE sessions SET votes_checked_at = datetime('now', '-2 days') WHERE session_id = 2`)
+    const before = await checkedAt(2)
+    await checkVoteDatasets(mockEnv(), db)
+    expect(queuedSessionIds()).toEqual([1])
+    expect(await checkedAt(2)).toBe(before)
+
+    await db.run(sql`UPDATE sessions SET votes_checked_at = datetime('now', '-7 days') WHERE session_id = 2`)
+    ingestorSend.mockClear()
+    await checkVoteDatasets(mockEnv(), db)
+    // Session 1 was checked on the first pass, so only session 2 is due now.
+    expect(queuedSessionIds()).toEqual([2])
+  })
+
+  it('still skips an adjourned session with sync turned off', async () => {
+    await db.run(sql`UPDATE sessions SET sync_enabled = 0 WHERE session_id = 2`)
+    await checkVoteDatasets(mockEnv(), db)
+    expect(queuedSessionIds()).toEqual([1])
+    expect(await checkedAt(2)).toBeNull()
+  })
+
+  it('still skips an adjourned session in a state no instance tracks', async () => {
+    await db.insert(schema.sessions).values({ sessionId: 5, state: 'MA', stateId: 22, yearStart: 2025, yearEnd: 2025, sessionName: 'MA 2025', sessionTitle: 'Regular', sineDie: 1 })
+    await addRollCall(5, 'MA', 22)
+    datasetList = [...datasetList as unknown[], { session_id: 5, state_id: 22, dataset_hash: 'hash-ma', dataset_size: 1000, access_key: 'key-5' }]
+    await checkVoteDatasets(mockEnv(), db)
+    expect(queuedSessionIds()).not.toContain(5)
+    expect(fetchMock.mock.calls.map(c => new URL(c[0] as string).searchParams.get('state'))).toEqual(['RI'])
+    expect(await checkedAt(5)).toBeNull()
+  })
+
+  it("still skips an adjourned session in a state another provider owns, and that provider's adjourned sessions", async () => {
+    await db.update(schema.tenants).set({ stateCoverage: JSON.stringify(['RI', 'DC', 'MD']) })
+    await db.insert(schema.sessions).values([
+      { sessionId: 6, state: 'DC', stateId: 51, yearStart: 2025, yearEnd: 2025, sessionName: 'DC 2025', sessionTitle: 'Regular', sineDie: 1 },
+      { sessionId: 3_000_000_002, state: 'MD', stateId: 20, yearStart: 2025, yearEnd: 2025, sessionName: '2025 Regular Session', sessionTitle: '2025 Regular Session', provider: 'mga', sineDie: 1 },
+    ])
+    await db.insert(schema.stateProviders).values([
+      { state: 'DC', provider: 'lims', previousProvider: 'legiscan' },
+      { state: 'MD', provider: 'legiscan', previousProvider: 'mga' },
+    ])
+    await addRollCall(6, 'DC', 51)
+    await addRollCall(3_000_000_002, 'MD', 20)
+    await checkVoteDatasets(mockEnv(), db)
+    expect(fetchMock.mock.calls.map(c => new URL(c[0] as string).searchParams.get('state'))).toEqual(['RI'])
+    expect(await checkedAt(6)).toBeNull()
+    expect(await checkedAt(3_000_000_002)).toBeNull()
+  })
+
+  it('shares one list call between a live session and an adjourned one in the same state', async () => {
+    await checkVoteDatasets(mockEnv(), db)
+    const ops = fetchMock.mock.calls.map(c => new URL(c[0] as string))
+    expect(ops.map(u => [u.searchParams.get('op'), u.searchParams.get('state')])).toEqual([['getDatasetList', 'RI']])
+    expect(queuedSessionIds()).toEqual([1, 2])
+    expect(await checkedAt(1)).not.toBeNull()
+    expect(await checkedAt(2)).not.toBeNull()
+  })
+
+  it('costs only the shared list call once every session of a state has adjourned and loaded', async () => {
+    await db.run(sql`UPDATE sessions SET sine_die = 1, votes_dataset_hash = CASE session_id WHEN 1 THEN 'hash-1' ELSE 'hash-old' END WHERE state = 'RI'`)
+    await weekPasses()
+    await checkVoteDatasets(mockEnv(), db)
+    expect(ingestorSend).not.toHaveBeenCalled()
+    expect(await callsLogged()).toEqual({ getDatasetList: 1 })
+  })
+})
+
+describe('sessions with no roll calls in central', () => {
+  // A seeded session row has no bills, so a load would write nothing and cost a
+  // quota call. Such a session is skipped, and left unchecked so it is due the
+  // moment it has a roll call.
+
+  beforeEach(async () => {
+    // Session 2 is adjourned and never loaded, as in the block above, but central has nothing of it.
+    await db.run(sql`UPDATE sessions SET votes_dataset_hash = NULL WHERE session_id = 2`)
+  })
+
+  it('skips an adjourned session with no bills: not checked, nothing queued', async () => {
+    await checkVoteDatasets(mockEnv(), db)
+    expect(queuedSessionIds()).toEqual([1])
+    expect(await checkedAt(2)).toBeNull()
+  })
+
+  it('skips an adjourned session with bills but no roll calls', async () => {
+    await db.insert(schema.bills).values({ billId: 202, sessionId: 2, state: 'RI', stateId: 39, billNumber: 'H202', title: 'Bill 202', changeHash: 'h', status: 4 })
+    await checkVoteDatasets(mockEnv(), db)
+    expect(queuedSessionIds()).toEqual([1])
+    expect(await checkedAt(2)).toBeNull()
+  })
+
+  it("doesn't count another session's roll calls", async () => {
+    // Session 2 has a bill with no roll call. The table holds roll calls, but
+    // they belong to bills of session 1, so the check must correlate by session.
+    await db.insert(schema.bills).values({ billId: 202, sessionId: 2, state: 'RI', stateId: 39, billNumber: 'H202', title: 'Bill 202', changeHash: 'h', status: 4 })
+    await db.insert(schema.bills).values({ billId: 103, sessionId: 1, state: 'RI', stateId: 39, billNumber: 'H103', title: 'Bill 103', changeHash: 'h', status: 1 })
+    await db.insert(schema.rollCalls).values({ rollCallId: 32, billId: 103, date: '2026-03-08', description: 'Concurrence', yea: 1, nay: 1, total: 2, passed: 0, chamber: 'H' })
+    await checkVoteDatasets(mockEnv(), db)
+    expect(queuedSessionIds()).toEqual([1])
+    expect(await checkedAt(2)).toBeNull()
+  })
+
+  it('skips a live session with no roll calls, then queues it once it gains one', async () => {
+    await db.run(sql`DELETE FROM roll_calls WHERE roll_call_id = 31`)
+    await db.run(sql`UPDATE sessions SET votes_dataset_hash = 'hash-old' WHERE session_id = 2`)
+    await checkVoteDatasets(mockEnv(), db)
+    expect(ingestorSend).not.toHaveBeenCalled()
+    expect(await checkedAt(1)).toBeNull()
+
+    // The ingest fetches a bill with a roll call. The session was never
+    // checked, so it is due at the next check with no week's wait.
+    await db.insert(schema.rollCalls).values({ rollCallId: 31, billId: 102, date: '2026-03-01', description: 'Third Reading', yea: 2, nay: 1, total: 3, passed: 1, chamber: 'H' })
+    await checkVoteDatasets(mockEnv(), db)
+    expect(queuedSessionIds()).toEqual([1])
+    expect(await checkedAt(1)).not.toBeNull()
+  })
+
+  it('makes no list call for a state whose only due sessions have no roll calls', async () => {
+    await db.run(sql`DELETE FROM roll_calls WHERE roll_call_id = 31`)
+    await checkVoteDatasets(mockEnv(), db)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(ingestorSend).not.toHaveBeenCalled()
+    expect(await checkedAt(1)).toBeNull()
+    expect(await checkedAt(2)).toBeNull()
+  })
+
+  it('spends the one list call on the sessions that have roll calls', async () => {
+    await checkVoteDatasets(mockEnv(), db)
+    expect(listCalls()).toHaveLength(1)
+    expect(queuedSessionIds()).toEqual([1])
   })
 })
 

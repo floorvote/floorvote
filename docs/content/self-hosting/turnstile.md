@@ -32,6 +32,13 @@ wrangler secret put TURNSTILE_SECRET_KEY --env legiscan
 > [!WARNING]
 > **Order matters.** Because the check fails closed once the secret is set, setting the secret *before* the login form is sending a token will 403 every login. Deploy the sitekey-bearing frontend **first**, then set the secret.
 
+> [!WARNING]
+> **A sitekey without the secret looks like it works.** The widget appears and visitors complete it, but the server skips the check, so the login form is protected by the rate limiter alone. When you add a tenant, set both. `scripts/new-instance.sh` does this for you, and refuses to continue if the sitekey is set but it can't get the secret. To check an existing tenant, a login request without a token should come back `403 Verification required.`:
+>
+> ```bash
+> curl -s -X POST -H 'Content-Type: application/json' -d '{"email":"check@example.invalid"}' https://<tenant-host>/api/auth/magic-link
+> ```
+
 To turn Turnstile off later, delete the secret — the check reverts to "skipped" instantly, no redeploy needed:
 
 ```bash
