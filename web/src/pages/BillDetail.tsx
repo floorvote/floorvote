@@ -56,6 +56,7 @@ import { CustomFieldsSection, type CustomFieldDef } from '../components/CustomFi
 import { useDemo } from '../context/DemoContext'
 import { useNotifications } from '../context/NotificationsContext'
 import { markNotificationsRead } from '../lib/demoReadState'
+import { isJustCreatedDraft } from '../lib/justCreatedDraft'
 import { relativeTime, absoluteTime } from '../lib/time'
 import { COMMENT_STYLE } from '../../../shared/commentStyle'
 import { billDisplayTitle } from '../../../shared/billTitle'
@@ -828,6 +829,8 @@ export function BillDetail() {
   // button's other disabled reasons.
   const linkGate = useRequiredSubmit({ missingRequired: !linkTarget, blocked: linking || demoLocked })
   const [deletingDraft, setDeletingDraft] = useState(false)
+  // Why Discard draft (the button shown right after a draft is created) failed.
+  const [discardError, setDiscardError] = useState<string | null>(null)
   // The page's toast for overflow-menu actions: Copy link's feedback, and a failed split.
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
   // Grouping by hand, from the overflow menu (admins).
@@ -1337,6 +1340,22 @@ export function BillDetail() {
     }
   }
 
+  // Discard draft: the one-click undo for a draft just created from the bills
+  // page. No confirm, because nothing has been added to the draft yet; the
+  // overflow menu's "Delete this draft bill" keeps its confirm for any other time.
+  async function handleDiscardDraft() {
+    if (!bill || deletingDraft || demoLocked) return
+    setDeletingDraft(true)
+    setDiscardError(null)
+    try {
+      await apiFetch(`/bills/${bill.id}`, { method: 'DELETE' })
+      navigate('/bills')
+    } catch (err) {
+      setDiscardError(err instanceof ApiError ? err.message : 'Failed to discard draft.')
+      setDeletingDraft(false)
+    }
+  }
+
   async function handleLinkDraft() {
     if (!bill || !linkTarget || demoLocked) return
     if (!window.confirm('Link this draft to the filed bill? The draft will be retired and all votes, positions, comments, notes, custom fields, and calendar events will be moved to the filed bill. This cannot be undone.')) return
@@ -1529,6 +1548,30 @@ export function BillDetail() {
         .comment-new { animation: slideInComment 0.38s cubic-bezier(0.16, 1, 0.3, 1) both; }
       `}</style>
 
+      {/* Only on arrival from "Add draft bill": the marker is router state, so a
+          reload, a link, or any other visit to the draft never shows this. */}
+      {isAdmin && bill.isDraft && isJustCreatedDraft(location.state) && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px 12px', marginBottom: 12 }}>
+          <button
+            type="button"
+            onClick={handleDiscardDraft}
+            disabled={deletingDraft || demoLocked}
+            title={demoLocked ? 'Locked in demo mode' : undefined}
+            aria-busy={deletingDraft || undefined}
+            style={{
+              fontFamily: 'inherit', fontSize: fontSize.sm, fontWeight: fontWeight.medium,
+              padding: '4px 6px', border: 'none', background: 'none', color: color.textSecondary,
+              cursor: demoLocked ? 'not-allowed' : deletingDraft ? 'default' : 'pointer',
+              opacity: demoLocked ? 0.6 : 1,
+            }}
+          >
+            Discard draft
+          </button>
+          {discardError && (
+            <span role="alert" style={{ minWidth: 0, overflowWrap: 'anywhere', fontSize: fontSize.sm, color: color.textErrorRed }}>{discardError}</span>
+          )}
+        </div>
+      )}
 
       {/* Static info block */}
       <div style={{ ...CARD, padding: '20px 24px' }}>
