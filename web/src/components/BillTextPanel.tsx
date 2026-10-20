@@ -9,7 +9,7 @@ import { parseHandle } from '../../../shared/billHandle'
 import type { GroupBillTexts } from '../../../shared/companionGroups'
 import { orderGroupTexts } from '../lib/groupTexts'
 import { claimGlow, CLAIM_GLOW_FLASH } from '../lib/claimGlow'
-import { focusPassage, markPassage, PASSAGE_ID, type ClaimDocument, type Span } from '../lib/claimLinks'
+import { focusPassage, markPassage, PASSAGE_ID, type ClaimDocument, type PageQuote, type Passage, type Span } from '../lib/claimLinks'
 import { describePageTarget, looksLikePdf, pdfPageTarget } from '../lib/pdfPages'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 
@@ -40,7 +40,14 @@ interface TextVersion {
 type RequestBase = { key: number; billId: string; billNumber: string | null; document: ClaimDocument }
 
 /** An HTML claim: the passage to highlight, as the claim's `matched` text and where it is. */
-export type HtmlPassageRequest = RequestBase & { matched: string; quoteAt: Span; quote?: undefined; page?: undefined }
+export type HtmlPassageRequest = RequestBase & {
+  matched: string
+  quoteAt: Span
+  /** The claim's other passages (#802), all highlighted with the first. */
+  rest?: Passage[]
+  quote?: undefined
+  page?: undefined
+}
 
 /**
  * A PDF claim (#572): the page the model cited (null when it gave none, and
@@ -50,6 +57,8 @@ export type HtmlPassageRequest = RequestBase & { matched: string; quoteAt: Span;
 export type PdfPageRequest = RequestBase & {
   quote: string
   page: number | null
+  /** The claim's other quotes (#802), each listed under its page. */
+  rest?: PageQuote[]
   matched?: undefined
   quoteAt?: undefined
   /**
@@ -218,7 +227,7 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, req
   // carry the fragment. Null when the passage isn't in the document.
   const requestShown = activePassage && activePassage.document.docId === selectedDocId ? activePassage : null
   const passageShown = requestShown && !isPdfRequest(requestShown) ? requestShown : null
-  const marked = useMemo(() => (passageShown && content !== null ? markPassage(content, passageShown) : null), [passageShown, content])
+  const marked = useMemo(() => (passageShown && content !== null ? markPassage(content, [passageShown, ...(passageShown.rest ?? [])]) : null), [passageShown, content])
   const passageMissing = passageShown !== null && content !== null && marked === null
   const [passageUrl, setPassageUrl] = useState<string | null>(null)
   useEffect(() => {
@@ -237,7 +246,11 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, req
   // beside it, since the page can't highlight a PDF. Focus moves to the quote,
   // once per request, so a keyboard or screen reader user gets it.
   const pdfRequest = requestShown && isPdfRequest(requestShown) ? requestShown : null
-  const pdfTarget = pdfRequest ? pdfPageTarget(pdfRequest.page) : null
+  // The quote whose page the frame shows: the first until the reader picks another's page label (#802).
+  const [pickedPage, setPickedPage] = useState<{ key: number; at: number } | null>(null)
+  const pdfQuotes: PageQuote[] = pdfRequest ? [{ quote: pdfRequest.quote, page: pdfRequest.page }, ...(pdfRequest.rest ?? [])] : []
+  const shownQuote = pdfRequest && pickedPage?.key === pdfRequest.key ? pickedPage.at : 0
+  const pdfTarget = pdfRequest ? pdfPageTarget(pdfQuotes[shownQuote]?.page ?? pdfRequest.page) : null
   const pageFragment = pdfTarget ? `#page=${pdfTarget.page}` : ''
   const captionRef = useRef<HTMLDivElement>(null)
   const captionId = `pdf-quote${useId()}`
@@ -424,13 +437,38 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, req
         aria-label="Quote behind the claim you opened"
         // Focus lands here, and not every screen reader reads a group's contents
         // on focus, so the page line and the quote are its description.
-        aria-describedby={`${captionId}-page ${captionId}-quote`}
+        aria-describedby={pdfQuotes.length === 1 ? `${captionId}-page ${captionId}-quote` : `${captionId}-page`}
         onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); closeQuote() } }}
         style={{ ...claimGlow, borderRadius: radius.md, padding: '8px 8px 10px 12px', marginBottom: 8, display: 'flex', gap: 8, alignItems: 'flex-start' }}
       >
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p id={`${captionId}-page`} style={{ fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: color.textSecondary, margin: 0 }}>{describePageTarget(pdfTarget)}</p>
-          <blockquote id={`${captionId}-quote`} style={{ fontSize: fontSize.sm, color: color.textSlate, margin: '4px 0 0' }}>{`“${pdfRequest.quote}”`}</blockquote>
+          {pdfQuotes.length === 1 ? (
+            <>
+              <p id={`${captionId}-page`} style={{ fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: color.textSecondary, margin: 0 }}>{describePageTarget(pdfTarget)}</p>
+              <blockquote id={`${captionId}-quote`} style={{ fontSize: fontSize.sm, color: color.textSlate, margin: '4px 0 0' }}>{`“${pdfRequest.quote}”`}</blockquote>
+            </>
+          ) : (
+            // Several quotes (#802): each under its page, whose label moves the frame there.
+            <div id={`${captionId}-page`}>
+              {pdfQuotes.map((q, i) => {
+                const target = pdfPageTarget(q.page)
+                return (
+                  <div key={i} style={{ marginTop: i === 0 ? 0 : 8 }}>
+                    <p style={{ fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: color.textSecondary, margin: 0 }}>
+                      <a
+                        href={`#page=${target.page}`}
+                        className="blue-link"
+                        aria-current={i === shownQuote ? 'true' : undefined}
+                        title={target.fallback ? describePageTarget(target) : undefined}
+                        onClick={e => { e.preventDefault(); setPickedPage({ key: pdfRequest.key, at: i }) }}
+                      >{`Page ${target.page}`}</a>
+                    </p>
+                    <blockquote style={{ fontSize: fontSize.sm, color: color.textSlate, margin: '4px 0 0' }}>{`“${q.quote}”`}</blockquote>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
         <button type="button" className="claim-quote-close" aria-label="Close quote" onClick={closeQuote}>×</button>
       </div>
@@ -537,7 +575,7 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, req
                       // A new frame for each request: a loaded viewer ignores a
                       // fragment-only change, so the page wouldn't move.
                       <iframe
-                        key={`${selectedDocId}:${pdfRequest?.key ?? 'plain'}`}
+                        key={`${selectedDocId}:${pdfRequest?.key ?? 'plain'}:${shownQuote}`}
                         src={`${pdfBlobUrl}${pageFragment}`}
                         style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
                         title="Bill text"

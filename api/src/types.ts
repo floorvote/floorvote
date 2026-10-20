@@ -13,6 +13,9 @@ export type Env = {
   DB: D1Database
   BILLS_BUCKET?: R2Bucket
   BILL_QUEUE?: Queue
+  // Comment attachments (#465): on once this bucket is bound, never on a
+  // DEMO_MODE instance.
+  ATTACHMENTS_BUCKET?: R2Bucket
   RESEND_API_KEY: string
   // AI Gateway (unified billing) — gateway-routed path
   CF_AIG_TOKEN?: string        // Account-level CF token with AI Gateway Run scope

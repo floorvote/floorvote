@@ -84,7 +84,9 @@ export function CollapsibleSection({
         borderRadius: radius.sm,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
+      {/* Above the body's clip box, which reaches OPEN_PAINT_ROOM up over this row
+          once open and, later in the DOM, would otherwise cover the title. */}
+      <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
         {/* With a closed summary beside it, the header keeps its width and the
             summary truncates. Otherwise a long label (a provider's name, say)
             wraps instead of being clipped on a narrow screen. */}

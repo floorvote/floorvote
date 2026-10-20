@@ -6,7 +6,7 @@ import { REGENERATE_PRESERVES_DESCRIPTION } from '../lib/billDetailCopy'
 export type ReprocessScope = 'prioritized' | 'all'
 
 interface Props {
-  /** Fully-analyzed (keyword/manual) bill count, for the "all" button. */
+  /** Analyzed (keyword/manual) bill count, for the "all" button. */
   matchedBillsCount: number | null
   /** Subset with a priority set, for the "prioritized" button. */
   prioritizedBillsCount: number | null
@@ -69,7 +69,7 @@ export function ReprocessScopeModal({
         </button>
       )}
       <button type="button" style={actionBtn(color.textErrorRed)} onClick={() => onChoose('all')}>
-        <strong>Yes, all {plural(allCount, 'fully analyzed bill')}</strong>
+        <strong>Yes, all {plural(allCount, 'analyzed bill')}</strong>
         <div style={{ marginTop: 2, opacity: 0.85 }}>Bills matching keywords or manually added.</div>
       </button>
       <button ref={cancelRef} type="button" style={actionBtn(color.linkBlue)} onClick={onDismiss}>

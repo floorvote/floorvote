@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, within, waitFor, act } from '@testing-library/react'
+import { render, screen, fireEvent, within, waitFor, act, cleanup } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { color } from '../../styles/tokens'
 import { decodeStatus } from '../../lib/legislativeStatus'
@@ -222,7 +222,34 @@ describe('BillListPane: request params', () => {
   })
 })
 
-describe('BillListPane: load more', () => {
+// jsdom has no IntersectionObserver. This one records each observer so a test
+// can say the sentinel has scrolled into range.
+type FakeObserver = { cb: IntersectionObserverCallback; options?: IntersectionObserverInit; targets: Element[]; live: boolean }
+const observers: FakeObserver[] = []
+class FakeIntersectionObserver {
+  private rec: FakeObserver
+  constructor(cb: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+    this.rec = { cb, options, targets: [], live: true }
+    observers.push(this.rec)
+  }
+  observe(el: Element) { this.rec.targets.push(el) }
+  unobserve() {}
+  disconnect() { this.rec.live = false }
+}
+beforeEach(() => { observers.length = 0; vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver) })
+afterEach(() => { vi.unstubAllGlobals() })
+
+// Report the sentinel as intersecting to every observer still watching it.
+function intersect() {
+  act(() => {
+    for (const o of observers.filter(o => o.live && o.targets.length > 0)) {
+      o.cb([{ isIntersecting: true, target: o.targets[0] } as IntersectionObserverEntry], {} as IntersectionObserver)
+    }
+  })
+}
+const pageCalls = (n: number) => hoisted.calls.filter(c => c.startsWith('/bills?') && c.includes(`page=${n}`))
+
+describe('BillListPane: infinite scroll', () => {
   const firstPage = Array.from({ length: 3 }, (_, i) => bill(`a${i}`, `HB ${i + 1}`))
   const secondPage = [bill('a3', 'HB 4'), bill('a4', 'HB 5')]
 
@@ -235,32 +262,39 @@ describe('BillListPane: load more', () => {
     }
   })
 
-  it('offers "Show more" with the count, appends the next page, and then hides the button', async () => {
+  it('fetches and appends the next page when the sentinel intersects, with no button', async () => {
     renderPane('/RI/2026/HB%201')
     const pane = await screen.findByRole('navigation', { name: 'Bill list' })
-    const more = await within(pane).findByRole('button', { name: 'Show more (3 of 5)' })
+    await within(pane).findByText('Title of HB 3')
     expect(within(pane).getByText('5 bills')).toBeInTheDocument()
+    expect(within(pane).queryByRole('button', { name: /Show more/ })).toBeNull()
 
-    fireEvent.click(more)
+    intersect()
     await within(pane).findByText('Title of HB 5')
     expect(within(pane).getAllByRole('listitem')).toHaveLength(5)
-    expect(within(pane).queryByRole('button', { name: /Show more/ })).toBeNull()
-    const billCalls = hoisted.calls.filter(c => c.startsWith('/bills?'))
-    const q = new URLSearchParams(billCalls[billCalls.length - 1].slice(7))
-    expect(q.get('page')).toBe('2')
+    expect(pageCalls(2)).toHaveLength(1)
+  })
+
+  it('observes within the pane\'s own scroll container, prefetching before the end shows', async () => {
+    renderPane('/RI/2026/HB%201')
+    const pane = await screen.findByRole('navigation', { name: 'Bill list' })
+    await within(pane).findByText('Title of HB 3')
+    const live = observers.find(o => o.live && o.targets.length > 0)
+    expect(live?.options?.root).toBe(pane.querySelector('ul'))
+    expect(live?.options?.rootMargin).toBe('1200px')
   })
 
   it('does not scroll the reader back to the current bill when more rows arrive', async () => {
     renderPane('/RI/2026/HB%201')
     const pane = await screen.findByRole('navigation', { name: 'Bill list' })
-    const more = await within(pane).findByRole('button', { name: /Show more/ })
+    await within(pane).findByText('Title of HB 3')
     await waitFor(() => expect(scrollSpy).toHaveBeenCalledTimes(1))
-    fireEvent.click(more)
+    intersect()
     await within(pane).findByText('Title of HB 5')
     expect(scrollSpy).toHaveBeenCalledTimes(1)
   })
 
-  it('ignores a second click while the page is loading', async () => {
+  it('requests nothing while a page is loading, and shows a Loading row', async () => {
     let release: (v: unknown) => void = () => {}
     hoisted.respond = (path) => {
       if (!path.startsWith('/bills?')) return {}
@@ -269,13 +303,46 @@ describe('BillListPane: load more', () => {
     }
     renderPane('/RI/2026/HB%201')
     const pane = await screen.findByRole('navigation', { name: 'Bill list' })
-    fireEvent.click(await within(pane).findByRole('button', { name: /Show more/ }))
-    const busy = await within(pane).findByRole('button', { name: 'Loading…' })
-    expect(busy).toBeDisabled()
-    fireEvent.click(busy)
-    expect(hoisted.calls.filter(c => c.startsWith('/bills?') && c.includes('page=2'))).toHaveLength(1)
+    await within(pane).findByText('Title of HB 3')
+    intersect()
+    await within(pane).findByText('Loading…')
+    intersect()
+    intersect()
+    expect(pageCalls(2)).toHaveLength(1)
     await act(async () => { release(page(secondPage, { page: 2, total: 5, totalPages: 2 })) })
     await within(pane).findByText('Title of HB 5')
+    expect(within(pane).queryByText('Loading…')).toBeNull()
+  })
+
+  it('stops after a failed page, and Retry fetches it again', async () => {
+    let fail = true
+    hoisted.respond = (path) => {
+      if (!path.startsWith('/bills?')) return {}
+      if (new URLSearchParams(path.slice(7)).get('page') === '2') return fail ? new Error('boom') : page(secondPage, { page: 2, total: 5, totalPages: 2 })
+      return page(firstPage, { total: 5, totalPages: 2 })
+    }
+    renderPane('/RI/2026/HB%201')
+    const pane = await screen.findByRole('navigation', { name: 'Bill list' })
+    await within(pane).findByText('Title of HB 3')
+    intersect()
+    await within(pane).findByText('Couldn’t load more')
+    intersect()
+    await act(async () => {})
+    expect(pageCalls(2)).toHaveLength(1)
+
+    fail = false
+    fireEvent.click(within(pane).getByRole('button', { name: 'Retry' }))
+    await within(pane).findByText('Title of HB 5')
+    expect(pageCalls(2)).toHaveLength(2)
+  })
+
+  it('requests nothing when there is no further page', async () => {
+    hoisted.respond = (path) => path.startsWith('/bills?') ? page(firstPage, { total: 3, totalPages: 1 }) : {}
+    renderPane('/RI/2026/HB%201')
+    const pane = await screen.findByRole('navigation', { name: 'Bill list' })
+    await within(pane).findByText('Title of HB 3')
+    intersect()
+    expect(pageCalls(2)).toHaveLength(0)
   })
 })
 
@@ -391,6 +458,23 @@ describe('BillListPane: filter and sort summary', () => {
     const tip = await screen.findByRole('tooltip')
     for (const label of ['Year: 2026', 'Relevance 5+', 'Team: Alpha']) expect(tip).toHaveTextContent(label)
     expect(tip).toHaveTextContent(/high/i)
+  })
+
+  it('names a picked committee in the active filters from the facets, and asks the facets only when one is picked', async () => {
+    hoisted.respond = (path) => {
+      if (path.startsWith('/bills/facets')) return { committee: { c1: 3 }, committeeInfo: { c1: { name: 'Judiciary', state: 'RI', chamber: 'S' } } }
+      return path.startsWith('/bills?') ? page([PLAIN, GROUP3], { total: 2 }) : {}
+    }
+    sessionStorage.setItem('lastBillsUrl', '/bills?year=2026')
+    await paneReady()
+    expect(hoisted.calls.some(c => c.startsWith('/bills/facets'))).toBe(false)
+    cleanup()
+    hoisted.calls = []
+    sessionStorage.setItem('lastBillsUrl', '/bills?committee=c1')
+    const pane = await paneReady()
+    await waitFor(() => expect(hoisted.calls.filter(c => c.startsWith('/bills/facets'))).toEqual(['/bills/facets?committee=c1']))
+    hover(within(pane).getByRole('button', { name: /1 filter · Sorted by/ }))
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Referred to Judiciary (Senate)')
   })
 
   it('shows the same list on keyboard focus, and Escape closes it', async () => {

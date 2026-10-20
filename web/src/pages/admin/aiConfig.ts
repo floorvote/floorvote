@@ -161,8 +161,8 @@ export type KeywordResyncResult = {
  * Warning to show after a keyword sync, or null when the sync was fully healthy.
  *
  * The tenant-side pass and central's enrichment pass fail independently, and only
- * central can promote a stub to full analysis. A central failure therefore leaves
- * precisely the newly-matching stubs unanalyzed while the tenant-side count still
+ * central can promote a monitored bill to analysis. A central failure therefore leaves
+ * precisely the newly matching bills unanalyzed while the tenant-side count still
  * reports a plausible non-zero "queued" — which reads as success. Surfacing it is
  * the difference between noticing in seconds and auditing the database by hand.
  *
@@ -171,13 +171,13 @@ export type KeywordResyncResult = {
  */
 export function centralSyncWarning(r: KeywordResyncResult): string | null {
   if (r.centralStatus === 'rate_limited') {
-    return 'Central was rate-limited, so bills currently monitored as stubs were not upgraded. Wait a minute and save again.'
+    return 'Central was rate-limited, so newly matching bills were not analyzed. Wait a minute and save again.'
   }
   if (r.centralStatus === 'failed') {
-    return 'Could not reach central, so bills currently monitored as stubs were not upgraded. Try saving again.'
+    return 'Could not reach central, so newly matching bills were not analyzed. Try saving again.'
   }
   if (r.centralTruncated) {
-    return 'Too many new matches to process at once — save again to continue upgrading the rest.'
+    return 'Too many new matches to process at once — save again to continue analyzing the rest.'
   }
   return null
 }

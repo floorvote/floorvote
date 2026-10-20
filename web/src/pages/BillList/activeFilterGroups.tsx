@@ -19,6 +19,11 @@ export type ActiveFilterGroupArgs = {
   year: number[]
   tag: string[]
   subject: string[]
+  /** The committees picked (#471), by central's id, and how the filter reads them. */
+  committee?: string[]
+  committeeScope?: 'current' | 'any'
+  /** Each committee's label by id, from the facets (`committeeGroups`). A committee with none reads by its id. */
+  committeeLabels?: Readonly<Record<string, string>>
   field: Record<string, string[]>
   minRelevance: number
   positionOptions: { value: string; label?: string }[]
@@ -38,6 +43,7 @@ export type ActiveFilterGroupArgs = {
   onRemoveYear: (y: number) => void
   onRemoveTag: (tag: string) => void
   onRemoveSubject: (subject: string) => void
+  onRemoveCommittee?: (committee: string) => void
   onRemoveField: (fieldId: string, value: string) => void
   onRemoveMinRelevance: () => void
 }
@@ -80,6 +86,16 @@ export function subjectChipLabel(subject: string, isMultiState: boolean): string
     : subject
 }
 
+/**
+ * A committee chip's label (#471): "In Judiciary (Senate)" under the current committee scope, "Referred to Judiciary
+ * (Senate)" under any referral, so the chip says which the list is filtered by. The label is the facets' (they name
+ * every committee picked), and a committee they have not named reads by its id.
+ */
+export function committeeChipLabel(id: string, scope: 'current' | 'any' | undefined, labels: Readonly<Record<string, string>> = {}): string {
+  const name = labels[id] ?? `committee ${id}`
+  return scope === 'current' ? `In ${name}` : `Referred to ${name}`
+}
+
 // fieldId here is normally the def's real id, but it can still be the raw slug
 // for a render or two after mount (useBillFilters resolves it against
 // customFieldDefs once those load, but that's async) — match by either so the
@@ -91,7 +107,7 @@ export function customFieldChipLabel(fieldId: string, v: string, defs: ReadonlyA
 
 export type ActiveFilterLabelArgs = Pick<ActiveFilterGroupArgs,
   'state' | 'status' | 'stage' | 'position' | 'priority' | 'year' |
-  'tag' | 'subject' | 'field' | 'minRelevance' | 'positionOptions' | 'isMultiState'
+  'tag' | 'subject' | 'field' | 'minRelevance' | 'positionOptions' | 'isMultiState' | 'committee' | 'committeeScope' | 'committeeLabels'
 > & { customFieldDefs: ReadonlyArray<ChipFieldDef>; active?: readonly ActiveFilter[] }
 
 /** Whether the list of active filters (when there is one) holds this group's filter as a chip. */
@@ -116,6 +132,7 @@ export function activeFilterLabelGroups(a: ActiveFilterLabelArgs): { key: string
   if (a.minRelevance > 0) push('minRelevance', [relevanceChipLabel(a.minRelevance)])
   push('tag', a.tag.map(tag => tag === FILTER_ANY ? 'Any tag' : tag))
   push('subject', a.subject.map(subject => subjectChipLabel(subject, a.isMultiState)))
+  push('committee', (a.committee ?? []).map(c => committeeChipLabel(c, a.committeeScope, a.committeeLabels)))
   for (const [fieldId, values] of Object.entries(a.field)) {
     push(`field.${fieldId}`, values.map(v => customFieldChipLabel(fieldId, v, a.customFieldDefs)))
   }
@@ -201,6 +218,14 @@ export function buildActiveFilterGroups(a: ActiveFilterGroupArgs): ActiveFilterG
       />
     )
   }))
+  push('committee', (a.committee ?? []).map(c => (
+    <ActiveChip
+      key={`committee-${c}`}
+      label={committeeChipLabel(c, a.committeeScope, a.committeeLabels)}
+      color="gray"
+      onRemove={() => a.onRemoveCommittee?.(c)}
+    />
+  )))
   for (const [fieldId, values] of Object.entries(a.field)) {
     push(`field.${fieldId}`, values.map(v => {
       return (
