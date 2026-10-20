@@ -117,7 +117,7 @@ function claimSourcesSchema(input: ClaimSourceInput) {
         },
         quote: {
           type: 'string',
-          description: 'copied character for character from the bill text: one short contiguous passage (one sentence or less is best) that supports the claim; never paraphrase, abbreviate, correct, add ellipses, or join separate passages',
+          description: 'copied character for character from the bill text: one short contiguous passage (one sentence or less is best) that supports the claim; a claim that draws on separate passages gets one entry for each passage, with the same claim; never paraphrase, abbreviate, correct, or add ellipses',
         },
         ...(input === 'pdf' ? {
           page: {

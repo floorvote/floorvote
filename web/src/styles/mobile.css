@@ -8,6 +8,9 @@
    mobile top bar — flip it to the brand's white below. */
 *:focus-visible { outline: 2px solid var(--fv-focus-ring); outline-offset: 2px; }
 *:focus:not(:focus-visible) { outline: none; }
+/* Switches hide their input (0x0), so ring the track that follows it instead. */
+.fv-switch-input:focus-visible + span { outline: 2px solid var(--fv-focus-ring); outline-offset: 2px; }
+
 .sidebar-brand { --fv-focus-ring: var(--fv-text-on-brand); }
 .mobile-topbar { --fv-focus-ring: var(--fv-text-on-brand); }
 
