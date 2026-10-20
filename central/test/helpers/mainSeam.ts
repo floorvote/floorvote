@@ -32,7 +32,8 @@ import { clearDb } from './migrations'
  *     expect(seam.sentToTenant(run)).toContainEqual(expect.objectContaining({ ... }))
  *   })
  *
- * A snapshot provider syncs through `runSnapshotSync`, as its hourly job does.
+ * A snapshot provider syncs through `runSnapshotSync`, the sync its hourly job
+ * runs, which throws every failed session rather than waiting for a streak.
  * Every queue is a mock, so nothing is consumed until a test hands the queued
  * messages to the ingestor (`syncAndIngest`, `ingest`).
  */

@@ -53,7 +53,8 @@ export function isSnapshotProvider(provider: Provider | undefined): provider is 
  */
 export const FAILED_PASSES_BEFORE_ALERT = 3
 
-type SessionFailure = { session: SessionRow; error: Error }
+/** A session whose pass threw, and whether its failed row was logged. */
+type SessionFailure = { session: SessionRow; error: Error; logged: boolean }
 
 /**
  * `force` (the admin "run now" route) ignores the hour of day: the provider
@@ -76,7 +77,9 @@ export async function runSnapshotSync(
 export async function runHourlySnapshotSync(provider: Provider, env: Env, db: Db): Promise<void> {
   const { failures } = await syncSessions(provider, env, db, {})
   const alerts: Error[] = []
-  for (const { session, error } of failures) {
+  for (const { session, error, logged } of failures) {
+    // A failed pass that couldn't be logged can't be counted, so it alerts.
+    if (!logged) { alerts.push(error); continue }
     const inARow = await failedPassesInARow(db, session)
     if (inARow < FAILED_PASSES_BEFORE_ALERT) {
       console.warn(`[sync-${provider.id}] ${session.sessionName}: ${inARow} failed in a row; alerting at ${FAILED_PASSES_BEFORE_ALERT}`)
@@ -160,8 +163,8 @@ async function syncSessions(
       await db.update(sessions).set({ lastSyncedAt: nowDb() }).where(eq(sessions.sessionId, session.sessionId))
     } catch (err) {
       console.error(`[sync-${provider.id}] ${session.sessionName} failed:`, err)
-      failures.push({ session, error: err instanceof Error ? err : new Error(String(err)) })
-      await logOutcome(db, session, { status: 'failed', error: errorMessage(err) })
+      const logged = await logOutcome(db, session, { status: 'failed', error: errorMessage(err) })
+      failures.push({ session, error: err instanceof Error ? err : new Error(String(err)), logged })
     }
   }
   return { reports, failures }
@@ -189,7 +192,7 @@ function errorMessage(err: unknown): string {
  */
 function logOutcome(
   db: Db, session: SessionRow, outcome: { status: 'ok' } | { status: 'failed'; error: string },
-): Promise<void> {
+): Promise<boolean> {
   return logSyncPass(db, {
     syncedAt: nowDb(),
     state: session.state,

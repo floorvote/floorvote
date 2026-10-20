@@ -630,6 +630,18 @@ describe('the hourly cron\'s alert', () => {
     await expect(runHourlySnapshotSync(lims, e, db())).rejects.toThrow('periods endpoint down')
   })
 
+  it('throws at once when it can\'t log the failed pass, since it can\'t count the streak', async () => {
+    limsDown()
+    await env.DB.exec('DROP TABLE session_sync_log')
+    try {
+      const { env: e } = makeEnv()
+      await expect(runHourlySnapshotSync(lims, e, db())).rejects.toThrow('Network connection lost.')
+    } finally {
+      // The schema is built once per file (test/setup.ts); put the table back.
+      await setupDb(legiscanMigrations)
+    }
+  })
+
   it('leaves runSnapshotSync, which "run now" calls, throwing on the first failure', async () => {
     limsDown()
     const { env: e } = makeEnv()
