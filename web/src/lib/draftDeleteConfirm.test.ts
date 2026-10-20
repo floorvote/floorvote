@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { bulkDraftDeleteConfirm, singleDraftDeleteConfirm, type DraftDeletePreview } from './draftDeleteConfirm'
 
 const preview = (p: Partial<Omit<DraftDeletePreview, 'engagement'>> & { engagement?: Partial<DraftDeletePreview['engagement']> }): DraftDeletePreview => ({
+  draftIds: p.draftIds ?? [],
   drafts: p.drafts ?? 1,
   filed: p.filed ?? 0,
   engagedDrafts: p.engagedDrafts ?? 0,

@@ -196,7 +196,8 @@ vi.mock('../../lib/api', () => {
         if (bulkDeleteState.preview) return bulkDeleteState.preview(body) as T
         const named = body.ids ? shown.filter(b => body.ids!.includes(b.id)) : shown.filter(b => b.isDraft)
         const drafts = named.filter(b => b.isDraft).length
-        return { drafts, filed: named.length - drafts, engagedDrafts: 0, engagement: { votes: 0, comments: 0, notes: 0, positions: 0 } } as T
+        const draftIds = named.filter(b => b.isDraft).map(b => b.id)
+        return { draftIds, drafts, filed: named.length - drafts, engagedDrafts: 0, engagement: { votes: 0, comments: 0, notes: 0, positions: 0 } } as T
       }
       bulkDeleteState.bodies.push(body)
       const ids = body.ids ?? shown.filter(b => b.isDraft).map(b => b.id)
@@ -1754,7 +1755,7 @@ describe('BillList delete selected drafts', () => {
   it('sends includeEngaged when the preview finds work on the selected drafts', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     facetsState.bills = [DRAFT_A, DRAFT_B]
-    bulkDeleteState.preview = () => ({ drafts: 1, filed: 0, engagedDrafts: 1, engagement: { votes: 2, comments: 0, notes: 0, positions: 0 } })
+    bulkDeleteState.preview = () => ({ draftIds: ['draft-a'], drafts: 1, filed: 0, engagedDrafts: 1, engagement: { votes: 2, comments: 0, notes: 0, positions: 0 } })
     renderWithSidebarSpy()
     await select('First Draft')
 
@@ -1766,7 +1767,7 @@ describe('BillList delete selected drafts', () => {
   })
 
   describe('with every bill matching the Drafts filter selected', () => {
-    it('offers Delete drafts, counted by the preview, and deletes by the filter', async () => {
+    it('offers Delete drafts, counted by the preview, and deletes the drafts it counted', async () => {
       vi.spyOn(window, 'confirm').mockReturnValue(true)
       facetsState.bills = [DRAFT_A, DRAFT_B]
       renderWithSidebarSpy('/bills?drafts=1')
@@ -1778,7 +1779,7 @@ describe('BillList delete selected drafts', () => {
       await waitFor(() => expect(screen.queryByText('First Draft')).toBeNull())
       expect(screen.queryByText('Second Draft')).toBeNull()
       expect(window.confirm).toHaveBeenCalledWith("Delete 2 draft bills? This can't be undone.")
-      expect(bulkDeleteState.bodies).toEqual([{ filter: 'drafts=1' }])
+      expect(bulkDeleteState.bodies).toEqual([{ ids: ['draft-a', 'draft-b'] }])
       expect(bulkDeleteState.previewBodies[0]).toEqual({ filter: 'drafts=1', preview: true })
       // Every draft it held is gone, so the selection ends with it.
       expect(screen.queryByRole('button', { name: /Apply to/ })).toBeNull()

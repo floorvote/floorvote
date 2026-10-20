@@ -860,9 +860,10 @@ describe('BulkActionBar — AI analysis count before Apply', () => {
 describe('BulkActionBar — delete drafts', () => {
   const deleteBtn = () => screen.queryByRole('button', { name: /Delete drafts/i })
   const bill = (id: string, isDraft: boolean) => ({ id, priority: null, position: null, matchType: 'manual', isDraft })
-  type Preview = { drafts: number; filed: number; engagedDrafts: number; engagement: { votes: number; comments: number; notes: number; positions: number } }
-  const preview = (drafts: number, filed = 0, engagedDrafts = 0, engagement: Partial<Preview['engagement']> = {}): Preview =>
-    ({ drafts, filed, engagedDrafts, engagement: { votes: 0, comments: 0, notes: 0, positions: 0, ...engagement } })
+  type Preview = { draftIds: string[]; drafts: number; filed: number; engagedDrafts: number; engagement: { votes: number; comments: number; notes: number; positions: number } }
+  /** A preview counting `drafts` drafts, named d1, d2, and so on unless `draftIds` names them. */
+  const preview = (drafts: number, filed = 0, engagedDrafts = 0, engagement: Partial<Preview['engagement']> = {}, draftIds?: string[]): Preview =>
+    ({ draftIds: draftIds ?? Array.from({ length: drafts }, (_, i) => `d${i + 1}`), drafts, filed, engagedDrafts, engagement: { votes: 0, comments: 0, notes: 0, positions: 0, ...engagement } })
 
   /** Answers POST /bills/bulk-delete: `onPreview` for a preview request, `onDelete` for the delete itself. */
   function mockBulkDelete(onPreview: (body: Record<string, unknown>) => unknown, onDelete: (body: Record<string, unknown>) => unknown = () => ({ deleted: [], skipped: [] })) {
@@ -1003,7 +1004,7 @@ describe('BulkActionBar — delete drafts', () => {
       fireEvent.click(deleteBtn()!)
 
       await waitFor(() => expect(onDraftsDeleted).toHaveBeenCalledWith(['d1']))
-      expect(await screen.findByText(/1 draft was kept: it gained votes, positions, comments, or notes since you asked\. Try again to see what goes with it\./i)).toBeInTheDocument()
+      expect(await screen.findByText(/1 draft was kept: it gained votes, comments, notes, or positions since you asked\. Try again to see what goes with it\./i)).toBeInTheDocument()
     })
 
     it('names drafts the server could not delete in the bar', async () => {
@@ -1118,7 +1119,7 @@ describe('BulkActionBar — delete drafts', () => {
       expect(deleteBtn()).not.toBeInTheDocument()
     })
 
-    it('confirms with a fresh preview, deletes by the filter with includeEngaged, and ends the selection', async () => {
+    it('confirms with a fresh preview, deletes the drafts it counted with includeEngaged, and ends the selection', async () => {
       let previews = 0
       mockBulkDelete(
         () => (++previews === 1 ? preview(3) : preview(3, 0, 1, { notes: 2 })),
@@ -1135,8 +1136,22 @@ describe('BulkActionBar — delete drafts', () => {
       expect(confirm.mock.calls[0][0]).toBe(
         "Delete 3 draft bills? 1 of them has your team's work on it: 2 notes, which will be deleted too. To keep it, link that draft to its filed bill instead. This can't be undone.",
       )
-      expect(deleteBodies()).toEqual([{ filter: serializeBillFilter(DRAFTS), includeEngaged: true }])
+      expect(deleteBodies()).toEqual([{ ids: ['d1', 'd2', 'd3'], includeEngaged: true }])
       expect(onClearSelection).toHaveBeenCalled()
+    })
+
+    it('deletes only the drafts the confirm counted, not one made since', async () => {
+      // The count on the button came from an earlier preview. The click's preview names d1 and d2. A draft d9
+      // made after that preview, while the confirm is open, still matches the filter, but is never named.
+      mockBulkDelete(() => preview(2, 0, 0, {}, ['d1', 'd2']), () => ({ deleted: ['d1', 'd2'], skipped: [] }))
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      renderFilterMode()
+
+      fireEvent.click(await screen.findByRole('button', { name: /Delete drafts \(2\)/ }))
+
+      await waitFor(() => expect(deleteBodies()).toHaveLength(1))
+      expect(deleteBodies()[0]).toEqual({ ids: ['d1', 'd2'] })
+      expect(deleteBodies()[0]).not.toHaveProperty('filter')
     })
 
     it('keeps the selection when some drafts could not be deleted', async () => {

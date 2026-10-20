@@ -2,6 +2,8 @@ import { apiFetch } from './api'
 
 /** What deleting a selection of draft bills would take: POST /bills/bulk-delete with `preview: true`. */
 export type DraftDeletePreview = {
+  /** The drafts counted, by id. The delete sends exactly these, so it takes only what the confirm counted. */
+  draftIds: string[]
   /** Drafts in the selection, which a delete removes. */
   drafts: number
   /** Filed bills in the selection, which a delete leaves alone. */
@@ -40,6 +42,9 @@ function workList(e: DraftDeletePreview['engagement']): string {
 }
 
 const UNDONE = "This can't be undone."
+
+/** What a delete refused with 409 after a confirm that named no work says: the draft gained some since the preview. */
+export const GAINED_ENGAGEMENT = 'This draft gained votes, comments, notes, or positions since you asked. Try again to see what goes with it.'
 
 /** The confirm for deleting one draft: the bill page's overflow menu, and Discard draft when it has engagement. */
 export function singleDraftDeleteConfirm(preview: DraftDeletePreview): string {

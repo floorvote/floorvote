@@ -494,8 +494,9 @@ export function BulkActionBar({
         return
       }
       if (!window.confirm(bulkDraftDeleteConfirm(preview))) return
-      const body: { ids?: string[]; filter?: string; includeEngaged?: true } =
-        filter !== null ? { filter } : { ids: selectedDrafts.map(b => b.id) }
+      // Exactly the drafts the confirm counted: a draft made while it was open, which a select-all's filter
+      // would now match, is never deleted uncounted.
+      const body: { ids: string[]; includeEngaged?: true } = { ids: preview.draftIds }
       // Only a confirm that named the work on the drafts lets the server delete it.
       if (hasEngagement(preview)) body.includeEngaged = true
       const result = await apiFetch<{
@@ -511,7 +512,7 @@ export function BulkActionBar({
       const failed = skipped.filter(s => s.reason === 'error' || s.reason === 'not_draft').length
       const messages: string[] = []
       if (kept > 0) {
-        messages.push(`${kept.toLocaleString()} ${plural(kept, 'draft was', 'drafts were')} kept: ${plural(kept, 'it', 'they')} gained votes, positions, comments, or notes since you asked. Try again to see what goes with ${plural(kept, 'it', 'them')}.`)
+        messages.push(`${kept.toLocaleString()} ${plural(kept, 'draft was', 'drafts were')} kept: ${plural(kept, 'it', 'they')} gained votes, comments, notes, or positions since you asked. Try again to see what goes with ${plural(kept, 'it', 'them')}.`)
       }
       if (failed > 0) {
         messages.push(`${failed.toLocaleString()} ${plural(failed, 'draft', 'drafts')} could not be deleted. Try again.`)

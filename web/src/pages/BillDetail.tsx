@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useState, useRef } from 'react'
 import { useParams, Link, useNavigate, useNavigation, useLocation, useLoaderData, redirect, type LoaderFunctionArgs } from 'react-router-dom'
 import { apiFetch, ApiError } from '../lib/api'
-import { fetchDraftDeletePreview, hasEngagement, singleDraftDeleteConfirm } from '../lib/draftDeleteConfirm'
+import { fetchDraftDeletePreview, GAINED_ENGAGEMENT, hasEngagement, singleDraftDeleteConfirm } from '../lib/draftDeleteConfirm'
 import { apiFetchForLoader } from '../lib/loaderFetch'
 import { groupByHand } from '../lib/groupByHand'
 import { useAuth } from '../hooks/useAuth'
@@ -1391,13 +1391,23 @@ export function BillDetail() {
           stop()
           return
         }
-        await apiFetch(`/bills/${bill.id}?includeEngaged=1`, { method: 'DELETE' })
+        // Only a confirm that named the work lets the server delete it, as in the overflow menu.
+        try {
+          await apiFetch(`/bills/${bill.id}${hasEngagement(preview) ? '?includeEngaged=1' : ''}`, { method: 'DELETE' })
+        } catch (second) {
+          throw refusedAfterPreview(second)
+        }
       }
       navigate('/bills')
     } catch (err) {
       setDiscardError(err instanceof ApiError ? err.message : 'Failed to discard draft.')
       stop()
     }
+  }
+
+  // A 409 after a preview means the draft gained work since: say so, and that trying again shows what goes with it.
+  function refusedAfterPreview(err: unknown): unknown {
+    return err instanceof ApiError && err.status === 409 ? new ApiError(409, GAINED_ENGAGEMENT) : err
   }
 
   // The overflow menu's "Delete this draft bill": asks the server what the draft
@@ -1414,6 +1424,7 @@ export function BillDetail() {
         return
       }
       await apiFetch(`/bills/${bill.id}${hasEngagement(preview) ? '?includeEngaged=1' : ''}`, { method: 'DELETE' })
+        .catch((err: unknown) => { throw refusedAfterPreview(err) })
       navigate('/bills')
     } catch (err) {
       setDeleteError(err instanceof ApiError ? err.message : 'Failed to delete draft.')
@@ -1823,7 +1834,7 @@ export function BillDetail() {
                 menuRows.push({
                   key: 'delete-draft',
                   label: 'Delete this draft bill',
-                  description: 'Permanently removes this draft. Any votes, positions, comments, and notes on it go too. To keep them, link it to its filed bill instead.',
+                  description: 'Permanently removes this draft. Any votes, comments, notes, and positions on it go too. To keep them, link it to its filed bill instead.',
                   tone: 'danger',
                   disabled: deletingDraft || demoLocked,
                   onSelect: handleDeleteDraft,

@@ -126,9 +126,10 @@ const CONFIG = {
 const FILED = { isDraft: false, externalId: 'ext-1', status: '1', session: '2026 Regular Session' }
 
 type Delete = (path: string) => Promise<unknown>
-type Preview = { drafts: number; filed: number; engagedDrafts: number; engagement: { votes: number; comments: number; notes: number; positions: number } }
-const CLEAN: Preview = { drafts: 1, filed: 0, engagedDrafts: 0, engagement: { votes: 0, comments: 0, notes: 0, positions: 0 } }
-const ENGAGED: Preview = { drafts: 1, filed: 0, engagedDrafts: 1, engagement: { votes: 3, comments: 2, notes: 1, positions: 0 } }
+type Preview = { draftIds: string[]; drafts: number; filed: number; engagedDrafts: number; engagement: { votes: number; comments: number; notes: number; positions: number } }
+const CLEAN: Preview = { draftIds: ['42'], drafts: 1, filed: 0, engagedDrafts: 0, engagement: { votes: 0, comments: 0, notes: 0, positions: 0 } }
+const ENGAGED: Preview = { draftIds: ['42'], drafts: 1, filed: 0, engagedDrafts: 1, engagement: { votes: 3, comments: 2, notes: 1, positions: 0 } }
+const GAINED = 'This draft gained votes, comments, notes, or positions since you asked. Try again to see what goes with it.'
 const ENGAGED_CONFIRM = "Delete this draft bill? Your team's 3 votes, 2 comments, and 1 note on it will be deleted too. To keep them, link the draft to its filed bill instead. This can't be undone."
 
 /** @param overrides fields of the bill the page loads (a filed bill: FILED).
@@ -387,7 +388,7 @@ describe('BillDetail Discard draft', () => {
 
   describe('clicking it on a draft that has engagement', () => {
     const refuse = (path: string) => path === '/bills/42'
-      ? Promise.reject(new api.ApiError(409, 'This draft has engagement; link it to a filed bill instead.'))
+      ? Promise.reject(new api.ApiError(409, 'This draft has votes, comments, notes, or a position.'))
       : Promise.resolve({ ok: true })
 
     it('confirms with what goes with it, then deletes it with includeEngaged and returns to the bills page', async () => {
@@ -420,6 +421,21 @@ describe('BillDetail Discard draft', () => {
       expect(deleteCalls()).toHaveLength(1)
       expect(navigateMock).not.toHaveBeenCalled()
       expect(screen.queryByRole('alert')).toBeNull()
+    })
+
+    it('deletes without includeEngaged when the follow-up preview finds no engagement, and says so if refused again', async () => {
+      const user = userEvent.setup()
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      markJustCreatedDraft('42')
+      mockApi({}, async () => { throw new api.ApiError(409, 'This draft has votes, comments, notes, or a position.') }, async () => CLEAN)
+      renderPage()
+
+      await user.click(await screen.findByRole('button', { name: 'Discard draft' }))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(GAINED)
+      expect(confirm).toHaveBeenCalledWith("Delete this draft bill? This can't be undone.")
+      expect(deleteCalls().map(([path]) => path)).toEqual(['/bills/42', '/bills/42'])
+      expect(navigateMock).not.toHaveBeenCalled()
     })
 
     it('shows the error when the preview fails, and deletes nothing more', async () => {
@@ -513,7 +529,7 @@ describe('BillDetail Discard draft', () => {
       await pageHasRendered()
       await user.click(screen.getByRole('button', { name: 'More actions' }))
       const item = screen.getByRole('menuitem', { name: /Delete this draft bill/ })
-      expect(item).toHaveTextContent(/votes, positions, comments, and notes on it go too\. To keep them, link it to its filed bill instead\./)
+      expect(item).toHaveTextContent(/Any votes, comments, notes, and positions on it go too\. To keep them, link it to its filed bill instead\./)
       expect(item).not.toHaveTextContent(/can.?t be deleted/)
     })
 
@@ -581,14 +597,14 @@ describe('BillDetail Discard draft', () => {
     it("shows the server's refusal and stays on the page when the draft gained engagement after a clean preview (409)", async () => {
       const user = userEvent.setup()
       vi.spyOn(window, 'confirm').mockReturnValue(true)
-      mockApi({}, async () => { throw new api.ApiError(409, 'This draft has engagement; link it to a filed bill instead.') })
+      mockApi({}, async () => { throw new api.ApiError(409, 'This draft has votes, comments, notes, or a position.') })
       renderPage()
 
       await pageHasRendered()
       await user.click(screen.getByRole('button', { name: 'More actions' }))
       await user.click(screen.getByRole('menuitem', { name: /Delete this draft bill/ }))
 
-      expect(await screen.findByRole('alert')).toHaveTextContent('This draft has engagement; link it to a filed bill instead.')
+      expect(await screen.findByRole('alert')).toHaveTextContent(GAINED)
       expect(navigateMock).not.toHaveBeenCalled()
       expect(screen.getByRole('menuitem', { name: /Delete this draft bill/ })).toBeEnabled()
     })
