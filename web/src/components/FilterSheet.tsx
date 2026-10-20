@@ -13,6 +13,9 @@ import { activeFilters, decodeSubjectFilter, withBillFilter } from '../../../sha
 import { filterableCustomFields } from '../lib/customFieldFilters'
 import { buildActiveFilterGroups } from '../pages/BillList/activeFilterGroups'
 import { GroupOperator } from '../pages/BillList/GroupOperator'
+import { CommitteeScopeSwitch, ProceduralTag } from '../pages/BillList/CommitteeFilter'
+import { committeeLabelsOf, type CommitteeGroup } from '../lib/committeeGroups'
+import type { ReactNode } from 'react'
 
 interface FilterSheetProps {
   isOpen: boolean
@@ -66,6 +69,12 @@ interface FilterSheetProps {
   positionOptions: { value: string; label: string }[]
   tagOptions: string[]
   subjectGroups: SubjectGroup[]
+  /** The committees picked (#471), how the filter reads them, and the options (`committeeGroups`). Same values desktop reads. */
+  committee?: string[]
+  committeeScope?: 'current' | 'any'
+  committeeGroups?: CommitteeGroup[]
+  onCommitteeChange?: (v: string[]) => void
+  onCommitteeScopeChange?: (v: 'current' | 'any') => void
   yearOptions: { value: string; label: string }[]
   totalYearCount?: number
   stateOptions: { value: string; label: string }[]
@@ -116,7 +125,7 @@ interface FilterSheetProps {
 // entries — represented here as `field.<fieldId>` rather than as one more member
 // of the static union. Binary custom fields, like the two toggles above,
 // never become a `dimension` value at all — they stay direct controls.
-type StaticDimensionKey = 'status' | 'stage' | 'priority' | 'position' | 'year' | 'tag' | 'subject' | 'state'
+type StaticDimensionKey = 'status' | 'stage' | 'priority' | 'position' | 'year' | 'tag' | 'subject' | 'committee' | 'state'
 type CustomFieldDimensionKey = `field.${string}`
 type DimensionKey = StaticDimensionKey | CustomFieldDimensionKey
 
@@ -130,7 +139,7 @@ function customFieldIdFromDimension(key: CustomFieldDimensionKey): string {
   return key.slice('field.'.length)
 }
 
-function SheetChip({ label, active, onClick, count }: { label: string; active: boolean; onClick: () => void; count?: number }) {
+function SheetChip({ label, active, onClick, count, tag }: { label: string; active: boolean; onClick: () => void; count?: number; tag?: ReactNode }) {
   return (
     <button
       onClick={onClick}
@@ -155,6 +164,7 @@ function SheetChip({ label, active, onClick, count }: { label: string; active: b
       }}
     >
       {label}
+      {tag}
       {count !== undefined && (
         <span style={{
           fontSize: fontSize.sm,
@@ -263,6 +273,7 @@ export function FilterSheet({
   isAdmin, newMatches, newMatchesCount, unvoted, unvotedCount, drafts, draftCount, hasDrafts, uniqueStates, isMultiState,
   match, onMatchChange,
   statusOptions, stageOptions, statusGroups, priorityOptions, positionOptions, tagOptions, subjectGroups, yearOptions, totalYearCount, stateOptions,
+  committee = [], committeeScope = 'any', committeeGroups = [], onCommitteeChange = () => {}, onCommitteeScopeChange = () => {},
   customFieldDefs, field, onFieldChange,
   onStatusChange, onStageChange, onPriorityChange, onPositionChange, onTagChange, onSubjectChange, onYearChange, onStateChange,
   onMinRelevanceChange, onMyBillsChange, onNewMatchesChange, onUnvotedChange, onDraftsChange,
@@ -319,6 +330,7 @@ export function FilterSheet({
       status, stage, priority, position, tag, year,
       state,
       subject: subject.flatMap(v => decodeSubjectFilter(v) ?? []),
+      committee, committeeScope,
       minRelevance: minRelevance > 0 ? minRelevance : null,
       myBills, unvoted, newMatches, drafts, field, search,
     }),
@@ -348,6 +360,7 @@ export function FilterSheet({
     year: filterDimensionLabel('year'),
     tag: filterDimensionLabel('tag'),
     subject: filterDimensionLabel('subject'),
+    committee: filterDimensionLabel('committee'),
   }
 
   // Which custom field types are filterable, and what control each gets, is
@@ -383,7 +396,8 @@ export function FilterSheet({
   const activeFilterGroups = buildActiveFilterGroups({
     state, status, stage, position, priority,
     year: year.map(Number),
-    tag, subject, field, minRelevance,
+    tag, subject, committee, committeeScope, field, minRelevance,
+    committeeLabels: committeeLabelsOf(committeeGroups),
     positionOptions,
     customFieldDefs,
     isMultiState,
@@ -396,6 +410,7 @@ export function FilterSheet({
     onRemoveYear: y => onYearChange(year.filter(v => v !== String(y))),
     onRemoveTag: t => onTagChange(tag.filter(x => x !== t)),
     onRemoveSubject: v => onSubjectChange(subject.filter(x => x !== v)),
+    onRemoveCommittee: v => onCommitteeChange(committee.filter(x => x !== v)),
     onRemoveField: (fieldId, v) => onFieldChange(fieldId, (field[fieldId] ?? []).filter(x => x !== v)),
     onRemoveMinRelevance: () => onMinRelevanceChange(0),
   })
@@ -643,6 +658,9 @@ export function FilterSheet({
                 {subjectGroups.length > 0 && (
                   <DimensionRow label={STATIC_DIMENSION_LABELS.subject} selectedCount={subject.length} onClick={() => setDimension('subject')} buttonRef={rowRef('subject')} />
                 )}
+                {(committeeGroups.length > 0 || committee.length > 0) && (
+                  <DimensionRow label={STATIC_DIMENSION_LABELS.committee} selectedCount={committee.length} onClick={() => setDimension('committee')} buttonRef={rowRef('committee')} />
+                )}
                 {/* Dropdown custom fields — a drill-down dimension like Status
                     or Tags, dynamic per tenant (see lib/customFieldFilters.ts). */}
                 {optionsCustomFields.map(({ def }) => {
@@ -809,6 +827,30 @@ export function FilterSheet({
               onToggle={(value) => toggleItem(subject, value, onSubjectChange)}
               limitSubjects
             />
+          )}
+
+          {/* Committees (#471): the scope switch, then each state's committees, procedural ones last and tagged. */}
+          {dimension === 'committee' && (
+            <div>
+              <CommitteeScopeSwitch scope={committeeScope} onScopeChange={onCommitteeScopeChange} name="committee-scope-sheet" />
+              {committeeGroups.map(group => (
+                <div key={group.state} style={{ marginTop: 8 }}>
+                  {isMultiState && <SectionLabel title={group.state} />}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {group.options.map(opt => (
+                      <SheetChip
+                        key={opt.value}
+                        label={opt.label}
+                        active={committee.includes(opt.value)}
+                        onClick={() => toggleItem(committee, opt.value, onCommitteeChange)}
+                        count={opt.count}
+                        tag={opt.procedural ? <ProceduralTag /> : undefined}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
 
           {/* Dropdown custom field options (level 2) — same chip-list

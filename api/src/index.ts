@@ -5,6 +5,8 @@ import { bodyLimit } from 'hono/body-limit'
 import { authRoutes } from './routes/auth'
 import { billsApiRouter } from './routes/billsApi'
 import { commentsApiRouter } from './routes/commentsApi'
+import { attachmentsRouter } from './routes/attachmentsApi'
+import { purgeAttachments } from './lib/attachments'
 import { feedRouter } from './routes/feed'
 import { usersRouter, rolesRouter } from './routes/users'
 import { statsRouter } from './routes/stats'
@@ -131,6 +133,7 @@ app.use('/api/auth/*', bodyLimit({ maxSize: 16 * 1024 }))
 app.route('/api/auth', authRoutes)
 app.route('/api/bills', billsApiRouter)
 app.route('/api/comments', commentsApiRouter)
+app.route('/api/attachments', attachmentsRouter)
 app.route('/api/admin', adminApiRouter)
 app.route('/api/config', configRouter)
 app.route('/api/feed', feedRouter)
@@ -358,6 +361,16 @@ export default {
           }
         } catch (err) {
           console.error(`[body-events] sync failed, skipping this run: ${describeErrorCauseChain(err)}`)
+        }
+      }))
+      // Comment attachments (#465): uploads never posted, after a day, and
+      // deleted comments' files, 30 days on. Does nothing without the bucket.
+      ctx.waitUntil(runJob(env, 'attachments-purge', async () => {
+        try {
+          const n = await purgeAttachments(env, db, new Date(event.scheduledTime))
+          if (n > 0) console.log(`[attachments-purge] purged=${n}`)
+        } catch (err) {
+          console.error(`[attachments-purge] failed, skipping this run: ${describeErrorCauseChain(err)}`)
         }
       }))
       return

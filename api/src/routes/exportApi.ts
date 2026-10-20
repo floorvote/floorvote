@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { getDb } from '../db/client'
 import {
   users, bills, billTexts,
-  memberVotes, officialPositions, comments, commentReactions, notes,
+  memberVotes, officialPositions, comments, commentReactions, commentAttachments, notes,
   feedEvents, publicReports, associationConfig,
   customFieldDefinitions, billCustomFieldValues,
   calendarEvents, calendarEventBills,
@@ -23,6 +23,7 @@ const tableMap = {
   officialPositions,
   comments,
   commentReactions,
+  commentAttachments,
   notes,
   feedEvents,
   publicReports,
@@ -43,7 +44,7 @@ type TableName = keyof typeof tableMap
 
 const SAFE_USER_COLUMNS = ['id', 'email', 'name', 'role', 'title', 'invitedBy', 'createdAt', 'lastActive', 'deactivatedAt', 'canVote'] as const
 
-// A tenant's `bills` table is dominated by lightweight "monitoring" stubs —
+// A tenant's `bills` table is dominated by monitored bills —
 // bills outside the keyword set the tenant doesn't actually track (on a large
 // multi-state tenant this is ~97% of rows). The export only includes
 // "meaningful" bills: anything the tenant tracks, has analyzed, has prioritized,
@@ -134,7 +135,7 @@ exportApiRouter.get('/rich', async (c) => {
   if (limit > 500) limit = 500
 
   // Only meaningful bills carry useful rich data and are actually viewed;
-  // restricting here avoids pulling rich data for lightweight stubs.
+  // restricting here avoids pulling rich data for monitored bills.
   const isCentralBill = sql`(${sql.join(HANDLE_PREFIXES.map(prefix => sql`${bills.externalId} LIKE ${`${prefix}%`}`), sql` OR `)})`
   const where = cursor
     ? sql`${isCentralBill} AND ${MEANINGFUL_BILLS} AND ${bills.id} > ${cursor}`

@@ -13,6 +13,7 @@ import { SessionChip } from '../../components/SessionChip'
 import { LastActionChip } from '../../components/LastActionChip'
 import { CompactPositionSelect } from '../../components/CompactPositionSelect'
 import { CompactPrioritySelect } from '../../components/CompactPrioritySelect'
+import { DismissAnnouncement } from '../../components/DismissAnnouncement'
 import { isUntriagedNewMatch } from '../../lib/newMatch'
 import { NewMatchChip } from '../../components/NewMatchChip'
 import { HoverTooltip } from '../../components/HoverTooltip'
@@ -166,13 +167,14 @@ export const BillRow = memo(function BillRow({
   // read-only. Once resolved (priority set or dismissed), this predicate flips
   // false and the row shows the plain priority control.
   const isNewMatch = isUntriagedNewMatch(bill)
+  const [announcement, setAnnouncement] = useState('')
   const renderPriorityControl = () => (
     <CompactPrioritySelect
       billId={bill.id}
       current={bill.priority}
       onChange={(p) => onPriorityChange(bill.id, p)}
       newMatch={isNewMatch}
-      onDismiss={() => onTriageDismiss?.(bill.id)}
+      onDismiss={() => { setAnnouncement('Dismissed'); onTriageDismiss?.(bill.id) }}
       isFiltered={bill.priority != null && filter.priority.includes(bill.priority)}
     />
   )
@@ -289,6 +291,7 @@ export const BillRow = memo(function BillRow({
         color: 'inherit',
       }}
     >
+      <DismissAnnouncement message={announcement} />
       {isAdmin && (isSelectionMode || hovered) ? (
         <div className="bill-row-checkbox" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <input

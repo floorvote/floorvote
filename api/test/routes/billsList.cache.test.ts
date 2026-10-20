@@ -98,6 +98,7 @@ describe('listCache helper (direct put/get)', () => {
       position: 'position=Support', priority: 'priority=high', tag: 'tag=Clerk', subject: 'subject=UT:Elections',
       minRelevance: 'minRelevance=5', search: 'search=election', myBills: 'myBills=1', unvoted: 'unvoted=1', newMatches: 'newMatches=1',
       drafts: 'drafts=1', match: 'match=any', field: 'field.area=North',
+      committee: 'committee=101', committeeScope: 'committeeScope=current',
     }
     expect(Object.keys(SET).sort()).toEqual(BILL_FILTER_DEFS.map(d => d.name).sort())
     const unfiltered = keyOf('')

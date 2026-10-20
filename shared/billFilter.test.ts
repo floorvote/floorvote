@@ -39,6 +39,8 @@ function generate(seed: number): BillFilter {
   return {
     status: multi(), stage: multi(), year: some(['2024', '2025', '2026']), sessionName: multi(), state: some(['NJ', 'TX', 'UT']),
     position: multi([FILTER_ANY, FILTER_NONE]), priority: multi([FILTER_ANY, FILTER_NONE]), tag: multi([FILTER_ANY]),
+    committee: some(['1021', '3000000004', ...AWKWARD], 3),
+    committeeScope: r() < 0.5 ? 'current' : 'any',
     subject: some([
       { state: 'UT', name: 'Elections' }, { state: 'NJ', name: 'Resolutions: Congratulatory' }, { state: '*', name: 'a&b=c' },
       { state: 'TX', name: ' spaced ' }, { state: 'UT', name: '日本' },
@@ -355,7 +357,7 @@ describe('the definitions', () => {
   it('give a name that is both a key of the value and the key the query string uses today', () => {
     const keys = serializeBillFilter(filterOf({
       status: ['a'], stage: ['a'], year: ['a'], sessionName: ['a'], state: ['a'], position: ['a'], priority: ['a'], tag: ['a'],
-      subject: [{ state: 'a', name: 'b' }], minRelevance: 1, search: 'a', myBills: true, unvoted: true, newMatches: true, drafts: true, match: 'any',
+      subject: [{ state: 'a', name: 'b' }], committee: ['a'], committeeScope: 'current', minRelevance: 1, search: 'a', myBills: true, unvoted: true, newMatches: true, drafts: true, match: 'any',
     })).split('&').map(p => p.slice(0, p.indexOf('=')))
     // A custom field's key is `field.<its slug or id>`, so it is the one name not written as itself.
     expect(keys.sort()).toEqual(BILL_FILTER_DEFS.map(d => d.name).filter(n => n !== 'field').sort())
@@ -479,11 +481,12 @@ describe('activeFilters: the one list of filters with a value', () => {
   it('holds every filter with a value, in the order serialize writes them, for a filter with everything set', () => {
     const everything = filterOf({
       status: ['2'], stage: ['introduced'], year: ['2026'], sessionName: ['2026 Regular'], state: ['UT'], position: ['Support'], priority: ['high'],
-      tag: ['Water'], subject: [{ state: 'UT', name: 'Elections' }], minRelevance: 4, search: 'storm',
+      tag: ['Water'], subject: [{ state: 'UT', name: 'Elections' }], committee: ['1021'], committeeScope: 'current', minRelevance: 4, search: 'storm',
       myBills: true, unvoted: true, newMatches: true, drafts: true, match: 'any', field: { team: ['a'] },
     })
-    // The stage is a way of choosing statuses, so it is listed with the status: one entry for both (#677).
-    const expected = BILL_FILTER_DEFS.map(d => d.name).filter(n => n !== 'match' && n !== 'stage')
+    // The stage is a way of choosing statuses, so it is listed with the status: one entry for both (#677). The
+    // committee scope says how the committee filter reads, and is no filter of its own.
+    const expected = BILL_FILTER_DEFS.map(d => d.name).filter(n => n !== 'match' && n !== 'stage' && n !== 'committeeScope')
     expect(names(everything)).toEqual(expected)
   })
 
@@ -506,16 +509,42 @@ describe('activeFilters: the one list of filters with a value', () => {
     expect(activeFilters(filterOf({ stage: ['enacted'], status: ['Passed'] }), { hidden: ['status'] })).toEqual([])
   })
 
-  it('agrees with serialize: a filter has an entry exactly when it writes a query key (but for the match mode)', () => {
+  it('agrees with serialize: a filter has an entry exactly when it writes a query key (but for the match mode and the committee scope)', () => {
     for (const seed of SEEDS) {
       const f = generate(seed)
       const inList = new Set(activeFilters(f).map(a => a.name))
       // The stage is written as its own key and listed with the status (#677).
       const written = new Set([...new URLSearchParams(serializeBillFilter(f)).keys()].map(k => k.startsWith('field.') ? 'field' : k === 'stage' ? 'status' : k))
       written.delete('match')
+      written.delete('committeeScope')
       // A blank search is written, but it narrows nothing.
       if (f.search.trim() === '') written.delete('search')
       expect(inList, `seed ${seed}`).toEqual(written)
     }
+  })
+})
+
+// The committee filter (#471): committee ids, read against a bill's current committee or against any committee it was
+// referred to. The scope is a switch on the one filter, written only when it is the current committee.
+describe('the committee filter', () => {
+  it('reads every committee id in order, and any referral when no scope is given', () => {
+    const f = parseBillFilter('committee=1021&committee=88')
+    expect(f.committee).toEqual(['1021', '88'])
+    expect(f.committeeScope).toBe('any')
+  })
+
+  it('reads the current committee scope, and any other scope as any referral', () => {
+    expect(parseBillFilter('committee=1&committeeScope=current').committeeScope).toBe('current')
+    expect(parseBillFilter('committee=1&committeeScope=bogus').committeeScope).toBe('any')
+  })
+
+  it('writes the scope only when it is the current committee', () => {
+    expect(serializeBillFilter(filterOf({ committee: ['1021'] }))).toBe('committee=1021')
+    expect(serializeBillFilter(filterOf({ committee: ['1021'], committeeScope: 'current' }))).toBe('committee=1021&committeeScope=current')
+  })
+
+  it('lists the committees picked as one active filter, and never the scope', () => {
+    expect(activeFilters(filterOf({ committee: ['1', '2'], committeeScope: 'current' }))).toEqual([{ name: 'committee', key: 'committee', count: 2 }])
+    expect(activeFilters(filterOf({ committeeScope: 'current' }))).toEqual([])
   })
 })

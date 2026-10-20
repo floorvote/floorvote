@@ -226,6 +226,10 @@ export const bills = sqliteTable('bills', {
   aiHealAttempts: integer('ai_heal_attempts').notNull().default(0),
   // When a pulled lead's request to central was last renewed (lib/companionAnalysis.ts, migration 0118).
   fetchRenewedAt: text('fetch_renewed_at'),
+  // When central's full message for the bill was last applied (migration 0117),
+  // null for a bill that has only had stubs. Written by the queue processor's
+  // full path alone, and the bill page's test for full or stub.
+  fullyIngestedAt: text('fully_ingested_at'),
   textStatus: text('text_status'),
   newMatchAt: text('new_match_at'),
   // Where the keyword match came from, as central declared it (MatchProvenance
@@ -322,6 +326,19 @@ export const billSubjects = sqliteTable('bill_subjects', {
   index('idx_bill_subjects_name').on(t.state, t.subjectName),
 ])
 
+/** The committees a bill was referred to, from central (#471, migration 0116). `isCurrent` marks the one it is pending in. */
+export const billCommittees = sqliteTable('bill_committees', {
+  billId:      text('bill_id').notNull().references(() => bills.id, { onDelete: 'cascade' }),
+  committeeId: text('committee_id').notNull(),
+  state:       text('state').notNull(),
+  name:        text('name').notNull(),
+  chamber:     text('chamber'),
+  isCurrent:   integer('is_current', { mode: 'boolean' }).notNull().default(false),
+}, (t) => [
+  primaryKey({ columns: [t.billId, t.committeeId] }),
+  index('idx_bill_committees_committee').on(t.committeeId, t.billId),
+])
+
 export const memberVotes = sqliteTable('member_votes', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull(),
@@ -360,6 +377,24 @@ export const commentReactions = sqliteTable('comment_reactions', {
   deletedAt: text('deleted_at'),
 }, (t) => ({
   uniqReaction: uniqueIndex('comment_reactions_comment_user_emoji_unique').on(t.commentId, t.userId, t.emoji),
+}))
+
+/** A file attached to a comment (#465). See migration 0115 and lib/attachments.ts. */
+export const commentAttachments = sqliteTable('comment_attachments', {
+  id: text('id').primaryKey(),
+  commentId: text('comment_id'),
+  uploaderId: text('uploader_id').notNull(),
+  r2Key: text('r2_key').notNull().unique(),
+  name: text('name').notNull(),
+  contentType: text('content_type').notNull(),
+  size: integer('size').notNull(),
+  checksum: text('checksum'),
+  confirmedAt: text('confirmed_at'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  deletedAt: text('deleted_at'),
+}, (t) => ({
+  commentIdx: index('idx_comment_attachments_comment').on(t.commentId),
+  uploaderIdx: index('idx_comment_attachments_uploader').on(t.uploaderId, t.createdAt),
 }))
 
 export const notes = sqliteTable('notes', {

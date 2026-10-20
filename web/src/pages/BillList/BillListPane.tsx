@@ -14,7 +14,8 @@ import { LastActionChip } from '../../components/LastActionChip'
 import { SECTION_LABEL, CHROME_TEXT, SR_ONLY, BILL_TITLE_TEXT } from '../../lib/textStyles'
 import { color, fontSize, fontWeight } from '../../styles/tokens'
 import { billDisplayTitle } from '../../../../shared/billTitle'
-import { billsApiParamsFromSearch, billsQueryFromSearch, searchFromListUrl } from './billsQuery'
+import { billsApiParamsFromSearch, billsFacetParams, billsQueryFromSearch, searchFromListUrl } from './billsQuery'
+import { committeeGroups, committeeLabelsOf } from '../../lib/committeeGroups'
 import { buildListSummary } from './listSummary'
 import { BillListPaneSummary } from './BillListPaneSummary'
 import { peekBillsListCache, peekCustomFieldDefs } from './index'
@@ -22,7 +23,7 @@ import { groupDisplay, memberPath, formatYearChip } from './BillRow'
 import { groupPlacement, groupGridStyle, groupItemStyle, subgridCellStyle, GROUP_ROW_GAP } from './groupRows'
 import { PANE_MIN_WIDTH, paneGridTemplate, visiblePaneColumns, type PaneColumn } from './paneWidth'
 import { PaneResizeHandle, useBillListPaneWidth } from './BillListPaneResize'
-import type { Bill } from './types'
+import type { Bill, FacetCounts } from './types'
 import type { SavedView } from './ViewSwitcher'
 
 // Viewport width at which a bill page shows this pane beside it. At 1440 with
@@ -287,18 +288,48 @@ export function BillListPane() {
   }, [search])
 
   const [loadingMore, setLoadingMore] = useState(false)
+  // A failed page stops the chain: the sentinel would otherwise still be in
+  // range and fire again at once. The reader's Retry clears it; so does a new list.
+  const [loadMoreFailed, setLoadMoreFailed] = useState(false)
+  const loadMoreBusy = useRef(false)
+  const searchRef = useRef(search)
+  searchRef.current = search
+  useEffect(() => { setLoadMoreFailed(false); loadMoreBusy.current = false; setLoadingMore(false) }, [search])
+  const sentinelRef = useRef<HTMLLIElement>(null)
+  // Infinite scroll, as on the Bills page, but watched inside the pane's own
+  // scroller: the pane scrolls independently of the viewport. The list (and so
+  // the sentinel) renders only once `loading` is false, hence the dependency.
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    const root = scrollRef.current
+    if (!sentinel || !root || !search || !hasMore || loading || loadingMore || loadMoreFailed) return
+    const observer = new IntersectionObserver(
+      entries => { if (entries[0].isIntersecting) loadMore() },
+      { root, rootMargin: '1200px' }, // prefetch well before the end is visible
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadMore is rebuilt each render from the values listed
+  }, [search, hasMore, loading, loadingMore, loadMoreFailed, page])
+
   function loadMore() {
-    if (!search || loadingMore) return
+    // The ref also stops two observer callbacks in one tick, before state lands.
+    if (!search || loadMoreBusy.current) return
+    loadMoreBusy.current = true
     setLoadingMore(true)
+    setLoadMoreFailed(false)
     const next = page + 1
+    // A response for a list the pane has since left must not touch this one.
+    const stale = () => searchRef.current !== search
     apiFetch<BillsPage>(`/bills?${billsApiParamsFromSearch(search, next, peekCustomFieldDefs())}`)
       .then(data => {
+        if (stale()) return
         setBills(prev => [...prev, ...data.bills])
         setHasMore(next < data.pagination.totalPages)
         setPage(next)
       })
-      .catch(() => {})
-      .finally(() => setLoadingMore(false))
+      .catch(() => { if (!stale()) setLoadMoreFailed(true) })
+      .finally(() => { if (!stale()) { loadMoreBusy.current = false; setLoadingMore(false) } })
   }
 
   const here = decodePath(location.pathname)
@@ -307,15 +338,32 @@ export function BillListPane() {
 
   // The summary is of the list the pane shows: the same resolved query its
   // request is built from, so the line and the rows cannot disagree.
-  const summary = useMemo(() => resolved && buildListSummary({
-    values: billsQueryFromSearch(resolved.search),
+  const values = useMemo(() => resolved && billsQueryFromSearch(resolved.search), [resolved])
+  // The facets name a picked committee, which the list's own reply does not, so they are asked for once per resolved
+  // query and only when one is picked. Until they land the summary reads a committee by its id.
+  const [committeeLabels, setCommitteeLabels] = useState<Record<string, string>>({})
+  useEffect(() => {
+    setCommitteeLabels({})
+    const filter = values?.filter
+    if (!filter || filter.committee.length === 0) return
+    let cancelled = false
+    apiFetch<FacetCounts>(`/bills/facets?${billsFacetParams(filter)}`)
+      .then(facets => {
+        if (!cancelled) setCommitteeLabels(committeeLabelsOf(committeeGroups({}, facets.committeeInfo ?? {}, filter.committee)))
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [values])
+  const summary = useMemo(() => resolved && values && buildListSummary({
+    values,
     view: resolved.view,
     customFieldDefs: peekCustomFieldDefs(),
     isMultiState: multiState,
-  }), [resolved, multiState])
+    committeeLabels,
+  }), [resolved, values, multiState, committeeLabels])
 
   // Bring the current bill into view only when it is off-screen, and only when
-  // the bill changes (or the list first arrives) — never when "Show more"
+  // the bill changes (or the list first arrives) — never when a page
   // appends, which would yank the reader back from where they scrolled.
   // `loading` is a dependency because the list renders only once it is false:
   // were the bills and the end of loading ever committed separately, an effect
@@ -372,15 +420,17 @@ export function BillListPane() {
             </li>
           ))}
           {hasMore && (
-            <li style={{ padding: 12 }}>
-              <button
-                type="button"
-                onClick={loadMore}
-                disabled={loadingMore}
-                style={{ width: '100%', padding: '6px 10px', fontSize: fontSize.sm, color: color.linkBlue, background: color.white, border: `1px solid ${color.borderDefault}`, cursor: 'pointer' }}
-              >
-                {loadingMore ? 'Loading…' : `Show more (${bills.length.toLocaleString()} of ${total.toLocaleString()})`}
-              </button>
+            <li
+              ref={sentinelRef}
+              aria-hidden={loadingMore || loadMoreFailed ? undefined : true}
+              style={{ ...CHROME_TEXT, padding: 12, textAlign: 'center' }}
+            >
+              {loadingMore ? <span role="status">Loading…</span> : loadMoreFailed ? (
+                <>
+                  Couldn’t load more{' '}
+                  <button type="button" onClick={loadMore} style={{ color: color.linkBlue, background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit' }}>Retry</button>
+                </>
+              ) : ''}
             </li>
           )}
         </ul>
