@@ -13,7 +13,7 @@ export type MigrationFiles = Record<string, string>
 // migrations, say), call it in the test with that folder's path and pass the
 // result to setupDb().
 export const legiscanMigrations: MigrationFiles = import.meta.glob<string>(
-  '../../migrations-legiscan/*.sql', { query: '?raw', import: 'default', eager: true },
+  '../../migrations/*.sql', { query: '?raw', import: 'default', eager: true },
 )
 
 // All migrations in filename order (wrangler's order), named by basename

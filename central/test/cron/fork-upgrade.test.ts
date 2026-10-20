@@ -128,11 +128,11 @@ type Run = ReturnType<typeof makeEnv>
 const db = () => drizzle(env.DB, { schema })
 
 async function central(method: string, path: string, run: Run) {
-  const { app } = await import('../../src/index-legiscan')
+  const { app } = await import('../../src/index')
   return app.fetch(new Request(`http://central/api${path}`, { method, headers: { 'x-admin-secret': 'test-secret' } }), run.env)
 }
 async function app(run: Run, method: string, path: string, body: unknown) {
-  const { app } = await import('../../src/index-legiscan')
+  const { app } = await import('../../src/index')
   return app.fetch(new Request(`http://central/api${path}`, {
     method, headers: { 'x-admin-secret': 'test-secret', 'content-type': 'application/json' }, body: JSON.stringify(body),
   }), run.env)

@@ -6,7 +6,7 @@ import { clearDb } from '../helpers/migrations'
 import { CALL_LOG_RETENTION_DAYS, pruneCallLogs } from '../../src/lib/pruneCallLogs'
 import { legiscanCallsThisMonth } from '../../src/lib/legiscanBudget'
 import { loadStateRows } from '../../src/lib/stateRows'
-import { app } from '../../src/index-legiscan'
+import { app } from '../../src/index'
 
 // 2026-10-14 15:30:00 UTC. The cutoff is that moment CALL_LOG_RETENTION_DAYS back.
 const NOW = new Date('2026-10-14T15:30:00Z')

@@ -326,7 +326,7 @@ export interface RehearsalOptions {
 
 /**
  * Rehearse a migrations folder on one database copy. `migrations` is the
- * folder for this kind of database (central/migrations-legiscan or
+ * folder for this kind of database (central/migrations or
  * api/migrations) on the branch to deploy. The copy is changed in place, so
  * it can be saved after.
  */

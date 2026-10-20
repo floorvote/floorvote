@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { env } from 'cloudflare:test'
-import { TenantApi, app } from '../../src/index-legiscan'
+import { TenantApi, app } from '../../src/index'
 import { clearDb } from '../helpers/migrations'
 
 // The TenantApi WorkerEntrypoint is the ONLY surface tenants can reach over the

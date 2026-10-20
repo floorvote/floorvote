@@ -44,7 +44,7 @@ Statements in an AI summary can now link to the bill text behind them, as summar
 
 ## Committee filter
 
-The Bills page has a Committee filter. It lists each committee with its number of bills, grouped by state, with procedural committees (Rules, Assignments, Calendars) last and tagged "Procedural." A switch chooses whether a bill counts for the committee it is pending in now ("Current committee") or for any committee it was referred to ("Any referral," the default). The filter is in the page address and saved views as `committee` and `committeeScope`.
+The Bills page has a Committee filter. It lists each committee with its number of bills, grouped by state, with the committees holding the most bills first and ties in alphabetical order. A switch chooses whether a bill counts for the committee it is pending in now ("Current committee") or for any committee it was referred to ("Any referral," the default). The filter is in the page address and saved views as `committee` and `committeeScope`. On a computer, the menu works like the Subject menu: a search box narrows the committees by name, the heading of the state on screen stays pinned at the top while the list scrolls, and the scope switch sits above the list on the same gray as the state headings.
 
 - **Instance migration only.** Instance migration 0116 adds an empty `bill_committees` table. Central doesn't change, since it already sends each bill's committees.
 - **Run the refresh after deploying each instance.** An instance stores a bill's committees only when the bill is next delivered, and an analyzed bill that hasn't changed isn't redelivered. Until the refresh runs, the counts and the filter cover only bills delivered since the deploy. Fill every bill at once with `POST /admin/refresh-metadata` on the instance (an admin request). It queues one metadata-only delivery per stored bill, so one central fetch each: about 52,000 on the largest instance. It runs no AI, and it rewrites each bill's stored metadata from central.
@@ -58,6 +58,38 @@ Members can attach files to comments (#465): from a paperclip in the comment too
 **Limits.** 25 MB a file, 10 files a comment, 30 uploads a member an hour, and 5 GB for the instance. Programs, scripts, web pages (HTML, SVG, JavaScript), macro-enabled Office files, and archives are refused, by name and by the file's first bytes. Files download only for a signed-in member of the instance, while their comment shows. Uploads that never finish are deleted after an hour, uploads never posted after a day, a deleted comment's files 30 days after the delete, by the hourly cron, which also removes within the hour any file whose comment was removed with its member's account. The admin data export lists the files (not their contents).
 
 **Deploying.** Migration `0115` adds the `comment_attachments` table and touches no existing table.
+
+## Central's provider-neutral names
+
+Central runs LegiScan and every opt-in provider, so its entry file, migrations folder, and npm scripts drop the LegiScan name. Nothing breaks: the old names keep working as aliases for now, and a later release removes them.
+
+| Old name | New name |
+|---|---|
+| `src/index-legiscan.ts` | `src/index.ts` |
+| `migrations-legiscan/` | `migrations/` |
+| `npm run deploy:legiscan` | `npm run deploy:central` |
+| `npm run migrate:legiscan:remote` | `npm run migrate:central:remote` |
+| `npm run migrate:legiscan:local` | `npm run migrate:central:local` |
+| `npm run smoke:legiscan` | `npm run smoke:central` |
+
+**Switch your `central/wrangler.toml`** before the aliases go. Under `[env.legiscan]`, set:
+
+```toml
+main = "src/index.ts"
+```
+
+and under `[[env.legiscan.d1_databases]]`:
+
+```toml
+migrations_dir = "migrations"
+```
+
+Then deploy with `npm run deploy:central`. Both sets of names build the same worker and list the same migration files, and wrangler records an applied migration by its filename alone, so a database migrated under the old names has nothing new to apply under the new ones.
+
+- **What doesn't change.** The `legiscan` wrangler environment (`--env legiscan`), the deployed worker's name (`floorvote-central-legiscan`), your D1 database, bucket, and queue names, and the bill handle prefix all stay as they are.
+- **`migrations-legiscan` is now a symlink to `migrations`.** A checkout without symlink support (Git for Windows with `core.symlinks` off) gets a plain file in its place, and wrangler then finds no migrations under the old name without saying so. Switch to `migrations_dir = "migrations"`, or check out on macOS, Linux, or WSL.
+- **Your own files in `central/migrations-legiscan/` need to move.** A checkout or fork with files of its own in that folder, committed or untracked, will see a refused pull or a git conflict, since the folder is now a link. Move them to `central/migrations/` under the same filenames, so wrangler still records them as applied and nothing runs twice.
+- **A fork that sets `SMOKE_BASE_URL` inline on `smoke:legiscan`** should move that to `smoke:central`, which `deploy:central` and `npm run deploy` now run. `smoke:legiscan` runs `smoke:central`.
 
 ## Draft bills move to the Bills page
 

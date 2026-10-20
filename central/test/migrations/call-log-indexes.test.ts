@@ -6,7 +6,7 @@ import { legiscanMigrations, parseMigrations, setupDb, type MigrationFiles } fro
 import { setupLsDb } from '../helpers/setupLsDb'
 import { planOf, spyOnD1 } from '../helpers/queryPlan'
 import { loadStateRows } from '../../src/lib/stateRows'
-import { app } from '../../src/index-legiscan'
+import { app } from '../../src/index'
 import { pruneCallLogs } from '../../src/lib/pruneCallLogs'
 import { splitStatements } from '../../../shared/sqlStatements'
 

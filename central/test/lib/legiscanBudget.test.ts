@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
 import { legiscanCallsThisMonth, monthStartDb } from '../../src/lib/legiscanBudget'
-import { app } from '../../src/index-legiscan'
+import { app } from '../../src/index'
 import { clearDb } from '../helpers/migrations'
 
 // The month's LegiScan call count: the number the Budget page shows, and the

@@ -8,7 +8,7 @@
 // (the per-version fetch the web text panel uses) broke for ~3 days. Unit tests
 // now guard the allowlist, but only an end-to-end probe through a REAL tenant
 // exercises tenant → binding → central → R2. Central has no staging, so we run
-// this right after `deploy:legiscan` to catch breakage within seconds.
+// this right after `deploy:central` to catch breakage within seconds.
 //
 // The check is opt-in: it needs a reachable tenant to probe, so it runs ONLY when
 // SMOKE_BASE_URL is set. Point it at a DEMO_MODE tenant (its shared auto-login

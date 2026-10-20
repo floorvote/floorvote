@@ -8,7 +8,7 @@ import type { Env } from '../types'
  * The deny-by-default allowlist (`./tenantSurface`) limits WHICH operations a
  * tenant can reach over the binding, but the routes take `:tenantId` (or
  * `body.tenantId`) as a param — so nothing stops tenant A from targeting tenant
- * B's objects. `TenantApi` (`../index-legiscan`) closes that by injecting
+ * B's objects. `TenantApi` (`../index`) closes that by injecting
  * `x-caller-tenant` from the unforgeable per-binding prop `ctx.props.tenantId`
  * (Cloudflare guarantees props are set only by authorized deployments). When the
  * header is present, the caller may act ONLY on its own tenantId.

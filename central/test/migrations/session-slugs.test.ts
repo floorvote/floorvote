@@ -4,7 +4,7 @@ import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
 import { legiscanMigrations, parseMigrations, setupDb, type MigrationFiles } from '../helpers/migrations'
 import { assignSessionSlugs } from '../../src/lib/sessionSlugs'
-import { app } from '../../src/index-legiscan'
+import { app } from '../../src/index'
 
 // A central upgrading onto session slugs: built from the migrations before
 // 0031, holding sessions whose names ask for the same slug, then migrated and

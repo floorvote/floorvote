@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { app } from '../../src/index-legiscan'
+import { app } from '../../src/index'
 
 // In the test environment, the ASSETS binding is not available (it's a Cloudflare binding).
 // The catch-all falls back to c.notFound(), which returns a 404 from Hono's default handler.

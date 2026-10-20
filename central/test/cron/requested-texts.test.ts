@@ -25,7 +25,7 @@ vi.mock('../../src/lib/queuesRest', () => ({
 const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
 
-import { app } from '../../src/index-legiscan'
+import { app } from '../../src/index'
 import { applyMasterList } from '../../src/cron/sync'
 import { processIngestorQueue } from '../../src/queue/processor'
 import { FETCH_REQUEST_DAYS } from '../../src/lib/fetchRequests'

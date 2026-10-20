@@ -330,8 +330,9 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
     const data = await apiFetch<FeedResponse>(`/feed?page=1&limit=${LIMIT}&scope=${scopeRef.current}`)
     const newTopId = data.events[0]?.id ?? null
     if (newTopId && newTopId !== topEventIdRef.current) {
-      // New activity detected — auto-load silently if near top, else show banner
-      if (window.scrollY < 150) {
+      // New activity detected — auto-load silently if near top, else show banner.
+      // The app scrolls inside <main>, not the window (window.scrollY is always 0).
+      if (getScrollContainer().scrollTop < 150) {
         setEvents(data.events)
         setPage(1)
         setTotal(data.total)

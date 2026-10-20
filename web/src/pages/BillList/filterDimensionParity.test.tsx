@@ -197,7 +197,7 @@ function renderMobile(
       subjectGroups={subjectGroups}
       committee={[]}
       committeeScope="any"
-      committeeGroups={[{ state: 'RI', options: [{ value: '101', label: 'Judiciary (Senate)', count: 3, procedural: false }] }]}
+      committeeGroups={[{ state: 'RI', options: [{ value: '101', label: 'Judiciary (Senate)', count: 3 }] }]}
       onCommitteeChange={() => {}}
       onCommitteeScopeChange={() => {}}
       yearOptions={[{ value: '2026', label: '2026' }]}

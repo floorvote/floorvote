@@ -2,7 +2,7 @@ import { env, createExecutionContext } from 'cloudflare:test'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
-import { app, StatsApi, TenantApi } from '../../src/index-legiscan'
+import { app, StatsApi, TenantApi } from '../../src/index'
 import { clearDb } from '../helpers/migrations'
 
 // StatsApi is the named entrypoint a consumer Worker on the same account binds
