@@ -125,15 +125,21 @@ const CONFIG = {
 
 const FILED = { isDraft: false, externalId: 'ext-1', status: '1', session: '2026 Regular Session' }
 
-type Delete = () => Promise<unknown>
+type Delete = (path: string) => Promise<unknown>
+type Preview = { drafts: number; filed: number; engagedDrafts: number; engagement: { votes: number; comments: number; notes: number; positions: number } }
+const CLEAN: Preview = { drafts: 1, filed: 0, engagedDrafts: 0, engagement: { votes: 0, comments: 0, notes: 0, positions: 0 } }
+const ENGAGED: Preview = { drafts: 1, filed: 0, engagedDrafts: 1, engagement: { votes: 3, comments: 2, notes: 1, positions: 0 } }
+const ENGAGED_CONFIRM = "Delete this draft bill? Your team's 3 votes, 2 comments, and 1 note on it will be deleted too. To keep them, link the draft to its filed bill instead. This can't be undone."
 
 /** @param overrides fields of the bill the page loads (a filed bill: FILED).
- *  @param onDelete what DELETE /bills/42 does: resolve, or throw an ApiError. */
-function mockApi(overrides: Record<string, unknown> = {}, onDelete: Delete = async () => ({ ok: true })) {
+ *  @param onDelete what DELETE /bills/42 (with any query) does: resolve, or throw an ApiError.
+ *  @param onPreview what the delete preview (POST /bills/bulk-delete, preview: true) answers. */
+function mockApi(overrides: Record<string, unknown> = {}, onDelete: Delete = async () => ({ ok: true }), onPreview: () => Promise<Preview> = async () => CLEAN) {
   const bill = { ...DRAFT, ...overrides }
   routerMock.loaderData = bill
   return vi.spyOn(api, 'apiFetch').mockImplementation(async (path: string, init?: RequestInit) => {
-    if (path === '/bills/42' && init?.method === 'DELETE') return (await onDelete()) as never
+    if ((path === '/bills/42' || path.startsWith('/bills/42?')) && init?.method === 'DELETE') return (await onDelete(path)) as never
+    if (path === '/bills/bulk-delete' && init?.method === 'POST') return (await onPreview()) as never
     if (path === '/bills/42' || path.startsWith('/bills/resolve/')) return { ...bill } as never
     if (path.startsWith('/bills/draft-defaults')) return { billNumber: 'D2', year: 2026, tenantState: 'TX' } as never
     if (path === '/bills/facets') return { state: { TX: 1 } } as never
@@ -151,6 +157,7 @@ function renderPage() {
 
 const discard = () => screen.queryByRole('button', { name: 'Discard draft' })
 const deleteCalls = () => vi.mocked(api.apiFetch).mock.calls.filter(([, init]) => init?.method === 'DELETE')
+const previewCalls = () => vi.mocked(api.apiFetch).mock.calls.filter(([path]) => path === '/bills/bulk-delete')
 
 // A negative test is only meaningful if the same page does show the button when
 // it should, so each one first renders the page it would otherwise be a no-op
@@ -378,6 +385,59 @@ describe('BillDetail Discard draft', () => {
     })
   })
 
+  describe('clicking it on a draft that has engagement', () => {
+    const refuse = (path: string) => path === '/bills/42'
+      ? Promise.reject(new api.ApiError(409, 'This draft has engagement; link it to a filed bill instead.'))
+      : Promise.resolve({ ok: true })
+
+    it('confirms with what goes with it, then deletes it with includeEngaged and returns to the bills page', async () => {
+      const user = userEvent.setup()
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      markJustCreatedDraft('42')
+      mockApi({}, refuse, async () => ENGAGED)
+      renderPage()
+
+      await user.click(await screen.findByRole('button', { name: 'Discard draft' }))
+
+      await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/bills'))
+      expect(confirm).toHaveBeenCalledWith(ENGAGED_CONFIRM)
+      expect(previewCalls()).toEqual([['/bills/bulk-delete', { method: 'POST', body: JSON.stringify({ ids: ['42'], preview: true }) }]])
+      expect(deleteCalls().map(([path]) => path)).toEqual(['/bills/42', '/bills/42?includeEngaged=1'])
+      expect(screen.queryByRole('alert')).toBeNull()
+    })
+
+    it('keeps the draft, and says nothing, when the admin cancels', async () => {
+      const user = userEvent.setup()
+      vi.spyOn(window, 'confirm').mockReturnValue(false)
+      markJustCreatedDraft('42')
+      mockApi({}, refuse, async () => ENGAGED)
+      renderPage()
+
+      await user.click(await screen.findByRole('button', { name: 'Discard draft' }))
+
+      await waitFor(() => expect(window.confirm).toHaveBeenCalled())
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Discard draft' })).toBeEnabled())
+      expect(deleteCalls()).toHaveLength(1)
+      expect(navigateMock).not.toHaveBeenCalled()
+      expect(screen.queryByRole('alert')).toBeNull()
+    })
+
+    it('shows the error when the preview fails, and deletes nothing more', async () => {
+      const user = userEvent.setup()
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      markJustCreatedDraft('42')
+      mockApi({}, refuse, async () => { throw new api.ApiError(500, 'Could not read the draft.') })
+      renderPage()
+
+      await user.click(await screen.findByRole('button', { name: 'Discard draft' }))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Could not read the draft.')
+      expect(confirm).not.toHaveBeenCalled()
+      expect(deleteCalls()).toHaveLength(1)
+      expect(navigateMock).not.toHaveBeenCalled()
+    })
+  })
+
   describe('in a locked demo', () => {
     it('is disabled and says "Locked in demo mode" in its title', async () => {
       demoState.demoLocked = true
@@ -445,25 +505,80 @@ describe('BillDetail Discard draft', () => {
       expect(deleteCalls()).toHaveLength(0)
     })
 
-    it("describes what the server's guard does, not a removal of votes, positions, comments, and notes", async () => {
+    it('says that deleting takes the work on the draft with it, and how to keep that work', async () => {
       const user = userEvent.setup()
-      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
       mockApi()
       renderPage()
 
       await pageHasRendered()
       await user.click(screen.getByRole('button', { name: 'More actions' }))
       const item = screen.getByRole('menuitem', { name: /Delete this draft bill/ })
-      expect(item).toHaveTextContent(/can.?t be deleted; link it to its filed bill instead/)
-      expect(item).not.toHaveTextContent(/removes it and its votes/)
-      await user.click(item)
-
-      const message = confirm.mock.calls[0][0] as string
-      expect(message).toMatch(/can.?t be deleted; link it to its filed bill instead/)
-      expect(message).not.toMatch(/removes it and its votes/)
+      expect(item).toHaveTextContent(/votes, positions, comments, and notes on it go too\. To keep them, link it to its filed bill instead\./)
+      expect(item).not.toHaveTextContent(/can.?t be deleted/)
     })
 
-    it("shows the server's refusal and stays on the page when the draft has engagement (409)", async () => {
+    it('asks the server what the draft holds, and confirms plainly when it holds nothing', async () => {
+      const user = userEvent.setup()
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      mockApi()
+      renderPage()
+
+      await pageHasRendered()
+      await user.click(screen.getByRole('button', { name: 'More actions' }))
+      await user.click(screen.getByRole('menuitem', { name: /Delete this draft bill/ }))
+
+      await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/bills'))
+      expect(previewCalls()).toEqual([['/bills/bulk-delete', { method: 'POST', body: JSON.stringify({ ids: ['42'], preview: true }) }]])
+      expect(confirm).toHaveBeenCalledWith("Delete this draft bill? This can't be undone.")
+      expect(deleteCalls().map(([path]) => path)).toEqual(['/bills/42'])
+    })
+
+    it('names the work that goes with an engaged draft, and deletes it with includeEngaged', async () => {
+      const user = userEvent.setup()
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      mockApi({}, undefined, async () => ENGAGED)
+      renderPage()
+
+      await pageHasRendered()
+      await user.click(screen.getByRole('button', { name: 'More actions' }))
+      await user.click(screen.getByRole('menuitem', { name: /Delete this draft bill/ }))
+
+      await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/bills'))
+      expect(confirm).toHaveBeenCalledWith(ENGAGED_CONFIRM)
+      expect(deleteCalls().map(([path]) => path)).toEqual(['/bills/42?includeEngaged=1'])
+    })
+
+    it('deletes nothing when the confirm is cancelled', async () => {
+      const user = userEvent.setup()
+      vi.spyOn(window, 'confirm').mockReturnValue(false)
+      mockApi({}, undefined, async () => ENGAGED)
+      renderPage()
+
+      await pageHasRendered()
+      await user.click(screen.getByRole('button', { name: 'More actions' }))
+      await user.click(screen.getByRole('menuitem', { name: /Delete this draft bill/ }))
+
+      await waitFor(() => expect(window.confirm).toHaveBeenCalled())
+      expect(deleteCalls()).toHaveLength(0)
+      expect(navigateMock).not.toHaveBeenCalled()
+    })
+
+    it('shows a failed preview, asks nothing, and deletes nothing', async () => {
+      const user = userEvent.setup()
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      mockApi({}, undefined, async () => { throw new api.ApiError(500, 'Could not read the draft.') })
+      renderPage()
+
+      await pageHasRendered()
+      await user.click(screen.getByRole('button', { name: 'More actions' }))
+      await user.click(screen.getByRole('menuitem', { name: /Delete this draft bill/ }))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Could not read the draft.')
+      expect(confirm).not.toHaveBeenCalled()
+      expect(deleteCalls()).toHaveLength(0)
+    })
+
+    it("shows the server's refusal and stays on the page when the draft gained engagement after a clean preview (409)", async () => {
       const user = userEvent.setup()
       vi.spyOn(window, 'confirm').mockReturnValue(true)
       mockApi({}, async () => { throw new api.ApiError(409, 'This draft has engagement; link it to a filed bill instead.') })

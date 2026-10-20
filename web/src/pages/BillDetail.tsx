@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useState, useRef } from 'react'
 import { useParams, Link, useNavigate, useNavigation, useLocation, useLoaderData, redirect, type LoaderFunctionArgs } from 'react-router-dom'
 import { apiFetch, ApiError } from '../lib/api'
+import { fetchDraftDeletePreview, hasEngagement, singleDraftDeleteConfirm } from '../lib/draftDeleteConfirm'
 import { apiFetchForLoader } from '../lib/loaderFetch'
 import { groupByHand } from '../lib/groupByHand'
 import { useAuth } from '../hooks/useAuth'
@@ -1365,8 +1366,10 @@ export function BillDetail() {
   }
 
   // Discard draft: the one-click undo for a draft just created from the bills
-  // page. No confirm, because nothing has been added to the draft yet; the
-  // overflow menu's "Delete this draft bill" keeps its confirm for any other time.
+  // page. No confirm while nothing has been added to the draft. If something has
+  // (the server refuses with 409), it asks first, naming what goes with the draft,
+  // and only then deletes it with its engagement. The overflow menu's "Delete
+  // this draft bill" always confirms.
   async function handleDiscardDraft() {
     // A ref, not `deletingDraft`: a second click can land before the first one's
     // re-render disables the button (as AddDraftButton's inFlight guard says).
@@ -1374,12 +1377,46 @@ export function BillDetail() {
     discardInFlight.current = true
     setDeletingDraft(true)
     setDiscardError(null)
+    const stop = () => {
+      discardInFlight.current = false
+      setDeletingDraft(false)
+    }
     try {
-      await apiFetch(`/bills/${bill.id}`, { method: 'DELETE' })
+      try {
+        await apiFetch(`/bills/${bill.id}`, { method: 'DELETE' })
+      } catch (err) {
+        if (!(err instanceof ApiError && err.status === 409)) throw err
+        const preview = await fetchDraftDeletePreview({ ids: [bill.id] })
+        if (!window.confirm(singleDraftDeleteConfirm(preview))) {
+          stop()
+          return
+        }
+        await apiFetch(`/bills/${bill.id}?includeEngaged=1`, { method: 'DELETE' })
+      }
       navigate('/bills')
     } catch (err) {
       setDiscardError(err instanceof ApiError ? err.message : 'Failed to discard draft.')
-      discardInFlight.current = false
+      stop()
+    }
+  }
+
+  // The overflow menu's "Delete this draft bill": asks the server what the draft
+  // holds, confirms with that, and sends includeEngaged only when the confirm
+  // named work that goes with it.
+  async function handleDeleteDraft() {
+    if (!bill || deletingDraft || demoLocked) return
+    setDeletingDraft(true)
+    setDeleteError(null)
+    try {
+      const preview = await fetchDraftDeletePreview({ ids: [bill.id] })
+      if (!window.confirm(singleDraftDeleteConfirm(preview))) {
+        setDeletingDraft(false)
+        return
+      }
+      await apiFetch(`/bills/${bill.id}${hasEngagement(preview) ? '?includeEngaged=1' : ''}`, { method: 'DELETE' })
+      navigate('/bills')
+    } catch (err) {
+      setDeleteError(err instanceof ApiError ? err.message : 'Failed to delete draft.')
       setDeletingDraft(false)
     }
   }
@@ -1786,22 +1823,10 @@ export function BillDetail() {
                 menuRows.push({
                   key: 'delete-draft',
                   label: 'Delete this draft bill',
-                  description: "Permanently removes this draft. A draft with votes, positions, comments, or notes can't be deleted; link it to its filed bill instead.",
+                  description: 'Permanently removes this draft. Any votes, positions, comments, and notes on it go too. To keep them, link it to its filed bill instead.',
                   tone: 'danger',
                   disabled: deletingDraft || demoLocked,
-                  onSelect: async () => {
-                    if (deletingDraft || demoLocked) return
-                    if (!window.confirm("Delete this draft bill? This can't be undone. A draft with votes, positions, comments, or notes can't be deleted; link it to its filed bill instead.")) return
-                    setDeletingDraft(true)
-                    setDeleteError(null)
-                    try {
-                      await apiFetch(`/bills/${bill.id}`, { method: 'DELETE' })
-                      navigate('/bills')
-                    } catch (err) {
-                      setDeleteError(err instanceof ApiError ? err.message : 'Failed to delete draft.')
-                      setDeletingDraft(false)
-                    }
-                  },
+                  onSelect: handleDeleteDraft,
                 })
               }
               return menuRows

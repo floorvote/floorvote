@@ -61,7 +61,11 @@ Members can attach files to comments (#465): from a paperclip in the comment too
 
 ## Draft bills move to the Bills page
 
-Admins create draft bills from the Bills page now. An **Add draft bill** button sits there: one click on a single-state instance, a menu of the instance's states first on a multi-state one (a two-letter state field instead, until the instance has bills). Right after creating a draft, its page shows a **Discard draft** button that removes it with no confirmation. It only appears on arrival from that button, so a reload, a link, or an ordinary visit never shows it. Settings → Draft bills is gone, and `/admin/drafts` redirects to the Bills page with the Drafts filter on, so old links and bookmarks still land on the draft list.
+Admins create draft bills from the Bills page now. An **Add draft bill** button sits there: one click on a single-state instance, a menu of the instance's states first on a multi-state one (a two-letter state field instead, until the instance has bills). Right after creating a draft, its page shows a **Discard draft** button that removes it in one click, with no confirmation while nothing has been added to it. It only appears on arrival from that button, so a reload, a link, or an ordinary visit never shows it. Settings → Draft bills is gone, and `/admin/drafts` redirects to the Bills page with the Drafts filter on, so old links and bookmarks still land on the draft list.
 
-- **Nothing to configure.** No migration and no API change.
-- **A locked demo shows the button disabled,** with the same "Locked in demo mode" hover as the other demo-locked controls.
+Admins can also delete drafts in bulk. In the Bills page's bulk edit view, a **Delete drafts (N)** button appears when the selection holds drafts, including a select-all with the Drafts filter on. It deletes only the drafts and leaves any filed bills in the selection alone.
+
+A draft with engagement (votes, positions, comments, or notes) can now be deleted, from the bill page's overflow menu, the bulk edit view, or **Discard draft**. A confirm first names what goes with it: the team's votes, comments, notes, and positions on it, and the files attached to its comments. To keep that work, link the draft to its filed bill instead.
+
+- **Nothing to configure.** No migration. `POST /bills/bulk-delete` is new: admin only, refused in a demo, and up to 1,000 drafts a request. `DELETE /bills/:id` deletes a draft with engagement only with `?includeEngaged=1`; without it, it still answers 409.
+- **A locked demo shows these buttons disabled,** with the same "Locked in demo mode" hover as the other demo-locked controls.

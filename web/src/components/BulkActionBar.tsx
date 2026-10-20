@@ -7,6 +7,7 @@ import { promotableCount, bulkConfirmMessage, describeMultiDelta } from './bulkC
 import { useDemo } from '../context/DemoContext'
 import { parseStoredMulti } from '../../../shared/customFieldValues'
 import { serializeBillFilter, type BillFilter } from '../../../shared/billFilter'
+import { bulkDraftDeleteConfirm, fetchDraftDeletePreview, hasEngagement, type DraftDeletePreview } from '../lib/draftDeleteConfirm'
 
 type Priority = 'high' | 'medium' | 'low'
 
@@ -302,6 +303,21 @@ export function BulkActionBar({
     return () => window.removeEventListener('beforeunload', handler)
   }, [hasPending])
 
+  // Select-all with the Drafts filter on (at most 1,000 bills, the delete's cap): the drafts among unloaded
+  // rows are unknown here, so the server's preview counts them for the Delete drafts button.
+  const filterDrafts = selection.mode === 'filter' && currentFilters.drafts && total <= 1000
+  const [filterDraftPreview, setFilterDraftPreview] = useState<DraftDeletePreview | null>(null)
+  useEffect(() => {
+    setFilterDraftPreview(null)
+    if (!filterDrafts) return
+    let current = true
+    fetchDraftDeletePreview({ filter: serializeBillFilter(currentFilters) })
+      .then(p => { if (current) setFilterDraftPreview(p) })
+      // No count, no button: the bar's other actions still work.
+      .catch(() => {})
+    return () => { current = false }
+  }, [filterDrafts, currentFilters, total])
+
   if (selection.mode === 'none') return null
 
   // Effective display value for a field: staged overrides initial
@@ -459,41 +475,50 @@ export function BulkActionBar({
     }
   }
 
-  // Only ids-mode selections can name drafts: a select-all-matching selection has no loaded rows to read isDraft from.
+  // A selection of rows counts its drafts itself. Select-all counts them from the server's preview.
   const selectedDrafts = selection.mode === 'ids' ? selectedBills.filter(b => b.isDraft) : []
-  const draftCount = selectedDrafts.length
-  const filedCount = selection.mode === 'ids' ? selectedBills.length - draftCount : 0
+  const draftCount = selection.mode === 'ids' ? selectedDrafts.length : (filterDrafts ? filterDraftPreview?.drafts ?? 0 : 0)
 
   async function handleDeleteDrafts() {
     if (draftCount === 0 || applying || demoLocked) return
     const plural = (n: number, one: string, many: string) => (n === 1 ? one : many)
-    const filedNote = filedCount > 0
-      ? ` The ${filedCount.toLocaleString()} filed ${plural(filedCount, 'bill', 'bills')} in your selection ${plural(filedCount, 'is', 'are')} not deleted.`
-      : ''
-    if (!window.confirm(
-      `Delete ${draftCount.toLocaleString()} draft ${plural(draftCount, 'bill', 'bills')}? This can't be undone. A draft with votes, positions, comments, or notes is kept.${filedNote}`,
-    )) return
     setApplying(true)
     setError(null)
     try {
+      // A fresh preview at the click, so the confirm names what the delete will take now. For rows it is
+      // asked of the whole selection, so it also counts the filed bills the delete leaves alone.
+      const filter = selection.mode === 'filter' ? serializeBillFilter(currentFilters) : null
+      const preview = await fetchDraftDeletePreview(filter !== null ? { filter } : { ids: selectedBills.map(b => b.id) })
+      if (preview.drafts === 0) {
+        setError('There are no drafts left to delete in this selection.')
+        return
+      }
+      if (!window.confirm(bulkDraftDeleteConfirm(preview))) return
+      const body: { ids?: string[]; filter?: string; includeEngaged?: true } =
+        filter !== null ? { filter } : { ids: selectedDrafts.map(b => b.id) }
+      // Only a confirm that named the work on the drafts lets the server delete it.
+      if (hasEngagement(preview)) body.includeEngaged = true
       const result = await apiFetch<{
         deleted?: string[]
         skipped?: Array<{ id: string; reason: 'not_found' | 'not_draft' | 'engaged' | 'error' }>
-      }>('/bills/bulk-delete', { method: 'POST', body: JSON.stringify({ ids: selectedDrafts.map(b => b.id) }) })
+      }>('/bills/bulk-delete', { method: 'POST', body: JSON.stringify(body) })
       const skipped = result.skipped ?? []
       // A draft another admin deleted first is gone either way, so it leaves the list too.
       const gone = [...(result.deleted ?? []), ...skipped.filter(s => s.reason === 'not_found').map(s => s.id)]
       if (gone.length > 0) onDraftsDeleted(gone)
+      // Kept only without includeEngaged: a draft that gained engagement after a preview that found none.
       const kept = skipped.filter(s => s.reason === 'engaged').length
       const failed = skipped.filter(s => s.reason === 'error' || s.reason === 'not_draft').length
       const messages: string[] = []
       if (kept > 0) {
-        messages.push(`${kept.toLocaleString()} ${plural(kept, 'draft was', 'drafts were')} kept: ${plural(kept, 'it has', 'they have')} votes, positions, comments, or notes. ${plural(kept, 'Link it', 'Link each')} to its filed bill instead.`)
+        messages.push(`${kept.toLocaleString()} ${plural(kept, 'draft was', 'drafts were')} kept: ${plural(kept, 'it', 'they')} gained votes, positions, comments, or notes since you asked. Try again to see what goes with ${plural(kept, 'it', 'them')}.`)
       }
       if (failed > 0) {
         messages.push(`${failed.toLocaleString()} ${plural(failed, 'draft', 'drafts')} could not be deleted. Try again.`)
       }
       if (messages.length > 0) setError(messages.join(' '))
+      // A row selection shrinks as its drafts leave the list. Select-all ends once every draft it held is gone.
+      else if (filter !== null) onClearSelection()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete drafts')
     } finally {

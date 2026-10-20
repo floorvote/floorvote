@@ -67,9 +67,14 @@ const overwriteCalls: Array<{ id: string; query: string | undefined }> = []
 const saveViewCalls: Array<{ name: string | undefined; query: string | undefined }> = []
 
 // Records each POST /bills/bulk-delete body and lets a test shape the reply (default: every id deleted).
+// A preview (`preview: true`) is recorded apart, and by default counts the drafts and filed bills it
+// names from the bills the list shows, with no engagement.
+type BulkDeleteBody = { ids?: string[]; filter?: string; includeEngaged?: boolean; preview?: boolean }
 const bulkDeleteState = vi.hoisted(() => ({
-  bodies: [] as Array<{ ids: string[] }>,
-  respond: null as ((body: { ids: string[] }) => unknown) | null,
+  bodies: [] as Array<BulkDeleteBody>,
+  previewBodies: [] as Array<BulkDeleteBody>,
+  respond: null as ((body: BulkDeleteBody) => unknown) | null,
+  preview: null as ((body: BulkDeleteBody) => unknown) | null,
 }))
 
 // Mutable so one test can opt into a locked demo tenant. Member votes are on the
@@ -184,9 +189,18 @@ vi.mock('../../lib/api', () => {
     }
     if (path.startsWith('/bills/facets')) return (facetsState.respond ? facetsState.respond(path) : FACETS) as T
     if (init?.method === 'POST' && path === '/bills/bulk-delete') {
-      const body = JSON.parse(init.body as string) as { ids: string[] }
+      const body = JSON.parse(init.body as string) as BulkDeleteBody
+      const shown = (facetsState.bills ?? BILLS) as Array<{ id: string; isDraft?: boolean }>
+      if (body.preview) {
+        bulkDeleteState.previewBodies.push(body)
+        if (bulkDeleteState.preview) return bulkDeleteState.preview(body) as T
+        const named = body.ids ? shown.filter(b => body.ids!.includes(b.id)) : shown.filter(b => b.isDraft)
+        const drafts = named.filter(b => b.isDraft).length
+        return { drafts, filed: named.length - drafts, engagedDrafts: 0, engagement: { votes: 0, comments: 0, notes: 0, positions: 0 } } as T
+      }
       bulkDeleteState.bodies.push(body)
-      return (bulkDeleteState.respond ? bulkDeleteState.respond(body) : { deleted: body.ids, skipped: [] }) as T
+      const ids = body.ids ?? shown.filter(b => b.isDraft).map(b => b.id)
+      return (bulkDeleteState.respond ? bulkDeleteState.respond(body) : { deleted: ids, skipped: [] }) as T
     }
     // What the Add draft bill button reads when the page mounts: a multi-state tenant with no states yet.
     if (path === '/bills/draft-defaults') return { billNumber: 'D1', year: 2026, tenantState: null } as T
@@ -275,7 +289,9 @@ beforeEach(() => {
   facetsState.respond = null
   facetsState.bills = null
   bulkDeleteState.bodies.length = 0
+  bulkDeleteState.previewBodies.length = 0
   bulkDeleteState.respond = null
+  bulkDeleteState.preview = null
   demoState.demoLocked = false
   demoState.demoMode = false
   demoState.settled = true
@@ -1633,14 +1649,14 @@ describe('BillList delete selected drafts', () => {
   const DRAFT_B = makeBill({ id: 'draft-b', billNumber: 'DRAFT 2', title: 'Second Draft', matchType: 'manual', isDraft: true })
   const FILED = makeBill({ id: 'filed-1', billNumber: 'HB 9', title: 'Filed Bill', matchType: 'manual', isDraft: false })
 
-  function renderWithSidebarSpy() {
+  function renderWithSidebarSpy(entry = '/bills') {
     const refresh = vi.fn()
     function SidebarProbe() {
       useRegisterSidebarRefresh(refresh)
       return null
     }
     render(
-      <MemoryRouter initialEntries={['/bills']}>
+      <MemoryRouter initialEntries={[entry]}>
         <AuthProvider>
           <SidebarRefreshProvider><SidebarProbe /><BillList /></SidebarRefreshProvider>
         </AuthProvider>
@@ -1703,7 +1719,7 @@ describe('BillList delete selected drafts', () => {
 
     await waitFor(() => expect(screen.queryByText('First Draft')).toBeNull())
     expect(screen.getByText('Second Draft')).toBeInTheDocument()
-    expect(await screen.findByText(/1 draft was kept/i)).toBeInTheDocument()
+    expect(await screen.findByText(/1 draft was kept: it gained votes/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Delete drafts \(1\)/ })).toBeInTheDocument()
   })
 
@@ -1729,9 +1745,70 @@ describe('BillList delete selected drafts', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /Delete drafts \(1\)/ }))
 
+    await waitFor(() => expect(window.confirm).toHaveBeenCalled())
     expect(bulkDeleteState.bodies).toEqual([])
     expect(screen.getByText('First Draft')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Delete drafts \(1\)/ })).toBeInTheDocument()
+  })
+
+  it('sends includeEngaged when the preview finds work on the selected drafts', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    facetsState.bills = [DRAFT_A, DRAFT_B]
+    bulkDeleteState.preview = () => ({ drafts: 1, filed: 0, engagedDrafts: 1, engagement: { votes: 2, comments: 0, notes: 0, positions: 0 } })
+    renderWithSidebarSpy()
+    await select('First Draft')
+
+    fireEvent.click(await screen.findByRole('button', { name: /Delete drafts \(1\)/ }))
+
+    await waitFor(() => expect(screen.queryByText('First Draft')).toBeNull())
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("Your team's 2 votes on it will be deleted too."))
+    expect(bulkDeleteState.bodies).toEqual([{ ids: ['draft-a'], includeEngaged: true }])
+  })
+
+  describe('with every bill matching the Drafts filter selected', () => {
+    it('offers Delete drafts, counted by the preview, and deletes by the filter', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      facetsState.bills = [DRAFT_A, DRAFT_B]
+      renderWithSidebarSpy('/bills?drafts=1')
+      await screen.findByText('First Draft')
+
+      fireEvent.click(await screen.findByTitle('Select all matching filters'))
+      fireEvent.click(await screen.findByRole('button', { name: /Delete drafts \(2\)/ }))
+
+      await waitFor(() => expect(screen.queryByText('First Draft')).toBeNull())
+      expect(screen.queryByText('Second Draft')).toBeNull()
+      expect(window.confirm).toHaveBeenCalledWith("Delete 2 draft bills? This can't be undone.")
+      expect(bulkDeleteState.bodies).toEqual([{ filter: 'drafts=1' }])
+      expect(bulkDeleteState.previewBodies[0]).toEqual({ filter: 'drafts=1', preview: true })
+      // Every draft it held is gone, so the selection ends with it.
+      expect(screen.queryByRole('button', { name: /Apply to/ })).toBeNull()
+    })
+
+    it('offers no Delete drafts when the Drafts filter is off', async () => {
+      facetsState.bills = [DRAFT_A, FILED]
+      renderWithSidebarSpy()
+      await screen.findByText('First Draft')
+
+      fireEvent.click(await screen.findByTitle('Select all matching filters'))
+
+      expect(await screen.findByRole('button', { name: /Apply to/ })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /Delete drafts/ })).toBeNull()
+      expect(bulkDeleteState.previewBodies).toEqual([])
+    })
+
+    it('deletes nothing when cancelled', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(false)
+      facetsState.bills = [DRAFT_A, DRAFT_B]
+      renderWithSidebarSpy('/bills?drafts=1')
+      await screen.findByText('First Draft')
+
+      fireEvent.click(await screen.findByTitle('Select all matching filters'))
+      fireEvent.click(await screen.findByRole('button', { name: /Delete drafts \(2\)/ }))
+
+      await waitFor(() => expect(window.confirm).toHaveBeenCalled())
+      expect(bulkDeleteState.bodies).toEqual([])
+      expect(screen.getByText('First Draft')).toBeInTheDocument()
+    })
   })
 
   it('shows a member no bulk bar and so no delete button', async () => {
