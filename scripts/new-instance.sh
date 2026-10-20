@@ -21,6 +21,7 @@
 #     [--email-provider cloudflare|resend] \
 #     [--seed-dir <path> --session-id <id>] \
 #     [--admin-secret <central ADMIN_SECRET>] \
+#     [--no-attachments] \
 #     [--from-step N] \
 #     [--preflight-only]
 #
@@ -35,7 +36,9 @@
 #   --from-step lets you resume after a failure without re-running earlier steps.
 #   --preflight-only runs the validation below and exits without provisioning
 #     anything. Every run preflights first regardless; this just stops after it.
-#   --seed-dir/--session-id trigger optional historical seeding (Step 9); omit to
+#   --no-attachments skips the private R2 bucket for comment attachments (step 3)
+#     and its binding, leaving attachments off. They are on by default.
+#   --seed-dir/--session-id trigger optional historical seeding (step 10); omit to
 #     let current-session bills flow in on the next central full-sync pass.
 #
 # The last step runs scripts/verify-instance.sh, a smoke test of the new instance:
@@ -130,6 +133,7 @@ EMAIL_PROVIDER="cloudflare"
 SEED_DIR=""
 SESSION_ID=""
 PREFLIGHT_ONLY=0
+ATTACHMENTS=1
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -146,6 +150,7 @@ while [[ $# -gt 0 ]]; do
     --app-url)        APP_URL="$2";        shift 2 ;;
     --from-step)      FROM_STEP="$2";      shift 2 ;;
     --preflight-only) PREFLIGHT_ONLY=1;     shift 1 ;;
+    --no-attachments) ATTACHMENTS=0;        shift 1 ;;
     --help|-h)        usage ;;
     *) die "Unknown option: $1" ;;
   esac
@@ -186,7 +191,7 @@ fi
 # Collect per-instance secrets upfront — before the log redirect makes stdout a
 # pipe (wrangler refuses to prompt when stdout is not a TTY). Only CF_AIG_TOKEN is
 # required; GEMINI and RESEND are optional (blank = skip).
-if [[ $FROM_STEP -le 5 && $PREFLIGHT_ONLY -eq 0 ]]; then
+if [[ $FROM_STEP -le 6 && $PREFLIGHT_ONLY -eq 0 ]]; then
   echo
   read -rsp "CF_AIG_TOKEN (required — AI Gateway 'Run' token): " CF_AIG_TOKEN || \
     die "could not read CF_AIG_TOKEN — this prompt needs a terminal. Run interactively, or use --preflight-only to validate without it."
@@ -214,6 +219,7 @@ WORKER_NAME="${RESOURCE_PREFIX}-${SLUG}"
 WORKER_URL="https://${WORKER_NAME}.${ACCOUNT_SUBDOMAIN}.workers.dev"
 DB_NAME="${RESOURCE_PREFIX}-${SLUG}"
 QUEUE_NAME="${RESOURCE_PREFIX}-${SLUG}-queue"
+BUCKET_NAME="${RESOURCE_PREFIX}-${SLUG}-files"
 SLUG_UPPER="$(echo "$SLUG" | tr '[:lower:]' '[:upper:]' | tr '-' '_')"
 CENTRALAPI_BINDING="TENANT_${SLUG_UPPER}"
 # Each tenant needs two unique ratelimits namespace_ids, one for the login limiter
@@ -364,10 +370,10 @@ preflight() {
   #    whose later keys quietly win.
   echo "  Name collisions:"
   if grep -qE "^\[env\.${SLUG}\]" "$API_DIR/wrangler.toml" 2>/dev/null; then
-    if [[ $FROM_STEP -gt 3 ]]; then
-      pf_ok "[env.$SLUG] already present (resuming past step 3 -- expected)"
+    if [[ $FROM_STEP -gt 4 ]]; then
+      pf_ok "[env.$SLUG] already present (resuming past step 4 -- expected)"
     else
-      pf_bad "[env.$SLUG] already exists in api/wrangler.toml -- pick another slug, or --from-step 4"
+      pf_bad "[env.$SLUG] already exists in api/wrangler.toml -- pick another slug, or --from-step 5"
     fi
   else
     pf_ok "slug '$SLUG' is free in api/wrangler.toml"
@@ -382,9 +388,26 @@ preflight() {
   else
     pf_ok "ratelimit namespace_id $MUTE_RATELIMIT_NS_ID is free"
   fi
+  # The attachments bucket. R2 refuses a name outside 3-63 lowercase letters,
+  # digits, and hyphens, which a slug can produce, and that would otherwise fail
+  # only at step 3. A name another instance already binds is allowed (each
+  # instance keeps its files under its TENANT_ID) but is unlikely to be meant.
+  if [[ $ATTACHMENTS -eq 1 ]]; then
+    if [[ ! "$BUCKET_NAME" =~ ^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$ ]]; then
+      pf_bad "bucket name $BUCKET_NAME is not a valid R2 name (3-63 lowercase letters, digits, hyphens) -- pick another slug, or --no-attachments"
+    elif grep -q "bucket_name = \"${BUCKET_NAME}\"" "$API_DIR/wrangler.toml" 2>/dev/null; then
+      if [[ $FROM_STEP -gt 4 ]]; then
+        pf_ok "bucket $BUCKET_NAME already bound (resuming past step 4 -- expected)"
+      else
+        pf_warn "bucket $BUCKET_NAME is already bound in api/wrangler.toml: this instance would share it"
+      fi
+    else
+      pf_ok "bucket $BUCKET_NAME is free in api/wrangler.toml"
+    fi
+  fi
 
   # 6. Central reachable, and the admin secret actually works. force-register
-  #    (step 8) is otherwise the first thing to find out, long after the deploys.
+  #    (step 9) is otherwise the first thing to find out, long after the deploys.
   echo "  Central:"
   local code
   code=$(curl -s -o /dev/null -w '%{http_code}' "$CENTRAL_URL/api/health" --max-time 20 || echo 000)
@@ -472,6 +495,7 @@ echo "  Association: $ASSOC_NAME"
 echo "  App URL:     $APP_URL"
 echo "  Worker URL:  $WORKER_URL"
 echo "  Email:       $EMAIL_PROVIDER"
+echo "  Attachments: $([[ $ATTACHMENTS -eq 1 ]] && echo "on (bucket $BUCKET_NAME)" || echo off)"
 echo "  Admin:       $ADMIN_NAME <$ADMIN_EMAIL>"
 [[ -n "$SEED_DIR" ]] && echo "  Seed:        $SEED_DIR (session $SESSION_ID)"
 echo "  Log:         $LOG_FILE"
@@ -498,19 +522,44 @@ if step queue "Create Queue"; then
   log_ok "Queue created: $QUEUE_NAME"
 fi
 
-# ── Step 3: Append tenant env block to api/wrangler.toml ──────────────────────
-# Deliberately does NOT commit. The commit moved to the end of step 4, after the
+# ── Step 3: Create the R2 bucket for comment attachments ──────────────────────
+# A new bucket is private: no public access and no r2.dev URL. Uploads and
+# downloads go through the Worker's binding, so it needs no CORS rule or token.
+# A bucket left by an earlier, failed run is reused.
+if step files "Create R2 bucket for comment attachments"; then
+  if [[ $ATTACHMENTS -eq 0 ]]; then
+    log "--no-attachments: no bucket, so comment attachments stay off"
+  else
+    cd "$API_DIR"
+    if R2_OUTPUT=$(npx wrangler r2 bucket create "$BUCKET_NAME" 2>&1); then
+      echo "$R2_OUTPUT"
+      log_ok "Bucket created: $BUCKET_NAME"
+    elif grep -qiE "already exists|code: 10004" <<<"$R2_OUTPUT"; then
+      log_ok "Bucket $BUCKET_NAME already exists -- reusing it"
+    else
+      echo "$R2_OUTPUT"
+      die "Could not create bucket $BUCKET_NAME (or re-run with --no-attachments)"
+    fi
+  fi
+fi
+
+# ── Step 4: Append tenant env block to api/wrangler.toml ──────────────────────
+# Deliberately does NOT commit. The commit moved to the end of step 5, after the
 # deploy succeeds: committing first meant a failed deploy left the bad config in
 # history, which is exactly how a wrong-prefix run got recorded before anything
 # reported an error. An uncommitted working-tree change is trivial to inspect or
 # discard; a commit is not.
 if step envblock "Add env block to api/wrangler.toml"; then
   [[ -n "${DB_ID:-}" ]] || die "DB_ID unset (resume from step 1, or pass it through)"
-  # Idempotent so a failed step 4 can be retried with --from-step 3 without
+  # Idempotent so a failed step 5 can be retried with --from-step 4 without
   # appending a duplicate block (whose later keys would quietly win).
   if grep -qE "^\\[env\\.${SLUG}\\]" "$API_DIR/wrangler.toml"; then
     log "[env.${SLUG}] already present — leaving it as is"
   else
+  R2_TOML=""
+  if [[ $ATTACHMENTS -eq 1 ]]; then
+    printf -v R2_TOML '# Comment attachments: the private bucket from step 3.\n[[env.%s.r2_buckets]]\nbinding = "ATTACHMENTS_BUCKET"\nbucket_name = "%s"\n\n' "$SLUG" "$BUCKET_NAME"
+  fi
   cat >> "$API_DIR/wrangler.toml" <<TOML
 
 [env.${SLUG}]
@@ -553,7 +602,7 @@ database_name = "${DB_NAME}"
 database_id = "${DB_ID}"
 migrations_dir = "migrations"
 
-[[env.${SLUG}.queues.producers]]
+${R2_TOML}[[env.${SLUG}.queues.producers]]
 binding = "BILL_QUEUE"
 queue = "${QUEUE_NAME}"
 
@@ -604,9 +653,9 @@ TOML
   fi
 fi
 
-# ── Step 4: Deploy the tenant worker (builds web + migrations + deploy) ────────
+# ── Step 5: Deploy the tenant worker (builds web + migrations + deploy) ────────
 # deploy.sh builds web/, applies pending D1 migrations, then deploys. This also
-# creates the Worker (so Step 5 secrets can attach) and provisions the custom domain.
+# creates the Worker (so step 6 secrets can attach) and provisions the custom domain.
 if step deploy "Deploy tenant worker"; then
   cd "$API_DIR"
   # deploy.sh stamps the build with this commit. The commits below move HEAD, so
@@ -628,7 +677,7 @@ if step deploy "Deploy tenant worker"; then
   fi
 fi
 
-# ── Step 5: Set secrets (worker now exists) ────────────────────────────────────
+# ── Step 6: Set secrets (worker now exists) ────────────────────────────────────
 # Only CF_AIG_TOKEN is required. No CENTRAL_ADMIN_SECRET, and no superadmin signing
 # key: central is the sole issuer and holds SUPERADMIN_JWT_PRIVATE_KEY, while a tenant
 # only ever verifies, using the public JWK in its vars. Both directions are
@@ -651,7 +700,7 @@ if step secrets "Set secrets"; then
   fi
 fi
 
-# ── Step 5b: Seed state_coverage for multi-state instances ────────────────────
+# ── Step 7: Seed state_coverage for multi-state instances ─────────────────────
 if step coverage "Seed state_coverage in D1 (multi-state)"; then
   if $IS_MULTI_STATE; then
     STATES_JSON=$(export _CSV="$STATES_CSV"; python3 -c "import json,os; print(json.dumps(os.environ['_CSV'].split(',')))")
@@ -664,9 +713,9 @@ if step coverage "Seed state_coverage in D1 (multi-state)"; then
   fi
 fi
 
-# ── Step 6: Bind the tenant on central via CentralApi + redeploy central ───────
+# ── Step 8: Bind the tenant on central via CentralApi + redeploy central ───────
 # central->tenant + operator->tenant calls run over this RPC binding (no shared
-# secret). The tenant worker must already exist (Step 4) for central to bind to it.
+# secret). The tenant worker must already exist (step 5) for central to bind to it.
 if step bind "Bind CentralApi on central + deploy central"; then
   if grep -q "binding = \"${CENTRALAPI_BINDING}\"" "$CENTRAL_DIR/wrangler.toml"; then
     log "CentralApi binding ${CENTRALAPI_BINDING} already present — skipping append"
@@ -695,7 +744,7 @@ TOML
   fi
 fi
 
-# ── Step 7: Register with central (syncs keywords + state coverage) ────────────
+# ── Step 9: Register with central (syncs keywords + state coverage) ────────────
 # force-register routes operator → central → RPC → tenant.forceRegister(), which
 # calls ensureAssociationName (seeds association_name from ASSOCIATION_NAME, only
 # over the migration placeholder) and registers the tenant's keywords — empty on
@@ -709,11 +758,11 @@ if step register "Register tenant with central"; then
   if echo "$REGISTER_RESP" | grep -q '"ok":true'; then
     log_ok "Registered with central (keywords + state coverage synced)"
   else
-    die "force-register failed: $REGISTER_RESP (check the CentralApi binding deployed in Step 6)"
+    die "force-register failed: $REGISTER_RESP (check the CentralApi binding deployed in step 8)"
   fi
 fi
 
-# ── Step 8: Seed the active session(s) so the tenant mirrors the whole session ──
+# ── Step 10: Seed the active session(s) so the tenant mirrors the whole session ─
 # Whole-session monitoring is the default: keyword/manual → full AI, everything
 # else → monitor stub. Two paths:
 #   • central already has the session (state covered already, or cron discovered it)
@@ -776,7 +825,7 @@ if step seed "Seed active session(s) for whole-session monitoring"; then
           RESP=$(curl -s -X POST "${CENTRAL_URL}/api/tenants/seed-session/${SLUG}?sessionId=${sid}&offset=${offset}" \
             -H "x-admin-secret: ${ADMIN_SECRET}" --max-time 120)
           if [[ -z "$RESP" ]]; then
-            log_warn "seed-session call failed (empty response) for ${SLUG} session ${sid} — re-run Step 8 with --from-step later"
+            log_warn "seed-session call failed (empty response) for ${SLUG} session ${sid} — re-run step 10 with --from-step later"
             seed_ok=0
             break
           fi
@@ -792,7 +841,7 @@ if step seed "Seed active session(s) for whole-session monitoring"; then
   fi
 fi
 
-# ── Step 9: Create the founding owner user ─────────────────────────────────────
+# ── Step 11: Create the founding owner user ────────────────────────────────────
 # The first user MUST be 'owner', not 'admin': only an owner can grant the owner
 # role (see api/src/routes/adminApi.ts), so a tenant with no owner can never get one.
 if step owner "Create founding owner user"; then
@@ -805,7 +854,7 @@ if step owner "Create founding owner user"; then
   log_ok "Founding owner created: $ADMIN_EMAIL"
 fi
 
-# ── Step 11: Verify the instance end to end ────────────────────────────────────
+# ── Step 12: Verify the instance end to end ────────────────────────────────────
 # Several of the steps above can fail without saying so: the site loads, but bills
 # never arrive or email never sends. verify-instance.sh proves health, registration,
 # queue delivery, AI, and email, and on a failure names the check, its likely cause,
@@ -813,7 +862,7 @@ fi
 # by hand without --ai to skip that.
 #
 # Everything is passed explicitly rather than re-read, so the check sees exactly the
-# values this run provisioned with. --expect-build is the commit step 4 deployed, or
+# values this run provisioned with. --expect-build is the commit step 5 deployed, or
 # "any" when resuming past it (this run cannot know what an earlier one deployed).
 resume_cmd() {
   # The command that resumes this run. --from-step is dropped so the verifier's
