@@ -684,11 +684,11 @@ const usHb6668Votes: DemoSeed['votes'] = [
 // ---------------------------------------------------------------------------
 const sb128: DemoSeedComment[] = [
   { id: 'lm-c-sb128-1', externalId: 'legiscan:2007625', userId: 'lm-user-dep',
-    content: '<p>Tracking SB128 as the Senate side of AB131. The two move together, so one thread covers both.</p>', daysAgo: 126 },
+    content: '<p>Tracking SB128 as the Senate side of AB131, which is now law. One thread covers both for the record.</p>', daysAgo: 126 },
   { id: 'lm-c-sb128-2', externalId: 'legiscan:2007625', userId: 'lm-user-gc',
     content: "<p>I read them side by side and found nothing that differs. I'm treating them as one bill.</p>", daysAgo: 125 },
   { id: 'lm-c-sb128-3', externalId: 'legiscan:2007625', userId: 'lm-user-la2',
-    content: "<p>Same here. I'll watch both chambers and post if either one moves.</p>", daysAgo: 124 },
+    content: "<p>Same here. I'll keep both numbers in the Wisconsin tracker so the companion isn't lost.</p>", daysAgo: 124 },
 ]
 const sb128Reactions: DemoSeedReaction[] = [
   { id: 'lm-r-sb128-1', commentId: 'lm-c-sb128-1', userId: 'lm-user-wq', emoji: '👍', daysAgo: 126 },
@@ -703,9 +703,9 @@ const ab59: DemoSeedComment[] = [
   { id: 'lm-c-ab59-1', externalId: 'legiscan:1981854', userId: 'lm-user-gov',
     content: '<p>AB59 is the Assembly companion to SB56. Same ask, so I am not splitting our tracking.</p>', daysAgo: 404 },
   { id: 'lm-c-ab59-2', externalId: 'legiscan:1981854', userId: 'lm-user-ed',
-    content: '<p>Good to have both on one page. If one chamber stalls, the other can carry it.</p>', daysAgo: 403 },
+    content: '<p>Good to have both on one page. SB56 became law, so this one stays here as the record of the companion.</p>', daysAgo: 403 },
   { id: 'lm-c-ab59-3', externalId: 'legiscan:1981854', userId: 'lm-user-grants',
-    content: '<p>Utilities keep asking which number to cite. Either one, so I am pointing them to this page.</p>', daysAgo: 401 },
+    content: '<p>Utilities keep asking which bill to cite. SB56 is the law, so I am pointing them there.</p>', daysAgo: 401 },
 ]
 const ab59Reactions: DemoSeedReaction[] = [
   { id: 'lm-r-ab59-1', commentId: 'lm-c-ab59-2', userId: 'lm-user-gov', emoji: '👍', daysAgo: 403 },
@@ -838,7 +838,7 @@ export const LM_NOTES: DemoSeed['notes'] = [
     content: "<p>Follow up with Grace on whether Michigan's mussel data can strengthen the record for the next subcommittee hearing.</p>" },
   // On the companion side of a group, so the group's page shows the note under both bill numbers.
   { id: 'lm-n-sb128', externalId: 'legiscan:2007625', daysAgo: 118,
-    content: '<p>Lead the Wisconsin briefing with both bill numbers. It is one ask, whichever chamber moves first.</p>' },
+    content: '<p>Cite both bill numbers in the Wisconsin briefing so the companion is not lost.</p>' },
   { id: 'lm-n-ab59', externalId: 'legiscan:1981854', daysAgo: 395,
     content: '<p>Cite both bill numbers in the lead service line one-pager.</p>' },
   { id: 'lm-n-sb528', externalId: 'legiscan:1966402', daysAgo: 5,
