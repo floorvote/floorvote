@@ -77,9 +77,9 @@ function entryKind(name: string): EntryKind | null {
  * polling it, but its member votes may never have been loaded, or may have
  * changed in its last week. An adjourned session's dataset hash stops
  * changing, so after one load it costs nothing beyond sharing its state's list
- * call. Sessions with sync off, or outside the
- * tracked states, are backfilled with the bulk seeder. States another
- * provider owns, and its sessions, are left out like the sync leaves them out.
+ * call. Sessions with sync off, or outside the tracked states, are backfilled
+ * with the bulk seeder. States another provider owns, and its sessions, are
+ * left out like the sync leaves them out.
  */
 export async function checkVoteDatasets(env: Env, db: Db): Promise<void> {
   // LegiScan's datasets, for the states LegiScan owns, as in the LegiScan sync.
