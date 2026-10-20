@@ -445,6 +445,53 @@ describe('BillDetail Discard draft', () => {
       expect(deleteCalls()).toHaveLength(0)
     })
 
+    it("describes what the server's guard does, not a removal of votes, positions, comments, and notes", async () => {
+      const user = userEvent.setup()
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+      mockApi()
+      renderPage()
+
+      await pageHasRendered()
+      await user.click(screen.getByRole('button', { name: 'More actions' }))
+      const item = screen.getByRole('menuitem', { name: /Delete this draft bill/ })
+      expect(item).toHaveTextContent(/can.?t be deleted; link it to its filed bill instead/)
+      expect(item).not.toHaveTextContent(/removes it and its votes/)
+      await user.click(item)
+
+      const message = confirm.mock.calls[0][0] as string
+      expect(message).toMatch(/can.?t be deleted; link it to its filed bill instead/)
+      expect(message).not.toMatch(/removes it and its votes/)
+    })
+
+    it("shows the server's refusal and stays on the page when the draft has engagement (409)", async () => {
+      const user = userEvent.setup()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      mockApi({}, async () => { throw new api.ApiError(409, 'This draft has engagement; link it to a filed bill instead.') })
+      renderPage()
+
+      await pageHasRendered()
+      await user.click(screen.getByRole('button', { name: 'More actions' }))
+      await user.click(screen.getByRole('menuitem', { name: /Delete this draft bill/ }))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('This draft has engagement; link it to a filed bill instead.')
+      expect(navigateMock).not.toHaveBeenCalled()
+      expect(screen.getByRole('menuitem', { name: /Delete this draft bill/ })).toBeEnabled()
+    })
+
+    it('says so plainly when the delete fails for another reason', async () => {
+      const user = userEvent.setup()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      mockApi({}, async () => { throw new Error('network down') })
+      renderPage()
+
+      await pageHasRendered()
+      await user.click(screen.getByRole('button', { name: 'More actions' }))
+      await user.click(screen.getByRole('menuitem', { name: /Delete this draft bill/ }))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Failed to delete draft.')
+      expect(navigateMock).not.toHaveBeenCalled()
+    })
+
     it('still deletes after a confirmed prompt on a draft reached without the state', async () => {
       const user = userEvent.setup()
       vi.spyOn(window, 'confirm').mockReturnValue(true)

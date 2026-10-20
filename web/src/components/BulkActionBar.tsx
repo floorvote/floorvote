@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { apiFetch } from '../lib/api'
 import { SECTION_LABEL } from '../lib/textStyles'
 import { Picker } from './Picker'
@@ -180,6 +180,17 @@ function computeInitialFromDistribution(
     customFields[def.id] = sharedValue(data.customFields[def.id] ?? {}, count)
   }
   return { priority, position, customFields, multiOptionCounts, sampleSize: count }
+}
+
+/** The small outlined triage buttons under the Priority pill (Dismiss new matches, Delete drafts). */
+function triageButtonStyle(blocked: boolean, locked: boolean): CSSProperties {
+  return {
+    fontSize: fontSize.sm, padding: '4px 10px', borderRadius: radius.md,
+    border: `1px solid ${color.borderDefault}`, background: color.white,
+    color: color.textMuted, cursor: blocked ? 'not-allowed' : 'pointer',
+    opacity: locked ? 0.5 : 1,
+    textAlign: 'left', whiteSpace: 'nowrap',
+  }
 }
 
 const SIDEBAR_DEFAULT_WIDTH = 225
@@ -475,14 +486,14 @@ export function BulkActionBar({
       if (gone.length > 0) onDraftsDeleted(gone)
       const kept = skipped.filter(s => s.reason === 'engaged').length
       const failed = skipped.filter(s => s.reason === 'error' || s.reason === 'not_draft').length
-      const notes: string[] = []
+      const messages: string[] = []
       if (kept > 0) {
-        notes.push(`${kept.toLocaleString()} ${plural(kept, 'draft was', 'drafts were')} kept: ${plural(kept, 'it has', 'they have')} votes, positions, comments, or notes.`)
+        messages.push(`${kept.toLocaleString()} ${plural(kept, 'draft was', 'drafts were')} kept: ${plural(kept, 'it has', 'they have')} votes, positions, comments, or notes. ${plural(kept, 'Link it', 'Link each')} to its filed bill instead.`)
       }
       if (failed > 0) {
-        notes.push(`${failed.toLocaleString()} ${plural(failed, 'draft', 'drafts')} could not be deleted. Try again.`)
+        messages.push(`${failed.toLocaleString()} ${plural(failed, 'draft', 'drafts')} could not be deleted. Try again.`)
       }
-      if (notes.length > 0) setError(notes.join(' '))
+      if (messages.length > 0) setError(messages.join(' '))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete drafts')
     } finally {
@@ -692,13 +703,7 @@ export function BulkActionBar({
               onClick={handleDismissNewMatches}
               disabled={applying || demoLocked}
               title="Mark the new matches in this selection as reviewed — no priority"
-              style={{
-                fontSize: fontSize.sm, padding: '4px 10px', borderRadius: radius.md,
-                border: `1px solid ${color.borderDefault}`, background: color.white,
-                color: color.textMuted, cursor: (applying || demoLocked) ? 'not-allowed' : 'pointer',
-                opacity: demoLocked ? 0.5 : 1,
-                textAlign: 'left', whiteSpace: 'nowrap',
-              }}
+              style={triageButtonStyle(applying || demoLocked, demoLocked)}
             >
               ✕ Dismiss new matches ({newMatchCount.toLocaleString()})
             </button>
@@ -709,13 +714,7 @@ export function BulkActionBar({
               onClick={handleDeleteDrafts}
               disabled={applying || demoLocked}
               title={demoLocked ? 'Locked in demo mode' : 'Permanently delete the draft bills in this selection'}
-              style={{
-                fontSize: fontSize.sm, padding: '4px 10px', borderRadius: radius.md,
-                border: `1px solid ${color.borderDefault}`, background: color.white,
-                color: color.textMuted, cursor: (applying || demoLocked) ? 'not-allowed' : 'pointer',
-                opacity: demoLocked ? 0.5 : 1,
-                textAlign: 'left', whiteSpace: 'nowrap',
-              }}
+              style={triageButtonStyle(applying || demoLocked, demoLocked)}
             >
               ✕ Delete drafts ({draftCount.toLocaleString()})
             </button>

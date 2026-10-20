@@ -979,7 +979,17 @@ describe('BulkActionBar — delete drafts', () => {
     fireEvent.click(deleteBtn()!)
 
     await waitFor(() => expect(onDraftsDeleted).toHaveBeenCalledWith(['d1']))
-    expect(await screen.findByText(/2 drafts were kept.*votes, positions, comments, or notes/i)).toBeInTheDocument()
+    expect(await screen.findByText(/2 drafts were kept.*votes, positions, comments, or notes\. Link each to its filed bill instead\./i)).toBeInTheDocument()
+  })
+
+  it('says what to do next for a single kept draft, in the singular', async () => {
+    vi.mocked(apiFetch).mockResolvedValueOnce({ deleted: [], skipped: [{ id: 'd1', reason: 'engaged' }] })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<Harness selectedBills={[bill('d1', true)]} />)
+
+    fireEvent.click(deleteBtn()!)
+
+    expect(await screen.findByText(/1 draft was kept: it has votes, positions, comments, or notes\. Link it to its filed bill instead\./i)).toBeInTheDocument()
   })
 
   it('names drafts the server could not delete in the bar', async () => {
