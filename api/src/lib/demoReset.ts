@@ -1,4 +1,5 @@
 import type { DemoSeed } from './demoSeeds'
+import { FIELD_CHANGED, type FieldChangedMetadata } from '../../../shared/teamFields'
 
 /** N days ago in the SQLite space format that stored timestamps require.
  *  Counts BACKWARD: positive n is the past, and n = 0 is now. This is the seed's
@@ -66,6 +67,11 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
     db.prepare('DELETE FROM notes'),
     db.prepare('DELETE FROM bill_mutes'),
     db.prepare('DELETE FROM feed_events'),
+    // Activity lines. A visitor's priority, position, or custom field change writes a
+    // field_changed row that the reset's put-it-back never undoes, so it would outlive the
+    // reset as a line about a change the page no longer shows. `grouped` and `split` stay:
+    // they record the tenant's real companion groups, which the reset leaves alone.
+    db.prepare(`DELETE FROM team_events WHERE type = 'field_changed'`),
     db.prepare('DELETE FROM bill_custom_field_values'),
     // calendar_event_bills.event_id REFERENCES calendar_events(id) with NO
     // cascade (migration 0045), so the join rows must be cleared BEFORE the
@@ -299,6 +305,26 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
        WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
     ).bind(v.externalId, v.fieldId, v.value, v.setBy, daysAgoDb(v.daysAgo), v.externalId),
   ))
+
+  // Activity lines: the seed's team field changes, in the metadata shape recordFieldChanges
+  // (lib/teamFields.ts) writes, so the bill page reads them as it reads a real one. The label
+  // is "priority", "position", or the custom field's name, as the app sets it.
+  const fieldLabel = (c: DemoSeed['teamFieldChanges'][number]) =>
+    c.field === 'customField' ? seed.customFields.find(f => f.id === c.fieldId)?.name ?? c.fieldId! : c.field
+  await batch(seed.teamFieldChanges.map((c) => {
+    const metadata: FieldChangedMetadata = {
+      field: c.field,
+      ...(c.fieldId !== undefined ? { fieldId: c.fieldId } : {}),
+      label: fieldLabel(c),
+      old: c.old,
+      new: c.new,
+    }
+    return db.prepare(
+      `INSERT OR IGNORE INTO team_events (id, bill_id, type, actor_user_id, metadata, created_at)
+       SELECT ?, (SELECT id FROM bills WHERE external_id = ? LIMIT 1), ?, ?, ?, ?
+       WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
+    ).bind(c.id, c.externalId, FIELD_CHANGED, c.userId, JSON.stringify(metadata), daysAgoDb(c.daysAgo), c.externalId)
+  }))
 
   // Personal notes for demo-user
   await batch(seed.notes.map((n) =>
