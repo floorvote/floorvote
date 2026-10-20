@@ -1,0 +1,11 @@
+-- When this instance last renewed its request to central for a pulled
+-- companion that leads a group with a tracked bill (#801). Central keeps
+-- ingesting a requested bill's new texts while the request is recent, and the
+-- request lapses without another ask. lib/companionAnalysis.ts renews it on a
+-- tracked member's delivery, at most once a week per lead, and this column is
+-- that limit. NULL means never renewed, so a lead pulled before #801 is renewed
+-- on the first delivery in its group.
+--
+-- No semicolons in these comments. api/test/helpers.ts splits migration files
+-- on the statement terminator before it strips comment lines.
+ALTER TABLE bills ADD COLUMN fetch_renewed_at TEXT;

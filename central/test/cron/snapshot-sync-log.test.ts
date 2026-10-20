@@ -179,6 +179,8 @@ describe('a pass that finishes', () => {
   it('logs a pass over unchanged data as every bill checked and none changed or queued', async () => {
     const { env: e } = makeEnv()
     await runSnapshotSync(lims, e, db())
+    // Stand in for the ingestor having run on every bill the first pass queued (LIMS declares ingestAll, #835).
+    await env.DB.prepare(`UPDATE bills SET texts_fetched_at = datetime('now'), detail_hash = change_hash`).run()
     await runSnapshotSync(lims, e, db())
     const rows = await logRows()
     expect(rows).toHaveLength(2)

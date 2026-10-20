@@ -1190,6 +1190,26 @@ describe('processBill: a text whose hash changed under the same doc id', () => {
         expect(await served()).toMatchObject({ textHash: 'v2-b', content: '<html>new bytes</html>' })
       })
 
+      it('moves updated_at when a forced refetch past the cap lands the new pair', async () => {
+        failing()
+        await changed(); await changed(); await changed()
+        expect(await updatedAt()).toBe(STALE)
+        fetchMock.mockImplementation(async () => html('new bytes'))
+        vi.mocked(legiscan.getBill).mockResolvedValue(buildFixtureBill({ texts: [text(1000, 'v1-a'), text(1001, 'v2-b')] }))
+        await processIngestorQueue(makeBatch(9001, { forceTextRefetch: true }), makeEnv(), db())
+        expect(await served()).toMatchObject({ textHash: 'v2-b', content: '<html>new bytes</html>' })
+        expect(await updatedAt()).not.toBe(STALE)
+      })
+
+      it('keeps the old pair, and leaves updated_at, when a forced refetch past the cap fails again', async () => {
+        failing()
+        await changed(); await changed(); await changed()
+        vi.mocked(legiscan.getBill).mockResolvedValue(buildFixtureBill({ texts: [text(1000, 'v1-a'), text(1001, 'v2-b')] }))
+        await processIngestorQueue(makeBatch(9001, { forceTextRefetch: true }), makeEnv(), db())
+        expect(await served()).toMatchObject({ textHash: 'v1-b', content: '<html>old bytes</html>' })
+        expect(await updatedAt()).toBe(STALE)
+      })
+
       it('starts the count over for a newer hash', async () => {
         failing()
         await changed(); await changed(); await changed()

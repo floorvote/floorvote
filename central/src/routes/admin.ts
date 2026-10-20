@@ -866,6 +866,20 @@ adminRoutes.post('/reingest-bill/:billId', async (c) => {
   return c.json({ ok: true, billId, queued: true })
 })
 
+// Refetch one bill's stored texts, past the retry cap on a changed text hash.
+// Unlike /refetch-fragment-texts this does not set skipFetch: the ingest reads
+// the bill's current hashes from its provider, so a document that gave up on a
+// new hash takes that hash and its bytes together, or keeps the old pair if the
+// fetch fails again. One provider call plus one download per stored document.
+adminRoutes.post('/refetch-bill-text/:billId', async (c) => {
+  const billId = parseInt(c.req.param('billId'), 10)
+  if (isNaN(billId)) return c.json({ error: 'invalid billId' }, 400)
+
+  const queue = await ingestQueueForBill(billId, c.env, drizzle(c.env.DB, { schema }))
+  await queue.send({ billId, forceTextRefetch: true } as IngestorMessage)
+  return c.json({ ok: true, billId, queued: true })
+})
+
 // Re-ingest every fully-tracked bill for a tenant. Triggers a fresh getBill call
 // for each bill, refreshing all child tables (supplements, amendments, history,
 // sponsors, etc.).

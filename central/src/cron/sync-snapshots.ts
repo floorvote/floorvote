@@ -325,7 +325,7 @@ async function runSnapshotPass(
   const queue = ingestQueueFor(provider, env)
   // Every bill a cutover moved here gets its first ingest, tracked or not.
   const queued = new Set(await applyMasterList(session, entries, covering, env, db, queue,
-    { deferQueuedUpdates: true, ingestMovedBills: true, tolerateLogFailure: true }))
+    { deferQueuedUpdates: true, ingestMovedBills: true, tolerateLogFailure: true, ingestAll: provider.ingestAll }))
   const newEtag = snapshot.unchanged ? storedEtag : snapshot.etag ?? null
   if (await ownerOfState(db, session.state) === provider.id) {
     const still = storedEtag === null ? isNull(sessions.snapshotEtag) : eq(sessions.snapshotEtag, storedEtag)

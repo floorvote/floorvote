@@ -138,6 +138,9 @@ beforeEach(async () => {
 
 afterEach(() => vi.restoreAllMocks())
 
+/** Every bill of the LIMS fixture's DC listing, sorted: LIMS declares ingestAll (#835), so a pass queues each one. */
+const DC_BILLS = () => ['B26-0400', 'B26-0769', 'B26-0001', 'HN26-0171'].map(n => limsBillId(n)!).sort()
+
 describe('claiming a state for a provider', () => {
   it('gives a state with no tracked bills to the provider, which syncs it from then on, and LegiScan lets it go', async () => {
     const { env: e, limsQueue } = makeEnv()
@@ -157,7 +160,7 @@ describe('claiming a state for a provider', () => {
 
     const passes = await runSnapshotSync(limsProvider, e, db)
     expect(passes).toEqual([expect.objectContaining({ sessionId: limsSessionId(26), records: 4 })])
-    expect(queuedIds(limsQueue)).toEqual([limsBillId('B26-0400')!, limsBillId('HN26-0171')!].sort())
+    expect(queuedIds(limsQueue)).toEqual(DC_BILLS())
 
     await runSync(e, db)
     expect(legiscan.getMasterListBySession).not.toHaveBeenCalled()
@@ -190,7 +193,7 @@ describe('claiming a state for a provider', () => {
     const { env: e, limsQueue } = makeEnv()
     expect((await claim(e, 'DC', { provider: 'lims' })).status).toBe(200)
     await runSnapshotSync(limsProvider, e, db)
-    expect(queuedIds(limsQueue).length).toBe(2)
+    expect(queuedIds(limsQueue)).toEqual(DC_BILLS())
     const before = await ownership(e)
 
     const res = await claim(e, 'DC', { provider: 'legiscan' })
@@ -327,7 +330,7 @@ describe('the old ownership env vars (#319)', () => {
     await runSync(e, db)
     expect(legiscanStates()).toEqual(['MD'])
     await runSnapshotSync(limsProvider, e, db)
-    expect(queuedIds(limsQueue)).toEqual([limsBillId('B26-0400')!, limsBillId('HN26-0171')!].sort())
+    expect(queuedIds(limsQueue)).toEqual(DC_BILLS())
   })
 
   it('lets a row decide when its old env var names a different state, and when it holds a different value', async () => {

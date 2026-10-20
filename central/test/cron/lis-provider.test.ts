@@ -46,6 +46,12 @@ const claim = (provider: string) => seam.claim('VA', provider)
 /** The central id of a bill by number, in a session (by its tag). */
 const billId = (number: string, code = '20261') => seam.billIdOf(number, code)
 
+/** Every bill of a provider's, sorted: it declares ingestAll (#835), so a pass queues each one. */
+async function allBills(provider: string): Promise<number[]> {
+  const rows = await env.DB.prepare('SELECT bill_id FROM bills WHERE provider = ? ORDER BY bill_id').bind(provider).all<{ bill_id: number }>()
+  return rows.results.map(r => r.bill_id)
+}
+
 beforeEach(async () => {
   await resetCentral()
   sessions = {}
@@ -80,7 +86,7 @@ describe('Virginia from the LIS data files', () => {
   it('syncs Virginia once claimed, with no key, no LegiScan call, and per-member votes', async () => {
     expect((await claim('lis')).status).toBe(200)
     const { run } = await syncAndIngest()
-    expect(queuedIds(run).sort()).toEqual([await billId('HB1'), await billId('HB9'), await billId('HB61')].sort())
+    expect(queuedIds(run).sort()).toEqual(await allBills('lis'))
 
     const bill = await getJson(`/bills/${toHandle(await billId('HB1'))}`)
     expect(bill).toMatchObject({

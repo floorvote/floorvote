@@ -137,7 +137,7 @@ describe('the Maryland sync', () => {
     expect(mga.getMgaSession).not.toHaveBeenCalled()
   })
 
-  it('finds the session, stores every record, and queues the matched bills', async () => {
+  it('finds the session, stores every record, and queues every bill, the matched ones first', async () => {
     const db = drizzle(env.DB, { schema })
     const { env: e, ingestor } = makeEnv()
     const reports = await runSnapshotSync(mgaProvider, e, db)
@@ -150,18 +150,23 @@ describe('the Maryland sync', () => {
     expect((await db.select().from(schema.providerRecords).all()).length).toBe(sample.length)
     const hb1 = await billByNumber('HB1')
     expect(hb1).toMatchObject({ provider: 'mga', state: 'MD', status: 204 })
-    // HB 1 and its cross-file SB 2 share a title, so both match "cost recovery".
-    expect(queuedIds(ingestor).sort()).toEqual([hb1!.billId, (await billByNumber('SB2'))!.billId].sort())
+    // HB 1 and its cross-file SB 2 share a title, so both match "cost recovery". The MGA
+    // declares ingestAll (#835), so the rest get a full ingest too, behind them.
+    const queued = queuedIds(ingestor)
+    expect(queued.slice(0, 2).sort()).toEqual([hb1!.billId, (await billByNumber('SB2'))!.billId].sort())
+    expect([...queued].sort()).toEqual((await db.select().from(schema.bills).all()).map(b => b.billId).sort())
   })
 
   it('queues nothing when only the file timestamp moved', async () => {
     const db = drizzle(env.DB, { schema })
     const first = makeEnv()
     await runSnapshotSync(mgaProvider, first.env, db)
-    for (const n of ['HB1', 'SB2']) {
-      const b = await billByNumber(n)
-      await db.update(schema.bills).set({ changeHash: (await db.select().from(schema.providerRecords)
-        .where(eq(schema.providerRecords.billId, b!.billId)).get())!.rawHash }).where(eq(schema.bills.billId, b!.billId))
+    // Stand in for the ingestor having run on every bill: each is fully ingested at its record's hash.
+    for (const b of await db.select().from(schema.bills).all()) {
+      const rawHash = (await db.select().from(schema.providerRecords)
+        .where(eq(schema.providerRecords.billId, b.billId)).get())!.rawHash
+      await db.update(schema.bills).set({ changeHash: rawHash, detailHash: rawHash, textsFetchedAt: '2026-01-01 00:00:00' })
+        .where(eq(schema.bills.billId, b.billId))
     }
     vi.mocked(mga.getMgaSession).mockImplementation(async () =>
       file(structuredClone(sample).map(r => ({ ...r, StatusCurrentAsOf: '2099-01-01T00:00:00' }))))

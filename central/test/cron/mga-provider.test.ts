@@ -44,6 +44,12 @@ const fileRequests = () => calls.filter(c => c.method === 'GET' && c.url === FIL
 const claim = (provider: string, run?: Run) => seam.claim('MD', provider, run)
 const billId = (number: string) => seam.billIdOf(number)
 
+/** Every bill of a provider's, sorted: it declares ingestAll (#835), so a pass queues each one. */
+async function allBills(provider: string): Promise<number[]> {
+  const rows = await env.DB.prepare('SELECT bill_id FROM bills WHERE provider = ? ORDER BY bill_id').bind(provider).all<{ bill_id: number }>()
+  return rows.results.map(r => r.bill_id)
+}
+
 beforeEach(async () => {
   await resetCentral()
   serve(sample())
@@ -79,8 +85,7 @@ describe('Maryland from the General Assembly', () => {
   it('syncs Maryland from its session file once claimed, with no key and no LegiScan call', async () => {
     expect((await claim('mga')).status).toBe(200)
     const { run } = await syncAndIngest()
-    // HB 1 and its cross-file SB 2 match "cost recovery", and HB 2 "tax".
-    expect(queuedIds(run).sort()).toEqual([await billId('HB1'), await billId('SB2'), await billId('HB2')].sort())
+    expect(queuedIds(run).sort()).toEqual(await allBills('mga'))
     expect(calls.every(c => c.url.startsWith('https://mgaleg.maryland.gov/'))).toBe(true)
 
     const bill = await getJson(`/bills/${toHandle(await billId('HB1'))}`)
@@ -199,7 +204,9 @@ describe('committees from the MGA (#299)', () => {
     expect(hb1.referrals.every((r: any) => Number(r.committeeId) > 3_000_000_000)).toBe(true)
 
     const rows = await drizzle(env.DB, { schema }).select().from(schema.committees).all()
+    // Every bill is ingested (the MGA declares ingestAll, #835), so the untracked ones' committees are there too.
     expect(rows.map(r => [r.provider, r.state, r.chamber, r.name]).sort()).toEqual([
+      ['mga', 'MD', 'H', 'Appropriations'],
       ['mga', 'MD', 'H', 'Environment and Transportation'],
       ['mga', 'MD', 'H', 'Ways and Means'],
       ['mga', 'MD', 'S', 'Education, Energy, and the Environment'],

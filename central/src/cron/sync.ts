@@ -1,4 +1,4 @@
-import { eq, and, inArray, isNotNull } from 'drizzle-orm'
+import { eq, and, inArray, isNotNull, sql } from 'drizzle-orm'
 import { DEFAULT_PROVIDER_ID, getProvider, type Provider, type SessionRef, type SyncEntry } from '../providers'
 import { sessions, bills, billTenants, billSasts, tenants, keywordRegistry, sessionSyncLog } from '../db/schema'
 import { relationshipKind } from '../lib/vocabulary'
@@ -12,9 +12,12 @@ import { deliverBatchToTenant } from '../lib/tenantDelivery'
 import { assignSessionSlugs } from '../lib/sessionSlugs'
 import { insertLinkWhileOwner, loadStateOwners, ownerOf, ownerOfState } from '../lib/stateProviders'
 import { queueCalendarRechecks } from '../lib/billCalendar'
+import { fetchRequestCutoff, refreshRequestedBills } from '../lib/fetchRequests'
 
 const BATCH = 80
 const FLUSH_BATCH = 500
+/** Passes that may queue a bill's first full ingest under `ingestAll` before it is given up on (0048). */
+const FIRST_INGEST_TRIES = 3
 
 /**
  * For the listed bills, the instances that track an identical companion of each
@@ -285,6 +288,12 @@ export async function applyMasterList(
      * write must not fail it. The snapshot sync sets this.
      */
     tolerateLogFailure?: boolean
+    /**
+     * The provider's Provider.ingestAll: queue every changed bill for a full
+     * ingest, tracked or not, in place of a monitor stub, and up to `perPass`
+     * bills that have never had one. The snapshot sync passes its provider's.
+     */
+    ingestAll?: { perPass: number }
   } = {},
 ): Promise<number[]> {
   const logPass = (values: typeof sessionSyncLog.$inferInsert) =>
@@ -318,7 +327,7 @@ export async function applyMasterList(
 
   // Load existing bills + bill_tenants links in chunks
   const billIds = list.map(b => b.bill_id)
-  const existing = new Map<number, { changeHash: string; carriedFrom: string | null }>()
+  const existing = new Map<number, { changeHash: string; carriedFrom: string | null; ingested: boolean; firstIngestTries: number }>()
   const existingLinks = new Map<string, string | null>()
   /**
    * Covering instances that already follow the session's state: they held a
@@ -327,20 +336,34 @@ export async function applyMasterList(
    * them. A state an instance never followed is seeded by its first pass.
    */
   const seeded = new Set<string>()
+  /** Live fetch-bills requests (lib/fetchRequests.ts), as `${billId}:${tenantId}`. */
+  const requested = new Set<string>()
+  const requestCutoff = fetchRequestCutoff()
   for (let i = 0; i < billIds.length; i += BATCH) {
     const chunk = billIds.slice(i, i + BATCH)
-    const rows = await db.select({ billId: bills.billId, changeHash: bills.changeHash, carriedFrom: bills.carriedFrom })
-      .from(bills).where(inArray(bills.billId, chunk)).all()
-    for (const r of rows) existing.set(r.billId, { changeHash: r.changeHash, carriedFrom: r.carriedFrom })
+    const rows = await db.select({
+      billId: bills.billId, changeHash: bills.changeHash, carriedFrom: bills.carriedFrom,
+      textsFetchedAt: bills.textsFetchedAt, detailHash: bills.detailHash, firstIngestTries: bills.firstIngestTries,
+    }).from(bills).where(inArray(bills.billId, chunk)).all()
+    for (const r of rows) {
+      existing.set(r.billId, {
+        changeHash: r.changeHash, carriedFrom: r.carriedFrom,
+        // Every ingest stamps both (queue/processor.ts); a bill only a sync pass wrote has neither.
+        ingested: r.textsFetchedAt !== null || r.detailHash !== null,
+        firstIngestTries: r.firstIngestTries ?? 0,
+      })
+    }
 
     const links = await db.select({
       billId: billTenants.billId,
       tenantId: billTenants.tenantId,
       matchType: billTenants.matchType,
+      fetchRequestedAt: billTenants.fetchRequestedAt,
     }).from(billTenants).where(inArray(billTenants.billId, chunk)).all()
     for (const r of links) {
       existingLinks.set(`${r.billId}:${r.tenantId}`, r.matchType ?? null)
       seeded.add(r.tenantId)
+      if (r.fetchRequestedAt && r.fetchRequestedAt > requestCutoff) requested.add(`${r.billId}:${r.tenantId}`)
     }
   }
   // An instance with no link in this list may still follow the state through
@@ -370,13 +393,30 @@ export async function applyMasterList(
   const billStmts: any[] = []
   const billTenantStmts: any[] = []
   const toQueue = new Set<number>()
+  /** Changed bills an instance asked for and doesn't track, fetched within the untracked-bill budget (lib/fetchRequests.ts). */
+  const toRefresh = new Set<number>()
   /** The new keyword matches each queued bill brings, by tenant (BillMessage.matchProvenance). */
   const provenanceByBill = new Map<number, Record<string, MatchProvenance>>()
   /** Bills a cutover moved here that are still waiting for their first ingest. */
   const carried = new Set<number>()
   /** Of those, the untracked ones, queued only for that ingest. */
   const untrackedFirst = new Set<number>()
+  /** Bills queued only for `ingestAll`, which go after the ones instances track. */
+  const ingestAllOnly = new Set<number>()
+  /** Of those, the never-ingested ones, whose first full ingest is quiet (BillMessage.firstFullIngest). */
+  const firstFull = new Set<number>()
+  /**
+   * Never-ingested bills `ingestAll` may queue, chosen after the loop, each
+   * with the instances due its stub if it isn't queued: `stubFor` as usual,
+   * and `untracked` (every instance it has no match in) once it is given up on.
+   */
+  const firstCandidates: { billId: number; tries: number; stubFor: string[]; untracked: string[] }[] = []
   const stubMessagesByTenant = new Map<string, NotificationMessage[]>()
+  const pushStub = (tenantId: string, billId: number) => {
+    const msgs = stubMessagesByTenant.get(tenantId) ?? []
+    msgs.push({ tenantId, billId: toHandle(billId), stubOnly: true })
+    stubMessagesByTenant.set(tenantId, msgs)
+  }
   const queueIdByTenant = new Map(coveringTenants.map(t => [t.tenantId, t.queueId]))
   /** Bills listed with the change hash central holds, by that hash, for calendar rechecks. */
   const unchanged = new Map<number, string>()
@@ -438,6 +478,9 @@ export async function applyMasterList(
     }
 
     const haystack = billMatchText({ title: entry.title, description: entry.description, billNumber: entry.number })
+    /** Instances due a monitor stub for this bill, sent unless `ingestAll` queues its full ingest. */
+    const stubFor: string[] = []
+    const untracked: string[] = []
     for (const t of coveringTenants) {
       const kws = keywordsByTenant.get(t.tenantId) ?? []
       const matched = kws.length > 0 ? matchesUnion(haystack, kws).matched : false
@@ -473,6 +516,13 @@ export async function applyMasterList(
       if (justMatched || alreadyMatchedAndChanged || carriedAndTracked || trackedCompanion) {
         toQueue.add(entry.bill_id)
       }
+      // A bill the instance asked for through fetch-bills without tracking it gets its new texts too
+      // (lib/fetchRequests.ts). A LegiScan fetch spends the untracked-bill budget, after this loop;
+      // another provider's is unmetered, so it is queued as a companion's is.
+      if (newMatchType === null && billChanged && requested.has(linkKey)) {
+        if (session.provider === DEFAULT_PROVIDER_ID) toRefresh.add(entry.bill_id)
+        else toQueue.add(entry.bill_id)
+      }
 
       // A new keyword match is routine only when this pass links a bill
       // central is seeing for the first time (or has only from a raw pass,
@@ -498,15 +548,30 @@ export async function applyMasterList(
       // first time) OR when an existing null-linked bill changed. Bypasses the ingestor
       // (no LegiScan call) — the tenant fetches metadata from central /bills/:id.
       const shouldStub = newMatchType === null && (!linkExists || billChanged)
-      if (shouldStub) {
-        const msgs = stubMessagesByTenant.get(t.tenantId) ?? []
-        msgs.push({
-          tenantId: t.tenantId,
-          billId: toHandle(entry.bill_id),
-          stubOnly: true,
-        })
-        stubMessagesByTenant.set(t.tenantId, msgs)
-      }
+      if (shouldStub) stubFor.push(t.tenantId)
+      if (newMatchType === null) untracked.push(t.tenantId)
+    }
+    const tracked = untracked.length < coveringTenants.length
+
+    // With `ingestAll`, a changed bill that has had a full ingest is queued
+    // for another. One that never has is a candidate for a first full ingest,
+    // changed or not, until it has been queued FIRST_INGEST_TRIES times
+    // without one landing; after the loop, at most `perPass` are chosen. The
+    // ingest notifies every linked instance with its own match type
+    // (queue/processor.ts), so a queued bill's stubs are left out. A bill a
+    // cutover moved here is left to `ingestMovedBills` below.
+    const ingestAllFree = !!opts.ingestAll && !stored?.carriedFrom && !toQueue.has(entry.bill_id)
+    if (ingestAllFree && stored?.ingested && billChanged) {
+      toQueue.add(entry.bill_id)
+      ingestAllOnly.add(entry.bill_id)
+    }
+    const tries = stored?.firstIngestTries ?? 0
+    // A bill any instance tracks gets its first ingest from the match path,
+    // which reports its changes, never a quiet one from here.
+    if (ingestAllFree && !stored?.ingested && !tracked && tries <= FIRST_INGEST_TRIES) {
+      firstCandidates.push({ billId: entry.bill_id, tries, stubFor, untracked })
+    } else if (!(opts.ingestAll && toQueue.has(entry.bill_id))) {
+      for (const tenantId of stubFor) pushStub(tenantId, entry.bill_id)
     }
 
     // With `ingestMovedBills`, an untracked bill a cutover moved here gets its
@@ -534,6 +599,34 @@ export async function applyMasterList(
       }).where(eq(bills.billId, entry.bill_id)))
     } else if (changedUpdate) {
       billStmts.push(changedUpdate)
+    }
+  }
+
+  // `ingestAll`'s first full ingests: untried bills first, then in list order,
+  // up to `perPass`. Each counts a try, so a bill whose ingest keeps failing
+  // goes behind untried ones and, after FIRST_INGEST_TRIES, is given up on: it
+  // gets a stub then, showing its current status, and stubs as usual after.
+  // These bills' rows took the list's status and change hash above (nothing
+  // deferred them), since a first full ingest reports no changes to diff.
+  if (opts.ingestAll) {
+    const picks = new Set(firstCandidates.filter(c => c.tries < FIRST_INGEST_TRIES)
+      .sort((a, b) => a.tries - b.tries)
+      .slice(0, opts.ingestAll.perPass)
+      .map(c => c.billId))
+    for (const c of firstCandidates) {
+      if (picks.has(c.billId)) {
+        toQueue.add(c.billId)
+        ingestAllOnly.add(c.billId)
+        firstFull.add(c.billId)
+        unchanged.delete(c.billId)
+      } else if (c.tries === FIRST_INGEST_TRIES) {
+        for (const tenantId of c.untracked) pushStub(tenantId, c.billId)
+      } else {
+        for (const tenantId of c.stubFor) pushStub(tenantId, c.billId)
+        continue
+      }
+      billStmts.push(db.update(bills).set({ firstIngestTries: sql`COALESCE(${bills.firstIngestTries}, 0) + 1` })
+        .where(eq(bills.billId, c.billId)))
     }
   }
 
@@ -568,24 +661,30 @@ export async function applyMasterList(
     return []
   }
 
-  // Untracked first ingests go last, so the bills instances track don't wait
-  // behind them. A moved bill's message names this provider, so one left over
-  // after an undo is skipped without a provider call (queue/processor.ts), and
-  // the provider the bill has then queues its own. An untracked one's is also
+  // Untracked first ingests go last, and `ingestAll`'s before them, so the
+  // bills instances track don't wait behind either. A moved bill's message,
+  // and an `ingestAll` one, names this provider, so one left over after an
+  // undo is skipped without a provider call (queue/processor.ts), and the
+  // provider the bill has then queues its own. An untracked one's is also
   // skipped once the bill has had its first ingest, so a copy queued while an
   // earlier one waits costs nothing.
-  const queueIds = [...toQueue].sort((a, b) => Number(untrackedFirst.has(a)) - Number(untrackedFirst.has(b)))
+  const rank = (billId: number) => untrackedFirst.has(billId) ? 2 : ingestAllOnly.has(billId) ? 1 : 0
+  const queueIds = [...toQueue].sort((a, b) => rank(a) - rank(b))
   for (let i = 0; i < queueIds.length; i += 100) {
     await ingestorQueue.sendBatch(
       queueIds.slice(i, i + 100)
         .map<BillMessage>(billId => (untrackedFirst.has(billId) ? { billId, firstIngestFor: session.provider }
-          : carried.has(billId) ? { billId, queuedBy: session.provider } : { billId }))
+          : firstFull.has(billId) ? { billId, queuedBy: session.provider, firstFullIngest: true }
+          : carried.has(billId) || ingestAllOnly.has(billId) ? { billId, queuedBy: session.provider } : { billId }))
         .map(body => {
           const matchProvenance = provenanceByBill.get(body.billId)
           return { body: matchProvenance ? { ...body, matchProvenance } : body }
         })
     )
   }
+  // After the bill rows took the list's change hash, so each reads as behind its detail.
+  const refreshed = await refreshRequestedBills(db, ingestorQueue, [...toRefresh].filter(billId => !toQueue.has(billId)))
+  queueIds.push(...refreshed)
   // An unchanged bill is a second pull of its calendar (lib/billCalendar.ts).
   await queueCalendarRechecks(db, ingestorQueue, unchanged)
 

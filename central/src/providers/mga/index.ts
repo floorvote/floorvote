@@ -25,6 +25,8 @@ export const mga: Provider = {
   envKeys: [],
   // A cutover queues thousands of bills; their own queue keeps them from holding up LegiScan's.
   ingestQueue: 'MGA_INGESTOR_QUEUE',
+  // A full ingest reads the bill from the stored snapshot, so every bill gets one (#835).
+  ingestAll: { perPass: 500 },
   // The file carries no votes, so a bill's roll calls are always none.
   replacesRollCalls: true,
   states: [MGA_STATE],

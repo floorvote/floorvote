@@ -8,3 +8,8 @@ export function toDb(d: Date): string {
 export function nowDb(): string {
   return toDb(new Date())
 }
+
+/** The stored-format time `ms` before `now`, for comparing with stored times. */
+export function dbTimeAgo(ms: number, now: Date = new Date()): string {
+  return toDb(new Date(now.getTime() - ms))
+}
