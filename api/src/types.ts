@@ -93,6 +93,8 @@ export type TenantQueueMessage = {
   billId: string // the bill handle, "legiscan:{bill_id}" or its neutral twin "bill:{bill_id}" (normalizeHandle in shared/billHandle; older data and tests may hold legacy "ocd-bill/{uuid}" ids)
   forceMetadata?: boolean // Skip providerUpdatedAt dedup; re-upsert metadata; still gates AI on keywords
   forceAI?: boolean // Skip text-hash dedup AND keyword gate; always run the model (Gemini)
+  /** Set ONLY by central's direct operator reprocess (never through a tenant binding): lets this message run AI on a DEMO_MODE tenant. */
+  operatorAi?: true
   interactive?: true     // Set ONLY by promote-bill and reprocess-bill routes; never inferred
   stubOnly?: boolean // Update stub metadata only; skip full bill fetch and AI
   probe?: string // A delivery check from scripts/verify-instance.sh: record arrival under this nonce and touch no bill

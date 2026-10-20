@@ -261,6 +261,45 @@ describe('POST /tenants/reprocess/:tenantId — untargeted offset pagination', (
   })
 })
 
+describe('POST /tenants/reprocess/:tenantId — operatorAi (demo AI opt-in)', () => {
+  const post = (env2: any, body: unknown, headers: Record<string, string> = AUTH) =>
+    app.fetch(new Request('http://central/api/tenants/reprocess/ri', { method: 'POST', headers, body: JSON.stringify(body) }), env2)
+
+  it('a direct operator call with operatorAi queues messages carrying the flag', async () => {
+    await seedReproc()
+    const { env2, sent } = queueEnv()
+    const res = await post(env2, { billIds: [101], operatorAi: true })
+    expect(res.status).toBe(200)
+    expect(sent).toHaveLength(1)
+    expect(sent[0].operatorAi).toBe(true)
+    expect(sent[0].forceAI).toBe(true)
+  })
+
+  it('without operatorAi the messages carry neither flag', async () => {
+    await seedReproc()
+    const { env2, sent } = queueEnv()
+    await post(env2, { billIds: [101] })
+    expect(sent[0].operatorAi).toBeUndefined()
+    expect(sent[0].forceAI).toBeUndefined()
+  })
+
+  it('a call carrying a caller-tenant header drops the flag', async () => {
+    await seedReproc()
+    const { env2, sent } = queueEnv()
+    await post(env2, { billIds: [101], operatorAi: true }, { ...AUTH, 'x-caller-tenant': 'ri' })
+    expect(sent).toHaveLength(1)
+    expect(sent[0].operatorAi).toBeUndefined()
+    expect(sent[0].forceAI).toBeUndefined()
+  })
+
+  it('only the literal true counts', async () => {
+    await seedReproc()
+    const { env2, sent } = queueEnv()
+    await post(env2, { billIds: [101], operatorAi: 'true' })
+    expect(sent[0].operatorAi).toBeUndefined()
+  })
+})
+
 describe('POST /tenants/promote-bills/:tenantId — bulk promote', () => {
   async function seedTwoBills() {
     const db = drizzle(env.DB, { schema })

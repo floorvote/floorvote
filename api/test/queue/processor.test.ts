@@ -547,6 +547,17 @@ describe('processCentralNotification', () => {
     expect(processBill).not.toHaveBeenCalled()
   })
 
+  it('runs the model on a demo tenant for an operatorAi message', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+    const demoEnv = { ...testEnv, DEMO_MODE: 'true' }
+    const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID, forceAI: true, operatorAi: true }
+    await processCentralNotification(msg, demoEnv as any, db)
+
+    const { processBill } = await import('../../src/lib/llm')
+    expect(processBill).toHaveBeenCalledTimes(1)
+  })
+
   it('forceMetadata does not bypass the AI text-hash dedup', async () => {
     const db = getDb(env.DB)
     await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })

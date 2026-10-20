@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { env } from 'cloudflare:test'
 import { TenantApi, app } from '../../src/index-legiscan'
 import { clearDb } from '../helpers/migrations'
+import { drizzle } from 'drizzle-orm/d1'
+import * as schema from '../../src/db/schema'
 
 // Object-level authorization for the tenant-reachable central surface.
 //
@@ -163,6 +165,29 @@ describe('TenantApi cross-tenant object-level authz (props.tenantId)', () => {
       })
       expect(res.status).not.toBe(403)
     })
+  })
+
+  // A demo's shared admin session reaches central only through its binding. operatorAi
+  // lifts the demo's no-AI gate, so no binding call may set it, even for its own tenant.
+  it('a binding call with operatorAi queues messages without the flag', async () => {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.bills).values({ billId: 101, sessionId: 1, state: 'RI', stateId: 44, billNumber: 'H1', title: 'A', changeHash: 'h1', status: 1 })
+    await db.insert(schema.billTenants).values({ billId: 101, tenantId: 'ri', matchType: 'keyword' })
+    const sent: any[] = []
+    const queueEnv: any = {
+      ...TEST_ENV,
+      TENANT_QUEUE_RI: { send: async (m: any) => sent.push(m), sendBatch: async (ms: any[]) => sent.push(...ms.map((x: any) => x.body)) },
+    }
+    const ctx: any = { waitUntil: () => {}, passThroughOnException: () => {}, props: { tenantId: 'ri' } }
+    const res = await new TenantApi(ctx, queueEnv).fetch(new Request('https://central/api/tenants/reprocess/ri', {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ billIds: [101], operatorAi: true }),
+    }))
+    expect(res.status).toBe(200)
+    expect(sent).toHaveLength(1)
+    expect(sent[0].operatorAi).toBeUndefined()
+    expect(sent[0].forceAI).toBeUndefined()
   })
 
   describe('the public HTTP operator path (x-admin-secret, no binding) bypasses the check', () => {

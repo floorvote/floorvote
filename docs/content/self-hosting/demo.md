@@ -39,6 +39,17 @@ Two deliberate exceptions to the pattern:
 - **Module toggles still work.** The sidebar's **Customize widgets** panel — the admin-only link pinned above the user section — is live, so visitors can turn the optional widgets on and see what they do. The reset puts them back to the seeded state.
 - **The Feedback link is hidden, not disabled.** It's the one control removed outright rather than greyed out — a shared demo login can't produce feedback anyone could act on.
 
+## Running AI on a demo
+
+A demo tenant never calls the model, so its bills carry no summaries or citations until an operator asks for one analysis. Send central's targeted reprocess a direct call with the admin secret and `operatorAi`:
+
+```bash
+curl -X POST "$CENTRAL_API_URL/api/tenants/reprocess/<tenant-id>" \
+  -H "x-admin-secret: $ADMIN_SECRET" -H "content-type: application/json" \
+  -d '{"billIds": [12345, 12346], "operatorAi": true}'
+```
+
+`billIds` are the LegiScan bill ids of bills the demo already tracks. Central honors `operatorAi` only on a direct call like this one. A request that arrives through a tenant's service binding, which is everything a demo visitor can reach, has the flag dropped, so no visitor can cause a model call.
 ## Choosing the demo content
 
 The demo's content — its personas, county names, comments, calendar events, keywords, AI context, and tag taxonomy — is data, described by a *seed*. Seeds live in `api/src/lib/demoSeeds/`, one module each, and are registered in `api/src/lib/demoSeeds/index.ts`. `api/src/lib/demoReset.ts` is the machinery that writes a seed to the database; it holds no content of its own.

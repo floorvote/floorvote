@@ -21,7 +21,7 @@ import { ensureQueue, resolveQueueId, queuesRestEnabled } from '../lib/queuesRes
 import { resolveTenantRpc } from '../lib/tenantRpc'
 import { mergeCoverage } from '../lib/coverage'
 import { isSafeTenantApiUrl } from '../lib/safeUrl'
-import { guardCallerTenantParam, guardCallerTenantBody } from '../lib/callerTenant'
+import { guardCallerTenantParam, guardCallerTenantBody, CALLER_TENANT_HEADER } from '../lib/callerTenant'
 import { toHandle } from '../lib/billHandle'
 import { refreshRequestedBills } from '../lib/fetchRequests'
 
@@ -794,7 +794,11 @@ tenantsRoutes.post('/reprocess/:tenantId', guardCallerTenantParam(), async (c) =
 
   // Optional targeted filter: only these LegiScan bill_ids, each delivered WITH a
   // calendar block built from stored bill_calendar (the priority-bill backfill path).
-  const body = await c.req.json().catch(() => ({})) as { billIds?: number[]; offset?: number; limit?: number }
+  const body = await c.req.json().catch(() => ({})) as { billIds?: number[]; offset?: number; limit?: number; operatorAi?: boolean }
+  // operatorAi lifts a demo tenant's no-AI gate for one analysis. A demo's visitors share an
+  // admin session that reaches central only through its binding, which always carries
+  // x-caller-tenant, so only a direct operator call (the admin secret, no header) may set it.
+  const operatorAi = body.operatorAi === true && !c.req.header(CALLER_TENANT_HEADER)
   const targeted = Array.isArray(body.billIds)
   const offset = typeof body.offset === 'number' && body.offset >= 0 ? Math.floor(body.offset) : 0
   const pageLimit = typeof body.limit === 'number' && body.limit > 0
@@ -845,7 +849,7 @@ tenantsRoutes.post('/reprocess/:tenantId', guardCallerTenantParam(), async (c) =
     }
 
     const bodies = await Promise.all(chunk.map(async r => {
-      const msg: Record<string, unknown> = { tenantId, billId: toHandle(r.billId), forceMetadata: true }
+      const msg: Record<string, unknown> = { tenantId, billId: toHandle(r.billId), forceMetadata: true, ...(operatorAi ? { operatorAi: true, forceAI: true } : {}) }
       const cal = calByBillId.get(r.billId)
       if (targeted && cal) {
         const provider = findProvider(cal.provider) ?? getProvider(DEFAULT_PROVIDER_ID)

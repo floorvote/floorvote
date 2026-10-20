@@ -616,7 +616,11 @@ async function applyCentralBill(
   // `forceAI` deliberately does NOT override this — a demo's content is whatever
   // its seed shipped, and there is no visitor action that should spend a model
   // call.
-  if (shouldRunAi && env.DEMO_MODE === 'true') {
+  //
+  // The one exception is `operatorAi`, which only central's direct operator
+  // reprocess sets (it drops the flag on any call through a tenant binding), so
+  // the operator can refresh a demo's analyses and no visitor can cause it.
+  if (shouldRunAi && env.DEMO_MODE === 'true' && !msg.operatorAi) {
     console.log(`[processor] demo tenant: skipping AI for ${msg.billId}`)
     shouldRunAi = false
   }
