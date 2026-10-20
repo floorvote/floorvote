@@ -28,9 +28,10 @@ vi.mock('react-router-dom', async () => {
 vi.mock('../lib/scrollUtils', () => ({ getScrollContainer: () => ({ scrollTo: vi.fn() }) }))
 
 // The composer is stood in for: what matters here is what BillDetail hands it and does with its post.
-const composer = vi.hoisted(() => ({ props: [] as Array<Record<string, unknown>> }))
+const composer = vi.hoisted(() => ({ props: [] as Array<Record<string, unknown>>, edit: [] as Array<Record<string, unknown>> }))
 vi.mock('../components/RichTextEditor', () => ({
-  RichTextEditor: (props: { attachments?: unknown; onSubmit?: (html: string, ids: string[]) => void; placeholder?: string }) => {
+  RichTextEditor: (props: { attachments?: unknown; allowEmpty?: boolean; onSubmit?: (html: string, ids: string[]) => void; placeholder?: string }) => {
+    if (props.placeholder === 'Edit comment…') composer.edit.push(props as Record<string, unknown>)
     if (props.placeholder === 'Add a comment…') composer.props.push(props as Record<string, unknown>)
     return <button type="button" data-testid="comment-composer" onClick={() => props.onSubmit?.('<p>hi</p>', ['att1'])}>post</button>
   },
@@ -84,6 +85,7 @@ beforeEach(() => {
   vi.restoreAllMocks()
   authMock.emailRepliesEnabled = true
   composer.props.length = 0
+  composer.edit.length = 0
   delete CONFIG.attachments
   routerMock.params = { billId: '42' }
   routerMock.location = { state: null, pathname: '/bills/42', hash: '', search: '' }
@@ -150,5 +152,44 @@ describe('BillDetail comment attachments', () => {
     await user.click(screen.getByTestId('comment-composer'))
     const post = apiSpy.mock.calls.find(([p]) => p === '/bills/42/comments')!
     expect(JSON.parse((post[1] as RequestInit).body as string).content).toBe('<p>hi</p>')
+  })
+
+  describe('a comment with only files', () => {
+    const FILE_ONLY = { id: 'c1', userId: 'u1', userName: 'Alice', userTitle: null, content: '', createdAt: '2026-10-11 12:00:00', reactions: [], attachments: [FILE] }
+    const withFileOnly = () => { routerMock.loaderData = { ...makeBill('42', 'HB 1'), commentsTotal: 1, comments: [FILE_ONLY] } }
+
+    it('sends the post when the text is blank but a file is attached', async () => {
+      CONFIG.attachments = LIMITS
+      render(<MemoryRouter><BillDetail /></MemoryRouter>)
+      await screen.findByText('Bill HB 1')
+      await waitFor(() => expect(lastComposer()).toBeDefined())
+      apiSpy.mockClear()
+      await (lastComposer().onSubmit as (h: string, ids: string[]) => Promise<unknown>)('', ['att1'])
+      const post = apiSpy.mock.calls.find(([p, i]) => p === '/bills/42/comments' && (i as RequestInit | undefined)?.method === 'POST')!
+      expect(JSON.parse((post[1] as RequestInit).body as string)).toEqual({ content: '', attachmentIds: ['att1'] })
+    })
+
+    it('leaves no empty gap above the files', async () => {
+      withFileOnly()
+      render(<MemoryRouter><BillDetail /></MemoryRouter>)
+      await screen.findByText('Bill HB 1')
+      const list = within(document.getElementById('section-comments') as HTMLElement).getByRole('list', { name: 'Attachments' })
+      const before = list.previousElementSibling as HTMLElement | null
+      expect(before?.style.margin ?? '').not.toBe('0px 0px 8px')
+    })
+
+    it('lets the author save an edit with the text cleared', async () => {
+      withFileOnly()
+      const user = userEvent.setup()
+      render(<MemoryRouter><BillDetail /></MemoryRouter>)
+      await screen.findByText('Bill HB 1')
+      await user.click(screen.getByRole('button', { name: 'Edit' }))
+      const editor = composer.edit[composer.edit.length - 1]
+      expect(editor.allowEmpty).toBe(true)
+      apiSpy.mockClear()
+      await (editor.onSubmit as (h: string) => Promise<unknown>)('')
+      const patch = apiSpy.mock.calls.find(([p]) => p === '/comments/c1')!
+      expect(JSON.parse((patch[1] as RequestInit).body as string)).toEqual({ content: '' })
+    })
   })
 })

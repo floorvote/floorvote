@@ -261,6 +261,14 @@ describe('composer attachments, removing and posting', () => {
     expect(onSubmit).toHaveBeenCalledWith('', ['att1'])
   })
 
+  it('keeps Post disabled while the only file is still uploading', async () => {
+    fetchMock.mockImplementationOnce(() => new Promise<Response>(() => {}))
+    const { container } = await mount()
+    await pick(container, pdf())
+    await screen.findAllByText(/Uploading/)
+    expect(screen.getByRole('button', { name: 'Post' })).toBeDisabled()
+  })
+
   it('keeps Post disabled for a file that was refused, with no text', async () => {
     replies = [{ status: 400, body: { error: 'Not allowed' } }]
     const { container } = await mount()

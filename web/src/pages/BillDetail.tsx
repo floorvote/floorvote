@@ -1213,7 +1213,7 @@ export function BillDetail() {
   }
 
   async function handlePostComment(content: string, attachmentIds: string[] = []) {
-    if (!bill || !content.trim()) return
+    if (!bill || (!content.trim() && attachmentIds.length === 0)) return
     const result = await apiFetch<{ id: string; content: string; createdAt: string; attachments?: AttachmentSummary[] }>(`/bills/${bill.id}/comments`, {
       method: 'POST',
       body: JSON.stringify(attachmentIds.length > 0 ? { content, attachmentIds } : { content }),
@@ -1277,7 +1277,8 @@ export function BillDetail() {
   }
 
   async function handleSaveEdit(commentId: string, content: string) {
-    if (!content.trim()) return
+    // Text can be cleared from a comment that still has files.
+    if (!content.trim() && !comments.find((c) => c.id === commentId)?.attachments?.length) return
     const newContent = content
     await apiFetch(`/comments/${commentId}`, {
       method: 'PATCH',
@@ -3239,13 +3240,14 @@ export function BillDetail() {
                         onSubmit={(html) => handleSaveEdit(comment.id, html)}
                         onCancel={() => setEditingCommentId(null)}
                         submitLabel="Save"
+                        allowEmpty={(comment.attachments?.length ?? 0) > 0}
                         placeholder="Edit comment…"
                         // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing: focus follows the user's own click/Enter into edit mode, out of scope for this task's focus-management redesign
                         autoFocus
                       />
                     </div>
                   )
-                  : <div style={{ margin: '0 0 8px' }}><CommentContent content={comment.content} users={usersData} roles={rolesData} fontSize={COMMENT_STYLE.bodySize} /></div>
+                  : comment.content.trim() && <div style={{ margin: '0 0 8px' }}><CommentContent content={comment.content} users={usersData} roles={rolesData} fontSize={COMMENT_STYLE.bodySize} /></div>
                 }
                 <CommentAttachments attachments={comment.attachments} />
                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center', position: 'relative' }}>
