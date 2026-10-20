@@ -66,6 +66,12 @@ const overwriteCalls: Array<{ id: string; query: string | undefined }> = []
 // overwriteCalls above.
 const saveViewCalls: Array<{ name: string | undefined; query: string | undefined }> = []
 
+// Records each POST /bills/bulk-delete body and lets a test shape the reply (default: every id deleted).
+const bulkDeleteState = vi.hoisted(() => ({
+  bodies: [] as Array<{ ids: string[] }>,
+  respond: null as ((body: { ids: string[] }) => unknown) | null,
+}))
+
 // Mutable so one test can opt into a locked demo tenant. Member votes are on the
 // server's demo allowlist, so handleVote must NOT consult demoLocked — see the
 // "list-page votes on a locked demo tenant" describe below.
@@ -177,6 +183,11 @@ vi.mock('../../lib/api', () => {
       return viewsState.response as T
     }
     if (path.startsWith('/bills/facets')) return (facetsState.respond ? facetsState.respond(path) : FACETS) as T
+    if (init?.method === 'POST' && path === '/bills/bulk-delete') {
+      const body = JSON.parse(init.body as string) as { ids: string[] }
+      bulkDeleteState.bodies.push(body)
+      return (bulkDeleteState.respond ? bulkDeleteState.respond(body) : { deleted: body.ids, skipped: [] }) as T
+    }
     if (path === '/bills/bulk-dismiss' || path.endsWith('/triage-dismiss')) return {} as T
     if (init?.method === 'PATCH' && path.endsWith('/priority')) return { priority: JSON.parse(init.body as string).priority } as T
     if (path.endsWith('/votes')) {
@@ -260,6 +271,8 @@ beforeEach(() => {
   billsListError.value = null
   facetsState.respond = null
   facetsState.bills = null
+  bulkDeleteState.bodies.length = 0
+  bulkDeleteState.respond = null
   demoState.demoLocked = false
   demoState.demoMode = false
   demoState.settled = true
@@ -1575,5 +1588,135 @@ describe('BillList column header alignment', () => {
     expect(children).toHaveLength(4)
     expect(children[2]).toHaveClass('bill-col-position')
     expect(children[3]).toHaveTextContent(/^Priority/)
+  })
+})
+
+describe('BillList delete selected drafts', () => {
+  const DRAFT_A = makeBill({ id: 'draft-a', billNumber: 'DRAFT 1', title: 'First Draft', matchType: 'manual', isDraft: true })
+  const DRAFT_B = makeBill({ id: 'draft-b', billNumber: 'DRAFT 2', title: 'Second Draft', matchType: 'manual', isDraft: true })
+  const FILED = makeBill({ id: 'filed-1', billNumber: 'HB 9', title: 'Filed Bill', matchType: 'manual', isDraft: false })
+
+  function renderWithSidebarSpy() {
+    const refresh = vi.fn()
+    function SidebarProbe() {
+      useRegisterSidebarRefresh(refresh)
+      return null
+    }
+    render(
+      <MemoryRouter initialEntries={['/bills']}>
+        <AuthProvider>
+          <SidebarRefreshProvider><SidebarProbe /><BillList /></SidebarRefreshProvider>
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+    return refresh
+  }
+
+  async function select(title: string) {
+    const row = (await screen.findByText(title)).closest('.bill-row') as HTMLElement
+    fireEvent.mouseEnter(row)
+    fireEvent.click(await within(row).findByRole('checkbox'))
+  }
+
+  it('removes the deleted drafts from the list and the selection, and keeps the selected filed bill selected', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    facetsState.bills = [DRAFT_A, FILED, DRAFT_B]
+    const refresh = renderWithSidebarSpy()
+    await select('First Draft')
+    await select('Filed Bill')
+    refresh.mockClear()
+
+    fireEvent.click(await screen.findByRole('button', { name: /Delete drafts \(1\)/ }))
+
+    await waitFor(() => expect(screen.queryByText('First Draft')).toBeNull())
+    expect(bulkDeleteState.bodies).toEqual([{ ids: ['draft-a'] }])
+    // The unselected draft and the selected filed bill are untouched.
+    expect(screen.getByText('Second Draft')).toBeInTheDocument()
+    expect(screen.getByText('Filed Bill')).toBeInTheDocument()
+    // The selection shrank to the filed bill: the bar now offers no delete, and counts one bill.
+    expect(screen.queryByRole('button', { name: /Delete drafts/ })).toBeNull()
+    expect(screen.getByRole('button', { name: /Apply to 1 bill/ })).toBeInTheDocument()
+    // The sidebar's draft count and the Drafts chip are refetched.
+    await waitFor(() => expect(refresh).toHaveBeenCalled())
+  })
+
+  it('leaves the bar once the last selected bill was a deleted draft', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    facetsState.bills = [DRAFT_A, DRAFT_B]
+    renderWithSidebarSpy()
+    await select('First Draft')
+    await select('Second Draft')
+
+    fireEvent.click(await screen.findByRole('button', { name: /Delete drafts \(2\)/ }))
+
+    await waitFor(() => expect(screen.queryByText('First Draft')).toBeNull())
+    expect(screen.queryByText('Second Draft')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Apply to/ })).toBeNull()
+  })
+
+  it('keeps a draft the server refused in the list and selected, and shows why', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    facetsState.bills = [DRAFT_A, DRAFT_B]
+    bulkDeleteState.respond = () => ({ deleted: ['draft-a'], skipped: [{ id: 'draft-b', reason: 'engaged' }] })
+    renderWithSidebarSpy()
+    await select('First Draft')
+    await select('Second Draft')
+
+    fireEvent.click(await screen.findByRole('button', { name: /Delete drafts \(2\)/ }))
+
+    await waitFor(() => expect(screen.queryByText('First Draft')).toBeNull())
+    expect(screen.getByText('Second Draft')).toBeInTheDocument()
+    expect(await screen.findByText(/1 draft was kept/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Delete drafts \(1\)/ })).toBeInTheDocument()
+  })
+
+  it('removes a draft another admin already deleted, as well as the ones it deleted', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    facetsState.bills = [DRAFT_A, DRAFT_B]
+    bulkDeleteState.respond = () => ({ deleted: ['draft-a'], skipped: [{ id: 'draft-b', reason: 'not_found' }] })
+    renderWithSidebarSpy()
+    await select('First Draft')
+    await select('Second Draft')
+
+    fireEvent.click(await screen.findByRole('button', { name: /Delete drafts \(2\)/ }))
+
+    await waitFor(() => expect(screen.queryByText('First Draft')).toBeNull())
+    expect(screen.queryByText('Second Draft')).toBeNull()
+  })
+
+  it('leaves the list and the selection as they were when cancelled', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    facetsState.bills = [DRAFT_A, FILED]
+    renderWithSidebarSpy()
+    await select('First Draft')
+
+    fireEvent.click(await screen.findByRole('button', { name: /Delete drafts \(1\)/ }))
+
+    expect(bulkDeleteState.bodies).toEqual([])
+    expect(screen.getByText('First Draft')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Delete drafts \(1\)/ })).toBeInTheDocument()
+  })
+
+  it('shows a member no bulk bar and so no delete button', async () => {
+    authState.role = 'member'
+    facetsState.bills = [DRAFT_A]
+    render(<BillList />, { wrapper: Wrapper })
+    await screen.findByText('First Draft')
+    expect(screen.queryByRole('button', { name: /Delete drafts/ })).toBeNull()
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+  })
+
+  it('disables the button in a locked demo and sends nothing', async () => {
+    demoState.demoLocked = true
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    facetsState.bills = [DRAFT_A]
+    renderWithSidebarSpy()
+    await select('First Draft')
+
+    const btn = await screen.findByRole('button', { name: /Delete drafts \(1\)/ })
+    expect(btn).toBeDisabled()
+    expect(btn).toHaveAttribute('title', 'Locked in demo mode')
+    fireEvent.click(btn)
+    expect(bulkDeleteState.bodies).toEqual([])
   })
 })

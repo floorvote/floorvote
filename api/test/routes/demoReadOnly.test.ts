@@ -276,6 +276,7 @@ const DENIED = new Set([
   // Dismissing a companion suggestion changes what every visiting admin is offered. A demo offers none.
   'POST /api/bills/:id/companion-suggestion/dismiss',
   'POST /api/bills/bulk',
+  'POST /api/bills/bulk-delete',
   'POST /api/bills/bulk-dismiss',
   'POST /api/bills/draft',
   'POST /api/calendar/backfill',
@@ -339,8 +340,8 @@ describe('demo write categorisation', () => {
 
   it('pins the size of each category so a silent shift is visible', () => {
     expect(DEMO_WRITE_ALLOWLIST.size).toBe(23)
-    expect(DENIED.size).toBe(62)
-    expect(registered().length).toBe(91)
+    expect(DENIED.size).toBe(63)
+    expect(registered().length).toBe(92)
   })
 
   it('refuses every denied route with the read-only message', async () => {

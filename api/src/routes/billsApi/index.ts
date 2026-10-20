@@ -22,7 +22,7 @@ billsApiRouter.use('*', requireAuth)
 // local to one file instead of depending on module registration order here.
 // Shared helpers: query.ts (filter/sort WHERE + ORDER BY), detail.ts
 // (buildBillDetail — the composite bill payload).
-registerBulkRoutes(billsApiRouter)        // POST /bulk, GET /bulk-values
+registerBulkRoutes(billsApiRouter)        // POST /bulk, /bulk-dismiss, /bulk-delete, GET /bulk-values
 registerListRoutes(billsApiRouter)        // GET / (list), GET /facets
 registerLabelRoutes(billsApiRouter)       // GET /labels
 registerLookupRoutes(billsApiRouter)      // GET /:id, GET /resolve/*, GET /drafts, GET /draft-defaults, GET /:id/changes

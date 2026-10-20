@@ -255,7 +255,7 @@ export function BillList() {
   const headerScrolled = useScrolledUnder(() => document.querySelector('main'))
 
   // --- bulk selection (hook) ---
-  const { selection, isSelectionMode, handleToggleSelect, handleSelectAllFilters, handleClearSelection } = useBulkActions({
+  const { selection, isSelectionMode, handleToggleSelect, handleSelectAllFilters, handleClearSelection, handleDeselect } = useBulkActions({
     sortedRef,
     // The filter is one immutable value, so a change to any filter (custom
     // fields included, and any filter added later) is a new value and resets the selection.
@@ -568,8 +568,21 @@ export function BillList() {
       customFieldValues: b.customFieldValues ?? {},
       newMatchAt: b.newMatchAt ?? null,
       triagedAt: b.triagedAt ?? null,
+      isDraft: b.isDraft ?? false,
     }))
   }, [selection, allBills])
+
+  // The bulk bar deleted these drafts (or found them already gone): drop them from the list and
+  // the selection, then refetch the counts that include them (the Drafts chip, the sidebar).
+  const handleDraftsDeleted = useCallback((ids: string[]) => {
+    const gone = new Set(ids)
+    setAllBills(prev => prev.filter(b => !gone.has(b.id)))
+    setTotal(prev => Math.max(0, prev - ids.length))
+    handleDeselect(ids)
+    billsListCache = null
+    void fetchFacets()
+    refreshSidebar()
+  }, [handleDeselect, fetchFacets, refreshSidebar])
 
   const handleBulkApplied = useCallback((
     updatedIds: string[] | 'filter',
@@ -1335,6 +1348,7 @@ export function BillList() {
           selectedBills={selectedBills}
           onClearSelection={handleClearSelection}
           onApplied={handleBulkApplied}
+          onDraftsDeleted={handleDraftsDeleted}
         />
       )}
     </>

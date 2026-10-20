@@ -19,9 +19,11 @@ const noFilters = EMPTY_BILL_FILTER
 function Harness({
   selectedBills = [{ id: 'bill-1', priority: null as string | null, position: null as string | null }],
   onApplied = vi.fn(),
+  onDraftsDeleted = vi.fn(),
 }: {
-  selectedBills?: Array<{ id: string; priority: string | null; position: string | null; matchType?: string | null; newMatchAt?: string | null; triagedAt?: string | null }>
+  selectedBills?: Array<{ id: string; priority: string | null; position: string | null; matchType?: string | null; newMatchAt?: string | null; triagedAt?: string | null; isDraft?: boolean }>
   onApplied?: (updatedIds: string[] | 'filter', updates: Record<string, unknown>) => void
+  onDraftsDeleted?: (ids: string[]) => void
 }) {
   const [selection] = useState<Selection>({ mode: 'ids', ids: new Set(selectedBills.map(b => b.id)) })
   return (
@@ -35,6 +37,7 @@ function Harness({
       selectedBills={selectedBills}
       onClearSelection={vi.fn()}
       onApplied={onApplied}
+      onDraftsDeleted={onDraftsDeleted}
     />
   )
 }
@@ -131,6 +134,7 @@ describe('BulkActionBar new-match dismiss (filter mode)', () => {
     const selection: Selection = { mode: 'filter' }
     render(
       <BulkActionBar
+        onDraftsDeleted={vi.fn()}
         selection={selection}
         total={682}
         positionVocabulary={['Support', 'Oppose']}
@@ -165,6 +169,7 @@ describe('BulkActionBar new-match dismiss (filter mode)', () => {
     const selection: Selection = { mode: 'filter' }
     render(
       <BulkActionBar
+        onDraftsDeleted={vi.fn()}
         selection={selection}
         total={12}
         positionVocabulary={['Support', 'Oppose']}
@@ -194,6 +199,7 @@ describe('BulkActionBar new-match dismiss (filter mode)', () => {
     const selection: Selection = { mode: 'filter' }
     render(
       <BulkActionBar
+        onDraftsDeleted={vi.fn()}
         selection={selection}
         total={1500}
         positionVocabulary={['Support', 'Oppose']}
@@ -266,6 +272,7 @@ describe('BulkActionBar multi-select custom field (filter mode)', () => {
     })
     return render(
       <BulkActionBar
+        onDraftsDeleted={vi.fn()}
         selection={{ mode: 'filter' }}
         total={count}
         positionVocabulary={['Support', 'Oppose']}
@@ -338,6 +345,7 @@ describe('BulkActionBar with a status and a stage in the filter', () => {
     })
     return render(
       <BulkActionBar
+        onDraftsDeleted={vi.fn()}
         selection={{ mode: 'filter' }} total={2} positionVocabulary={['Support']} customFieldDefs={[]}
         currentFilters={filter} filterNewMatchCount={0} selectedBills={[]} onClearSelection={vi.fn()} onApplied={vi.fn()}
       />,
@@ -394,6 +402,7 @@ describe('BulkActionBar unknown current values', () => {
     })
     return render(
       <BulkActionBar
+        onDraftsDeleted={vi.fn()}
         selection={{ mode: 'filter' }}
         total={count}
         positionVocabulary={['Support', 'Oppose']}
@@ -496,6 +505,7 @@ describe('BulkActionBar sends the serialized bill filter', () => {
     })
     return render(
       <BulkActionBar
+        onDraftsDeleted={vi.fn()}
         selection={{ mode: 'filter' }}
         total={total}
         positionVocabulary={['Support']}
@@ -579,6 +589,7 @@ describe('BulkActionBar sends the serialized bill filter', () => {
     })
     render(
       <BulkActionBar
+        onDraftsDeleted={vi.fn()}
         selection={{ mode: 'filter' }}
         total={3}
         positionVocabulary={['Support']}
@@ -603,6 +614,7 @@ describe('BulkActionBar sends the serialized bill filter', () => {
     vi.mocked(apiFetch).mockImplementation(() => Promise.resolve({ dismissed: 1 }))
     render(
       <BulkActionBar
+        onDraftsDeleted={vi.fn()}
         selection={{ mode: 'ids', ids: new Set(['a']) }}
         total={1}
         positionVocabulary={['Support']}
@@ -644,6 +656,7 @@ describe('BulkActionBar multi-select confirmation wording', () => {
     })
     return render(
       <BulkActionBar
+        onDraftsDeleted={vi.fn()}
         selection={{ mode: 'filter' }}
         total={3}
         positionVocabulary={['Support', 'Oppose']}
@@ -811,6 +824,7 @@ describe('BulkActionBar — AI analysis count before Apply', () => {
     })
     render(
       <BulkActionBar
+        onDraftsDeleted={vi.fn()}
         selection={{ mode: 'filter' }}
         total={40}
         positionVocabulary={['Support', 'Oppose']}
@@ -840,5 +854,186 @@ describe('BulkActionBar — AI analysis count before Apply', () => {
     render(<Harness selectedBills={[untracked('a'), untracked('b')]} />)
     stagePriority('High')
     expect(screen.getByRole('button', { name: 'Apply to 2 bills' })).toBeInTheDocument()
+  })
+})
+
+describe('BulkActionBar — delete drafts', () => {
+  const deleteBtn = () => screen.queryByRole('button', { name: /Delete drafts/i })
+  const bill = (id: string, isDraft: boolean) => ({ id, priority: null, position: null, matchType: 'manual', isDraft })
+
+  afterEach(() => {
+    demoState.demoLocked = false
+    vi.restoreAllMocks()
+  })
+
+  it('is hidden when no selected bill is a draft', () => {
+    render(<Harness selectedBills={[bill('f1', false), bill('f2', false)]} />)
+    expect(deleteBtn()).not.toBeInTheDocument()
+  })
+
+  it('is hidden for a bill whose isDraft flag is absent', () => {
+    render(<Harness selectedBills={[{ id: 'a', priority: null, position: null }]} />)
+    expect(deleteBtn()).not.toBeInTheDocument()
+  })
+
+  it('counts only the drafts in a mixed selection', () => {
+    render(<Harness selectedBills={[bill('d1', true), bill('f1', false), bill('d2', true)]} />)
+    expect(screen.getByRole('button', { name: /Delete drafts \(2\)/ })).toBeInTheDocument()
+  })
+
+  it('is hidden when the whole filter is selected, since the drafts among them are not known', () => {
+    render(
+      <BulkActionBar
+        selection={{ mode: 'filter' }}
+        total={5}
+        positionVocabulary={[]}
+        customFieldDefs={[]}
+        currentFilters={noFilters}
+        filterNewMatchCount={0}
+        selectedBills={[]}
+        onClearSelection={vi.fn()}
+        onApplied={vi.fn()}
+        onDraftsDeleted={vi.fn()}
+      />,
+    )
+    expect(deleteBtn()).not.toBeInTheDocument()
+  })
+
+  it('asks first, naming the count and that it cannot be undone, and deletes nothing when cancelled', async () => {
+    vi.mocked(apiFetch).mockClear()
+    const onDraftsDeleted = vi.fn()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    render(<Harness onDraftsDeleted={onDraftsDeleted} selectedBills={[bill('d1', true), bill('d2', true)]} />)
+
+    fireEvent.click(deleteBtn()!)
+
+    expect(confirm).toHaveBeenCalledTimes(1)
+    const message = confirm.mock.calls[0][0] as string
+    expect(message).toContain('2 draft bills')
+    expect(message).toMatch(/can.?t be undone/i)
+    expect(apiFetch).not.toHaveBeenCalledWith('/bills/bulk-delete', expect.anything())
+    expect(onDraftsDeleted).not.toHaveBeenCalled()
+  })
+
+  it('says the confirm is for one draft in the singular', () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    render(<Harness selectedBills={[bill('d1', true)]} />)
+    fireEvent.click(deleteBtn()!)
+    expect(confirm.mock.calls[0][0]).toContain('1 draft bill?')
+  })
+
+  it('says filed bills in the selection are not deleted only when the selection mixes the two', () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const { unmount } = render(<Harness selectedBills={[bill('d1', true), bill('f1', false), bill('f2', false)]} />)
+    fireEvent.click(deleteBtn()!)
+    expect(confirm.mock.calls[0][0]).toMatch(/2 filed bills .*not deleted/i)
+    unmount()
+
+    confirm.mockClear()
+    render(<Harness selectedBills={[bill('d1', true)]} />)
+    fireEvent.click(deleteBtn()!)
+    expect(confirm.mock.calls[0][0]).not.toMatch(/filed/i)
+  })
+
+  it('warns that a draft with votes, positions, comments, or notes is kept', () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    render(<Harness selectedBills={[bill('d1', true)]} />)
+    fireEvent.click(deleteBtn()!)
+    expect(confirm.mock.calls[0][0]).toMatch(/votes, positions, comments, or notes/i)
+  })
+
+  it('sends only the drafts of a mixed selection, then reports the deleted ids', async () => {
+    vi.mocked(apiFetch).mockClear()
+    vi.mocked(apiFetch).mockResolvedValueOnce({ deleted: ['d1', 'd2'], skipped: [] })
+    const onDraftsDeleted = vi.fn()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<Harness onDraftsDeleted={onDraftsDeleted} selectedBills={[bill('d1', true), bill('f1', false), bill('d2', true)]} />)
+
+    fireEvent.click(deleteBtn()!)
+
+    await waitFor(() => expect(onDraftsDeleted).toHaveBeenCalledWith(['d1', 'd2']))
+    expect(apiFetch).toHaveBeenCalledWith('/bills/bulk-delete', { method: 'POST', body: JSON.stringify({ ids: ['d1', 'd2'] }) })
+  })
+
+  it('reports a draft another admin already deleted as gone, and says nothing is wrong', async () => {
+    vi.mocked(apiFetch).mockResolvedValueOnce({ deleted: ['d1'], skipped: [{ id: 'd2', reason: 'not_found' }] })
+    const onDraftsDeleted = vi.fn()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<Harness onDraftsDeleted={onDraftsDeleted} selectedBills={[bill('d1', true), bill('d2', true)]} />)
+
+    fireEvent.click(deleteBtn()!)
+
+    await waitFor(() => expect(onDraftsDeleted).toHaveBeenCalledWith(['d1', 'd2']))
+    expect(screen.queryByText(/kept|could not/i)).not.toBeInTheDocument()
+  })
+
+  it('keeps a draft the server refused, names why in the bar, and reports only what was deleted', async () => {
+    vi.mocked(apiFetch).mockResolvedValueOnce({
+      deleted: ['d1'],
+      skipped: [{ id: 'd2', reason: 'engaged' }, { id: 'd3', reason: 'engaged' }],
+    })
+    const onDraftsDeleted = vi.fn()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<Harness onDraftsDeleted={onDraftsDeleted} selectedBills={[bill('d1', true), bill('d2', true), bill('d3', true)]} />)
+
+    fireEvent.click(deleteBtn()!)
+
+    await waitFor(() => expect(onDraftsDeleted).toHaveBeenCalledWith(['d1']))
+    expect(await screen.findByText(/2 drafts were kept.*votes, positions, comments, or notes/i)).toBeInTheDocument()
+  })
+
+  it('names drafts the server could not delete in the bar', async () => {
+    vi.mocked(apiFetch).mockResolvedValueOnce({ deleted: [], skipped: [{ id: 'd1', reason: 'error' }] })
+    const onDraftsDeleted = vi.fn()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<Harness onDraftsDeleted={onDraftsDeleted} selectedBills={[bill('d1', true)]} />)
+
+    fireEvent.click(deleteBtn()!)
+
+    expect(await screen.findByText(/1 draft could not be deleted/i)).toBeInTheDocument()
+    expect(onDraftsDeleted).not.toHaveBeenCalled()
+  })
+
+  it('shows the error in the bar and removes nothing when the request fails', async () => {
+    vi.mocked(apiFetch).mockRejectedValueOnce(new Error('Server on fire'))
+    const onDraftsDeleted = vi.fn()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<Harness onDraftsDeleted={onDraftsDeleted} selectedBills={[bill('d1', true)]} />)
+
+    fireEvent.click(deleteBtn()!)
+
+    expect(await screen.findByText('Server on fire')).toBeInTheDocument()
+    expect(onDraftsDeleted).not.toHaveBeenCalled()
+    expect(deleteBtn()).toBeEnabled()
+  })
+
+  it('disables itself while the request is in flight, so a second click sends nothing', async () => {
+    vi.mocked(apiFetch).mockClear()
+    let finish: (v: unknown) => void = () => {}
+    vi.mocked(apiFetch).mockImplementationOnce(() => new Promise(res => { finish = res }))
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<Harness selectedBills={[bill('d1', true)]} />)
+
+    fireEvent.click(deleteBtn()!)
+    await waitFor(() => expect(deleteBtn()).toBeDisabled())
+    fireEvent.click(deleteBtn()!)
+
+    expect(vi.mocked(apiFetch).mock.calls.filter(c => c[0] === '/bills/bulk-delete')).toHaveLength(1)
+    finish({ deleted: ['d1'], skipped: [] })
+  })
+
+  it('is disabled with the locked hover in a demo, and sends nothing', () => {
+    demoState.demoLocked = true
+    vi.mocked(apiFetch).mockClear()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<Harness selectedBills={[bill('d1', true)]} />)
+
+    const btn = screen.getByRole('button', { name: /Delete drafts/i })
+    expect(btn).toBeDisabled()
+    expect(btn).toHaveAttribute('title', 'Locked in demo mode')
+    fireEvent.click(btn)
+
+    expect(confirm).not.toHaveBeenCalled()
+    expect(apiFetch).not.toHaveBeenCalledWith('/bills/bulk-delete', expect.anything())
   })
 })

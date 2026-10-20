@@ -17,6 +17,8 @@ import { BULK_FILTER_ERROR, parseBulkFilter, subjectCapError } from './filterReq
 import { parseStoredMulti } from '../../../../shared/customFieldValues'
 import { inGroupOf, inGroupsOf } from '../../lib/companionGroups'
 import { loadTeamValuesOf, recordFieldChanges, type FieldChange } from '../../lib/teamFields'
+import { chunk } from '../../lib/chunk'
+import { DRAFT_DELETE_CHUNK, draftDeleteVerdicts, draftDeleteStatements } from '../../lib/draftDelete'
 
 // Cloudflare D1 rejects queries with >100 bound parameters. Chunk bulk operations
 // below 100 to leave headroom for the extra SET/predicate params some queries add
@@ -381,6 +383,49 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         .where(inArray(bills.id, toDismiss.slice(i, i + BULK_CHUNK)))
     }
     return c.json({ dismissed: toDismiss.length })
+  })
+
+  // POST /bills/bulk-delete — admin only. Deletes the draft bills named, each exactly as
+  // DELETE /bills/:id deletes one (lib/draftDelete.ts is the one place that decides and does it),
+  // and says what became of every id: { deleted, skipped: [{ id, reason }] }. A bill that is
+  // gone already, is filed, or has engagement is skipped and left alone, so one such id never
+  // fails the rest. Takes ids only: a draft is deleted because someone selected it, never because
+  // a filter happened to match it.
+  router.post('/bulk-delete', requireAdmin, async (c) => {
+    const db = getDb(c.env.DB)
+    const body = await c.req.json<{ ids?: unknown }>().catch(() => null)
+    if (!body) return c.json({ error: 'Invalid body' }, 400)
+    const { ids } = body
+    if (!Array.isArray(ids) || ids.length === 0 || !ids.every((id): id is string => typeof id === 'string' && id !== '')) {
+      return c.json({ error: 'ids must be a non-empty array of bill ids' }, 400)
+    }
+    // The same cap as POST /bulk, checked before anything is read or written.
+    if (ids.length > 1000) {
+      return c.json({ error: `Too many bills (${ids.length}). Select 1,000 or fewer.` }, 400)
+    }
+
+    const deleted: string[] = []
+    const skipped: Array<{ id: string; reason: 'not_found' | 'not_draft' | 'engaged' | 'error' }> = []
+    for (const part of chunk([...new Set(ids)], DRAFT_DELETE_CHUNK)) {
+      const verdicts = await draftDeleteVerdicts(db, part)
+      const deletable: string[] = []
+      for (const id of part) {
+        const verdict = verdicts.get(id)!
+        if (verdict === 'delete') deletable.push(id)
+        else skipped.push({ id, reason: verdict })
+      }
+      if (deletable.length === 0) continue
+      // One atomic batch per chunk. A chunk that fails leaves its drafts whole and is
+      // reported, and the chunks after it still run.
+      try {
+        await db.batch(draftDeleteStatements(db, deletable))
+        deleted.push(...deletable)
+      } catch (err) {
+        console.error('bulk draft delete failed', err)
+        for (const id of deletable) skipped.push({ id, reason: 'error' })
+      }
+    }
+    return c.json({ deleted, skipped })
   })
 
   // GET /bills/bulk-values — admin only; returns value distributions across matching bills

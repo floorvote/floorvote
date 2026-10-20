@@ -55,10 +55,20 @@ export function useBulkActions(opts: {
     setSelection({ mode: 'none' })
   }, [])
 
+  // Drops bills that left the list (deleted drafts) from the selection, and ends it when none are left.
+  const handleDeselect = useCallback((billIds: string[]) => {
+    setSelection(prev => {
+      if (prev.mode !== 'ids') return prev
+      const ids = new Set(prev.ids)
+      for (const id of billIds) ids.delete(id)
+      return ids.size > 0 ? { mode: 'ids', ids } : { mode: 'none' }
+    })
+  }, [])
+
   useEffect(() => {
     setSelection({ mode: 'none' })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, resetDeps)
 
-  return { selection, isSelectionMode, handleToggleSelect, handleSelectAllFilters, handleClearSelection }
+  return { selection, isSelectionMode, handleToggleSelect, handleSelectAllFilters, handleClearSelection, handleDeselect }
 }

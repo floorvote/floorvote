@@ -67,8 +67,12 @@ interface BulkActionBarProps {
     customFieldValues?: Record<string, string>
     newMatchAt?: string | null
     triagedAt?: string | null
+    isDraft?: boolean
   }>
   onClearSelection: () => void
+  /** Drafts that are gone after a bulk delete (deleted now, or already gone), for the page to drop
+      from its list and the selection. Drafts the server kept are not named. */
+  onDraftsDeleted: (ids: string[]) => void
   onApplied: (
     updatedIds: string[] | 'filter',
     updates: {
@@ -196,7 +200,7 @@ function useSidebarWidth() {
 
 export function BulkActionBar({
   selection, total, positionVocabulary, customFieldDefs, currentFilters, filterNewMatchCount,
-  selectedBills, onClearSelection, onApplied,
+  selectedBills, onClearSelection, onApplied, onDraftsDeleted,
 }: BulkActionBarProps) {
   const { demoLocked } = useDemo()
   const sidebarWidth = useSidebarWidth()
@@ -444,6 +448,48 @@ export function BulkActionBar({
     }
   }
 
+  // Only ids-mode selections can name drafts: a select-all-matching selection has no loaded rows to read isDraft from.
+  const selectedDrafts = selection.mode === 'ids' ? selectedBills.filter(b => b.isDraft) : []
+  const draftCount = selectedDrafts.length
+  const filedCount = selection.mode === 'ids' ? selectedBills.length - draftCount : 0
+
+  async function handleDeleteDrafts() {
+    if (draftCount === 0 || applying || demoLocked) return
+    const plural = (n: number, one: string, many: string) => (n === 1 ? one : many)
+    const filedNote = filedCount > 0
+      ? ` The ${filedCount.toLocaleString()} filed ${plural(filedCount, 'bill', 'bills')} in your selection ${plural(filedCount, 'is', 'are')} not deleted.`
+      : ''
+    if (!window.confirm(
+      `Delete ${draftCount.toLocaleString()} draft ${plural(draftCount, 'bill', 'bills')}? This can't be undone. A draft with votes, positions, comments, or notes is kept.${filedNote}`,
+    )) return
+    setApplying(true)
+    setError(null)
+    try {
+      const result = await apiFetch<{
+        deleted?: string[]
+        skipped?: Array<{ id: string; reason: 'not_found' | 'not_draft' | 'engaged' | 'error' }>
+      }>('/bills/bulk-delete', { method: 'POST', body: JSON.stringify({ ids: selectedDrafts.map(b => b.id) }) })
+      const skipped = result.skipped ?? []
+      // A draft another admin deleted first is gone either way, so it leaves the list too.
+      const gone = [...(result.deleted ?? []), ...skipped.filter(s => s.reason === 'not_found').map(s => s.id)]
+      if (gone.length > 0) onDraftsDeleted(gone)
+      const kept = skipped.filter(s => s.reason === 'engaged').length
+      const failed = skipped.filter(s => s.reason === 'error' || s.reason === 'not_draft').length
+      const notes: string[] = []
+      if (kept > 0) {
+        notes.push(`${kept.toLocaleString()} ${plural(kept, 'draft was', 'drafts were')} kept: ${plural(kept, 'it has', 'they have')} votes, positions, comments, or notes.`)
+      }
+      if (failed > 0) {
+        notes.push(`${failed.toLocaleString()} ${plural(failed, 'draft', 'drafts')} could not be deleted. Try again.`)
+      }
+      if (notes.length > 0) setError(notes.join(' '))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete drafts')
+    } finally {
+      setApplying(false)
+    }
+  }
+
   const applyable = hasPending && !applying && !overLimit && !demoLocked
   // Shown beside Apply and recapped in the confirmation, so the click isn't the
   // first time an admin learns the edit queues AI analysis.
@@ -623,7 +669,7 @@ export function BulkActionBar({
           onUndo: () => clearStaged('position'),
         })}
 
-        {/* Priority pill + dismiss-new-matches, stacked (mirrors the single-row triage control) */}
+        {/* Priority pill + dismiss-new-matches + delete-drafts, stacked (mirrors the single-row triage control) */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
           {renderPill({
             fieldKey: 'priority',
@@ -655,6 +701,23 @@ export function BulkActionBar({
               }}
             >
               ✕ Dismiss new matches ({newMatchCount.toLocaleString()})
+            </button>
+          )}
+          {draftCount > 0 && (
+            <button
+              type="button"
+              onClick={handleDeleteDrafts}
+              disabled={applying || demoLocked}
+              title={demoLocked ? 'Locked in demo mode' : 'Permanently delete the draft bills in this selection'}
+              style={{
+                fontSize: fontSize.sm, padding: '4px 10px', borderRadius: radius.md,
+                border: `1px solid ${color.borderDefault}`, background: color.white,
+                color: color.textMuted, cursor: (applying || demoLocked) ? 'not-allowed' : 'pointer',
+                opacity: demoLocked ? 0.5 : 1,
+                textAlign: 'left', whiteSpace: 'nowrap',
+              }}
+            >
+              ✕ Delete drafts ({draftCount.toLocaleString()})
             </button>
           )}
         </div>
