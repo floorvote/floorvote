@@ -21,7 +21,7 @@ const env = { GEMINI_API_KEY: 'k', TENANT_ID: 't' } as unknown as Env
 // descriptions fails this test instead of silently moving along with it.
 const CLAIM_SOURCES_DESCRIPTION = 'one entry for each distinct claim in the summary'
 const CLAIM_DESCRIPTION = 'copied character for character from the summary above: one whole list item (without the leading "- ") or one sentence or clause of prose'
-const QUOTE_DESCRIPTION = 'copied character for character from the bill text: one short contiguous passage (one sentence or less is best) that supports the claim; never paraphrase, abbreviate, correct, add ellipses, or join separate passages'
+const QUOTE_DESCRIPTION = 'copied character for character from the bill text: one short contiguous passage (one sentence or less is best) that supports the claim; a claim that draws on separate passages gets one entry for each passage, with the same claim; never paraphrase, abbreviate, correct, or add ellipses'
 const PAGE_DESCRIPTION = 'the page of this PDF file the quote is on, counting the first page of the file as 1 (the position in the file, not a printed page number)'
 
 const html = { billNumber: 'HB 1', title: 'T', text: 'Section 1. Text.', taxonomy: [{ name: 'Voting' }] }
