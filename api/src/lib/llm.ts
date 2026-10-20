@@ -320,21 +320,39 @@ async function callGemini(
     return raw
   }
 
-  const raw = await generate(claimSources)
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch (err) {
-    if (!claimSources) throw err
-    // claimSources is the last property and the only unbounded one, so a
-    // response cut off at the output limit is cut off inside it, after a
-    // complete summary. Before claim sources, that summary would have been
-    // stored. Ask once more without them rather than fail the analysis. Not
-    // capped with maxItems, which would change the schema #347 measured.
-    console.warn(`[llm] response for ${params.billNumber} did not parse with claim sources asked; retrying without them`)
-    return { ...validateAndClamp(JSON.parse(await generate(null)), null), claimSourcesRetried: true }
+  const analyze = async (): Promise<ProcessBillResult> => {
+    const raw = await generate(claimSources)
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(raw)
+    } catch (err) {
+      if (!claimSources) throw err
+      // claimSources is the last property and the only unbounded one, so a
+      // response cut off at the output limit is cut off inside it, after a
+      // complete summary. Before claim sources, that summary would have been
+      // stored. Ask once more without them rather than fail the analysis. Not
+      // capped with maxItems, which would change the schema #347 measured.
+      console.warn(`[llm] response for ${params.billNumber} did not parse with claim sources asked; retrying without them`)
+      return { ...validateAndClamp(JSON.parse(await generate(null)), null), claimSourcesRetried: true }
+    }
+    return validateAndClamp(parsed, claimSources)
   }
-  return validateAndClamp(parsed, claimSources)
+
+  // The model sometimes announces a list ("…for county clerks:") and ends its
+  // answer there: the raw response stops on the colon, so nothing was lost on
+  // our side. Ask once more; keep the first answer if the second stops too.
+  const first = await analyze()
+  if (!stopsOnColon(first.summary)) return first
+  console.warn(`[llm] summary for ${params.billNumber} stopped on a colon; asking once more`)
+  const second = await analyze().catch(() => null)
+  if (second && !stopsOnColon(second.summary)) return second
+  console.warn(`[llm] summary for ${params.billNumber} stopped on a colon twice; keeping the first`)
+  return first
+}
+
+/** Whether a summary's last line ends on a colon: a list announced and never written. */
+function stopsOnColon(summary: string): boolean {
+  return summary.trimEnd().endsWith(':')
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
