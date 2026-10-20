@@ -604,7 +604,7 @@ exports[`demo reset golden snapshot > matches the recorded snapshot, identically
 {"bill_id":"bill-legiscan:1979645","field_id":"lm-cf-2","value":"Infrastructure","set_by":"lm-user-dep","updated_at":"<d-420>"}
 {"bill_id":"bill-legiscan:2006749","field_id":"lm-cf-1","value":"Significant (>$100K)","set_by":"lm-user-ed","updated_at":"<d-121>"}
 {"bill_id":"bill-legiscan:2006749","field_id":"lm-cf-2","value":"Contaminants","set_by":"lm-user-ed","updated_at":"<d-121>"}
-{"bill_id":"bill-legiscan:2006749","field_id":"lm-cf-3","value":"<p>The PFAS program bill enacted as 2026 Wisconsin Act 201 is the strongest state-level contaminant framework we track. We are now focused on how the agency implements the testing and remediation programs it authorizes, since the statute itself leaves most of that to rulemaking.</p>","set_by":"lm-user-ed","updated_at":"<d-200>"}
+{"bill_id":"bill-legiscan:2006749","field_id":"lm-cf-3","value":"<p>The PFAS program bill enacted as 2026 Wisconsin Act 201 is the strongest state-level contaminant framework we track. We are now focused on how the agency implements the testing and remediation programs it authorizes, since the statute itself leaves most of that to rulemaking.</p>","set_by":"lm-user-ed","updated_at":"<d-121>"}
 {"bill_id":"bill-legiscan:2006749","field_id":"lm-cf-4","value":"2026-04-07","set_by":"lm-user-ed","updated_at":"<d-130>"}
 {"bill_id":"bill-legiscan:2006944","field_id":"lm-cf-2","value":"Infrastructure","set_by":"lm-user-ed","updated_at":"<d-135>"}
 {"bill_id":"bill-legiscan:2029026","field_id":"lm-cf-1","value":"Moderate ($10K-$100K)","set_by":"demo-user","updated_at":"<d-270>"}
@@ -622,7 +622,7 @@ exports[`demo reset golden snapshot > matches the recorded snapshot, identically
 {"bill_id":"bill-legiscan:2095619","field_id":"lm-cf-5","value":"1","set_by":"demo-user","updated_at":"<d-3>"}
 {"bill_id":"bill-legiscan:2109237","field_id":"lm-cf-2","value":"Infrastructure","set_by":"lm-user-dep","updated_at":"<d-187>"}
 {"bill_id":"bill-legiscan:2111275","field_id":"lm-cf-1","value":"Significant (>$100K)","set_by":"lm-user-dep","updated_at":"<d-60>"}
-{"bill_id":"bill-legiscan:2111275","field_id":"lm-cf-3","value":"<p>Lead service line replacement funding enacted as Public Act 104-0572. Our concern now shifts to implementation — whether disadvantaged communities get prioritized access to the replacement funds, and how quickly utilities can staff up to do the work.</p>","set_by":"lm-user-dep","updated_at":"<d-60>"}
+{"bill_id":"bill-legiscan:2111275","field_id":"lm-cf-3","value":"<p>Lead service line replacement funding enacted as Public Act 104-0572. Our concern now shifts to implementation — whether disadvantaged communities get prioritized access to the replacement funds, and how quickly utilities can staff up to do the work.</p>","set_by":"lm-user-dep","updated_at":"<d-31>"}
 {"bill_id":"bill-legiscan:2111275","field_id":"lm-cf-4","value":"2026-07-10","set_by":"lm-user-dep","updated_at":"<d-32>"}
 {"bill_id":"bill-legiscan:2129983","field_id":"lm-cf-2","value":"Infrastructure","set_by":"demo-user","updated_at":"<d-159>"}
 {"bill_id":"bill-legiscan:2150744","field_id":"lm-cf-1","value":"Moderate ($10K-$100K)","set_by":"lm-user-ed","updated_at":"<d-50>"}

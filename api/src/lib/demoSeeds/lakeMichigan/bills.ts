@@ -180,9 +180,9 @@ export const LM_CUSTOM_FIELD_VALUES: Array<{ externalId: string; fieldId: string
     value: '<p>Supports the brown alert requirement as a straightforward extension of existing county emergency-notice duties. Our only outstanding question is which county department bears the cost of maintaining the E. coli monitoring equipment the alert threshold depends on.</p>' },
   { externalId: 'legiscan:2095619', fieldId: 'lm-cf-3', setBy: 'demo-user', daysAgo: 60,
     value: '<p>The onsite wastewater assessment and evaluation requirements in the substitute are a meaningful step for septic oversight in the basin. We are watching how the evaluation cost is allocated between property owners and counties, since that detail was still being worked out in Committee of the Whole.</p>' },
-  { externalId: 'legiscan:2006749', fieldId: 'lm-cf-3', setBy: 'lm-user-ed', daysAgo: 200,
+  { externalId: 'legiscan:2006749', fieldId: 'lm-cf-3', setBy: 'lm-user-ed', daysAgo: 121,
     value: '<p>The PFAS program bill enacted as 2026 Wisconsin Act 201 is the strongest state-level contaminant framework we track. We are now focused on how the agency implements the testing and remediation programs it authorizes, since the statute itself leaves most of that to rulemaking.</p>' },
-  { externalId: 'legiscan:2111275', fieldId: 'lm-cf-3', setBy: 'lm-user-dep', daysAgo: 60,
+  { externalId: 'legiscan:2111275', fieldId: 'lm-cf-3', setBy: 'lm-user-dep', daysAgo: 31,
     value: '<p>Lead service line replacement funding enacted as Public Act 104-0572. Our concern now shifts to implementation — whether disadvantaged communities get prioritized access to the replacement funds, and how quickly utilities can staff up to do the work.</p>' },
 
   // Compliance Deadline (lm-cf-4) — 3 enacted bills, real effective dates from the manifest
