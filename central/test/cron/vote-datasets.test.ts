@@ -259,6 +259,9 @@ describe('weekly LegiScan member votes', () => {
 
   it('runs one dataset load per invocation and defers the rest of the batch', async () => {
     await db.run(sql`UPDATE sessions SET votes_dataset_hash = NULL WHERE session_id = 2`)
+    // Session 2 needs a roll call of its own to be due.
+    await db.insert(schema.bills).values({ billId: 202, sessionId: 2, state: 'RI', stateId: 39, billNumber: 'H202', title: 'Bill 202', changeHash: 'h', status: 4 })
+    await db.insert(schema.rollCalls).values({ rollCallId: 41, billId: 202, date: '2025-05-01', description: 'Passage', yea: 1, total: 1, passed: 1, chamber: 'H' })
     await checkVoteDatasets(mockEnv(), db)
     expect(ingestorSend.mock.calls.map(c => c[0].sessionId)).toEqual([1, 2])
 
@@ -348,9 +351,13 @@ describe('weekly LegiScan member votes', () => {
 
 describe('adjourned sessions', () => {
   // Session 2 is an RI session that adjourned sine die, never checked. Here it
-  // also has no stored hash, as one that adjourned before the weekly load existed.
+  // also has no stored hash, as one that adjourned before the weekly load
+  // existed, and central has a bill of it with a roll call, so there is
+  // something for a load to write.
   beforeEach(async () => {
     await db.run(sql`UPDATE sessions SET votes_dataset_hash = NULL WHERE session_id = 2`)
+    await db.insert(schema.bills).values({ billId: 202, sessionId: 2, state: 'RI', stateId: 39, billNumber: 'H202', title: 'Bill 202', changeHash: 'h', status: 4 })
+    await db.insert(schema.rollCalls).values({ rollCallId: 41, billId: 202, date: '2025-05-01', description: 'Passage', yea: 2, nay: 1, total: 3, passed: 1, chamber: 'H' })
   })
   const queuedSessionIds = () => ingestorSend.mock.calls.map(c => c[0].sessionId as number)
   const checkedAt = async (sessionId: number) =>
@@ -364,8 +371,6 @@ describe('adjourned sessions', () => {
   })
 
   it("loads an adjourned session's votes onto its bill page, with no manual backfill", async () => {
-    await db.insert(schema.bills).values({ billId: 202, sessionId: 2, state: 'RI', stateId: 39, billNumber: 'H202', title: 'Bill 202', changeHash: 'h', status: 4 })
-    await db.insert(schema.rollCalls).values({ rollCallId: 41, billId: 202, date: '2025-05-01', description: 'Passage', yea: 2, nay: 1, total: 3, passed: 1, chamber: 'H' })
     const adjourned = datasetZip({
       votes: [voteFile(41, 202, [[1, 'Yea'], [2, 'Nay'], [3, 'Yea']])],
       people: [personFile(1, 'Ann Able'), personFile(2, 'Bo Baker'), personFile(3, 'Cy Carter')],
@@ -456,6 +461,72 @@ describe('adjourned sessions', () => {
     await checkVoteDatasets(mockEnv(), db)
     expect(ingestorSend).not.toHaveBeenCalled()
     expect(await callsLogged()).toEqual({ getDatasetList: 1 })
+  })
+})
+
+describe('sessions with no roll calls in central', () => {
+  // A seeded session row has no bills, so a load would write nothing and cost a
+  // quota call. Such a session is skipped, and left unchecked so it is due the
+  // moment it has a roll call.
+  const queuedSessionIds = () => ingestorSend.mock.calls.map(c => c[0].sessionId as number)
+  const checkedAt = async (sessionId: number) =>
+    (await db.select({ at: schema.sessions.votesCheckedAt }).from(schema.sessions)
+      .where(sql`session_id = ${sessionId}`).get())?.at
+  const listCalls = () => fetchMock.mock.calls.map(c => new URL(c[0] as string)).filter(u => u.searchParams.get('op') === 'getDatasetList')
+
+  beforeEach(async () => {
+    // Session 2 is adjourned and never loaded, as in the block above, but central has nothing of it.
+    await db.run(sql`UPDATE sessions SET votes_dataset_hash = NULL WHERE session_id = 2`)
+  })
+
+  it('skips an adjourned session with no bills: not checked, nothing queued', async () => {
+    await checkVoteDatasets(mockEnv(), db)
+    expect(queuedSessionIds()).toEqual([1])
+    expect(await checkedAt(2)).toBeNull()
+  })
+
+  it('skips an adjourned session with bills but no roll calls', async () => {
+    await db.insert(schema.bills).values({ billId: 202, sessionId: 2, state: 'RI', stateId: 39, billNumber: 'H202', title: 'Bill 202', changeHash: 'h', status: 4 })
+    await checkVoteDatasets(mockEnv(), db)
+    expect(queuedSessionIds()).toEqual([1])
+    expect(await checkedAt(2)).toBeNull()
+  })
+
+  it("doesn't count another session's roll calls", async () => {
+    // Roll call 31 belongs to session 1's bill; session 2 still has none.
+    await db.insert(schema.bills).values({ billId: 202, sessionId: 2, state: 'RI', stateId: 39, billNumber: 'H202', title: 'Bill 202', changeHash: 'h', status: 4 })
+    await checkVoteDatasets(mockEnv(), db)
+    expect(queuedSessionIds()).not.toContain(2)
+  })
+
+  it('skips a live session with no roll calls, then queues it once it gains one', async () => {
+    await db.run(sql`DELETE FROM roll_calls WHERE roll_call_id = 31`)
+    await db.run(sql`UPDATE sessions SET votes_dataset_hash = 'hash-old' WHERE session_id = 2`)
+    await checkVoteDatasets(mockEnv(), db)
+    expect(ingestorSend).not.toHaveBeenCalled()
+    expect(await checkedAt(1)).toBeNull()
+
+    // The ingest fetches a bill with a roll call. The session was never
+    // checked, so it is due at the next check with no week's wait.
+    await db.insert(schema.rollCalls).values({ rollCallId: 31, billId: 102, date: '2026-03-01', description: 'Third Reading', yea: 2, nay: 1, total: 3, passed: 1, chamber: 'H' })
+    await checkVoteDatasets(mockEnv(), db)
+    expect(queuedSessionIds()).toEqual([1])
+    expect(await checkedAt(1)).not.toBeNull()
+  })
+
+  it('makes no list call for a state whose only due sessions have no roll calls', async () => {
+    await db.run(sql`DELETE FROM roll_calls WHERE roll_call_id = 31`)
+    await checkVoteDatasets(mockEnv(), db)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(ingestorSend).not.toHaveBeenCalled()
+    expect(await checkedAt(1)).toBeNull()
+    expect(await checkedAt(2)).toBeNull()
+  })
+
+  it('spends the one list call on the sessions that have roll calls', async () => {
+    await checkVoteDatasets(mockEnv(), db)
+    expect(listCalls()).toHaveLength(1)
+    expect(queuedSessionIds()).toEqual([1])
   })
 })
 

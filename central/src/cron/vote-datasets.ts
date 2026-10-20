@@ -70,8 +70,10 @@ function entryKind(name: string): EntryKind | null {
 /**
  * Queue a dataset load for each covered session whose dataset changed since
  * its votes were last loaded. "Covered" is a session of a state an active
- * instance tracks, with sync enabled. A session that adjourned sine die is
- * covered too: the hourly sync stops polling it, but its member votes may
+ * instance tracks, with sync enabled, and with at least one roll call in
+ * central, since a load writes only roll calls central has (a session skipped
+ * for having none isn't marked checked, so it is due once it has one). A
+ * session that adjourned sine die is covered too: the hourly sync stops polling it, but its member votes may
  * never have been loaded, or may have changed in its last week. An adjourned
  * session's dataset hash stops changing, so after one load it costs nothing
  * beyond sharing its state's list call. Sessions with sync off, or outside the
@@ -102,6 +104,11 @@ export async function checkVoteDatasets(env: Env, db: Db): Promise<void> {
       inArray(sessions.state, [...trackedStates]),
       eq(sessions.provider, provider.id),
       eq(sessions.syncEnabled, true),
+      // Only a session central has a roll call for: a load writes only roll
+      // calls central has, so for any other it would spend a quota call to
+      // write nothing. Skipped sessions are left unchecked, so one is due the
+      // day it gains a roll call, not a week later.
+      sql`EXISTS (SELECT 1 FROM bills b JOIN roll_calls rc ON rc.bill_id = b.bill_id WHERE b.session_id = ${sessions.sessionId})`,
       or(isNull(sessions.votesCheckedAt), lt(sessions.votesCheckedAt, sql`datetime('now', ${CHECK_INTERVAL})`)),
     ))
     .all()
