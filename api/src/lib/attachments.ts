@@ -21,6 +21,8 @@
 // removes them 30 days later, along with uploads that never finished (after an
 // hour, and they stop counting toward the quota then too), uploads never
 // posted (after a day), and files whose comment row is gone (at once).
+// Deleting a draft with its comments removes their files in the same request
+// (removeFilesOfDeletedComments), and the purge takes any it could not.
 //
 // The feature is off until an operator binds the bucket, and always off on a
 // demo.
@@ -364,8 +366,28 @@ export async function purgeAttachments(env: Env, db: AppDb, now = new Date()): P
       .limit(500)
       .all()
     if (rows.length === 0) return purged
-    await bucket.delete(rows.map(r => r.r2Key))
-    await db.delete(commentAttachments).where(inArray(commentAttachments.id, rows.map(r => r.id)))
+    await removeAttachments(bucket, db, rows)
     purged += rows.length
   }
+}
+
+/** Delete the bytes of these files, then their rows. A row outlives its bytes, never the reverse, so a failure here leaves rows the purge retries. */
+async function removeAttachments(bucket: R2Bucket, db: AppDb, rows: Array<{ id: string; r2Key: string }>): Promise<void> {
+  await bucket.delete(rows.map(r => r.r2Key))
+  await db.delete(commentAttachments).where(inArray(commentAttachments.id, rows.map(r => r.id)))
+}
+
+/**
+ * The files of comments just hard-deleted (a draft deleted with its engagement), removed now rather than at the
+ * next hourly purge. Only files whose comment row is gone are taken. Without a bucket the rows wait, as they do
+ * for the purge. A failure throws and leaves the rows, which the purge then takes as orphaned.
+ */
+export async function removeFilesOfDeletedComments(bucket: R2Bucket | undefined, db: AppDb, commentIds: readonly string[]): Promise<void> {
+  if (!bucket || commentIds.length === 0) return
+  // One JSON parameter, so any number of comments stays under D1's parameter limit.
+  const rows = await db.select({ id: commentAttachments.id, r2Key: commentAttachments.r2Key }).from(commentAttachments)
+    .where(and(sql`${commentAttachments.commentId} IN (SELECT value FROM json_each(${JSON.stringify(commentIds)}))`, ORPHANED))
+    .all()
+  // R2 deletes at most 1,000 keys a call, and the purge takes 500 at a time.
+  for (let i = 0; i < rows.length; i += 500) await removeAttachments(bucket, db, rows.slice(i, i + 500))
 }

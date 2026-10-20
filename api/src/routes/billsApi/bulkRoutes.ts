@@ -18,7 +18,7 @@ import { parseStoredMulti } from '../../../../shared/customFieldValues'
 import { inGroupOf, inGroupsOf } from '../../lib/companionGroups'
 import { loadTeamValuesOf, recordFieldChanges, type FieldChange } from '../../lib/teamFields'
 import { chunk } from '../../lib/chunk'
-import { DRAFT_DELETE_CHUNK, deleteDrafts, type DraftSkipReason } from '../../lib/draftDelete'
+import { DRAFT_DELETE_CHUNK, deleteDrafts, previewDraftDelete, type DraftSkipReason } from '../../lib/draftDelete'
 
 // Cloudflare D1 rejects queries with >100 bound parameters. Chunk bulk operations
 // below 100 to leave headroom for the extra SET/predicate params some queries add
@@ -385,31 +385,83 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
     return c.json({ dismissed: toDismiss.length })
   })
 
-  // POST /bills/bulk-delete — admin only. Deletes the draft bills named, each exactly as
+  // POST /bills/bulk-delete — admin only. Deletes the draft bills selected, each exactly as
   // DELETE /bills/:id deletes one (lib/draftDelete.ts is the one place that decides and does it),
-  // and says what became of every id: { deleted, skipped: [{ id, reason }] }. A bill that is
-  // gone already, is filed, or has engagement is skipped and left alone, so one such id never
-  // fails the rest. Takes ids only: a draft is deleted because someone selected it, never because
-  // a filter happened to match it.
+  // and says what became of every draft: { deleted, skipped: [{ id, reason }] }. A bill that is
+  // gone already, is filed, or has engagement (without includeEngaged) is skipped and left alone,
+  // so one such id never fails the rest.
+  //
+  // The selection is { ids } or { filter }, the filter as a query string, as POST /bulk takes it.
+  // A filter must have the Drafts filter on: it is the bills page's select-all with Drafts shown.
+  // Either way the cap is 1,000 drafts, checked before anything is written.
+  //
+  // `includeEngaged: true` says the admin saw what goes with an engaged draft and confirmed.
+  // `preview: true` writes nothing and answers what a delete would take (DraftDeletePreview), for
+  // that confirm: the drafts and filed bills selected, and the engagement on the drafts.
   router.post('/bulk-delete', requireAdmin, async (c) => {
     const db = getDb(c.env.DB)
-    const body = await c.req.json<{ ids?: unknown }>().catch(() => null)
-    if (!body) return c.json({ error: 'Invalid body' }, 400)
-    const { ids } = body
-    if (!Array.isArray(ids) || ids.length === 0 || !ids.every((id): id is string => typeof id === 'string' && id !== '')) {
-      return c.json({ error: 'ids must be a non-empty array of bill ids' }, 400)
+    const body = await c.req.json<{ ids?: unknown; filter?: unknown; includeEngaged?: unknown; preview?: unknown }>().catch(() => null)
+    if (!body || typeof body !== 'object') return c.json({ error: 'Invalid body' }, 400)
+    for (const flag of ['includeEngaged', 'preview'] as const) {
+      if (flag in body && typeof body[flag] !== 'boolean') return c.json({ error: `${flag} must be true or false` }, 400)
     }
-    // The same cap as POST /bulk, checked before anything is read or written.
-    if (ids.length > 1000) {
-      return c.json({ error: `Too many bills (${ids.length}). Select 1,000 or fewer.` }, 400)
+    const includeEngaged = body.includeEngaged === true
+
+    const hasIds = body.ids !== undefined
+    const hasFilter = body.filter !== undefined
+    if (hasIds === hasFilter) return c.json({ error: 'Provide exactly one of: ids or filter' }, 400)
+
+    let ids: string[] | null = null
+    let filterSql: SQL | undefined
+    if (hasIds) {
+      const raw = body.ids
+      if (!Array.isArray(raw) || raw.length === 0 || !raw.every((id): id is string => typeof id === 'string' && id !== '')) {
+        return c.json({ error: 'ids must be a non-empty array of bill ids' }, 400)
+      }
+      // The same cap as POST /bulk, checked before anything is read or written.
+      if (raw.length > 1000) {
+        return c.json({ error: `Too many bills (${raw.length}). Select 1,000 or fewer.` }, 400)
+      }
+      ids = [...new Set(raw)]
+    } else {
+      const f = parseBulkFilter(body.filter)
+      if (!f) return c.json(BULK_FILTER_ERROR, 400)
+      if (!f.drafts) return c.json({ error: 'A filter must have the Drafts filter on to delete drafts.' }, 400)
+      const capError = subjectCapError(f)
+      if (capError) return c.json(capError, 400)
+      const filter = await buildBillsFilter(db, f, {
+        userId: c.get('user').id,
+        newMatchMinRelevance: f.newMatches ? await getNewMatchMinRelevance(db) : 0,
+      })
+      // The Drafts filter is on, so every bill it matches is a draft; the condition says so again here.
+      filterSql = and(filter(billsAs('m')), sql`m.is_draft = 1`)
+    }
+    const tooMany = async () => {
+      const rows = await db.all(sql`SELECT COUNT(*) AS n FROM bills m WHERE ${filterSql}`) as { n: number }[]
+      const n = Number(rows[0].n).toLocaleString('en-US')
+      return c.json({ error: `Too many drafts (${n}). Apply more filters to narrow down to 1,000 or fewer.` }, 400)
+    }
+
+    if (body.preview === true) {
+      const where = ids ? sql`m.id IN (SELECT value FROM json_each(${JSON.stringify(ids)}))` : filterSql!
+      const preview = await previewDraftDelete(db, where)
+      if (preview.drafts > 1000) return tooMany()
+      return c.json(preview)
+    }
+
+    if (!ids) {
+      // One more than the cap tells an over-cap selection from one at it.
+      const rows = await db.all(sql`SELECT m.id FROM bills m WHERE ${filterSql} LIMIT 1001`) as { id: string }[]
+      if (rows.length > 1000) return tooMany()
+      ids = rows.map(r => r.id)
     }
 
     const deleted: string[] = []
     const skipped: Array<{ id: string; reason: DraftSkipReason }> = []
     // One atomic D1 batch per chunk. A chunk that fails leaves its drafts whole and is
     // reported, and the chunks after it still run.
-    for (const part of chunk([...new Set(ids)], DRAFT_DELETE_CHUNK)) {
-      const result = await deleteDrafts(db, part, { reportFailure: true })
+    for (const part of chunk(ids, DRAFT_DELETE_CHUNK)) {
+      const result = await deleteDrafts(db, part, { reportFailure: true, includeEngaged, attachments: c.env.ATTACHMENTS_BUCKET })
       deleted.push(...result.deleted)
       skipped.push(...result.skipped)
     }

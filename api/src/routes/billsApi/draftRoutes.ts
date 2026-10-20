@@ -32,11 +32,14 @@ async function latchTriaged(db: ReturnType<typeof getDb>, id: string, userId: st
 }
 
 export function registerDraftRoutes(router: Hono<AppEnv>) {
-  // DELETE /bills/:id — admin only
+  // DELETE /bills/:id — admin only. A draft with engagement answers 409 unless `?includeEngaged=1` says the
+  // admin confirmed deleting it with its votes, positions, comments, and notes (lib/draftDelete.ts).
   router.delete('/:id', requireAdmin, async (c) => {
     const db = getDb(c.env.DB)
     const { id } = c.req.param()
-    const { skipped } = await deleteDrafts(db, [id])
+    const flag = c.req.query('includeEngaged')
+    const includeEngaged = flag === '1' || flag === 'true'
+    const { skipped } = await deleteDrafts(db, [id], { includeEngaged, attachments: c.env.ATTACHMENTS_BUCKET })
     const refusal = skipped[0]?.reason
     if (refusal === 'not_found') return c.json({ error: 'Bill not found' }, 404)
     if (refusal === 'not_draft') return c.json({ error: 'Only draft bills can be deleted' }, 403)
