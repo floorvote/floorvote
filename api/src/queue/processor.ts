@@ -762,7 +762,8 @@ async function applyCentralBill(
   const priorMatchEvent = !aiResult && derivedMatchType === 'keyword' && !existing?.newMatchAt && existing?.matchType === null && existing.aiProcessedAt != null
     ? !!(await db.select({ id: feedEvents.id }).from(feedEvents).where(and(eq(feedEvents.billId, existing.id), eq(feedEvents.type, 'bill_matched'))).get())
     : null
-  const isFirstKeywordMatch = derivedMatchType === 'keyword' && !existing?.newMatchAt
+  // An operator's analysis of a demo refreshes content; it is not news, so it never marks a bill new.
+  const isFirstKeywordMatch = derivedMatchType === 'keyword' && !existing?.newMatchAt && !msg.operatorAi
     && (!!aiResult || priorMatchEvent === false)
 
   // Where the match came from, as central declared it. The declaration rides

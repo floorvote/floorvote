@@ -798,8 +798,9 @@ tenantsRoutes.post('/reprocess/:tenantId', guardCallerTenantParam(), async (c) =
   // operatorAi lifts a demo tenant's no-AI gate for one analysis. A demo's visitors share an
   // admin session that reaches central only through its binding, which always carries
   // x-caller-tenant, so only a direct operator call (the admin secret, no header) may set it.
-  const operatorAi = body.operatorAi === true && !c.req.header(CALLER_TENANT_HEADER)
+  // Only a targeted reprocess takes it, so one call can't run AI on a whole tenant.
   const targeted = Array.isArray(body.billIds)
+  const operatorAi = body.operatorAi === true && targeted && !c.req.header(CALLER_TENANT_HEADER)
   const offset = typeof body.offset === 'number' && body.offset >= 0 ? Math.floor(body.offset) : 0
   const pageLimit = typeof body.limit === 'number' && body.limit > 0
     ? Math.min(Math.floor(body.limit), REPROCESS_LIMIT)

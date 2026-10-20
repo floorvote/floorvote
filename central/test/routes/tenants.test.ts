@@ -292,6 +292,14 @@ describe('POST /tenants/reprocess/:tenantId — operatorAi (demo AI opt-in)', ()
     expect(sent[0].forceAI).toBeUndefined()
   })
 
+  it('an untargeted reprocess (no billIds) drops the flag', async () => {
+    await seedReproc()
+    const { env2, sent } = queueEnv()
+    await post(env2, { operatorAi: true })
+    expect(sent.length).toBeGreaterThan(0)
+    expect(sent.every(m => m.operatorAi === undefined && m.forceAI === undefined)).toBe(true)
+  })
+
   it('only the literal true counts', async () => {
     await seedReproc()
     const { env2, sent } = queueEnv()

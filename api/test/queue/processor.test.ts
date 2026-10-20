@@ -558,6 +558,19 @@ describe('processCentralNotification', () => {
     expect(processBill).toHaveBeenCalledTimes(1)
   })
 
+  it('an operatorAi analysis does not mark the bill new or write a bill_matched event', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+    const demoEnv = { ...testEnv, DEMO_MODE: 'true' }
+    await processCentralNotification({ tenantId: 'test-org', billId: BILL_ID, forceAI: true, operatorAi: true }, demoEnv as any, db)
+
+    const row = await db.select().from(bills).get()
+    expect(row!.aiProcessedAt).not.toBeNull()
+    expect(row!.newMatchAt).toBeNull()
+    const events = await db.select().from(feedEvents).where(eq(feedEvents.type, 'bill_matched')).all()
+    expect(events).toHaveLength(0)
+  })
+
   it('forceMetadata does not bypass the AI text-hash dedup', async () => {
     const db = getDb(env.DB)
     await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })

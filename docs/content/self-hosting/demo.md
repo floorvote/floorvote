@@ -44,12 +44,13 @@ Two deliberate exceptions to the pattern:
 A demo tenant never calls the model, so its bills carry no summaries or citations until an operator asks for one analysis. Send central's targeted reprocess a direct call with the admin secret and `operatorAi`:
 
 ```bash
-curl -X POST "$CENTRAL_API_URL/api/tenants/reprocess/<tenant-id>" \
+curl -X POST "$CENTRAL/api/tenants/reprocess/<tenant-id>" \
   -H "x-admin-secret: $ADMIN_SECRET" -H "content-type: application/json" \
   -d '{"billIds": [12345, 12346], "operatorAi": true}'
 ```
 
-`billIds` are the LegiScan bill ids of bills the demo already tracks. Central honors `operatorAi` only on a direct call like this one. A request that arrives through a tenant's service binding, which is everything a demo visitor can reach, has the flag dropped, so no visitor can cause a model call.
+`billIds` are central's bill ids for bills the demo already tracks, and `operatorAi` is honored only with `billIds`. Central honors it only on a direct call like this one. A request that arrives through a tenant's service binding, which is everything a demo visitor can reach, has the flag dropped, so no visitor can cause a model call.
+
 ## Choosing the demo content
 
 The demo's content — its personas, county names, comments, calendar events, keywords, AI context, and tag taxonomy — is data, described by a *seed*. Seeds live in `api/src/lib/demoSeeds/`, one module each, and are registered in `api/src/lib/demoSeeds/index.ts`. `api/src/lib/demoReset.ts` is the machinery that writes a seed to the database; it holds no content of its own.
