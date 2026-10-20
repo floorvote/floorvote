@@ -17,24 +17,6 @@ export const COMMITTEE_SCOPES: ReadonlyArray<{ value: CommitteeScope; label: str
 /** What the Committee control says on hover. */
 export const COMMITTEE_FILTER_HINT = 'Filter by the committee a bill is in now, or any committee it was referred to.'
 
-/** What a procedural committee's tag says on hover. */
-export const PROCEDURAL_HINT = 'Routes or schedules bills rather than weighing them, so it can hold many of a session\'s bills.'
-
-/** The tag beside a procedural committee (Rules, Assignments, Calendars). */
-export function ProceduralTag() {
-  return (
-    <span
-      title={PROCEDURAL_HINT}
-      style={{
-        fontSize: fontSize.xs, color: color.textMuted, border: `1px solid ${color.borderDefault}`,
-        borderRadius: radius.sm, padding: '0 4px', flexShrink: 0,
-      }}
-    >
-      Procedural
-    </span>
-  )
-}
-
 /** The current committee or any referral, as two radios. */
 export function CommitteeScopeSwitch({ scope, onScopeChange, name }: { scope: CommitteeScope; onScopeChange: (scope: CommitteeScope) => void; name: string }) {
   return (
@@ -59,9 +41,9 @@ export function CommitteeScopeSwitch({ scope, onScopeChange, name }: { scope: Co
 const MENU_ITEM = 'input[type="radio"], input[type="checkbox"]'
 
 /**
- * The Committee filter (#471): each committee with its bill count, under its state on a multi-state instance, the
- * procedural ones last and tagged, and a switch between the committee a bill is in now and any committee it was
- * referred to. The options come from `committeeGroups`.
+ * The Committee filter (#471): each committee with its bill count, under its state on a multi-state instance, and a
+ * switch between the committee a bill is in now and any committee it was referred to. The options come from
+ * `committeeGroups`.
  */
 export function CommitteeFilterDropdown({ groups, selected, onChange, scope, onScopeChange, showStates }: {
   groups: CommitteeGroup[]
@@ -174,7 +156,6 @@ export function CommitteeFilterDropdown({ groups, selected, onChange, scope, onS
                       style={{ margin: 0, accentColor: color.accentBlue, flexShrink: 0 }}
                     />
                     {opt.label}
-                    {opt.procedural && <ProceduralTag />}
                     <CountBadge count={opt.count} />
                   </label>
                 )

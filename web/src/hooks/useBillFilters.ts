@@ -322,7 +322,7 @@ export function useBillFilters(opts: {
       }))
   }, [facetCounts.subject])
 
-  // The Committee filter's options (#471): by state, procedural committees last, the picked ones kept (lib/committeeGroups.ts).
+  // The Committee filter's options (#471): by state and then by count, the picked ones kept (lib/committeeGroups.ts).
   const committeeGroups = useMemo(
     () => groupCommittees(facetCounts.committee ?? {}, facetCounts.committeeInfo ?? {}, filter.committee),
     [facetCounts.committee, facetCounts.committeeInfo, filter.committee],

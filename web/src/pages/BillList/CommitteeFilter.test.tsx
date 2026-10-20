@@ -1,18 +1,24 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import { CommitteeFilterDropdown } from './CommitteeFilter'
-import type { CommitteeGroup } from '../../lib/committeeGroups'
+import { committeeGroups, type CommitteeGroup } from '../../lib/committeeGroups'
 
-// The Committee menu (#471): each committee with its count, under its state, procedural committees last and tagged,
+// The Committee menu (#471): each committee with its count, under its state, in the order `committeeGroups` gives,
 // and a switch between the committee a bill is in now and any committee it was referred to.
 
 const GROUPS: CommitteeGroup[] = [
   { state: 'NJ', options: [
-    { value: '101', label: 'Judiciary (Senate)', count: 12, procedural: false },
-    { value: '102', label: 'Rules (Senate)', count: 140, procedural: true },
+    { value: '101', label: 'Judiciary (Senate)', count: 12 },
+    { value: '102', label: 'Rules (Senate)', count: 140 },
   ] },
-  { state: 'TX', options: [{ value: '201', label: 'State Affairs (House)', count: 4, procedural: false }] },
+  { state: 'TX', options: [{ value: '201', label: 'State Affairs (House)', count: 4 }] },
 ]
+
+const INFO = {
+  101: { name: 'Judiciary', state: 'NJ', chamber: 'S' },
+  102: { name: 'Rules', state: 'NJ', chamber: 'S' },
+  103: { name: 'Calendars', state: 'NJ', chamber: 'H' },
+}
 
 function renderMenu(props: Partial<Parameters<typeof CommitteeFilterDropdown>[0]> = {}) {
   const onChange = vi.fn()
@@ -31,12 +37,16 @@ describe('the Committee menu', () => {
     expect(within(judiciary).getByText('12')).toBeInTheDocument()
   })
 
-  it('tags a procedural committee, and lists it after the others', () => {
-    const { menu } = renderMenu()
+  it('renders no Procedural tag beside a Rules committee', () => {
+    const { menu } = renderMenu({ groups: committeeGroups({ 101: 12, 102: 140, 103: 3 }, INFO) })
+    expect(within(menu).queryByText('Procedural')).toBeNull()
+    expect(menu.textContent).not.toMatch(/Procedural/)
+  })
+
+  it('lists a large Rules committee first, by its count, with nothing after its name but the count', () => {
+    const { menu } = renderMenu({ groups: committeeGroups({ 101: 12, 102: 140, 103: 3 }, INFO) })
     const labels = within(menu).getAllByRole('checkbox').map(c => c.closest('label')!.textContent)
-    expect(labels[0]).toMatch(/^Judiciary/)
-    expect(labels[1]).toMatch(/^Rules \(Senate\)Procedural/)
-    expect(labels[0]).not.toMatch(/Procedural/)
+    expect(labels).toEqual(['Rules (Senate)140', 'Judiciary (Senate)12', 'Calendars (House)3'])
   })
 
   it('picks a committee', () => {
