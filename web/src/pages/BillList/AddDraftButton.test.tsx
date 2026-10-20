@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
 import { AddDraftButton } from './AddDraftButton'
 import { peekJustCreatedDraft } from '../../lib/justCreatedDraft'
 import * as api from '../../lib/api'
+import { color, fontSize, fontWeight } from '../../styles/tokens'
+import { contrast, resolveColor } from '../../test/colorTokens'
 
 // Mutable flag so a test can opt into a locked demo without a module-level
 // mock rewrite.
@@ -39,8 +41,8 @@ function renderButton() {
 
 type Defaults = { tenantState: string | null }
 interface Server {
-  defaults?: Defaults | Error
-  facets?: { state: Record<string, number> } | Error
+  defaults?: Defaults | Error | (() => Defaults | Promise<Defaults>)
+  states?: string[] | Error
   create?: (init: RequestInit) => unknown | Promise<unknown>
 }
 
@@ -52,12 +54,12 @@ function mockApi(server: Server = {}) {
     if (path === '/bills/draft-defaults') {
       const d = server.defaults ?? { tenantState: 'UT' }
       if (d instanceof Error) throw d
-      return d as never
+      return (typeof d === 'function' ? await d() : d) as never
     }
-    if (path === '/bills/facets') {
-      const f = server.facets ?? { state: {} }
-      if (f instanceof Error) throw f
-      return f as never
+    if (path === '/bills/draft-states') {
+      const st = server.states ?? []
+      if (st instanceof Error) throw st
+      return { states: st } as never
     }
     if (path === '/bills/draft' && init?.method === 'POST') {
       return (await (server.create ? server.create(init) : { id: 'new-draft-1' })) as never
@@ -89,7 +91,7 @@ describe('AddDraftButton', () => {
     })
 
     it('opens no menu and no text field', async () => {
-      mockApi({ defaults: { tenantState: 'UT' }, facets: { state: { UT: 3, CO: 1 } } })
+      mockApi({ defaults: { tenantState: 'UT' }, states: ['UT', 'CO'] })
       renderButton()
       fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
       await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent('/bills/new-draft-1'))
@@ -99,7 +101,7 @@ describe('AddDraftButton', () => {
 
     it('decides single-state from draft-defaults, not from how many states have bills', async () => {
       // Two states have bills, but the tenant is configured for one: still one click.
-      const server = mockApi({ defaults: { tenantState: 'UT' }, facets: { state: { UT: 3, CO: 1 } } })
+      const server = mockApi({ defaults: { tenantState: 'UT' }, states: ['UT', 'CO'] })
       renderButton()
       fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
       await waitFor(() => expect(server.posts()).toHaveLength(1))
@@ -124,7 +126,7 @@ describe('AddDraftButton', () => {
 
   describe('multi-state tenant with states that have bills', () => {
     it('opens a menu of the facet states instead of creating', async () => {
-      const server = mockApi({ defaults: { tenantState: null }, facets: { state: { UT: 3, CO: 1 } } })
+      const server = mockApi({ defaults: { tenantState: null }, states: ['UT', 'CO'] })
       renderButton()
       fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
 
@@ -135,7 +137,7 @@ describe('AddDraftButton', () => {
     })
 
     it('lists the states in alphabetical order', async () => {
-      mockApi({ defaults: { tenantState: null }, facets: { state: { UT: 3, CO: 1, AZ: 2 } } })
+      mockApi({ defaults: { tenantState: null }, states: ['UT', 'CO', 'AZ'] })
       renderButton()
       fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
       await screen.findByRole('menuitem', { name: 'AZ' })
@@ -143,7 +145,7 @@ describe('AddDraftButton', () => {
     })
 
     it('creates the draft in the picked state and opens its page marked as just created', async () => {
-      const server = mockApi({ defaults: { tenantState: null }, facets: { state: { UT: 3, CO: 1 } } })
+      const server = mockApi({ defaults: { tenantState: null }, states: ['UT', 'CO'] })
       renderButton()
       fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
       fireEvent.click(await screen.findByRole('menuitem', { name: 'CO' }))
@@ -155,7 +157,7 @@ describe('AddDraftButton', () => {
 
     it('still offers the menu when only one state has bills', async () => {
       // One state with bills does not make the tenant single-state: draft-defaults says null.
-      const server = mockApi({ defaults: { tenantState: null }, facets: { state: { UT: 3 } } })
+      const server = mockApi({ defaults: { tenantState: null }, states: ['UT'] })
       renderButton()
       fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
       expect(await screen.findByRole('menuitem', { name: 'UT' })).toBeInTheDocument()
@@ -163,7 +165,7 @@ describe('AddDraftButton', () => {
     })
 
     it('closes the menu on Escape without creating anything', async () => {
-      const server = mockApi({ defaults: { tenantState: null }, facets: { state: { UT: 3, CO: 1 } } })
+      const server = mockApi({ defaults: { tenantState: null }, states: ['UT', 'CO'] })
       renderButton()
       fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
       await screen.findByRole('menuitem', { name: 'CO' })
@@ -173,7 +175,7 @@ describe('AddDraftButton', () => {
     })
 
     it('closes the menu on a click outside it without creating anything', async () => {
-      const server = mockApi({ defaults: { tenantState: null }, facets: { state: { UT: 3, CO: 1 } } })
+      const server = mockApi({ defaults: { tenantState: null }, states: ['UT', 'CO'] })
       renderButton()
       fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
       await screen.findByRole('menuitem', { name: 'CO' })
@@ -183,7 +185,7 @@ describe('AddDraftButton', () => {
     })
 
     it('closes the menu when the button is clicked again', async () => {
-      mockApi({ defaults: { tenantState: null }, facets: { state: { UT: 3, CO: 1 } } })
+      mockApi({ defaults: { tenantState: null }, states: ['UT', 'CO'] })
       renderButton()
       const button = screen.getByRole('button', { name: 'Add draft bill' })
       fireEvent.click(button)
@@ -195,7 +197,7 @@ describe('AddDraftButton', () => {
 
   describe('multi-state tenant with no bills yet', () => {
     it('offers a two-letter text field instead of a menu', async () => {
-      mockApi({ defaults: { tenantState: null }, facets: { state: {} } })
+      mockApi({ defaults: { tenantState: null }, states: [] })
       renderButton()
       fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
       const field = await screen.findByRole('textbox', { name: 'State' })
@@ -204,7 +206,7 @@ describe('AddDraftButton', () => {
     })
 
     it('creates the draft with the typed state, uppercased', async () => {
-      const server = mockApi({ defaults: { tenantState: null }, facets: { state: {} } })
+      const server = mockApi({ defaults: { tenantState: null }, states: [] })
       renderButton()
       fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
       const user = userEvent.setup()
@@ -217,7 +219,7 @@ describe('AddDraftButton', () => {
     })
 
     it('submits the typed state on Enter', async () => {
-      const server = mockApi({ defaults: { tenantState: null }, facets: { state: {} } })
+      const server = mockApi({ defaults: { tenantState: null }, states: [] })
       renderButton()
       fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
       const user = userEvent.setup()
@@ -226,7 +228,7 @@ describe('AddDraftButton', () => {
     })
 
     it('does not create with a blank state', async () => {
-      const server = mockApi({ defaults: { tenantState: null }, facets: { state: {} } })
+      const server = mockApi({ defaults: { tenantState: null }, states: [] })
       renderButton()
       fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
       await screen.findByRole('textbox', { name: 'State' })
@@ -236,7 +238,7 @@ describe('AddDraftButton', () => {
     })
 
     it('does not create with a one-letter state', async () => {
-      const server = mockApi({ defaults: { tenantState: null }, facets: { state: {} } })
+      const server = mockApi({ defaults: { tenantState: null }, states: [] })
       renderButton()
       fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
       const user = userEvent.setup()
@@ -246,7 +248,7 @@ describe('AddDraftButton', () => {
     })
 
     it('does not accept more than two letters or non-letters', async () => {
-      const server = mockApi({ defaults: { tenantState: null }, facets: { state: {} } })
+      const server = mockApi({ defaults: { tenantState: null }, states: [] })
       renderButton()
       fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
       const user = userEvent.setup()
@@ -256,11 +258,169 @@ describe('AddDraftButton', () => {
       await waitFor(() => expect(server.postBodies()).toEqual([{ state: 'UT' }]))
     })
 
-    it('falls back to the text field when the facets call fails', async () => {
-      mockApi({ defaults: { tenantState: null }, facets: new api.ApiError(500, 'boom') })
+    it('falls back to the text field when the states call fails', async () => {
+      mockApi({ defaults: { tenantState: null }, states: new api.ApiError(500, 'boom') })
       renderButton()
       fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
       expect(await screen.findByRole('textbox', { name: 'State' })).toBeInTheDocument()
+    })
+  })
+
+  describe('prefetch: the click answers from what the page already fetched', () => {
+    // Lets every request started by the mount settle.
+    const settle = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+
+    it('asks draft-defaults and the state list once each when the page mounts, before any click', async () => {
+      const server = mockApi({ defaults: { tenantState: null }, states: ['UT', 'CO'] })
+      renderButton()
+      await settle()
+      expect(server.calls.map(c => c.path).sort()).toEqual(['/bills/draft-defaults', '/bills/draft-states'])
+    })
+
+    it('never asks for the full facets, which compute every facet to read a few state names', async () => {
+      const server = mockApi({ defaults: { tenantState: null }, states: ['UT', 'CO'] })
+      renderButton()
+      await settle()
+      fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
+      await screen.findByRole('menuitem', { name: 'CO' })
+      await settle()
+      expect(server.calls.some(c => c.path.startsWith('/bills/facets'))).toBe(false)
+    })
+
+    it('opens the state menu on the click itself, with no request left to wait for', async () => {
+      const server = mockApi({ defaults: { tenantState: null }, states: ['UT', 'CO'] })
+      renderButton()
+      await settle()
+      const before = server.calls.length
+      fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
+      // Synchronous: no await, no findBy. The menu is there as soon as the click returns.
+      expect(screen.getAllByRole('menuitem').map(el => el.textContent)).toEqual(['CO', 'UT'])
+      expect(server.calls).toHaveLength(before)
+      expect(screen.getByRole('button', { name: 'Add draft bill' })).not.toHaveAttribute('aria-busy')
+    })
+
+    it('opens the two-letter field on the click itself when the tenant has no bills yet', async () => {
+      const server = mockApi({ defaults: { tenantState: null }, states: [] })
+      renderButton()
+      await settle()
+      const before = server.calls.length
+      fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
+      expect(screen.getByRole('textbox', { name: 'State' })).toBeInTheDocument()
+      expect(server.calls).toHaveLength(before)
+    })
+
+    it('creates a single-state tenant draft with exactly one request after the click', async () => {
+      const server = mockApi({ defaults: { tenantState: 'UT' } })
+      renderButton()
+      await settle()
+      const before = server.calls.length
+      fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
+      await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent('/bills/new-draft-1'))
+      const after = server.calls.slice(before)
+      expect(after.map(c => `${c.init?.method ?? 'GET'} ${c.path}`)).toEqual(['POST /bills/draft'])
+    })
+
+    it('a click before the prefetch lands waits on it instead of asking again', async () => {
+      let release: (d: Defaults) => void = () => {}
+      const server = mockApi({ defaults: () => new Promise<Defaults>(res => { release = res }), states: ['UT', 'CO'] })
+      renderButton()
+      await settle()
+      fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
+      expect(screen.queryByRole('menu')).toBeNull()
+      release({ tenantState: null })
+      expect(await screen.findByRole('menuitem', { name: 'CO' })).toBeInTheDocument()
+      expect(server.calls.filter(c => c.path === '/bills/draft-defaults')).toHaveLength(1)
+      expect(server.calls.filter(c => c.path === '/bills/draft-states')).toHaveLength(1)
+    })
+
+    it('a click before a slow prefetch of a single-state tenant still creates once it lands', async () => {
+      let release: (d: Defaults) => void = () => {}
+      const server = mockApi({ defaults: () => new Promise<Defaults>(res => { release = res }) })
+      renderButton()
+      await settle()
+      fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
+      expect(server.posts()).toHaveLength(0)
+      release({ tenantState: 'UT' })
+      await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent('/bills/new-draft-1'))
+      expect(server.posts()).toHaveLength(1)
+      expect(server.calls.filter(c => c.path === '/bills/draft-defaults')).toHaveLength(1)
+    })
+
+    it('asks again on the click when the prefetch failed, and the retry can succeed', async () => {
+      let attempts = 0
+      const server = mockApi({
+        defaults: () => {
+          attempts += 1
+          if (attempts === 1) throw new api.ApiError(503, 'Central is down.')
+          return { tenantState: 'UT' }
+        },
+      })
+      renderButton()
+      await settle()
+      // A failed prefetch says nothing: the error would describe an attempt nobody made.
+      expect(screen.queryByRole('alert')).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
+      await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent('/bills/new-draft-1'))
+      expect(server.calls.filter(c => c.path === '/bills/draft-defaults')).toHaveLength(2)
+    })
+
+    it('tries a failed prefetch again when the pointer arrives, so the click can still be instant', async () => {
+      let attempts = 0
+      const server = mockApi({
+        defaults: () => {
+          attempts += 1
+          if (attempts === 1) throw new api.ApiError(503, 'Central is down.')
+          return { tenantState: null }
+        },
+        states: ['UT', 'CO'],
+      })
+      renderButton()
+      await settle()
+      fireEvent.pointerEnter(screen.getByRole('button', { name: 'Add draft bill' }), { pointerType: 'mouse' })
+      await settle()
+      const before = server.calls.length
+      fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
+      expect(screen.getAllByRole('menuitem')).toHaveLength(2)
+      expect(server.calls).toHaveLength(before)
+    })
+
+    it('does not ask again on hover or focus when the prefetch already landed', async () => {
+      const server = mockApi({ defaults: { tenantState: null }, states: ['UT'] })
+      renderButton()
+      await settle()
+      const button = screen.getByRole('button', { name: 'Add draft bill' })
+      fireEvent.pointerEnter(button, { pointerType: 'mouse' })
+      fireEvent.focus(button)
+      await settle()
+      expect(server.calls).toHaveLength(2)
+    })
+
+    it('still decides the tenant type from draft-defaults, not from the state list', async () => {
+      // Two states have bills, but the tenant is configured for one: no menu.
+      const server = mockApi({ defaults: { tenantState: 'UT' }, states: ['UT', 'CO'] })
+      renderButton()
+      await settle()
+      fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
+      await waitFor(() => expect(server.posts()).toHaveLength(1))
+      expect(screen.queryByRole('menu')).toBeNull()
+      expect(server.postBodies()[0]).toBeNull()
+    })
+
+    it('sends no request on mount in a locked demo', async () => {
+      demoState.demoLocked = true
+      const server = mockApi()
+      renderButton()
+      await settle()
+      expect(server.calls).toHaveLength(0)
+    })
+
+    it('shows the server error when the click retries a failed prefetch and fails again', async () => {
+      const server = mockApi({ defaults: new api.ApiError(500, 'Defaults unavailable.') })
+      renderButton()
+      await settle()
+      fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
+      expect(await screen.findByRole('alert')).toHaveTextContent('Defaults unavailable.')
+      expect(server.posts()).toHaveLength(0)
     })
   })
 
@@ -321,7 +481,7 @@ describe('AddDraftButton', () => {
     it("shows the server's error and does not navigate when a picked-state create fails", async () => {
       mockApi({
         defaults: { tenantState: null },
-        facets: { state: { UT: 3, CO: 1 } },
+        states: ['UT', 'CO'],
         create: () => { throw new api.ApiError(400, 'Include a state when creating a draft.') },
       })
       renderButton()
@@ -334,7 +494,7 @@ describe('AddDraftButton', () => {
     it('shows the error and keeps the typed state when a text-field create fails', async () => {
       mockApi({
         defaults: { tenantState: null },
-        facets: { state: {} },
+        states: [],
         create: () => { throw new api.ApiError(500, 'Something broke.') },
       })
       renderButton()
@@ -383,7 +543,7 @@ describe('AddDraftButton', () => {
 
   describe('popup semantics and dismissal', () => {
     it('always says it opens a menu, and whether the menu is open', async () => {
-      mockApi({ defaults: { tenantState: null }, facets: { state: { UT: 3, CO: 1 } } })
+      mockApi({ defaults: { tenantState: null }, states: ['UT', 'CO'] })
       renderButton()
       const button = screen.getByRole('button', { name: 'Add draft bill' })
       expect(button).toHaveAttribute('aria-haspopup', 'menu')
@@ -396,7 +556,7 @@ describe('AddDraftButton', () => {
     })
 
     it('returns focus to the button on Escape from the menu', async () => {
-      mockApi({ defaults: { tenantState: null }, facets: { state: { UT: 3, CO: 1 } } })
+      mockApi({ defaults: { tenantState: null }, states: ['UT', 'CO'] })
       renderButton()
       const button = screen.getByRole('button', { name: 'Add draft bill' })
       fireEvent.click(button)
@@ -406,7 +566,7 @@ describe('AddDraftButton', () => {
     })
 
     it('returns focus to the button on Escape from the text field', async () => {
-      mockApi({ defaults: { tenantState: null }, facets: { state: {} } })
+      mockApi({ defaults: { tenantState: null }, states: [] })
       renderButton()
       const button = screen.getByRole('button', { name: 'Add draft bill' })
       fireEvent.click(button)
@@ -420,7 +580,7 @@ describe('AddDraftButton', () => {
     async function openPickerWithFailedCreate() {
       mockApi({
         defaults: { tenantState: null },
-        facets: { state: {} },
+        states: [],
         create: () => { throw new api.ApiError(500, 'Something broke.') },
       })
       renderButton()
@@ -460,6 +620,36 @@ describe('AddDraftButton', () => {
   })
 
   describe('look and hover', () => {
+    it('is set in the view switcher\'s size, so the two sit on one baseline', () => {
+      mockApi()
+      renderButton()
+      const style = screen.getByRole('button', { name: 'Add draft bill' }).style
+      // The Views trigger: fontSize.base, 3px vertical padding, the inherited font and line height.
+      expect(style.fontSize).toBe(`${fontSize.base}px`)
+      expect(style.paddingTop).toBe('3px')
+      expect(style.paddingBottom).toBe('3px')
+      expect(style.fontFamily).toBe('inherit')
+      expect(style.lineHeight).toBe('')
+    })
+
+    it('is lighter in weight than the view switcher, in the same secondary text color', () => {
+      mockApi()
+      renderButton()
+      const style = screen.getByRole('button', { name: 'Add draft bill' }).style
+      expect(Number(style.fontWeight)).toBe(fontWeight.normal)
+      expect(Number(style.fontWeight)).toBeLessThan(fontWeight.medium)
+      expect(style.color).toBe(color.textSecondary)
+    })
+
+    it('keeps WCAG AA (4.5:1) for its text on the page header in both color modes', () => {
+      // The header behind the button is surfaceMuted (BillList's sticky block). 14px regular is normal-size text.
+      for (const mode of ['light', 'dark'] as const) {
+        const fg = resolveColor(color.textSecondary, mode)
+        const bg = resolveColor(color.surfaceMuted, mode)
+        expect(contrast(fg, bg), mode).toBeGreaterThanOrEqual(4.5)
+      }
+    })
+
     it('explains the feature on hover', () => {
       mockApi()
       renderButton()
