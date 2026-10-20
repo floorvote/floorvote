@@ -95,5 +95,14 @@ export const LAKE_MICHIGAN_SEED: DemoSeed = {
       id: 'lm-view-high-mi-wi', name: 'High priority in Michigan and Wisconsin', slug: 'high-priority-in-michigan-and-wisconsin',
       query: viewQuery([['priority', 'high'], ['state', 'MI'], ['state', 'WI']]),
     },
+    {
+      // Bills referred to any of the coalition's environment and natural resources committees (central's ids, stable
+      // across metadata refreshes): WI Assembly Environment and Senate Natural Resources, MI House Natural Resources
+      // and Senate Natural Resources and Agriculture, IL House Energy & Environment, IN House Environmental Affairs,
+      // and the US Senate Environment and Public Works and House Water Resources and Environment subcommittee. The
+      // default `any referral` scope is not written, as the bill list leaves it out of the URL. Not subject-based.
+      id: 'lm-view-environment-committees', name: 'Environment committees', slug: 'environment-committees',
+      query: viewQuery(['4122', '5058', '5004', '4774', '3958', '1290', '2325', '2551'].map((id): [string, string] => ['committee', id])),
+    },
   ],
 }
