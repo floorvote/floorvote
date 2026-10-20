@@ -207,6 +207,8 @@ namespace_id = "3003"               # unique per env, and not LOGIN's
 # access, no r2.dev URL). Several instances may share one bucket: each stores
 # its files under its TENANT_ID. Never bind it on a DEMO_MODE tenant
 # (attachments stay off there regardless).
+# scripts/new-instance.sh creates <prefix>-<slug>-files and binds it for you
+# unless given --no-attachments.
 # [[env.example.r2_buckets]]
 # binding = "ATTACHMENTS_BUCKET"
 # bucket_name = "floorvote-example-files"
