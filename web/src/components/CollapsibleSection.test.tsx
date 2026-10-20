@@ -270,3 +270,33 @@ describe('CollapsibleSection', () => {
     })
   })
 })
+
+// #806: the open body's clip box reaches OPEN_PAINT_ROOM up over the header and
+// is later in the DOM, so it painted above the title and swallowed its clicks.
+// jsdom has no layout, so pin the stacking that keeps the header on top.
+describe('CollapsibleSection header stays clickable when open (#806)', () => {
+  beforeEach(() => mockMatchMedia(false))
+
+  it('folds when the title is clicked after the open animation settles', async () => {
+    const onToggle = vi.fn()
+    render(
+      <CollapsibleSection label="Actions" count={3} open onToggle={onToggle}>
+        <p>body content</p>
+      </CollapsibleSection>,
+    )
+    await act(async () => { await new Promise(r => setTimeout(r, 300)) })
+    fireEvent.click(screen.getByText('Actions'))
+    expect(onToggle).toHaveBeenCalledTimes(1)
+  })
+
+  it('stacks the header above the body clip box that overlaps it', () => {
+    render(
+      <CollapsibleSection label="Actions" open onToggle={() => {}}>
+        <p>body content</p>
+      </CollapsibleSection>,
+    )
+    const header = screen.getByRole('button', { name: /Actions/ }).parentElement as HTMLElement
+    expect(header.style.position).toBe('relative')
+    expect(header.style.zIndex).toBe('1')
+  })
+})

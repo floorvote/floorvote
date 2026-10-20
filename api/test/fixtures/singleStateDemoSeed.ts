@@ -39,5 +39,6 @@ export const SINGLE_STATE_SEED: DemoSeed = {
   customFieldValues: [],
   notes: [],
   calendarEvents: [],
+  teamFieldChanges: [],
   savedViews: [],
 }

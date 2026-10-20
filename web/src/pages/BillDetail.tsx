@@ -1492,8 +1492,8 @@ export function BillDetail() {
     }
     // A PDF claim opens its page and shows its quote (#572), an HTML claim its highlighted passage (#571).
     setPassage('quote' in link
-      ? { ...base, quote: link.quote, page: link.page, opener: opener ?? null }
-      : { ...base, matched: link.matched, quoteAt: link.quoteAt })
+      ? { ...base, quote: link.quote, page: link.page, opener: opener ?? null, ...(link.rest ? { rest: link.rest } : {}) }
+      : { ...base, matched: link.matched, quoteAt: link.quoteAt, ...(link.rest ? { rest: link.rest } : {}) })
   }
 
   // Separators between collapsible sections — no border above the first one.
