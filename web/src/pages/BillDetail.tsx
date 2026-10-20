@@ -860,20 +860,23 @@ export function BillDetail() {
   const [editingDraftField, setEditingDraftField] = useState<'summary' | 'text' | 'title' | 'sponsor' | 'billNumber' | 'year' | 'state' | null>(null)
   const [hoveredDraftField, setHoveredDraftField] = useState<'summary' | 'text' | 'title' | 'sponsor' | 'billNumber' | 'year' | 'state' | null>(null)
   const [draftFieldError, setDraftFieldError] = useState<string | null>(null)
-  // The authoritative single-state signal, from GET /bills/draft-defaults —
-  // the same one DraftBills.tsx uses, for the same reason: c.env.STATE when
-  // the tenant is configured for one state, null when it tracks many. `null`
-  // (including before the call resolves, or if it fails) offers the State
-  // editor; the client only ever hides it on positive evidence of a configured
-  // state. Deliberately NOT derived from /bills/facets — facets only reports
-  // states that already have bills, so it cannot tell a single-state tenant
-  // from a multi-state one whose bills happen to sit in one state.
+  // The authoritative single-state signal, from GET /bills/draft-defaults:
+  // c.env.STATE when the tenant is configured for one state, null when it
+  // tracks many. `null` (including before the call resolves, or if it fails)
+  // offers the State editor; the client only ever hides it on positive
+  // evidence of a configured state. Deliberately NOT derived from
+  // /bills/facets — facets only reports states that already have bills, so it
+  // cannot tell a single-state tenant from a multi-state one whose bills
+  // happen to sit in one state. The real guarantee that a draft never ends up
+  // with state='' is server-side (POST /bills/draft 400s on an empty resolved
+  // state); this editor is the convenience that lets an admin satisfy it.
   const [tenantState, setTenantState] = useState<string | null>(null)
   // Option list for the State Picker only — NOT used to decide whether to
-  // show the editor (that's tenantState above). Same facets-derived list and
-  // free-text fallback as the create form (DraftBills.tsx): `null` means
-  // unknown (still loading, or the call failed); `statesResolved`
-  // distinguishes that from a genuine empty list.
+  // show the editor (that's tenantState above). Built from GET /bills/facets,
+  // which only lists states that already have bills, so a tenant with none yet
+  // (or a facets outage) gets a free-text input instead of a select it cannot
+  // satisfy. `null` means unknown (still loading, or the call failed);
+  // `statesResolved` distinguishes that from a genuine empty list.
   const [knownStates, setKnownStates] = useState<string[] | null>(null)
   const [statesResolved, setStatesResolved] = useState(false)
   // Pending edit values for the year/state Pickers, seeded from the bill's
@@ -2272,8 +2275,7 @@ export function BillDetail() {
                 >
                   <span style={{ color: color.textMuted }}>Year:</span>
                   {(() => {
-                    // Same option-building rule as the create form (DraftBills.tsx):
-                    // the held value must always be one of the options, and the
+                    // The held value must always be one of the options, and the
                     // current year must always be offerable.
                     const thisYear = new Date().getFullYear()
                     const base = Number(draftYearEdit) || thisYear
@@ -2351,9 +2353,8 @@ export function BillDetail() {
                 reports states that already have bills, so it cannot tell a
                 single-state tenant from a multi-state one whose bills happen
                 to sit in one state. The facets-derived list below only supplies
-                the Picker's OPTIONS (same as the create form in
-                DraftBills.tsx); it falls back to free text when facets yields
-                nothing usable. */}
+                the Picker's OPTIONS; it falls back to free text when facets
+                yields nothing usable. */}
             {tenantState === null && (
               // A div for the same reason as the bill-number one above.
               <div>

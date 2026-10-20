@@ -42,7 +42,7 @@ describe('links to the Bills page', () => {
   })
 
   it('are built with billsListPath: each file that links to a filtered list imports it', () => {
-    for (const file of ['web/src/components/Sidebar.tsx', 'web/src/components/FeedActivityRow.tsx', 'web/src/pages/BillDetail.tsx', 'api/src/lib/digestEmail.ts']) {
+    for (const file of ['web/src/components/Sidebar.tsx', 'web/src/components/FeedActivityRow.tsx', 'web/src/pages/BillDetail.tsx', 'web/src/App.tsx', 'api/src/lib/digestEmail.ts']) {
       expect(readFileSync(join(ROOT, file), 'utf8'), file).toMatch(/billsListPath/)
     }
   })

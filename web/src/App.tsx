@@ -23,7 +23,6 @@ import { Members } from './pages/admin/Members'
 import { Config } from './pages/admin/Config'
 import { Notifications } from './pages/admin/Notifications'
 import { CalendarEventsMoved } from './pages/admin/CalendarEventsMoved'
-import { DraftBills } from './pages/admin/DraftBills'
 import { Calendar, calendarLoader } from './pages/Calendar'
 import { useAuth } from './hooks/useAuth'
 import { SidebarRefreshProvider } from './context/SidebarRefreshContext'
@@ -34,6 +33,7 @@ import { useNavPendingCursor } from './hooks/useNavPendingCursor'
 import { UnsavedTextProvider } from './lib/unsavedText'
 import { legalDocs, hasTerms, hasPrivacy } from './lib/legalDocs'
 import { useFocusTrap } from './lib/useFocusTrap'
+import { billsListPath } from '../../shared/billFilter'
 import { useState, useRef, useContext, lazy, Suspense } from 'react'
 
 // Exported for App.demoBanner.test.tsx, which pins the "render nothing until
@@ -208,12 +208,19 @@ export const routes = createRoutesFromElements(
         <Route path="bills/:billId" element={<BillDetail />} loader={billDetailLoader} errorElement={<BillDetailError />} handle={BILL_ROUTE_HANDLE} />
         <Route path="calendar" element={<Calendar />} loader={calendarLoader} />
         <Route path="profile" element={<Profile />} />
+        {/* The Settings → Draft bills page is retired: drafts are created from
+            the Bills page and listed there under the Drafts filter, so old
+            links and bookmarks land on that filtered list. Outside
+            RequireAdmin on purpose — the Drafts filter is on the Bills page
+            for every signed-in member, and a member's old link should reach
+            it rather than bounce to the feed. Still inside RequireAuth, so a
+            signed-out visitor goes to login first. */}
+        <Route path="admin/drafts" element={<Navigate to={billsListPath({ drafts: true })} replace />} />
         <Route element={<RequireAdmin />}>
           <Route path="admin" element={<Navigate to="/admin/members" replace />} />
           <Route path="admin/members" element={<Members />} />
           <Route path="admin/config" element={<Config />} />
           <Route path="admin/notifications" element={<Notifications />} />
-          <Route path="admin/drafts" element={<DraftBills />} />
           <Route path="admin/calendar-events" element={<CalendarEventsMoved />} />
         </Route>
         {/* Canonical + legacy bill URLs — greedy param routes; React Router

@@ -7,7 +7,7 @@ import { peekJustCreatedDraft } from '../../lib/justCreatedDraft'
 import * as api from '../../lib/api'
 
 // Mutable flag so a test can opt into a locked demo without a module-level
-// mock rewrite (same pattern as DraftBills.test.tsx).
+// mock rewrite.
 const demoState = vi.hoisted(() => ({ demoLocked: false }))
 vi.mock('../../context/DemoContext', () => ({
   useDemo: () => ({ demoMode: false, demoLocked: demoState.demoLocked, settled: true }),

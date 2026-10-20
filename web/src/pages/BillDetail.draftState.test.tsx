@@ -123,7 +123,7 @@ const CONFIG = {
  *  @param onPatch what PATCH /bills/42/draft does — resolve with the updated
  *  row, or throw an ApiError.
  *  @param facetStates what GET /bills/facets reports for `state` — the option
- *  list for the State Picker (see DraftBills.tsx's `knownStates`). Omitted
+ *  list for the State Picker (see BillDetail.tsx's `knownStates`). Omitted
  *  (undefined) mocks a facets failure, which falls back to free text. */
 function mockApi(tenantState: string | null, onPatch?: () => Promise<unknown>, facetStates?: Record<string, number>) {
   routerMock.loaderData = { ...DRAFT }
@@ -239,8 +239,8 @@ describe('BillDetail draft State editor', () => {
     expect(navigateMock).not.toHaveBeenCalled()
   })
 
-  // When facets has something to offer, the State editor is the same Picker
-  // single-select as the create form (DraftBills.tsx), not free text.
+  // When facets has something to offer, the State editor is a Picker
+  // single-select, not free text.
   it('offers a Picker (not free text) when facets reports known states, and saves the chosen one', async () => {
     const user = userEvent.setup()
     mockApi(null, undefined, { RI: 3, TX: 2 })

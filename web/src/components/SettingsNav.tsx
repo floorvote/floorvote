@@ -18,7 +18,6 @@ function adminTabsFor(notificationsLabel: string) {
     { to: '/admin/config', label: 'Config' },
     { to: '/admin/members', label: 'Members' },
     { to: '/admin/notifications', label: notificationsLabel },
-    { to: '/admin/drafts', label: 'Draft bills' },
   ]
 }
 
@@ -103,7 +102,7 @@ export function SettingsNav() {
           gap: 2,
           borderBottom: `1px solid ${color.borderStrong}`,
           // Narrow phones can't fit all tabs (Account · Config/Members/
-          // Notifications/Draft bills) — let the row scroll horizontally instead
+          // Notifications) — let the row scroll horizontally instead
           // of overflowing. overflowY is explicitly 'clip' (never 'visible', which
           // is the only value the CSS spec would force to match overflowX's
           // 'auto') so the row never becomes independently vertically

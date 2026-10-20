@@ -48,7 +48,7 @@ describe('SettingsNav', () => {
     expect(screen.queryByRole('link', { name: 'Modules' })).not.toBeInTheDocument()
   })
 
-  it('orders admin tabs Account, Config, Members, Team notifications, Draft bills and drops the pipe divider', () => {
+  it('orders admin tabs Account, Config, Members, Team notifications and drops the pipe divider', () => {
     vi.spyOn(AuthContext, 'useAuth').mockReturnValue({
       user: { id: '1', email: 'a@b.com', name: 'Admin', role: 'admin', title: null, canVote: true, emailDigestEnabled: true, emailDigestMatchesEnabled: true, emailWeekAheadEnabled: true, emailRepliesEnabled: true, lastSeenFeed: null, isLastOwner: false, termsAcceptanceRequired: false, termsAcceptanceKind: 'existing_member' as const },
       loading: false,
@@ -69,10 +69,11 @@ describe('SettingsNav', () => {
       'Config',
       'Members',
       'Team notifications',
-      'Draft bills',
     ])
 
-    expect(screen.getByRole('link', { name: 'Draft bills' })).toHaveAttribute('href', '/admin/drafts')
+    // Drafts are created and found on the Bills page now; Settings has no tab for them.
+    expect(screen.queryByRole('link', { name: 'Draft bills' })).not.toBeInTheDocument()
+    expect(container.querySelector('a[href*="draft"]')).toBeNull()
 
     // The vertical pipe divider before "Admin" has been removed.
     const nav = container.querySelector('nav.settings-nav')
@@ -176,7 +177,7 @@ describe('SettingsNav', () => {
     expect(screen.queryByRole('link', { name: 'Calendar events' })).not.toBeInTheDocument()
     expect(document.querySelector('a[href="/admin/calendar-events"]')).toBeNull()
     // The rest of the tabs are as they were.
-    expect(screen.getAllByRole('link').map(a => a.textContent)).toEqual(['Account', 'Config', 'Members', 'Team notifications', 'Draft bills'])
+    expect(screen.getAllByRole('link').map(a => a.textContent)).toEqual(['Account', 'Config', 'Members', 'Team notifications'])
   })
   describe('admin notifications tab is named after the org noun', () => {
     function renderWithNoun(orgNoun: string | undefined, path = '/admin/config') {
@@ -244,10 +245,10 @@ describe('SettingsNav', () => {
       expect(screen.queryByRole('link', { name: 'Notifications' })).not.toBeInTheDocument()
     })
 
-    it('keeps the tab in the same slot, between Members and Draft bills', () => {
+    it('keeps the tab in the same slot, right after Members, as the last tab', () => {
       renderWithNoun('association')
       expect(screen.getAllByRole('link').map((el) => el.textContent)).toEqual([
-        'Account', 'Config', 'Members', 'Association notifications', 'Draft bills',
+        'Account', 'Config', 'Members', 'Association notifications',
       ])
     })
 
