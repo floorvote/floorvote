@@ -106,6 +106,20 @@ async function callsLogged(): Promise<Record<string, number>> {
   return counts
 }
 
+let rollCallSeq = 0
+/** A bill of the session with one roll call, so the check has something a load could write. */
+async function addRollCall(sessionId: number, state: string, stateId: number) {
+  const n = ++rollCallSeq
+  await db.insert(schema.bills).values({ billId: 7000 + n, sessionId, state, stateId, billNumber: `B${n}`, title: `Bill ${n}`, changeHash: 'h', status: 1 })
+  await db.insert(schema.rollCalls).values({ rollCallId: 8000 + n, billId: 7000 + n, date: '2025-05-01', description: 'Passage', yea: 1, total: 1, passed: 1, chamber: 'H' })
+}
+
+const queuedSessionIds = () => ingestorSend.mock.calls.map(c => c[0].sessionId as number)
+const checkedAt = async (sessionId: number) =>
+  (await db.select({ at: schema.sessions.votesCheckedAt }).from(schema.sessions)
+    .where(sql`session_id = ${sessionId}`).get())?.at
+const listCalls = () => fetchMock.mock.calls.map(c => new URL(c[0] as string)).filter(u => u.searchParams.get('op') === 'getDatasetList')
+
 const weekPasses = () => db.run(sql`UPDATE sessions SET votes_checked_at = datetime('now', '-7 days')`)
 
 beforeEach(async () => {
@@ -129,6 +143,8 @@ beforeEach(async () => {
     // No instance covers MA.
     { sessionId: 3, state: 'MA', stateId: 22, yearStart: 2026, yearEnd: 2026, sessionName: 'MA 2026', sessionTitle: 'Regular' },
   ])
+  // Roll calls, so only the state filter keeps MA out.
+  await addRollCall(3, 'MA', 22)
   await db.insert(schema.bills).values({ billId: 102, sessionId: 1, state: 'RI', stateId: 39, billNumber: 'H102', title: 'Bill 102', changeHash: 'h', status: 1 })
   await db.insert(schema.billTenants).values({ billId: 102, tenantId: 'acme', matchType: 'keyword' })
   // The roll call's totals, as the bill ingest writes them from getBill.
@@ -190,6 +206,9 @@ describe('weekly LegiScan member votes', () => {
       { state: 'DC', provider: 'lims', previousProvider: 'legiscan' },
       { state: 'MD', provider: 'legiscan', previousProvider: 'mga' },
     ])
+    // Each has a roll call, so only the owner and provider filters keep them out.
+    await addRollCall(4, 'DC', 51)
+    await addRollCall(3_000_000_001, 'MD', 20)
 
     await checkVoteDatasets(mockEnv(), db)
 
@@ -359,10 +378,6 @@ describe('adjourned sessions', () => {
     await db.insert(schema.bills).values({ billId: 202, sessionId: 2, state: 'RI', stateId: 39, billNumber: 'H202', title: 'Bill 202', changeHash: 'h', status: 4 })
     await db.insert(schema.rollCalls).values({ rollCallId: 41, billId: 202, date: '2025-05-01', description: 'Passage', yea: 2, nay: 1, total: 3, passed: 1, chamber: 'H' })
   })
-  const queuedSessionIds = () => ingestorSend.mock.calls.map(c => c[0].sessionId as number)
-  const checkedAt = async (sessionId: number) =>
-    (await db.select({ at: schema.sessions.votesCheckedAt }).from(schema.sessions)
-      .where(sql`session_id = ${sessionId}`).get())?.at
 
   it('checks an adjourned session that was never loaded and queues its dataset', async () => {
     await checkVoteDatasets(mockEnv(), db)
@@ -391,6 +406,20 @@ describe('adjourned sessions', () => {
     await weekPasses()
     await checkVoteDatasets(mockEnv(), db)
     expect(queuedSessionIds()).not.toContain(2)
+  })
+
+  it('marks an adjourned session checked, with nothing queued, when the provider no longer lists its dataset', async () => {
+    datasetList = [{ session_id: 1, state_id: 39, dataset_hash: 'hash-1', dataset_size: 1000, access_key: 'key-1' }]
+    await checkVoteDatasets(mockEnv(), db)
+    expect(queuedSessionIds()).toEqual([1])
+    expect(await checkedAt(2)).not.toBeNull()
+
+    // Checked, so it isn't retried every day: nothing is due until the week passes.
+    ingestorSend.mockClear()
+    fetchMock.mockClear()
+    await checkVoteDatasets(mockEnv(), db)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(ingestorSend).not.toHaveBeenCalled()
   })
 
   it('marks an adjourned session checked, and queues nothing, when its stored hash matches', async () => {
@@ -423,6 +452,7 @@ describe('adjourned sessions', () => {
 
   it('still skips an adjourned session in a state no instance tracks', async () => {
     await db.insert(schema.sessions).values({ sessionId: 5, state: 'MA', stateId: 22, yearStart: 2025, yearEnd: 2025, sessionName: 'MA 2025', sessionTitle: 'Regular', sineDie: 1 })
+    await addRollCall(5, 'MA', 22)
     datasetList = [...datasetList as unknown[], { session_id: 5, state_id: 22, dataset_hash: 'hash-ma', dataset_size: 1000, access_key: 'key-5' }]
     await checkVoteDatasets(mockEnv(), db)
     expect(queuedSessionIds()).not.toContain(5)
@@ -440,6 +470,8 @@ describe('adjourned sessions', () => {
       { state: 'DC', provider: 'lims', previousProvider: 'legiscan' },
       { state: 'MD', provider: 'legiscan', previousProvider: 'mga' },
     ])
+    await addRollCall(6, 'DC', 51)
+    await addRollCall(3_000_000_002, 'MD', 20)
     await checkVoteDatasets(mockEnv(), db)
     expect(fetchMock.mock.calls.map(c => new URL(c[0] as string).searchParams.get('state'))).toEqual(['RI'])
     expect(await checkedAt(6)).toBeNull()
@@ -468,11 +500,6 @@ describe('sessions with no roll calls in central', () => {
   // A seeded session row has no bills, so a load would write nothing and cost a
   // quota call. Such a session is skipped, and left unchecked so it is due the
   // moment it has a roll call.
-  const queuedSessionIds = () => ingestorSend.mock.calls.map(c => c[0].sessionId as number)
-  const checkedAt = async (sessionId: number) =>
-    (await db.select({ at: schema.sessions.votesCheckedAt }).from(schema.sessions)
-      .where(sql`session_id = ${sessionId}`).get())?.at
-  const listCalls = () => fetchMock.mock.calls.map(c => new URL(c[0] as string)).filter(u => u.searchParams.get('op') === 'getDatasetList')
 
   beforeEach(async () => {
     // Session 2 is adjourned and never loaded, as in the block above, but central has nothing of it.
@@ -493,10 +520,14 @@ describe('sessions with no roll calls in central', () => {
   })
 
   it("doesn't count another session's roll calls", async () => {
-    // Roll call 31 belongs to session 1's bill; session 2 still has none.
+    // Session 2 has a bill with no roll call. The table holds roll calls, but
+    // they belong to bills of session 1, so the check must correlate by session.
     await db.insert(schema.bills).values({ billId: 202, sessionId: 2, state: 'RI', stateId: 39, billNumber: 'H202', title: 'Bill 202', changeHash: 'h', status: 4 })
+    await db.insert(schema.bills).values({ billId: 103, sessionId: 1, state: 'RI', stateId: 39, billNumber: 'H103', title: 'Bill 103', changeHash: 'h', status: 1 })
+    await db.insert(schema.rollCalls).values({ rollCallId: 32, billId: 103, date: '2026-03-08', description: 'Concurrence', yea: 1, nay: 1, total: 2, passed: 0, chamber: 'H' })
     await checkVoteDatasets(mockEnv(), db)
-    expect(queuedSessionIds()).not.toContain(2)
+    expect(queuedSessionIds()).toEqual([1])
+    expect(await checkedAt(2)).toBeNull()
   })
 
   it('skips a live session with no roll calls, then queues it once it gains one', async () => {

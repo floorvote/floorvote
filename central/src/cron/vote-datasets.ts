@@ -16,9 +16,9 @@
 //     vote/ and people/ entries as the bytes arrive, and writes the votes of
 //     roll calls central has whose stored votes are missing or incomplete.
 
-import { and, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm'
+import { and, eq, exists, inArray, isNull, lt, or, sql } from 'drizzle-orm'
 import { Unzip, UnzipInflate, type UnzipDecoder } from 'fflate'
-import { sessions, tenants } from '../db/schema'
+import { bills, rollCalls, sessions, tenants } from '../db/schema'
 import { DEFAULT_PROVIDER_ID, getProvider, type MeasurePerson } from '../providers'
 import { insertMissingPeople, personRow } from '../lib/people'
 import { providerContext } from '../lib/providerContext'
@@ -73,10 +73,11 @@ function entryKind(name: string): EntryKind | null {
  * instance tracks, with sync enabled, and with at least one roll call in
  * central, since a load writes only roll calls central has (a session skipped
  * for having none isn't marked checked, so it is due once it has one). A
- * session that adjourned sine die is covered too: the hourly sync stops polling it, but its member votes may
- * never have been loaded, or may have changed in its last week. An adjourned
- * session's dataset hash stops changing, so after one load it costs nothing
- * beyond sharing its state's list call. Sessions with sync off, or outside the
+ * session that adjourned sine die is covered too: the hourly sync stops
+ * polling it, but its member votes may never have been loaded, or may have
+ * changed in its last week. An adjourned session's dataset hash stops
+ * changing, so after one load it costs nothing beyond sharing its state's list
+ * call. Sessions with sync off, or outside the
  * tracked states, are backfilled with the bulk seeder. States another
  * provider owns, and its sessions, are left out like the sync leaves them out.
  */
@@ -108,7 +109,9 @@ export async function checkVoteDatasets(env: Env, db: Db): Promise<void> {
       // calls central has, so for any other it would spend a quota call to
       // write nothing. Skipped sessions are left unchecked, so one is due the
       // day it gains a roll call, not a week later.
-      sql`EXISTS (SELECT 1 FROM bills b JOIN roll_calls rc ON rc.bill_id = b.bill_id WHERE b.session_id = ${sessions.sessionId})`,
+      exists(db.select({ one: sql`1` }).from(bills)
+        .innerJoin(rollCalls, eq(rollCalls.billId, bills.billId))
+        .where(eq(bills.sessionId, sessions.sessionId))),
       or(isNull(sessions.votesCheckedAt), lt(sessions.votesCheckedAt, sql`datetime('now', ${CHECK_INTERVAL})`)),
     ))
     .all()
