@@ -104,15 +104,22 @@ export const bills = sqliteTable('bills', {
    */
   carriedWaits:    integer('carried_waits'),
   /**
-   * How many passes queued the bill for its first full ingest under a
-   * provider's ingestAll without one landing (0048, cron/sync.ts). Null for
-   * none, and with no default, as above.
+   * How many times the ingestor ran the bill's first full ingest under a
+   * provider's ingestAll without one landing (0048, 0049, queue/processor.ts).
+   * A pass sets it one past the limit when it gives the bill up (cron/sync.ts).
+   * Null for none, and with no default, as above.
    */
   firstIngestTries: integer('first_ingest_tries'),
+  /**
+   * When a pass last queued that first full ingest, cleared when the message
+   * runs (0049). Null when none waits.
+   */
+  firstIngestQueuedAt: text('first_ingest_queued_at'),
 }, (t) => [
   index('idx_bills_session').on(t.sessionId),
   index('idx_bills_state').on(t.state),
   index('idx_bills_detail_requested_at').on(t.detailRequestedAt).where(sql`detail_requested_at IS NOT NULL`),
+  index('idx_bills_first_ingest_queued').on(t.provider, t.firstIngestQueuedAt).where(sql`first_ingest_queued_at IS NOT NULL`),
 ])
 
 export const committees = sqliteTable('committees', {

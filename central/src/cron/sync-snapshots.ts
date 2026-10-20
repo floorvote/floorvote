@@ -6,7 +6,7 @@ import { terminalStatuses } from '../lib/vocabulary'
 import { providerContext } from '../lib/providerContext'
 import { ingestQueueFor, providerConfigured } from '../lib/providerRouting'
 import { loadStateOwners, ownerOfState, statesOwnedBy } from '../lib/stateProviders'
-import { applyMasterList, logSyncPass } from './sync'
+import { applyMasterList, firstIngestBudget, logSyncPass } from './sync'
 import { assignSessionSlugs } from '../lib/sessionSlugs'
 import { carriedBillIds, carriedPeopleIds, withCarriedBillIds, withCarriedPeople } from '../lib/carriedIds'
 import type { Provider, ProviderContext, ProviderPerson, ProviderRecord, StoredSession, SyncSession } from '../providers'
@@ -87,6 +87,8 @@ export async function runSnapshotSync(
   // the job still fails and alerts.
   const reports: SnapshotPassReport[] = []
   const errors: Error[] = []
+  // One budget of first full ingests for all the sessions (Provider.ingestAll).
+  const firstIngests = await firstIngestBudget(db, provider)
   for (const session of toSync) {
     const covering = coveringByState.get(session.state)
     if (!covering) continue
@@ -94,7 +96,7 @@ export async function runSnapshotSync(
     if (!force && decideMode(session, etHour, provider) !== 'full') continue
     console.log(`[sync-${provider.id}] full pass: ${session.sessionName}`)
     try {
-      const counts = await runSnapshotPass(provider, session, covering, env, db, ctx, force)
+      const counts = await runSnapshotPass(provider, session, covering, env, db, ctx, force, firstIngests)
       reports.push({ sessionId: session.sessionId, sessionName: session.sessionName, ...counts })
       await db.update(sessions).set({ lastSyncedAt: nowDb() }).where(eq(sessions.sessionId, session.sessionId))
     } catch (err) {
@@ -286,6 +288,7 @@ async function runSnapshotPass(
   db: Db,
   ctx: ProviderContext,
   force: boolean,
+  firstIngests: { left: number } | undefined,
 ): Promise<{ records: number; queued: number; refreshed: number }> {
   const storedEtag = session.snapshotEtag ?? null
   const etag = force ? null : storedEtag
@@ -325,7 +328,7 @@ async function runSnapshotPass(
   const queue = ingestQueueFor(provider, env)
   // Every bill a cutover moved here gets its first ingest, tracked or not.
   const queued = new Set(await applyMasterList(session, entries, covering, env, db, queue,
-    { deferQueuedUpdates: true, ingestMovedBills: true, tolerateLogFailure: true, ingestAll: provider.ingestAll }))
+    { deferQueuedUpdates: true, ingestMovedBills: true, tolerateLogFailure: true, ingestAll: firstIngests }))
   const newEtag = snapshot.unchanged ? storedEtag : snapshot.etag ?? null
   if (await ownerOfState(db, session.state) === provider.id) {
     const still = storedEtag === null ? isNull(sessions.snapshotEtag) : eq(sessions.snapshotEtag, storedEtag)

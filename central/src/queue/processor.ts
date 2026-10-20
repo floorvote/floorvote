@@ -1,4 +1,4 @@
-import { eq, and, isNull, sql } from 'drizzle-orm'
+import { eq, and, isNull, isNotNull, sql } from 'drizzle-orm'
 import { DEFAULT_PROVIDER_ID, findProvider, getProvider, type CentralMeasure, type MeasureRef, type Provider } from '../providers'
 import {
   bills, billHistory, billSponsors, billTexts, billSupplements, billAmendments,
@@ -88,8 +88,10 @@ async function processBill(msg: BillMessage, env: Env, db: Db): Promise<void> {
   const interactive = msg.interactive ?? false
   // The provider that wrote the bill, by its row's `provider` column, and its
   // session, in one read. A bill central has no row for is the default's.
-  const known = await db.select({ provider: bills.provider, sessionId: bills.sessionId, carriedFrom: bills.carriedFrom })
-    .from(bills).where(eq(bills.billId, msg.billId)).get()
+  const known = await db.select({
+    provider: bills.provider, sessionId: bills.sessionId, carriedFrom: bills.carriedFrom,
+    textsFetchedAt: bills.textsFetchedAt, detailHash: bills.detailHash,
+  }).from(bills).where(eq(bills.billId, msg.billId)).get()
   const provider = getProvider(known?.provider ?? DEFAULT_PROVIDER_ID)
 
   // A moved bill's message from a provider it has since moved off, or an
@@ -102,6 +104,19 @@ async function processBill(msg: BillMessage, env: Env, db: Db): Promise<void> {
   if (msg.firstIngestFor && !known?.carriedFrom) {
     console.log(`[processor-ls] bill ${msg.billId} already had its first ${msg.firstIngestFor} ingest; skipped`)
     return
+  }
+  // An ingestAll first full ingest (cron/sync.ts): a copy whose bill has had
+  // one since is skipped. Otherwise the run counts a try and frees the bill
+  // for later passes, once per queued message, whatever its retries.
+  if (msg.firstFullIngest && known) {
+    if (known.textsFetchedAt !== null || known.detailHash !== null) {
+      console.log(`[processor-ls] bill ${msg.billId} already had its first full ingest; skipped`)
+      return
+    }
+    await db.update(bills).set({
+      firstIngestTries: sql`COALESCE(${bills.firstIngestTries}, 0) + 1`,
+      firstIngestQueuedAt: null,
+    }).where(and(eq(bills.billId, msg.billId), isNotNull(bills.firstIngestQueuedAt)))
   }
 
   if (msg.calendarRecheck !== undefined) {

@@ -34,6 +34,8 @@ vi.mock('../../src/lib/sync-schedule', async () => {
 vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('no network in this test') }))
 /** Set to make the next ingest fail partway, after its bills upsert and before its calendar write. */
 const failNextIngest = { on: false }
+/** Bills whose every ingest fails at the same point (a provider that keeps failing them). */
+const failingBills = new Set<number>()
 vi.mock('../../src/lib/committees', async () => {
   const actual = await vi.importActual<typeof import('../../src/lib/committees')>('../../src/lib/committees')
   return {
@@ -43,6 +45,7 @@ vi.mock('../../src/lib/committees', async () => {
         failNextIngest.on = false
         throw new Error('ingest killed partway')
       }
+      if (failingBills.has(args[1].bill_id)) throw new Error(`ingest of ${args[1].bill_id} keeps failing`)
       return actual.upsertCommittees(...args)
     }),
   }
@@ -64,6 +67,29 @@ const rec = (n: number, Title = `Measure ${n} Act of 2026`): ExampleRecord => ({
 /** The example provider declaring ingestAll, with its ingests on a queue of its own. */
 const cheap = (perPass: number): Provider => ({ ...example, ingestAll: { perPass }, ingestQueue: 'LIMS_INGESTOR_QUEUE' })
 
+/**
+ * `cheap`, with two sessions in the state, as Virginia has. The feed's records
+ * numbered B26- are the first session's, and S26- the second's.
+ */
+const cheapTwoSessions = (perPass: number): Provider => ({
+  ...cheap(perPass),
+  async listSessions(_state, ctx) {
+    const ids = await ctx.ids('session', ['2026', '2026S'])
+    return [
+      { session_id: ids.get('2026')!, session_name: '2026 Session', session_tag: '2026', year_start: 2026, year_end: 2026, prior: 0, sine_die: 0 },
+      { session_id: ids.get('2026S')!, session_name: '2026 Special Session', session_tag: '2026S', year_start: 2026, year_end: 2026, prior: 0, sine_die: 0 },
+    ]
+  },
+  async snapshot(session, ctx) {
+    const prefix = session.sessionTag === '2026S' ? 'S26-' : 'B26-'
+    const records = exampleFeed.records.filter(r => r.Number.startsWith(prefix))
+    const ids = await ctx.ids('bill', records.map(r => r.Number))
+    return {
+      records: records.map(r => ({ billId: ids.get(r.Number)!, nativeKey: r.Number, raw: r, hash: `${r.Number}:${r.Title}:${r.Status}` })),
+    }
+  },
+})
+
 const mockQueue = () => ({ sendBatch: vi.fn().mockResolvedValue(undefined), send: vi.fn().mockResolvedValue(undefined) })
 type MockQueue = ReturnType<typeof mockQueue>
 const bodies = (q: MockQueue): any[] => [
@@ -76,7 +102,7 @@ const bodies = (q: MockQueue): any[] => [
  * the provider's own queue (unless `ingest` is false). Returns the bill ids
  * queued there, what the shared queue got, the bill ids the instance was sent
  * as stubs, and the full messages it was sent. `fail` names bills whose
- * ingest never lands (a provider that keeps failing them).
+ * ingest runs and fails (a provider that keeps failing them).
  */
 async function pass(provider: Provider, opts: { ingest?: boolean; fail?: number[] } = {}) {
   const db = drizzle(env.DB, { schema })
@@ -90,10 +116,15 @@ async function pass(provider: Provider, opts: { ingest?: boolean; fail?: number[
   await runSnapshotSync(provider, e, db)
   const ingests = bodies(own).filter(b => b.calendarRecheck === undefined)
   if (opts.ingest !== false) {
-    const messages = ingests.filter(body => !opts.fail?.includes(body.billId))
-      .map(body => ({ body, ack: vi.fn(), retry: vi.fn() }))
-    await processIngestorQueue({ messages } as any, e, db)
-    for (const m of messages) expect(m.retry).not.toHaveBeenCalled()
+    const messages = ingests.map(body => ({ body, ack: vi.fn(), retry: vi.fn() }))
+    for (const id of opts.fail ?? []) failingBills.add(id)
+    try {
+      await processIngestorQueue({ messages } as any, e, db)
+    } finally {
+      failingBills.clear()
+    }
+    // A failing bill's message runs out of retries here: it is not run again.
+    for (const m of messages) expect(m.retry).toHaveBeenCalledTimes(opts.fail?.includes(m.body.billId) ? 1 : 0)
   }
   // What the ingests just sent the instance is full messages; stubs are what the pass sent before them.
   return {
@@ -296,6 +327,87 @@ describe('a never-ingested bill', () => {
     const changed = await pass(cheap(2), { fail: [a] })
     expect(changed.queued).toEqual([])
     expect(changed.stubbed).toEqual([a])
+  })
+})
+
+/** Each bill's first-ingest bookkeeping, by bill id. */
+async function firstIngestRows(): Promise<Map<number, { tries: number | null; queuedAt: string | null }>> {
+  const rows = await env.DB.prepare(`SELECT bill_id, first_ingest_tries, first_ingest_queued_at FROM bills WHERE provider = 'example'`)
+    .all<{ bill_id: number; first_ingest_tries: number | null; first_ingest_queued_at: string | null }>()
+  return new Map(rows.results.map(r => [r.bill_id, { tries: r.first_ingest_tries, queuedAt: r.first_ingest_queued_at }]))
+}
+
+describe('a first full ingest still waiting in the queue (#835 follow-up)', () => {
+  it('is neither queued again nor counted as a try, nor given up on, however many passes it waits', async () => {
+    feed([rec(1)])
+    const first = await pass(cheap(10), { ingest: false })
+    const [id] = await allBillIds()
+    expect(first.queued).toEqual([id])
+    for (let i = 0; i < 5; i++) {
+      const later = await pass(cheap(10), { ingest: false })
+      expect(later.queued).toEqual([])
+      // Its ingest will send the full bill, so it gets no stub while it waits.
+      expect(later.stubbed).toEqual([])
+    }
+    expect((await firstIngestRows()).get(id)!.tries ?? 0).toBe(0)
+
+    // The message the first pass queued lands its ingest.
+    const db = drizzle(env.DB, { schema })
+    const e = { ...(env as any), [tenantQueueBindingName('team')]: mockQueue() }
+    const messages = first.bodies.map(body => ({ body, ack: vi.fn(), retry: vi.fn() }))
+    await processIngestorQueue({ messages } as any, e, db)
+    expect(await ingested()).toEqual([id])
+  })
+
+  it('counts against perPass, so the queue never holds more than perPass first ingests of the provider', async () => {
+    feed([1, 2, 3, 4, 5].map(n => rec(n)))
+    const counts: number[] = []
+    for (let i = 0; i < 3; i++) counts.push((await pass(cheap(2), { ingest: false })).queued.length)
+    expect(counts).toEqual([2, 0, 0])
+  })
+
+  it('is queued again once its message has waited a day, as one lost from the queue', async () => {
+    feed([rec(1)])
+    await pass(cheap(10), { ingest: false })
+    const [id] = await allBillIds()
+    await env.DB.prepare(`UPDATE bills SET first_ingest_queued_at = datetime('now', '-25 hours') WHERE bill_id = ?`).bind(id).run()
+    const { queued } = await pass(cheap(10), { ingest: false })
+    expect(queued).toEqual([id])
+    // It never ran, so it has used no try.
+    expect((await firstIngestRows()).get(id)!.tries ?? 0).toBe(0)
+  })
+
+  it('that runs after an earlier copy landed is skipped without a provider call', async () => {
+    feed([rec(1)])
+    const first = await pass(cheap(10), { ingest: false })
+    const [id] = await allBillIds()
+    const db = drizzle(env.DB, { schema })
+    const team = mockQueue()
+    const e = { ...(env as any), [tenantQueueBindingName('team')]: team }
+    await processIngestorQueue({ messages: first.bodies.map(body => ({ body, ack: vi.fn(), retry: vi.fn() })) } as any, e, db)
+    expect(await ingested()).toEqual([id])
+    const sentBefore = bodies(team).length
+
+    // A duplicate, as a pass before this fix queued while the first one waited.
+    const fetchMeasure = vi.spyOn(example, 'fetchMeasure')
+    const dup = first.bodies.map(body => ({ body, ack: vi.fn(), retry: vi.fn() }))
+    await processIngestorQueue({ messages: dup } as any, e, db)
+    expect(dup[0].ack).toHaveBeenCalled()
+    expect(fetchMeasure).not.toHaveBeenCalled()
+    expect(bodies(team)).toHaveLength(sentBefore)
+    fetchMeasure.mockRestore()
+  })
+})
+
+describe('perPass', () => {
+  it('is one budget across all of a provider\'s sessions in a pass', async () => {
+    feed([
+      ...[1, 2, 3].map(n => rec(n)),
+      ...[1, 2, 3].map(n => ({ ...rec(n), Number: `S26-${String(n).padStart(4, '0')}` })),
+    ])
+    const { queued } = await pass(cheapTwoSessions(4), { ingest: false })
+    expect(await allBillIds()).toHaveLength(6)
+    expect(queued).toHaveLength(4)
   })
 })
 

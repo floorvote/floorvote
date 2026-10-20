@@ -253,8 +253,10 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
    * For a provider whose full ingest is cheap (no metered budget): every
    * changed bill of its states gets a full ingest, tracked or not, in place of
    * a monitor stub, so every covering instance holds full bills. Bills that
-   * have never had a full ingest are queued at most `perPass` per pass, so a
-   * backfill or a new session's first pass drains over several passes; a
+   * have never had a full ingest are queued at most `perPass` a pass across
+   * all the provider's sessions, fewer while earlier ones still wait in the
+   * queue, so a backfill or a new session's first pass drains over several
+   * passes at the pace the queue does; a
    * changed bill already fully ingested is queued without a cap. LegiScan
    * declares nothing: a getBill per untracked bill would spend its budget.
    */
