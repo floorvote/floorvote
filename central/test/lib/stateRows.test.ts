@@ -126,9 +126,9 @@ describe('loadStateRows: provider column', () => {
     await session(2, LIMS_STATE, { provider: 'lims', lastSyncedAt: '2026-10-14 05:00:00' })
     const r = await rowFor(LIMS_STATE)
     expect(r.provider).toMatchObject({ id: 'lims', otherProviders: ['legiscan'] })
-    // The schedule is the owner's, not the old provider's override.
+    // The schedule is the owner's (DC reads every hour), not the old provider's override.
     expect(r.schedule.override).toBe(false)
-    expect(r.schedule.fullHours).toEqual([5, 13, 23])
+    expect(r.schedule.fullHours).toEqual(Array.from({ length: 24 }, (_, h) => h))
     expect(r.schedule.lastRead).toBe('2026-10-14T05:00:00.000Z')
   })
 

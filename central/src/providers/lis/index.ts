@@ -4,7 +4,7 @@ import {
   lisNativeKey, lisRecordHash, lisRollCallKey, lisTextDocKey, lisVoteHasTally, parseVotes, toLisMasterListEntry, VA_STATE_ID, type LisRecord,
 } from './map'
 import { vocabulary } from './vocabulary'
-import type { Provider, ProviderContext, ProviderPerson, ProviderRecord, ProviderSnapshot, SyncSession } from '../sdk'
+import { EVERY_HOUR_ET, type Provider, type ProviderContext, type ProviderPerson, type ProviderRecord, type ProviderSnapshot, type SyncSession } from '../sdk'
 
 /**
  * Virginia's Legislative Information System public data files (client.ts,
@@ -37,6 +37,8 @@ export const lis: Provider<'LIS_API_KEY'> = {
   // A full ingest reads the bill from the stored snapshot, so every bill gets one (#835).
   // Without LIS_API_KEY it carries no texts, and the bill still counts as fully ingested.
   ingestAll: { perPass: 500 },
+  // An unchanged pass compares ETags with HEAD requests, so every hour is cheap.
+  fullHoursEt: EVERY_HOUR_ET,
   // A bill's record carries every vote (VOTE.CSV is read whole or the pass fails).
   replacesRollCalls: true,
 

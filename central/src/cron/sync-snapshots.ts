@@ -91,7 +91,7 @@ export async function runSnapshotSync(
     const covering = coveringByState.get(session.state)
     if (!covering) continue
     // A snapshot is the only kind of pull, so only the session's full-pass hours run it.
-    if (!force && decideMode(session, etHour) !== 'full') continue
+    if (!force && decideMode(session, etHour, provider) !== 'full') continue
     console.log(`[sync-${provider.id}] full pass: ${session.sessionName}`)
     try {
       const counts = await runSnapshotPass(provider, session, covering, env, db, ctx, force)

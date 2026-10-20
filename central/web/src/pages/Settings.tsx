@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
-import { SYNC_PRESETS, matchPreset } from '../lib/syncPresets'
+import { presetsFor, matchPreset } from '../lib/syncPresets'
 
 type SessionRow = {
   sessionId: number
@@ -14,6 +14,10 @@ type SessionRow = {
   fullSyncIsDefault: boolean
   rawSyncHours: number[]
   rawSyncIsDefault: boolean
+  defaultFullHours: number[]
+  defaultRawHours: number[]
+  /** A snapshot provider's session has no raw pass, so no raw hours to set. */
+  snapshot: boolean
   syncEnabled: boolean
   sineDie: boolean
 }
@@ -61,10 +65,11 @@ function SessionEditor({ s, onSaved }: { s: SessionRow; onSaved: () => void }) {
   const [enabled, setEnabled] = useState<boolean>(s.syncEnabled)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  const preset = matchPreset(full, raw)
+  const presets = presetsFor(s)
+  const preset = matchPreset(presets, full, raw, s.snapshot)
 
   function applyPreset(id: string) {
-    const p = SYNC_PRESETS.find(p => p.id === id)
+    const p = presets.find(p => p.id === id)
     if (!p) return
     setFull(p.full); setRaw(p.raw)
   }
@@ -94,7 +99,7 @@ function SessionEditor({ s, onSaved }: { s: SessionRow; onSaved: () => void }) {
       </div>
       <div style={{ marginTop: 10, fontSize: 12, color: 'var(--muted)' }}>Preset</div>
       <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-        {SYNC_PRESETS.map(p => (
+        {presets.map(p => (
           <button key={p.id} type="button" onClick={() => applyPreset(p.id)}
             style={{ padding: '4px 10px', fontSize: 12, borderRadius: 4, cursor: 'pointer',
               border: '1px solid var(--border)', background: preset === p.id ? 'var(--accent)' : 'white',
@@ -106,8 +111,12 @@ function SessionEditor({ s, onSaved }: { s: SessionRow; onSaved: () => void }) {
       </div>
       <div style={{ marginTop: 12, fontSize: 12, color: 'var(--muted)' }}>Full sync hours (ET)</div>
       <div style={{ marginTop: 4 }}><HourGrid value={full} onChange={setFull} /></div>
-      <div style={{ marginTop: 12, fontSize: 12, color: 'var(--muted)' }}>Raw sync hours (ET)</div>
-      <div style={{ marginTop: 4 }}><HourGrid value={raw} onChange={setRaw} /></div>
+      {!s.snapshot && (
+        <>
+          <div style={{ marginTop: 12, fontSize: 12, color: 'var(--muted)' }}>Raw sync hours (ET)</div>
+          <div style={{ marginTop: 4 }}><HourGrid value={raw} onChange={setRaw} /></div>
+        </>
+      )}
       {err && <div style={{ marginTop: 8, color: 'var(--danger)', fontSize: 13 }}>{err}</div>}
       <div style={{ marginTop: 12 }}>
         <button type="button" onClick={save} disabled={saving}

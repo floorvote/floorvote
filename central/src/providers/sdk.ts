@@ -10,3 +10,6 @@ export { httpUrl } from '../../../shared/httpUrl'
 export { rateLimitedFetch } from '../lib/rateLimitedFetch'
 export { sha256Hex } from '../lib/sha256'
 export { htmlToText } from '../lib/htmlToText'
+
+/** Every hour of the day, for a provider's `fullHoursEt` when a full pass is cheap enough to run hourly. */
+export const EVERY_HOUR_ET: readonly number[] = Array.from({ length: 24 }, (_, h) => h)

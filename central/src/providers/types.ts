@@ -234,6 +234,14 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
   readonly ingestQueue?: ProviderEnvKey
 
   /**
+   * The hours of the day (0 through 23, ET) at which a session of this
+   * provider with no `full_sync_hours_et` override runs a full pass. Omitted
+   * means LegiScan's schedule (`DEFAULT_FULL_HOURS_ET`) and its raw passes in
+   * between. A provider whose pass is cheap lists every hour.
+   */
+  readonly fullHoursEt?: readonly number[]
+
+  /**
    * For a provider whose per-measure details can change while its listed
    * record doesn't: core re-queues tracked measures whose status isn't
    * terminal in the vocabulary once their details are older than `maxAge` (an

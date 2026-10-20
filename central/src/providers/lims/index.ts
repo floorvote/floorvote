@@ -4,7 +4,7 @@ import { limsBillId, limsPeopleId, limsSessionId } from './ids'
 import { limsCategories } from './config'
 import { hearingUid, limsBodyEvents } from './hearings'
 import { vocabulary } from './vocabulary'
-import type { Provider, ProviderImport, ProviderPerson, ProviderRecord, SyncSession } from '../sdk'
+import { EVERY_HOUR_ET, type Provider, type ProviderImport, type ProviderPerson, type ProviderRecord, type SyncSession } from '../sdk'
 
 /**
  * The DC Council's Legislative Information Management System (client.ts,
@@ -44,6 +44,8 @@ export const lims: Provider<'LIMS_API_KEY' | 'LIMS_CATEGORIES'> = {
   // A full ingest is one LegislationDetails call, unmetered and paced on that queue, so every
   // bill gets one (#835). 200 a pass is about three and a half minutes of calls.
   ingestAll: { perPass: 200 },
+  // An unchanged pass is a few BulkData calls, so every hour is cheap.
+  fullHoursEt: EVERY_HOUR_ET,
 
   /**
    * The current Council Period, plus the previous one while it is within a

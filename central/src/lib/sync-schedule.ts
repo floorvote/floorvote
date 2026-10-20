@@ -4,6 +4,11 @@
 export const DEFAULT_FULL_HOURS_ET = [5, 13, 23]
 export const DEFAULT_RAW_HOURS_ET = [7, 9, 11, 15, 17, 19, 21]
 
+/** The hours a session with no override runs a full pass: its provider's, else LegiScan's. */
+export function defaultFullHours(provider?: { fullHoursEt?: readonly number[] }): readonly number[] {
+  return provider?.fullHoursEt ?? DEFAULT_FULL_HOURS_ET
+}
+
 export type SyncMode = 'full' | 'raw' | 'skip'
 
 export type SessionSyncConfig = {
@@ -13,7 +18,7 @@ export type SessionSyncConfig = {
   sineDie?: number  // 1 = concluded, 0 = active. Optional for backward compat with older callers.
 }
 
-function parseHours(json: string | null, fallback: number[]): number[] {
+function parseHours(json: string | null, fallback: readonly number[]): readonly number[] {
   if (!json) return fallback
   try {
     const arr = JSON.parse(json)
@@ -25,10 +30,10 @@ function parseHours(json: string | null, fallback: number[]): number[] {
   return fallback
 }
 
-export function decideMode(cfg: SessionSyncConfig, etHour: number): SyncMode {
+export function decideMode(cfg: SessionSyncConfig, etHour: number, provider?: { fullHoursEt?: readonly number[] }): SyncMode {
   if (cfg.sineDie === 1) return 'skip'
   if (!cfg.syncEnabled) return 'skip'
-  const fullHours = parseHours(cfg.fullSyncHoursEt, DEFAULT_FULL_HOURS_ET)
+  const fullHours = parseHours(cfg.fullSyncHoursEt, defaultFullHours(provider))
   if (fullHours.includes(etHour)) return 'full'
   const rawHours = parseHours(cfg.rawSyncHoursEt, DEFAULT_RAW_HOURS_ET)
   if (rawHours.includes(etHour)) return 'raw'

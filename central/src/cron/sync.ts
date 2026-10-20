@@ -154,7 +154,7 @@ export async function runSync(env: Env, db: Db): Promise<void> {
   // of stacking serially. Promise.allSettled ensures one session's failure
   // doesn't reject the whole batch.
   const sessionsToProcess = sessionRows
-    .map(session => ({ session, mode: decideMode(session, etHour) }))
+    .map(session => ({ session, mode: decideMode(session, etHour, provider) }))
     // A provider with no cheap hash list has no raw pass: its sessions sync in
     // full-pass hours only.
     .filter(({ mode }) => mode === 'full' || (mode === 'raw' && !!provider.listChangeHashes))

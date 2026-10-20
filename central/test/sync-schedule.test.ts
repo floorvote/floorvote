@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { findProvider } from '../src/providers'
 import { decideMode, getCurrentEtHour, DEFAULT_FULL_HOURS_ET, DEFAULT_RAW_HOURS_ET } from '../src/lib/sync-schedule'
 
 describe('decideMode', () => {
@@ -102,5 +103,29 @@ describe('getCurrentEtHour', () => {
     expect(Number.isInteger(h)).toBe(true)
     expect(h).toBeGreaterThanOrEqual(0)
     expect(h).toBeLessThanOrEqual(23)
+  })
+})
+
+describe('decideMode with a provider\'s default hours', () => {
+  const enabled = { syncEnabled: true, fullSyncHoursEt: null, rawSyncHoursEt: null }
+  const hours = Array.from({ length: 24 }, (_, h) => h)
+
+  it('runs a full pass at every hour for Maryland, Virginia, and DC with no override', () => {
+    for (const id of ['mga', 'lis', 'lims']) {
+      for (const h of hours) expect(decideMode(enabled, h, findProvider(id)), `${id} at ${h}`).toBe('full')
+    }
+  })
+
+  it('keeps LegiScan\'s full and raw split', () => {
+    const legiscan = findProvider('legiscan')
+    for (const h of [5, 13, 23]) expect(decideMode(enabled, h, legiscan)).toBe('full')
+    for (const h of DEFAULT_RAW_HOURS_ET) expect(decideMode(enabled, h, legiscan)).toBe('raw')
+    expect(decideMode(enabled, 0, legiscan)).toBe('skip')
+  })
+
+  it('uses a session override whatever its provider', () => {
+    const cfg = { ...enabled, fullSyncHoursEt: JSON.stringify([6]) }
+    expect(decideMode(cfg, 6, findProvider('mga'))).toBe('full')
+    expect(decideMode(cfg, 12, findProvider('mga'))).toBe('skip')
   })
 })

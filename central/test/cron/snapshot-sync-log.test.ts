@@ -237,7 +237,8 @@ describe('a pass that finishes', () => {
     const { env: e } = makeEnv()
     await runSnapshotSync(mga, e, db())
     expect(await logRows()).toHaveLength(1)
-    // Hour 4 ET is no full-pass hour for the default schedule.
+    // Maryland's default is every hour, so only a session on its own hours has an hour with no pass.
+    await db().update(schema.sessions).set({ fullSyncHoursEt: '[13]' })
     vi.mocked(getCurrentEtHour).mockReturnValue(4)
     await runSnapshotSync(mga, e, db())
     expect(await logRows()).toHaveLength(1)
