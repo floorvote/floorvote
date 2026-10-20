@@ -103,6 +103,12 @@ export const bills = sqliteTable('bills', {
    * don't bind one more parameter per row.
    */
   carriedWaits:    integer('carried_waits'),
+  /**
+   * How many passes queued the bill for its first full ingest under a
+   * provider's ingestAll without one landing (0048, cron/sync.ts). Null for
+   * none, and with no default, as above.
+   */
+  firstIngestTries: integer('first_ingest_tries'),
 }, (t) => [
   index('idx_bills_session').on(t.sessionId),
   index('idx_bills_state').on(t.state),
@@ -365,11 +371,14 @@ export const keywordRegistry = sqliteTable('keyword_registry', {
   keyword:  text('keyword').notNull(),
 }, (t) => [primaryKey({ columns: [t.tenantId, t.keyword] })])
 
+// A new column must also go in insertLinkWhileOwner's positional INSERT…SELECT (lib/stateProviders.ts).
 export const billTenants = sqliteTable('bill_tenants', {
   billId:     integer('bill_id').notNull(),
   tenantId:   text('tenant_id').notNull(),
   notifiedAt: text('notified_at'),
   matchType:  text('match_type'),
+  /** When the instance last asked for the bill through POST /tenants/fetch-bills (0046, lib/fetchRequests.ts). */
+  fetchRequestedAt: text('fetch_requested_at'),
 }, (t) => [primaryKey({ columns: [t.billId, t.tenantId] })])
 
 export const apiCallLog = sqliteTable('api_call_log', {

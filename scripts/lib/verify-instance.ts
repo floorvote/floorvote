@@ -11,6 +11,10 @@
  *   4. ai           one stored bill is analyzed end to end (opt-in: it costs a call)
  *   5. email        a sample email goes to the operator, never to the instance's admin
  *
+ * It also reports whether comment attachments are on, from the ATTACHMENTS_BUCKET
+ * binding in api/wrangler.toml. That is a line, not a check: the instance tells
+ * only a signed-in member, and an instance may run without attachments.
+ *
  * Everything past check 1 goes through central's operator routes
  * (central/src/routes/tenants.ts), authenticated with its admin secret, because
  * a tenant holds no secret of its own. None of them calls LegiScan or changes
@@ -35,6 +39,9 @@ export interface CheckResult {
   stage?: string
 }
 
+/** A bucket bound as ATTACHMENTS_BUCKET, none, or no api/wrangler.toml to read. */
+export type Attachments = { bucket: string } | 'off' | 'unknown'
+
 export interface VerifyConfig {
   slug: string
   centralUrl: string
@@ -52,6 +59,7 @@ export interface VerifyConfig {
   expectStates: string[]
   /** How to re-run new-instance.sh, and which step number each stage is. Null when run standalone. */
   resume: { cmd: string; steps: Record<string, number> } | null
+  attachments: Attachments
 }
 
 export interface ConfigIo {
@@ -114,6 +122,27 @@ function readTomlVar(toml: string | null, slug: string, key: string): string | n
     if (!inBlock) continue
     const m = line.match(new RegExp(`^\\s*${key}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`))
     if (m) return m[1] ?? m[2] ?? ''
+  }
+  return null
+}
+
+/** The bucket an `[[env.<slug>.r2_buckets]]` block binds as ATTACHMENTS_BUCKET. */
+function readAttachmentsBucket(toml: string, slug: string): string | null {
+  let inBlock = false
+  let binding: string | null = null
+  let bucket: string | null = null
+  for (const line of [...toml.split('\n'), '[end]']) {
+    const trimmed = line.trim()
+    if (trimmed.startsWith('[')) {
+      if (inBlock && binding === 'ATTACHMENTS_BUCKET' && bucket) return bucket
+      inBlock = trimmed === `[[env.${slug}.r2_buckets]]`
+      binding = bucket = null
+      continue
+    }
+    if (!inBlock) continue
+    const m = trimmed.match(/^(binding|bucket_name)\s*=\s*"([^"]*)"/)
+    if (m?.[1] === 'binding') binding = m[2]
+    if (m?.[1] === 'bucket_name') bucket = m[2]
   }
   return null
 }
@@ -188,7 +217,14 @@ export function resolveConfig(argv: string[], env: Record<string, string | undef
     expectBuild,
     expectStates: (flags.get('--states') ?? '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean),
     resume: resumeCmd && resumeSteps ? { cmd: resumeCmd, steps } : null,
+    attachments: attachmentsFrom(toml, slug),
   }
+}
+
+function attachmentsFrom(toml: string | null, slug: string): Attachments {
+  if (toml === null) return 'unknown'
+  const bucket = readAttachmentsBucket(toml, slug)
+  return bucket ? { bucket } : 'off'
 }
 
 // ── Checks ───────────────────────────────────────────────────────────────────
@@ -429,6 +465,16 @@ export function formatResult(r: CheckResult): string {
   return lines.join('\n')
 }
 
+export function formatAttachments(cfg: VerifyConfig): string {
+  const a = cfg.attachments
+  const detail = a === 'unknown'
+    ? 'unknown (no api/wrangler.toml to read)'
+    : a === 'off'
+      ? `off (api/wrangler.toml binds no ATTACHMENTS_BUCKET for ${cfg.slug})`
+      : `on (${a.bucket}, bound in api/wrangler.toml)`
+  return `  ${'info'.padEnd(8)} Attachments: ${detail}`
+}
+
 export function formatFooter(results: CheckResult[], cfg: VerifyConfig): string {
   const n = (s: CheckStatus) => results.filter(r => r.status === s).length
   const lines = ['', `  ${n('pass')} passed, ${n('fail')} failed, ${n('skipped')} skipped.`]
@@ -445,7 +491,7 @@ export function formatFooter(results: CheckResult[], cfg: VerifyConfig): string 
 }
 
 export function formatReport(results: CheckResult[], cfg: VerifyConfig): string {
-  return [`Verifying ${cfg.slug}`, ...results.map(formatResult), formatFooter(results, cfg)].join('\n')
+  return [`Verifying ${cfg.slug}`, formatAttachments(cfg), ...results.map(formatResult), formatFooter(results, cfg)].join('\n')
 }
 
 export function exitCode(results: CheckResult[]): number {

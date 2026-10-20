@@ -10,6 +10,7 @@ import details0400Raw from '../fixtures/lims/details-B26-0400.json?raw'
 import detailsHnRaw from '../fixtures/lims/details-HN26-0171.json?raw'
 import detailsReprogRaw from '../fixtures/lims/details-REPROG26-0153.json?raw'
 import membersRaw from '../fixtures/lims/members-26.json?raw'
+import { listedOnlyDetails } from '../helpers/limsListedOnly'
 import calendarRaw from '../fixtures/lims/hearings-calendar.json?raw'
 
 // The fork upgrade rehearsal (#302): a downstream fork's production central,
@@ -90,6 +91,9 @@ bulk['B26-0769'] = {
 }
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 const feed: Record<string, () => Response> = {
+  'LegislationDetails/B26-0001': () => json(listedOnlyDetails('B26-0001', 80)),
+  'LegislationDetails/PR26-0808': () => json(listedOnlyDetails('PR26-0808', 82)),
+  'LegislationDetails/GBM26-0061': () => json(listedOnlyDetails('GBM26-0061', 83)),
   'CouncilPeriods': () => json([CP26]),
   'Members/26': () => json(JSON.parse(membersRaw)),
   'LegislationDetails/B26-0400': () => json(JSON.parse(details0400Raw)),
@@ -385,7 +389,10 @@ describe('a fork\'s production central, moved onto upstream', () => {
       calendars.set(m.billId, m.calendar)
       changes.set(m.billId, [...(changes.get(m.billId) ?? []), ...m.calendar.changes.map((c: any) => [c.changeType, c.identityKey])])
     }
-    expect([...calendars.keys()].sort()).toEqual(Object.keys(forkRows.calendarIdentities).sort())
+    // Every bill the fork held entries for. Others get their first ingest here too (LIMS declares
+    // ingestAll, #835), and with it entries the fork never sent, which this test doesn't follow.
+    const forkBills = Object.keys(forkRows.calendarIdentities)
+    expect([...calendars.keys()]).toEqual(expect.arrayContaining(forkBills))
     for (const [billId, identities] of Object.entries(forkRows.calendarIdentities)) {
       expect(calendars.get(billId).events.map((e: any) => e.identityKey).sort()).toEqual([...identities].sort())
       // Nothing added or cancelled. Only the second hearing changes, once: its text loses the fork's " (2)".
@@ -398,7 +405,8 @@ describe('a fork\'s production central, moved onto upstream', () => {
     expect(now.bill_tenants).toEqual(held.bill_tenants)
     for (const t of ['roll_calls', 'roll_call_votes', 'bill_history']) expect(now[t]).toEqual(expect.arrayContaining(held[t]))
     // One row per entry, each now holding the identity instances know it by.
-    expect(await rows('SELECT identity_key FROM bill_calendar WHERE cancelled_at IS NULL ORDER BY identity_key'))
+    expect(await rows(`SELECT identity_key FROM bill_calendar WHERE cancelled_at IS NULL
+      AND bill_id IN (${forkBills.map(h => Number(h.split(':')[1])).join(', ')}) ORDER BY identity_key`))
       .toEqual(Object.values(forkRows.calendarIdentities).flat().sort().map(identity_key => ({ identity_key })))
   })
 

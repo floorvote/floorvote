@@ -5,7 +5,7 @@ import { eq, and, isNull, isNotNull, inArray, asc, desc, count, exists, sql } fr
 import { matchesUnion, billMatchText } from '../lib/keywords'
 import * as schema from '../db/schema'
 import { secretsMatch } from '../lib/auth'
-import { nowDb } from '../lib/dbTime'
+import { dbTimeAgo, nowDb } from '../lib/dbTime'
 import type { BillMessage, Db, Env } from '../types'
 import { calendarBlockEvents, calendarKind, type CalendarRow } from '../lib/billCalendar'
 import { bodyEventDetails, bodyEventOptions, calendarCoverage, type BodyEventDetail, type BodyEventOptions } from '../lib/bodyEvents'
@@ -23,6 +23,7 @@ import { mergeCoverage } from '../lib/coverage'
 import { isSafeTenantApiUrl } from '../lib/safeUrl'
 import { guardCallerTenantParam, guardCallerTenantBody } from '../lib/callerTenant'
 import { toHandle } from '../lib/billHandle'
+import { refreshRequestedBills } from '../lib/fetchRequests'
 
 const REPROCESS_LIMIT = 1000
 // Rows per bill_tenants upsert in promote-bills: 3 bound parameters each, under D1's limit of 100.
@@ -549,8 +550,15 @@ tenantsRoutes.post('/promote-bills/:tenantId', guardCallerTenantParam(), async (
 //   two tenants asking for each other's bills end after one round, because the first fetch's ingest
 //   stamps texts_fetched_at.
 // - A bill whose texts central already holds is queued with skipFetch, which needs no
-//   provider call. Only a bill with no texts costs a getBill against the shared monthly quota.
+//   provider call, unless the bill's change hash has moved past its last fetch, when the
+//   provider may have a newer text. Then it is fetched, a LegiScan bill within the budget
+//   untracked bills' fetches share and once per change (lib/stubRefresh.ts), and sent on with
+//   the texts central holds when it can't be. A bill with no texts costs a getBill against the
+//   shared monthly quota.
 // The count is capped at REPROCESS_LIMIT, as promote-bills is.
+//
+// Each ask is stamped on the asking instance's link, so the sync keeps fetching the bill's new
+// texts while the ask is recent (lib/fetchRequests.ts).
 const FETCH_COOLDOWN_HOURS = 24
 const REQUEST_COOLDOWN_HOURS = 1
 
@@ -564,18 +572,34 @@ tenantsRoutes.post('/fetch-bills/:tenantId', guardCallerTenantParam(), async (c)
     return c.json({ error: `too many billIds (max ${REPROCESS_LIMIT})` }, 400)
   }
 
-  const hoursAgo = (h: number) => new Date(Date.now() - h * 3600_000).toISOString().slice(0, 19).replace('T', ' ')
+  const hoursAgo = (h: number) => dbTimeAgo(h * 3600_000)
   const fetchedCutoff = hoursAgo(FETCH_COOLDOWN_HOURS)
   const requestedCutoff = hoursAgo(REQUEST_COOLDOWN_HOURS)
+  const now = nowDb()
   const due: number[] = []
   const held = new Set<number>()
+  /** Bills whose change hash has moved past their last fetch: LegiScan's, whose fetches are metered, and the rest. */
+  const behindMetered = new Set<number>()
+  const behindUnmetered = new Set<number>()
   for (let i = 0; i < requested.length; i += 90) {
     const part = requested.slice(i, i + 90)
-    const rows = await db.select({ billId: schema.billTenants.billId, fetchedAt: schema.bills.textsFetchedAt, requestedAt: schema.bills.textsRequestedAt })
+    const rows = await db.select({
+      billId: schema.billTenants.billId, fetchedAt: schema.bills.textsFetchedAt, requestedAt: schema.bills.textsRequestedAt,
+      provider: schema.bills.provider, changeHash: schema.bills.changeHash, detailHash: schema.bills.detailHash,
+    })
       .from(schema.billTenants)
       .leftJoin(schema.bills, eq(schema.bills.billId, schema.billTenants.billId))
       .where(and(eq(schema.billTenants.tenantId, tenantId), inArray(schema.billTenants.billId, part)))
       .all()
+    if (rows.length > 0) {
+      await db.update(schema.billTenants).set({ fetchRequestedAt: now })
+        .where(and(eq(schema.billTenants.tenantId, tenantId), inArray(schema.billTenants.billId, rows.map(r => r.billId))))
+    }
+    for (const r of rows) {
+      if (r.changeHash !== null && r.detailHash !== r.changeHash) {
+        (r.provider === DEFAULT_PROVIDER_ID ? behindMetered : behindUnmetered).add(r.billId)
+      }
+    }
     due.push(...rows.filter(r => (!r.fetchedAt || r.fetchedAt <= fetchedCutoff) && (!r.requestedAt || r.requestedAt <= requestedCutoff)).map(r => r.billId))
     const withTexts = await db.selectDistinct({ billId: schema.billTexts.billId }).from(schema.billTexts)
       .where(inArray(schema.billTexts.billId, part)).all()
@@ -583,17 +607,52 @@ tenantsRoutes.post('/fetch-bills/:tenantId', guardCallerTenantParam(), async (c)
   }
   due.sort((a, b) => a - b)
 
+  // A held LegiScan bill that is behind is fetched within the untracked-bill budget. Each claim is stamped as it's queued.
+  const refreshed = await refreshRequestedBills(db, c.env.INGESTOR_QUEUE, due.filter(billId => held.has(billId) && behindMetered.has(billId)))
+  if (refreshed.size > 0) await db.update(schema.bills).set({ textsRequestedAt: now }).where(inArray(schema.bills.billId, [...refreshed]))
+  const skipFetch = (billId: number) => held.has(billId) && !behindUnmetered.has(billId)
+
   // Each batch is stamped only once its send succeeds, so a queue outage blocks no bill from the next ask.
-  const now = nowDb()
-  for (const { queue, billIds } of await groupByIngestQueue(due, c.env, db)) {
+  for (const { queue, billIds } of await groupByIngestQueue(due.filter(billId => !refreshed.has(billId)), c.env, db)) {
     for (let i = 0; i < billIds.length; i += 90) {
       const batch = billIds.slice(i, i + 90)
-      await queue.sendBatch(batch.map(billId => ({ body: held.has(billId) ? { billId, skipFetch: true } : { billId } })))
+      await queue.sendBatch(batch.map(billId => ({ body: skipFetch(billId) ? { billId, skipFetch: true } : { billId } })))
       await db.update(schema.bills).set({ textsRequestedAt: now }).where(inArray(schema.bills.billId, batch))
     }
   }
 
   return c.json({ ok: true, tenantId, queued: due.length })
+})
+
+// POST /tenants/renew-fetch-requests/:tenantId — keep the tenant's fetch-bills requests alive.
+// Body: { billIds: number[] }. An instance calls it, at most weekly per bill, for a pulled
+// companion that leads a group it tracks a bill in (api/src/lib/companionAnalysis.ts), so the
+// sync keeps ingesting the bill's new texts while it leads (lib/fetchRequests.ts). It stamps
+// fetch_requested_at on the tenant's existing links to the listed bills, and queues nothing for
+// a bill whose detail is current, so a renewal costs no provider call and no delivery. A LegiScan
+// bill whose change hash moved while no request was live (one pulled before #801, or whose
+// request lapsed) is fetched once, within the budget untracked bills' fetches share.
+tenantsRoutes.post('/renew-fetch-requests/:tenantId', guardCallerTenantParam(), async (c) => {
+  const db = drizzle(c.env.DB, { schema })
+  const tenantId = c.req.param('tenantId')
+  const body = await c.req.json<{ billIds?: unknown }>().catch(() => ({} as { billIds?: unknown }))
+  if (body.billIds !== undefined && !Array.isArray(body.billIds)) return c.json({ error: 'billIds must be a list' }, 400)
+  const requested = [...new Set((body.billIds ?? []).filter((n: unknown): n is number => Number.isInteger(n) && (n as number) > 0))]
+  if (requested.length > REPROCESS_LIMIT) {
+    return c.json({ error: `too many billIds (max ${REPROCESS_LIMIT})` }, 400)
+  }
+
+  const now = nowDb()
+  const linked: number[] = []
+  for (let i = 0; i < requested.length; i += 90) {
+    const part = requested.slice(i, i + 90)
+    const rows = await db.update(schema.billTenants).set({ fetchRequestedAt: now })
+      .where(and(eq(schema.billTenants.tenantId, tenantId), inArray(schema.billTenants.billId, part)))
+      .returning({ billId: schema.billTenants.billId })
+    linked.push(...rows.map(r => r.billId))
+  }
+  const refreshed = await refreshRequestedBills(db, c.env.INGESTOR_QUEUE, linked)
+  return c.json({ ok: true, tenantId, renewed: linked.length, fetched: refreshed.size })
 })
 
 tenantsRoutes.get('/:tenantId/upcoming-hearings', guardCallerTenantParam(), async (c) => {

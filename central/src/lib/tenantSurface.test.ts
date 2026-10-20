@@ -147,6 +147,7 @@ describe('tenantSurface allowlist matcher', () => {
       ['POST', '/api/tenants/promote-bill/ri/legiscan:123',    'routes/adminApi.ts, billsApi/draftRoutes.ts'],
       ['POST', '/api/tenants/promote-bills/ri',                'billsApi/bulkRoutes.ts'],
       ['POST', '/api/tenants/fetch-bills/ri',                  'lib/companionAnalysis.ts (companions that didn\'t match)'],
+      ['POST', '/api/tenants/renew-fetch-requests/ri',         'lib/companionAnalysis.ts (renewing a pulled lead)'],
       ['POST', '/api/bills/rich-batch',                        'routes/exportApi.ts'],
       ['POST', '/api/admin/sync-keywords/ri',                  'routes/adminApi.ts'],
       ['POST', '/api/admin/update-bill-match-types/ri',        'routes/adminApi.ts'],

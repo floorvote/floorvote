@@ -18,6 +18,17 @@ Each row lists `state`, `provider`, `status`, `previousProvider`, and `claimedAt
 
 A fork upgrading from a build older than `v2026.10.0` has no rows to confirm. Claim DC for LIMS right after deploying central, as `docs/internal/fork-upgrade.md` says, before the next top of the hour.
 
+## Every Maryland, Virginia, and DC bill fully ingested
+
+Bills from the Maryland General Assembly, the Virginia LIS, and DC's LIMS now get a full ingest whether or not they match an instance's keywords, so instances covering those states receive every bill's history, sponsors, votes, and texts, not only the matched ones'. Analysis is unchanged: AI still runs only on keyword and manual matches, and untracked bills send members no notifications. LegiScan states are unchanged.
+
+- **Nothing to configure, but bind the provider queues.** The providers declare it, and there's no switch. A provider whose queue isn't bound (`MGA_INGESTOR_QUEUE`, `LIS_INGESTOR_QUEUE`, `LIMS_INGESTOR_QUEUE`, commented out in `wrangler.example.toml`) sends these ingests to the shared queue, where they delay LegiScan's tracked bills by up to 500 ingests a pass per state. Bind each provider's queue before upgrading if you sync Maryland, Virginia, or DC from their own providers.
+- **A bill whose ingest keeps failing goes back to stubs.** After three passes without a first full ingest landing, the bill gets status updates as a stub, as before.
+- **A backfill over about a day.** Bills never fully ingested are queued at most 500 a pass for Maryland and Virginia and 200 for DC, so a state's existing stubs, and a new session's first pass, drain over several hourly passes rather than at once. Expect each provider's ingest queue, and each instance's queue, to stay busy meanwhile.
+- **More storage and calls.** Central's D1 grows by tens of megabytes and its R2 by about a gigabyte for all three states, mostly Maryland's PDFs. DC spends one `LegislationDetails` call per changed bill, at the pace of whichever queue it is on. LegiScan's budget is untouched.
+
+**Deploying.** Upgrade the instances before central, so a bill page shows an untracked bill's full data as full rather than as a stub (#832).
+
 ## Summary citations
 
 Statements in an AI summary can now link to the bill text behind them, as summary citations. On an HTML bill, clicking a statement opens the bill text at the passage, highlighted. On a PDF, it opens the cited page, with the quote beside the link. A statement whose quote can't be found stays plain text.
@@ -42,7 +53,7 @@ The Bills page has a Committee filter. It lists each committee with its number o
 
 Members can attach files to comments (#465): from a paperclip in the comment toolbar, by dropping files on the composer, or by pasting. Posted comments list their files with a Download link, and admins see storage used against the quota in Settings. The feature stays off, and nothing needs doing, until you set it up.
 
-**To turn it on for an instance** (optional, and never on a demo instance, where it stays off regardless): create a private R2 bucket (no public access, no `r2.dev` URL), bind it as `ATTACHMENTS_BUCKET` (`api/wrangler.example.toml` has the block), and deploy as usual. Uploads stream through the instance's Worker, so the bucket needs no CORS rule and no API token. Several instances may share one bucket, since each stores its files under its `TENANT_ID`.
+**To turn it on for an instance** (optional, and never on a demo instance, where it stays off regardless): create a private R2 bucket (no public access, no `r2.dev` URL), bind it as `ATTACHMENTS_BUCKET` (`api/wrangler.example.toml` has the block), and deploy as usual. Uploads stream through the instance's Worker, so the bucket needs no CORS rule and no API token. Several instances may share one bucket, since each stores its files under its `TENANT_ID`. `scripts/new-instance.sh` now does this for each new instance, creating `<prefix>-<slug>-files` and binding it, unless you pass `--no-attachments`. It adds a step 3, so every later step's number moves up by one: a `--from-step` you have noted from an earlier run now means the step before. `verify-instance.sh` prints whether an instance's attachments are on.
 
 **Limits.** 25 MB a file, 10 files a comment, 30 uploads a member an hour, and 5 GB for the instance. Programs, scripts, web pages (HTML, SVG, JavaScript), macro-enabled Office files, and archives are refused, by name and by the file's first bytes. Files download only for a signed-in member of the instance, while their comment shows. Uploads that never finish are deleted after an hour, uploads never posted after a day, a deleted comment's files 30 days after the delete, by the hourly cron, which also removes within the hour any file whose comment was removed with its member's account. The admin data export lists the files (not their contents).
 

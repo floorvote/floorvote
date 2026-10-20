@@ -140,6 +140,7 @@ async function processBill(msg: BillMessage, env: Env, db: Db): Promise<void> {
     forceMetadata, forceAI, interactive,
     forceTextRefetch: msg.forceTextRefetch ?? false,
     matchProvenance: msg.matchProvenance,
+    firstFullIngest: msg.firstFullIngest,
   })
 }
 
@@ -194,6 +195,8 @@ export type IngestOptions = {
   forceTextRefetch?: boolean
   /** The new keyword matches the ingest brings instances (BillMessage.matchProvenance). */
   matchProvenance?: Record<string, MatchProvenance>
+  /** BillMessage.firstFullIngest: quiet while the bill has had no full ingest. */
+  firstFullIngest?: boolean
 }
 
 /**
@@ -218,10 +221,16 @@ export async function ingestMeasure(
     .select({
       changeHash: bills.changeHash, status: bills.status, title: bills.title, description: bills.description,
       provider: bills.provider, carriedFrom: bills.carriedFrom, carriedWaits: bills.carriedWaits,
+      textsFetchedAt: bills.textsFetchedAt, detailHash: bills.detailHash,
     })
     .from(bills)
     .where(eq(bills.billId, measure.bill_id))
     .get()
+  // The first full ingest an ingestAll pass queued, of a bill that still has
+  // had none (BillMessage.firstFullIngest). Its data is all new to instances,
+  // as a new bill's is, so nothing is reported as a change.
+  const quietFirst = !!opts.firstFullIngest && !!existingBillRow
+    && existingBillRow.textsFetchedAt === null && existingBillRow.detailHash === null
 
   // A cutover moved the bill to another provider while this ingest ran: the
   // bill's new provider writes it now, so this one writes nothing.
@@ -351,12 +360,16 @@ export async function ingestMeasure(
         .set({ fetchError: `hash-refetch ${t.text_hash} attempt ${attempt}: ${row?.fetchError ?? 'no state_link'}` })
         .where(eq(billTexts.docId, t.doc_id))
       if (attempt >= HASH_REFETCH_ATTEMPTS) {
-        console.warn(`[processor-ls] giving up refetching doc ${t.doc_id} of bill ${bill.bill_id} for its new text hash after ${attempt} attempts; a newer hash or a manually queued forced ingest lifts the cap`)
+        console.warn(`[processor-ls] giving up refetching doc ${t.doc_id} of bill ${bill.bill_id} for its new text hash after ${attempt} attempts; a newer hash or POST /admin/refetch-bill-text/:billId lifts the cap`)
       } else {
         holdBackChangeHash = true
       }
     }
     companionChanges = detectCompanionChanges(priorSasts, bill, provider)
+  }
+  if (quietFirst) {
+    detectedChanges = []
+    companionChanges = []
   }
 
   // This pull's effect on the bill's calendar. A new bill's entries are all
@@ -374,7 +387,7 @@ export async function ingestMeasure(
     calendarPlan = null
   } else {
     calendarPlan = planCalendarPull(provider, bill.bill_id, priorCalendar, bill.calendar, bill.change_hash, now)
-    if (existingBillRow) calendarChanges = calendarPlan.changes
+    if (existingBillRow && !quietFirst) calendarChanges = calendarPlan.changes
   }
   // --- End change detection ---
 
@@ -433,9 +446,13 @@ export async function ingestMeasure(
       currentBodyId:      bill.current_body_id,
       // A cutover's first ingest changes the bill's data without reporting a
       // change, so instances still see it moved and fetch it again.
-      updatedAt:          detectedChanges.length > 0 || textHashChanged || carriedFrom ? now : sql`updated_at`,
-      textsFetchedAt:     now,
-      detailHash:         holdBackChangeHash ? '' : bill.change_hash,
+      // So is a quiet first full ingest.
+      updatedAt:          detectedChanges.length > 0 || textHashChanged || carriedFrom || quietFirst ? now : sql`updated_at`,
+      // A quiet first full ingest stamps both only once everything below is
+      // written (after the roll calls), so one that fails partway is retried
+      // as quiet as it began.
+      textsFetchedAt:     quietFirst ? null : now,
+      detailHash:         quietFirst ? null : holdBackChangeHash ? '' : bill.change_hash,
     },
     setWhere: eq(bills.provider, provider.id),
   }).returning({ billId: bills.billId })
@@ -690,6 +707,12 @@ export async function ingestMeasure(
   // One write for every member vote of the bill: a Virginia budget bill has
   // thousands, and one query each would pass D1's per-invocation query limit.
   if (memberVotes.length > 0) await writeMemberVotes(env.DB, memberVotes, { replace: true })
+
+  if (quietFirst) {
+    await db.update(bills)
+      .set({ textsFetchedAt: now, detailHash: holdBackChangeHash ? '' : bill.change_hash })
+      .where(and(eq(bills.billId, bill.bill_id), eq(bills.provider, provider.id)))
+  }
 
   // Only once everything above is written does a cutover's first ingest stop
   // being one, so an ingest that fails partway is retried as quiet as it began.

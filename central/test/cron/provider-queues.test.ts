@@ -186,7 +186,11 @@ describe('where each provider\'s sync queues its bills', () => {
   it('queues an operator\'s re-ingest of a provider\'s bills on that provider\'s queue', async () => {
     const { env: e, q } = makeEnv({ mga: true, lis: true })
     await runSnapshotSync(mga, e as any, db())
-    const mgaIds = billIds(q.mga)
+    // The instance's tracked bills: the sync queued every bill (the MGA declares ingestAll, #835).
+    const tracked = new Set((await db().select().from(schema.billTenants).where(eq(schema.billTenants.tenantId, 'mdteam')).all())
+      .filter(l => l.matchType !== null).map(l => l.billId))
+    const mgaIds = billIds(q.mga).filter(id => tracked.has(id))
+    expect(mgaIds.length).toBeGreaterThan(0)
     q.mga.sendBatch.mockClear()
     const res = await worker.fetch(new Request('http://central/api/admin/reingest-tenant/mdteam?provider=mga&confirm=true', {
       method: 'POST', headers: { 'x-admin-secret': ADMIN_SECRET },

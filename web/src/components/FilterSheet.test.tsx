@@ -92,21 +92,26 @@ function makeTagOptions(count: number): string[] {
 }
 
 // FilterSheetVirtualList (Subjects, Tags) is virtualized (@tanstack/react-virtual).
-// jsdom performs no layout, so the scroll container's real offsetHeight is 0 and
+// jsdom performs no layout, so the scroll container's real clientHeight is 0 and
 // the virtualizer would compute a 0-row viewport and render nothing. Stub
-// offsetHeight on HTMLElement.prototype to a realistic pixel value, same
-// technique as FilterPanel.test.tsx (and TanStack Virtual's own jsdom tests),
-// rather than mocking the virtualizer away — that would make it impossible to
-// assert that a 2000-option panel renders only a handful of row nodes.
-let restoreOffsetHeight: (() => void) | undefined
+// clientHeight (and offsetHeight, which virtual-core read before 3.19) on
+// HTMLElement.prototype to a realistic pixel value, same technique as
+// FilterPanel.test.tsx (and TanStack Virtual's own jsdom tests), rather than
+// mocking the virtualizer away — that would make it impossible to assert that
+// a 2000-option panel renders only a handful of row nodes.
+let restoreViewportHeight: (() => void) | undefined
 beforeAll(() => {
-  const descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')
-  Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, value: 600 })
-  restoreOffsetHeight = () => {
-    if (descriptor) Object.defineProperty(HTMLElement.prototype, 'offsetHeight', descriptor)
+  const props = ['clientHeight', 'offsetHeight'] as const
+  const descriptors = props.map((prop) => Object.getOwnPropertyDescriptor(HTMLElement.prototype, prop))
+  for (const prop of props) Object.defineProperty(HTMLElement.prototype, prop, { configurable: true, value: 600 })
+  restoreViewportHeight = () => {
+    props.forEach((prop, i) => {
+      const descriptor = descriptors[i]
+      if (descriptor) Object.defineProperty(HTMLElement.prototype, prop, descriptor)
+    })
   }
 })
-afterAll(() => { restoreOffsetHeight?.() })
+afterAll(() => { restoreViewportHeight?.() })
 
 describe('FilterSheet — dimension list (level 1)', () => {
   it('opens on the dimension list, not on any dimension\'s options', () => {

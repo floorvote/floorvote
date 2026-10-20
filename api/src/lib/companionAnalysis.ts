@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from 'drizzle-orm'
+import { and, eq, isNull, lte, or, sql } from 'drizzle-orm'
 import { bills } from '../db/schema'
 import { centralFetch } from './centralFetch'
 import { inGroupOf } from './companionGroups'
@@ -60,6 +60,10 @@ export const MAX_COMPANION_ANALYSES_PER_DELIVERY = 10
  * such retry counts toward the heal's attempt cap (`ai_heal_attempts`, which a
  * successful analysis resets). An analysis the text hash deduplicates records
  * the newest text as read (queue/processor.ts), so it isn't queued again.
+ *
+ * A pulled lead's new texts reach the instance only while its request to
+ * central is recent, so a tracked member's delivery, or the lead's own stub or
+ * metadata update, renews it, at most weekly (renewLeadRequest).
  */
 export async function pullCompanions(env: Env, db: AppDb, msg: TenantQueueMessage): Promise<void> {
   // A demo never calls the model, and has no central to fetch from.
@@ -111,6 +115,44 @@ export async function pullCompanions(env: Env, db: AppDb, msg: TenantQueueMessag
     }
   }
   if (toFetch.length > 0) await requestFetch(env, toFetch)
+  // On a tracked member's delivery, or the lead's own stub or metadata update, which comes when the lead changes.
+  const renewsLead = delivered.matchType !== null || (lead?.id === delivered.id && (msg.stubOnly || msg.metadataOnly))
+  if (renewsLead && lead && lead.matchType === null && isHandle(lead.externalId) && lead.textR2Key) {
+    await renewLeadRequest(env, db, lead.id, lead.externalId!)
+  }
+}
+
+/** How often a pulled lead's request to central is renewed, at most. */
+export const LEAD_RENEWAL_DAYS = 7
+
+/**
+ * Keep central ingesting a pulled lead's new texts (#801). Central does so
+ * while this instance's request for the bill is recent, and the request is
+ * made through fetch-bills only while the bill has no text, so it would lapse
+ * while the bill still leads. A tracked member's delivery renews it, and so
+ * does the lead's own stub or metadata update (which comes when the lead
+ * changes, however quiet its tracked members are), at most once every
+ * LEAD_RENEWAL_DAYS: the delivery that stamps `fetch_renewed_at` asks. A lead
+ * pulled before #801 has never been renewed, so the first such delivery does.
+ * Renewing fetches nothing for a bill central holds current.
+ */
+async function renewLeadRequest(env: Env, db: AppDb, billId: string, externalId: string): Promise<void> {
+  const dueBefore = toDbTs(new Date(Date.now() - LEAD_RENEWAL_DAYS * 86400_000))
+  const claimed = await db.update(bills).set({ fetchRenewedAt: nowDb() })
+    .where(and(eq(bills.id, billId), or(isNull(bills.fetchRenewedAt), lte(bills.fetchRenewedAt, dueBefore)))).run()
+  if ((claimed.meta?.changes ?? 0) !== 1) return
+  try {
+    const res = await centralFetch(env, `/tenants/renew-fetch-requests/${env.TENANT_ID}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ billIds: [parseHandle(externalId)!] }),
+    })
+    // An error, not a warning, so a refusal across the fleet shows in the error logs.
+    if (!res.ok) console.error(`[companion-analysis] central renew-fetch-requests returned ${res.status} for ${externalId}`)
+  } catch (err) {
+    // The request stays live until central's window ends, and the next week's delivery renews it.
+    console.error('[companion-analysis] central renew-fetch-requests failed:', err)
+  }
 }
 
 /**

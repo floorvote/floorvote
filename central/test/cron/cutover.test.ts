@@ -8,6 +8,7 @@ import details0400Raw from '../fixtures/lims/details-B26-0400.json?raw'
 import detailsHnRaw from '../fixtures/lims/details-HN26-0171.json?raw'
 import detailsReprogRaw from '../fixtures/lims/details-REPROG26-0153.json?raw'
 import membersRaw from '../fixtures/lims/members-26.json?raw'
+import { listedOnlyDetails } from '../helpers/limsListedOnly'
 
 // Cutting DC over from LegiScan to LIMS at the main seam (#296): a central
 // whose DC bills came from LegiScan and are tracked by an instance, LIMS's
@@ -128,6 +129,9 @@ function recordedFeed(): Record<string, () => Response> {
     'LegislationDetails/B26-0001': () => json(details0001()),
     'LegislationDetails/HN26-0171': () => json(JSON.parse(detailsHnRaw)),
     'LegislationDetails/REPROG26-0153': () => json(JSON.parse(detailsReprogRaw)),
+    'LegislationDetails/B26-0769': () => json(listedOnlyDetails('B26-0769', 81)),
+    'LegislationDetails/PR26-0808': () => json(listedOnlyDetails('PR26-0808', 82)),
+    'LegislationDetails/GBM26-0061': () => json(listedOnlyDetails('GBM26-0061', 83)),
   }
   for (const [name, id] of Object.entries(CATEGORY_IDS)) {
     routes[`BulkData/${id}/26`] = () => json(Object.values(bulk).filter(r => r.legislationCategory === name))
@@ -899,6 +903,30 @@ describe('a moved bill no instance tracks', () => {
     expect(sentToTenant(after)).toContainEqual(expect.objectContaining({ billId: toHandle(B0001), matchType: 'keyword' }))
   })
 
+  it('skips an ingestAll message still waiting when an undo lands, so it costs no getBill', async () => {
+    const run = makeEnv()
+    expect((await cutover(run, '?confirm=true')).status).toBe(200)
+    await drain(run.limsQueue, run)
+    expect(await row('SELECT carried_from FROM bills WHERE bill_id = ?', B0001)).toEqual({ carried_from: null })
+
+    // B26-0001 changes at LIMS. LIMS declares ingestAll, so the next pass queues its ingest, untracked.
+    feed['BulkData/1/26'] = () => json(Object.values(bulk).filter(r => r.legislationCategory === 'Bill')
+      .map(r => (r.legislationNumber === 'B26-0001' ? { ...r, title: `${r.title as string}, as amended` } : r)))
+    const next = makeEnv()
+    const { runSnapshotSync } = await import('../../src/cron/sync-snapshots')
+    const { lims } = await import('../../src/providers/lims')
+    await runSnapshotSync(lims, next.env, drizzle(env.DB, { schema }), { force: true })
+    const waiting = queued(next.limsQueue).filter(b => b.billId === B0001)
+    expect(waiting).toHaveLength(1)
+
+    // The undo lands while it waits, and the message is skipped: no getBill.
+    expect((await undo(next, '?confirm=true')).status).toBe(200)
+    const messages = waiting.map(body => ({ body, ack: vi.fn(), retry: vi.fn() }))
+    await processIngestorQueue({ messages } as any, next.env, drizzle(env.DB, { schema }))
+    expect(legiscanCalls('getBill')).toEqual([])
+    expect(messages[0].ack).toHaveBeenCalled()
+  })
+
   it('isn\'t queued by LegiScan after an undo, so it costs no getBill', async () => {
     const run = makeEnv()
     expect((await cutover(run, '?confirm=true')).status).toBe(200)
@@ -908,7 +936,8 @@ describe('a moved bill no instance tracks', () => {
     // consumer spends no LegiScan call.
     const waiting = await drain(run.limsQueue, run)
     for (const m of waiting.filter(m => m.body.billId === B0001 || m.body.billId === B0400)) expect(m.ack).toHaveBeenCalled()
-    expect(calls.filter(u => u.includes('LegislationDetails/B26-0'))).toEqual([])
+    // (A bill new to LIMS, queued for its full ingest by ingestAll (#835), still costs its LIMS call.)
+    expect(calls.filter(u => /LegislationDetails\/B26-0(001|400)$/.test(u))).toEqual([])
     expect(legiscanCalls('getBill')).toEqual([])
 
     // LegiScan's next full pass queues only the tracked bill, on its own
