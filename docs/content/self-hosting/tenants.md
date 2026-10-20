@@ -295,13 +295,22 @@ npm run deploy:tenant -- [slug]
 
 This builds the frontend, applies pending migrations, and deploys the worker. Never run `wrangler deploy --env [slug]` directly — that skips the build and migrations.
 
-## Step 6: Set the tenant secret
+## Step 6: Set the tenant secrets
 
-Set this **after** the first deploy — `wrangler secret put` errors if the worker doesn't exist yet. From `api/`, **only `CF_AIG_TOKEN` is required** — paste the same value you used for your last tenant:
+Set these **after** the first deploy — `wrangler secret put` errors if the worker doesn't exist yet. From `api/`, `CF_AIG_TOKEN` is always required — paste the same value you used for your last tenant:
 
 ```bash
 npx wrangler secret put CF_AIG_TOKEN --env [slug]
 ```
+
+If you set `TURNSTILE_SITE_KEY` in Step 3, also set the matching secret now, from the same Turnstile widget as your other tenants:
+
+```bash
+npx wrangler secret put TURNSTILE_SECRET_KEY --env [slug]
+```
+
+> [!WARNING]
+> **Don't set one half without the other.** With only the sitekey, the login page shows the Turnstile widget but the server never checks it, so the protection is silently off. With only the secret, every login is rejected, because no widget sends a token. `scripts/new-instance.sh` sets the secret for you whenever the sitekey is set.
 
 > [!TIP]
 > **Optional fallbacks.** `GEMINI_API_KEY` is only read if you flip `AI_GATEWAY_ENABLED` to `"false"`. You don't set `LEGISCAN_API_KEY` on a tenant — only central calls LegiScan.
