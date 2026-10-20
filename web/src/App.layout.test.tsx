@@ -70,7 +70,7 @@ describe('AppLayout skip link', () => {
   // hidden live region, say) takes the page as its containing block, so at its
   // place far down a long page it makes the document scroll too: a second
   // scrollbar beside main's on any window shorter than the page.
-  it('makes <main> the containing block for absolutely positioned content, so the document never scrolls', async () => {
+  it('positions <main>, the scroll container, so it is the containing block for absolutely positioned content', async () => {
     const router = createMemoryRouter(routes, { initialEntries: ['/bills'] })
     render(<AuthProvider><RouterProvider router={router} /></AuthProvider>)
     await screen.findByText('bills page')
