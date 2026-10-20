@@ -71,6 +71,9 @@ export default defineConfig({
         compatibilityDate: '2025-01-01',
         compatibilityFlags: ['nodejs_compat'],
         d1Databases: ['DB'],
+        // Comment attachments (#465), on wherever this is bound. Tests of the
+        // feature being off unbind it.
+        r2Buckets: ['ATTACHMENTS_BUCKET'],
         bindings: {
           RESEND_API_KEY: 'test-key',
           GEMINI_API_KEY: 'test-gemini-key',

@@ -17,7 +17,7 @@ const TABLES = [
   'users', 'roles', 'user_roles', 'custom_field_definitions', 'association_config',
   'sessions', 'magic_links', 'official_positions', 'member_votes', 'comments',
   'notifications', 'comment_reactions', 'feed_events', 'bill_custom_field_values', 'notes',
-  'calendar_events',
+  'calendar_events', 'team_events',
 ]
 
 // The bills the seed references. Seeded with deterministic ids of the form

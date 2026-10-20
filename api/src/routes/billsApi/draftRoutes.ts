@@ -5,7 +5,7 @@ import { requireAdmin } from '../../middleware/auth'
 import { getDb } from '../../db/client'
 import {
   bills, memberVotes, officialPositions, comments, notes, feedEvents, billTexts,
-  billCustomFieldValues, calendarEventBills, notifications, billMutes,
+  billCustomFieldValues, calendarEventBills, notifications, billMutes, teamEvents,
 } from '../../db/schema'
 import type { AppEnv } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
@@ -206,6 +206,8 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
     }
     ops.push(db.update(calendarEventBills).set({ billId: filedBillId }).where(eq(calendarEventBills.billId, draftId)))
     ops.push(db.update(feedEvents).set({ billId: filedBillId }).where(eq(feedEvents.billId, draftId)))
+    // Field-change history cascade-deletes with the draft, so it must move first.
+    ops.push(db.update(teamEvents).set({ billId: filedBillId }).where(eq(teamEvents.billId, draftId)))
     ops.push(db.delete(bills).where(eq(bills.id, draftId)))
 
     await db.batch(ops as unknown as Parameters<typeof db.batch>[0])
@@ -338,7 +340,7 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
       const legiscanId = parseHandle(row?.externalId)
       // Backfill hearings for this newly-prioritized bill (fire-and-forget).
       if (legiscanId !== null) c.executionCtx.waitUntil(backfillCalendar(c.env, [legiscanId]))
-      // Promote a lightweight LegiScan stub to full tracking + AI (zero-cost on central;
+      // Promote a monitored LegiScan bill to full tracking + AI (zero-cost on central;
       // the ingestor will make one getBill() call). Failures log but don't fail the request.
       // Promotion means "fetch text and run AI", which a demo must never do —
       // see the demo guard in queue/processor.ts. `promoted` stays false so the

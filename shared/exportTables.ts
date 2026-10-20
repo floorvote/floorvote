@@ -17,6 +17,7 @@ export const EXPORT_TABLES = [
   'officialPositions',
   'comments',
   'commentReactions',
+  'commentAttachments',
   'notes',
   'feedEvents',
   'publicReports',

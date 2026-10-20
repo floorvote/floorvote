@@ -10,6 +10,7 @@ import { DraftChip } from '../components/DraftChip'
 import { PositionBadge } from '../components/PositionBadge'
 import { PriorityBadge } from '../components/PriorityBadge'
 import { CompactPrioritySelect } from '../components/CompactPrioritySelect'
+import { DismissAnnouncement } from '../components/DismissAnnouncement'
 import { NewMatchChip } from '../components/NewMatchChip'
 import { isUntriagedNewMatch } from '../lib/newMatch'
 import { CompactPositionSelect } from '../components/CompactPositionSelect'
@@ -48,6 +49,8 @@ import { HoverTooltip } from '../components/HoverTooltip'
 import { SubjectsTrigger, SubjectsPanel } from '../components/SubjectsDisclosure'
 import { ChangeHistoryTooltip, type ChangeRecord } from '../components/ChangeHistoryTooltip'
 import { RichTextEditor } from '../components/RichTextEditor'
+import { CommentAttachments } from '../components/CommentAttachments'
+import type { AttachmentLimits, AttachmentSummary } from '../lib/attachments'
 import { CommentContent } from '../components/CommentContent'
 import { CustomFieldsSection, type CustomFieldDef } from '../components/CustomFieldsSection'
 import { useDemo } from '../context/DemoContext'
@@ -402,6 +405,8 @@ type Comment = {
   content: string
   createdAt: string
   reactions: { emoji: string; count: number; userReacted: boolean; reactors: { name: string; title: string | null }[] }[]
+  /** Files attached to the comment (#465). Absent from a server that predates them. */
+  attachments?: AttachmentSummary[]
 }
 
 type CoSponsor = { name: string; party: string | null; role?: string; district?: string; url: string | null; primary?: boolean }
@@ -499,6 +504,8 @@ type BillDetailData = {
   extras?: BillExtras | null
   customFieldValues: Record<string, { value: string; setBy: string | null; updatedAt: string }>
   matchType: 'keyword' | 'manual' | null
+  /** Central's full message has been applied: the bill's data is here, tracked or not. Absent from an older server. */
+  fullyIngested?: boolean
   newMatchAt?: string | null
   triagedAt?: string | null
   isDraft?: boolean
@@ -691,6 +698,7 @@ export function BillDetail() {
   // no spinner. Mirrors applyBillData; the effect re-applies it as the source of truth.
   const [bill, setBill] = useState<BillDetailData | null>(prefetchedBill)
   const [triageDismissed, setTriageDismissed] = useState(false)
+  const [dismissAnnouncement, setDismissAnnouncement] = useState('')
   const [loading, setLoading] = useState(() => prefetchedBill ? false : true)
   const [error, setError] = useState<string | null>(null)
   usePageTitle(bill ? `${bill.state} ${bill.billNumber} — ${billDisplayTitle(bill) || bill.abstract || ''}` : null)
@@ -731,7 +739,8 @@ export function BillDetail() {
   }
   const [openPickerFor, setOpenPickerFor] = useState<string | null>(null)
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
-  const [config, setConfig] = useState<{ positionVocabulary: string[]; instanceDomains: Record<string, string>; orgNoun: string } | null>(null)
+  const [config, setConfig] = useState<{ positionVocabulary: string[]; instanceDomains: Record<string, string>; orgNoun: string; attachments: AttachmentLimits | null } | null>(null)
+  const commentAttachments = demoMode ? null : config?.attachments ?? null
   // How the thread's activity lines word the position, as the position card does, and mark a change made on a companion.
   const threadPositionLabel = orgPositionLabel(config?.orgNoun ?? DEFAULT_ORG_NOUN).toLowerCase()
   const renderChangeBill = (e: FieldChangeEvent) => bill && e.billId !== bill.id && e.billNumber
@@ -1071,8 +1080,8 @@ export function BillDetail() {
     applyBillData(prefetchedBill)
     const today = todayIso()
     if ((prefetchedBill.calendar ?? []).some(e => e.date >= today)) setShowHearings(true)
-    apiFetch<{ associationName: string; positionVocabulary: string[]; instanceDomains: Record<string, string>; orgNoun: string }>('/config')
-      .then(cfg => setConfig({ positionVocabulary: cfg.positionVocabulary, instanceDomains: cfg.instanceDomains ?? {}, orgNoun: cfg.orgNoun }))
+    apiFetch<{ associationName: string; positionVocabulary: string[]; instanceDomains: Record<string, string>; orgNoun: string; attachments?: AttachmentLimits | null }>('/config')
+      .then(cfg => setConfig({ positionVocabulary: cfg.positionVocabulary, instanceDomains: cfg.instanceDomains ?? {}, orgNoun: cfg.orgNoun, attachments: cfg.attachments ?? null }))
       .catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [billKey])
@@ -1205,11 +1214,11 @@ export function BillDetail() {
     refreshSidebar()
   }
 
-  async function handlePostComment(content: string) {
-    if (!bill || !content.trim()) return
-    const result = await apiFetch<{ id: string; content: string; createdAt: string }>(`/bills/${bill.id}/comments`, {
+  async function handlePostComment(content: string, attachmentIds: string[] = []) {
+    if (!bill || (!content.trim() && attachmentIds.length === 0)) return
+    const result = await apiFetch<{ id: string; content: string; createdAt: string; attachments?: AttachmentSummary[] }>(`/bills/${bill.id}/comments`, {
       method: 'POST',
-      body: JSON.stringify({ content }),
+      body: JSON.stringify(attachmentIds.length > 0 ? { content, attachmentIds } : { content }),
     })
     setComments((prev) => [...prev, {
       id: result.id,
@@ -1219,6 +1228,7 @@ export function BillDetail() {
       content: result.content,
       createdAt: result.createdAt,
       reactions: [],
+      attachments: result.attachments ?? [],
     }])
     setNewCommentIds((prev) => new Set([...prev, result.id]))
   }
@@ -1269,7 +1279,8 @@ export function BillDetail() {
   }
 
   async function handleSaveEdit(commentId: string, content: string) {
-    if (!content.trim()) return
+    // Text can be cleared from a comment that still has files.
+    if (!content.trim() && !comments.find((c) => c.id === commentId)?.attachments?.length) return
     const newContent = content
     await apiFetch(`/comments/${commentId}`, {
       method: 'PATCH',
@@ -1492,8 +1503,8 @@ export function BillDetail() {
     }
     // A PDF claim opens its page and shows its quote (#572), an HTML claim its highlighted passage (#571).
     setPassage('quote' in link
-      ? { ...base, quote: link.quote, page: link.page, opener: opener ?? null }
-      : { ...base, matched: link.matched, quoteAt: link.quoteAt })
+      ? { ...base, quote: link.quote, page: link.page, opener: opener ?? null, ...(link.rest ? { rest: link.rest } : {}) }
+      : { ...base, matched: link.matched, quoteAt: link.quoteAt, ...(link.rest ? { rest: link.rest } : {}) })
   }
 
   // Separators between collapsible sections — no border above the first one.
@@ -1521,6 +1532,7 @@ export function BillDetail() {
 
       {/* Static info block */}
       <div style={{ ...CARD, padding: '20px 24px' }}>
+        <DismissAnnouncement message={dismissAnnouncement} />
 
         {/* Chip strip */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: priorityMeta ? 20 : headerCompanions.length > 0 ? 8 : 12 }}>
@@ -1575,7 +1587,7 @@ export function BillDetail() {
                           if (result?.promoted) startAnalyzingPoll()
                         }}
                         newMatch={isNewMatch}
-                        onDismiss={() => { setTriageDismissed(true); refreshSidebar() }}
+                        onDismiss={() => { setTriageDismissed(true); setDismissAnnouncement('Dismissed'); refreshSidebar() }}
                       />
                     )
                     // Only a new match's control needs a word: its label alone does not say what to do.
@@ -1641,7 +1653,7 @@ export function BillDetail() {
               // that has none sent an un-promoted stub down the reprocess path,
               // where the queue consumer skips AI for want of bill text — so it
               // spun for three minutes and produced nothing. Those bills get the
-              // in-page "Enable full analysis" button instead, which promotes
+              // in-page "Run analysis" button instead, which promotes
               // via central and fetches the text first.
               // Drafts are excluded too: a draft can carry a hand-written
               // tenantSummary, but it has no externalId, so reprocess-bill
@@ -2440,13 +2452,12 @@ export function BillDetail() {
           const isStuck = !isLightweight && textConfirmed && !bill.aiSkipReason
           if (isStuck && !isAdmin) return null
 
-          const message = getNoAnalysisMessage({ matchType: bill.matchType, textStatus: bill.textStatus, aiSkipReason: bill.aiSkipReason })
+          const message = getNoAnalysisMessage({ matchType: bill.matchType, fullyIngested: bill.fullyIngested, textStatus: bill.textStatus, aiSkipReason: bill.aiSkipReason })
 
-          // Admins can kick off AI for an unanalyzed bill — either promoting a lightweight stub
+          // Admins can kick off AI for an unanalyzed bill — either promoting an untracked bill
           // or repairing a stuck tracked bill. Both go through handlePromote → promote-bill
           // (idempotent on match_type, re-runs AI via forceAI).
           const canRunAnalysis = isAdmin && (isLightweight || isStuck)
-          const promoteLabel = isLightweight ? 'Enable full analysis' : 'Run analysis'
           const generateDisabled = promoting || pendingPromote || demoLocked
           const hasAdminContent = canRunAnalysis && (pendingPromote || !generateDisabled || !!promoteError || !!promoteOutcomeMsg)
 
@@ -2474,7 +2485,7 @@ export function BillDetail() {
                         ...(pendingPromote ? DIMMED_WHILE_RUNNING : {}),
                       }}
                     >
-                      {promoting ? 'Queueing…' : promoteLabel}
+                      {promoting ? 'Queueing…' : 'Run analysis'}
                     </button>
                     {pendingPromote && <AnalysisProgressChip label="Analyzing…" />}
                     {isLightweight && !pendingPromote && (
@@ -3230,14 +3241,16 @@ export function BillDetail() {
                         onSubmit={(html) => handleSaveEdit(comment.id, html)}
                         onCancel={() => setEditingCommentId(null)}
                         submitLabel="Save"
+                        allowEmpty={(comment.attachments?.length ?? 0) > 0}
                         placeholder="Edit comment…"
                         // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing: focus follows the user's own click/Enter into edit mode, out of scope for this task's focus-management redesign
                         autoFocus
                       />
                     </div>
                   )
-                  : <div style={{ margin: '0 0 8px' }}><CommentContent content={comment.content} users={usersData} roles={rolesData} fontSize={COMMENT_STYLE.bodySize} /></div>
+                  : comment.content.trim() && <div style={{ margin: '0 0 8px' }}><CommentContent content={comment.content} users={usersData} roles={rolesData} fontSize={COMMENT_STYLE.bodySize} /></div>
                 }
+                <CommentAttachments attachments={comment.attachments} />
                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center', position: 'relative' }}>
                   {comment.reactions.map((r) => (
                     <span key={r.emoji} style={{ position: 'relative', display: 'inline-block' }}
@@ -3331,7 +3344,10 @@ export function BillDetail() {
                   bill's draft text across the spinner-less prefetch navigation
                   (BillDetail stays mounted and just swaps data). */}
               <RichTextEditor
-                key={bill.id}
+                // Attachments are read when the editor is created, so the key also
+                // remounts it once /config says they are on. Never on a demo, whatever /config says.
+                key={`${bill.id}:${commentAttachments ? 'files' : 'text'}`}
+                attachments={commentAttachments}
                 onSubmit={handlePostComment}
                 placeholder="Add a comment…"
                 submitLabel="Post"

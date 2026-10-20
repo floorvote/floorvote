@@ -30,11 +30,12 @@ describe('registry: which filters have their own pill', () => {
   })
 
   it('gives every filter a chip but the ones declared as having their own pill, and the search box, which is its own control', () => {
-    // The stage is listed with the status, as one entry (#677), so it has no chip entry of its own.
-    const everything = BILL_FILTER_DEFS.map(d => d.name).filter(n => n !== 'match' && n !== 'stage')
+    // The stage is listed with the status, as one entry (#677), so it has no chip entry of its own. The committee scope
+    // is a switch on the committee filter (#471), never an entry.
+    const everything = BILL_FILTER_DEFS.map(d => d.name).filter(n => n !== 'match' && n !== 'stage' && n !== 'committeeScope')
     const f = withBillFilter({
       status: ['2'], stage: ['introduced'], year: ['2026'], sessionName: ['x'], state: ['UT'], position: ['Support'], priority: ['high'],
-      tag: ['Water'], subject: [{ state: 'UT', name: 'Elections' }], minRelevance: 4, search: 'storm',
+      tag: ['Water'], subject: [{ state: 'UT', name: 'Elections' }], committee: ['101'], committeeScope: 'current', minRelevance: 4, search: 'storm',
       myBills: true, unvoted: true, newMatches: true, drafts: true, field: { team: ['a'] },
     })
     const chips = chipFilters(activeFilters(f)).map(a => a.name)

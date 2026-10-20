@@ -3,7 +3,7 @@ import { customFieldDefinitions } from '../../db/schema'
 import type { AppDb } from '../../types'
 import {
   billsAs, buildCustomFieldFilters, buildSearchCondition, filterSuppressedSubjects, hasGroupTags, loadMyBillsInGroups,
-  multiFilter, myBillsCondition, positionCondition, priorityCondition, statusFilterValues, subjectMembership, tagCondition,
+  committeeMembership, multiFilter, myBillsCondition, positionCondition, priorityCondition, statusFilterValues, subjectMembership, tagCondition,
   unvotedCondition, type BillFilterContext, type BillsCondition, type BillsFilter,
 } from './query'
 import { countBy, countHolders, freshOf, type Counting, type CountRow } from './facetCounts'
@@ -34,8 +34,8 @@ import { loadVotedInGroups } from '../../lib/companionGroups'
 
 // ── Conditions ──────────────────────────────────────────────────────────
 
-/** What a condition may read besides its filter's value: the database, and what the route read for the request. */
-export type ConditionContext = BillFilterContext & { db: AppDb }
+/** What a condition may read besides its filter's value: the database, what the route read for the request, and the whole filter. */
+export type ConditionContext = BillFilterContext & { db: AppDb; filter: BillFilter }
 
 /** What a condition reads when the request can match nothing, whatever else it sets. */
 export const NO_MATCH = Symbol('no match')
@@ -51,12 +51,14 @@ type Built = BillsCondition | undefined
  * - `custom-field`: one fact for each custom field with a value, keyed by the field's id
  * - `scope`: viewer-relative or search, which always narrows
  * - `operator`: no condition of its own: it says how the facts join
+ * - `modifier`: no condition of its own: it says how another filter reads (the committee scope), and sets that part
  */
 type Condition<V> =
   | { kind: 'fact'; joins?: keyof BillFilter; condition: (value: V, ctx: ConditionContext) => Built | Promise<Built> }
   | { kind: 'custom-field'; condition: (value: V, ctx: ConditionContext) => Promise<Record<string, BillsCondition>> }
   | { kind: 'scope'; condition: (value: V, ctx: ConditionContext) => Built | typeof NO_MATCH | Promise<Built | typeof NO_MATCH> }
   | { kind: 'operator'; condition: (value: V) => 'all' | 'any' }
+  | { kind: 'modifier'; condition: (value: V) => Partial<Pick<FilterParts, 'committeeScope'>> }
 
 // ── Facet counts ────────────────────────────────────────────────────────
 
@@ -74,6 +76,10 @@ export type FacetContext = {
   isAdmin: boolean
   /** How the bill facts combine, the filter's `match`. */
   match: BillFilter['match']
+  /** Whether the committee facet counts current committees or any referral (`FilterParts.committeeScope`). */
+  committeeScope: BillFilter['committeeScope']
+  /** The committees the filter picks (`FilterParts.committeesPicked`), which `committeeInfo` always names. */
+  committeesPicked: BillFilter['committee']
   /** Whether the tenant has any draft, unfiltered. */
   hasDrafts: boolean
   newMatchMinRelevance: number
@@ -163,6 +169,34 @@ const statusGroups: Facet<Record<string, { stage: string | null; rank: number }>
         Number(b.bills) - Number(a.bills) || stagePosition(b.stage as StatusStage) - stagePosition(a.stage as StatusStage))[0]
       return [label, { stage: best.stage ?? null, rank: Math.max(...group.map(r => Number(r.rank))) }]
     }))
+  },
+}
+
+/** The rows the committee facet reads (#471): each bill's committees, or only its current one under the current scope. */
+const committeeRows = sql`bill_committees bc JOIN bills m ON m.id = bc.bill_id`
+const currentOnly = (fc: FacetContext) => fc.committeeScope === 'current' ? sql`bc.is_current = 1` : undefined
+
+/**
+ * Each committee counted, with its name, state, and chamber (`committeeInfo`), which the menu labels and groups the
+ * counts by. Read from the rows the committee counts are, and from every row of a committee the filter picks, whatever
+ * the scope and the other filters, so a picked committee they leave out can still be shown picked and named on its chip. A committee central renamed keeps its old name on a bill
+ * until the bill's next delivery, so the name is the greatest of the names its bills hold.
+ */
+const committeeInfo: Facet<Record<string, { name: string; state: string; chamber: string | null }>> & { kind: 'derived' } = {
+  kind: 'derived',
+  response: 'committeeInfo',
+  empty: () => ({}),
+  count: async (fc, own) => {
+    const where = fc.counting(own).where(m)
+    const current = currentOnly(fc)
+    const conditions = [where, current].filter((c): c is SQL => c !== undefined)
+    const counted = conditions.length > 0 ? and(...conditions)! : undefined
+    const picked = fc.committeesPicked.length > 0 ? sql`bc.committee_id IN (SELECT value FROM json_each(${JSON.stringify(fc.committeesPicked)}))` : undefined
+    // With no condition on the counts every committee is named, the picked ones among them.
+    const named = counted && picked ? or(counted, picked)! : counted
+    const rows = await fc.db.all(sql`SELECT bc.committee_id AS id, MAX(bc.name) AS name, MAX(bc.state) AS state, MAX(bc.chamber) AS chamber
+      FROM ${committeeRows}${named ? sql` WHERE ${named}` : sql``} GROUP BY bc.committee_id`) as Array<{ id: string; name: string; state: string; chamber: string | null }>
+    return Object.fromEntries(rows.map(r => [r.id, { name: r.name, state: r.state, chamber: r.chamber || null }]))
   },
 }
 
@@ -286,6 +320,24 @@ export const FILTER_TABLE: FilterTable = {
         ))
       },
     },
+  },
+  // A committee is a fact about the bill: one it was referred to, or under the current scope the one it is pending in.
+  committee: {
+    kind: 'fact',
+    condition: (ids, ctx) => ids.length > 0 ? t => committeeMembership(ids, ctx.filter.committeeScope, t) : undefined,
+    facet: {
+      kind: 'values',
+      empty: () => ({}),
+      count: async (fc, own) => fc.shift(countsOf(await countBy(fc.db, fc.counting(own), {
+        values: [sql`bc.committee_id`], from: committeeRows, where: currentOnly(fc),
+      }))),
+    },
+    alsoFacets: [committeeInfo],
+  },
+  committeeScope: {
+    kind: 'modifier',
+    condition: committeeScope => ({ committeeScope }),
+    facet: null,
   },
   position: {
     kind: 'fact',
@@ -451,6 +503,10 @@ export type FilterParts = {
   noMatch: boolean
   /** How the facts join: all of them, or any one (the filter's `match`). */
   match: BillFilter['match']
+  /** How the committee filter and its facet read a bill's committees (the filter's `committeeScope`). */
+  committeeScope: BillFilter['committeeScope']
+  /** The committees the filter picks, which the facets always name. */
+  committeesPicked: BillFilter['committee']
 }
 
 const NAMES = Object.keys(FILTER_TABLE) as Array<keyof BillFilter>
@@ -482,8 +538,8 @@ function addFact(parts: FilterParts, key: string, condition: BillsCondition) {
  * See docs/superpowers/specs/2026-09-07-filter-group-operator-design.md.
  */
 export async function buildFilterParts(db: AppDb, f: BillFilter, ctx: BillFilterContext): Promise<FilterParts> {
-  const parts: FilterParts = { facts: [], scopes: [], noMatch: false, match: 'all' }
-  const context: ConditionContext = { ...ctx, db }
+  const parts: FilterParts = { facts: [], scopes: [], noMatch: false, match: 'all', committeeScope: 'any', committeesPicked: f.committee }
+  const context: ConditionContext = { ...ctx, db, filter: f }
   for (const name of NAMES) {
     // One entry's condition reads its own filter's value, which the table's type pairs with it.
     const entry = FILTER_TABLE[name] as Entry<unknown>
@@ -507,6 +563,9 @@ export async function buildFilterParts(db: AppDb, f: BillFilter, ctx: BillFilter
       }
       case 'operator':
         parts.match = entry.condition(value) === 'any' ? 'any' : 'all'
+        break
+      case 'modifier':
+        Object.assign(parts, entry.condition(value))
         break
     }
   }
@@ -598,7 +657,7 @@ export function makeFacetContext(req: FacetRequest): FacetContext {
   }
 
   return {
-    db, userId: req.userId, isAdmin: req.isAdmin, match: parts.match, hasDrafts: req.hasDrafts, newMatchMinRelevance: req.newMatchMinRelevance,
+    db, userId: req.userId, isAdmin: req.isAdmin, match: parts.match, committeeScope: parts.committeeScope, committeesPicked: parts.committeesPicked, hasDrafts: req.hasDrafts, newMatchMinRelevance: req.newMatchMinRelevance,
     mine: req.mine, suppressedSubjectStates: req.suppressedSubjectStates,
     factKeys: parts.facts.map(f => f.key), currentOnM, counting, groupsMeeting,
     shift: async counts => {

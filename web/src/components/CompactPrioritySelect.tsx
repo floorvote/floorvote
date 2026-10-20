@@ -1,6 +1,7 @@
+import { useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { PRIORITY_COLORS } from '../lib/chipStyles'
-import { color, radius as radiusTokens, fontWeight } from '../styles/tokens'
+import { color, radius as radiusTokens, fontWeight, fontSize } from '../styles/tokens'
 
 const NO_PRIORITY = { fill: color.white, text: color.textMuted, dot: color.borderDefault, label: '' }
 // An untriaged new match: the same control in amber.
@@ -35,6 +36,7 @@ interface CompactPrioritySelectProps {
 }
 
 export function CompactPrioritySelect({ billId, current, onChange, isFiltered, mini, placeholder = 'Set priority', newMatch, onDismiss }: CompactPrioritySelectProps) {
+  const [dismissError, setDismissError] = useState(false)
   const amber = !!newMatch && !current
   const c = current ? PRIORITY_COLORS[current] : amber ? NEW_MATCH : NO_PRIORITY
   const borderColor = current ? 'transparent' : amber ? color.borderAmber : color.borderDefault
@@ -70,7 +72,8 @@ export function CompactPrioritySelect({ billId, current, onChange, isFiltered, m
           if (e.target.value === DISMISS) {
             // Triage with no priority. A failed request leaves the control as it
             // was, still a new match, so the admin can try again.
-            apiFetch(`/bills/${billId}/triage-dismiss`, { method: 'PATCH' }).then(() => onDismiss?.()).catch(() => {})
+            setDismissError(false)
+            apiFetch(`/bills/${billId}/triage-dismiss`, { method: 'PATCH' }).then(() => onDismiss?.()).catch(() => setDismissError(true))
             return
           }
           const p = e.target.value === '' ? null : e.target.value as 'high' | 'medium' | 'low'
@@ -100,6 +103,14 @@ export function CompactPrioritySelect({ billId, current, onChange, isFiltered, m
       }}>
         <ChevronDown size={mini ? 8 : 10} color={c.text} />
       </span>
+      {dismissError && (
+        <span role="alert" style={{
+          position: 'absolute', top: '100%', left: 0, marginTop: 2, whiteSpace: 'nowrap', zIndex: 1,
+          fontSize: fontSize.xs, color: color.textErrorRed,
+        }}>
+          Couldn&apos;t dismiss. Try again.
+        </span>
+      )}
     </div>
   )
 }

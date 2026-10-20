@@ -222,3 +222,16 @@ describe('buildListSummary: reads the one list of active filters', () => {
     expect(summarize('', { search: ' ' }).filterCount).toBe(0)
   })
 })
+
+describe('buildListSummary: committee filters (#471)', () => {
+  it('names a picked committee from the labels given, and by its id without them', () => {
+    const named = summarize('committee=c1', {}, { committeeLabels: { c1: 'Judiciary (Senate)' } })
+    expect(named.filters).toEqual(['Referred to Judiciary (Senate)'])
+    expect(summarize('committee=c1').filters).toEqual(['Referred to committee c1'])
+  })
+
+  it('words the chip by the committee scope', () => {
+    const s = summarize('committee=c1&committeeScope=current', {}, { committeeLabels: { c1: 'Judiciary (Senate)' } })
+    expect(s.filters).toEqual(['In Judiciary (Senate)'])
+  })
+})

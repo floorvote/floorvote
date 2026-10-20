@@ -49,6 +49,13 @@ export type BillFilter = Readonly<{
   priority: readonly string[]
   tag: readonly string[]
   subject: readonly SubjectValue[]
+  /** Central's ids of the committees picked (#471). */
+  committee: readonly string[]
+  /**
+   * What a bill's committee is for the committee filter: `current`, the committee it is pending in, or `any`
+   * (the default), any committee it was referred to. A switch on the committee filter, never a filter of its own.
+   */
+  committeeScope: 'current' | 'any'
   /** The least relevance a bill may have (a whole number), or null for no minimum. Zero is a minimum. */
   minRelevance: number | null
   /** The search query, or an empty string for none. */
@@ -116,6 +123,13 @@ const PARTS: { [K in keyof BillFilter]: Part<BillFilter[K]> } = {
     // MAX_SUBJECT_FILTERS (shared/limits), and counts only the valid ones.
     read: params => frozen(params.getAll('subject').flatMap(v => decodeSubjectFilter(v) ?? [])),
     write: (values, out) => { for (const s of values) out.append('subject', encodeSubjectFilter(s.state, s.name)) },
+  },
+  committee: multiSelect('committee'),
+  committeeScope: {
+    kind: 'toggle',
+    sentinels: [],
+    read: params => params.get('committeeScope') === 'current' ? 'current' : 'any',
+    write: (scope, out) => { if (scope === 'current') out.append('committeeScope', 'current') },
   },
   minRelevance: {
     kind: 'range',
@@ -229,12 +243,12 @@ export function billsListPath(patch: Partial<BillFilter> = {}): string {
  * One filter that has a value: its name, its key (a custom field's is `field.<key>`), and how many values it holds.
  * The stage is never a name here: it is a grouping inside Status, so its values are listed under `status`.
  */
-export type ActiveFilter = Readonly<{ name: Exclude<keyof BillFilter, 'match' | 'stage'>; key: string; count: number }>
+export type ActiveFilter = Readonly<{ name: Exclude<keyof BillFilter, 'match' | 'stage' | 'committeeScope'>; key: string; count: number }>
 
 const distinct = (values: readonly string[]): number => new Set(values).size
 
 /** How many values a filter holds, each distinct value once. A toggle, a minimum, and a search hold one when set. */
-function countValues(filter: BillFilter, name: Exclude<keyof BillFilter, 'match' | 'stage' | 'field'>): number {
+function countValues(filter: BillFilter, name: Exclude<keyof BillFilter, 'match' | 'stage' | 'committeeScope' | 'field'>): number {
   const value = filter[name]
   if (Array.isArray(value)) {
     return name === 'subject'
@@ -249,7 +263,7 @@ function countValues(filter: BillFilter, name: Exclude<keyof BillFilter, 'match'
 
 /**
  * The one list of active filters: every filter with a value, search included, in the order `serializeBillFilter`
- * writes them, with a custom field once per field. The match mode is not a filter and is never in it. The badge,
+ * writes them, with a custom field once per field. The match mode and the committee scope are not filters and are never in it. The badge,
  * Reset, the chips, the filter sheet, and the split pane's summary all read this list, so none counts for itself.
  * A filter named in `hidden` (one this instance does not offer) is left out.
  */
@@ -257,7 +271,7 @@ export function activeFilters(filter: BillFilter, options: { hidden?: readonly s
   const hidden = options.hidden ?? []
   const list: ActiveFilter[] = []
   for (const { name } of BILL_FILTER_DEFS) {
-    if (name === 'match' || hidden.includes(name)) continue
+    if (name === 'match' || name === 'committeeScope' || hidden.includes(name)) continue
     if (name === 'field') {
       for (const [key, values] of Object.entries(filter.field)) {
         const count = distinct(values)

@@ -130,6 +130,26 @@ describe('CompactPrioritySelect', () => {
       expect(onDismiss).not.toHaveBeenCalled()
     })
 
+    it('reports a failed Dismiss as an alert and leaves the control a new match', async () => {
+      apiFetchMock.mockRejectedValue(new Error('boom'))
+      const { onDismiss } = renderNew()
+      fireEvent.change(screen.getByRole('combobox'), { target: { value: 'dismiss' } })
+      expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't dismiss. Try again.")
+      expect(onDismiss).not.toHaveBeenCalled()
+      expect(screen.getByRole('combobox')).toHaveDisplayValue('New · Set priority')
+      expectAmber(screen.getByRole('combobox'))
+    })
+
+    it('clears the error when the next Dismiss succeeds', async () => {
+      apiFetchMock.mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce({ ok: true })
+      const { onDismiss } = renderNew()
+      fireEvent.change(screen.getByRole('combobox'), { target: { value: 'dismiss' } })
+      await screen.findByRole('alert')
+      fireEvent.change(screen.getByRole('combobox'), { target: { value: 'dismiss' } })
+      await waitFor(() => expect(onDismiss).toHaveBeenCalledTimes(1))
+      expect(screen.queryByRole('alert')).toBeNull()
+    })
+
     it('does not call onDismiss before the dismiss request resolves', async () => {
       let resolve!: (v: unknown) => void
       apiFetchMock.mockReturnValue(new Promise(r => { resolve = r }))

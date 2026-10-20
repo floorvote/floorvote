@@ -81,6 +81,8 @@ export type NormalizedSession = {
 export type SortColumn = 'default' | 'priority' | 'status' | 'relevance' | 'position' | 'year' | 'session' | 'lastAction' | 'bill'
 export type SortDir = 'asc' | 'desc'
 
+import type { CommitteeInfo } from '../../lib/committeeGroups'
+
 export type FacetCounts = {
   status:   Record<string, number>
   /** By common stage key (shared/statusStages.ts). */
@@ -97,6 +99,10 @@ export type FacetCounts = {
   position: Record<string, number>
   tag:      Record<string, number>
   subject:  Record<string, number>
+  /** By central's committee id (#471). Absent from an API older than the Committee filter. */
+  committee?: Record<string, number>
+  /** Each committee counted, by id: its name, state, and chamber. */
+  committeeInfo?: CommitteeInfo
   /**
    * Every state that has subjects (suppressed ones excluded), whatever filters
    * are active, unlike `subject`. Absent = not known yet.
