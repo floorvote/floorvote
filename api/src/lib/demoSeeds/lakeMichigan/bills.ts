@@ -1,4 +1,4 @@
-import type { DemoSeedCalendarEvent, DemoSeedFeedEvent, DemoSeedFieldChange } from '../types'
+import type { DemoSeed, DemoSeedCalendarEvent, DemoSeedFeedEvent, DemoSeedFieldChange } from '../types'
 
 // The 20 real bills the Lake Michigan Alliance tracks across Michigan, Wisconsin,
 // Illinois, Indiana, and Congress. Every id, committee name, sponsor, and action
@@ -77,7 +77,7 @@ export const LM_PRIORITIES: Array<{ externalId: string; priority: 'high' | 'medi
 // (AB129, SB628) get Support too: they lost, and that's the point of tracking a
 // concluded bill. SB0771 and HB8876 carry Amend/Monitor so the vocabulary isn't
 // all Support.
-export const LM_POSITIONS: Array<{ id: string; externalId: string; position: string; setBy: string; daysAgo: number }> = [
+export const LM_POSITIONS: DemoSeed['positions'] = [
   { id: 'lm-pos-1',  externalId: 'legiscan:2029026', position: 'Support', setBy: 'demo-user',   daysAgo: 270 }, // MI HB4427
   { id: 'lm-pos-2',  externalId: 'legiscan:2055958', position: 'Support', setBy: 'demo-user',   daysAgo: 90 },  // MI HB5308
   { id: 'lm-pos-3',  externalId: 'legiscan:2095619', position: 'Monitor', setBy: 'demo-user',   daysAgo: 60 },  // MI SB0771
