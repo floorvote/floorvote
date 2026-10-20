@@ -10,6 +10,7 @@ import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { NotificationsSlideOver } from './NotificationsSlideOver'
 import { NotificationsProvider } from '../context/NotificationsContext'
+import { color } from '../styles/tokens'
 
 vi.mock('../context/DemoContext', () => ({
   useDemo: () => ({ demoMode: false, demoLocked: false, settled: true, demoResetAt: 'epoch-1' }),
@@ -124,5 +125,39 @@ describe('NotificationsSlideOver reaction rows', () => {
     const fresh = (await screen.findByText(sentence('Jordan Lee and Sam reacted to your comment'))).closest('a')!
     expect(fresh.style.borderLeft).toMatch(/3px solid (?!transparent)/)
     expect(screen.getAllByRole('link')).toHaveLength(1)
+  })
+
+  it('puts one emoji in the sentence', async () => {
+    renderPanel([row({ id: 'r1', reactors: [reactor('u1', 'Jordan Lee')], reactorCount: 1, emoji: ['👍'] })])
+    expect(await screen.findByText(sentence('Jordan Lee reacted 👍 to your comment'))).toBeInTheDocument()
+  })
+
+  it('puts several emoji in the sentence, space-separated, in the order given', async () => {
+    renderPanel([row({ id: 'r1', reactors: [reactor('u1', 'Sam Ortiz'), reactor('u2', 'Priya')], reactorCount: 2, emoji: ['😭', '👍'] })])
+    expect(await screen.findByText(sentence('Sam Ortiz and Priya reacted 😭 👍 to your comment'))).toBeInTheDocument()
+  })
+
+  it('shows at most four emoji, then +N for the rest', async () => {
+    renderPanel([row({
+      id: 'r1', reactors: [reactor('u1', 'Chris Patel'), reactor('u2', 'Sam')], reactorCount: 9,
+      emoji: ['🔥', '👍', '❤️', '😂', '💯', '🤔'],
+    })])
+    expect(await screen.findByText(sentence('Chris Patel and 8 others reacted 🔥 👍 ❤️ 😂 +2 to your comment'))).toBeInTheDocument()
+  })
+
+  it('shows exactly four emoji without a +N', async () => {
+    renderPanel([row({ id: 'r1', reactors: [reactor('u1', 'Jordan Lee')], reactorCount: 1, emoji: ['🔥', '👍', '❤️', '😂'] })])
+    expect(await screen.findByText(sentence('Jordan Lee reacted 🔥 👍 ❤️ 😂 to your comment'))).toBeInTheDocument()
+  })
+
+  it('counts a reactor with two emoji once and shows both', async () => {
+    renderPanel([row({ id: 'r1', reactors: [reactor('u1', 'Jordan Lee')], reactorCount: 1, emoji: ['🔥', '👍'] })])
+    expect(await screen.findByText(sentence('Jordan Lee reacted 🔥 👍 to your comment'))).toBeInTheDocument()
+  })
+
+  it('shows the +N muted', async () => {
+    renderPanel([row({ id: 'r1', reactors: [reactor('u1', 'Jordan Lee')], reactorCount: 1, emoji: ['🔥', '👍', '❤️', '😂', '💯'] })])
+    const more = await screen.findByText('+1')
+    expect(more.style.color).toBe(color.textMuted)
   })
 })

@@ -42,7 +42,7 @@ describe('ReprocessScopeModal', () => {
 
   it('invokes onChoose("all") when the "all bills" action is clicked', () => {
     const { onChoose } = mount()
-    fireEvent.click(screen.getByRole('button', { name: /yes, all 5 fully analyzed bills/i }))
+    fireEvent.click(screen.getByRole('button', { name: /yes, all 5 analyzed bills/i }))
     expect(onChoose).toHaveBeenCalledWith('all')
   })
 
