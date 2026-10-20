@@ -83,7 +83,7 @@ Wrangler records each applied file by name in `d1_migrations` and applies every 
 
 ## Keep Fork Features Separate
 
-Your data layer is already apart from upstream's: the 0900 range, the tables and columns `AGENTS.md` lists as yours, and the rehearsal script. Your feature code isn't. The Council directory, CRM, deep analyses, team links, and hearing briefs hook into shared upstream files: the cron list in `central/src/index-legiscan.ts`, the tenant surface allowlist (`central/src/lib/tenantSurface.ts`), the api router, and the web routes. Each upstream change to one of those files is a hand merge. This is fork-side work. Upstream adds nothing for it and promises no hooks.
+Your data layer is already apart from upstream's: the 0900 range, the tables and columns `AGENTS.md` lists as yours, and the rehearsal script. Your feature code isn't. The Council directory, CRM, deep analyses, team links, and hearing briefs hook into shared upstream files: the cron list in `central/src/index.ts`, the tenant surface allowlist (`central/src/lib/tenantSurface.ts`), the api router, and the web routes. Each upstream change to one of those files is a hand merge. This is fork-side work. Upstream adds nothing for it and promises no hooks.
 
 The pattern that keeps those merges small:
 
