@@ -678,9 +678,9 @@ const usHb6668Votes: DemoSeed['votes'] = [
 // Companion bills (#867) — the identical companions of WI AB131, WI SB56, US HB284,
 // and US HB6668, each in its own group once the operator delivers them. The threads
 // read as the team working the two chambers' versions as one bill, and every vote is
-// from someone who did not vote on the tracked side. Nothing here states a fact about
-// either bill beyond what the pairing itself says. A row no-ops until its bill is
-// in the tenant.
+// from someone who did not vote on the tracked side. The comments state only the pairing and the
+// tracked bill's enactment, which the seed already records. A row no-ops until its
+// bill is in the tenant.
 // ---------------------------------------------------------------------------
 const sb128: DemoSeedComment[] = [
   { id: 'lm-c-sb128-1', externalId: 'legiscan:2007625', userId: 'lm-user-dep',
@@ -840,7 +840,7 @@ export const LM_NOTES: DemoSeed['notes'] = [
   { id: 'lm-n-sb128', externalId: 'legiscan:2007625', daysAgo: 118,
     content: '<p>Cite both bill numbers in the Wisconsin briefing so the companion is not lost.</p>' },
   { id: 'lm-n-ab59', externalId: 'legiscan:1981854', daysAgo: 395,
-    content: '<p>Cite both bill numbers in the lead service line one-pager.</p>' },
+    content: '<p>Cite SB56 in the lead service line one-pager and mention AB59 as its companion.</p>' },
   { id: 'lm-n-sb528', externalId: 'legiscan:1966402', daysAgo: 5,
     content: '<p>One ask, two bills: put the GLRI funding level in the appropriations letter.</p>' },
   { id: 'lm-n-sb3457', externalId: 'legiscan:2058679', daysAgo: 2,
