@@ -1571,8 +1571,9 @@ export function BillDetail() {
         .comment-new { animation: slideInComment 0.38s cubic-bezier(0.16, 1, 0.3, 1) both; }
       `}</style>
 
-      {/* Only on arrival from "Add draft bill": the marker is router state, so a
-          reload, a link, or any other visit to the draft never shows this. */}
+      {/* Only on arrival from "Add draft bill": the marker is read once on arrival
+          (lib/justCreatedDraft.ts), so a reload, a link, or any other visit to
+          the draft never shows this. */}
       {isAdmin && bill.isDraft && justCreated && (
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px 12px', marginBottom: 12 }}>
           <button

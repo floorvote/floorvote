@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, cleanup } from '@testing-library/react'
+import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { StrictMode } from 'react'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
@@ -104,11 +104,12 @@ const CONFIG = {
   orgNoun: 'association',
 }
 
-const server = { bill: null as Record<string, unknown> | null, deleteFails: false }
+const server = { bill: null as Record<string, unknown> | null, deleteFails: false, tenantState: 'TX' as string | null }
 
 function mockApi() {
   server.bill = { ...DRAFT }
   server.deleteFails = false
+  server.tenantState = 'TX'
   return vi.spyOn(api, 'apiFetch').mockImplementation(async (path: string, init?: RequestInit) => {
     if (path === '/bills/draft' && init?.method === 'POST') return { id: '42' } as never
     if (path === '/bills/42' && init?.method === 'DELETE') {
@@ -120,8 +121,8 @@ function mockApi() {
       return { ...server.bill } as never
     }
     if (path === '/bills/42' || path.startsWith('/bills/resolve/')) return { ...server.bill } as never
-    if (path.startsWith('/bills/draft-defaults')) return { billNumber: 'D2', year: 2026, tenantState: 'TX' } as never
-    if (path === '/bills/facets') return { state: { TX: 1 } } as never
+    if (path.startsWith('/bills/draft-defaults')) return { billNumber: 'D2', year: 2026, tenantState: server.tenantState } as never
+    if (path === '/bills/facets') return { state: { TX: 1, CO: 1 } } as never
     if (path === '/config') return { ...CONFIG } as never
     if (path === '/config/custom-fields') return [] as never
     if (path === '/roles') return [] as never
@@ -238,6 +239,26 @@ describe('Discard draft through the real router', () => {
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/TX/2026/D9'))
     expect(await screen.findByRole('button', { name: 'Edit bill number' })).toHaveTextContent('Bill number: D9')
+    expect(screen.getByRole('button', { name: 'Discard draft' })).toBeInTheDocument()
+  })
+
+  // Guards the shared mechanism (component state, not router state) for the
+  // State editor's navigate-with-replace path, which rebuilds /STATE/YEAR/NUMBER.
+  // Passes without a code change beyond the number-edit test above, by design.
+  it('stays after an in-page State edit, which navigates with replace to the new state', async () => {
+    const user = userEvent.setup()
+    server.tenantState = null
+    markJustCreatedDraft('42')
+    const router = mount('/bills/42')
+    await screen.findByRole('button', { name: 'Discard draft' })
+
+    await user.click(await screen.findByRole('button', { name: 'Edit state' }))
+    await user.click(await screen.findByRole('button', { name: 'State (required)' }))
+    fireEvent.click(screen.getByRole('radio', { name: 'CO' }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/CO/2026/D1'))
+    expect(await screen.findByRole('button', { name: 'Edit state' })).toHaveTextContent('State: CO')
     expect(screen.getByRole('button', { name: 'Discard draft' })).toBeInTheDocument()
   })
 
