@@ -16,6 +16,7 @@ export const TREATMENT: Record<string, Treatment> = {
   team_events: { link: 'moved', delete: 'cascade', reason: 'Field-change history (FIELD_CHANGED) moves to the filed bill; a deleted draft has only disposable history, so it cascades.' },
   bill_texts: { link: 'cascade', delete: 'deleted', reason: "The draft's own text; the filed bill has its own." },
   bill_subjects: { link: 'cascade', delete: 'cascade', reason: 'Written by sync for filed bills; a draft has none.' },
+  bill_committees: { link: 'cascade', delete: 'cascade', reason: 'Written by sync for filed bills; a draft has none.' },
   calendar_events: { link: 'not-applicable', delete: 'not-applicable', reason: "Only central's hearing sync writes a bill id, and a draft has no external id; custom and body events store null." },
   bill_group_overrides: { link: 'not-applicable', delete: 'not-applicable', reason: 'Grouping by hand refuses drafts, and a draft is in no group to split from.' },
   companion_suggestion_dismissals: { link: 'cascade', delete: 'cascade', reason: 'Drafts are never suggested a companion; only a direct API call writes a row, which is meaningless once the draft goes.' },
