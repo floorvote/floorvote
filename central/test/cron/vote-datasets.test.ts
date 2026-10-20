@@ -123,8 +123,9 @@ beforeEach(async () => {
   await db.insert(schema.tenants).values({ tenantId: 'acme', name: 'Acme', stateCoverage: JSON.stringify(['RI']), active: true })
   await db.insert(schema.sessions).values([
     { sessionId: 1, state: 'RI', stateId: 39, yearStart: 2026, yearEnd: 2026, sessionName: '2026 Regular', sessionTitle: 'Regular' },
-    // Adjourned: the hourly sync no longer covers it, so neither does the vote load.
-    { sessionId: 2, state: 'RI', stateId: 39, yearStart: 2025, yearEnd: 2025, sessionName: '2025 Regular', sessionTitle: 'Regular', sineDie: 1 },
+    // Adjourned, and its votes already loaded: the dataset hash matches the list's, as it does for
+    // every adjourned session once its catch-up load has run. The 'adjourned sessions' tests reset this.
+    { sessionId: 2, state: 'RI', stateId: 39, yearStart: 2025, yearEnd: 2025, sessionName: '2025 Regular', sessionTitle: 'Regular', sineDie: 1, votesDatasetHash: 'hash-old' },
     // No instance covers MA.
     { sessionId: 3, state: 'MA', stateId: 22, yearStart: 2026, yearEnd: 2026, sessionName: 'MA 2026', sessionTitle: 'Regular' },
   ])
@@ -173,7 +174,7 @@ describe('weekly LegiScan member votes', () => {
     await checkVoteDatasets(mockEnv(), db)
     const ops = fetchMock.mock.calls.map(c => new URL(c[0] as string))
     expect(ops.map(u => [u.searchParams.get('op'), u.searchParams.get('state')])).toEqual([['getDatasetList', 'RI']])
-    // Session 2 is in the list with a hash never loaded, but it adjourned.
+    // Session 2 adjourned, and the hash it last loaded is still the list's.
     expect(ingestorSend.mock.calls.map(c => c[0].sessionId)).toEqual([1])
   })
 
@@ -257,7 +258,7 @@ describe('weekly LegiScan member votes', () => {
   })
 
   it('runs one dataset load per invocation and defers the rest of the batch', async () => {
-    await db.run(sql`UPDATE sessions SET sine_die = 0 WHERE session_id = 2`)
+    await db.run(sql`UPDATE sessions SET votes_dataset_hash = NULL WHERE session_id = 2`)
     await checkVoteDatasets(mockEnv(), db)
     expect(ingestorSend.mock.calls.map(c => c[0].sessionId)).toEqual([1, 2])
 
@@ -342,6 +343,119 @@ describe('weekly LegiScan member votes', () => {
     await weekPasses()
     await checkVoteDatasets(mockEnv(), db)
     expect(ingestorSend).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 1, hash: 'hash-1' }))
+  })
+})
+
+describe('adjourned sessions', () => {
+  // Session 2 is an RI session that adjourned sine die, never checked. Here it
+  // also has no stored hash, as one that adjourned before the weekly load existed.
+  beforeEach(async () => {
+    await db.run(sql`UPDATE sessions SET votes_dataset_hash = NULL WHERE session_id = 2`)
+  })
+  const queuedSessionIds = () => ingestorSend.mock.calls.map(c => c[0].sessionId as number)
+  const checkedAt = async (sessionId: number) =>
+    (await db.select({ at: schema.sessions.votesCheckedAt }).from(schema.sessions)
+      .where(sql`session_id = ${sessionId}`).get())?.at
+
+  it('checks an adjourned session that was never loaded and queues its dataset', async () => {
+    await checkVoteDatasets(mockEnv(), db)
+    expect(ingestorSend).toHaveBeenCalledWith({ kind: 'vote-dataset', providerId: 'legiscan', sessionId: 2, key: 'key-2', hash: 'hash-old' })
+    expect(await checkedAt(2)).not.toBeNull()
+  })
+
+  it("loads an adjourned session's votes onto its bill page, with no manual backfill", async () => {
+    await db.insert(schema.bills).values({ billId: 202, sessionId: 2, state: 'RI', stateId: 39, billNumber: 'H202', title: 'Bill 202', changeHash: 'h', status: 4 })
+    await db.insert(schema.rollCalls).values({ rollCallId: 41, billId: 202, date: '2025-05-01', description: 'Passage', yea: 2, nay: 1, total: 3, passed: 1, chamber: 'H' })
+    const adjourned = datasetZip({
+      votes: [voteFile(41, 202, [[1, 'Yea'], [2, 'Nay'], [3, 'Yea']])],
+      people: [personFile(1, 'Ann Able'), personFile(2, 'Bo Baker'), personFile(3, 'Cy Carter')],
+    })
+    zipBody = () => new Response(chunked(adjourned), { headers: { 'content-type': 'application/zip' } })
+    expect(await legislatorVotes(202, 41)).toEqual([])
+
+    await checkVoteDatasets(mockEnv(), db)
+    // Session 1's load goes first and session 2's is deferred; run until the queue drains.
+    while (ingestorSend.mock.calls.length > 0) await deliverQueued()
+
+    expect(await legislatorVotes(202, 41)).toEqual([
+      { personId: '1', name: 'Ann Able', vote: 'Yea', url: null, party: null },
+      { personId: '2', name: 'Bo Baker', vote: 'Nay', url: null, party: 'D' },
+      { personId: '3', name: 'Cy Carter', vote: 'Yea', url: null, party: 'D' },
+    ])
+    // Loaded once, so the next weekly check finds the hash unchanged and queues nothing.
+    await weekPasses()
+    await checkVoteDatasets(mockEnv(), db)
+    expect(queuedSessionIds()).not.toContain(2)
+  })
+
+  it('marks an adjourned session checked, and queues nothing, when its stored hash matches', async () => {
+    await db.run(sql`UPDATE sessions SET votes_dataset_hash = 'hash-old' WHERE session_id = 2`)
+    await checkVoteDatasets(mockEnv(), db)
+    expect(queuedSessionIds()).toEqual([1])
+    expect(await checkedAt(2)).not.toBeNull()
+  })
+
+  it('leaves an adjourned session alone until six days after its last check', async () => {
+    await db.run(sql`UPDATE sessions SET votes_checked_at = datetime('now', '-2 days') WHERE session_id = 2`)
+    const before = await checkedAt(2)
+    await checkVoteDatasets(mockEnv(), db)
+    expect(queuedSessionIds()).toEqual([1])
+    expect(await checkedAt(2)).toBe(before)
+
+    await db.run(sql`UPDATE sessions SET votes_checked_at = datetime('now', '-7 days') WHERE session_id = 2`)
+    ingestorSend.mockClear()
+    await checkVoteDatasets(mockEnv(), db)
+    // Session 1 was checked on the first pass, so only session 2 is due now.
+    expect(queuedSessionIds()).toEqual([2])
+  })
+
+  it('still skips an adjourned session with sync turned off', async () => {
+    await db.run(sql`UPDATE sessions SET sync_enabled = 0 WHERE session_id = 2`)
+    await checkVoteDatasets(mockEnv(), db)
+    expect(queuedSessionIds()).toEqual([1])
+    expect(await checkedAt(2)).toBeNull()
+  })
+
+  it('still skips an adjourned session in a state no instance tracks', async () => {
+    await db.insert(schema.sessions).values({ sessionId: 5, state: 'MA', stateId: 22, yearStart: 2025, yearEnd: 2025, sessionName: 'MA 2025', sessionTitle: 'Regular', sineDie: 1 })
+    datasetList = [...datasetList as unknown[], { session_id: 5, state_id: 22, dataset_hash: 'hash-ma', dataset_size: 1000, access_key: 'key-5' }]
+    await checkVoteDatasets(mockEnv(), db)
+    expect(queuedSessionIds()).not.toContain(5)
+    expect(fetchMock.mock.calls.map(c => new URL(c[0] as string).searchParams.get('state'))).toEqual(['RI'])
+    expect(await checkedAt(5)).toBeNull()
+  })
+
+  it("still skips an adjourned session in a state another provider owns, and that provider's adjourned sessions", async () => {
+    await db.update(schema.tenants).set({ stateCoverage: JSON.stringify(['RI', 'DC', 'MD']) })
+    await db.insert(schema.sessions).values([
+      { sessionId: 6, state: 'DC', stateId: 51, yearStart: 2025, yearEnd: 2025, sessionName: 'DC 2025', sessionTitle: 'Regular', sineDie: 1 },
+      { sessionId: 3_000_000_002, state: 'MD', stateId: 20, yearStart: 2025, yearEnd: 2025, sessionName: '2025 Regular Session', sessionTitle: '2025 Regular Session', provider: 'mga', sineDie: 1 },
+    ])
+    await db.insert(schema.stateProviders).values([
+      { state: 'DC', provider: 'lims', previousProvider: 'legiscan' },
+      { state: 'MD', provider: 'legiscan', previousProvider: 'mga' },
+    ])
+    await checkVoteDatasets(mockEnv(), db)
+    expect(fetchMock.mock.calls.map(c => new URL(c[0] as string).searchParams.get('state'))).toEqual(['RI'])
+    expect(await checkedAt(6)).toBeNull()
+    expect(await checkedAt(3_000_000_002)).toBeNull()
+  })
+
+  it('shares one list call between a live session and an adjourned one in the same state', async () => {
+    await checkVoteDatasets(mockEnv(), db)
+    const ops = fetchMock.mock.calls.map(c => new URL(c[0] as string))
+    expect(ops.map(u => [u.searchParams.get('op'), u.searchParams.get('state')])).toEqual([['getDatasetList', 'RI']])
+    expect(queuedSessionIds()).toEqual([1, 2])
+    expect(await checkedAt(1)).not.toBeNull()
+    expect(await checkedAt(2)).not.toBeNull()
+  })
+
+  it('costs only the shared list call once every session of a state has adjourned and loaded', async () => {
+    await db.run(sql`UPDATE sessions SET sine_die = 1, votes_dataset_hash = CASE session_id WHEN 1 THEN 'hash-1' ELSE 'hash-old' END WHERE state = 'RI'`)
+    await weekPasses()
+    await checkVoteDatasets(mockEnv(), db)
+    expect(ingestorSend).not.toHaveBeenCalled()
+    expect(await callsLogged()).toEqual({ getDatasetList: 1 })
   })
 })
 
