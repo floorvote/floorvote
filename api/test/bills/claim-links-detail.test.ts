@@ -82,6 +82,15 @@ describe('GET /api/bills/:id: claimSources', () => {
       ])
     })
 
+    it('carries the model\'s quote for an anchored item, whose matched text is only a short anchor (#802)', async () => {
+      await pin('a100', '9001', [
+        { ...item('Requires a drop box in each county.', 'anchored', [10, 42], 'Each county shall have a drop b'), quote: 'Each county shall have a drop box for returned ballots.' },
+      ])
+      expect((await detail('a100')).claimSources?.items).toEqual([
+        { claim: 'Requires a drop box in each county.', status: 'anchored', quoteAt: { start: 10, end: 42 }, matched: 'Each county shall have a drop b', quote: 'Each county shall have a drop box for returned ballots.' },
+      ])
+    })
+
     it('is null when the pinned document is no longer in the bill\'s text list', async () => {
       await env.DB.prepare('DELETE FROM bill_texts WHERE doc_id = ?').bind('9001').run()
       expect((await detail('a100')).claimSources).toBeNull()

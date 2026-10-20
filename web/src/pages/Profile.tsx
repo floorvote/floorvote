@@ -684,6 +684,7 @@ export function Profile() {
                 <input
                   type="checkbox"
                   role="switch"
+                  className="fv-switch-input"
                   aria-label="Toggle Replies on bills you've commented on"
                   checked={repliesEnabled}
                   disabled={repliesSaving || demoLocked}
@@ -749,6 +750,7 @@ export function Profile() {
                 <input
                   type="checkbox"
                   role="switch"
+                  className="fv-switch-input"
                   aria-label="Toggle Email digest of recent bill activity"
                   checked={digestEnabled}
                   disabled={digestSaving || demoLocked || digestAdminOff}
@@ -833,6 +835,7 @@ export function Profile() {
                   <input
                     type="checkbox"
                     role="switch"
+                    className="fv-switch-input"
                     aria-labelledby="digest-matches-label"
                     checked={digestMatchesEnabled}
                     disabled={digestMatchesSaving || demoLocked || digestAdminOff || !digestEnabled}
@@ -899,6 +902,7 @@ export function Profile() {
                 <input
                   type="checkbox"
                   role="switch"
+                  className="fv-switch-input"
                   aria-label="Toggle Email digest of upcoming hearings and events"
                   checked={weekAheadEnabled}
                   disabled={weekAheadSaving || demoLocked || weekAheadAdminOff}

@@ -32,7 +32,7 @@ describe('reacting to a comment notifies its author', () => {
 
   type Row = {
     id: string; kind: string; commentId: string; billId: string; isUnread: boolean
-    reactors?: { id: string; name: string | null }[]; reactorCount?: number
+    reactors?: { id: string; name: string | null }[]; reactorCount?: number; emoji?: string[]
   }
   async function inbox(as: string) {
     const res = await request('/api/notifications', 'GET', as)
@@ -168,6 +168,47 @@ describe('reacting to a comment notifies its author', () => {
     expect(rows[0].reactors).toHaveLength(2)
     expect(rows[1]).toMatchObject({ isUnread: true, reactorCount: 1, reactors: [{ id: ids.ben, name: 'Ben' }] })
     expect(unreadCount).toBe(2)
+  })
+
+  it('lists the comment\'s distinct emoji, newest first', async () => {
+    await react('ben', '👍')
+    await react('cara', '🔥')
+    await react('ben', '😭')
+    await react('cara', '👍')
+    // Same-second inserts tie on created_at, so space the rows out.
+    const stamps: Record<string, string> = { '👍': '2020-01-01 00:00:01', '🔥': '2020-01-01 00:00:02', '😭': '2020-01-01 00:00:03' }
+    for (const row of await stored('ann')) {
+      const e = JSON.parse(row.data).emoji as string
+      await getDb(env.DB).update(notifications).set({ createdAt: stamps[e] }).where(eq(notifications.id, row.id))
+    }
+    const { notifications: rows } = await inbox('ann')
+    expect(rows).toHaveLength(1)
+    // 👍 appears twice (two reactors) but once in the list.
+    expect(rows[0].emoji).toEqual(['😭', '🔥', '👍'])
+  })
+
+  it('counts a reactor with two emoji once and lists both emoji', async () => {
+    await react('ben', '👍')
+    await react('ben', '🔥')
+    const { notifications: rows } = await inbox('ann')
+    expect(rows[0].reactorCount).toBe(1)
+    expect([...(rows[0].emoji ?? [])].sort()).toEqual(['👍', '🔥'].sort())
+  })
+
+  it('keeps the emoji after the reaction is removed', async () => {
+    await react('ben', '👍')
+    await unreact('ben', '👍')
+    const { notifications: rows } = await inbox('ann')
+    expect(rows[0].emoji).toEqual(['👍'])
+  })
+
+  it('gives each comment its own emoji', async () => {
+    const other = await seedComment(billId, ids.ann, '<p>Ann again</p>')
+    await react('ben', '👍')
+    await react('ben', '🔥', other)
+    const { notifications: rows } = await inbox('ann')
+    const byComment = Object.fromEntries(rows.map(r => [r.commentId, r.emoji]))
+    expect(byComment).toEqual({ [commentId]: ['👍'], [other]: ['🔥'] })
   })
 
   it('hides the row when the comment is deleted', async () => {

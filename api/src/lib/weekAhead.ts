@@ -1,7 +1,7 @@
 import { and, eq, ne, isNull, isNotNull, gte, lt, exists, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/sqlite-core'
 import { calendarEvents, calendarEventBills, bills, users, sessions, associationConfig } from '../db/schema'
-import { renderWeekAheadEmail, capBodyEvents, type WeekAheadEvent, type WeekAheadDay } from './weekAheadEmail'
+import { renderWeekAheadEmail, capBodyEvents, fitToBudget, type WeekAheadEvent, type WeekAheadDay } from './weekAheadEmail'
 import { senderFor, unsubscribeHeaders } from './email'
 import { nowDb } from './dbTime'
 import { prioritizedBillEntry, billEntryGroupKey } from './calendarVisibility'
@@ -197,7 +197,7 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
   if (allDays.length === 0) return
 
   // Keep the email under Gmail's clip (#675): the calendar has the rest.
-  const { days, omitted } = capBodyEvents(allDays)
+  const capped = capBodyEvents(allDays)
 
   // Recipients: opted-in users with active sessions
   const recipients = await db.select({ email: users.email }).from(users)
@@ -211,6 +211,10 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
   const nameRow = await db.select().from(associationConfig).where(eq(associationConfig.key, 'association_name')).get()
   let assocName = PRODUCT_NAME
   if (nameRow?.value) { try { assocName = JSON.parse(nameRow.value) } catch { assocName = nameRow.value } }
+
+  // Then under its byte budget for the kinds the cap leaves alone (#774).
+  const { days, omitted } = fitToBudget(capped.days, capped.omitted,
+    (d, o) => renderWeekAheadEmail({ days: d, assocName, appUrl: env.APP_URL, omitted: o }))
 
   const firstDay = days[0].label.split(', ').slice(1).join(', ')
   const lastDay = days[days.length - 1].label.split(', ').slice(1).join(', ')

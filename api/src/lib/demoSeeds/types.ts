@@ -74,6 +74,25 @@ export type DemoSeedFeedEvent = {
   daysAgo: number
 }
 
+/**
+ * A change a persona made to a team field, which the reset writes as the
+ * `field_changed` team event the app writes (the bill page's activity line).
+ * `old` and `new` are stored values: a priority's `high`, a position's text, a
+ * custom field's raw value. `old` is null for a first set. The newest change of
+ * a field ends on the value the seed sets for it.
+ */
+export type DemoSeedFieldChange = {
+  id: string
+  externalId: string
+  userId: string
+  field: 'priority' | 'position' | 'customField'
+  /** The custom field's id, for `field: 'customField'`. */
+  fieldId?: string
+  old: string | null
+  new: string | null
+  daysAgo: number
+}
+
 export type DemoSeedCalendarEvent = {
   id: string
   externalId: string | null
@@ -168,6 +187,8 @@ export type DemoSeed = {
   customFieldValues: Array<{ externalId: string; fieldId: string; value: string; setBy: string; daysAgo: number }>
   notes: Array<{ id: string; externalId: string; content: string; daysAgo: number }>
   calendarEvents: DemoSeedCalendarEvent[]
+  /** The team field changes shown as activity lines on bill pages. */
+  teamFieldChanges: DemoSeedFieldChange[]
   /** Two or three views written for this demo's audience. At least one joins
    *  subjects and tags with the OR group operator (`match=any`), the case saved
    *  views were built for. */
