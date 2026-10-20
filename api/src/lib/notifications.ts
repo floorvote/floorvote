@@ -131,6 +131,8 @@ export type ReactionNotificationView = NotificationBase & {
   /** The newest reactors (up to two), each once however many emoji they used. */
   reactors: Array<{ id: string; name: string | null }>
   reactorCount: number
+  /** The comment's distinct emoji, newest first. */
+  emoji: string[]
 }
 
 export type NotificationView = MentionNotificationView | ReplyNotificationView | ReactionNotificationView
@@ -331,6 +333,25 @@ async function listReactionGroups(db: Db, recipientId: string): Promise<Reaction
     reactors.set(r.commentId, list)
   }
 
+  // Each listed comment's distinct emoji, newest first.
+  const emojiRows = await db
+    .select({
+      commentId: sql<string>`${notifications.commentId}`,
+      emoji: sql<string>`json_extract(${notifications.data}, '$.emoji')`,
+    })
+    .from(notifications)
+    .innerJoin(comments, eq(notifications.commentId, comments.id))
+    .innerJoin(users, eq(notifications.actorId, users.id))
+    .where(and(visible, inArray(notifications.commentId, groups.map(g => g.commentId))))
+    .groupBy(notifications.commentId, sql`json_extract(${notifications.data}, '$.emoji')`)
+    .orderBy(sql`max(${notifications.createdAt}) desc`, sql`max(${notifications}.rowid) desc`)
+    .all()
+  const emoji = new Map<string, string[]>()
+  for (const r of emojiRows) {
+    if (typeof r.emoji !== 'string') continue
+    emoji.set(r.commentId, [...(emoji.get(r.commentId) ?? []), r.emoji])
+  }
+
   return groups.map(g => ({
     ...notificationBase({ ...g, id: `reaction:${g.commentId}` }),
     kind: 'reaction',
@@ -338,6 +359,7 @@ async function listReactionGroups(db: Db, recipientId: string): Promise<Reaction
     commentHtml: g.commentContent,
     reactors: reactors.get(g.commentId) ?? [],
     reactorCount: g.reactorCount,
+    emoji: emoji.get(g.commentId) ?? [],
   }))
 }
 
