@@ -463,7 +463,7 @@ preflight() {
   fi
 
   # 9. Whether api/wrangler.toml is committable. Upstream gitignores it; forks
-  #    that track it expect the commit. Step 3 must not assume either way.
+  #    that track it expect the commit. Step 4 must not assume either way.
   echo "  Config tracking:"
   if git -C "$REPO_ROOT" check-ignore -q api/wrangler.toml 2>/dev/null; then
     WRANGLER_TOML_TRACKED=0
