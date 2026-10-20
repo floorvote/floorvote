@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
 import { AddDraftButton } from './AddDraftButton'
-import { isJustCreatedDraft } from '../../lib/justCreatedDraft'
+import { peekJustCreatedDraft } from '../../lib/justCreatedDraft'
 import * as api from '../../lib/api'
 
 // Mutable flag so a test can opt into a locked demo without a module-level
@@ -13,13 +13,14 @@ vi.mock('../../context/DemoContext', () => ({
   useDemo: () => ({ demoMode: false, demoLocked: demoState.demoLocked, settled: true }),
 }))
 
-// Where the click landed, and with what router state.
+// Where the click landed, and with what router state. The just-created marker
+// is not router state: a loader redirect replaces it and a reload keeps it, so it
+// lives in sessionStorage (lib/justCreatedDraft.ts), and the page carries none.
 function Landing() {
   const loc = useLocation()
   return (
     <div>
       <div data-testid="path">{loc.pathname}</div>
-      <div data-testid="just-created">{String(isJustCreatedDraft(loc.state))}</div>
       <div data-testid="raw-state">{JSON.stringify(loc.state)}</div>
     </div>
   )
@@ -69,8 +70,8 @@ function mockApi(server: Server = {}) {
 }
 
 describe('AddDraftButton', () => {
-  beforeEach(() => { vi.restoreAllMocks(); demoState.demoLocked = false })
-  afterEach(() => { demoState.demoLocked = false })
+  beforeEach(() => { vi.restoreAllMocks(); demoState.demoLocked = false; window.sessionStorage.clear() })
+  afterEach(() => { demoState.demoLocked = false; window.sessionStorage.clear() })
 
   describe('single-state tenant', () => {
     it('creates a blank draft with no state and opens its page marked as just created', async () => {
@@ -82,9 +83,9 @@ describe('AddDraftButton', () => {
       expect(server.posts()).toHaveLength(1)
       // An empty body: the server fills in the number, the year, and the state.
       expect(server.postBodies()[0]).toBeNull()
-      expect(screen.getByTestId('just-created')).toHaveTextContent('true')
-      // The state a later ticket reads is exactly this literal, so pin it.
-      expect(screen.getByTestId('raw-state')).toHaveTextContent('{"justCreatedDraft":true}')
+      expect(peekJustCreatedDraft('new-draft-1')).toBe(true)
+      // The marker is in sessionStorage, not in the navigation: no router state rides along.
+      expect(screen.getByTestId('raw-state')).toHaveTextContent('null')
     })
 
     it('opens no menu and no text field', async () => {
@@ -149,7 +150,7 @@ describe('AddDraftButton', () => {
 
       await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent('/bills/new-draft-1'))
       expect(server.postBodies()).toEqual([{ state: 'CO' }])
-      expect(screen.getByTestId('just-created')).toHaveTextContent('true')
+      expect(peekJustCreatedDraft('new-draft-1')).toBe(true)
     })
 
     it('still offers the menu when only one state has bills', async () => {
@@ -212,7 +213,7 @@ describe('AddDraftButton', () => {
 
       await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent('/bills/new-draft-1'))
       expect(server.postBodies()).toEqual([{ state: 'UT' }])
-      expect(screen.getByTestId('just-created')).toHaveTextContent('true')
+      expect(peekJustCreatedDraft('new-draft-1')).toBe(true)
     })
 
     it('submits the typed state on Enter', async () => {
@@ -273,6 +274,7 @@ describe('AddDraftButton', () => {
       fireEvent.click(button)
       expect(server.calls).toHaveLength(0)
       expect(screen.getByTestId('path')).toHaveTextContent('/bills')
+      expect(window.sessionStorage.length).toBe(0)
     })
 
     it("says \"Locked in demo mode\" in the title, as the repo's other locked controls do", () => {
@@ -294,6 +296,15 @@ describe('AddDraftButton', () => {
   })
 
   describe('errors', () => {
+    it('marks nothing when the create fails', async () => {
+      mockApi({ defaults: { tenantState: 'UT' }, create: () => { throw new api.ApiError(500, 'boom') } })
+      renderButton()
+      fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
+      await screen.findByRole('alert')
+      expect(window.sessionStorage.length).toBe(0)
+      expect(screen.getByTestId('path')).toHaveTextContent('/bills')
+    })
+
     it("shows the server's error and does not navigate when a single-state create fails", async () => {
       const server = mockApi({
         defaults: { tenantState: 'UT' },

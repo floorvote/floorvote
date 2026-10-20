@@ -7,7 +7,7 @@ import { useDismissOnOutsideClick } from '../../hooks/useDismissOnOutsideClick'
 import { HoverTooltip } from '../../components/HoverTooltip'
 import { MissingRequiredReason, useRequiredSubmit } from '../../components/RequiredField'
 import { inlineEditSaveStyle } from '../../lib/inlineEditStyles'
-import { justCreatedDraftState } from '../../lib/justCreatedDraft'
+import { markJustCreatedDraft } from '../../lib/justCreatedDraft'
 
 const EXPLAINER = "Track a bill before it's filed. Link it to the filed bill later to carry over its votes, comments, and notes."
 const LOCKED_HOVER = 'Locked in demo mode'
@@ -89,7 +89,9 @@ export function AddDraftButton() {
     })
     setPicker(null)
     setTypedState('')
-    navigate('/bills/' + created.id, { state: justCreatedDraftState() })
+    // Marked before navigating, so the page's first render already finds it.
+    markJustCreatedDraft(created.id)
+    navigate('/bills/' + created.id)
   }
 
   function handleClick() {
