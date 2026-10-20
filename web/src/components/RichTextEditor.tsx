@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { EditorContent, EditorContext, ReactRenderer, useEditor } from '@tiptap/react'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
@@ -6,6 +6,10 @@ import { StarterKit } from '@tiptap/starter-kit'
 import { Extension } from '@tiptap/core'
 import { Placeholder } from '@tiptap/extension-placeholder'
 import { Mention } from '@tiptap/extension-mention'
+import { FileHandler } from '@tiptap/extension-file-handler'
+import type { AttachmentLimits } from '../lib/attachments'
+import { DropOverlay, PaperclipIcon, PendingAttachmentRows, useAttachmentUploads } from './ComposerAttachments'
+import { Button } from '@/components/tiptap-ui-primitive/button'
 import tippy, { type Instance as TippyInstance } from 'tippy.js'
 import { MentionSuggestions, type MentionSuggestionsRef } from './MentionSuggestions'
 import { apiFetch } from '../lib/api'
@@ -15,6 +19,7 @@ import { MENTION_STYLE } from '../../../shared/mentionStyle'
 import { useUnsavedRegistration } from '../lib/unsavedText'
 import { mentionSuggestionItems } from '../lib/mentionItems'
 import { useAuth } from '../hooks/useAuth'
+import { SR_ONLY } from '../lib/textStyles'
 
 import { Toolbar, ToolbarGroup, ToolbarSeparator } from '@/components/tiptap-ui-primitive/toolbar'
 import { MarkButton } from '@/components/tiptap-ui/mark-button'
@@ -81,7 +86,15 @@ function useMentionData(enabled: boolean) {
 }
 
 interface RichTextEditorProps {
-  onSubmit?: (html: string) => void
+  /** `attachmentIds`: the files uploaded for this comment (always empty while `attachments` is off). */
+  onSubmit?: (html: string, attachmentIds: string[]) => void | Promise<unknown>
+  /**
+   * File attachments (#465): the limits from GET /config, or null/absent to
+   * leave attachments off. Sets whether the toolbar gets a paperclip and the
+   * editor takes dropped and pasted files. Read when the editor is created, so
+   * a parent changing it should remount the editor (see BillDetail's key).
+   */
+  attachments?: AttachmentLimits | null
   onChange?: (html: string) => void
   placeholder?: string
   initialContent?: string
@@ -102,8 +115,22 @@ interface MentionTooltipData {
   roleMembers?: Array<{ name: string; title: string | null }>
 }
 
-export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a comment…', initialContent, submitLabel = 'Post', onCancel, autoFocus, enableMentions = true, allowEmpty = false, disabled = false }: RichTextEditorProps) {
+export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a comment…', initialContent, submitLabel = 'Post', onCancel, autoFocus, enableMentions = true, allowEmpty = false, disabled = false, attachments }: RichTextEditorProps) {
   const [hasContent, setHasContent] = useState(false)
+  const uploads = useAttachmentUploads(attachments)
+  const uploadsRef = useRef(uploads)
+  // Text, or at least one finished file, makes a postable comment.
+  const hasFile = uploads.items.some(i => i.status === 'done' && i.id)
+  const canPost = hasContent || allowEmpty || hasFile
+  uploadsRef.current = uploads
+  const attachmentsOn = !!attachments
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  // dragenter and dragleave also fire for every child the pointer crosses, so count them.
+  const dragDepth = useRef(0)
+  const [dragging, setDragging] = useState(false)
+  const [posting, setPosting] = useState(false)
+  const heldNoteId = useId()
+  const [postError, setPostError] = useState(false)
   const initialTextRef = useRef('')
   const [editorTooltip, setEditorTooltip] = useState<MentionTooltipData | null>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
@@ -132,6 +159,19 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
       }),
       Placeholder.configure({ placeholder }),
       TabHandler,
+      ...(attachmentsOn ? [FileHandler.configure({
+        // Files dropped on the editor itself. (The rest of the composer takes drops through the wrapper.)
+        onDrop: (_editor, files) => {
+          dragDepth.current = 0
+          setDragging(false)
+          uploadsRef.current.addFiles(files)
+        },
+        // A copied spreadsheet range or web image arrives as a picture and its HTML:
+        // that is content to paste, not a file to attach. A file on its own is a file.
+        onPaste: (_editor, files, html) => {
+          if (!html) uploadsRef.current.addFiles(files)
+        },
+      })] : []),
       ...(enableMentions ? [Mention.configure({
         HTMLAttributes: { class: 'mention' },
         renderHTML({ node }) {
@@ -229,22 +269,39 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
   }, [editor, disabled])
 
   useUnsavedRegistration({
-    isDirty: () => !!editor && editor.getText().trim() !== initialTextRef.current,
+    isDirty: () => (!!editor && editor.getText().trim() !== initialTextRef.current) || uploadsRef.current.hasFiles,
     reset: () => {
+      uploadsRef.current.discard()
       if (onCancel) { onCancel(); return }
       editor?.commands.clearContent()
       setHasContent(false)
     },
   })
 
-  const handleSubmit = useCallback(() => {
-    if (!editor || !onSubmit || disabled) return
+  const handleSubmit = useCallback(async () => {
+    if (!editor || !onSubmit || disabled || posting) return
     const text = editor.getText().trim()
-    if (!text && !allowEmpty) return
-    onSubmit(trimEdgeParagraphs(editor.getHTML()))
+    if (!text && !allowEmpty && !uploadsRef.current.ids().length) return
+    // The comment can't post while a file is still going up: it would post without it.
+    if (uploadsRef.current.uploading) return
+    const html = trimEdgeParagraphs(editor.getHTML())
+    setPosting(true)
+    uploadsRef.current.setPosting(true)
+    setPostError(false)
+    try {
+      await onSubmit(html, uploadsRef.current.ids())
+    } catch {
+      // Keep the draft and its files so the member can try again.
+      setPostError(true)
+      return
+    } finally {
+      setPosting(false)
+      uploadsRef.current.setPosting(false)
+    }
+    uploadsRef.current.clear()
     editor.commands.clearContent()
     setHasContent(false)
-  }, [editor, onSubmit, allowEmpty, disabled])
+  }, [editor, onSubmit, allowEmpty, disabled, posting])
 
   function handleEditorMouseOver(e: React.MouseEvent) {
     const target = e.target as HTMLElement
@@ -269,6 +326,42 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
     }
   }
 
+  // After a row's × the focus would fall to the page: hand it to the next row's ×, else the previous
+  // one, else the paperclip. Those elements outlive the removal, so focus them first.
+  const removeRow = (key: string) => {
+    const buttons = Array.from(wrapperRef.current?.querySelectorAll<HTMLElement>('[data-remove-attachment]') ?? [])
+    const at = buttons.findIndex(b => b.dataset.removeAttachment === key)
+    const next = buttons[at + 1] ?? buttons[at - 1] ?? wrapperRef.current?.querySelector<HTMLElement>('[aria-label="Attach a file"]')
+    next?.focus()
+    uploads.remove(key)
+  }
+
+  const carriesFiles = (e: React.DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files')
+
+  // Files dropped anywhere on the composer but the editor itself (the editor's own
+  // drops arrive through FileHandler). Without this, the browser would open the
+  // file in place of the page.
+  const dropHandlers = attachmentsOn && !disabled ? {
+    onDragEnter: (e: React.DragEvent) => {
+      if (!carriesFiles(e)) return
+      dragDepth.current += 1
+      setDragging(true)
+    },
+    onDragOver: (e: React.DragEvent) => { if (carriesFiles(e)) e.preventDefault() },
+    onDragLeave: (e: React.DragEvent) => {
+      if (!carriesFiles(e)) return
+      dragDepth.current = Math.max(0, dragDepth.current - 1)
+      if (dragDepth.current === 0) setDragging(false)
+    },
+    onDrop: (e: React.DragEvent) => {
+      dragDepth.current = 0
+      setDragging(false)
+      if (e.defaultPrevented || !carriesFiles(e)) return
+      e.preventDefault()
+      uploads.addFiles(Array.from(e.dataTransfer.files))
+    },
+  } : {}
+
   function handleEditorMouseOut(e: React.MouseEvent) {
     const target = e.target as HTMLElement
     if (target.dataset.type === 'mention') setEditorTooltip(null)
@@ -288,7 +381,9 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
       }}
       onMouseOver={handleEditorMouseOver}
       onMouseOut={handleEditorMouseOut}
+      {...dropHandlers}
     >
+      {dragging && <DropOverlay />}
       <EditorContext.Provider value={{ editor }}>
         <Toolbar>
           <ToolbarGroup>
@@ -316,9 +411,44 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
             <UndoRedoButton action="undo" />
             <UndoRedoButton action="redo" />
           </ToolbarGroup>
+
+          {attachmentsOn && (
+            <>
+              <ToolbarSeparator />
+              <ToolbarGroup>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  role="button"
+                  tabIndex={-1}
+                  aria-label="Attach a file"
+                  tooltip="Attach a file"
+                  disabled={disabled}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <PaperclipIcon className="tiptap-button-icon" />
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  hidden
+                  aria-hidden="true"
+                  tabIndex={-1}
+                  onChange={(e) => {
+                    uploads.addFiles(Array.from(e.target.files ?? []))
+                    e.target.value = ''
+                  }}
+                />
+              </ToolbarGroup>
+            </>
+          )}
         </Toolbar>
 
         <EditorContent editor={editor} role="presentation" />
+        {attachmentsOn && <PendingAttachmentRows items={uploads.items} onRemove={removeRow} />}
+        {/* Polite announcements for what the rows show: uploading, then done. Refusals announce themselves. */}
+        {attachmentsOn && <div role="status" aria-live="polite" style={SR_ONLY}>{uploads.announcement}</div>}
       </EditorContext.Provider>
 
       {onSubmit && (
@@ -333,6 +463,16 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
           <span style={{ fontSize: fontSize.sm, color: color.textMuted, marginRight: 'auto' }}>
             {enableMentions && 'Type @ to mention · '}{isMac() ? '⌘↵' : 'Ctrl+Enter'} to {submitLabel.toLowerCase()}
           </span>
+          {uploads.uploading && (
+            <span id={heldNoteId} style={{ fontSize: fontSize.sm, color: color.textSecondary }}>
+              Uploading… {submitLabel} is available when it finishes.
+            </span>
+          )}
+          {postError && (
+            <span role="alert" style={{ fontSize: fontSize.sm, color: color.textDanger }}>
+              Couldn’t post. Your draft is kept; try again.
+            </span>
+          )}
           {onCancel && (
             <button
               type="button"
@@ -354,7 +494,8 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={(!hasContent && !allowEmpty) || disabled}
+            aria-describedby={uploads.uploading ? heldNoteId : undefined}
+            disabled={!canPost || disabled || uploads.uploading || posting}
             style={{
               fontSize: fontSize.sm,
               padding: '6px 18px',
@@ -362,8 +503,8 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
               color: color.textOnFill,
               border: 'none',
               borderRadius: radius.md,
-              cursor: ((hasContent || allowEmpty) && !disabled) ? 'pointer' : 'not-allowed',
-              opacity: ((hasContent || allowEmpty) && !disabled) ? 1 : 0.5,
+              cursor: (canPost && !disabled && !uploads.uploading) ? 'pointer' : 'not-allowed',
+              opacity: (canPost && !disabled && !uploads.uploading) ? 1 : 0.5,
               fontWeight: fontWeight.medium,
             }}
           >
@@ -431,6 +572,7 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
           border: 1px solid ${color.borderDefault};
           border-radius: 8px;
           background: ${color.white};
+          position: relative;
           overflow: hidden;
         }
         /* The shared "fixed"-variant Toolbar switches to position:absolute at

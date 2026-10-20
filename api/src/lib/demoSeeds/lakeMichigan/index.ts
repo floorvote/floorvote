@@ -13,6 +13,7 @@ import {
   LM_HEARING_EVENTS,
   LM_POSITIONS,
   LM_PRIORITIES,
+  LM_TEAM_FIELD_CHANGES,
 } from './bills'
 import { LM_COMMENTS, LM_MENTIONS, LM_NOTES, LM_REACTIONS, LM_VOTES } from './discussion'
 
@@ -69,6 +70,7 @@ export const LAKE_MICHIGAN_SEED: DemoSeed = {
   ],
   customFieldValues: LM_CUSTOM_FIELD_VALUES, notes: LM_NOTES,
   calendarEvents: LM_CALENDAR_EVENTS,
+  teamFieldChanges: LM_TEAM_FIELD_CHANGES,
   // Written for a basin-wide water team. Each view combines filters the way a team
   // would, and they lean on what this seed writes (working group, position, priority)
   // so they return bills whatever the AI tagged. None uses a subject, since a demo

@@ -14,6 +14,8 @@ export type ListSummaryInput = {
   isMultiState?: boolean
   /** Filters this instance does not offer, which the list of active filters leaves out. */
   hidden?: readonly string[]
+  /** Each committee's label by id (`committeeLabelsOf`), from the facets. A committee with none reads by its id. */
+  committeeLabels?: Readonly<Record<string, string>>
 }
 export type ListSummary = {
   /** The line: "<N filters | All bills | view name> · Sorted by <sort>". */
@@ -45,7 +47,7 @@ const unique = <T,>(xs: T[]): T[] => [...new Set(xs)]
  * carries but a member still counts as a filter. The all-of/any-of operator is
  * not a filter.
  */
-export function buildListSummary({ values, view, customFieldDefs = [], isMultiState = false, hidden }: ListSummaryInput): ListSummary {
+export function buildListSummary({ values, view, customFieldDefs = [], isMultiState = false, hidden, committeeLabels }: ListSummaryInput): ListSummary {
   const { filter } = values
   // The one list of active filters, the same the badge, Reset, and the chips read. Each entry is one line here, so
   // the count of lines is the badge's count plus the search term. The scope pills (a filter with its own pill) are
@@ -63,6 +65,9 @@ export function buildListSummary({ values, view, customFieldDefs = [], isMultiSt
     year: unique(filter.year.map(Number)),
     tag: unique([...filter.tag]),
     subject: unique(filter.subject.map(s => encodeSubjectFilter(s.state, s.name))),
+    committee: unique([...filter.committee]),
+    committeeScope: filter.committeeScope,
+    committeeLabels,
     field,
     minRelevance: filter.minRelevance ?? 0,
     positionOptions: [{ value: 'none', label: 'Not set' }],

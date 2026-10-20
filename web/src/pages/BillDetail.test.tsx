@@ -331,12 +331,29 @@ describe('BillDetail stuck-state repair affordance', () => {
     expect(screen.queryByRole('button', { name: /run analysis|enable full analysis/i })).not.toBeInTheDocument()
   })
 
-  it('still shows Enable full analysis (not Run analysis) for a lightweight stub to admins', async () => {
+  it('shows Run analysis to admins on an untracked stub, with the stub message', async () => {
     authState.role = 'admin'
     makeMockApiFetch({ matchType: null, textStatus: 'available', aiProcessedAt: null, aiSkipReason: null, tenantSummary: null, tags: [], relevanceScore: null })
     render(<MemoryRouter><BillDetail /></MemoryRouter>)
     await screen.findByText('Test Bill')
-    expect(await screen.findByRole('button', { name: /enable full analysis/i })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Run analysis' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /enable full analysis/i })).not.toBeInTheDocument()
+    expect(screen.getByText(/Sponsors, full action history, and bill text are not/)).toBeInTheDocument()
+  })
+
+  it('shows an untracked, fully ingested bill its data and the no-analysis message', async () => {
+    authState.role = 'admin'
+    makeMockApiFetch({
+      matchType: null, fullyIngested: true, textStatus: 'available', aiProcessedAt: null, aiSkipReason: null,
+      tenantSummary: null, tags: [], relevanceScore: null,
+      sponsor: 'Jane Smith', history: [{ date: '2026-05-02', action: 'Introduced in the House', chamber: 'lower' }],
+    })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await screen.findByText('Test Bill')
+    expect(await screen.findByText("This bill doesn't match your keywords, so it has no AI analysis.")).toBeInTheDocument()
+    expect(screen.queryByText(/are not\./)).not.toBeInTheDocument()
+    expect(screen.getByText('Jane Smith')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Run analysis' })).toBeInTheDocument()
   })
 })
 
@@ -1047,9 +1064,9 @@ describe('overflow menu', () => {
     try {
       render(<MemoryRouter><BillDetail /></MemoryRouter>)
       await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
-      await user.click(screen.getByRole('button', { name: 'Enable full analysis' }))
+      await user.click(screen.getByRole('button', { name: 'Run analysis' }))
       await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Analyzing…'))
-      expect(screen.getByRole('button', { name: 'Enable full analysis' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'Run analysis' })).toBeDisabled()
     } finally {
       fetchSpy.mockRestore()
     }

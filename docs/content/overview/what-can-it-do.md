@@ -75,13 +75,17 @@ Every bill in the states you are tracking is accessible on one page.
 
 Search covers bill numbers, titles, abstracts, and the AI summaries. Separate several terms with commas to look up a batch of bills at once—paste in a list of bill numbers and you get that whole batch in one result, with the bill-number matches at the top.
 
-Filters narrow the list by state, session year, status, tag, subject, priority, and your team's official position, plus any custom fields you've defined. Stage is a grouping inside Status, not a second filter. Once a state you track is read from the legislature's own data rather than LegiScan, the Status filter lists its options under stage headings, from Enacted down to Introduced, with statuses that belong to no stage under Other, so you can compare where bills are in the process across states whose status names differ. Choosing a heading selects every status in that stage, and choosing a status selects only that one. Each has a count beside it. A stage and a status chosen together match bills in either one: a bill with that status, or in that stage. Before this change, a saved view or link that set both matched only the bills in both, and it now matches the union. A link or saved view that sets a stage always shows the grouped Status filter, so you can remove the stage. Quick toggles show your own bills and the bills you haven't voted on yet.
+Filters narrow the list by state, session year, status, tag, subject, committee, priority, and your team's official position, plus any custom fields you've defined. Stage is a grouping inside Status, not a second filter. Once a state you track is read from the legislature's own data rather than LegiScan, the Status filter lists its options under stage headings, from Enacted down to Introduced, with statuses that belong to no stage under Other, so you can compare where bills are in the process across states whose status names differ. Choosing a heading selects every status in that stage, and choosing a status selects only that one. Each has a count beside it. A stage and a status chosen together match bills in either one: a bill with that status, or in that stage. Before this change, a saved view or link that set both matched only the bills in both, and it now matches the union. A link or saved view that sets a stage always shows the grouped Status filter, so you can remove the stage. Quick toggles show your own bills and the bills you haven't voted on yet.
 
 ### Subjects
 
 Many legislatures label each bill with subject terms. When a bill has them, its page shows a collapsible Subjects list, open by default for a bill with no AI analysis, and clicking a subject opens the Bills page filtered to it. The Bills page also has a Subject filter.
 
 The filter groups subjects by state, because each legislature has its own vocabulary: some use a few dozen broad terms and others thousands of fine-grained ones, so "Education" in one state isn't the same as "Education" in another. Subjects are the legislature's labels, separate from the tags your own AI instructions assign. An operator can hide them for a state or for the whole instance, as [Hiding subjects](/self-hosting/tenants#hiding-subjects) explains.
+
+### Committees
+
+The Committee filter lists each committee with its number of bills, grouped by state. Procedural committees, such as Rules and Assignments, route or schedule bills rather than weigh them, so they are listed last and tagged "Procedural." A switch chooses whether a bill counts for the committee it is in now ("Current committee") or for any committee it was referred to ("Any referral"). Some legislatures' data never names a bill's current committee, so "Any referral" is the default.
 
 ### Saved views
 

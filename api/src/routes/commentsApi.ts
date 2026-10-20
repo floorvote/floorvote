@@ -7,6 +7,7 @@ import { syncMentionsOnEdit } from '../lib/mentions'
 import { notifyAuthorOfReaction } from '../lib/reactions'
 import { sanitizeCommentHtml } from '../lib/sanitizeHtml'
 import { nowDb } from '../lib/dbTime'
+import { attachmentSummaryText, loadCommentAttachments, softDeleteCommentAttachments } from '../lib/attachments'
 import { isReactionEmoji } from '../../../shared/reactionEmojis'
 import { COMMENT_PREVIEW_MAX, stripHtml, truncateWithEllipsis } from '../../../shared/feedUtils'
 import type { AppEnv } from '../types'
@@ -35,19 +36,24 @@ commentsApiRouter.patch('/:id', async (c) => {
   const { id } = c.req.param()
   const currentUser = c.get('user')
   const body = await c.req.json<{ content?: string }>().catch(() => ({} as { content?: string }))
-  if (!body.content?.trim()) return c.json({ error: 'content is required' }, 400)
-  if (new TextEncoder().encode(body.content.trim()).length > 10_240) {
+  const text = typeof body.content === 'string' ? body.content.trim() : ''
+  if (new TextEncoder().encode(text).length > 10_240) {
     return c.json({ error: 'Comment too long (max 10 KB)' }, 400)
   }
   // Sanitize on write to the same allowlist the on-screen renderer uses — the
   // raw value is otherwise interpolated into mention emails unescaped (H5).
-  const content = sanitizeCommentHtml(body.content.trim())
+  const content = sanitizeCommentHtml(text)
 
   const comment = await db.select().from(comments).where(
     and(eq(comments.id, id), isNull(comments.deletedAt))
   ).get()
   if (!comment) return c.json({ error: 'not found' }, 404)
   if (comment.userId !== currentUser.id) return c.json({ error: 'forbidden' }, 403)
+  // Text can be cleared only from a comment that still has files to show.
+  const files = text ? [] : (await loadCommentAttachments(db, [id])).get(id) ?? []
+  if (!text && files.length === 0) {
+    return c.json({ error: 'content is required' }, 400)
+  }
 
   await db.update(comments).set({ content }).where(eq(comments.id, id))
 
@@ -72,7 +78,7 @@ commentsApiRouter.patch('/:id', async (c) => {
     delete parsed.mentionedUserIds
     const metadata = JSON.stringify({
       ...parsed,
-      preview: truncateWithEllipsis(stripHtml(content), COMMENT_PREVIEW_MAX),
+      preview: truncateWithEllipsis(stripHtml(content) || attachmentSummaryText(files), COMMENT_PREVIEW_MAX),
       ...(mentionedUserIds.length > 0 ? { mentionedUserIds } : {}),
     })
     await db.update(feedEvents).set({ metadata }).where(eq(feedEvents.id, event.id))
@@ -97,6 +103,8 @@ commentsApiRouter.delete('/:id', async (c) => {
   const now = nowDb()
   await db.update(comments).set({ deletedAt: now, deletedBy: currentUser.id }).where(eq(comments.id, id))
   await db.update(commentReactions).set({ deletedAt: now }).where(eq(commentReactions.commentId, id))
+  // Its files stop downloading now and are purged 30 days on (lib/attachments.ts).
+  await softDeleteCommentAttachments(db, id)
   await db.update(feedEvents)
     .set({ suppressed: true })
     .where(and(

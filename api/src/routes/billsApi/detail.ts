@@ -15,6 +15,7 @@ import { dbTsToEpoch } from '../../../../shared/time'
 import { billSlug, filedSlug } from '../../lib/sessionSlug'
 import { loadDemoBillCalendar } from '../../lib/demoCalendar'
 import { activeUser } from '../../lib/accountDeletion'
+import { loadCommentAttachments } from '../../lib/attachments'
 import { loadTaxonomyTagNameSet, filterTagsToTaxonomy } from '../../lib/taxonomy'
 import { parseSubjects, loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../../lib/billSubjects'
 import { displayName, userDisplayNameSql } from '../../lib/displayName'
@@ -286,6 +287,7 @@ export async function buildBillDetail(
         .where(and(inArray(commentReactions.commentId, commentIds), isNull(commentReactions.deletedAt), activeUser))
         .all()
     : []
+  const attachmentsByComment = await loadCommentAttachments(db, commentIds)
 
   const reactionsByComment = new Map<string, Map<string, { count: number; userReacted: boolean; reactors: { name: string; title: string | null; subtitle: string | null }[] }>>()
   for (const { reaction: r, user: reactor } of reactionRows) {
@@ -314,6 +316,7 @@ export async function buildBillDetail(
     reactions: Array.from(reactionsByComment.get(comment.id)?.entries() ?? []).map(
       ([emoji, data]) => ({ emoji, count: data.count, userReacted: data.userReacted, reactors: data.reactors }),
     ),
+    attachments: attachmentsByComment.get(comment.id) ?? [],
   }))
 
   const positionRow = teamValues.position
@@ -412,6 +415,8 @@ export async function buildBillDetail(
       // A PDF's item links by page, with its quote shown beside the link (#572).
       // The instance never matched the quote, so these are the model's own.
       ...(i.status === 'unverified' ? { quote: i.quote, page: typeof i.page === 'number' ? i.page : null } : {}),
+      // An anchored item's matched text is only an anchor, so the page shows the model's whole quote (#802).
+      ...(i.status === 'anchored' ? { quote: i.quote } : {}),
     })),
   }
 
@@ -463,6 +468,9 @@ export async function buildBillDetail(
     history: bill.history ? JSON.parse(bill.history) : [],
     relatedBillIds: resolvedRelated,
     matchType: bill.matchType,
+    // Whether central's full message has been applied, which is what separates a
+    // monitored bill with its data from a stub (migration 0117).
+    fullyIngested: bill.fullyIngestedAt != null,
     newMatchAt: bill.newMatchAt ?? null,
     // Triaging any member triages the group.
     triagedAt: teamValues.triaged?.triagedAt ?? null,

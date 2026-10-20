@@ -201,6 +201,16 @@ namespace_id = "3003"               # unique per env, and not LOGIN's
 #   limit = 30
 #   period = 60
 
+# Comment attachments (optional). Members can attach files to comments once
+# this bucket is bound. Uploads stream through the Worker into the binding, so
+# the bucket needs no CORS rule and no API token. Keep it private (no public
+# access, no r2.dev URL). Several instances may share one bucket: each stores
+# its files under its TENANT_ID. Never bind it on a DEMO_MODE tenant
+# (attachments stay off there regardless).
+# [[env.example.r2_buckets]]
+# binding = "ATTACHMENTS_BUCKET"
+# bucket_name = "floorvote-example-files"
+
 # Scheduled work. Both entries are required on a normal tenant: src/index.ts
 # dispatches on the cron string, so an unregistered schedule silently disables
 # the job it maps to rather than failing anywhere visible.

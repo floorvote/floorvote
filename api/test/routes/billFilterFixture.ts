@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import {
-  associationConfig, billCustomFieldValues, billSubjects, bills, customFieldDefinitions, memberVotes, notes, officialPositions,
+  associationConfig, billCommittees, billCustomFieldValues, billSubjects, bills, customFieldDefinitions, memberVotes, notes, officialPositions,
 } from '../../src/db/schema'
 
 // The bills the bill filter tests read, and the filters they apply. Each case is a filter as a query string, with
@@ -16,6 +16,8 @@ import {
 //  HB 5  UT  Introduced  introduced  S26  2026  -       rel 8  -             -        Labor         UT:Elections  voted, noted
 //  HB 6  UT  Failed      failed      S26  2026  high    rel 4  -             Oppose   -             -
 // The viewer (an admin) has voted on HB 1 and HB 5 and noted HB 2 and HB 5. Every bill is an untriaged keyword match.
+// Committees (#471): HB 1 is pending in NJ Judiciary (101) and was referred to NJ Rules (102), HB 2 was referred to
+// NJ Judiciary, HB 3 is pending in TX State Affairs (201), and HB 5 is pending in UT Rules (301).
 
 export type Case = { name: string; qs: string; expected: string[] }
 export const ALL = ['HB 1', 'HB 2', 'HB 3', 'HB 4', 'HB 5', 'HB 6']
@@ -46,6 +48,11 @@ export const CASES: Case[] = [
   { name: 'tag', qs: 'tag=Energy', expected: ['HB 1', 'HB 4'] },
   { name: 'any tag', qs: 'tag=__any__', expected: ['HB 1', 'HB 2', 'HB 4'] },
   { name: 'subjects', qs: 'subject=NJ:Elections&subject=UT:Elections', expected: ['HB 1', 'HB 5'] },
+  { name: 'a committee, any referral', qs: 'committee=101', expected: ['HB 1', 'HB 2'] },
+  { name: 'a committee, current committee', qs: 'committee=101&committeeScope=current', expected: ['HB 1'] },
+  { name: 'two committees', qs: 'committee=102&committee=201', expected: ['HB 1', 'HB 3'] },
+  { name: 'two committees, current committee', qs: 'committee=102&committee=201&committeeScope=current', expected: ['HB 3'] },
+  { name: 'the committee scope alone', qs: 'committeeScope=current', expected: ALL },
   { name: 'min relevance', qs: 'minRelevance=6', expected: ['HB 1', 'HB 3', 'HB 5'] },
   { name: 'min relevance of zero', qs: 'minRelevance=0', expected: ALL },
   { name: 'search', qs: 'search=ballot', expected: ['HB 3', 'HB 5'] },
@@ -113,6 +120,13 @@ export async function seedFilterFixture(): Promise<{ token: string; ada: string;
   await db.insert(billSubjects).values([
     { billId: b1, subjectName: 'Elections', state: 'NJ' }, { billId: b2, subjectName: 'Energy', state: 'NJ' },
     { billId: b3, subjectName: 'Elections', state: 'TX' }, { billId: b5, subjectName: 'Elections', state: 'UT' },
+  ])
+  await db.insert(billCommittees).values([
+    { billId: b1, committeeId: '101', state: 'NJ', name: 'Judiciary', chamber: 'S', isCurrent: true },
+    { billId: b1, committeeId: '102', state: 'NJ', name: 'Rules', chamber: 'S', isCurrent: false },
+    { billId: b2, committeeId: '101', state: 'NJ', name: 'Judiciary', chamber: 'S', isCurrent: false },
+    { billId: b3, committeeId: '201', state: 'TX', name: 'State Affairs', chamber: 'H', isCurrent: true },
+    { billId: b5, committeeId: '301', state: 'UT', name: 'Rules', chamber: 'H', isCurrent: true },
   ])
   await db.insert(memberVotes).values([
     { id: 'v1', userId: ada, billId: b1, position: 'support' }, { id: 'v5', userId: ada, billId: b5, position: 'oppose' },

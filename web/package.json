@@ -15,6 +15,7 @@
     "@radix-ui/react-popover": "^1.2.0",
     "@tanstack/react-virtual": "^3.14.14",
     "@tiptap/core": "^3.31.4",
+    "@tiptap/extension-file-handler": "^3.31.4",
     "@tiptap/extension-highlight": "^3.31.4",
     "@tiptap/extension-horizontal-rule": "^3.31.4",
     "@tiptap/extension-image": "^3.31.4",

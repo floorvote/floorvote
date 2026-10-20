@@ -54,6 +54,8 @@ export type ReactionNotification = NotificationBase & {
   /** The newest reactors (up to two), each once. */
   reactors: Array<{ id: string; name: string | null }>
   reactorCount: number
+  /** The comment's distinct emoji, newest first. Absent from an older server. */
+  emoji?: string[]
 }
 
 export type NotificationItem = MentionNotification | ReplyNotification | ReactionNotification
