@@ -1,4 +1,4 @@
-import type { DemoSeedCalendarEvent, DemoSeedFeedEvent } from '../types'
+import type { DemoSeedCalendarEvent, DemoSeedFeedEvent, DemoSeedFieldChange } from '../types'
 
 // The 20 real bills the Lake Michigan Alliance tracks across Michigan, Wisconsin,
 // Illinois, Indiana, and Congress. Every id, committee name, sponsor, and action
@@ -93,6 +93,52 @@ export const LM_POSITIONS: Array<{ id: string; externalId: string; position: str
   { id: 'lm-pos-13', externalId: 'legiscan:1910159', position: 'Support', setBy: 'lm-user-ed',  daysAgo: 500 }, // US HB284
   { id: 'lm-pos-14', externalId: 'legiscan:2150744', position: 'Amend',   setBy: 'lm-user-ed',  daysAgo: 50 },  // US HB8876
 ]
+
+// Team field changes the activity lines show: who set what on a bill, oldest first within
+// a field. Each field's newest change ends on the value LM_PRIORITIES, LM_POSITIONS, or
+// LM_CUSTOM_FIELD_VALUES sets (a test checks), at about the time they give. Most land on the
+// bills with a real identical companion (WI AB131/SB128, SB56/AB59, AB129/SB104, SB628/AB635,
+// IN HB1124, US HB284/SB528, HB583/SB508, HB6668/SB3457), so a group's page shows a companion's
+// badge on a line once the companions are delivered. A bill the tenant lacks no-ops.
+type FieldChangeRow = Omit<DemoSeedFieldChange, 'id'>
+const prio = (externalId: string, userId: string, old: string | null, to: string, daysAgo: number): FieldChangeRow =>
+  ({ externalId, userId, field: 'priority', old, new: to, daysAgo })
+const pos = (externalId: string, userId: string, to: string, daysAgo: number): FieldChangeRow =>
+  ({ externalId, userId, field: 'position', old: null, new: to, daysAgo })
+const cf = (externalId: string, userId: string, fieldId: string, old: string | null, to: string, daysAgo: number): FieldChangeRow =>
+  ({ externalId, userId, field: 'customField', fieldId, old, new: to, daysAgo })
+
+const LM_FIELD_CHANGE_ROWS: FieldChangeRow[] = [
+  // WI AB131
+  prio('legiscan:2006749', 'lm-user-dep', null, 'medium', 240),
+  prio('legiscan:2006749', 'lm-user-ed', 'medium', 'high', 205),
+  pos('legiscan:2006749', 'lm-user-ed', 'Support', 200),
+  cf('legiscan:2006749', 'lm-user-ed', 'lm-cf-1', 'Unknown', 'Significant (>$100K)', 200),
+  cf('legiscan:2006749', 'lm-user-ed', 'lm-cf-2', null, 'Contaminants', 200),
+  // WI SB56
+  prio('legiscan:1979645', 'lm-user-dep', 'medium', 'high', 430),
+  pos('legiscan:1979645', 'lm-user-dep', 'Support', 420),
+  cf('legiscan:1979645', 'lm-user-dep', 'lm-cf-1', null, 'Significant (>$100K)', 420),
+  // WI AB129
+  prio('legiscan:2006944', 'lm-user-ed', null, 'low', 215),
+  prio('legiscan:2006944', 'lm-user-dep', 'low', 'medium', 210),
+  cf('legiscan:2006944', 'lm-user-ed', 'lm-cf-2', null, 'Infrastructure', 210),
+  // WI SB628
+  prio('legiscan:2052600', 'lm-user-dep', 'medium', 'low', 185),
+  // IN HB1124
+  prio('legiscan:2061476', 'lm-user-la1', null, 'medium', 230),
+  prio('legiscan:2061476', 'demo-user', 'medium', 'high', 150),
+  pos('legiscan:2061476', 'demo-user', 'Support', 200),
+  cf('legiscan:2061476', 'demo-user', 'lm-cf-1', null, 'Minimal (<$10K)', 200),
+  // US HB284, HB583, HB6668
+  prio('legiscan:1910159', 'lm-user-fed', 'medium', 'high', 520),
+  pos('legiscan:1910159', 'lm-user-ed', 'Support', 500),
+  prio('legiscan:1933798', 'lm-user-fed', 'low', 'medium', 140),
+  prio('legiscan:2058690', 'lm-user-wq', null, 'medium', 100),
+]
+
+export const LM_TEAM_FIELD_CHANGES: DemoSeedFieldChange[] =
+  LM_FIELD_CHANGE_ROWS.map((c, i) => ({ id: `lm-tfc-${i + 1}`, ...c }))
 
 // Spread across bills so custom-field filtering returns results in every column.
 export const LM_CUSTOM_FIELD_VALUES: Array<{ externalId: string; fieldId: string; value: string; setBy: string; daysAgo: number }> = [
