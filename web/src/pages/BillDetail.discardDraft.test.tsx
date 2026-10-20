@@ -4,13 +4,15 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { BillDetail } from './BillDetail'
 import * as api from '../lib/api'
-import { justCreatedDraftState, JUST_CREATED_DRAFT_KEY } from '../lib/justCreatedDraft'
+import { markJustCreatedDraft, peekJustCreatedDraft } from '../lib/justCreatedDraft'
 
 // Discard draft (#890): an admin who lands on a draft's page straight from the
 // bills page's "Add draft bill" button gets a one-click undo at the top of the
-// page. The just-created marker rides in router state (lib/justCreatedDraft.ts),
-// so a reload, a link, or an ordinary visit never shows it. Harness mirrors
-// BillDetail.draftState.test.tsx, with the router, auth, and demo state steerable.
+// page. The just-created marker is a sessionStorage entry the page consumes on
+// arrival (lib/justCreatedDraft.ts), so a reload, a link, or an ordinary visit
+// never shows it. Harness mirrors BillDetail.draftState.test.tsx, with the
+// router hooks mocked and auth and demo state steerable; the real router path
+// (loader redirect, reload) is in BillDetail.discardDraft.router.test.tsx.
 const navigateMock = vi.hoisted(() => vi.fn())
 const routerMock = vi.hoisted(() => ({
   params: { billId: '42' } as Record<string, string | undefined>,
@@ -121,7 +123,6 @@ const CONFIG = {
   orgNoun: 'association',
 }
 
-const JUST_CREATED = justCreatedDraftState()
 const FILED = { isDraft: false, externalId: 'ext-1', status: '1', session: '2026 Regular Session' }
 
 type Delete = () => Promise<unknown>
@@ -155,8 +156,8 @@ const deleteCalls = () => vi.mocked(api.apiFetch).mock.calls.filter(([, init]) =
 // it should, so each one first renders the page it would otherwise be a no-op
 // against: an admin's draft reached with the just-created state.
 async function expectControlShowsDiscard() {
-  const saved = { state: routerMock.location.state, role: authMock.role, locked: demoState.demoLocked }
-  routerMock.location.state = JUST_CREATED
+  const saved = { role: authMock.role, locked: demoState.demoLocked }
+  markJustCreatedDraft('42')
   authMock.role = 'admin'
   demoState.demoLocked = false
   mockApi()
@@ -164,7 +165,7 @@ async function expectControlShowsDiscard() {
   expect(await screen.findByRole('button', { name: 'Discard draft' })).toBeInTheDocument()
   cleanup()
   vi.restoreAllMocks()
-  routerMock.location.state = saved.state
+  window.sessionStorage.clear()
   authMock.role = saved.role
   demoState.demoLocked = saved.locked
 }
@@ -177,44 +178,44 @@ async function pageHasRendered(billNumber = 'D1') {
 
 beforeEach(() => {
   vi.restoreAllMocks()
+  window.sessionStorage.clear()
   navigateMock.mockClear()
   routerMock.params = { billId: '42' }
   routerMock.location = { state: null, pathname: '/bills/42', hash: '', search: '' }
   authMock.role = 'admin'
   demoState.demoLocked = false
 })
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => { vi.restoreAllMocks(); window.sessionStorage.clear() })
 
 describe('BillDetail Discard draft', () => {
   describe('when it shows', () => {
     it('shows for an admin on a draft reached with the just-created router state', async () => {
-      routerMock.location.state = JUST_CREATED
+      markJustCreatedDraft('42')
       mockApi()
       renderPage()
       expect(await screen.findByRole('button', { name: 'Discard draft' })).toBeInTheDocument()
     })
 
-    it('does not show on the same draft reached without that state, as after a reload or a link', async () => {
+    it('does not show on the same draft when nothing marked it, as after a reload or a link', async () => {
       await expectControlShowsDiscard()
-      routerMock.location.state = null
       mockApi()
       renderPage()
       await pageHasRendered()
       expect(discard()).toBeNull()
     })
 
-    it('does not show when the router state is some other state, such as the bill-list navigation state', async () => {
+    it('does not show on router state alone: the bill-list navigation state, or the old router-state marker', async () => {
       await expectControlShowsDiscard()
-      routerMock.location.state = { billPaths: ['/bills/42', '/bills/43'], currentIndex: 0 }
+      routerMock.location.state = { billPaths: ['/bills/42', '/bills/43'], currentIndex: 0, justCreatedDraft: true }
       mockApi()
       renderPage()
       await pageHasRendered()
       expect(discard()).toBeNull()
     })
 
-    it('does not show when the marker key is present but not true', async () => {
+    it("does not show when another draft was the one just created", async () => {
       await expectControlShowsDiscard()
-      routerMock.location.state = { [JUST_CREATED_DRAFT_KEY]: false }
+      markJustCreatedDraft('43')
       mockApi()
       renderPage()
       await pageHasRendered()
@@ -223,7 +224,7 @@ describe('BillDetail Discard draft', () => {
 
     it('does not show on a filed bill, even with the just-created state', async () => {
       await expectControlShowsDiscard()
-      routerMock.location.state = JUST_CREATED
+      markJustCreatedDraft('42')
       mockApi(FILED)
       renderPage()
       await pageHasRendered()
@@ -233,7 +234,40 @@ describe('BillDetail Discard draft', () => {
     it('does not show for a member, who cannot delete a draft', async () => {
       await expectControlShowsDiscard()
       authMock.role = 'member'
-      routerMock.location.state = JUST_CREATED
+      markJustCreatedDraft('42')
+      mockApi()
+      renderPage()
+      await pageHasRendered()
+      expect(discard()).toBeNull()
+    })
+
+    it('consumes the marker on arrival, so the next visit finds none', async () => {
+      markJustCreatedDraft('42')
+      mockApi()
+      renderPage()
+      await screen.findByRole('button', { name: 'Discard draft' })
+      await waitFor(() => expect(peekJustCreatedDraft('42')).toBe(false))
+      expect(screen.getByRole('button', { name: 'Discard draft' })).toBeInTheDocument()
+    })
+
+    it('does not show on a second mount of the page, as after a reload', async () => {
+      markJustCreatedDraft('42')
+      mockApi()
+      renderPage()
+      await screen.findByRole('button', { name: 'Discard draft' })
+      cleanup()
+
+      renderPage()
+      await pageHasRendered()
+      expect(discard()).toBeNull()
+    })
+
+    it('does not show, and does not throw, when sessionStorage is blocked', async () => {
+      await expectControlShowsDiscard()
+      const boom = () => { throw new DOMException('blocked', 'SecurityError') }
+      vi.spyOn(Storage.prototype, 'getItem').mockImplementation(boom)
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(boom)
+      vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(boom)
       mockApi()
       renderPage()
       await pageHasRendered()
@@ -241,7 +275,7 @@ describe('BillDetail Discard draft', () => {
     })
 
     it('shows above the bill card, at the top of the page', async () => {
-      routerMock.location.state = JUST_CREATED
+      markJustCreatedDraft('42')
       mockApi()
       renderPage()
       const button = await screen.findByRole('button', { name: 'Discard draft' })
@@ -254,7 +288,7 @@ describe('BillDetail Discard draft', () => {
     it('sends DELETE /bills/<id> with no confirm prompt, then returns to the bills page', async () => {
       const user = userEvent.setup()
       const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
-      routerMock.location.state = JUST_CREATED
+      markJustCreatedDraft('42')
       mockApi()
       renderPage()
 
@@ -268,7 +302,7 @@ describe('BillDetail Discard draft', () => {
     it('does not navigate until the delete has finished', async () => {
       const user = userEvent.setup()
       let finish!: () => void
-      routerMock.location.state = JUST_CREATED
+      markJustCreatedDraft('42')
       mockApi({}, () => new Promise(resolve => { finish = () => resolve({ ok: true }) }))
       renderPage()
 
@@ -282,7 +316,7 @@ describe('BillDetail Discard draft', () => {
 
     it('sends one DELETE when clicked twice in a row', async () => {
       let finish!: () => void
-      routerMock.location.state = JUST_CREATED
+      markJustCreatedDraft('42')
       mockApi({}, () => new Promise(resolve => { finish = () => resolve({ ok: true }) }))
       renderPage()
 
@@ -298,7 +332,7 @@ describe('BillDetail Discard draft', () => {
 
     it("shows the server's message on a failed delete and stays on the draft", async () => {
       const user = userEvent.setup()
-      routerMock.location.state = JUST_CREATED
+      markJustCreatedDraft('42')
       mockApi({}, async () => { throw new api.ApiError(500, 'The draft could not be removed.') })
       renderPage()
 
@@ -311,7 +345,7 @@ describe('BillDetail Discard draft', () => {
 
     it('says "Failed to discard draft." when the failure carries no message', async () => {
       const user = userEvent.setup()
-      routerMock.location.state = JUST_CREATED
+      markJustCreatedDraft('42')
       mockApi({}, async () => { throw new TypeError('network down') })
       renderPage()
 
@@ -324,7 +358,7 @@ describe('BillDetail Discard draft', () => {
     it('lets the admin try again after a failed delete, and clears the error when they do', async () => {
       const user = userEvent.setup()
       let fail = true
-      routerMock.location.state = JUST_CREATED
+      markJustCreatedDraft('42')
       mockApi({}, async () => {
         if (fail) throw new api.ApiError(500, 'The draft could not be removed.')
         return { ok: true }
@@ -347,7 +381,7 @@ describe('BillDetail Discard draft', () => {
   describe('in a locked demo', () => {
     it('is disabled and says "Locked in demo mode" in its title', async () => {
       demoState.demoLocked = true
-      routerMock.location.state = JUST_CREATED
+      markJustCreatedDraft('42')
       mockApi()
       renderPage()
 
@@ -358,7 +392,7 @@ describe('BillDetail Discard draft', () => {
 
     it('sends nothing when clicked', async () => {
       demoState.demoLocked = true
-      routerMock.location.state = JUST_CREATED
+      markJustCreatedDraft('42')
       mockApi()
       renderPage()
 
@@ -369,7 +403,7 @@ describe('BillDetail Discard draft', () => {
     })
 
     it('is enabled, with no title, when the demo is not locked', async () => {
-      routerMock.location.state = JUST_CREATED
+      markJustCreatedDraft('42')
       mockApi()
       renderPage()
       const button = await screen.findByRole('button', { name: 'Discard draft' })
@@ -382,7 +416,7 @@ describe('BillDetail Discard draft', () => {
     it('still asks for confirmation before deleting, on a just-created draft', async () => {
       const user = userEvent.setup()
       const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
-      routerMock.location.state = JUST_CREATED
+      markJustCreatedDraft('42')
       mockApi()
       renderPage()
 
