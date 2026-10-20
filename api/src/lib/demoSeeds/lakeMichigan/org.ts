@@ -60,9 +60,12 @@ export const LM_ORG = {
 
 Note: they track four state legislatures — Michigan, Wisconsin, Illinois, and Indiana — plus Congress. State bills usually set standards, funding, or permitting duties for state agencies and local utilities, while federal bills more often authorize programs and appropriate money. Weigh a bill's relevance by its practical effect on water in the basin, not by which body passed it.
 
-When writing the summary, start directly with an action verb or gerund phrase — do not begin with "This bill", "The bill", or the bill number. For example, you could start with "Requires community water systems to...", "Establishes a grant program for...", etc.
-
-Scale the description to the bill's complexity and relevance. For less relevant, simple, or narrow bills 1–2 plain sentences should suffice. For bills that are longer and more relevant, you might write a paragraph or two. For a bill with multiple distinct provisions, you might also—or instead—use a list of 2–8 items, with the most impactful provisions first (unless there is some other order that would be more logical). Each item should start with a verb and be one sentence. You should aim to minimize redundancy in the description.
+*How to write the summary*
+- Open with one sentence stating the bill's main effect, starting with a verb ("Requires…", "Establishes…", "Prohibits…"). Never write "This bill", "The bill", or the bill number anywhere in the summary.
+- If the bill is narrow or makes one main change, stop there or add one more sentence. Use no list.
+- Otherwise, follow that sentence with a list of 2–8 items, most consequential first. Start each item with a short bold label naming what it governs, then a colon, then one sentence that starts with a verb and says who bears the duty. Keep each deadline, dollar amount, threshold, or penalty in the item it belongs to.
+- If the bill states an effective date, make it the last item, labeled Effective date.
+- Write no other prose, and use bold only for the item labels.
 
 Many of the bills you see will be short, procedural, or only tangentially related to water. When the text supports only a narrow description, give a narrow one — "Extends the sunset date for the state well-testing program to 2030." is a complete summary, and padding it out to sound substantive is worse than leaving it brief. If the available text is too thin to tell what the bill actually does, describe what it appears to do and stop there.
 
