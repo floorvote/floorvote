@@ -888,8 +888,9 @@ async function applyCentralBill(
   // `new_match_at`. That column is a *worklist* flag and things legitimately clear it
   // — the demo reset nulls it on every bill so a six-hourly reset doesn't present
   // months-old content as newly matched. When a cleared row is then reprocessed with a
-  // fresh AI result (setting a priority triggers exactly that, via backfillCalendar →
-  // central reprocess), isFirstKeywordMatch goes true a second time and a duplicate
+  // fresh AI result (an operator's re-run, or central's own redelivery; a visitor's
+  // priority change doesn't, since backfillCalendar skips on a demo), isFirstKeywordMatch
+  // goes true a second time and a duplicate
   // "New bill matching your keywords" event surfaces, timestamped now, on a bill that
   // by then has a priority — so it lands in the default feed and lights the nav dot.
   if (isFirstKeywordMatch) {
