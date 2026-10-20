@@ -42,7 +42,14 @@ export function AddDraftButton() {
   // A second click can land before the first one's re-render disables anything,
   // so the guard is a ref, not the state.
   const inFlight = useRef(false)
-  const ref = useDismissOnOutsideClick(picker !== null, () => setPicker(null))
+  // Dismissing the picker (Escape, a click outside, the button again) also drops
+  // an error left beside it: the attempt it described is over.
+  function closePicker() {
+    setPicker(null)
+    setError(null)
+  }
+  const ref = useDismissOnOutsideClick(picker !== null, closePicker)
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const fieldRef = useRef<HTMLInputElement>(null)
   const firstItemRef = useRef<HTMLButtonElement>(null)
 
@@ -87,7 +94,7 @@ export function AddDraftButton() {
 
   function handleClick() {
     if (demoLocked) return
-    if (picker) { setPicker(null); return }
+    if (picker) { closePicker(); return }
     void run(async () => {
       const { tenantState } = await apiFetch<{ tenantState?: string | null }>('/bills/draft-defaults')
       if (tenantState) {
@@ -110,7 +117,9 @@ export function AddDraftButton() {
   function onMenuKeyDown(e: KeyboardEvent<HTMLDivElement>) {
     if (e.key === 'Escape') {
       e.preventDefault()
-      setPicker(null)
+      closePicker()
+      // The focused item or field unmounts with the picker; keep focus on the trigger.
+      triggerRef.current?.focus()
       return
     }
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
@@ -122,29 +131,39 @@ export function AddDraftButton() {
     items[next].focus()
   }
 
+  // A click may open a menu of states (a multi-state tenant), so the button always
+  // says so and whether it is open, as the repo's other menu triggers do. In a
+  // locked demo it is disabled and says why in its title, as the repo's other
+  // locked controls do, rather than relying on a hover bubble over a disabled button.
+  const button = (
+    <button
+      ref={triggerRef}
+      type="button"
+      onClick={handleClick}
+      disabled={demoLocked}
+      title={demoLocked ? LOCKED_HOVER : undefined}
+      aria-busy={busy || undefined}
+      aria-haspopup="menu"
+      aria-expanded={picker !== null}
+      style={{
+        // A quiet "Add ..." text button: no fill, no border, secondary text.
+        fontFamily: 'inherit', fontSize: fontSize.sm, fontWeight: fontWeight.medium,
+        padding: '4px 6px', border: 'none', background: 'none', color: color.textSecondary,
+        cursor: demoLocked ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap',
+        opacity: demoLocked ? 0.6 : 1,
+      }}
+    >
+      Add draft bill
+    </button>
+  )
+
   return (
-    <div ref={ref} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-      <HoverTooltip text={demoLocked ? LOCKED_HOVER : EXPLAINER} maxWidth={300} placement="bottom">
-        <button
-          type="button"
-          onClick={handleClick}
-          disabled={demoLocked}
-          aria-busy={busy || undefined}
-          aria-haspopup={picker ? 'menu' : undefined}
-          aria-expanded={picker ? true : undefined}
-          style={{
-            // A quiet "Add ..." text button: no fill, no border, secondary text.
-            fontFamily: 'inherit', fontSize: fontSize.sm, fontWeight: fontWeight.medium,
-            padding: '4px 6px', border: 'none', background: 'none', color: color.textSecondary,
-            cursor: demoLocked ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap',
-            opacity: demoLocked ? 0.6 : 1,
-          }}
-        >
-          Add draft bill
-        </button>
-      </HoverTooltip>
+    <div ref={ref} style={{ position: 'relative', display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center', gap: '0 10px', minWidth: 0, maxWidth: '100%' }}>
+      {demoLocked ? button : (
+        <HoverTooltip text={EXPLAINER} maxWidth={300} placement="bottom">{button}</HoverTooltip>
+      )}
       {error && (
-        <span role="alert" style={{ fontSize: fontSize.sm, color: color.textErrorRed }}>{error}</span>
+        <span role="alert" style={{ minWidth: 0, overflowWrap: 'anywhere', fontSize: fontSize.sm, color: color.textErrorRed }}>{error}</span>
       )}
       {picker && (
         <div

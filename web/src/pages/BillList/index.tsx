@@ -696,7 +696,7 @@ export function BillList() {
       {/* Full-width sticky block: filter controls + column headers */}
       <div className="bill-list-sticky-header" style={{ position: 'sticky', top: 0, zIndex: 10, background: color.surfaceMuted }}>
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '16px 24px 0' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px 16px', marginBottom: 12 }}>
         <h1 style={{ fontSize: fontSize.xxl, fontWeight: fontWeight.bold, color: color.textPrimary, margin: 0 }}>Bills</h1>
         <ViewSwitcher
           views={savedViews}

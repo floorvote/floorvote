@@ -318,6 +318,15 @@ describe('BillList Add draft bill button', () => {
     expect(await screen.findByRole('button', { name: 'Add draft bill' })).toBeInTheDocument()
   })
 
+  it('sits in a header row that wraps, so a long error cannot push past a phone-width screen', async () => {
+    render(<BillList />, { wrapper: Wrapper })
+    const button = await screen.findByRole('button', { name: 'Add draft bill' })
+    const heading = screen.getByRole('heading', { level: 1, name: 'Bills' })
+    const row = heading.parentElement as HTMLElement
+    expect(row).toContainElement(button)
+    expect(row.style.flexWrap).toBe('wrap')
+  })
+
   it('is not shown to a member who is not an admin', async () => {
     authState.role = 'member'
     render(<BillList />, { wrapper: Wrapper })

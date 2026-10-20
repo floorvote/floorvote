@@ -275,12 +275,14 @@ describe('AddDraftButton', () => {
       expect(screen.getByTestId('path')).toHaveTextContent('/bills')
     })
 
-    it('says "Locked in demo mode" on hover', () => {
+    it("says \"Locked in demo mode\" in the title, as the repo's other locked controls do", () => {
       demoState.demoLocked = true
       mockApi()
       renderButton()
-      fireEvent.pointerEnter(screen.getByRole('button', { name: 'Add draft bill' }), { pointerType: 'mouse' })
-      expect(screen.getByText('Locked in demo mode')).toBeInTheDocument()
+      const button = screen.getByRole('button', { name: 'Add draft bill' })
+      expect(button).toHaveAttribute('title', 'Locked in demo mode')
+      // No hover bubble is layered on a natively disabled button.
+      fireEvent.pointerEnter(button, { pointerType: 'mouse' })
       expect(screen.queryByText(/before it's filed/i)).toBeNull()
     })
 
@@ -365,6 +367,84 @@ describe('AddDraftButton', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
       await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent('/bills/new-draft-2'))
       expect(server.posts()).toHaveLength(2)
+    })
+  })
+
+  describe('popup semantics and dismissal', () => {
+    it('always says it opens a menu, and whether the menu is open', async () => {
+      mockApi({ defaults: { tenantState: null }, facets: { state: { UT: 3, CO: 1 } } })
+      renderButton()
+      const button = screen.getByRole('button', { name: 'Add draft bill' })
+      expect(button).toHaveAttribute('aria-haspopup', 'menu')
+      expect(button).toHaveAttribute('aria-expanded', 'false')
+      fireEvent.click(button)
+      await screen.findByRole('menu')
+      expect(button).toHaveAttribute('aria-expanded', 'true')
+      fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
+      expect(button).toHaveAttribute('aria-expanded', 'false')
+    })
+
+    it('returns focus to the button on Escape from the menu', async () => {
+      mockApi({ defaults: { tenantState: null }, facets: { state: { UT: 3, CO: 1 } } })
+      renderButton()
+      const button = screen.getByRole('button', { name: 'Add draft bill' })
+      fireEvent.click(button)
+      await screen.findByRole('menuitem', { name: 'CO' })
+      fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
+      expect(button).toHaveFocus()
+    })
+
+    it('returns focus to the button on Escape from the text field', async () => {
+      mockApi({ defaults: { tenantState: null }, facets: { state: {} } })
+      renderButton()
+      const button = screen.getByRole('button', { name: 'Add draft bill' })
+      fireEvent.click(button)
+      const field = await screen.findByRole('textbox', { name: 'State' })
+      fireEvent.keyDown(field, { key: 'Escape' })
+      expect(button).toHaveFocus()
+    })
+
+    // A failed create leaves the picker open with the error beside the button;
+    // dismissing the picker then clears the stale error.
+    async function openPickerWithFailedCreate() {
+      mockApi({
+        defaults: { tenantState: null },
+        facets: { state: {} },
+        create: () => { throw new api.ApiError(500, 'Something broke.') },
+      })
+      renderButton()
+      fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
+      const user = userEvent.setup()
+      await user.type(await screen.findByRole('textbox', { name: 'State' }), 'ut{Enter}')
+      await screen.findByRole('alert')
+    }
+
+    it('clears the error when the picker is dismissed with Escape', async () => {
+      await openPickerWithFailedCreate()
+      fireEvent.keyDown(screen.getByRole('textbox', { name: 'State' }), { key: 'Escape' })
+      expect(screen.queryByRole('alert')).toBeNull()
+    })
+
+    it('clears the error when the picker is dismissed by a click outside', async () => {
+      await openPickerWithFailedCreate()
+      fireEvent.mouseDown(document.body)
+      expect(screen.queryByRole('alert')).toBeNull()
+    })
+
+    it('clears the error when the button closes the picker', async () => {
+      await openPickerWithFailedCreate()
+      fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(screen.queryByRole('textbox', { name: 'State' })).toBeNull()
+    })
+
+    it('lets a long error message wrap instead of overflowing the header', async () => {
+      mockApi({ create: () => { throw new api.ApiError(500, 'x'.repeat(300)) } })
+      renderButton()
+      fireEvent.click(screen.getByRole('button', { name: 'Add draft bill' }))
+      const alert = await screen.findByRole('alert')
+      expect(alert.style.minWidth).toBe('0px')
+      expect(alert.style.overflowWrap).toBe('anywhere')
     })
   })
 
