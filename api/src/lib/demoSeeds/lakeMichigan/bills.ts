@@ -186,7 +186,7 @@ export const LM_CUSTOM_FIELD_VALUES: Array<{ externalId: string; fieldId: string
     value: '<p>Lead service line replacement funding enacted as Public Act 104-0572. Our concern now shifts to implementation — whether disadvantaged communities get prioritized access to the replacement funds, and how quickly utilities can staff up to do the work.</p>' },
 
   // Compliance Deadline (lm-cf-4) — 3 enacted bills, real effective dates from the manifest
-  { externalId: 'legiscan:2006749', fieldId: 'lm-cf-4', value: '2026-04-07', setBy: 'lm-user-ed',  daysAgo: 130 }, // WI AB131 — published 4-7-2026
+  { externalId: 'legiscan:2006749', fieldId: 'lm-cf-4', value: '2026-04-07', setBy: 'lm-user-ed',  daysAgo: 127 }, // WI AB131 — published 4-7-2026
   { externalId: 'legiscan:1952725', fieldId: 'lm-cf-4', value: '2025-08-15', setBy: 'lm-user-dep', daysAgo: 361 }, // IL HB2516 — effective 8-15-2025
   { externalId: 'legiscan:2111275', fieldId: 'lm-cf-4', value: '2026-07-10', setBy: 'lm-user-dep', daysAgo: 32 },  // IL SB4025 — effective 7-10-2026
 

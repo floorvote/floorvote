@@ -327,7 +327,7 @@ const sb628: DemoSeedComment[] = [
   { id: 'lm-c-38', externalId: 'legiscan:2052600', userId: 'lm-user-la2',
     content: '<p>This one died too. Committee had it 4 to 1 in February and it never got scheduled.</p>', daysAgo: 141 },
   { id: 'lm-c-39', externalId: 'legiscan:2052600', userId: 'lm-user-wq',
-    content: '<p>Low priority for us anyway, but the notification requirement was a good idea. Someone will bring it back.</p>', daysAgo: 141 },
+    content: '<p>Not a top priority for us, but the notification requirement was a good idea. Someone will bring it back.</p>', daysAgo: 141 },
   { id: 'lm-c-100', externalId: 'legiscan:2052600', userId: 'lm-user-dep',
     content: "<p>Dropping this to Low. It never got scheduled, so it is not where we spend January.</p>", daysAgo: 136, minutesLater: 0 },
   { id: 'lm-c-40', externalId: 'legiscan:2052600', userId: 'demo-user',
