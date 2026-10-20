@@ -142,7 +142,7 @@ describe('a LegiScan-only central after the upgrade', () => {
     }
 
     // The bill API: LegiScan's labels and sponsor links.
-    const { app } = await import('../../src/index-legiscan')
+    const { app } = await import('../../src/index')
     const res = await app.fetch(new Request('http://central/api/bills/legiscan:9001', { headers: { 'x-admin-secret': 'test-secret' } }), e)
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({

@@ -2,7 +2,7 @@ import { env } from 'cloudflare:test'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
-import { app } from '../../src/index-legiscan'
+import { app } from '../../src/index'
 import { clearDb } from '../helpers/migrations'
 
 // Seam 2 of #363: the operator and instance routes that turn bills into keyword

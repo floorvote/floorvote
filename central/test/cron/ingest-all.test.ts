@@ -57,7 +57,7 @@ import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
 import { example, exampleFeed, type ExampleRecord } from '../providers/example'
 import { PROVIDERS } from '../../src/providers'
 import type { Provider } from '../../src/providers'
-import migration0049 from '../../migrations-legiscan/0049_bill_first_ingest_queued_at.sql?raw'
+import migration0049 from '../../migrations/0049_bill_first_ingest_queued_at.sql?raw'
 
 const rec = (n: number, Title = `Measure ${n} Act of 2026`): ExampleRecord => ({
   Number: `B26-${String(n).padStart(4, '0')}`, Title, Status: 'Introduced', Introduced: '2026-01-13',
@@ -165,7 +165,7 @@ beforeEach(async () => {
   const db = drizzle(env.DB, { schema })
   // No keywords: nothing this instance holds is tracked.
   await db.insert(schema.tenants).values({ tenantId: 'team', name: 'Team', stateCoverage: '["ZZ"]', active: true })
-  const { app } = await import('../../src/index-legiscan')
+  const { app } = await import('../../src/index')
   const claim = await app.fetch(new Request('http://central/api/admin/state-providers/ZZ', {
     method: 'POST', headers: { 'x-admin-secret': 'test-secret', 'content-type': 'application/json' },
     body: JSON.stringify({ provider: 'example' }),

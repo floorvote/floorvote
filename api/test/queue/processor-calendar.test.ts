@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { env } from 'cloudflare:test'
 import { processCentralNotification } from '../../src/queue/processor'
 import { getDb } from '../../src/db/client'
-import { calendarEvents, feedEvents } from '../../src/db/schema'
+import { bills, calendarEvents, feedEvents } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
 import { clearDb, seedBill } from '../helpers'
 
@@ -348,5 +348,135 @@ describe('processCentralNotification — calendar mirror', () => {
       const fe = await getDb(env.DB).select().from(feedEvents).where(eq(feedEvents.billId, billId)).all()
       expect(fe.filter(e => e.type.startsWith('hearing_'))).toEqual([])
     })
+  })
+})
+
+// A demo's hearings come only from its seed (LM_CALENDAR_EVENTS), written as
+// `hearing` rows with no event hash. Central's calendar never lists them, so
+// reconciling against it cancels every one (#884).
+describe('processCentralNotification — calendar on a demo tenant', () => {
+  const demoEnv = { ...testEnv, DEMO_MODE: 'true' }
+  const SEEDED_AT = '2026-06-01 09:00:00'
+  let billId: string
+
+  const seededRow = (n: number) => ({
+    id: `seed-hearing-${n}`, uid: `seed-hearing-${n}@example.com`, billId, source: 'hearing' as const, kind: null,
+    sequence: 0, date: `2026-06-1${n}`, time: '10:00:00', location: `Room ${n}`,
+    description: `Seeded committee hearing ${n}`, status: 'confirmed' as const, eventHash: null,
+    createdAt: SEEDED_AT, updatedAt: SEEDED_AT,
+  })
+  const stored = async () => getDb(env.DB).select().from(calendarEvents).orderBy(calendarEvents.id).all()
+  const feedTypes = async () => (await getDb(env.DB).select().from(feedEvents).all()).map(e => e.type)
+
+  async function seedBillAndHearings(over: { matchType?: 'keyword' | null, priority?: 'high' | null, providerUpdatedAt?: string, groupKey?: string } = {}) {
+    await clearDb()
+    const { groupKey, ...rest } = over
+    billId = await seedBill({
+      billNumber: 'H 5174', state: 'RI', session: '2026 Regular Session', externalId: 'legiscan:999',
+      matchType: 'keyword', priority: 'high', aiProcessedAt: '2026-06-01T00:00:00Z', ...rest,
+    })
+    if (groupKey) await env.DB.prepare('UPDATE bills SET group_key = ? WHERE id = ?').bind(groupKey, billId).run()
+    await getDb(env.DB).insert(calendarEvents).values([seededRow(1), seededRow(2), seededRow(3)])
+  }
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify(centralBillJson()), { status: 200, headers: { 'Content-Type': 'application/json' } })),
+    ))
+    await seedBillAndHearings()
+  })
+
+  it('leaves seeded hearings confirmed and unchanged when central lists none', async () => {
+    const before = await stored()
+    await processCentralNotification(
+      { tenantId: 'ri', billId: 'legiscan:999', calendar: calendarBlock('hearing_cancelled') } as any,
+      demoEnv as any, getDb(env.DB),
+    )
+    expect(await stored()).toEqual(before)
+  })
+
+  it('leaves seeded hearings unchanged on a metadata refresh (forceMetadata)', async () => {
+    const before = await stored()
+    await processCentralNotification(
+      { tenantId: 'ri', billId: 'legiscan:999', forceMetadata: true, calendar: calendarBlock('hearing_cancelled') } as any,
+      demoEnv as any, getDb(env.DB),
+    )
+    expect(await stored()).toEqual(before)
+  })
+
+  it('leaves seeded hearings unchanged on an operator AI re-run (full path)', async () => {
+    const before = await stored()
+    await processCentralNotification(
+      { tenantId: 'ri', billId: 'legiscan:999', forceMetadata: true, forceAI: true, operatorAi: true, calendar: calendarBlock('hearing_cancelled') } as any,
+      demoEnv as any, getDb(env.DB),
+    )
+    expect(await stored()).toEqual(before)
+  })
+
+  it('leaves seeded hearings unchanged when the bill is unchanged and the delivery early-returns', async () => {
+    await seedBillAndHearings({ providerUpdatedAt: '2026-06-02T00:00:00Z' })
+    const before = await stored()
+    await processCentralNotification(
+      { tenantId: 'ri', billId: 'legiscan:999', calendar: calendarBlock('hearing_cancelled') } as any,
+      demoEnv as any, getDb(env.DB),
+    )
+    expect(await stored()).toEqual(before)
+  })
+
+  it('leaves seeded hearings unchanged on a metadata-only delivery', async () => {
+    const before = await stored()
+    await processCentralNotification(
+      { tenantId: 'ri', billId: 'legiscan:999', metadataOnly: true, calendar: calendarBlock('hearing_cancelled') } as any,
+      demoEnv as any, getDb(env.DB),
+    )
+    expect(await stored()).toEqual(before)
+  })
+
+  it('adds no hearing of central\'s own and rewrites none of the seed\'s', async () => {
+    const before = await stored()
+    await processCentralNotification(
+      { tenantId: 'ri', billId: 'legiscan:999', calendar: calendarBlock('hearing_added') } as any,
+      demoEnv as any, getDb(env.DB),
+    )
+    expect(await stored()).toEqual(before)
+  })
+
+  it('writes no hearing feed event', async () => {
+    await processCentralNotification(
+      { tenantId: 'ri', billId: 'legiscan:999', calendar: calendarBlock('hearing_added') } as any,
+      demoEnv as any, getDb(env.DB),
+    )
+    expect((await feedTypes()).filter(t => t.startsWith('hearing_'))).toEqual([])
+  })
+
+  it('leaves seeded hearings alone on a grouped bill that is not itself tracked', async () => {
+    await seedBillAndHearings({ matchType: null, priority: null, groupKey: 'grp-1' })
+    const before = await stored()
+    await processCentralNotification(
+      { tenantId: 'ri', billId: 'legiscan:999', calendar: calendarBlock('hearing_cancelled') } as any,
+      demoEnv as any, getDb(env.DB),
+    )
+    expect(await stored()).toEqual(before)
+  })
+
+  it('still stores the bill\'s own metadata on a demo delivery', async () => {
+    await processCentralNotification(
+      { tenantId: 'ri', billId: 'legiscan:999', forceMetadata: true, calendar: calendarBlock('hearing_cancelled') } as any,
+      demoEnv as any, getDb(env.DB),
+    )
+    const bill = (await getDb(env.DB).select().from(bills).where(eq(bills.id, billId)).get())!
+    expect(bill.title).toBe('Mail ballot processing')
+  })
+
+  it('still cancels a dropped hearing when DEMO_MODE is not true', async () => {
+    const before = await stored()
+    await processCentralNotification(
+      { tenantId: 'ri', billId: 'legiscan:999', calendar: calendarBlock('hearing_cancelled') } as any,
+      { ...testEnv, DEMO_MODE: 'false' } as any, getDb(env.DB),
+    )
+    const after = await stored()
+    expect(after.map(r => r.status)).toEqual(['cancelled', 'cancelled', 'cancelled'])
+    expect(after.map(r => r.sequence)).toEqual(before.map(r => r.sequence + 1))
   })
 })

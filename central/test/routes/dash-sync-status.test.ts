@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
-import { app } from '../../src/index-legiscan'
+import { app } from '../../src/index'
 import { clearDb } from '../helpers/migrations'
 
 // The other readers of the sync log: a failed pass is a row in it, and is not a sync.

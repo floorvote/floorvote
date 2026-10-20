@@ -16,7 +16,7 @@ describe('parseMigrations', () => {
 })
 
 describe('setupDb', () => {
-  it('applies every file in migrations-legiscan', async () => {
+  it('applies every file in migrations/', async () => {
     await setupDb(legiscanMigrations)
     const applied = await env.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>()
     expect(applied.results.map(r => r.name)).toEqual(parseMigrations(legiscanMigrations).map(m => m.name))

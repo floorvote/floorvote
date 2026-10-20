@@ -335,7 +335,7 @@ entrypoint = "CentralApi"
 Then redeploy central so the binding resolves:
 
 ```bash
-cd central && npm run deploy:legiscan
+cd central && npm run deploy:central
 ```
 
 ## Step 8: Register the tenant with central

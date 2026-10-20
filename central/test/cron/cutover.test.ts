@@ -200,7 +200,7 @@ const sentToTenant = (run: Run) => [
 const queued = (queue: Run['limsQueue']) => queue.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body))
 
 async function central(method: string, path: string, run: Run, body?: unknown) {
-  const { app } = await import('../../src/index-legiscan')
+  const { app } = await import('../../src/index')
   return app.fetch(new Request(`http://central/api${path}`, {
     method,
     headers: { 'x-admin-secret': 'test-secret', 'content-type': 'application/json' },

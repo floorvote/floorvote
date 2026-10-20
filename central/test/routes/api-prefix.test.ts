@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { env } from 'cloudflare:test'
-import { app } from '../../src/index-legiscan'
+import { app } from '../../src/index'
 
 // The machine API is served under /api/* so its prefixes (/api/tenants, /api/bills,
 // /api/admin) no longer shadow the dashboard SPA's client routes (/tenants, …).

@@ -1,7 +1,7 @@
 import { env, applyD1Migrations } from 'cloudflare:test'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { legiscanMigrations, parseMigrations, setupDb, type MigrationFiles } from '../helpers/migrations'
-import { app } from '../../src/index-legiscan'
+import { app } from '../../src/index'
 
 // A central upgrading onto committees (#299): built from the migrations before
 // 0035, holding LegiScan bills whose referrals carry LegiScan's committee ids

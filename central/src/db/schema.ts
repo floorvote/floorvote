@@ -491,7 +491,7 @@ export const resendUsageDaily = sqliteTable('resend_usage_daily', {
 
 /**
  * The raw record each snapshot provider's bill was last built from, and its hash;
- * see migrations-legiscan/0025_source_provenance.sql (renamed by 0027).
+ * see migrations/0025_source_provenance.sql (renamed by 0027).
  */
 export const providerRecords = sqliteTable('provider_records', {
   billId:           integer('bill_id').primaryKey(),
@@ -509,7 +509,7 @@ export const providerRecords = sqliteTable('provider_records', {
 
 /**
  * Which provider central reads each state from; see
- * migrations-legiscan/0030_state_providers.sql and lib/stateProviders.ts. A
+ * migrations/0030_state_providers.sql and lib/stateProviders.ts. A
  * state with no row is LegiScan's.
  */
 export const stateProviders = sqliteTable('state_providers', {
@@ -521,7 +521,7 @@ export const stateProviders = sqliteTable('state_providers', {
   claimedAt:        text('claimed_at').notNull().default(sql`(datetime('now'))`),
 })
 
-/** Central ids that providers mint for their own keys (ProviderContext.ids); see migrations-legiscan/0026_source_ids.sql (renamed by 0027) and lib/providerIds.ts. */
+/** Central ids that providers mint for their own keys (ProviderContext.ids); see migrations/0026_source_ids.sql (renamed by 0027) and lib/providerIds.ts. */
 export const providerIds = sqliteTable('provider_ids', {
   id:        integer('id').primaryKey({ autoIncrement: true }),
   provider:  text('provider').notNull(),
@@ -531,7 +531,7 @@ export const providerIds = sqliteTable('provider_ids', {
 
 /**
  * What a provider keeps between runs (ProviderContext.cache): text entries under
- * keys it names. See migrations-legiscan/0042_provider_cache.sql and lib/providerCache.ts.
+ * keys it names. See migrations/0042_provider_cache.sql and lib/providerCache.ts.
  */
 export const providerCache = sqliteTable('provider_cache', {
   provider:  text('provider').notNull(),
@@ -542,7 +542,7 @@ export const providerCache = sqliteTable('provider_cache', {
 
 /**
  * Cutovers: a state moved from one provider to another with every matched bill
- * keeping its central row id (lib/cutover.ts, migrations-legiscan/0036_cutovers.sql).
+ * keeping its central row id (lib/cutover.ts, migrations/0036_cutovers.sql).
  */
 export const cutovers = sqliteTable('cutovers', {
   id:           text('id').primaryKey(),

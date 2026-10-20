@@ -61,7 +61,7 @@ What to keep from `oca-production`:
 
 When porting what you keep:
 
-- **The directory refresh ran inside the old LIMS sync** (`runLimsSync`). Upstream's LIMS provider doesn't run it, so give it a cron job of its own in `central/src/index-legiscan.ts`, beside the provider jobs. Select DC's legislators by `people.provider = 'lims'`, not by id range. Until it runs, the `council_*` tables and the seated and term columns go stale. Nothing is lost.
+- **The directory refresh ran inside the old LIMS sync** (`runLimsSync`). Upstream's LIMS provider doesn't run it, so give it a cron job of its own in `central/src/index.ts`, beside the provider jobs. Select DC's legislators by `people.provider = 'lims'`, not by id range. Until it runs, the `council_*` tables and the seated and term columns go stale. Nothing is lost.
 - **So did the term refresh.** `people.term_start` and `people.term_end`, and the "sworn in" and "leaving" rows of `council_changes`, came from the old sync's `upsertMembers` and `diffTerms` (`central/src/cron/sync-lims.ts`), not from the directory code. Upstream's LIMS provider reads the same Members call but keeps no term dates. Port that part into the directory job: fetch each Council Period's members, write only `term_start` and `term_end` by `people_id`, and record the changes. Without it, a special election leaves the People page and hearing briefs with stale terms, and nothing says so.
 - **Instances reach central only through the tenant surface allowlist** (`central/src/lib/tenantSurface.ts`), which denies everything else. Add each fork-only route an instance calls, such as `GET /api/bills/council-directory`, and list it in the caller test beside it. Register the route ahead of `/bills/:id`, which would otherwise answer for it.
 - **Council rows become body events.** Upstream's mirror takes over each `source = 'council'` row as `source = 'body'`, under the same id and UID. Code that selects `source = 'council'`, as the fork's hearing briefs (`deepAnalysis.ts`, `deepApi.ts`) and event popover do, must select `source IN ('body', 'council')` instead, or it finds nothing once the mirror has run. The mirror only takes over rows in its window (a month back and four ahead), so older Council rows stay `'council'` for good. Existing rows that point at a Council event's id stay valid.
@@ -74,7 +74,7 @@ When porting what you keep:
 Wrangler records each applied file by name in `d1_migrations` and applies every file in the folder it hasn't recorded, in order. Your production has applied your own files and upstream's under different names, so both sets apply and nothing runs twice. Your central's `0020_lims_records.sql` and upstream's `0020_legiscan_limit_10k.sql` are both recorded, and upstream's `0021_lims_records.sql` creates `lims_records` only if it doesn't exist, so it keeps yours, which has the same columns.
 
 - **Upstream keeps your numbers and names free.** Central 0022, 0023, and 0024 and tenant 0071, 0072, and 0074 are reserved upstream for good. `AGENTS.md` also lists your tables and columns (`council_*`, `people.term_start`, `people.term_end`, `people.seated`, `deep_analyses`, `team_links`, and `crm_*`), which upstream never creates, changes, or assumes exist or don't.
-- **Put future fork-only migrations in their own range:** `0900_oca_<what>.sql`, in `central/migrations-legiscan/` or `api/migrations/`. Upstream leaves 0900 and up to forks, and `AGENTS.md` records that, so your names never meet upstream's. Use the next free number in the range for each one.
+- **Put future fork-only migrations in their own range:** `0900_oca_<what>.sql`, in `central/migrations/` or `api/migrations/`. Upstream leaves 0900 and up to forks, and `AGENTS.md` records that, so your names never meet upstream's. Use the next free number in the range for each one.
 - **Never rename or edit a file production applied.** A renamed file runs again.
 - **Change only your own tables.** Never alter or drop an upstream table or column. A column you add to an upstream table (as `people.seated` is) is one upstream could someday add under the same name, so prefer a table of your own keyed to upstream's id.
 - **No `;` inside a comment** in a migration file. The tenant test helper splits on it before stripping comments, and the error it gives points elsewhere.
@@ -83,7 +83,7 @@ Wrangler records each applied file by name in `d1_migrations` and applies every 
 
 ## Keep Fork Features Separate
 
-Your data layer is already apart from upstream's: the 0900 range, the tables and columns `AGENTS.md` lists as yours, and the rehearsal script. Your feature code isn't. The Council directory, CRM, deep analyses, team links, and hearing briefs hook into shared upstream files: the cron list in `central/src/index-legiscan.ts`, the tenant surface allowlist (`central/src/lib/tenantSurface.ts`), the api router, and the web routes. Each upstream change to one of those files is a hand merge. This is fork-side work. Upstream adds nothing for it and promises no hooks.
+Your data layer is already apart from upstream's: the 0900 range, the tables and columns `AGENTS.md` lists as yours, and the rehearsal script. Your feature code isn't. The Council directory, CRM, deep analyses, team links, and hearing briefs hook into shared upstream files: the cron list in `central/src/index.ts`, the tenant surface allowlist (`central/src/lib/tenantSurface.ts`), the api router, and the web routes. Each upstream change to one of those files is a hand merge. This is fork-side work. Upstream adds nothing for it and promises no hooks.
 
 The pattern that keeps those merges small:
 
@@ -91,7 +91,7 @@ The pattern that keeps those merges small:
 2. **Cut each edit to a shared file down to one line** that hands off to your folder. One call registers your crons, one adds your routes, one extends the allowlist, and one adds your web routes. An example only, not an upstream API:
 
    ```ts
-   // central/src/index-legiscan.ts: the only line of yours in this file
+   // central/src/index.ts: the only line of yours in this file
    registerForkCrons(jobs);
    ```
 
@@ -101,7 +101,7 @@ When upstream changes a feature you extended, such as a simpler event-rules UI (
 
 ## Before You Deploy
 
-1. **Configuration.** Your gitignored `central/wrangler.toml` already names `src/index-legiscan.ts` and `migrations-legiscan`. Keep the `LIMS_API_KEY` secret (claiming DC for LIMS needs it), the hourly cron, and `LIMS_INGESTOR_QUEUE` with its consumer at `max_concurrency = 1` (LIMS answers 429 above about two concurrent requests). Compare the rest with `central/wrangler.example.toml`. Deploy central before the instances. Each instance's footer credit comes from central now (DC's from the LIMS provider's own declaration), so the LIMS credit is there when the tenant upgrades. Each instance can then drop `DATA_SOURCES = "lims"`, and one that still sets it is unaffected. Its `PROVIDER` var is no longer read. Keep your deep analysis vars if you ported that feature.
+1. **Configuration.** Your gitignored `central/wrangler.toml` names `src/index-legiscan.ts` and `migrations-legiscan`, which still work as aliases of `src/index.ts` and `migrations`. Switch to the neutral names when you like. Keep the `LIMS_API_KEY` secret (claiming DC for LIMS needs it), the hourly cron, and `LIMS_INGESTOR_QUEUE` with its consumer at `max_concurrency = 1` (LIMS answers 429 above about two concurrent requests). Compare the rest with `central/wrangler.example.toml`. Deploy central before the instances. Each instance's footer credit comes from central now (DC's from the LIMS provider's own declaration), so the LIMS credit is there when the tenant upgrades. Each instance can then drop `DATA_SOURCES = "lims"`, and one that still sets it is unaffected. Its `PROVIDER` var is no longer read. Keep your deep analysis vars if you ported that feature.
 2. **Rehearse on copies.** Export each database, read-only, from your production checkout (so wrangler finds the bindings), into a directory outside both checkouts: the exports hold members' emails and sign-in history, and `.gitignore` doesn't cover `*.sql`. A D1 export holds up the database's other queries while it runs, so start it away from the top of the hour. Then run the rehearsal from your upgrade branch, with absolute paths:
 
    ```bash
@@ -139,7 +139,7 @@ Deploy central, claim DC, then deploy every instance, all before the next top of
 
 **A fork on a build older than v2026.10.0** (before the ownership table, #303) upgrades in two steps. Deploy v2026.10.0 first, with `LIMS_STATES` set, and let one top-of-the-hour sync write DC's ownership row. Then deploy this release. That closes the late-claim window, and the claim step below finds DC already owned.
 
-1. **Central.** `cd central && npm run deploy:legiscan`. It builds the dashboard, applies the migrations, and deploys, so the code follows the migrations within a minute or so. Start at least 15 minutes after the hour, once the LIMS ingestor queue shows no backlog in the Cloudflare dashboard, so the old code's hourly LIMS pass isn't running.
+1. **Central.** `cd central && npm run deploy:central`. It builds the dashboard, applies the migrations, and deploys, so the code follows the migrations within a minute or so. Start at least 15 minutes after the hour, once the LIMS ingestor queue shows no backlog in the Cloudflare dashboard, so the old code's hourly LIMS pass isn't running.
 
    Between the migrations and the new code, the old LIMS sync and ingest fail (migration 0029 drops `lims_records`) and their messages retry. A message that runs out of retries before the new code deploys is lost. A tracked bill recovers at the re-ingest below, and any other bill at its next change. A bill the old code inserts in that window is labeled LegiScan's and blocks DC's ownership row (see "If Something Goes Wrong"). To rule both out, first deploy your current code with `crons = []` under `[env.legiscan.triggers]`, then upgrade. Deleting the triggers block wouldn't do it: wrangler changes a Worker's schedules only when the config defines `crons`, so without one the hourly cron keeps firing. The upgrade's configuration brings the hourly cron back.
 

@@ -1,6 +1,6 @@
 // Every tenant's daily engagement stats (tenant_stats) since a date, for a
 // consumer Worker that binds to central's StatsApi entrypoint. There is no
-// HTTP route for this: see StatsApi in index-legiscan.ts.
+// HTTP route for this: see StatsApi in index.ts.
 import { asc, gte } from 'drizzle-orm'
 import type { DrizzleD1Database } from 'drizzle-orm/d1'
 import * as schema from '../db/schema'

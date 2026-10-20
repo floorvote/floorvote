@@ -81,7 +81,7 @@ wrangler queues create central-legiscan-ingestor
 Save the `database_id` from the D1 output — you'll need it in the next step.
 
 > [!IMPORTANT]
-> **The `-ls` suffix is required, not stylistic.** `npm run deploy:legiscan` applies migrations to a database named exactly `central-bills-ls`, and the example config names the bucket and queue the same way.
+> **The `-ls` suffix is required, not stylistic.** `npm run deploy:central` applies migrations to a database named exactly `central-bills-ls`, and the example config names the bucket and queue the same way.
 
 > [!TIP]
 > `--location` sets the D1 primary region, and it defaults to wherever *you* are when you run the command — not where your users are. Pick the hint nearest your audience (`enam`, `wnam`, `weur`, `eeur`, `apac`, `oc`). Getting this wrong adds a cross-ocean round trip to every query, and changing it later means recreating the database and reseeding.
@@ -93,7 +93,7 @@ Copy `central/wrangler.example.toml` to `central/wrangler.toml` and fill in your
 ```toml
 [env.legiscan]
 name = "floorvote-central-legiscan"
-main = "src/index-legiscan.ts"
+main = "src/index.ts"
 
 [env.legiscan.vars]
 # optional — shown as a credit in each team's footer
@@ -103,7 +103,7 @@ OPERATOR_NAME = "Your Organization Name"
 binding = "DB"
 database_name = "central-bills-ls"
 database_id = "<YOUR_D1_DATABASE_ID>"
-migrations_dir = "migrations-legiscan"
+migrations_dir = "migrations"
 
 [[env.legiscan.r2_buckets]]
 binding = "BILLS_BUCKET"
@@ -123,6 +123,9 @@ crons = ["0 * * * *"]
 ```
 
 See `central/wrangler.example.toml` for the complete template, including optional bindings.
+
+> [!NOTE]
+> A config copied from an older example names `src/index-legiscan.ts` and `migrations-legiscan`. Those are aliases of `src/index.ts` and `migrations` and still work for now, so switch when convenient. Both name the same files, and a database migrated under one has nothing to apply under the other.
 
 ### 3. Set central secrets
 
@@ -162,7 +165,7 @@ Also set `CF_ACCOUNT_ID` in `[env.legiscan.vars]` (it's not a secret — get it 
 ```bash
 cd central
 npm ci
-npm run deploy:legiscan
+npm run deploy:central
 ```
 
 > [!NOTE]

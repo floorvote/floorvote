@@ -52,7 +52,7 @@ const parseDbTs = (v: string) => Date.parse(v.replace(' ', 'T').replace(/Z?$/, '
 const SQL_CLOCK_COLUMNS = new Set([
   'users.last_active', 'users.last_seen_feed', 'roles.created_at',
   'custom_field_definitions.created_at', 'custom_field_definitions.updated_at',
-  'official_positions.updated_at', 'notes.updated_at',
+  'notes.updated_at',
   'calendar_events.created_at', 'calendar_events.updated_at',
 ])
 

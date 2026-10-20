@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import { eq } from 'drizzle-orm'
 import * as schema from '../../src/db/schema'
-import { app } from '../../src/index-legiscan'
+import { app } from '../../src/index'
 
 // backfill-stub-actions re-pulls getMasterListBySession; mock it. (reingest-tenant tests below
 // don't touch the legiscan lib, so this mock is inert for them.)

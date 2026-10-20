@@ -56,7 +56,7 @@ function makeEnv() {
 }
 
 async function central(method: string, path: string, body?: unknown) {
-  const { app } = await import('../../src/index-legiscan')
+  const { app } = await import('../../src/index')
   return app.fetch(new Request(`http://central/api${path}`, {
     method,
     headers: { 'x-admin-secret': 'test-secret', 'content-type': 'application/json' },
