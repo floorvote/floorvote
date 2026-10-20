@@ -336,6 +336,15 @@ describe('the claim in the summary', () => {
     expect(slice(summary, r.claimAt)).toBe('Requires a drop box\n  in each   county.')
   })
 
+  it('finds a list item copied without its bold label markers', () => {
+    // The model writes "**Drop boxes**: …" in the summary, then copies the item
+    // into the claim as the reader sees it, without the asterisks.
+    const summary = 'Sets drop box rules.\n- **Drop boxes**: Requires a drop box in each county.\n- **Penalties**: Sets penalties.'
+    const out = resolveClaimSources([{ claim: 'Drop boxes: Requires a drop box in each county.', quote: 'two employees' }], summary, DOC)
+    expect(out.dropped).toBe(0)
+    expect(slice(summary, out.items[0].claimAt)).toBe('Drop boxes**: Requires a drop box in each county.')
+  })
+
   it('drops a claim that is not in the summary, and counts it', () => {
     const out = resolveClaimSources(
       [{ claim: 'Requires a heron statue.', quote: 'two employees' }, { claim: 'Sets penalties.', quote: 'a misdemeanor' }],

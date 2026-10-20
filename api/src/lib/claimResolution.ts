@@ -64,9 +64,10 @@ type Norm = {
  * With `tags`, also drop the retained redline markup (`billHtmlToText` keeps
  * `<u>`, `<strike>`, `<font>`, and the like, so the model and the matcher see
  * it). With `fold`, also fold curly quotes and dashes and drop invisible
- * characters. The map takes any range of the result back to the original.
+ * characters. With `marks`, also drop markdown emphasis asterisks. The map
+ * takes any range of the result back to the original.
  */
-function normalize(text: string, opts: { tags: boolean; fold: boolean }): Norm {
+function normalize(text: string, opts: { tags: boolean; fold: boolean; marks?: boolean }): Norm {
   const out: string[] = []
   const map: number[] = []
   let i = 0
@@ -78,6 +79,7 @@ function normalize(text: string, opts: { tags: boolean; fold: boolean }): Norm {
       if (m && KEEP_TAG.test(m[0])) { i += m[0].length; continue }
     }
     if (opts.fold && INVISIBLE.test(ch)) { i++; continue }
+    if (opts.marks && ch === '*') { i++; continue }
     if (/\s/.test(ch)) {
       if (out.length > 0 && out[out.length - 1] !== ' ') { out.push(' '); map.push(i) }
       i++
@@ -100,15 +102,23 @@ function original(n: Norm, start: number, end: number): Span {
   return { start: n.map[start], end: n.map[end - 1] + 1 }
 }
 
-/** `[start, end)` of `needle` in `summary`, exact or with whitespace normalized, or null. First one wins. */
+/**
+ * `[start, end)` of `needle` in `summary`, exact, with whitespace normalized, or
+ * with markdown emphasis asterisks ignored too (a list item's `**Label**:` that
+ * the model copied as the reader sees it), or null. First one wins.
+ */
 function findClaim(summary: string, claim: string): Span | null {
   if (claim.trim().length === 0) return null
   const exact = summary.indexOf(claim)
   if (exact !== -1) return { start: exact, end: exact + claim.length }
-  const hay = normalize(summary, { tags: false, fold: false })
-  const needle = trimEnd(normalize(claim, { tags: false, fold: false }))
-  const at = hay.s.indexOf(needle.s)
-  return at === -1 ? null : original(hay, at, at + needle.s.length)
+  for (const marks of [false, true]) {
+    const hay = normalize(summary, { tags: false, fold: false, marks })
+    const needle = trimEnd(normalize(claim, { tags: false, fold: false, marks }))
+    if (needle.s.length === 0) continue
+    const at = hay.s.indexOf(needle.s)
+    if (at !== -1) return original(hay, at, at + needle.s.length)
+  }
+  return null
 }
 
 /**
