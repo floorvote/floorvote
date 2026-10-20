@@ -43,23 +43,21 @@ describe('demo reset and team field changes', () => {
     await seedSeedBills()
   })
 
-  it('deletes the field changes a visitor made, and keeps grouped and split events', async () => {
+  it('deletes the field changes a visitor made and the grouping lines, which would drift', async () => {
     await runDemoReset(env.DB, seed)
     const bill = idOf('legiscan:2061476')
-    for (const [id, type] of [['visitor-fc', 'field_changed'], ['kept-grouped', 'grouped'], ['kept-split', 'split']]) {
+    for (const [id, type] of [['visitor-fc', 'field_changed'], ['old-grouped', 'grouped'], ['old-split', 'split']]) {
       await env.DB.prepare(`INSERT INTO team_events (id, bill_id, type, actor_user_id, metadata) VALUES (?, ?, ?, 'demo-user', '{}')`)
         .bind(id, bill, type).run()
     }
 
     await runDemoReset(env.DB, seed)
 
-    const ids = (await rows()).map(r => r.id)
-    expect(ids).not.toContain('visitor-fc')
-    expect(ids).toContain('kept-grouped')
-    expect(ids).toContain('kept-split')
     // Nothing but the seed's own field changes remains.
     const seedIds = new Set((seed.teamFieldChanges ?? []).map(c => c.id))
-    for (const r of await rows('field_changed')) expect(seedIds.has(r.id), r.id).toBe(true)
+    const left = await rows()
+    expect(left.length).toBeGreaterThan(0)
+    for (const r of left) expect(r.type === 'field_changed' && seedIds.has(r.id), r.id).toBe(true)
   })
 
   it('writes each seeded change in the shape the app writes, once, however often it resets', async () => {

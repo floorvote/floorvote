@@ -104,13 +104,14 @@ exports[`demo reset golden snapshot > matches the recorded snapshot, identically
 {"id":"demo-ml-lm-user-prog","user_id":"lm-user-prog","token_hash":"demo-mltoken-lm-user-prog","expires_at":"<d+30>","used_at":"<d-14>"}
 {"id":"demo-ml-lm-user-res","user_id":"lm-user-res","token_hash":"demo-mltoken-lm-user-res","expires_at":"<d+30>","used_at":"<d-5>"}
 {"id":"demo-ml-lm-user-wq","user_id":"lm-user-wq","token_hash":"demo-mltoken-lm-user-wq","expires_at":"<d+30>","used_at":"<d-2>"}
-### official_positions (14)
+### official_positions (15)
 {"id":"lm-pos-1","bill_id":"bill-legiscan:2029026","position":"Support","notes":null,"set_by":"demo-user","created_at":"<d-270>","updated_at":"<sql-now>"}
 {"id":"lm-pos-10","bill_id":"bill-legiscan:2111275","position":"Support","notes":null,"set_by":"lm-user-dep","created_at":"<d-60>","updated_at":"<sql-now>"}
 {"id":"lm-pos-11","bill_id":"bill-legiscan:2061476","position":"Support","notes":null,"set_by":"demo-user","created_at":"<d-200>","updated_at":"<sql-now>"}
 {"id":"lm-pos-12","bill_id":"bill-legiscan:2056216","position":"Support","notes":null,"set_by":"lm-user-ed","created_at":"<d-180>","updated_at":"<sql-now>"}
 {"id":"lm-pos-13","bill_id":"bill-legiscan:1910159","position":"Support","notes":null,"set_by":"lm-user-ed","created_at":"<d-500>","updated_at":"<sql-now>"}
 {"id":"lm-pos-14","bill_id":"bill-legiscan:2150744","position":"Amend","notes":null,"set_by":"lm-user-ed","created_at":"<d-50>","updated_at":"<sql-now>"}
+{"id":"lm-pos-15","bill_id":"bill-legiscan:2058690","position":"Monitor","notes":null,"set_by":"lm-user-dep","created_at":"<d-3>","updated_at":"<sql-now>"}
 {"id":"lm-pos-2","bill_id":"bill-legiscan:2055958","position":"Support","notes":null,"set_by":"demo-user","created_at":"<d-90>","updated_at":"<sql-now>"}
 {"id":"lm-pos-3","bill_id":"bill-legiscan:2095619","position":"Monitor","notes":null,"set_by":"demo-user","created_at":"<d-60>","updated_at":"<sql-now>"}
 {"id":"lm-pos-4","bill_id":"bill-legiscan:2006944","position":"Support","notes":null,"set_by":"lm-user-ed","created_at":"<d-200>","updated_at":"<sql-now>"}
@@ -369,7 +370,7 @@ exports[`demo reset golden snapshot > matches the recorded snapshot, identically
 {"id":"lm-r-7","comment_id":"lm-c-19","user_id":"demo-user","emoji":"👍","created_at":"<d-4>","deleted_at":null}
 {"id":"lm-r-8","comment_id":"lm-c-21","user_id":"lm-user-comms","emoji":"🤔","created_at":"<d-2>","deleted_at":null}
 {"id":"lm-r-9","comment_id":"lm-c-25","user_id":"lm-user-comms","emoji":"🤔","created_at":"<d-2>","deleted_at":null}
-### feed_events (203)
+### feed_events (204)
 {"id":"lm-fe-c-1","type":"comment_added","bill_id":"bill-legiscan:2029026","user_id":"lm-user-la1","metadata":"{\\"commentId\\":\\"lm-c-1\\",\\"preview\\":\\"Senate Local Government has us on its agenda. I'll have written testimony ready the day before.\\"}","suppressed":0,"created_at":"<d-33>"}
 {"id":"lm-fe-c-10","type":"comment_added","bill_id":"bill-legiscan:2055958","user_id":"lm-user-res","metadata":"{\\"commentId\\":\\"lm-c-10\\",\\"preview\\":\\"Michigan's invasive mussel counts are still climbing on the west shoreline. Good timing for this.\\"}","suppressed":0,"created_at":"<d-3>"}
 {"id":"lm-fe-c-11","type":"comment_added","bill_id":"bill-legiscan:2055958","user_id":"demo-user","metadata":"{\\"commentId\\":\\"lm-c-11\\",\\"preview\\":\\"@Habitat should we flag this decal fee model to the other states we track?\\",\\"mentionedUserIds\\":[\\"lm-user-res\\",\\"lm-user-prog\\",\\"lm-user-data\\"]}","suppressed":0,"created_at":"<d-3>"}
@@ -478,6 +479,7 @@ exports[`demo reset golden snapshot > matches the recorded snapshot, identically
 {"id":"lm-fe-o12","type":"position_set","bill_id":"bill-legiscan:2056216","user_id":"lm-user-ed","metadata":"{\\"position\\":\\"Support\\"}","suppressed":0,"created_at":"<d-180>"}
 {"id":"lm-fe-o13","type":"position_set","bill_id":"bill-legiscan:1910159","user_id":"lm-user-ed","metadata":"{\\"position\\":\\"Support\\"}","suppressed":0,"created_at":"<d-500>"}
 {"id":"lm-fe-o14","type":"position_set","bill_id":"bill-legiscan:2150744","user_id":"lm-user-ed","metadata":"{\\"position\\":\\"Amend\\"}","suppressed":0,"created_at":"<d-50>"}
+{"id":"lm-fe-o15","type":"position_set","bill_id":"bill-legiscan:2058690","user_id":"lm-user-dep","metadata":"{\\"position\\":\\"Monitor\\"}","suppressed":0,"created_at":"<d-3>"}
 {"id":"lm-fe-o2","type":"position_set","bill_id":"bill-legiscan:2055958","user_id":"demo-user","metadata":"{\\"position\\":\\"Support\\"}","suppressed":0,"created_at":"<d-90>"}
 {"id":"lm-fe-o3","type":"position_set","bill_id":"bill-legiscan:2095619","user_id":"demo-user","metadata":"{\\"position\\":\\"Monitor\\"}","suppressed":0,"created_at":"<d-60>"}
 {"id":"lm-fe-o4","type":"position_set","bill_id":"bill-legiscan:2006944","user_id":"lm-user-ed","metadata":"{\\"position\\":\\"Support\\"}","suppressed":0,"created_at":"<d-200>"}
@@ -630,7 +632,7 @@ exports[`demo reset golden snapshot > matches the recorded snapshot, identically
 {"id":"lm-hearing-6","uid":"lm-hearing-6@example.com","bill_id":"bill-legiscan:2150744","source":"hearing","sequence":0,"date":"<snapped-date>","time":"10:00:00","location":"Rayburn House Office Building, Washington DC","description":"Subcommittee on Water, Wildlife and Fisheries — hearing","status":"confirmed","event_hash":null,"created_at":"<sql-now>","updated_at":"<sql-now>","timezone":null,"details":null,"url":null,"kind":null,"covered_by":null,"rule_facets":null,"rule_match":null}
 {"id":"lm-hearing-past-1","uid":"lm-hearing-past-1@example.com","bill_id":"bill-legiscan:2095619","source":"hearing","sequence":0,"date":"<snapped-date>","time":"09:00:00","location":"Binsfeld Office Building, Room 1100, Lansing","description":"Senate Natural Resources and Agriculture Committee — hearing","status":"confirmed","event_hash":null,"created_at":"<sql-now>","updated_at":"<sql-now>","timezone":null,"details":null,"url":null,"kind":null,"covered_by":null,"rule_facets":null,"rule_match":null}
 {"id":"lm-hearing-past-2","uid":"lm-hearing-past-2@example.com","bill_id":"bill-legiscan:2109237","source":"hearing","sequence":0,"date":"<snapped-date>","time":"13:00:00","location":"Illinois State Capitol, Room 118, Springfield","description":"House Energy & Environment Committee — hearing","status":"confirmed","event_hash":null,"created_at":"<sql-now>","updated_at":"<sql-now>","timezone":null,"details":null,"url":null,"kind":null,"covered_by":null,"rule_facets":null,"rule_match":null}
-### team_events (20)
+### team_events (21)
 {"id":"lm-tfc-1","bill_id":"bill-legiscan:2006749","type":"field_changed","actor_user_id":"lm-user-dep","metadata":"{\\"field\\":\\"priority\\",\\"label\\":\\"priority\\",\\"old\\":null,\\"new\\":\\"medium\\"}","created_at":"<d-240>"}
 {"id":"lm-tfc-10","bill_id":"bill-legiscan:2006944","type":"field_changed","actor_user_id":"lm-user-dep","metadata":"{\\"field\\":\\"priority\\",\\"label\\":\\"priority\\",\\"old\\":\\"low\\",\\"new\\":\\"medium\\"}","created_at":"<d-210>"}
 {"id":"lm-tfc-11","bill_id":"bill-legiscan:2006944","type":"field_changed","actor_user_id":"lm-user-ed","metadata":"{\\"field\\":\\"customField\\",\\"fieldId\\":\\"lm-cf-2\\",\\"label\\":\\"Working Group\\",\\"old\\":null,\\"new\\":\\"Infrastructure\\"}","created_at":"<d-210>"}
@@ -644,6 +646,7 @@ exports[`demo reset golden snapshot > matches the recorded snapshot, identically
 {"id":"lm-tfc-19","bill_id":"bill-legiscan:1933798","type":"field_changed","actor_user_id":"lm-user-fed","metadata":"{\\"field\\":\\"priority\\",\\"label\\":\\"priority\\",\\"old\\":\\"low\\",\\"new\\":\\"medium\\"}","created_at":"<d-140>"}
 {"id":"lm-tfc-2","bill_id":"bill-legiscan:2006749","type":"field_changed","actor_user_id":"lm-user-ed","metadata":"{\\"field\\":\\"priority\\",\\"label\\":\\"priority\\",\\"old\\":\\"medium\\",\\"new\\":\\"high\\"}","created_at":"<d-205>"}
 {"id":"lm-tfc-20","bill_id":"bill-legiscan:2058690","type":"field_changed","actor_user_id":"lm-user-wq","metadata":"{\\"field\\":\\"priority\\",\\"label\\":\\"priority\\",\\"old\\":null,\\"new\\":\\"medium\\"}","created_at":"<d-100>"}
+{"id":"lm-tfc-21","bill_id":"bill-legiscan:2058690","type":"field_changed","actor_user_id":"lm-user-dep","metadata":"{\\"field\\":\\"position\\",\\"label\\":\\"position\\",\\"old\\":null,\\"new\\":\\"Monitor\\"}","created_at":"<d-3>"}
 {"id":"lm-tfc-3","bill_id":"bill-legiscan:2006749","type":"field_changed","actor_user_id":"lm-user-ed","metadata":"{\\"field\\":\\"position\\",\\"label\\":\\"position\\",\\"old\\":null,\\"new\\":\\"Support\\"}","created_at":"<d-200>"}
 {"id":"lm-tfc-4","bill_id":"bill-legiscan:2006749","type":"field_changed","actor_user_id":"lm-user-ed","metadata":"{\\"field\\":\\"customField\\",\\"fieldId\\":\\"lm-cf-1\\",\\"label\\":\\"Fiscal Impact\\",\\"old\\":\\"Unknown\\",\\"new\\":\\"Significant (>$100K)\\"}","created_at":"<d-200>"}
 {"id":"lm-tfc-5","bill_id":"bill-legiscan:2006749","type":"field_changed","actor_user_id":"lm-user-ed","metadata":"{\\"field\\":\\"customField\\",\\"fieldId\\":\\"lm-cf-2\\",\\"label\\":\\"Working Group\\",\\"old\\":null,\\"new\\":\\"Contaminants\\"}","created_at":"<d-200>"}

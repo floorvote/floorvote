@@ -3,7 +3,7 @@ import { env } from 'cloudflare:test'
 import { clearDb, seedBill } from '../helpers'
 import { runDemoReset } from '../../src/lib/demoReset'
 import { DEMO_SEEDS, resolveDemoSeed } from '../../src/lib/demoSeeds'
-import { LM_BILLS, LM_HEARING_NOTICE_SOURCES } from '../../src/lib/demoSeeds/lakeMichigan/bills'
+import { LM_BILLS, LM_COMPANION_BILLS, LM_HEARING_NOTICE_SOURCES } from '../../src/lib/demoSeeds/lakeMichigan/bills'
 import {
   stripHtml, truncateWithEllipsis, COMMENT_PREVIEW_MAX, PASSIVE_EVENT_TYPES, type FeedEvent,
 } from '../../../shared/feedUtils'
@@ -301,7 +301,7 @@ describe('lake-michigan derived feed events', () => {
   it('gives every feed event a unique id and a known bill', () => {
     const ids = s.feedEvents.map(e => e.id)
     expect(new Set(ids).size).toBe(ids.length)
-    const known = new Set(s.priorities.map(p => p.externalId))
+    const known = new Set([...s.priorities.map(p => p.externalId), ...LM_COMPANION_BILLS.map(c => c.externalId)])
     for (const e of s.feedEvents) expect(known.has(e.externalId), `event ${e.id}`).toBe(true)
   })
 })
@@ -321,7 +321,7 @@ describe('lake-michigan discussion', () => {
   it('resolves every comment, reaction, mention, vote, and note reference', () => {
     const uids = new Set(s.users.map(u => u.id))
     const rids = new Set(s.roles.map(r => r.id))
-    const bills = new Set(s.priorities.map(p => p.externalId))
+    const bills = new Set([...s.priorities.map(p => p.externalId), ...LM_COMPANION_BILLS.map(c => c.externalId)])
     const cids = new Set(s.comments.map(c => c.id))
     for (const c of s.comments) {
       expect(uids.has(c.userId), `comment ${c.id} user`).toBe(true)

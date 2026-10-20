@@ -69,9 +69,12 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
     db.prepare('DELETE FROM feed_events'),
     // Activity lines. A visitor's priority, position, or custom field change writes a
     // field_changed row that the reset's put-it-back never undoes, so it would outlive the
-    // reset as a line about a change the page no longer shows. `grouped` and `split` stay:
-    // they record the tenant's real companion groups, which the reset leaves alone.
-    db.prepare(`DELETE FROM team_events WHERE type = 'field_changed'`),
+    // reset as a line about a change the page no longer shows. A `grouped` or `split` row
+    // goes too: it is dated when the group formed, while the seeded comments are re-dated on
+    // every reset, so its line would drift out of step with them and then vanish. Only the
+    // bill page displays it (billsApi/detail.ts); no logic reads it, and the groups
+    // themselves live in bills.group_key, which a reset leaves alone.
+    db.prepare(`DELETE FROM team_events WHERE type IN ('field_changed', 'grouped', 'split')`),
     db.prepare('DELETE FROM bill_custom_field_values'),
     // calendar_event_bills.event_id REFERENCES calendar_events(id) with NO
     // cascade (migration 0045), so the join rows must be cleared BEFORE the

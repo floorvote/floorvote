@@ -3,6 +3,7 @@ import { env } from 'cloudflare:test'
 import { clearDb, seedBill } from '../helpers'
 import { runDemoReset } from '../../src/lib/demoReset'
 import { DEMO_SEEDS } from '../../src/lib/demoSeeds'
+import { LM_COMPANION_BILLS } from '../../src/lib/demoSeeds/lakeMichigan/bills'
 
 /**
  * Everything in demoSeeds.lakeMichigan.test.ts proves the seed is internally
@@ -14,6 +15,17 @@ import { DEMO_SEEDS } from '../../src/lib/demoSeeds'
  * real D1 bindings.
  */
 const seed = DEMO_SEEDS['lake-michigan']
+// The test tenant holds the 20 tracked bills only, so a row on a companion bill (#867) no-ops.
+const companionBills = new Set(LM_COMPANION_BILLS.map(c => c.externalId))
+const onTracked = <T extends { externalId: string }>(rows: T[]) => rows.filter(r => !companionBills.has(r.externalId))
+const companionComments = new Set(seed.comments.filter(c => companionBills.has(c.externalId)).map(c => c.id))
+const trackedRows = {
+  comments: onTracked(seed.comments).length,
+  reactions: seed.reactions.filter(r => !companionComments.has(r.commentId)).length,
+  votes: onTracked(seed.votes).length,
+  notes: onTracked(seed.notes).length,
+  feedEvents: onTracked(seed.feedEvents).length,
+}
 const count = async (t: string) =>
   (await env.DB.prepare(`SELECT count(*) AS n FROM ${t}`).first<{ n: number }>())?.n ?? 0
 
@@ -45,15 +57,15 @@ describe('runDemoReset with the lake-michigan seed', () => {
 
   it('installs the engagement data', async () => {
     await runDemoReset(env.DB, seed)
-    expect(await count('comments')).toBe(seed.comments.length)
-    expect(await count('comment_reactions')).toBe(seed.reactions.length)
+    expect(await count('comments')).toBe(trackedRows.comments)
+    expect(await count('comment_reactions')).toBe(trackedRows.reactions)
     expect(await count('notifications')).toBe(seed.mentions.length)
-    expect(await count('member_votes')).toBe(seed.votes.length)
+    expect(await count('member_votes')).toBe(trackedRows.votes)
     expect(await count('official_positions')).toBe(seed.positions.length)
     expect(await count('bill_custom_field_values')).toBe(seed.customFieldValues.length)
-    expect(await count('feed_events')).toBe(seed.feedEvents.length)
+    expect(await count('feed_events')).toBe(trackedRows.feedEvents)
     expect(await count('calendar_events')).toBe(seed.calendarEvents.length)
-    expect(await count('notes')).toBe(seed.notes.length)
+    expect(await count('notes')).toBe(trackedRows.notes)
   })
 
   // The brief's own list catches a total miscount, but reports it as a bare
@@ -63,11 +75,11 @@ describe('runDemoReset with the lake-michigan seed', () => {
   it('drops no comment, reaction, mention, vote, or note through the bill guard', async () => {
     await runDemoReset(env.DB, seed)
     const checks: Array<[table: string, expected: number]> = [
-      ['comments', seed.comments.length],
-      ['comment_reactions', seed.reactions.length],
+      ['comments', trackedRows.comments],
+      ['comment_reactions', trackedRows.reactions],
       ['notifications', seed.mentions.length],
-      ['member_votes', seed.votes.length],
-      ['notes', seed.notes.length],
+      ['member_votes', trackedRows.votes],
+      ['notes', trackedRows.notes],
     ]
     for (const [table, expected] of checks) {
       const actual = await count(table)
@@ -105,11 +117,11 @@ describe('runDemoReset with the lake-michigan seed', () => {
     await runDemoReset(env.DB, seed)
     await runDemoReset(env.DB, seed)
     expect(await count('users')).toBe(seed.users.length)
-    expect(await count('comments')).toBe(seed.comments.length)
-    expect(await count('comment_reactions')).toBe(seed.reactions.length)
+    expect(await count('comments')).toBe(trackedRows.comments)
+    expect(await count('comment_reactions')).toBe(trackedRows.reactions)
     expect(await count('notifications')).toBe(seed.mentions.length)
-    expect(await count('member_votes')).toBe(seed.votes.length)
-    expect(await count('feed_events')).toBe(seed.feedEvents.length)
+    expect(await count('member_votes')).toBe(trackedRows.votes)
+    expect(await count('feed_events')).toBe(trackedRows.feedEvents)
     const row = await env.DB.prepare('SELECT count(*) AS n FROM bills WHERE priority IS NULL').first<{ n: number }>()
     expect(row!.n).toBe(0)
     const cov = await env.DB.prepare(`SELECT value FROM association_config WHERE key = 'state_coverage'`).first<{ value: string }>()

@@ -92,6 +92,8 @@ export const LM_POSITIONS: Array<{ id: string; externalId: string; position: str
   { id: 'lm-pos-12', externalId: 'legiscan:2056216', position: 'Support', setBy: 'lm-user-ed',  daysAgo: 180 }, // IN SB0006
   { id: 'lm-pos-13', externalId: 'legiscan:1910159', position: 'Support', setBy: 'lm-user-ed',  daysAgo: 500 }, // US HB284
   { id: 'lm-pos-14', externalId: 'legiscan:2150744', position: 'Amend',   setBy: 'lm-user-ed',  daysAgo: 50 },  // US HB8876
+  // Monitor, not Support: lm-c-88 asks for the EPA-rule overlap to be sorted before a position.
+  { id: 'lm-pos-15', externalId: 'legiscan:2058690', position: 'Monitor', setBy: 'lm-user-dep', daysAgo: 3 },   // US HB6668
 ]
 
 // Team field changes the activity lines show: who set what on a bill, oldest first within
@@ -135,6 +137,7 @@ const LM_FIELD_CHANGE_ROWS: FieldChangeRow[] = [
   pos('legiscan:1910159', 'lm-user-ed', 'Support', 500),
   prio('legiscan:1933798', 'lm-user-fed', 'low', 'medium', 140),
   prio('legiscan:2058690', 'lm-user-wq', null, 'medium', 100),
+  pos('legiscan:2058690', 'lm-user-dep', 'Monitor', 3),
 ]
 
 export const LM_TEAM_FIELD_CHANGES: DemoSeedFieldChange[] =
@@ -590,6 +593,7 @@ export const LM_ENGAGEMENT_EVENTS: DemoSeedFeedEvent[] = [
   { id: 'lm-fe-o12', type: 'position_set', externalId: 'legiscan:2056216', userId: 'lm-user-ed',  metadata: { position: 'Support' }, daysAgo: 180 },
   { id: 'lm-fe-o13', type: 'position_set', externalId: 'legiscan:1910159', userId: 'lm-user-ed',  metadata: { position: 'Support' }, daysAgo: 500 },
   { id: 'lm-fe-o14', type: 'position_set', externalId: 'legiscan:2150744', userId: 'lm-user-ed',  metadata: { position: 'Amend' },   daysAgo: 50 },
+  { id: 'lm-fe-o15', type: 'position_set', externalId: 'legiscan:2058690', userId: 'lm-user-dep', metadata: { position: 'Monitor' }, daysAgo: 3 },
 ]
 
 // ── Recent legislative activity (fictional) ─────────────────────────────────
@@ -674,4 +678,24 @@ export const LM_RECENT_ACTIVITY_EVENTS: DemoSeedFeedEvent[] = [
   { id: 'lm-fe-r-us-hb6668-1', type: 'bill_updated', externalId: 'legiscan:2058690', userId: 'system', daysAgo: 4, metadata: { changes: [
     chg('action_added', { newValue: 'Referred to the Subcommittee on Water Resources and Environment.' }),
   ] } },
+]
+
+/**
+ * The companion bills the seed engages (#867): the identical companions of four tracked
+ * bills, which the operator delivers into the demo tenant so each pair forms a group.
+ * Until then a row on one of these bills no-ops, as any seed row whose bill is missing
+ * does. They are not among the 20 tracked bills, so the seed's priorities and the
+ * tests that count tracked bills leave them out.
+ */
+export const LM_COMPANION_BILLS: Array<{
+  externalId: string
+  jurisdiction: 'WI' | 'US'
+  billNumber: string
+  /** The tracked bill this one is the identical companion of. */
+  companionOf: string
+}> = [
+  { externalId: 'legiscan:2007625', jurisdiction: 'WI', billNumber: 'SB128',  companionOf: 'legiscan:2006749' },
+  { externalId: 'legiscan:1981854', jurisdiction: 'WI', billNumber: 'AB59',   companionOf: 'legiscan:1979645' },
+  { externalId: 'legiscan:1966402', jurisdiction: 'US', billNumber: 'SB528',  companionOf: 'legiscan:1910159' },
+  { externalId: 'legiscan:2058679', jurisdiction: 'US', billNumber: 'SB3457', companionOf: 'legiscan:2058690' },
 ]
