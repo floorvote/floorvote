@@ -18,6 +18,10 @@ const MENU_ITEM_STYLE: CSSProperties = {
   background: 'none', color: color.textPrimary, cursor: 'pointer',
 }
 
+// One read the button starts before anyone clicks and keeps. `value` is set once the
+// read lands, so a click can answer from it with no request left to wait for.
+type Prefetched<T> = { promise: Promise<T>; value?: { v: T } }
+
 /**
  * The bills page's "Add draft bill" button, for admins (the page decides who
  * sees it). One click creates a blank draft and opens its page. A tenant that
@@ -25,11 +29,20 @@ const MENU_ITEM_STYLE: CSSProperties = {
  * have bills, or a two-letter field when none do yet.
  *
  * Single-state or multi-state comes from GET /bills/draft-defaults'
- * `tenantState` (a value means one state, null means several), fetched on the
- * click. It is deliberately not the bills page's facet-derived `isMultiState`,
- * which only counts states that already have bills and so cannot tell a
- * single-state tenant from a multi-state one whose bills sit in one state. The
- * facets call only supplies the menu's options.
+ * `tenantState` (a value means one state, null means several). It is
+ * deliberately not the bills page's facet-derived `isMultiState`, which only
+ * counts states that already have bills and so cannot tell a single-state
+ * tenant from a multi-state one whose bills sit in one state. The menu's
+ * options come from GET /bills/draft-states, which is just the state names:
+ * GET /bills/facets computes every facet to answer the same question, and
+ * draft-defaults waits on central for the session year.
+ *
+ * Both are read when the button mounts (and again on hover or focus if that
+ * failed), so a click answers from what has already landed: the single-state
+ * create is one request, and the menu opens with none. A click that comes
+ * before they land waits on the read in flight rather than starting another.
+ * A failed read is dropped, not remembered: the next click asks again and shows
+ * the server's error if that fails too.
  */
 export function AddDraftButton() {
   const navigate = useNavigate()
@@ -52,6 +65,36 @@ export function AddDraftButton() {
   const triggerRef = useRef<HTMLButtonElement>(null)
   const fieldRef = useRef<HTMLInputElement>(null)
   const firstItemRef = useRef<HTMLButtonElement>(null)
+
+  const defaultsRead = useRef<Prefetched<string | null> | null>(null)
+  const statesRead = useRef<Prefetched<string[]> | null>(null)
+
+  // Starts a read unless one is already held. A failure empties the slot so the
+  // next ask retries; the rejection itself is left for whoever awaits the promise.
+  function hold<T>(slot: { current: Prefetched<T> | null }, load: () => Promise<T>): Prefetched<T> {
+    if (slot.current) return slot.current
+    const read: Prefetched<T> = { promise: load() }
+    slot.current = read
+    read.promise.then(
+      v => { read.value = { v } },
+      () => { if (slot.current === read) slot.current = null },
+    )
+    return read
+  }
+  const readDefaults = () => hold(defaultsRead, () =>
+    apiFetch<{ tenantState?: string | null }>('/bills/draft-defaults').then(d => d.tenantState || null))
+  const readStates = () => hold(statesRead, () =>
+    apiFetch<{ states?: string[] }>('/bills/draft-states').then(r => [...(r.states ?? [])].sort()))
+  // The two reads are independent, so they run side by side.
+  function prefetch() {
+    readDefaults()
+    readStates()
+  }
+  const prefetchRef = useRef(prefetch)
+  prefetchRef.current = prefetch
+  useEffect(() => {
+    if (!demoLocked) prefetchRef.current()
+  }, [demoLocked])
 
   const gate = useRequiredSubmit({ missingRequired: typedState.length !== 2, blocked: busy })
   const resetGate = gate.reset
@@ -97,16 +140,25 @@ export function AddDraftButton() {
   function handleClick() {
     if (demoLocked) return
     if (picker) { closePicker(); return }
+    // Everything already landed: act inside the click, with nothing to wait for.
+    const tenant = defaultsRead.current?.value
+    if (tenant) {
+      if (tenant.v) { void run(() => create()); return }
+      const known = statesRead.current?.value
+      if (known) {
+        setError(null)
+        setPicker({ states: known.v })
+        return
+      }
+    }
     void run(async () => {
-      const { tenantState } = await apiFetch<{ tenantState?: string | null }>('/bills/draft-defaults')
+      const tenantState = await readDefaults().promise
       if (tenantState) {
         await create()
         return
       }
-      // A facets failure only costs the menu's options: the admin can still type a state.
-      const states = await apiFetch<{ state: Record<string, number> }>('/bills/facets')
-        .then(f => Object.keys(f.state).sort())
-        .catch(() => [] as string[])
+      // A failed state read only costs the menu's options: the admin can still type a state.
+      const states = await readStates().promise.catch(() => [] as string[])
       setPicker({ states })
     })
   }
@@ -142,15 +194,23 @@ export function AddDraftButton() {
       ref={triggerRef}
       type="button"
       onClick={handleClick}
+      // Hover and focus ask again only if the mount's reads failed (hold keeps a landed or in-flight one).
+      onPointerEnter={demoLocked ? undefined : prefetch}
+      onFocus={demoLocked ? undefined : prefetch}
       disabled={demoLocked}
       title={demoLocked ? LOCKED_HOVER : undefined}
       aria-busy={busy || undefined}
       aria-haspopup="menu"
       aria-expanded={picker !== null}
       style={{
-        // A quiet "Add ..." text button: no fill, no border, secondary text.
-        fontFamily: 'inherit', fontSize: fontSize.sm, fontWeight: fontWeight.medium,
-        padding: '4px 6px', border: 'none', background: 'none', color: color.textSecondary,
+        // A quiet "Add ..." text button: no fill, no border, secondary text. It sits in the
+        // header row beside the view switcher's trigger, so it takes that trigger's size,
+        // vertical padding, and font (so the two boxes are the same height and their text
+        // shares a baseline), and sets the text lighter: regular where the trigger is
+        // medium. The color is the trigger's own resting secondary text, 5.2:1 on the header's
+        // surfaceMuted (8.2:1 in dark mode), above the 4.5:1 AA floor for text this size.
+        fontFamily: 'inherit', fontSize: fontSize.base, fontWeight: fontWeight.normal,
+        padding: '3px 7px', border: 'none', background: 'none', color: color.textSecondary,
         cursor: demoLocked ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap',
         opacity: demoLocked ? 0.6 : 1,
       }}
