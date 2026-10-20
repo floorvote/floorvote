@@ -188,7 +188,7 @@ describe('GET /bills/facets query plans', () => {
   // The committee facet's statements (#471): the whole count of each committee, the count of its grouped bills'
   // groups, and `committeeInfo`, which names each one. The info tallies by neither COUNT( nor SUM(, so facetPlans
   // does not select it, and the three are found by the rows they read.
-  const COMMITTEE_ROWS = /FROM bill_committees bc JOIN bills m ON m\.id = bc\.bill_id/
+  const COMMITTEE_ROWS = /FROM bill_committees\s+bc\s+JOIN\s+bills\s+m\b/i
   async function committeePlans(qs = ''): Promise<{ whole: Planned; grouped: Planned; info: Planned }> {
     const found: Planned[] = []
     for (const s of await statementsFor(qs)) {
@@ -223,6 +223,21 @@ describe('GET /bills/facets query plans', () => {
       const { whole } = await committeePlans(qs)
       expect(whole.plan, `"${qs}"\n${whole.sql}\n${whole.plan}`).toMatch(/SCAN bc USING COVERING INDEX idx_bill_committees_committee/)
       expect(whole.plan, `"${qs}"\n${whole.sql}\n${whole.plan}`).toMatch(/SEARCH m USING COVERING INDEX sqlite_autoindex_bills_1 \(id=\?\)/)
+    }
+  })
+
+  it('reads every committee row by index, and no worse, for the current-scope count and the info when nothing narrows them', async () => {
+    // Today these read every bill_committees row by idx_bill_committees_committee (not covering: no index holds
+    // is_current, and the info names each committee), a bill lookup per row. Pinned as it is, so a plan that gets worse
+    // (a temp B-tree, a second scan, a table scan) fails.
+    for (const [qs, which] of [['', 'info'], ['committeeScope=current', 'whole'], ['committeeScope=current', 'info']] as const) {
+      const p = (await committeePlans(qs))[which]
+      const lines = p.plan.split('\n')
+      const msg = `"${qs}" ${which}\n${p.sql}\n${p.plan}`
+      expect(lines[0], msg).toMatch(/^SCAN bc USING INDEX idx_bill_committees_committee$/)
+      expect(lines.filter(l => /^SCAN\b/.test(l)), msg).toHaveLength(1)
+      expect(p.plan, msg).not.toMatch(/TEMP B-TREE/)
+      expect(p.plan, msg).toMatch(/SEARCH m USING COVERING INDEX sqlite_autoindex_bills_1 \(id=\?\)/)
     }
   })
 
