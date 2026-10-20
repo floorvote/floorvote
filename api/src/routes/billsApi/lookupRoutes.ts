@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, ne } from 'drizzle-orm'
 import { requireAdmin } from '../../middleware/auth'
 import { getDb } from '../../db/client'
 import { bills } from '../../db/schema'
@@ -134,6 +134,17 @@ export function registerLookupRoutes(router: Hono<AppEnv>) {
     const state = (c.req.query('state') || '').trim().toUpperCase() || tenantState || ''
     const billNumber = await nextDraftNumber(db, state)
     return c.json({ billNumber, year: await defaultDraftYear(c, db, state), tenantState })
+  })
+
+  // GET /bills/draft-states — the states the tenant has bills in (drafts too), sorted, with no
+  // counts. The Add draft bill menu on the bills page reads this instead of GET /bills/facets,
+  // whose every-facet computation (the committee counts read every bill_committees row) is far
+  // more than a list of state names needs. Admin only, like the create route. MUST be before /:id.
+  // A draft made without a state carries '', which is no state to offer.
+  router.get('/draft-states', requireAdmin, async (c) => {
+    const db = getDb(c.env.DB)
+    const rows = await db.selectDistinct({ state: bills.state }).from(bills).where(ne(bills.state, '')).all()
+    return c.json({ states: rows.map(r => r.state).sort() })
   })
 
   router.get('/:id', async (c) => {

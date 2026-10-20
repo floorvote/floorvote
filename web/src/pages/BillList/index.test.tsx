@@ -177,6 +177,9 @@ vi.mock('../../lib/api', () => {
       return viewsState.response as T
     }
     if (path.startsWith('/bills/facets')) return (facetsState.respond ? facetsState.respond(path) : FACETS) as T
+    // What the Add draft bill button reads when the page mounts: a multi-state tenant with no states yet.
+    if (path === '/bills/draft-defaults') return { billNumber: 'D1', year: 2026, tenantState: null } as T
+    if (path === '/bills/draft-states') return { states: [] } as T
     if (path === '/bills/bulk-dismiss' || path.endsWith('/triage-dismiss')) return {} as T
     if (init?.method === 'PATCH' && path.endsWith('/priority')) return { priority: JSON.parse(init.body as string).priority } as T
     if (path.endsWith('/votes')) {
@@ -337,12 +340,46 @@ describe('BillList Add draft bill button', () => {
     expect(screen.queryByRole('button', { name: 'Add draft bill' })).toBeNull()
   })
 
-  it('makes no draft-defaults or draft request just by rendering the page', async () => {
+  it('reads draft-defaults and the state list once when the page mounts, and creates nothing', async () => {
     render(<BillList />, { wrapper: Wrapper })
     await screen.findByRole('button', { name: 'Add draft bill' })
+    await waitFor(() => expect(apiCalls.filter(p => p.startsWith('/bills/draft'))).toEqual(['/bills/draft-defaults', '/bills/draft-states']))
+    // Neither the create nor the full facets computation is paid for the menu.
+    expect(apiCalls).not.toContain('/bills/draft')
+  })
+
+  it('makes no draft request for a member who is not an admin', async () => {
+    authState.role = 'member'
+    render(<BillList />, { wrapper: Wrapper })
+    await screen.findByText('Early Voting Centers')
+    await waitFor(() => expect(apiCalls).toContain('/auth/me'))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)) })
     expect(apiCalls.some(p => p.startsWith('/bills/draft'))).toBe(false)
   })
+
+  it('matches the Views control in size and line box, and is lighter in weight, so the two share a baseline', async () => {
+    // A tenant with no saved views has no Views control to compare with.
+    viewsState.response = { views: [{ id: 'v1', name: 'Clerk bills', query: 'subject=UT%3AElections' }] }
+    render(<BillList />, { wrapper: Wrapper })
+    const add = await screen.findByRole('button', { name: 'Add draft bill' })
+    const views = await screen.findByRole('button', { name: /^Views$/ })
+    const a = getComputedStyle(add)
+    const v = getComputedStyle(views)
+    expect(a.fontSize).toBe(v.fontSize)
+    expect(a.fontFamily).toBe(v.fontFamily)
+    expect(a.lineHeight).toBe(v.lineHeight)
+    expect(a.paddingTop).toBe(v.paddingTop)
+    expect(a.paddingBottom).toBe(v.paddingBottom)
+    expect(Number(a.fontWeight)).toBeLessThan(Number(v.fontWeight))
+    expect(a.color).toBe(v.color)
+    // Both sit in the header's one flex row, which centers its items on a line.
+    const row = screen.getByRole('heading', { level: 1, name: 'Bills' }).parentElement as HTMLElement
+    expect(row).toContainElement(add)
+    expect(row).toContainElement(views)
+    expect(row.style.alignItems).toBe('center')
+  })
 })
+
 
 describe('BillList votes on a locked demo tenant', () => {
   // Pins the handler, not the button. BillRow.test.tsx covers the vote bar being
