@@ -16,19 +16,24 @@ import { cloudflarePool, cloudflareTest } from '@cloudflare/vitest-pool-workers'
 // Together they are half the suite's time; every other file takes about 1.5s.
 // A file left off this list still runs, it just counts as average. Add a file
 // here when it starts to take 10s or more.
+// The five groupFacetsRandom files were weighed through `SELF.fetch`, whose cost grew with every request (#860); the
+// harness now calls the app in process, and each runs in 4 to 7s alone on an idle laptop (whole-file wall time, about
+// 3.5s of it startup). Their weights are twice that, as a CI estimate of the same shape as the rule above (CI runs
+// about twice as slow as a laptop, and the mean of the CI seconds and twice the laptop seconds is then twice the
+// laptop seconds). Re-measure them on CI's next run.
 const HEAVY_FILE_SECONDS: Record<string, number> = {
-  'test/routes/groupFacetsRandom2.test.ts': 139,
-  'test/routes/groupFacetsRandom1.test.ts': 130,
   'test/lib/claimResolution.test.ts': 67,
-  'test/routes/groupFacetsRandom4.test.ts': 45,
   'test/routes/filterInvariants.test.ts': 40,
   'test/lib/splitCannotLink.test.ts': 25,
-  'test/routes/groupFacetsRandom3.test.ts': 25,
   'test/queue/processor-companion-analysis.test.ts': 19,
   'test/routes/groupFacets.test.ts': 18,
-  'test/routes/groupFacetsRandom5.test.ts': 13,
+  'test/routes/groupFacetsRandom1.test.ts': 14,
+  'test/routes/groupFacetsRandom2.test.ts': 13,
   'test/routes/superadminProfileSignIn.test.ts': 13,
   'test/routes/billsApi.test.ts': 10,
+  'test/routes/groupFacetsRandom3.test.ts': 10,
+  'test/routes/groupFacetsRandom4.test.ts': 10,
+  'test/routes/groupFacetsRandom5.test.ts': 9,
 }
 const DEFAULT_FILE_SECONDS = 1.5
 

@@ -73,8 +73,8 @@ const AND_ANCHORS: Array<[string, string[]]> = [
 // neither promises the total after picking the other (the union), and it still checks every other count against the list.
 // The same, for the provider facts that were never the active filter (state, stage, year, session) and for drafts: each is
 // a dimension with a facet of its own, so each must leave itself out of its own count and no other's. Drafts is a scope,
-// which narrows every count. They run in files of their own (groupFacetsRandom4, 5): a file slows with the number of
-// requests it has made, and these anchors would carry the others' past their time limit on a busy machine.
+// which narrows every count. They run in files of their own (groupFacetsRandom4, 5), to keep each file's run short for
+// the time-balanced shards in vitest.config.mts.
 const PROVIDER_AND_ANCHORS: Array<[string, string[]]> = [
   ['state=NJ', ['state']], ['stage=passed', ['stage', 'status']], ['year=2026', ['year']], ['sessionName=2025', ['sessionName']], ['drafts=1', []],
   ['year=2026&sessionName=2025', ['year', 'sessionName']], ['state=TX&stage=introduced', ['state', 'stage', 'status']], ['drafts=1&status=Passed', ['status', 'stage']],
