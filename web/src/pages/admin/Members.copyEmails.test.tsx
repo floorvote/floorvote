@@ -21,7 +21,7 @@ type TestMember = {
   lastActive: string
   deactivatedAt: string | null
   hasLoggedIn: boolean
-  invitedBy: null
+  invitedBy: { id: string; name: string | null; email: string } | null
   roles: { id: string; name: string }[]
   canVote: boolean
   voteCount: number
@@ -384,6 +384,23 @@ describe('Members copy shown emails', () => {
       await waitFor(() => expect(writeText).toHaveBeenCalled())
       expect(copiedEmails()).toEqual(['olive@example.com', 'alpha@example.com'])
     })
+  })
+
+  it('counts pending invites apart from members, and copies both', async () => {
+    const inviter = { id: 'inviter-1', name: 'Ira Inviter', email: 'ira@example.com' }
+    const PENDING = member({ id: 'pending-1', email: 'pending@example.com', name: 'Pat Pending', hasLoggedIn: false, invitedBy: inviter })
+    const PENDING_TWO = member({ id: 'pending-2', email: 'pending2@example.com', name: 'Penn Pending', hasLoggedIn: false, invitedBy: inviter })
+    // A superadmin who signs in through central has no inviter and no magic link: a member, not a pending invite.
+    const SUPERADMIN = member({ id: 'super-1', email: 'super@example.com', name: 'Sam Super', role: 'admin', hasLoggedIn: false })
+    await renderPage([OWNER, ADMIN, SUPERADMIN, PENDING, PENDING_TWO, DEACTIVATED])
+    expect(screen.getByText('3 members, 2 pending invites')).toBeVisible()
+    expect(copyButton()).toHaveTextContent('Copy 5 emails')
+  })
+
+  it('names one pending invite in the singular', async () => {
+    const PENDING = member({ id: 'pending-1', email: 'pending@example.com', name: 'Pat Pending', hasLoggedIn: false, invitedBy: { id: 'inviter-1', name: 'Ira Inviter', email: 'ira@example.com' } })
+    await renderPage([OWNER, PENDING])
+    expect(screen.getByText('1 member, 1 pending invite')).toBeVisible()
   })
 
   it('shows the button to an Admin who is not an Owner', async () => {

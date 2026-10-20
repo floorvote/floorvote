@@ -3,7 +3,7 @@ import type { Context } from 'hono'
 import { requireAuth } from '../middleware/auth'
 import { getDb } from '../db/client'
 import { users, bills, memberVotes, associationConfig, calendarEvents } from '../db/schema'
-import { count, eq, isNotNull, isNull, and, inArray, sql, gte, lte, or } from 'drizzle-orm'
+import { count, eq, isNotNull, isNull, and, inArray, sql, gte, lte, or, not } from 'drizzle-orm'
 import type { AppEnv } from '../types'
 import { visibleCalendarEvent } from '../lib/calendarVisibility'
 import { loadDateFieldEvents } from '../lib/dateFieldEvents'
@@ -14,7 +14,7 @@ import { loadUpcomingDemoHearings } from '../lib/demoCalendar'
 import { myGroupVote } from '../lib/companionGroups'
 import { billsAs } from './billsApi/query'
 import { getNewMatchMinRelevance, newMatchWhere } from '../lib/newMatch'
-import { hasLoggedInWhere } from '../lib/loginHistory'
+import { pendingInviteWhere } from '../lib/pendingInvite'
 
 const statsRouter = new Hono<AppEnv>()
 
@@ -28,13 +28,13 @@ statsRouter.get('/', async (c) => {
   const in30 = new Date(Date.now() + CALENDAR_UPCOMING_DAYS * 86400_000).toISOString().slice(0, 10)
   const [billCount, memberCount, calUpcoming, dateFieldUpcoming] = await Promise.all([
     db.select({ count: count() }).from(bills).get(),
-    // Members = users who have accepted their invite (used a magic link) and are not deactivated.
-    // Deliberately NOT keyed on a live `sessions` row: those are ephemeral (deleted on logout,
-    // role/deactivation change, and expiry), which would undercount real members. Matches the
-    // `hasLoggedIn` definition the Members admin page uses for its "Active" status.
+    // Members = users who are not deactivated and not a pending invite, the same split the Members
+    // admin page shows. Deliberately NOT keyed on a live `sessions` row: those are ephemeral (deleted
+    // on logout, role/deactivation change, and expiry), which would undercount real members. Nor on a
+    // used magic link alone: a superadmin who signs in through central never uses one.
     db.select({ count: count() }).from(users).where(and(
       isNull(users.deactivatedAt),
-      hasLoggedInWhere(db),
+      not(pendingInviteWhere(db)),
     )).get(),
     db.select({ count: count() })
       .from(calendarEvents)

@@ -12,7 +12,7 @@ type Db = ReturnType<typeof getDb>
  *   - `hasLoggedInSelect` — a correlated subquery for a SELECT list, used by the
  *     Members admin page, which needs the flag per row alongside other columns.
  *   - `hasLoggedInWhere` — a Drizzle `exists()` for a WHERE clause, used by the
- *     sidebar stats member count.
+ *     pending-invite definition (lib/pendingInvite.ts).
  *   - `usedMagicLinkCount` — the count itself, used by the terms-acceptance gate
  *     to tell a first-time login from a returning member.
  *

@@ -228,18 +228,27 @@ describe('GET /api/stats memberCount', () => {
   })
 
   it('counts accepted members regardless of a live session, and excludes invite-pending', async () => {
+    const inviter = await seedUser({ email: 'inviter@b.com' }); await seedMagicLink(inviter, { used: true })
     // Two accepted members with NO live session (the "logged out / session booted" case) — must still count.
-    const a = await seedUser({ email: 'a@b.com' }); await seedMagicLink(a, { used: true })
-    const b = await seedUser({ email: 'b@b.com' }); await seedMagicLink(b, { used: true })
+    const a = await seedUser({ email: 'a@b.com', invitedBy: inviter }); await seedMagicLink(a, { used: true })
+    const b = await seedUser({ email: 'b@b.com', invitedBy: inviter }); await seedMagicLink(b, { used: true })
     // Invite pending: link issued but never used — must NOT count.
-    const pending = await seedUser({ email: 'pending@b.com' }); await seedMagicLink(pending, { used: false })
-    // A session but no accepted invite (e.g. stale row) — must NOT count under the accepted definition.
-    const sessionOnly = await seedUser({ email: 'session@b.com' }); await seedSession(sessionOnly)
+    const pending = await seedUser({ email: 'pending@b.com', invitedBy: inviter }); await seedMagicLink(pending, { used: false })
 
     const r = await SELF.fetch('http://localhost/api/stats', { headers: { Cookie: `session=${token}` } })
     expect(r.status).toBe(200)
     const body = await r.json() as { memberCount: number }
-    expect(body.memberCount).toBe(3) // me + a + b
+    expect(body.memberCount).toBe(4) // me + inviter + a + b
+  })
+
+  it('counts a superadmin who signed in through central, who has no magic link and no inviter', async () => {
+    // Central SSO creates the user with no inviter and signs them in with a session only.
+    const superadmin = await seedUser({ email: 'super@central.com', role: 'admin', invitedBy: null })
+    await seedSession(superadmin)
+
+    const r = await SELF.fetch('http://localhost/api/stats', { headers: { Cookie: `session=${token}` } })
+    const body = await r.json() as { memberCount: number }
+    expect(body.memberCount).toBe(2) // me + superadmin
   })
 
   it('excludes deactivated members even when they have accepted', async () => {

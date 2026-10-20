@@ -26,7 +26,7 @@
 
 **Invite**: the email that brings a new member into an instance. Avoid: "invitation link" as the name of the email.
 
-**Pending invite**: a member who was invited and hasn't signed in yet.
+**Pending invite**: a member who was invited and hasn't signed in yet. Member counts (the sidebar's "N members" and the Members page's count line) leave pending invites and deactivated members out, so a superadmin who signs in through central, with no inviter, counts.
 
 **Bounced invite**: a pending invite whose latest invite or sign-in email couldn't be delivered. Shown as "Email bounced." Avoid: "failed invite" (the email failed, not the invite); "undeliverable."
 

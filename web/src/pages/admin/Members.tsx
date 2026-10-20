@@ -53,6 +53,16 @@ function isPendingInvite(m: Pick<Member, 'invitedBy' | 'hasLoggedIn' | 'deactiva
   return m.invitedBy !== null && !m.hasLoggedIn && !m.deactivatedAt
 }
 
+// The count line: members and pending invites, counted apart the way the
+// sidebar's member count does; deactivated members are in neither.
+function memberCountLine(all: Member[]): string {
+  const active = all.filter(m => !m.deactivatedAt)
+  const pending = active.filter(isPendingInvite).length
+  const joined = active.length - pending
+  const line = `${joined} ${joined === 1 ? 'member' : 'members'}`
+  return pending === 0 ? line : `${line}, ${pending} pending ${pending === 1 ? 'invite' : 'invites'}`
+}
+
 interface AuthEvent extends EmailChangeStepFields {
   id: string
   event: string
@@ -1026,7 +1036,7 @@ export function Members() {
         {!listLoading && !listError && (
           <div style={{ ...HELPER_TEXT, marginTop: 14, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <span>
-              {filtering ? `Showing ${shownMembers.length} of ${members.length}` : `${members.length} ${members.length === 1 ? 'member' : 'members'}`}
+              {filtering ? `Showing ${shownMembers.length} of ${members.length}` : memberCountLine(members)}
             </span>
             <button
               type="button"
