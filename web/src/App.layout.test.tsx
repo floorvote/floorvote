@@ -64,6 +64,20 @@ describe('AppLayout skip link', () => {
     expect(link.getAttribute('href')).toBe('#main-content')
     expect(document.getElementById('main-content')?.tagName).toBe('MAIN')
   })
+
+  // <main> is the scroll container. If it isn't positioned, an absolutely
+  // positioned descendant with no positioned ancestor of its own (a visually
+  // hidden live region, say) takes the page as its containing block, so at its
+  // place far down a long page it makes the document scroll too: a second
+  // scrollbar beside main's on any window shorter than the page.
+  it('makes <main> the containing block for absolutely positioned content, so the document never scrolls', async () => {
+    const router = createMemoryRouter(routes, { initialEntries: ['/bills'] })
+    render(<AuthProvider><RouterProvider router={router} /></AuthProvider>)
+    await screen.findByText('bills page')
+    const main = document.getElementById('main-content')!
+    expect(main.style.overflowY).toBe('auto')
+    expect(main.style.position).toBe('relative')
+  })
 })
 
 describe('shared layout route (data router)', () => {

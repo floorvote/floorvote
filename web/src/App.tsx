@@ -145,8 +145,13 @@ function AppLayout() {
                       agenda/feed DateDivider shadow, which intentionally extends
                       ±20px past the content column) would otherwise spill past the
                       viewport and create unwanted left-right scroll once the column
-                      nears the viewport width (narrow desktop and mobile). */}
-                  <main ref={mainRef} id="main-content" className="app-main" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', scrollbarGutter: 'stable' }}><Outlet /></main>
+                      nears the viewport width (narrow desktop and mobile).
+                      position: 'relative' — makes the scroll container the
+                      containing block for absolutely positioned content. Without
+                      it, a visually hidden live region with no positioned
+                      ancestor is placed against the page, far down a long page,
+                      and the document scrolls too: a second scrollbar. */}
+                  <main ref={mainRef} id="main-content" className="app-main" style={{ flex: 1, position: 'relative', overflowY: 'auto', overflowX: 'hidden', scrollbarGutter: 'stable' }}><Outlet /></main>
                 </div>
               </div>
             </FeedUnreadProvider>
