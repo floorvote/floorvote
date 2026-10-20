@@ -51,7 +51,7 @@ export function isSnapshotProvider(provider: Provider | undefined): provider is 
  * provider's server drops a connection or answers 522 now and then, and the
  * next pass reads the session fine; the States page shows every failed pass.
  */
-export const FAILED_PASSES_BEFORE_ALERT = 3
+export const FAILED_PASSES_BEFORE_ALERT = 4
 
 /** A session whose pass threw, and whether its failed row was logged. */
 type SessionFailure = { session: SessionRow; error: Error; logged: boolean }

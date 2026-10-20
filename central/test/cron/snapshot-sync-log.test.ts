@@ -127,7 +127,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   vi.useRealTimers()
-  // clearDb() empties tables but keeps triggers; three tests below install one.
+  // clearDb() empties tables but keeps triggers; some tests below install one.
   await env.DB.exec('DROP TRIGGER IF EXISTS no_etag; DROP TRIGGER IF EXISTS no_failed_rows;')
 })
 
@@ -508,8 +508,8 @@ describe('the hourly cron\'s alert', () => {
     return runHourlySnapshotSync(provider, e, db())
   }
 
-  it('waits for three failed passes in a row', () => {
-    expect(FAILED_PASSES_BEFORE_ALERT).toBe(3)
+  it('waits for four failed passes in a row', () => {
+    expect(FAILED_PASSES_BEFORE_ALERT).toBe(4)
   })
 
   it('does not throw for a session\'s first failed pass, and still logs it', async () => {
@@ -526,17 +526,14 @@ describe('the hourly cron\'s alert', () => {
     expect((await logRows()).map(r => r.status)).toEqual(Array(FAILED_PASSES_BEFORE_ALERT - 1).fill('failed'))
   })
 
-  it('throws on the third failed pass in a row, naming the count, the session, and the error', async () => {
+  it('throws on the failed pass that reaches the threshold, naming the count, the session, and the error', async () => {
     limsDown()
     const { env: e } = makeEnv()
-    const [session] = await (async () => { await runHourlySnapshotSync(lims, e, db()); return sessionRows() })()
-    nextHour()
-    await runHourlySnapshotSync(lims, e, db())
-    nextHour()
-    const err = await runHourlySnapshotSync(lims, e, db()).then(() => null, (x: Error) => x)
+    const err = await hourly(lims, e, FAILED_PASSES_BEFORE_ALERT).then(() => null, (x: Error) => x)
+    const [session] = await sessionRows()
     expect(err).toBeInstanceOf(Error)
     expect(err!.message).toContain('Network connection lost.')
-    expect(err!.message).toContain('3 passes in a row')
+    expect(err!.message).toContain(`${FAILED_PASSES_BEFORE_ALERT} passes in a row`)
     expect(err!.message).toContain(session.sessionName)
   })
 
@@ -553,7 +550,7 @@ describe('the hourly cron\'s alert', () => {
     const { env: e } = makeEnv()
     await expect(hourly(lims, e, FAILED_PASSES_BEFORE_ALERT)).rejects.toThrow()
     nextHour()
-    await expect(runHourlySnapshotSync(lims, e, db())).rejects.toThrow('4 passes in a row')
+    await expect(runHourlySnapshotSync(lims, e, db())).rejects.toThrow(`${FAILED_PASSES_BEFORE_ALERT + 1} passes in a row`)
   })
 
   it('starts the count again after a pass that finishes', async () => {
@@ -567,7 +564,7 @@ describe('the hourly cron\'s alert', () => {
     limsDown()
     await expect(hourly(lims, e, FAILED_PASSES_BEFORE_ALERT - 1)).resolves.toBeUndefined()
     nextHour()
-    await expect(runHourlySnapshotSync(lims, e, db())).rejects.toThrow('3 passes in a row')
+    await expect(runHourlySnapshotSync(lims, e, db())).rejects.toThrow(`${FAILED_PASSES_BEFORE_ALERT} passes in a row`)
   })
 
   it('counts a pass that logged its counts and then failed as a failure, not a finish', async () => {
@@ -577,13 +574,13 @@ describe('the hourly cron\'s alert', () => {
     await expect(hourly(mga, e, FAILED_PASSES_BEFORE_ALERT - 1)).resolves.toBeUndefined()
     nextHour()
     await expect(runHourlySnapshotSync(mga, e, db())).rejects.toThrow('etag write refused')
-    expect((await logRows()).map(r => r.status)).toEqual(['ok', 'failed', 'ok', 'failed', 'ok', 'failed'])
+    expect((await logRows()).map(r => r.status)).toEqual(Array(FAILED_PASSES_BEFORE_ALERT).fill(['ok', 'failed']).flat())
   })
 
   it('counts each session\'s failures on their own', async () => {
     vi.mocked(mgaClient.mgaSessionExists).mockImplementation(async code => code === MGA_CODE || code === MGA_CODE_2)
     const { env: e } = makeEnv()
-    // The special session fails twice, then the regular session fails once with it.
+    // The special session fails until one short of the threshold, then the regular session fails once with it.
     vi.mocked(mgaClient.getMgaSession).mockImplementation(async code => {
       if (code === MGA_CODE_2) throw new Error('special session 522')
       return code === MGA_CODE ? mgaFile() : null
@@ -592,12 +589,12 @@ describe('the hourly cron\'s alert', () => {
     nextHour()
     vi.mocked(mgaClient.getMgaSession).mockRejectedValue(new Error('every file 522'))
     const err = await runHourlySnapshotSync(mga, e, db()).then(() => null, (x: Error) => x)
-    // Only the special session has failed three in a row; the regular one's single failure stays quiet.
+    // Only the special session has reached the threshold; the regular one's single failure stays quiet.
     expect(err).toBeInstanceOf(Error)
     expect(err).not.toBeInstanceOf(AggregateError)
     const special = (await sessionRows()).find(s => s.sessionTag === MGA_CODE_2)!
     expect(err!.message).toContain(special.sessionName)
-    expect(err!.message).toContain('3 passes in a row')
+    expect(err!.message).toContain(`${FAILED_PASSES_BEFORE_ALERT} passes in a row`)
   })
 
   it('stays quiet when several sessions each fail fewer times than the threshold', async () => {
