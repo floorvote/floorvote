@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:test'
 import { describe, it, expect, beforeEach } from 'vitest'
-import { app } from '../../src/index-legiscan'
+import { app } from '../../src/index'
 import { clearDb } from '../helpers/migrations'
 
 beforeEach(async () => { await clearDb() })

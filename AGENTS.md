@@ -61,7 +61,7 @@ Each tenant is a separate wrangler environment. Configuration lives in `api/wran
 npm run deploy:tenant -- <env-name>
 
 # Deploy central (from central/)
-npm run deploy:legiscan     # `npm run deploy` is an alias
+npm run deploy:central      # `npm run deploy` is an alias
 ```
 
 `deploy.sh` builds the frontend, applies pending D1 migrations, and deploys the Worker. **Never run `wrangler deploy --env <tenant>` directly** — it skips migrations and the web build.
@@ -125,7 +125,7 @@ For local dev: `cp api/.dev.vars.example api/.dev.vars` (and `central/.dev.vars.
 
 ### Database
 
-Tenant migrations: `api/migrations/`. Central migrations: `central/migrations-legiscan/`. Schema source of truth: `api/src/db/schema.ts` (tenant), `central/src/db/schema.ts` (central).
+Tenant migrations: `api/migrations/`. Central migrations: `central/migrations/` (`central/migrations-legiscan` is a symlink alias kept for older configs, so add files only under `migrations/`). Schema source of truth: `api/src/db/schema.ts` (tenant), `central/src/db/schema.ts` (central).
 
 **Always add new migration files — never edit existing ones.**
 

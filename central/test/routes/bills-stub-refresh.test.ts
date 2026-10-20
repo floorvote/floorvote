@@ -15,7 +15,7 @@ vi.mock('../../src/providers/legiscan/client', async () => {
 const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
 
-import { app, TenantApi } from '../../src/index-legiscan'
+import { app, TenantApi } from '../../src/index'
 import { processIngestorQueue } from '../../src/queue/processor'
 import * as legiscan from '../../src/providers/legiscan/client'
 import { clearDb } from '../helpers/migrations'

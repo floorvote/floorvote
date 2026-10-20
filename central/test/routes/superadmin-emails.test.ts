@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { env } from 'cloudflare:test'
-import { app } from '../../src/index-legiscan'
+import { app } from '../../src/index'
 import { isTenantSurfaceAllowed } from '../../src/lib/tenantSurface'
 
 const TEST_ENV: any = { ...env, ADMIN_SECRET: 'admin-secret', SUPERADMIN_EMAILS: 'a@x.com, B@x.com' }

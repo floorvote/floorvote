@@ -42,7 +42,7 @@ import { formatReport, openCopy, passed, readMigrations, rehearse, upstreamNames
 
 const REPO_ROOT = resolve(import.meta.dirname, '..')
 const FOLDERS: Record<DbKind, string> = {
-  central: 'central/migrations-legiscan',
+  central: 'central/migrations',
   instance: 'api/migrations',
 }
 const DEFAULT_REF = 'upstream/main'

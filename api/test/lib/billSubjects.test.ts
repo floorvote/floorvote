@@ -247,4 +247,44 @@ describe('syncBillSubjects', () => {
     const rows = await db.select().from(billSubjects).where(eq(billSubjects.billId, 'b5')).all()
     expect(rows).toHaveLength(40)
   })
+
+  // #848: the delete and the inserts are one D1 batch (one transaction), so a write that fails leaves the rows it
+  // would have replaced. Otherwise the retry takes the processor's early skip and the bill keeps no subject rows.
+  it('leaves the bill\'s previous rows in place when the new ones fail to write', async () => {
+    const db = getDb(env.DB)
+    await seedBill(db, 'b6')
+    await syncBillSubjects(db, 'b6', 'UT', ['Elections', 'Counties'])
+    // A null state breaks the insert's NOT NULL.
+    await expect(syncBillSubjects(db, 'b6', null as unknown as string, ['Referenda'])).rejects.toThrow()
+    const rows = await db.select().from(billSubjects).where(eq(billSubjects.billId, 'b6')).all()
+    expect(rows.map(r => r.subjectName).sort()).toEqual(['Counties', 'Elections'])
+  })
+
+  it('leaves the previous rows in place when a later chunk of a long list fails', async () => {
+    const db = getDb(env.DB)
+    await seedBill(db, 'b7')
+    await syncBillSubjects(db, 'b7', 'UT', ['Elections', 'Counties'])
+    // 70 subjects is three insert chunks; the last holds the name the trigger rejects, so the first two chunks have
+    // already run when the write fails.
+    const many = [...Array.from({ length: 69 }, (_, i) => `Subject ${i}`), 'Rejected']
+    await env.DB.exec(`CREATE TRIGGER reject_subject BEFORE INSERT ON bill_subjects WHEN NEW.subject_name = 'Rejected' BEGIN SELECT RAISE(ABORT, 'rejected'); END`)
+    try {
+      await expect(syncBillSubjects(db, 'b7', 'UT', many)).rejects.toThrow()
+    } finally {
+      await env.DB.exec('DROP TRIGGER reject_subject')
+    }
+    const rows = await db.select().from(billSubjects).where(eq(billSubjects.billId, 'b7')).all()
+    expect(rows.map(r => r.subjectName).sort()).toEqual(['Counties', 'Elections'])
+  })
+
+  it('replaces only the given bill\'s rows', async () => {
+    const db = getDb(env.DB)
+    await seedBill(db, 'b8')
+    await seedBill(db, 'b9')
+    await syncBillSubjects(db, 'b8', 'UT', ['Elections'])
+    await syncBillSubjects(db, 'b9', 'UT', ['Counties'])
+    await syncBillSubjects(db, 'b8', 'UT', ['Referenda'])
+    const rows = await db.select().from(billSubjects).all()
+    expect(rows.map(r => `${r.billId}:${r.subjectName}`).sort()).toEqual(['b8:Referenda', 'b9:Counties'])
+  })
 })

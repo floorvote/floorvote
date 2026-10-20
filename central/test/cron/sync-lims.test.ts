@@ -177,7 +177,7 @@ describe('match provenance from the DC sync', () => {
     }
     vi.mocked(lims.getBulkData).mockImplementation(async (c: number) => c === 1 ? [bulk['B26-0400'], filed] : [])
     const { env: e, limsQueue } = makeEnv({ ADMIN_SECRET: 'test-secret' })
-    const { app } = await import('../../src/index-legiscan')
+    const { app } = await import('../../src/index')
 
     const res = await app.fetch(new Request('http://central/api/admin/lims-import', {
       method: 'POST', headers: { 'x-admin-secret': 'test-secret', 'content-type': 'application/json' },
@@ -200,7 +200,7 @@ describe('match provenance from the DC sync', () => {
     vi.mocked(lims.getBulkData).mockImplementation(async (c: number, cp: number) =>
       cp === 25 && c === 1 ? [secureDc] : c === 1 ? [bulk['B26-0400']] : [])
     const { env: e, limsQueue } = makeEnv({ ADMIN_SECRET: 'test-secret' })
-    const { app } = await import('../../src/index-legiscan')
+    const { app } = await import('../../src/index')
 
     const res = await app.fetch(new Request('http://central/api/admin/lims-import', {
       method: 'POST', headers: { 'x-admin-secret': 'test-secret', 'content-type': 'application/json' },
@@ -296,7 +296,7 @@ describe('routing by the provider column', () => {
     expect(retry).not.toHaveBeenCalled()
     expect(legiscan.getBill).not.toHaveBeenCalled()
     expect(lims.getLegislationDetails).toHaveBeenCalledWith('B26-0400', 'lims-key', expect.any(Function))
-    const { app } = await import('../../src/index-legiscan')
+    const { app } = await import('../../src/index')
     const res = await app.fetch(new Request(`http://central/api/bills/legiscan:${BILL}`, {
       headers: { 'x-admin-secret': 'test-secret' },
     }), e)
@@ -569,7 +569,7 @@ describe('cancellations', () => {
 
 describe('POST /api/admin/lims-sync', () => {
   it('runs a full pass immediately, outside the full-sync hours, and reports it', async () => {
-    const { app } = await import('../../src/index-legiscan')
+    const { app } = await import('../../src/index')
     const schedule = await import('../../src/lib/sync-schedule')
     vi.mocked(schedule.getCurrentEtHour).mockReturnValue(8)   // not a full-pass hour
     try {
@@ -588,7 +588,7 @@ describe('POST /api/admin/lims-sync', () => {
   })
 
   it('rejects a request without the admin secret', async () => {
-    const { app } = await import('../../src/index-legiscan')
+    const { app } = await import('../../src/index')
     const { env: e } = makeEnv({ ADMIN_SECRET: 'test-secret' })
     const res = await app.fetch(new Request('http://central/api/admin/lims-sync', { method: 'POST' }), e)
     expect(res.status).toBe(401)
@@ -598,7 +598,7 @@ describe('POST /api/admin/lims-sync', () => {
 
 describe('POST /api/admin/providers/:id/sync', () => {
   const post = async (id: string) => {
-    const { app } = await import('../../src/index-legiscan')
+    const { app } = await import('../../src/index')
     const { env: e } = makeEnv({ ADMIN_SECRET: 'test-secret' })
     return app.fetch(new Request(`http://central/api/admin/providers/${id}/sync`, {
       method: 'POST', headers: { 'x-admin-secret': 'test-secret' },
@@ -637,7 +637,7 @@ describe('POST /api/admin/lims-import', () => {
   }
 
   async function post(e: any, body: unknown) {
-    const { app } = await import('../../src/index-legiscan')
+    const { app } = await import('../../src/index')
     return app.fetch(new Request('http://central/api/admin/lims-import', {
       method: 'POST', headers: { 'x-admin-secret': 'test-secret', 'content-type': 'application/json' }, body: JSON.stringify(body),
     }), e)
@@ -705,7 +705,7 @@ describe('sponsors of earlier Council Periods', () => {
     const secureDc = { ...bulk['B26-0400'], legislationNumber: 'B25-0345', legislationHistory: bulk['B26-0400'].legislationHistory.map(h => ({ ...h, legislationNumber: 'B25-0345' })) }
     vi.mocked(lims.getBulkData).mockImplementation(async (c: number, cp: number) => cp === 25 && c === 1 ? [secureDc] : c === 1 ? [bulk['B26-0400']] : [])
     const { env: e } = makeEnv({ ADMIN_SECRET: 'test-secret' })
-    const { app } = await import('../../src/index-legiscan')
+    const { app } = await import('../../src/index')
     await app.fetch(new Request('http://central/api/admin/lims-import', {
       method: 'POST', headers: { 'x-admin-secret': 'test-secret', 'content-type': 'application/json' }, body: JSON.stringify({ tenantId: 'oca', numbers: ['B25-0345'] }),
     }), e)

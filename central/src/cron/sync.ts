@@ -252,12 +252,14 @@ async function runFullPass(
  */
 export async function logSyncPass(
   db: Db, values: typeof sessionSyncLog.$inferInsert, opts: { tolerate: boolean; label: string },
-): Promise<void> {
+): Promise<boolean> {
   try {
     await db.insert(sessionSyncLog).values(values)
+    return true
   } catch (err) {
     if (!opts.tolerate) throw err
     console.error(`[sync] couldn't log the pass of ${opts.label}:`, err)
+    return false
   }
 }
 

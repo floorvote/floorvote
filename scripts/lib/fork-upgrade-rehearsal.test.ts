@@ -10,7 +10,7 @@ import { compareMigrationNames, formatReport, openCopy, passed, readMigrations, 
 // migrations and code left it), the report out.
 const ROOT = join(__dirname, '../..')
 const FORK: Record<DbKind, { own: string; upstream: string; fixtures: string; rows: string }> = {
-  central: { own: 'central/test/fixtures/fork/migrations-legiscan', upstream: 'central/migrations-legiscan', fixtures: 'central/test/fixtures/fork', rows: 'central-rows.json' },
+  central: { own: 'central/test/fixtures/fork/migrations-legiscan', upstream: 'central/migrations', fixtures: 'central/test/fixtures/fork', rows: 'central-rows.json' },
   instance: { own: 'api/test/fixtures/fork/migrations', upstream: 'api/migrations', fixtures: 'api/test/fixtures/fork', rows: 'tenant-rows.json' },
 }
 const upstreamMigrations = (kind: DbKind) => readMigrations(join(ROOT, FORK[kind].upstream))
@@ -187,7 +187,7 @@ describe('the fork upgrade rehearsal', () => {
   it('reports ownership rows a copy already has, which the upgrade leaves as they are', () => {
     const db = forkCopy('central')
     // A copy that already ran the ownership table (a fork past #303).
-    db.exec(readFileSync(join(ROOT, 'central/migrations-legiscan/0030_state_providers.sql'), 'utf8'))
+    db.exec(readFileSync(join(ROOT, 'central/migrations/0030_state_providers.sql'), 'utf8'))
     db.exec(`INSERT INTO state_providers (state, provider, previous_provider) VALUES ('DC', 'lims', 'legiscan')`)
     db.prepare('INSERT INTO d1_migrations (name) VALUES (?)').run('0030_state_providers.sql')
     const report = rehearse(db, 'central', 'central', upstreamMigrations('central'))

@@ -50,7 +50,7 @@ async function ingest(...responses: any[]) {
 }
 
 async function getBill(billId: number) {
-  const { app } = await import('../../src/index-legiscan')
+  const { app } = await import('../../src/index')
   const res = await app.fetch(new Request(`http://central/api/bills/${toHandle(billId)}`, {
     headers: { 'x-admin-secret': 'test-secret' },
   }), env as any)

@@ -13,9 +13,8 @@ import { activeFilters, decodeSubjectFilter, withBillFilter } from '../../../sha
 import { filterableCustomFields } from '../lib/customFieldFilters'
 import { buildActiveFilterGroups } from '../pages/BillList/activeFilterGroups'
 import { GroupOperator } from '../pages/BillList/GroupOperator'
-import { CommitteeScopeSwitch, ProceduralTag } from '../pages/BillList/CommitteeFilter'
+import { CommitteeScopeSwitch } from '../pages/BillList/CommitteeFilter'
 import { committeeLabelsOf, type CommitteeGroup } from '../lib/committeeGroups'
-import type { ReactNode } from 'react'
 
 interface FilterSheetProps {
   isOpen: boolean
@@ -139,7 +138,7 @@ function customFieldIdFromDimension(key: CustomFieldDimensionKey): string {
   return key.slice('field.'.length)
 }
 
-function SheetChip({ label, active, onClick, count, tag }: { label: string; active: boolean; onClick: () => void; count?: number; tag?: ReactNode }) {
+function SheetChip({ label, active, onClick, count }: { label: string; active: boolean; onClick: () => void; count?: number }) {
   return (
     <button
       onClick={onClick}
@@ -164,7 +163,6 @@ function SheetChip({ label, active, onClick, count, tag }: { label: string; acti
       }}
     >
       {label}
-      {tag}
       {count !== undefined && (
         <span style={{
           fontSize: fontSize.sm,
@@ -829,7 +827,7 @@ export function FilterSheet({
             />
           )}
 
-          {/* Committees (#471): the scope switch, then each state's committees, procedural ones last and tagged. */}
+          {/* Committees (#471): the scope switch, then each state's committees by count. */}
           {dimension === 'committee' && (
             <div>
               <CommitteeScopeSwitch scope={committeeScope} onScopeChange={onCommitteeScopeChange} name="committee-scope-sheet" />
@@ -844,7 +842,6 @@ export function FilterSheet({
                         active={committee.includes(opt.value)}
                         onClick={() => toggleItem(committee, opt.value, onCommitteeChange)}
                         count={opt.count}
-                        tag={opt.procedural ? <ProceduralTag /> : undefined}
                       />
                     ))}
                   </div>

@@ -8,6 +8,7 @@ import type { CustomFieldDef } from '../pages/BillList/types'
 import { MAX_SUBJECT_FILTERS } from '../../../shared/limits'
 import { ConfigContext, type AppConfig } from '../context/ConfigContext'
 import type { StatusStageGroup } from '../lib/statusGroups'
+import { committeeGroups } from '../lib/committeeGroups'
 
 function makeDefaults(): ComponentProps<typeof FilterSheet> {
   return {
@@ -949,5 +950,25 @@ describe('FilterSheet — Status grouped by Stage', () => {
     renderWithProviders(undefined, grouped())
     fireEvent.click(screen.getByRole('button', { name: /^status/i }))
     expect(screen.getByRole('checkbox', { name: /^Enacted/ })).toBeInTheDocument()
+  })
+})
+
+describe('FilterSheet — Committee options', () => {
+  const INFO = {
+    101: { name: 'Judiciary', state: 'UT', chamber: 'S' },
+    102: { name: 'Rules', state: 'UT', chamber: 'S' },
+    103: { name: 'Calendars', state: 'UT', chamber: 'H' },
+  }
+
+  function openCommittee(counts: Record<string, number>) {
+    renderSheet({ committeeGroups: committeeGroups(counts, INFO) })
+    fireEvent.click(screen.getByRole('button', { name: /^committee/i }))
+  }
+
+  it('lists a large Rules committee first, by count, with no Procedural tag on any chip', () => {
+    openCommittee({ 101: 12, 102: 140, 103: 3 })
+    const chips = screen.getAllByRole('button', { pressed: false }).map(b => b.textContent)
+    expect(chips.filter(t => /Senate|House/.test(t ?? ''))).toEqual(['Rules (Senate)140', 'Judiciary (Senate)12', 'Calendars (House)3'])
+    expect(screen.queryByText('Procedural')).toBeNull()
   })
 })

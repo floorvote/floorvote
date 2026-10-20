@@ -232,14 +232,17 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
     db.prepare(`UPDATE bills SET priority = NULL WHERE external_id NOT IN (${placeholdersFor(priorityExtIds)})`).bind(...priorityExtIds),
   ])
 
-  // Official positions
-  await batch(seed.positions.map((p) =>
-    db.prepare(
-      `INSERT OR IGNORE INTO official_positions (id, bill_id, position, set_by, created_at)
-       SELECT ?, (SELECT id FROM bills WHERE external_id = ? LIMIT 1), ?, ?, ?
+  // Official positions. The position card ("Set by … · 2m ago") reads updated_at,
+  // not created_at, so both come from the seed: left to its default, updated_at is
+  // the moment of the reset and every seeded position reads as just set (#884).
+  await batch(seed.positions.map((p) => {
+    const setAt = daysAgoDb(p.daysAgo, p.minutesLater)
+    return db.prepare(
+      `INSERT OR IGNORE INTO official_positions (id, bill_id, position, set_by, created_at, updated_at)
+       SELECT ?, (SELECT id FROM bills WHERE external_id = ? LIMIT 1), ?, ?, ?, ?
        WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
-    ).bind(p.id, p.externalId, p.position, p.setBy, daysAgoDb(p.daysAgo, p.minutesLater), p.externalId),
-  ))
+    ).bind(p.id, p.externalId, p.position, p.setBy, setAt, setAt, p.externalId)
+  }))
 
   // Member votes spread across several bills
   await batch(seed.votes.map((v) => {

@@ -212,7 +212,7 @@ describe('ingesting a Maryland bill', () => {
     expect(sponsors.length).toBeGreaterThan(20)
     expect(sponsors.every(s => s.people.provider === 'mga')).toBe(true)
 
-    const { app } = await import('../../src/index-legiscan')
+    const { app } = await import('../../src/index')
     const res = await app.fetch(new Request(`http://central/api/bills/legiscan:${hb1.billId}`, {
       headers: { 'x-admin-secret': 'test-secret' },
     }), { ...e, ADMIN_SECRET: 'test-secret' })

@@ -48,7 +48,7 @@ describe('GET /bills/facets query plans', () => {
   const STATUS_GROUPS = /MAX\([^)]*status_rank/i
   const select = (plans: Planned[], needle: RegExp) => plans.filter(p => needle.test(p.sql))
   // A full read of a table, not of an index.
-  const TABLE_SCAN = /SCAN (bills|m|me|fb|bs|p|cv|bcfv|official_positions)\b(?! USING)/
+  const TABLE_SCAN = /SCAN (bills|m|me|fb|bs|p|cv|bcfv|official_positions|bc)\b(?! USING)/
 
   beforeAll(async () => {
     await clearDb()
@@ -66,6 +66,12 @@ describe('GET /bills/facets query plans', () => {
           CASE WHEN i % 30 = 0 THEN i % 10 + 1 END, '2026-0' || (1 + i % 9) || '-15',
           CASE WHEN i <= 7500 THEN 'bill' || printf('%05d', ((i - 1) / 2) * 2 + 1) END FROM n`),
       env.DB.prepare("INSERT INTO official_positions (id, bill_id, position, set_by) SELECT 'p' || id, id, 'Support', 'u' FROM bills WHERE substr(id, 5) % 1500 = 0"),
+      // Two committees a bill, as central names them (#471): the one it is pending in, and one it was referred to.
+      // 40 and 25 committees, so each holds a few thousand of the 60,000 rows.
+      env.DB.prepare(`INSERT INTO bill_committees (bill_id, committee_id, state, name, chamber, is_current)
+        SELECT id, 'c' || ((substr(id, 5) + 0) % 40), state, 'Committee ' || ((substr(id, 5) + 0) % 40), CASE WHEN (substr(id, 5) + 0) % 2 = 0 THEN 'H' ELSE 'S' END, 1 FROM bills`),
+      env.DB.prepare(`INSERT INTO bill_committees (bill_id, committee_id, state, name, chamber, is_current)
+        SELECT id, 'r' || ((substr(id, 5) + 0) % 25), state, 'Referral ' || ((substr(id, 5) + 0) % 25), 'S', 0 FROM bills`),
       env.DB.prepare('ANALYZE'),
       // One draft, as a tenant that has any has a few: the stats still say every bill has the same is_draft.
       env.DB.prepare("UPDATE bills SET is_draft = 1 WHERE id = 'bill00002'"),
@@ -176,6 +182,86 @@ describe('GET /bills/facets query plans', () => {
       expect(probe.plan, `${probe.sql}\n${probe.plan}`).not.toMatch(TABLE_SCAN)
     } finally {
       await env.DB.batch([env.DB.prepare("UPDATE bills SET is_draft = 1 WHERE id = 'bill00002'"), env.DB.prepare('ANALYZE')])
+    }
+  })
+
+  // The committee facet's statements (#471): the whole count of each committee, the count of its grouped bills'
+  // groups, and `committeeInfo`, which names each one. The info tallies by neither COUNT( nor SUM(, so facetPlans
+  // does not select it, and the three are found by the rows they read.
+  const COMMITTEE_ROWS = /FROM bill_committees\s+bc\s+JOIN\s+bills\s+m\b/i
+  async function committeePlans(qs = ''): Promise<{ whole: Planned; grouped: Planned; info: Planned }> {
+    const found: Planned[] = []
+    for (const s of await statementsFor(qs)) {
+      if (COMMITTEE_ROWS.test(s.sql)) found.push({ sql: s.sql, plan: await plan(s) })
+    }
+    const label = `committee statements for "${qs}": ${found.map(p => p.sql).join(' | ')}`
+    expect(found.length, `expected three ${label}`).toBe(3)
+    const info = found.filter(p => /MAX\(bc\.name\)/.test(p.sql))
+    const grouped = found.filter(p => /GROUP BY "m"\."group_key"/.test(p.sql))
+    const whole = found.filter(p => !/GROUP BY "m"\."group_key"/.test(p.sql) && !/MAX\(bc\.name\)/.test(p.sql))
+    expect([info.length, grouped.length, whole.length], `expected one info, one grouped count, and one whole count: ${label}`).toEqual([1, 1, 1])
+    return { whole: whole[0], grouped: grouped[0], info: info[0] }
+  }
+  // Each scope with nothing narrowing the facets, a filter on a bill column, a filter picking a committee, and a
+  // priority filter (which tests a bill's whole group).
+  const COMMITTEE_REQUESTS = [
+    '', 'committeeScope=current', 'committee=c1', 'committee=c1&committeeScope=current', 'status=Passed', 'state=NJ&committeeScope=current',
+    'status=Passed&committee=c1', 'priority=high&committeeScope=current',
+  ]
+
+  it('never reads bills or the committee rows by a table scan, in either scope or under any filter', async () => {
+    for (const qs of COMMITTEE_REQUESTS) {
+      const { whole, grouped, info } = await committeePlans(qs)
+      for (const p of [whole, grouped, info]) expect(p.plan, `"${qs}"\n${p.sql}\n${p.plan}`).not.toMatch(TABLE_SCAN)
+    }
+  })
+
+  it('counts every committee from the committee index alone when nothing narrows the facet, each bill reached by key', async () => {
+    // The whole count of the any scope reads idx_bill_committees_committee end to end, which covers it, and looks
+    // each row's bill up by its primary key. Picking a committee leaves its own facet unnarrowed, so it reads alike.
+    for (const qs of ['', 'committee=c1']) {
+      const { whole } = await committeePlans(qs)
+      expect(whole.plan, `"${qs}"\n${whole.sql}\n${whole.plan}`).toMatch(/SCAN bc USING COVERING INDEX idx_bill_committees_committee/)
+      expect(whole.plan, `"${qs}"\n${whole.sql}\n${whole.plan}`).toMatch(/SEARCH m USING COVERING INDEX sqlite_autoindex_bills_1 \(id=\?\)/)
+    }
+  })
+
+  it('reads every committee row by index, and no worse, for the current-scope count and the info when nothing narrows them', async () => {
+    // Today these read every bill_committees row by idx_bill_committees_committee (not covering: no index holds
+    // is_current, and the info names each committee), a bill lookup per row. Pinned as it is, so a plan that gets worse
+    // (a temp B-tree, a second scan, a table scan) fails.
+    for (const [qs, which] of [['', 'info'], ['committeeScope=current', 'whole'], ['committeeScope=current', 'info']] as const) {
+      const p = (await committeePlans(qs))[which]
+      const lines = p.plan.split('\n')
+      const msg = `"${qs}" ${which}\n${p.sql}\n${p.plan}`
+      expect(lines[0], msg).toMatch(/^SCAN bc USING INDEX idx_bill_committees_committee$/)
+      expect(lines.filter(l => /^SCAN\b/.test(l)), msg).toHaveLength(1)
+      expect(p.plan, msg).not.toMatch(/TEMP B-TREE/)
+      expect(p.plan, msg).toMatch(/SEARCH m USING COVERING INDEX sqlite_autoindex_bills_1 \(id=\?\)/)
+    }
+  })
+
+  it('starts from the bills a bill-column filter narrows to and reaches their committees by key', async () => {
+    // With a filter on the bills, reading every committee row would cost more as a tenant gains committees than the
+    // filter's bills do: the count and the info start from the bill index, and reach the rows by (bill_id, ...).
+    for (const [qs, index] of [['status=Passed', 'idx_bills_status'], ['state=NJ&committeeScope=current', 'idx_bills_state']]) {
+      const { whole, info } = await committeePlans(qs)
+      for (const p of [whole, info]) {
+        expect(p.plan, `"${qs}"\n${p.sql}\n${p.plan}`).toContain(`SEARCH m USING INDEX ${index} `)
+        expect(p.plan, `"${qs}"\n${p.sql}\n${p.plan}`).toMatch(/SEARCH bc USING (COVERING )?INDEX sqlite_autoindex_bill_committees_1 \(bill_id=\?\)/)
+        expect(p.plan, `"${qs}"\n${p.sql}\n${p.plan}`).not.toMatch(/SCAN (bc|m)\b/)
+      }
+    }
+  })
+
+  it('counts the groups of each committee from the group key index, its rows reached by key', async () => {
+    // The grouped bills read the covering group key index and each one's committee rows by (bill_id, ...), as the
+    // other facets' grouped counts do, and scan neither table.
+    for (const qs of ['', 'committeeScope=current', 'status=Passed', 'committee=c1&committeeScope=current']) {
+      const { grouped } = await committeePlans(qs)
+      expect(grouped.plan, `"${qs}"\n${grouped.sql}\n${grouped.plan}`).toMatch(/SEARCH m USING COVERING INDEX idx_bills_group_key \(group_key>\?\)/)
+      expect(grouped.plan, `"${qs}"\n${grouped.sql}\n${grouped.plan}`).toMatch(/SEARCH bc USING (COVERING )?INDEX sqlite_autoindex_bill_committees_1 \(bill_id=\?\)/)
+      expect(grouped.plan, `"${qs}"\n${grouped.sql}\n${grouped.plan}`).not.toMatch(/SCAN (bc|m)\b(?! USING)/)
     }
   })
 

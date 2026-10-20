@@ -105,21 +105,21 @@ exports[`demo reset golden snapshot > matches the recorded snapshot, identically
 {"id":"demo-ml-lm-user-res","user_id":"lm-user-res","token_hash":"demo-mltoken-lm-user-res","expires_at":"<d+30>","used_at":"<d-5>"}
 {"id":"demo-ml-lm-user-wq","user_id":"lm-user-wq","token_hash":"demo-mltoken-lm-user-wq","expires_at":"<d+30>","used_at":"<d-2>"}
 ### official_positions (15)
-{"id":"lm-pos-1","bill_id":"bill-legiscan:2029026","position":"Support","notes":null,"set_by":"demo-user","created_at":"<d-270>","updated_at":"<sql-now>"}
-{"id":"lm-pos-10","bill_id":"bill-legiscan:2111275","position":"Support","notes":null,"set_by":"lm-user-dep","created_at":"<d-60>","updated_at":"<sql-now>"}
-{"id":"lm-pos-11","bill_id":"bill-legiscan:2061476","position":"Support","notes":null,"set_by":"demo-user","created_at":"<d-4>","updated_at":"<sql-now>"}
-{"id":"lm-pos-12","bill_id":"bill-legiscan:2056216","position":"Support","notes":null,"set_by":"lm-user-ed","created_at":"<d-180>","updated_at":"<sql-now>"}
-{"id":"lm-pos-13","bill_id":"bill-legiscan:1910159","position":"Support","notes":null,"set_by":"lm-user-ed","created_at":"<d-6>","updated_at":"<sql-now>"}
-{"id":"lm-pos-14","bill_id":"bill-legiscan:2150744","position":"Amend","notes":null,"set_by":"lm-user-ed","created_at":"<d-50>","updated_at":"<sql-now>"}
-{"id":"lm-pos-15","bill_id":"bill-legiscan:2058690","position":"Monitor","notes":null,"set_by":"lm-user-dep","created_at":"<d-3>","updated_at":"<sql-now>"}
-{"id":"lm-pos-2","bill_id":"bill-legiscan:2055958","position":"Support","notes":null,"set_by":"demo-user","created_at":"<d-90>","updated_at":"<sql-now>"}
-{"id":"lm-pos-3","bill_id":"bill-legiscan:2095619","position":"Monitor","notes":null,"set_by":"demo-user","created_at":"<d-60>","updated_at":"<sql-now>"}
-{"id":"lm-pos-4","bill_id":"bill-legiscan:2006944","position":"Support","notes":null,"set_by":"lm-user-ed","created_at":"<d-200>","updated_at":"<sql-now>"}
-{"id":"lm-pos-5","bill_id":"bill-legiscan:2006749","position":"Support","notes":null,"set_by":"lm-user-ed","created_at":"<d-121>","updated_at":"<sql-now>"}
-{"id":"lm-pos-6","bill_id":"bill-legiscan:1979645","position":"Support","notes":null,"set_by":"lm-user-dep","created_at":"<d-402>","updated_at":"<sql-now>"}
-{"id":"lm-pos-7","bill_id":"bill-legiscan:2052600","position":"Support","notes":null,"set_by":"lm-user-dep","created_at":"<d-180>","updated_at":"<sql-now>"}
-{"id":"lm-pos-8","bill_id":"bill-legiscan:1906052","position":"Support","notes":null,"set_by":"lm-user-dep","created_at":"<d-300>","updated_at":"<sql-now>"}
-{"id":"lm-pos-9","bill_id":"bill-legiscan:1952725","position":"Support","notes":null,"set_by":"lm-user-dep","created_at":"<d-420>","updated_at":"<sql-now>"}
+{"id":"lm-pos-1","bill_id":"bill-legiscan:2029026","position":"Support","notes":null,"set_by":"demo-user","created_at":"<d-270>","updated_at":"<d-270>"}
+{"id":"lm-pos-10","bill_id":"bill-legiscan:2111275","position":"Support","notes":null,"set_by":"lm-user-dep","created_at":"<d-60>","updated_at":"<d-60>"}
+{"id":"lm-pos-11","bill_id":"bill-legiscan:2061476","position":"Support","notes":null,"set_by":"demo-user","created_at":"<d-4>","updated_at":"<d-4>"}
+{"id":"lm-pos-12","bill_id":"bill-legiscan:2056216","position":"Support","notes":null,"set_by":"lm-user-ed","created_at":"<d-180>","updated_at":"<d-180>"}
+{"id":"lm-pos-13","bill_id":"bill-legiscan:1910159","position":"Support","notes":null,"set_by":"lm-user-ed","created_at":"<d-6>","updated_at":"<d-6>"}
+{"id":"lm-pos-14","bill_id":"bill-legiscan:2150744","position":"Amend","notes":null,"set_by":"lm-user-ed","created_at":"<d-50>","updated_at":"<d-50>"}
+{"id":"lm-pos-15","bill_id":"bill-legiscan:2058690","position":"Monitor","notes":null,"set_by":"lm-user-dep","created_at":"<d-3>","updated_at":"<d-3>"}
+{"id":"lm-pos-2","bill_id":"bill-legiscan:2055958","position":"Support","notes":null,"set_by":"demo-user","created_at":"<d-90>","updated_at":"<d-90>"}
+{"id":"lm-pos-3","bill_id":"bill-legiscan:2095619","position":"Monitor","notes":null,"set_by":"demo-user","created_at":"<d-60>","updated_at":"<d-60>"}
+{"id":"lm-pos-4","bill_id":"bill-legiscan:2006944","position":"Support","notes":null,"set_by":"lm-user-ed","created_at":"<d-200>","updated_at":"<d-200>"}
+{"id":"lm-pos-5","bill_id":"bill-legiscan:2006749","position":"Support","notes":null,"set_by":"lm-user-ed","created_at":"<d-121>","updated_at":"<d-121>"}
+{"id":"lm-pos-6","bill_id":"bill-legiscan:1979645","position":"Support","notes":null,"set_by":"lm-user-dep","created_at":"<d-402>","updated_at":"<d-402>"}
+{"id":"lm-pos-7","bill_id":"bill-legiscan:2052600","position":"Support","notes":null,"set_by":"lm-user-dep","created_at":"<d-180>","updated_at":"<d-180>"}
+{"id":"lm-pos-8","bill_id":"bill-legiscan:1906052","position":"Support","notes":null,"set_by":"lm-user-dep","created_at":"<d-300>","updated_at":"<d-300>"}
+{"id":"lm-pos-9","bill_id":"bill-legiscan:1952725","position":"Support","notes":null,"set_by":"lm-user-dep","created_at":"<d-420>","updated_at":"<d-420>"}
 ### member_votes (63)
 {"id":"lm-v-1","user_id":"demo-user","bill_id":"bill-legiscan:2029026","position":"support","created_at":"<d-45>","updated_at":"<d-45>"}
 {"id":"lm-v-10","user_id":"demo-user","bill_id":"bill-legiscan:2095619","position":"support","created_at":"<d-70>","updated_at":"<d-70>"}
