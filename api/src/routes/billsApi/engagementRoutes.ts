@@ -13,7 +13,7 @@ import { muteBill, unmuteBill } from '../../lib/billMutes'
 import { stripHtml } from '../../lib/stripHtml'
 import { COMMENT_PREVIEW_MAX, truncateWithEllipsis } from '../../../../shared/feedUtils'
 import { sanitizeCommentHtml } from '../../lib/sanitizeHtml'
-import { attachToComment, checkAttachable, loadCommentAttachments } from '../../lib/attachments'
+import { attachmentSummaryText, attachToComment, checkAttachable, loadCommentAttachments } from '../../lib/attachments'
 import type { AppEnv } from '../../types'
 import { nowDb } from '../../lib/dbTime'
 import { activeUser } from '../../lib/accountDeletion'
@@ -238,14 +238,16 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
     const bill = await db.select({ id: bills.id }).from(bills).where(eq(bills.id, id)).get()
     if (!bill) return c.json({ error: 'Not found' }, 404)
     const body = await c.req.json<{ content?: string; attachmentIds?: unknown }>().catch(() => ({} as { content?: string; attachmentIds?: unknown }))
-    if (!body.content?.trim()) return c.json({ error: 'content is required' }, 400)
-    if (new TextEncoder().encode(body.content.trim()).length > 10_240) {
+    const text = typeof body.content === 'string' ? body.content.trim() : ''
+    if (new TextEncoder().encode(text).length > 10_240) {
       return c.json({ error: 'Comment too long (max 10 KB)' }, 400)
     }
     // Files the composer uploaded and confirmed (#465), checked before the
     // comment is written so a refused file posts nothing.
     const attachable = await checkAttachable(c.env, db, currentUser.id, body.attachmentIds)
     if (!attachable.ok) return c.json({ error: attachable.error }, attachable.status)
+    // A comment is text, files, or both: blank text needs at least one file.
+    if (!text && attachable.ids.length === 0) return c.json({ error: 'content is required' }, 400)
     if (c.env.DEMO_MODE === 'true') {
       const live = await db
         .select({ n: sql<number>`count(*)` })
@@ -261,7 +263,7 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
     }
     // Sanitize on write to the same allowlist the on-screen renderer uses — the
     // raw value is otherwise interpolated into mention emails unescaped (H5).
-    const content = sanitizeCommentHtml(body.content.trim())
+    const content = sanitizeCommentHtml(text)
 
     const commentId = crypto.randomUUID()
     const now = nowDb()
@@ -274,10 +276,16 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
     })
     const attachments = await attachToComment(db, commentId, attachable.ids)
 
+    // A file-only comment has no body to preview, so notifications and the feed
+    // say what was attached instead. This is not stored as the comment's content.
+    const typed = stripHtml(content)
+    const preview = typed || attachmentSummaryText(attachments)
+    const notifyHtml = typed || !preview ? content : sanitizeCommentHtml(`<p>${preview}</p>`)
+
     const mentionedUserIds = await extractAndNotifyMentions(commentId, content, currentUser.id, currentUser.role, id, c.env, c.executionCtx.waitUntil.bind(c.executionCtx))
     // Everyone else who has commented here hears about it too, except the people
     // this comment mentions (they got the mention).
-    await notifyParticipantsOfReply({ id: commentId, html: content, createdAt: now }, currentUser.id, id, mentionedUserIds, c.env, c.executionCtx.waitUntil.bind(c.executionCtx))
+    await notifyParticipantsOfReply({ id: commentId, html: notifyHtml, createdAt: now }, currentUser.id, id, mentionedUserIds, c.env, c.executionCtx.waitUntil.bind(c.executionCtx))
 
     await db.insert(feedEvents).values({
       id: crypto.randomUUID(),
@@ -285,7 +293,7 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
       billId: id,
       userId: currentUser.id,
       metadata: JSON.stringify({
-        preview: truncateWithEllipsis(stripHtml(content), COMMENT_PREVIEW_MAX),
+        preview: truncateWithEllipsis(preview, COMMENT_PREVIEW_MAX),
         commentId,
         ...(mentionedUserIds.length > 0 ? { mentionedUserIds } : {}),
       }),

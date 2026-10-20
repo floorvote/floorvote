@@ -308,6 +308,12 @@ export async function attachToComment(db: AppDb, commentId: string, ids: string[
   return rows.sort((a, b) => order.get(a.id)! - order.get(b.id)!)
 }
 
+/** What a file-only comment says in previews: "Attached report.pdf" or "Attached 2 files". */
+export function attachmentSummaryText(files: { name: string }[]): string {
+  if (files.length === 0) return ''
+  return files.length === 1 ? `Attached ${files[0].name}` : `Attached ${files.length} files`
+}
+
 /** A deleted comment's files, kept 30 days and then purged. */
 export async function softDeleteCommentAttachments(db: AppDb, commentId: string): Promise<void> {
   await db.update(commentAttachments).set({ deletedAt: nowDb() })

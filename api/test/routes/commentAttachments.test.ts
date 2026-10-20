@@ -3,7 +3,7 @@ import { env } from 'cloudflare:test'
 import { eq, isNull } from 'drizzle-orm'
 import { clearDb, appFetch, stubFetch, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { commentAttachments } from '../../src/db/schema'
+import { commentAttachments, feedEvents } from '../../src/db/schema'
 import { purgeAttachments, uploadAttachment, UPLOAD_DEADLINE_MS } from '../../src/lib/attachments'
 
 // The test config binds ATTACHMENTS_BUCKET, which is all the feature needs.
@@ -88,6 +88,42 @@ describe('comment attachments', () => {
     other = await seedSession(await seedUser())
     admin = await seedSession(await seedUser({ role: 'admin' }))
     billId = await seedBill()
+  })
+
+  describe('a comment with only files', () => {
+    const blank = (token: string, attachmentIds?: unknown, content = '') =>
+      appFetch(`http://localhost/api/bills/${billId}/comments`, json(token, 'POST', { content, attachmentIds }), env)
+
+    it('posts with no text, and the feed preview names the file', async () => {
+      const { id } = await attached(member, 'Report.pdf', PDF)
+      const res = await blank(member, [id])
+      expect(res.status).toBe(201)
+      const body = await res.json() as { content: string; attachments: Uploaded[] }
+      expect(body.content).toBe('')
+      expect(body.attachments.map(a => a.id)).toEqual([id])
+      const event = await getDb(env.DB).select().from(feedEvents).where(eq(feedEvents.type, 'comment_added')).get()
+      expect(JSON.parse(event!.metadata!).preview).toBe('Attached Report.pdf')
+    })
+
+    it('says how many files when there are several', async () => {
+      const a = await attached(member, 'A.pdf', PDF)
+      const b = await attached(member, 'B.png', PNG)
+      expect((await blank(member, [a.id, b.id], '<p></p>')).status).toBe(201)
+      const event = await getDb(env.DB).select().from(feedEvents).where(eq(feedEvents.type, 'comment_added')).get()
+      expect(JSON.parse(event!.metadata!).preview).toBe('Attached 2 files')
+    })
+
+    it('still refuses a blank comment with no files', async () => {
+      expect((await blank(member)).status).toBe(400)
+      expect((await blank(member, [])).status).toBe(400)
+    })
+
+    it('refuses a blank comment whose file is not attachable', async () => {
+      const theirs = await attached(other, 'Theirs.pdf', PDF)
+      expect((await blank(member, [theirs.id])).status).toBe(400)
+      expect((await blank(member, ['no-such-upload'])).status).toBe(400)
+      expect(await getDb(env.DB).select().from(feedEvents).where(eq(feedEvents.type, 'comment_added')).all()).toHaveLength(0)
+    })
   })
 
   describe('uploading', () => {
