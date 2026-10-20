@@ -35,6 +35,7 @@ import { useStageFilterUseful } from '../../lib/capabilities'
 import { filterableCustomFields } from '../../lib/customFieldFilters'
 import { ViewSwitcher, type SavedView } from './ViewSwitcher'
 import { SaveViewButton } from './SaveViewButton'
+import { AddDraftButton } from './AddDraftButton'
 import { SearchClearButton } from './SearchClearButton'
 import { findActiveView, normalizeViewQuery, matchesUrlIdentifier } from '../../lib/savedViews'
 import { buildActiveFilterGroups } from './activeFilterGroups'
@@ -776,6 +777,9 @@ export function BillList() {
             }
           }}
         />
+        {/* Admins only: creating a draft is an admin action. In a locked demo the
+            button shows but is disabled (AddDraftButton). */}
+        {isAdmin && <AddDraftButton />}
       </div>
 
       {/* List-fetch error — rendered inline, above the toolbar and chip row (not

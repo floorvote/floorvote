@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 
@@ -128,6 +128,10 @@ const configState: { value: { states: string[]; modules?: Record<string, unknown
 const digestState = { memberOn: false }
 const digestCalls: Array<{ method: string; path: string; body: unknown }> = []
 
+// The signed-in user's role as GET /auth/me reports it. Defaults to an owner, which
+// is what every test that doesn't care about roles gets.
+const authState = vi.hoisted(() => ({ role: 'owner' as string }))
+
 vi.mock('../../lib/api', () => {
   class ApiError extends Error {
     constructor(public status: number, message: string) { super(message); this.name = 'ApiError' }
@@ -155,7 +159,7 @@ vi.mock('../../lib/api', () => {
       return {} as T
     }
     if (path === '/auth/me') {
-      return { id: 'demo-user', email: 'demo@example.com', name: 'Demo', role: 'owner',
+      return { id: 'demo-user', email: 'demo@example.com', name: 'Demo', role: authState.role,
         title: null, canVote: true, emailDigestEnabled: digestState.memberOn, lastSeenFeed: null } as T
     }
     if (path === '/config') return CONFIG as T
@@ -268,6 +272,7 @@ beforeEach(() => {
   configState.value = null
   digestState.memberOn = false
   digestCalls.length = 0
+  authState.role = 'owner'
   FACETS.subject = { 'UT:Counties': 1 }
   FACETS.subjectStates = ['UT']
   FACETS.billStates = ['UT']
@@ -302,6 +307,31 @@ describe('BillList vote failure rollback', () => {
     // ...now fail the request; the count must roll back to 0.
     deferred.rejectVote?.(new ApiError(500, 'fail'))
     await waitFor(() => expect(within(supportRow()).getByText('0')).toBeInTheDocument())
+  })
+})
+
+describe('BillList Add draft bill button', () => {
+  it.each(['admin', 'owner'])('is shown to an %s', async role => {
+    authState.role = role
+    render(<BillList />, { wrapper: Wrapper })
+    await screen.findByText('Early Voting Centers')
+    expect(await screen.findByRole('button', { name: 'Add draft bill' })).toBeInTheDocument()
+  })
+
+  it('is not shown to a member who is not an admin', async () => {
+    authState.role = 'member'
+    render(<BillList />, { wrapper: Wrapper })
+    await screen.findByText('Early Voting Centers')
+    // Absence only means something once the user has loaded: let /auth/me resolve and the page re-render.
+    await waitFor(() => expect(apiCalls).toContain('/auth/me'))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)) })
+    expect(screen.queryByRole('button', { name: 'Add draft bill' })).toBeNull()
+  })
+
+  it('makes no draft-defaults or draft request just by rendering the page', async () => {
+    render(<BillList />, { wrapper: Wrapper })
+    await screen.findByRole('button', { name: 'Add draft bill' })
+    expect(apiCalls.some(p => p.startsWith('/bills/draft'))).toBe(false)
   })
 })
 
