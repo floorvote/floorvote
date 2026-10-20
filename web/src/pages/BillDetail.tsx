@@ -1576,13 +1576,14 @@ export function BillDetail() {
         .comment-new { animation: slideInComment 0.38s cubic-bezier(0.16, 1, 0.3, 1) both; }
       `}</style>
 
-      {/* Only on arrival from "Add draft bill": the marker is read once on arrival
-          (lib/justCreatedDraft.ts), so a reload, a link, or any other visit to
-          the draft never shows this. */}
+      {/* The overflow menu's "Delete this draft bill" failing, such as the server refusing a draft with engagement. */}
       {isAdmin && bill.isDraft && deleteError && (
         <div role="alert" style={{ marginBottom: 12, overflowWrap: 'anywhere', fontSize: fontSize.sm, color: color.textErrorRed }}>{deleteError}</div>
       )}
 
+      {/* Only on arrival from "Add draft bill": the marker is read once on arrival
+          (lib/justCreatedDraft.ts), so a reload, a link, or any other visit to
+          the draft never shows this. */}
       {isAdmin && bill.isDraft && justCreated && (
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px 12px', marginBottom: 12 }}>
           <button

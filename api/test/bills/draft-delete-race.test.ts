@@ -78,6 +78,30 @@ describe('draft delete: engagement that arrives between the check and the batch'
     expect(result).toEqual({ deleted: [clean], skipped: [{ id: late, reason: 'engaged' }] })
   })
 
+  it('reports the drafts the batch kept as engaged when the re-check read fails, rather than failing the request', async () => {
+    const late = await draft(1)
+    const clean = await draft(2)
+    await draftDeleteVerdicts(db(), [late, clean])
+    await db().insert(memberVotes).values({ id: crypto.randomUUID(), userId: member, billId: late, position: 'support' })
+    // The real D1 runs the batch. Only the reads after it fail.
+    const real = db()
+    let batched = false
+    const flaky = new Proxy(real, {
+      get(target, key) {
+        const value = Reflect.get(target, key, target)
+        if (key === 'batch') return async (...args: unknown[]) => { const out = await (value as (...a: unknown[]) => Promise<unknown>).apply(target, args); batched = true; return out }
+        if (key === 'select' && batched) return () => { throw new Error('read failed') }
+        return typeof value === 'function' ? value.bind(target) : value
+      },
+    })
+
+    const result = await deleteCleared(flaky, [late, clean])
+
+    expect(result).toEqual({ deleted: [clean], skipped: [{ id: late, reason: 'engaged' }] })
+    expect(await exists(clean)).toBe(false)
+    expect(await exists(late)).toBe(true)
+  })
+
   it('reports a draft filed or deleted after the check under the reason a fresh check gives it', async () => {
     const filed = await draft(1)
     const gone = await draft(2)
@@ -93,7 +117,7 @@ describe('draft delete: engagement that arrives between the check and the batch'
     )
   })
 
-  it('leaves the rows of an orphaned id alone when its bill is kept, and removes them once the bill is gone', async () => {
+  it("leaves a kept draft's rows alone and removes a deleted draft's rows in the same batch", async () => {
     const kept = await draft(1)
     const removed = await draft(2)
     await addFeedEvent(kept)

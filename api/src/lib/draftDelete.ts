@@ -85,7 +85,7 @@ export function draftDeleteStatements(db: AppDb, ids: readonly string[]): Parame
     AND NOT EXISTS (SELECT 1 FROM comments c WHERE c.bill_id = b.id AND c.deleted_at IS NULL)
     AND NOT EXISTS (SELECT 1 FROM notes n WHERE n.bill_id = b.id AND n.content <> ''))`
   // A row of a named bill that no longer exists.
-  const ofDeleted = (column: SQLiteColumn) => sql`${column} IN ${named} AND ${column} NOT IN (SELECT id FROM bills)`
+  const ofDeleted = (column: SQLiteColumn) => sql`${column} IN ${named} AND NOT EXISTS (SELECT 1 FROM bills WHERE bills.id = ${column})`
   return [
     db.delete(bills).where(sql`${bills.id} IN ${deletable}`).returning({ id: bills.id }),
     db.delete(feedEvents).where(ofDeleted(feedEvents.billId)),
@@ -150,11 +150,16 @@ export async function deleteCleared(
   const left = candidates.filter(id => !gone.has(id))
   const skipped: Array<{ id: string; reason: DraftSkipReason }> = []
   if (left.length > 0) {
-    const fresh = await draftDeleteVerdicts(db, left)
+    // The batch has run, so a failed read here must not fail the request: earlier chunks and this
+    // one's deleted drafts are already gone. The drafts it kept are reported as engaged, the usual cause.
+    const fresh = await draftDeleteVerdicts(db, left).catch((err: unknown) => {
+      console.error('draft delete re-check failed', err)
+      return new Map<string, DraftDeleteVerdict>()
+    })
     for (const id of left) {
-      const verdict = fresh.get(id)!
+      const verdict = fresh.get(id)
       // 'delete' again means the guard and the fresh check disagree: report it as kept, not as gone.
-      skipped.push({ id, reason: verdict === 'delete' ? 'engaged' : verdict })
+      skipped.push({ id, reason: !verdict || verdict === 'delete' ? 'engaged' : verdict })
     }
   }
   return { deleted, skipped }
