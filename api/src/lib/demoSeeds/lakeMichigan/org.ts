@@ -62,12 +62,12 @@ Note: they track four state legislatures — Michigan, Wisconsin, Illinois, and 
 
 *How to write the summary*
 - Open with one sentence stating the bill's main effect, starting with a verb ("Requires…", "Establishes…", "Prohibits…"). Never write "This bill", "The bill", or the bill number anywhere in the summary.
-- If the bill is narrow or makes one main change, stop there or add one more sentence. Use no list.
+- Use the one-sentence form only when the bill makes a single change with nothing attached (one new requirement, one changed date, one renamed program). If it also sets a deadline, penalty, fee, or funding, or changes more than one thing, use the list below, however low its relevance. When unsure, use the list.
 - Otherwise, follow that sentence with a list of 2–8 items, most consequential first. Start each item with a short bold label naming what it governs, then a colon, then one sentence that starts with a verb and says who bears the duty. Keep each deadline, dollar amount, threshold, or penalty in the item it belongs to.
 - If the bill states an effective date, make it the last item, labeled Effective date.
 - Write no other prose, and use bold only for the item labels.
 
-Many of the bills you see will be short, procedural, or only tangentially related to water. When the text supports only a narrow description, give a narrow one — "Extends the sunset date for the state well-testing program to 2030." is a complete summary, and padding it out to sound substantive is worse than leaving it brief. If the available text is too thin to tell what the bill actually does, describe what it appears to do and stop there.
+Many of the bills you see will be short, procedural, or only tangentially related to water. Don't pad a single change to sound substantive ("Extends the sunset date for the state well-testing program to 2030." is a complete summary), and don't compress a bill with several provisions into one sentence either: the rules above decide its shape. If the available text is too thin to tell what the bill actually does, describe what it appears to do and stop there.
 
 Describe what the bill does, not whether it is good policy. The organization records its own stance separately as an official position, and takes one on only a small share of what it tracks — so a summary should read the same whether they end up supporting the bill, opposing it, or never taking a view. Don't predict whether a bill will pass.`,
   relevanceQuestion: "Rate the bill's relevance to Great Lakes water quality and drinking water infrastructure.",
