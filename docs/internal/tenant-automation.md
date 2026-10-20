@@ -2,7 +2,7 @@
 
 > Moved out of the public tenant guide. Useful orientation for a coding agent (or anyone) automating tenant standup: which pieces `wrangler` can create versus which are dashboard-only, one-time, and reused by every tenant.
 
-Almost everything per-tenant is scriptable with `wrangler`: creating the D1 database, the queue, running migrations, and deploying. The Cloudflare **credentials** are not — and they don't need to be, because they are **account-level and created once, then reused by every tenant**:
+Almost everything per-tenant is scriptable with `wrangler`: creating the D1 database, the queue, and the private R2 bucket for comment attachments (`wrangler r2 bucket create`; a new bucket has no public access), running migrations, and deploying. `new-instance.sh` creates the bucket as `<prefix>-<slug>-files` and binds it as `ATTACHMENTS_BUCKET` unless given `--no-attachments`. The Cloudflare **credentials** are not — and they don't need to be, because they are **account-level and created once, then reused by every tenant**:
 
 | Credential | Scriptable? | How it's obtained |
 |---|---|---|
@@ -34,4 +34,6 @@ An instance from before the probe existed would treat it as an ordinary bill not
 
 A `probe` message is handled before any bill logic (`api/src/lib/deliveryProbe.ts`): the consumer reads the bill back from central to prove the `CENTRAL` binding, records `{ nonce, billId, receivedAt, readStatus }` under the `delivery_probe` key in `association_config`, and acknowledges. It writes no bill row and no feed event, so verifying never changes which bills the instance tracks. The AI check shares its prompt inputs with the queue consumer (`api/src/lib/analysisInputs.ts`) so it exercises what the pipeline would.
 
-Failures carry a `stage` (`deploy`, `secrets`, `bind`, `register`, or `verify`). `new-instance.sh` passes the step number of each (`step <key> "..."` records `STEP_NO_<key>`) so the resume line names the earliest step that needs re-running, and passes the commit step 4 deployed as the expected build, because the commits after the deploy move HEAD.
+The script also prints whether attachments are on. It reads that from the instance's `[[env.<slug>.r2_buckets]]` binding in `api/wrangler.toml`, not from the instance, which tells only a signed-in member, so it is an `info` line rather than a check, and an instance without attachments still passes.
+
+Failures carry a `stage` (`deploy`, `secrets`, `bind`, `register`, or `verify`). `new-instance.sh` passes the step number of each (`step <key> "..."` records `STEP_NO_<key>`) so the resume line names the earliest step that needs re-running, and passes the commit its deploy step deployed as the expected build, because the commits after the deploy move HEAD.

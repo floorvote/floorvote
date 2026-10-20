@@ -9,7 +9,7 @@ A tenant is one team's instance: a single Cloudflare Worker + D1 database + queu
 Throughout, replace `[slug]` with a lowercase identifier for the team (e.g. `org-nj`) and `[STATE]` with its two-letter abbreviation.
 
 > [!TIP]
-> **Shortcut:** `scripts/new-instance.sh` automates every step below — it creates the database and queue, appends the config block, deploys, sets the secret, binds the tenant on central, registers it, optionally seeds history, and creates the first user, then [verifies the instance end to end](#verify-the-instance-end-to-end). Use `--from-step N` to resume after a failure. The manual steps below are the reference, and worth reading once before your first run.
+> **Shortcut:** `scripts/new-instance.sh` automates every step below — it creates the database, the queue, and the bucket for comment attachments, appends the config block, deploys, sets the secret, binds the tenant on central, registers it, optionally seeds history, and creates the first user, then [verifies the instance end to end](#verify-the-instance-end-to-end). Use `--from-step N` to resume after a failure, and `--no-attachments` to leave comment attachments off. The manual steps below are the reference, and worth reading once before your first run.
 
 > [!NOTE]
 > **Renamed resources?** The commands below name every Cloudflare resource `floorvote-…` — the worker, the D1 database, the queues, and the shared `floorvote-dlq`. If your deployment uses a different resource prefix (anything other than the default `floorvote`), substitute it consistently everywhere you see `floorvote-` below — **and** make sure it matches the `TENANT_QUEUE_PREFIX` set on your central service. Otherwise central looks for a queue that doesn't exist, silently creates a phantom with no consumer, and the tenant receives no bills.
@@ -67,6 +67,16 @@ npx wrangler queues create floorvote-dlq
 ```
 
 Later tenants reuse the same one; running this again for a second tenant is harmless but unnecessary.
+
+## Step 2b: Create a bucket for comment attachments (optional)
+
+Members can attach files to comments once the instance has a bucket bound. Skip this step, and the bucket block in Step 3, to leave attachments off.
+
+```bash
+npx wrangler r2 bucket create floorvote-[slug]-files
+```
+
+A new bucket is private, and should stay that way: don't turn on public access or an `r2.dev` URL. Files go to and from it through the instance's Worker, so it needs no CORS rule and no API token.
 
 ## Step 3: Add a config block to `api/wrangler.toml`
 
@@ -171,6 +181,11 @@ binding = "DB"
 database_name = "floorvote-[slug]"
 database_id = "<database-id-from-step-1>"
 migrations_dir = "migrations"
+
+# Comment attachments: the bucket from Step 2b. Leave this out to keep them off.
+[[env.[slug].r2_buckets]]
+binding = "ATTACHMENTS_BUCKET"
+bucket_name = "floorvote-[slug]-files"
 
 [[env.[slug].queues.producers]]
 binding = "BILL_QUEUE"
@@ -533,6 +548,8 @@ It runs five checks, each cheap and none visible to the team's members, and prin
 | **Queue delivery** | Central sends the instance one bill it already stores, through the real queue, and the instance receives it and can read it back from central. The instance records the arrival and stops, so it tracks no bill it didn't already. |
 | **AI analysis** | The instance analyzes one stored bill end to end through your AI Gateway. Off by default when run by hand, since it costs one model call (`new-instance.sh` turns it on). Reported as `skipped` when the instance has no AI configured. Nothing is saved, so no bill is left tracked. |
 | **Email** | A sample digest goes to the operator: the first address in the instance's `ALERT_EMAILS`, or `--to <email>`. It never sends a sign-in link, and never goes to the instance's owner or members. Works with either email provider, and is `skipped` if there is no address to send to. |
+
+Above the checks, an `info` line says whether comment attachments are on, and with which bucket. It reads the instance's `ATTACHMENTS_BUCKET` binding in `api/wrangler.toml`, so it reflects your config rather than the running instance, and an instance without attachments still passes.
 
 Run it after you have redeployed central and the instance on the same release: if either is older than the script, it says so and tells you to redeploy, and central refuses to send the delivery probe to an instance that would not understand it. None of it calls LegiScan. A failure names the check and its likely cause, for example *Central has no binding for this instance: did central redeploy after the binding step?* When `new-instance.sh` runs it, a failure also prints the `--from-step` command to resume from, and the script exits non-zero. Run by hand, it exits non-zero on any failure.
 

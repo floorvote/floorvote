@@ -10,7 +10,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  USAGE, UsageError, resolveConfig, runChecks, formatResult, formatFooter, exitCode,
+  USAGE, UsageError, resolveConfig, runChecks, formatAttachments, formatResult, formatFooter, exitCode,
 } from './lib/verify-instance'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -40,6 +40,7 @@ async function main(): Promise<number> {
   }
 
   console.log(`Verifying ${cfg.slug} (central: ${cfg.centralUrl})`)
+  console.log(formatAttachments(cfg))
   const results = await runChecks(cfg, {
     fetch,
     sleep: (ms) => new Promise(r => setTimeout(r, ms)),
