@@ -194,6 +194,18 @@ describe('Feed: Dismiss on a new match', () => {
     expect(refreshSidebar).toHaveBeenCalledTimes(1)
   })
 
+  it('leaves keyboard focus on the same control when Dismiss turns it plain', async () => {
+    apiFetchMock.mockResolvedValue({ ok: true })
+    renderFeed([ev({ id: 'e1', billNewMatch: true })])
+    const before = sel()
+    before.focus()
+    expect(before).toHaveFocus()
+    fireEvent.change(before, { target: { value: 'dismiss' } })
+    await waitFor(() => expectClosedLabel(sel(), 'Set priority'))
+    expect(sel()).toBe(before)
+    expect(before).toHaveFocus()
+  })
+
   it('a failed Dismiss leaves the amber control in place', async () => {
     apiFetchMock.mockRejectedValue(new Error('boom'))
     renderFeed([ev({ id: 'e1', billNewMatch: true })])

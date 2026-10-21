@@ -17,8 +17,11 @@ const hoisted = vi.hoisted(() => ({
   pages: new Map<number, unknown>(),
   calls: [] as string[],
   patches: [] as Array<{ url: string; body: unknown }>,
-  // URLs of PATCHes that fail, and the ones held until a test releases them.
+  // URLs of PATCHes that fail.
   failing: new Set<string>(),
+  // List pages held until a test releases them, and a way to answer one by the `removed` it was asked with.
+  held: new Map<number, Promise<void>>(),
+  respond: null as null | ((page: number, removed: number) => unknown),
 }))
 
 vi.mock('../hooks/usePolling', () => ({ usePolling: (fn: () => Promise<void>) => { hoisted.poll = fn; return { forceRefresh: () => {} } } }))
@@ -31,7 +34,11 @@ vi.mock('../lib/api', () => ({
       return url.endsWith('/priority') ? { priority: JSON.parse(init.body!).priority, promoted: false } : { ok: true }
     }
     const list = url.match(/^\/feed\/events\/([^/]+)\/bills\?page=(\d+)(?:&removed=(\d+))?$/)
-    if (list) return hoisted.pages.get(Number(list[2]))
+    if (list) {
+      const page = Number(list[2])
+      await hoisted.held.get(page)
+      return hoisted.respond?.(page, Number(list[3] ?? 0)) ?? hoisted.pages.get(page)
+    }
     if (url.startsWith('/feed?')) return hoisted.feed
     throw new Error(`unexpected ${url}`)
   },
@@ -120,6 +127,8 @@ beforeEach(() => {
   hoisted.calls = []
   hoisted.patches = []
   hoisted.failing = new Set()
+  hoisted.held = new Map()
+  hoisted.respond = null
   refreshSidebar.mockReset()
   asAdmin()
 })
@@ -305,6 +314,36 @@ describe('Dismiss on a new match', () => {
   })
 })
 
+describe('each dropdown names its bill', () => {
+  it('reads "Priority for <bill number>", and says so for a new match too', async () => {
+    await openRow([row(2, [A, B])], [entry([A]), entry([B], { newMatch: true })])
+    expect(screen.getByRole('combobox', { name: 'Priority for HB1' })).toBe(selectIn(entryOf('Act on HB1')))
+    expect(screen.getByRole('combobox', { name: 'Priority for HB2 (new match: set a priority or dismiss)' })).toBe(selectIn(entryOf('Act on HB2')))
+  })
+
+  it('names a companion group\'s dropdown for its lead bill', async () => {
+    const SB5 = bill('s5', 'SB5', { groupKey: 'g1' })
+    const HB6 = bill('h6', 'HB6', { groupKey: 'g1' })
+    await openRow([row(1, [SB5])], [entry([SB5, HB6])])
+    expect(screen.getByRole('combobox', { name: 'Priority for SB5' })).toBeInTheDocument()
+  })
+})
+
+describe('keyboard focus through Dismiss', () => {
+  it('stays on the same dropdown after Dismiss turns it from amber to plain', async () => {
+    await openRow([row(1, [A])], [entry([A], { newMatch: true })])
+    const before = selectIn(entryOf('Act on HB1'))
+    before.focus()
+    expect(before).toHaveFocus()
+
+    await choose(entryOf('Act on HB1'), 'dismiss')
+
+    await waitFor(() => expectNotAmber(selectIn(entryOf('Act on HB1'))))
+    expect(selectIn(entryOf('Act on HB1'))).toBe(before)
+    expect(before).toHaveFocus()
+  })
+})
+
 describe('a member\'s expanded row', () => {
   beforeEach(() => authMock.mockReturnValue({ user: { id: 'u1', role: 'member' } }))
 
@@ -448,6 +487,97 @@ describe('the rest of a long list, after bills have left it', () => {
     await waitFor(() => expect(screen.queryByRole('link', { name: 'Act on HB1' })).toBeNull())
     scrollToEnd()
     await waitFor(() => expect(hoisted.calls.filter((u) => u.includes('/bills?'))[2]).toBe('/feed/events/row/bills?page=3&removed=2'))
+  })
+})
+
+describe('a box with nothing left to scroll', () => {
+  const sizeBox = (scrollHeight: number, clientHeight: number) => {
+    Object.defineProperty(box(), 'scrollHeight', { configurable: true, value: scrollHeight })
+    Object.defineProperty(box(), 'clientHeight', { configurable: true, value: clientHeight })
+  }
+  const listCalls = () => hoisted.calls.filter((u) => u.includes('/bills?'))
+
+  it('loads the next page by itself once removals leave nothing to scroll, counting what was dropped', async () => {
+    hoisted.pages.set(2, { entries: [entry([D])], total: 4, page: 2, limit: 50, hasMore: false })
+    await openRow([row(4, [A, B])], [entry([A]), entry([B]), entry([C])], true)
+
+    sizeBox(1000, 300) // still a scrollbar: the reader can scroll to the end from here
+    await choose(entryOf('Act on HB1'), 'high')
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'Act on HB1' })).toBeNull())
+    expect(listCalls()).toEqual(['/feed/events/row/bills?page=1'])
+
+    sizeBox(100, 300) // the box no longer overflows, so no scroll event can ever come
+    await choose(entryOf('Act on HB2'), 'high')
+    expect(await screen.findByRole('link', { name: 'Act on HB4' })).toBeInTheDocument()
+    expect(listCalls()).toEqual(['/feed/events/row/bills?page=1', '/feed/events/row/bills?page=2&removed=2'])
+  })
+
+  it('keeps going while there is nothing to scroll, and stops once the last page has arrived', async () => {
+    hoisted.pages.set(2, { entries: [entry([D])], total: 5, page: 2, limit: 50, hasMore: true })
+    hoisted.pages.set(3, { entries: [entry([E])], total: 5, page: 3, limit: 50, hasMore: false })
+    await openRow([row(5, [A, B])], [entry([A]), entry([B]), entry([C])], true)
+    sizeBox(100, 300)
+    await choose(entryOf('Act on HB1'), 'high')
+    expect(await screen.findByRole('link', { name: 'Act on HB5' })).toBeInTheDocument()
+    await act(async () => {})
+    expect(listCalls()).toEqual([
+      '/feed/events/row/bills?page=1', '/feed/events/row/bills?page=2&removed=1', '/feed/events/row/bills?page=3&removed=1',
+    ])
+  })
+
+  it('loads nothing by itself before the box has been laid out, or when it overflows', async () => {
+    hoisted.pages.set(2, { entries: [entry([D])], total: 4, page: 2, limit: 50, hasMore: false })
+    await openRow([row(4, [A, B])], [entry([A]), entry([B]), entry([C])], true)
+    await act(async () => {})
+    expect(listCalls()).toEqual(['/feed/events/row/bills?page=1'])
+    sizeBox(900, 300)
+    await choose(entryOf('Act on HB1'), 'high')
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'Act on HB1' })).toBeNull())
+    await act(async () => {})
+    expect(listCalls()).toEqual(['/feed/events/row/bills?page=1'])
+  })
+})
+
+describe('a bill that leaves while the next page is on its way', () => {
+  const scrollToEnd = () => {
+    Object.defineProperty(box(), 'scrollHeight', { configurable: true, value: 1000 })
+    Object.defineProperty(box(), 'clientHeight', { configurable: true, value: 300 })
+    Object.defineProperty(box(), 'scrollTop', { configurable: true, value: 700, writable: true })
+    fireEvent.scroll(box())
+  }
+  const listCalls = () => hoisted.calls.filter((u) => u.includes('/bills?'))
+  const STALE = bill('bs', 'HB9')
+
+  it('discards that page, which started a bill too late, and asks again counting it', async () => {
+    let release!: () => void
+    hoisted.held.set(2, new Promise<void>((resolve) => { release = resolve }))
+    // The server answers as it was asked: with nothing dropped, it starts late and leaves HB4 out.
+    hoisted.respond = (page, removed) => (page === 2
+      ? { entries: [entry(removed === 0 ? [STALE] : [D])], total: 4, page: 2, limit: 50, hasMore: false }
+      : undefined)
+    await openRow([row(4, [A, B])], [entry([A]), entry([B]), entry([C])], true)
+    scrollToEnd()
+    await waitFor(() => expect(listCalls()).toHaveLength(2))
+
+    await choose(entryOf('Act on HB1'), 'high')
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'Act on HB1' })).toBeNull())
+    release()
+
+    expect(await screen.findByRole('link', { name: 'Act on HB4' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Act on HB9' })).toBeNull()
+    expect(listCalls()).toEqual(['/feed/events/row/bills?page=1', '/feed/events/row/bills?page=2', '/feed/events/row/bills?page=2&removed=1'])
+  })
+
+  it('keeps a page that nothing left during, asking once', async () => {
+    let release!: () => void
+    hoisted.held.set(2, new Promise<void>((resolve) => { release = resolve }))
+    hoisted.pages.set(2, { entries: [entry([D])], total: 4, page: 2, limit: 50, hasMore: false })
+    await openRow([row(4, [A, B])], [entry([A]), entry([B]), entry([C])], true)
+    scrollToEnd()
+    await waitFor(() => expect(listCalls()).toHaveLength(2))
+    release()
+    expect(await screen.findByRole('link', { name: 'Act on HB4' })).toBeInTheDocument()
+    expect(listCalls()).toHaveLength(2)
   })
 })
 
