@@ -647,76 +647,13 @@ export function Profile() {
         )}
       </div>
 
-      {/* Notifications card: every email a member can control, most frequent first, plus the always-sent line */}
+      {/* Notifications card: every email a member can control, the digests first and replies last (the same order as Team notifications), plus the always-sent line */}
       <div style={SECTION_CARD}>
         <h2 style={CARD_TITLE}>Notifications</h2>
         <p style={{ ...HELPER_TEXT, marginTop: 0, marginBottom: 12 }}>
           You'll always get an email when someone mentions you, your role, @admins, or @everyone.
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div
-            id="setting-email-replies"
-            style={{
-              padding: '12px 14px',
-              border: `1px solid ${color.borderDefault}`,
-              borderRadius: radius.lg,
-              background: color.white,
-              opacity: demoLocked ? 0.55 : 1,
-              boxShadow: flashedSetting === 'setting-email-replies' ? `0 0 0 3px ${color.borderAmber}` : undefined,
-              transition: 'box-shadow 0.6s ease',
-            }}
-          >
-            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, cursor: demoLocked ? 'not-allowed' : 'pointer' }}>
-              <div style={{ fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5 }}>
-                <div style={{ fontWeight: fontWeight.bold, color: color.textPrimary }}>Replies on bills you've commented on</div>
-                <div>Notify me in FloorVote and by email when someone else comments on a bill I've commented on. To stop them on one bill, use Mute comments on that bill.</div>
-              </div>
-              <span
-                style={{
-                  position: 'relative',
-                  display: 'inline-block',
-                  width: 38,
-                  height: 24,
-                  flexShrink: 0,
-                  cursor: demoLocked ? 'not-allowed' : 'pointer',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  role="switch"
-                  className="fv-switch-input"
-                  aria-label="Toggle Replies on bills you've commented on"
-                  checked={repliesEnabled}
-                  disabled={repliesSaving || demoLocked}
-                  onChange={toggleReplies}
-                  style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
-                />
-                <span
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    background: repliesEnabled ? color.accentBlue : color.borderStrong,
-                    borderRadius: radius.pill,
-                    transition: 'background 0.18s ease',
-                  }}
-                />
-                <span
-                  style={{
-                    position: 'absolute',
-                    top: 2,
-                    left: repliesEnabled ? 16 : 2,
-                    width: 20,
-                    height: 20,
-                    background: color.white,
-                    borderRadius: '50%',
-                    transition: 'left 0.18s ease',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
-                  }}
-                />
-              </span>
-            </label>
-          </div>
-
           <div
             id="setting-email-digest"
             style={{
@@ -923,6 +860,69 @@ export function Profile() {
                     position: 'absolute',
                     top: 2,
                     left: weekAheadEnabled ? 16 : 2,
+                    width: 20,
+                    height: 20,
+                    background: color.white,
+                    borderRadius: '50%',
+                    transition: 'left 0.18s ease',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                  }}
+                />
+              </span>
+            </label>
+          </div>
+
+          <div
+            id="setting-email-replies"
+            style={{
+              padding: '12px 14px',
+              border: `1px solid ${color.borderDefault}`,
+              borderRadius: radius.lg,
+              background: color.white,
+              opacity: demoLocked ? 0.55 : 1,
+              boxShadow: flashedSetting === 'setting-email-replies' ? `0 0 0 3px ${color.borderAmber}` : undefined,
+              transition: 'box-shadow 0.6s ease',
+            }}
+          >
+            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, cursor: demoLocked ? 'not-allowed' : 'pointer' }}>
+              <div style={{ fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5 }}>
+                <div style={{ fontWeight: fontWeight.bold, color: color.textPrimary }}>Replies on bills you've commented on</div>
+                <div>Notify me in FloorVote and by email when someone else comments on a bill I've commented on. To stop them on one bill, use Mute comments on that bill.</div>
+              </div>
+              <span
+                style={{
+                  position: 'relative',
+                  display: 'inline-block',
+                  width: 38,
+                  height: 24,
+                  flexShrink: 0,
+                  cursor: demoLocked ? 'not-allowed' : 'pointer',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  role="switch"
+                  className="fv-switch-input"
+                  aria-label="Toggle Replies on bills you've commented on"
+                  checked={repliesEnabled}
+                  disabled={repliesSaving || demoLocked}
+                  onChange={toggleReplies}
+                  style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
+                />
+                <span
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    background: repliesEnabled ? color.accentBlue : color.borderStrong,
+                    borderRadius: radius.pill,
+                    transition: 'background 0.18s ease',
+                  }}
+                />
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: 2,
+                    left: repliesEnabled ? 16 : 2,
                     width: 20,
                     height: 20,
                     background: color.white,

@@ -54,6 +54,17 @@ describe('Notifications page', () => {
     expect(screen.getByText(/mentions of a member, a role, @admins, or @everyone in comments, and replies on bills members have commented on, for the whole instance/i)).toBeInTheDocument()
   })
 
+  it('lists the switches in the Account page\'s order: recent activity, upcoming hearings, then conversation emails last', async () => {
+    mockConfig()
+    render(<MemoryRouter><Notifications /></MemoryRouter>)
+    await screen.findByText(/digest of recent bill activity/i)
+    expect(screen.getAllByRole('switch').map((s) => s.getAttribute('aria-label'))).toEqual([
+      'Toggle email digest',
+      'Toggle week-ahead email',
+      'Toggle conversation emails',
+    ])
+  })
+
   it('frames the page as settings for everyone in the instance', async () => {
     mockConfig()
     render(<MemoryRouter><Notifications /></MemoryRouter>)

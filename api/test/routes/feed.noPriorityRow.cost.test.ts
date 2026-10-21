@@ -58,7 +58,7 @@ describe('the no-priority updates row: what a GET /feed costs', () => {
   const getFeed = async () => {
     const res = await SELF.fetch('http://localhost/api/feed?limit=40', { headers: { Cookie: `session=${token}` } })
     expect(res.status).toBe(200)
-    return await res.json() as { events: Array<{ type: string; metadata: { count?: number } }> }
+    return await res.json() as { events: Array<{ type: string; metadata: { count?: number }; noPriorityCard?: boolean }> }
   }
   const row = (day: string) =>
     getDb(env.DB).insert(feedEvents).values({ id: `row-${day}`, type: 'no_priority_updates' as never, billId: null, userId: 'system', metadata: '{}', createdAt: `${day} 06:00:00` })
@@ -66,7 +66,9 @@ describe('the no-priority updates row: what a GET /feed costs', () => {
     getDb(env.DB).insert(feedEvents).values({ id: crypto.randomUUID(), type: 'bill_updated', billId, userId: 'system', metadata: '{"changes":[]}', createdAt: at })
 
   it('resolves the rows from the day\'s events, through the created_at index', async () => {
+    // Two bills: a row of one is its bill's card (#921).
     await update(await seedBill({ billNumber: 'HB 1', relevanceScore: 5 }), '2026-03-04 09:00:00')
+    await update(await seedBill({ billNumber: 'HB 2', relevanceScore: 5 }), '2026-03-04 10:00:00')
     await row('2026-03-04')
 
     const { result, statements } = await capture(getFeed)
@@ -136,6 +138,29 @@ describe('the no-priority updates row: what a GET /feed costs', () => {
     })
   })
 
+  describe('the row\'s list, with companion groups and new matches (#920)', () => {
+    const list = async (qs: string) => {
+      const res = await SELF.fetch(`http://localhost/api/feed/events/row-2026-03-04/bills${qs}`, { headers: { Cookie: `session=${token}` } })
+      expect(res.status).toBe(200)
+      return await res.json() as { entries: Array<{ newMatch: boolean }> }
+    }
+
+    it('costs the same number of statements for 50 entries that are companion groups and new matches as for 2', async () => {
+      for (let i = 0; i < 60; i++) {
+        await update(await seedBill({ billNumber: `HB ${i}`, relevanceScore: 1 + (i % 10), matchType: 'keyword', newMatchAt: '2026-03-01 08:00:00' }), `2026-03-04 09:${String(i % 60).padStart(2, '0')}:00`)
+      }
+      await env.DB.prepare(`UPDATE bills SET group_key = 'g' || id`).run()
+      await row('2026-03-04')
+
+      const small = await capture(() => list('?page=1&limit=2'))
+      const full = await capture(() => list('?page=1'))
+      expect(small.result.entries.every((e) => e.newMatch)).toBe(true)
+      expect(full.result.entries).toHaveLength(50)
+      expect(full.result.entries.every((e) => e.newMatch)).toBe(true)
+      expect(full.statements.length).toBe(small.statements.length)
+    })
+  })
+
   // A realistic instance: 4,000 bills, 1,000 analyzed (50 prioritized, 60 in
   // companion pairs), and 30 days of 100 legislative updates a day, each day with
   // its row. Most bills move a few times a month, so the history the engagement
@@ -172,6 +197,98 @@ describe('the no-priority updates row: what a GET /feed costs', () => {
     const before = await rowsReadAs(count, asBefore)
     console.log(`[no-priority row cost] triaged statements=${statements.length} count rows_read=${read} as-joined-before=${before}`)
     expect(read).toBeLessThan(28 * 100 * 12)
+  })
+
+  // #921: a day whose row resolves to one entry is that entry's card. GET /feed
+  // decides it in the page's own query and its total, from each day's events
+  // through the created_at index, and marks the card's updates with the
+  // statements it already runs for the rows: no statement per day.
+  describe('a day whose row is one bill\'s card (#921)', () => {
+    const loneDays = async (days: string[]) => {
+      for (const [i, day] of days.entries()) {
+        const b = await seedBill({ billNumber: `HB ${i}`, relevanceScore: 5 })
+        await update(b, `${day} 09:00:00`)
+        await update(b, `${day} 11:00:00`)
+        await row(day)
+      }
+    }
+    const cards = (r: { events: Array<{ noPriorityCard?: boolean }> }) => r.events.filter((e) => e.noPriorityCard === true)
+
+    it('reads the lone days through the created_at index, in the page\'s query and its count', async () => {
+      await loneDays(['2026-03-03', '2026-03-04'])
+      const { result, statements } = await capture(getFeed)
+      expect(cards(result)).toHaveLength(4)
+      expect(result.events.filter((e) => e.type === 'no_priority_updates')).toEqual([])
+
+      for (const s of [statements.find(isFeedList)!, statements.find(isFeedCount)!]) {
+        const plan = await planOf(s)
+        expect(plan, `plan of:\n${s.sql}\n\n${plan}`).toContain('USING INDEX idx_feed_events_created ')
+        // No alias of feed_events inside the row's rules is ever scanned whole.
+        expect(plan, `plan of:\n${s.sql}\n\n${plan}`).not.toMatch(/SCAN (m|o|sib)\b/)
+        // Each day is sorted into row or card once a statement, not once an update:
+        // the days' subquery reads nothing of the event it is asked about.
+        expect(plan, `plan of:\n${s.sql}\n\n${plan}`).toMatch(/^LIST SUBQUERY \d+\nMATERIALIZE day_first$/m)
+        expect(plan, `plan of:\n${s.sql}\n\n${plan}`).toContain('SCAN r USING INDEX idx_feed_events_no_priority_updates_day')
+      }
+    })
+
+    it('costs the same number of statements for three lone-bill days on the page as for one', async () => {
+      await loneDays(['2026-03-04'])
+      const one = await capture(getFeed)
+      expect(cards(one.result)).toHaveLength(2)
+
+      await loneDays(['2026-03-02', '2026-03-03'])
+      const three = await capture(getFeed)
+      expect(cards(three.result)).toHaveLength(6)
+      expect(three.statements.length).toBe(one.statements.length)
+    })
+
+    it('costs no more statements for a page of rows and lone-bill days than for a page of rows alone', async () => {
+      const rowDays = ['2026-03-05', '2026-03-06']
+      for (const [i, day] of rowDays.entries()) {
+        for (let j = 0; j < 2; j++) await update(await seedBill({ billNumber: `SB ${i}${j}`, relevanceScore: 5 }), `${day} 09:0${j}:00`)
+        await row(day)
+      }
+      const rows = await capture(getFeed)
+      expect(rows.result.events.filter((e) => e.type === 'no_priority_updates')).toHaveLength(2)
+
+      await loneDays(['2026-03-02', '2026-03-03', '2026-03-04'])
+      const mixed = await capture(getFeed)
+      expect(mixed.result.events.filter((e) => e.type === 'no_priority_updates')).toHaveLength(2)
+      expect(cards(mixed.result)).toHaveLength(6)
+      expect(mixed.statements.length).toBe(rows.statements.length)
+    })
+
+    // A triaged instance where one bill with no priority moves three times every
+    // day: each day's row is that bill's card. Each lone update looks through
+    // its own day's updates for a second entry, so a day's cost is its updates
+    // times its lone updates, not every analyzed bill or the whole history.
+    it('reads a bounded number of rows on a triaged instance whose every day has one bill with no priority', async () => {
+      await realistic({ triaged: true })
+      await env.DB.prepare(`INSERT INTO bills (id, bill_number, title, state, match_type, relevance_score) VALUES ('lone', 'HB 5000', 'Lone Act', 'RI', 'keyword', 5)`).run()
+      const lone: string[] = []
+      for (let d = 0; d < 28; d++) {
+        for (const h of ['09', '13', '17']) lone.push(`('lone-${d}-${h}', 'bill_updated', 'lone', 'system', '{"changes":[]}', '2026-02-${String(d + 1).padStart(2, '0')} ${h}:20:00')`)
+      }
+      await env.DB.prepare(`INSERT INTO feed_events (id, type, bill_id, user_id, metadata, created_at) VALUES ${lone.join(', ')}`).run()
+
+      const { result, statements } = await capture(getFeed)
+      expect(result.events.filter((e) => e.type === 'no_priority_updates')).toEqual([])
+      expect(cards(result).length).toBeGreaterThan(0)
+      const count = statements.find(isFeedCount)!
+      const list = statements.find(isFeedList)!
+      const read = { list: await rowsRead(list), count: await rowsRead(count) }
+      console.log(`[no-priority row cost] lone days statements=${statements.length} rows_read=${JSON.stringify(read)}`)
+      expect(read.count).toBeLessThan(28 * 100 * 12)
+    })
+
+    it('reads a bounded number of rows on a realistic instance, with its lone cards decided in the same reads', async () => {
+      await realistic({ triaged: false })
+      const { statements } = await capture(getFeed)
+      const count = await rowsRead(statements.find(isFeedCount)!)
+      console.log(`[no-priority row cost] realistic count rows_read=${count}`)
+      expect(count).toBeLessThan(28 * 100 * 12)
+    })
   })
 
   const rowsReadAs = async (s: Captured, rewrite: (q: string) => string) =>

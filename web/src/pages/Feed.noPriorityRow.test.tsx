@@ -106,7 +106,9 @@ describe('the collapsed row', () => {
     expect(screen.queryByText(/^\+\d+$/)).toBeNull()
   })
 
-  it('reads as one bill, with one chip, for a day with one', () => {
+  // The server sends a row of one bill as that bill's card (#921); a row reads
+  // one only after an admin prioritizes the rest of it in place (#920).
+  it('reads as one bill, with one chip, when one is left', () => {
     showFeed([row(1, [bill('b1', 'HB2')])])
     expect(toggle()).toHaveAccessibleName('Updates on 1 bill with no priority')
     expect(screen.getAllByRole('link')).toHaveLength(1)

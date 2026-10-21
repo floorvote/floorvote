@@ -7,15 +7,14 @@ import { LoadingState } from '../components/LoadingState'
 import type { FeedEvent } from '../lib/feedUtils'
 import { GroupedBillCard } from '../components/GroupedBillCard'
 import { FeedActivityRow } from '../components/FeedActivityRow'
-import { NoPriorityRow } from '../components/NoPriorityRow'
-import { groupEventsByBillAndDay, filterPriorityEvents, filterFullyAnalyzed, NO_PRIORITY_UPDATES } from '../lib/feedUtils'
+import { NoPriorityRow, rowAfterPrioritized } from '../components/NoPriorityRow'
+import { groupEventsByBillAndDay, filterPriorityEvents, NO_PRIORITY_UPDATES } from '../lib/feedUtils'
 import type { GroupedBillEvents } from '../lib/feedUtils'
 import { eventDateLabel } from '../lib/calendarDate'
 import { usePolling } from '../hooks/usePolling'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 import { DateDivider } from '../components/ui/DateDivider'
-import { ScopeSelect, type ScopeSelectOption } from '../components/ui/ScopeSelect'
 import { useFeedUnread } from '../context/FeedUnreadContext'
 import { useAuth } from '../hooks/useAuth'
 import { useSidebarRefresh } from '../context/SidebarRefreshContext'
@@ -25,7 +24,7 @@ type FeedResponse = { events: FeedEvent[]; total: number; page: number; limit: n
 
 const LIMIT = 40
 // One scroll-to-bottom should add a real batch of cards, not a sliver. Because a
-// page of LIMIT raw events collapses (grouping) and is culled (default-scope
+// page of LIMIT raw events collapses (grouping) and is culled (feed
 // filter) into an unpredictable, often tiny, number of visible cards, we keep
 // pulling pages until this many NEW visible cards have been added (or the feed
 // ends). MAX_FILL_FETCHES bounds the per-scroll latency on a heavily-filtered
@@ -39,8 +38,14 @@ const MAX_FILL_FETCHES = 10
 
 // The newest event the poll compares to tell new activity from none. The
 // no-priority updates row is passive, as it is for the Feed dot: on its own it
-// raises no "New activity" banner and loads nothing in place.
-const topEventId = (events: FeedEvent[]) => events.find((e) => e.type !== NO_PRIORITY_UPDATES)?.id ?? null
+// raises no "New activity" banner and loads nothing in place. Nor does the card
+// the server sends in place of a row of one bill (#921). Only events the default
+// feed would draw count: the server can admit a lone update and send it
+// unmarked when its bill changes between two reads, and the Feed's rule drops it.
+const topEventId = (events: FeedEvent[]) => {
+  const shown = new Set(filterPriorityEvents(groupEventsByBillAndDay(events)).flatMap((g) => g.events.map((e) => e.id)))
+  return events.find((e) => e.type !== NO_PRIORITY_UPDATES && !e.noPriorityCard && shown.has(e.id))?.id ?? null
+}
 
 export type FeedLoaderResult =
   | { data: FeedResponse }
@@ -68,7 +73,7 @@ export function feedLoader({ request }: Pick<LoaderFunctionArgs, 'request'>): Pr
   const controller = new AbortController()
   const signal = AbortSignal.any([controller.signal, request.signal])
   const pending = apiFetchForLoader<FeedResponse>(
-    `/feed?page=1&limit=${LIMIT}&scope=default`,
+    `/feed?page=1&limit=${LIMIT}`,
     { progress, signal },
   )
   let unblockTimer: ReturnType<typeof setTimeout> | undefined
@@ -174,14 +179,6 @@ export function FeedPane() {
   return <Feed preloaded={data} />
 }
 
-type ScopeMode = 'default' | 'analyzed'
-
-const SCOPE_OPTIONS: ScopeSelectOption<ScopeMode>[] = [
-  { value: 'default',  label: 'Default feed',            description: 'Prioritized bills and other bills with member activity' },
-  { value: 'analyzed', label: 'All analyzed bills', description: 'All bills that match your keywords or have been manually added' },
-]
-
-
 export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
   usePageTitle('Feed')
   const [events, setEvents] = useState<FeedEvent[]>(preloaded?.events ?? [])
@@ -189,9 +186,6 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(!preloaded)
   const [error, setError] = useState<string | null>(null)
-  const [scopeMode, setScopeMode] = useState<ScopeMode>('default')
-  const scopeRef = useRef(scopeMode)
-  useEffect(() => { scopeRef.current = scopeMode }, [scopeMode])
   const [hasNewActivity, setHasNewActivity] = useState(false)
   const skipFirstFetch = useRef(!!preloaded)
   const topEventIdRef = useRef<string | null>(topEventId(preloaded?.events ?? []))
@@ -202,8 +196,8 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
   const isAdmin = user?.role === 'admin' || user?.role === 'owner'
   const refreshSidebar = useSidebarRefresh()
   // The cards an admin has changed the priority or triage of on this visit, by day-group key.
-  // The default feed hides a card with no priority and only provider updates, so clearing
-  // a priority would drop the card from under the pointer; these stay until the feed reloads.
+  // The feed hides a card with no priority and only provider updates, so clearing
+  // a priority would drop the card from under the pointer; these stay for the visit.
   const editedCardsRef = useRef(new Set<string>())
   // Mirror the accumulating state into refs so the auto-fill loop reads the
   // latest values without being recreated on every append.
@@ -227,14 +221,12 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
     return () => window.removeEventListener('resize', measure)
   }, [])
 
-  // Count how many cards are actually visible under the current scope, after the
-  // same grouping + filtering the render applies. Pagination is driven by this,
-  // not by raw event count — otherwise a page of mostly-filtered events nets one
-  // sliver of content and the scroll stutters.
-  const visibleCount = useCallback((evs: FeedEvent[]) => {
-    const fn = scopeMode === 'analyzed' ? filterFullyAnalyzed : filterPriorityEvents
-    return fn(groupEventsByBillAndDay(evs)).length
-  }, [scopeMode])
+  // Count how many cards are actually visible, after the same grouping +
+  // filtering the render applies. Pagination is driven by this, not by raw event
+  // count — otherwise a page of mostly-filtered events nets one sliver of content
+  // and the scroll stutters.
+  const visibleCount = useCallback((evs: FeedEvent[]) =>
+    filterPriorityEvents(groupEventsByBillAndDay(evs)).length, [])
 
   // Low-level paginator: from the given seed events/page/total, keep appending
   // pages until `stop(evs)` holds, the feed is exhausted, or MAX_FILL_FETCHES is
@@ -247,7 +239,7 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
     let evs = seedEvents, pg = seedPage, tot = seedTotal, fetches = 0
     while (evs.length < tot && !stop(evs) && fetches < MAX_FILL_FETCHES) {
       const next = pg + 1
-      const data = await apiFetch<FeedResponse>(`/feed?page=${next}&limit=${LIMIT}&scope=${scopeRef.current}`)
+      const data = await apiFetch<FeedResponse>(`/feed?page=${next}&limit=${LIMIT}`)
       evs = [...evs, ...data.events]; pg = next; tot = data.total; fetches++
       setEvents(evs); setPage(pg); setTotal(tot)
     }
@@ -274,7 +266,7 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
       }
       fillingRef.current = true; setLoading(true)
       try {
-        const data = await apiFetch<FeedResponse>(`/feed?page=1&limit=${LIMIT}&scope=${scopeRef.current}`)
+        const data = await apiFetch<FeedResponse>(`/feed?page=1&limit=${LIMIT}`)
         if (cancelled) return
         setEvents(data.events); setPage(1); setTotal(data.total)
         topEventIdRef.current = topEventId(data.events)
@@ -286,28 +278,6 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
     run()
     return () => { cancelled = true }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Refetch from page 1 when scope changes (skip the initial mount).
-  const mountedRef = useRef(false)
-  useEffect(() => {
-    if (!mountedRef.current) { mountedRef.current = true; return }
-    editedCardsRef.current.clear()
-    let cancelled = false
-    const run = async () => {
-      fillingRef.current = true; setLoading(true); setError(null)
-      try {
-        const data = await apiFetch<FeedResponse>(`/feed?page=1&limit=${LIMIT}&scope=${scopeMode}`)
-        if (cancelled) return
-        setEvents(data.events); setPage(1); setTotal(data.total)
-        topEventIdRef.current = topEventId(data.events)
-        await pumpPages(data.events, 1, data.total,
-          (evs) => visibleCount(evs) >= INITIAL_TARGET)
-      } catch { if (!cancelled) setError('Failed to load feed.') }
-      finally { fillingRef.current = false; setLoading(false) }
-    }
-    run()
-    return () => { cancelled = true }
-  }, [scopeMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Scroll handler: pull pages until FILL_TARGET new visible cards are added or
   // the feed is exhausted. Self-serializing via fillingRef so overlapping
@@ -332,7 +302,7 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
   useEffect(() => { loadMoreRef.current = loadMore }, [loadMore])
 
   const loadLatest = useCallback(async () => {
-    const data = await apiFetch<FeedResponse>(`/feed?page=1&limit=${LIMIT}&scope=${scopeRef.current}`)
+    const data = await apiFetch<FeedResponse>(`/feed?page=1&limit=${LIMIT}`)
     setEvents(data.events)
     setPage(1)
     setTotal(data.total)
@@ -341,7 +311,7 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
   }, [])
 
   const pollFeed = useCallback(async () => {
-    const data = await apiFetch<FeedResponse>(`/feed?page=1&limit=${LIMIT}&scope=${scopeRef.current}`)
+    const data = await apiFetch<FeedResponse>(`/feed?page=1&limit=${LIMIT}`)
     const newTopId = topEventId(data.events)
     if (newTopId && newTopId !== topEventIdRef.current) {
       // New activity detected — auto-load silently if near top, else show banner.
@@ -387,13 +357,16 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
   // it changes on every event of the card's bill, or of its companion group whichever member
   // the card was set through, on every day. Setting a priority triages the bill, so it
   // is no longer a new match, and so does a Dismiss.
-  const showCardChange = useCallback((card: GroupedBillEvents, change: { billPriority?: GroupedBillEvents['billPriority']; billNewMatch: false }) => {
-    editedCardsRef.current.add(card.key)
+  const showBillChange = useCallback((bill: Pick<GroupedBillEvents, 'billId' | 'groupKey'>, change: { billPriority?: GroupedBillEvents['billPriority']; billNewMatch: false }) => {
     setEvents(prev => prev.map(e =>
-      (card.groupKey != null ? e.billGroupKey === card.groupKey : e.billId === card.billId) ? { ...e, ...change } : e,
+      (bill.groupKey != null ? e.billGroupKey === bill.groupKey : e.billId === bill.billId) ? { ...e, ...change } : e,
     ))
     refreshSidebar()
   }, [refreshSidebar])
+  const showCardChange = useCallback((card: GroupedBillEvents, change: { billPriority?: GroupedBillEvents['billPriority']; billNewMatch: false }) => {
+    editedCardsRef.current.add(card.key)
+    showBillChange(card, change)
+  }, [showBillChange])
 
   async function handleNewActivityClick() {
     await loadLatest()
@@ -415,10 +388,9 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
     return () => observer.disconnect()
   }, [])
 
-  const scopeFn = scopeMode === 'analyzed' ? filterFullyAnalyzed : filterPriorityEvents
   const allGroups = groupEventsByBillAndDay(events)
-  const inScope = new Set(scopeFn(allGroups))
-  const groups = allGroups.filter(g => inScope.has(g) || editedCardsRef.current.has(g.key))
+  const shown = new Set(filterPriorityEvents(allGroups))
+  const groups = allGroups.filter(g => shown.has(g) || editedCardsRef.current.has(g.key))
 
   // Group cards by day for separators
   const groupsByDay = new Map<string, GroupedBillEvents[]>()
@@ -439,10 +411,7 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
         style={{ position: 'sticky', top: 0, zIndex: 10, background: color.surfaceMuted }}
       >
         <div style={{ maxWidth: 680, margin: '0 auto', padding: '24px 20px 12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-            <h1 style={{ fontSize: fontSize.xxl, fontWeight: fontWeight.bold, color: color.textPrimary, margin: 0 }}>Feed</h1>
-            <ScopeSelect options={SCOPE_OPTIONS} value={scopeMode} onChange={setScopeMode} defaultValue="default" />
-          </div>
+          <h1 style={{ fontSize: fontSize.xxl, fontWeight: fontWeight.bold, color: color.textPrimary, margin: 0 }}>Feed</h1>
         </div>
       </div>
 
@@ -477,7 +446,17 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
             <DateDivider {...eventDateLabel(day)} stickyTop={headerHeight} />
             {groupsByDay.get(day)!.map(group => group.billId === null ? (
               group.events[0].type === NO_PRIORITY_UPDATES ? (
-                <NoPriorityRow key={group.key} event={group.events[0]} />
+                <NoPriorityRow
+                  key={group.key} event={group.events[0]} isAdmin={isAdmin}
+                  // A bill given a priority leaves the row, which shrinks in place; the next read of the
+                  // feed gives the bill a card of its own. Its cards elsewhere take the priority too.
+                  onPrioritized={(entry, billPriority, remaining) => {
+                    const rowId = group.events[0].id
+                    setEvents(prev => prev.map(e => (e.id === rowId ? { ...e, metadata: rowAfterPrioritized(e.metadata, entry, remaining) } : e)))
+                    showBillChange({ billId: entry.bills[0].id, groupKey: entry.bills[0].groupKey ?? null }, { billPriority, billNewMatch: false })
+                  }}
+                  onDismissed={(entry) => showBillChange({ billId: entry.bills[0].id, groupKey: entry.bills[0].groupKey ?? null }, { billNewMatch: false })}
+                />
               ) : (
                 <FeedActivityRow key={group.key} event={group.events[0]} seenAt={seenAtRef.current} currentUserId={user?.id ?? null} />
               )

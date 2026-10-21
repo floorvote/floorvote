@@ -599,3 +599,20 @@ describe('CompactPrioritySelect: a failed priority save', () => {
     })
   })
 })
+
+describe('CompactPrioritySelect: an accessible name from its caller', () => {
+  it('uses the name it is given, in place of "Priority", for either state', () => {
+    const { rerender } = render(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} ariaLabel="Priority for HB 1" />)
+    expect(screen.getByRole('combobox', { name: 'Priority for HB 1' })).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Priority' })).toBeNull()
+    rerender(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} newMatch ariaLabel="Priority for HB 1 (new match)" />)
+    expect(screen.getByRole('combobox', { name: 'Priority for HB 1 (new match)' })).toBeInTheDocument()
+  })
+
+  it('keeps "Priority", and the new-match name, when it is given none', () => {
+    const { rerender } = render(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} />)
+    expect(screen.getByRole('combobox', { name: 'Priority' })).toBeInTheDocument()
+    rerender(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} newMatch />)
+    expect(screen.getByRole('combobox', { name: 'Priority (new match: set a priority or dismiss)' })).toBeInTheDocument()
+  })
+})

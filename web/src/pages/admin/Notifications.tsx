@@ -145,6 +145,7 @@ export function Notifications() {
         {loading ? (
           <div style={{ marginTop: 16, color: color.textMuted, fontSize: fontSize.sm }}>Loading…</div>
         ) : (
+          // Same order as the Account page's Notifications card: the digests, then conversation emails last.
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
             <div style={settingBoxStyle}>
               <div style={SETTING_BOX_HEADER}>

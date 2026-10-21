@@ -104,8 +104,9 @@ export function GroupedBillCard({ group, seenAt = null, currentUserId = null, is
         style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}
       >
         <DismissAnnouncement message={announcement} />
-        {/* Only a new match's control needs a word: its label alone does not say what to do. */}
-        {isNewMatch ? <HoverTooltip text="New keyword match — set a priority or dismiss">{select}</HoverTooltip> : select}
+        {/* Only a new match's control needs a word: its label alone does not say what to do. The wrapper stays
+            when the word goes (Dismiss), so the select is not remounted and keyboard focus stays on it. */}
+        <HoverTooltip text={isNewMatch ? 'New keyword match — set a priority or dismiss' : ''}>{select}</HoverTooltip>
       </span>
     )
   })() : model.priority ? <PriorityBadge priority={model.priority} /> : isNewMatch ? <NewMatchChip /> : null

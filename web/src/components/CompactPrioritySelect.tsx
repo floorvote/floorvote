@@ -42,9 +42,14 @@ interface CompactPrioritySelectProps {
    * than the control, so a control at the right edge of a card or the sidebar sets 'right' to keep it inside.
    */
   errorAlign?: 'left' | 'right'
+  /**
+   * The control's accessible name, where the surroundings do not name its bill (a list of many). Defaults to
+   * "Priority", or the new-match variant while one.
+   */
+  ariaLabel?: string
 }
 
-export function CompactPrioritySelect({ billId, current, onChange, isFiltered, mini, placeholder = 'Set priority', newMatch, onDismiss, errorAlign = 'left' }: CompactPrioritySelectProps) {
+export function CompactPrioritySelect({ billId, current, onChange, isFiltered, mini, placeholder = 'Set priority', newMatch, onDismiss, errorAlign = 'left', ariaLabel }: CompactPrioritySelectProps) {
   // The message for the last failed request (a save or a Dismiss), shown until the next change.
   const [error, setError] = useState<string | null>(null)
   // The id of the latest priority save. Only the latest one may report: a slow earlier save that settles after a later one
@@ -74,7 +79,7 @@ export function CompactPrioritySelect({ billId, current, onChange, isFiltered, m
   return (
     <div style={{ position: 'relative', display: 'inline-grid' }}>
       <select
-        aria-label={amber ? 'Priority (new match: set a priority or dismiss)' : 'Priority'}
+        aria-label={ariaLabel ?? (amber ? 'Priority (new match: set a priority or dismiss)' : 'Priority')}
         aria-describedby={empty ? labelId : undefined}
         value={current ?? CLEAR}
         onClick={(e) => e.stopPropagation()}

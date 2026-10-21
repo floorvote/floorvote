@@ -21,7 +21,7 @@ const apiSignals: { path: string; signal?: AbortSignal }[] = []
  *
  * Path is NOT a usable discriminator here, unlike in Calendar.preload.test.tsx:
  * Feed's own page-1 refetch builds the byte-identical query string feedLoader
- * does (`/feed?page=1&limit=40&scope=default`), so the stray traffic cannot be
+ * does (`/feed?page=1&limit=40`), so the stray traffic cannot be
  * told apart by path. Carrying the path anyway keeps the failure message able to
  * name what it saw.
  */

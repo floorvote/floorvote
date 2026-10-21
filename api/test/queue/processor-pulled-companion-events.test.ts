@@ -181,11 +181,15 @@ describe('processCentralNotification: a pulled companion in a group', () => {
     const types = (await db().select().from(feedEvents).all()).map(e => e.type)
     expect(types).not.toContain('bill_matched')
     expect(types).not.toContain('new_matches')
-    // The new-match worklist and the analyzed (all matches) feed scope leave it out.
+    // The new-match worklist leaves it out, and so does the feed: the group's priority puts its
+    // updates on a card, but no new-match event or row reaches it.
     const worklist = await db().select({ id: bills.id }).from(bills).where(newMatchWhere(0)).all()
     expect(worklist.map(b => b.id)).not.toContain('b-companion')
-    const analyzed = await feed('?scope=analyzed')
-    expect(analyzed.filter(e => e.billId === 'b-companion')).toHaveLength(0)
+    const onFeed = (await feed()).map(e => e.type)
+    // The feed does show the group's update, so the absences below can fail on their own.
+    expect(onFeed).toContain('bill_updated')
+    expect(onFeed).not.toContain('bill_matched')
+    expect(onFeed).not.toContain('new_matches')
   })
 
   it('keeps its events and rows when the group\'s priority is cleared, and shows none of them until a priority is set again', async () => {
