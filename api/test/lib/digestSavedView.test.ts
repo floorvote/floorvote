@@ -445,7 +445,7 @@ describe('runDigest: saved views', () => {
 
     const html = to('ada@example.com')[0].html
     expect(cards(html)).toBe(1)
-    expect(text(html)).toContain('S 202: Action: Passed Senate committee')
+    expect(text(html)).toContain('Action: Passed Senate committee')
     expect(text(html)).not.toContain('Unrelated')
   })
 

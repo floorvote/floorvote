@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildBillCardModel, buildActivityRowModel, userEventIcon, USER_EVENT_ICONS } from './billCardModel'
+import { buildBillCardModel, billCardRowText, buildActivityRowModel, userEventIcon, USER_EVENT_ICONS } from './billCardModel'
 import { PRIORITY_COLORS } from './chipStyles'
 import { POSITION_FEED_ICON } from '../../../shared/billChipColors'
 import { color } from '../styles/tokens'
@@ -142,8 +142,9 @@ describe('buildActivityRowModel', () => {
 })
 
 // ── companion groups (#381) ─────────────────────────────────────────────────
-// A group's card holds the events of every member bill, each labeled with its
-// bill's number so the reader knows which chamber's bill it happened on.
+// A group's card holds the events of every member bill. When its header shows
+// more than one bill, each row is labeled with its bill's number so the reader
+// knows which chamber's bill it happened on; with one, the header names it.
 
 describe('buildBillCardModel: companion groups', () => {
   const member = (billId: string, billNumber: string, over: Partial<FeedEvent> = {}): Partial<FeedEvent> =>
@@ -176,8 +177,28 @@ describe('buildBillCardModel: companion groups', () => {
     expect(m.rows.map(r => r.billLabel)).toEqual(['S 202', 'H 101', 'H 101'])
   })
 
-  it('labels a lone member\'s events too, since the card stands for the group', () => {
-    const m = buildBillCardModel(grouped([member('s1', 'S 202', { metadata: { changes: [{ changeType: 'status_change', oldValue: 'a', newValue: 'b' }] } })]))
+  it('leaves a lone member\'s rows unlabeled, since the header\'s one chip already names the bill', () => {
+    const lone = group([
+      member('s1', 'S 202', { metadata: { changes: [{ changeType: 'status_change', oldValue: 'a', newValue: 'b' }] } }),
+      member('s1', 'S 202', { type: 'priority_set', metadata: { priority: 'medium' } }),
+    ], {
+      key: 'group:h1::2026-06-03', groupKey: 'h1',
+      bills: [{ billId: 's1', billNumber: 'S 202', billState: 'RI', billSessionSlug: '2026', billIsDraft: false }],
+    })
+    const m = buildBillCardModel(lone)
+    expect(m.rows.map(r => [r.billLabel, r.billId])).toEqual([[null, 's1'], [null, 's1']])
+    expect(m.rows.map(r => billCardRowText(r))).toEqual(m.rows.map(r => r.text))
+    expect(billCardRowText(m.rows[1])).toBe('Marked medium priority by Will')
+  })
+
+  it('leaves a group\'s rows unlabeled when the card carries no bills list for its header', () => {
+    const m = buildBillCardModel(group([member('s1', 'S 202', { type: 'priority_set', metadata: { priority: 'high' } })], { key: 'group:h1::2026-06-03', groupKey: 'h1' }))
+    expect(m.rows[0].billLabel).toBeNull()
+  })
+
+  it('labels a member\'s rows when the header shows another bill, even if only one had events', () => {
+    // The no-priority list's entry shows a chip for every member, active or not.
+    const m = buildBillCardModel(grouped([member('s1', 'S 202', { type: 'priority_set', metadata: { priority: 'low' } })]))
     expect(m.rows[0].billLabel).toBe('S 202')
   })
 

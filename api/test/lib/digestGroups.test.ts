@@ -10,8 +10,9 @@ import { groupByHand, splitFromGroup } from '../../src/lib/companionGroups'
 import { renderDigestEmail, countNewMatches, type DigestEvent, type NewMatchDigestItem } from '../../src/lib/digestEmail'
 
 // A companion group is one policy in the digest (#381): the events on every
-// member roll into one card, each event labeled with its bill's number, and the
-// card counts once in the headline, the contents box, and the subject.
+// member roll into one card, each event labeled with its bill's number when the
+// card shows more than one bill, and the card counts once in the headline, the
+// contents box, and the subject.
 // Seams: the renderer (events in, HTML out) and the digest job with outgoing
 // email captured.
 
@@ -74,10 +75,11 @@ describe('renderDigestEmail: companion groups', () => {
     expect(text(both)).not.toContain('2 priority bills')
   })
 
-  it('still labels a group\'s event by bill number when only one member had events', () => {
+  it('leaves a group\'s events unlabeled when only one member had events, as its one badge names the bill', () => {
     const html = render([senate({ metadata: action('Signed') })])
     expect(cards(html)).toBe(1)
-    expect(text(html)).toContain('S 202: Action: Signed')
+    expect(text(html)).toContain('Action: Signed')
+    expect(text(html)).not.toContain('S 202: Action')
   })
 
   it('links each event to its own bill, not the card\'s first', () => {
@@ -189,7 +191,7 @@ describe('runDigest: companion groups', () => {
     await runDigest(env as never, db())
 
     expect(sentEmails()).toHaveLength(1)
-    expect(text(sentEmails()[0].html)).toContain('S 202: Action: Reported from committee')
+    expect(text(sentEmails()[0].html)).toContain('Action: Reported from committee')
     // The card wears the group's priority.
     expect(sentEmails()[0].html).toContain('High')
   })
@@ -206,13 +208,14 @@ describe('runDigest: companion groups', () => {
     expect(result).toEqual({ ok: true, recipients: 0, sent: 0, failed: 0 })
   })
 
-  it('labels a group\'s lone event by its bill number', async () => {
+  it('leaves a group\'s lone event unlabeled', async () => {
     await group('a-house', 'b-senate')
     await event('b-senate', 'comment_added', { preview: 'Worth testifying on', commentId: 'c1' })
 
     await runDigest(env as never, db())
 
-    expect(text(sentEmails()[0].html)).toContain('S 202:')
+    expect(text(sentEmails()[0].html)).toContain('Worth testifying on')
+    expect(text(sentEmails()[0].html)).not.toContain('S 202:')
     expect(sentEmails()[0].subject).toBe('Your daily digest: 1 updated bill')
   })
 

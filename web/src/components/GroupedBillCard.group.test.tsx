@@ -2,7 +2,8 @@
  * GroupedBillCard — companion groups (#381)
  *
  * A group is one policy in the feed: one card holds the events of every member
- * bill, each row labeled with its bill's number, and a row opens its own bill.
+ * bill, each row labeled with its bill's number when the header shows more
+ * than one, and a row opens its own bill.
  */
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
@@ -56,9 +57,20 @@ describe('GroupedBillCard: a companion group', () => {
     expect(screen.getByText('H 101: Action: Passed House committee')).toBeInTheDocument()
   })
 
-  it('labels a lone member\'s event too', () => {
+  it('leaves a lone member\'s events unlabeled: its one badge in the header names the bill', () => {
+    renderCard([
+      ev({ id: 'e3', billId: 's1', billNumber: 'S 202', type: 'priority_set', metadata: { priority: 'medium' }, createdAt: '2026-01-01T12:00:00Z' }),
+      ev({ id: 'e2', billId: 's1', billNumber: 'S 202', metadata: action('Signed') }),
+    ])
+    expect(screen.getByText('Action: Signed')).toBeInTheDocument()
+    expect(screen.getByText('Marked medium priority by Ada')).toBeInTheDocument()
+    expect(screen.queryByText(/^S 202:/)).toBeNull()
+  })
+
+  it('still opens a lone member\'s bill from its unlabeled row', () => {
     renderCard([ev({ id: 'e2', billId: 's1', billNumber: 'S 202', metadata: action('Signed') })])
-    expect(screen.getByText(/^S 202:/)).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Action: Signed'))
+    expect(screen.getByTestId('where').textContent).toBe('/RI/2026rs/S 202')
   })
 
   it('opens the bill an event is on, not the card\'s first bill', () => {
@@ -68,7 +80,10 @@ describe('GroupedBillCard: a companion group', () => {
   })
 
   it('opens the bill at the row\'s section when the row has one', () => {
-    renderCard([ev({ id: 'e2', billId: 's1', billNumber: 'S 202', type: 'comment_added', metadata: { preview: 'hi', commentId: 'c9' } })])
+    renderCard([
+      ev({ id: 'e2', billId: 's1', billNumber: 'S 202', type: 'comment_added', metadata: { preview: 'hi', commentId: 'c9' }, createdAt: '2026-01-01T12:00:00Z' }),
+      ev({ id: 'e1', metadata: action('Passed House committee') }),
+    ])
     fireEvent.click(screen.getByText(/^S 202:/))
     // router location has no hash in pathname; the destination is the senate bill, not the house one.
     expect(screen.getByTestId('where').textContent).toBe('/RI/2026rs/S 202')

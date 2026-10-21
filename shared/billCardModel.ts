@@ -60,8 +60,9 @@ export type BillCardRow = {
   billId: string | null
   /**
    * The number of the bill the row's event is on, shown in front of the text, in
-   * a companion group's card: the card stands for the group, so each row says
-   * which of its bills it happened on. Null in a bill's own card.
+   * a companion group's card whose header shows more than one bill, so each row
+   * says which of them it happened on. Null in a bill's own card, and in a group's
+   * card with one bill in its header, where the chip already names it.
    */
   billLabel: string | null
 }
@@ -73,7 +74,7 @@ export type BillCardModel = {
   bills?: GroupedBill[]
 }
 
-/** A row's text as it reads in a card: in front of it, the number of its bill when the card is a companion group's. */
+/** A row's text as it reads in a card: in front of it, the number of its bill when the card's header shows several. */
 export function billCardRowText(row: Pick<BillCardRow, 'text' | 'billLabel'>): string {
   return row.billLabel ? `${row.billLabel}: ${row.text}` : row.text
 }
@@ -142,8 +143,10 @@ function hearingLine(event: FeedEvent): string {
 export function buildBillCardModel(group: GroupedBillEvents): BillCardModel {
   const rows: BillCardRow[] = []
   const inGroup = group.groupKey != null
+  // With one bill in the header, its chip already says which bill every row is on.
+  const labelRows = inGroup && (group.bills?.length ?? 0) > 1
   for (const event of group.events) {
-    const ofBill = { billId: event.billId, billLabel: inGroup && event.billId !== null ? event.billNumber : null }
+    const ofBill = { billId: event.billId, billLabel: labelRows && event.billId !== null ? event.billNumber : null }
     if (event.type === 'bill_updated') {
       getBillUpdateChanges(event).forEach((change, idx) => {
         rows.push({

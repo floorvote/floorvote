@@ -14,7 +14,7 @@ vi.mock('../hooks/useAuth', () => ({ useAuth: () => ({ user: { id: 'u1' } }) }))
 import { Feed } from './Feed'
 
 // A companion group is one policy: one card per group per day, with each event
-// labeled by its bill (#381).
+// labeled by its bill (#381) when the card shows more than one bill.
 const base = {
   billSessionSlug: '2026rs', billState: 'RI', billTitle: 'Mail Ballot Processing', billSummary: null, billPriority: 'high',
   billMatchType: 'keyword' as const, userId: 'u2', userName: 'Ada Admin', userTitle: null,
@@ -34,7 +34,9 @@ it('shows one card for a group\'s events on one day, and one more for another da
   expect(screen.getAllByText('Mail Ballot Processing')).toHaveLength(2)
   expect(screen.getByText('S 202: Action: Reported')).toBeInTheDocument()
   expect(screen.getByText('H 101: Action: Passed House')).toBeInTheDocument()
-  expect(screen.getByText('S 202: Action: Signed')).toBeInTheDocument()
+  // The other day's card has events on one bill only, so its one chip names it.
+  expect(screen.getByText('Action: Signed')).toBeInTheDocument()
+  expect(screen.queryByText('S 202: Action: Signed')).toBeNull()
 })
 
 it('keeps two ungrouped bills\' cards apart and unlabeled', () => {
