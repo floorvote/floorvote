@@ -104,6 +104,38 @@ describe('the no-priority updates row: what a GET /feed costs', () => {
     expect(three.statements.length).toBe(one.statements.length)
   })
 
+  describe('the row\'s list (GET /feed/events/:id/bills)', () => {
+    const list = async (qs: string) => {
+      const res = await SELF.fetch(`http://localhost/api/feed/events/row-2026-03-04/bills${qs}`, { headers: { Cookie: `session=${token}` } })
+      expect(res.status).toBe(200)
+      return await res.json() as { entries: unknown[] }
+    }
+    const seedDay = async (bills: number) => {
+      for (let i = 0; i < bills; i++) await update(await seedBill({ billNumber: `HB ${i}`, relevanceScore: 1 + (i % 10) }), `2026-03-04 09:${String(i % 60).padStart(2, '0')}:00`)
+      await row('2026-03-04')
+    }
+
+    it('reads the page\'s events through the created_at index', async () => {
+      await seedDay(3)
+      const { result, statements } = await capture(() => list('?page=1'))
+      expect(result.entries).toHaveLength(3)
+      const events = statements.find((x) => /SELECT m\.id, m\.type/.test(x.sql))
+      expect(events, statements.map((x) => x.sql).join('\n\n')).toBeDefined()
+      const plan = await planOf(events!)
+      expect(plan, `plan of:\n${events!.sql}\n\n${plan}`).toContain('SEARCH m USING INDEX idx_feed_events_created')
+      expect(plan).not.toMatch(/SCAN m\b/)
+    })
+
+    it('costs the same number of statements for a page of 50 as for a page of 2', async () => {
+      await seedDay(60)
+      const small = await capture(() => list('?page=1&limit=2'))
+      const full = await capture(() => list('?page=1'))
+      expect(small.result.entries).toHaveLength(2)
+      expect(full.result.entries).toHaveLength(50)
+      expect(full.statements.length).toBe(small.statements.length)
+    })
+  })
+
   // A realistic instance: 4,000 bills, 1,000 analyzed (50 prioritized, 60 in
   // companion pairs), and 30 days of 100 legislative updates a day, each day with
   // its row. Most bills move a few times a month, so the history the engagement

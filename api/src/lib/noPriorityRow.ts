@@ -162,6 +162,9 @@ export type RowEntry = { key: string; bills: RowBill[]; events: RowEvent[] }
 /**
  * A page of the row's list for UTC day `day`: each entry's moved bills and
  * their events that day, newest first. Three queries whatever the page's size.
+ * The events are read through the day's range, like every query here: the
+ * unary + keeps SQLite from looking each bill up by bill_id instead, which
+ * would read each one's whole history, a cost that grows through a session.
  */
 export async function rowPage(db: AppDb, day: string, minRelevance: number, entries: readonly DayEntry[]): Promise<RowEntry[]> {
   const ids = entries.flatMap((e) => e.memberIds)
@@ -171,7 +174,7 @@ export async function rowPage(db: AppDb, day: string, minRelevance: number, entr
     SELECT m.id, m.type, m.bill_id, m.metadata, m.created_at
       FROM ${EVENTS_THEN_BILLS}
      WHERE ${standsFor(sql`${day}`, sql`${nextDay(day)}`, minRelevance)}
-       AND m.bill_id IN (SELECT value FROM json_each(${JSON.stringify(ids)}))
+       AND +m.bill_id IN (SELECT value FROM json_each(${JSON.stringify(ids)}))
   `) as Array<{ id: string; type: string; bill_id: string; metadata: string; created_at: string }>
   const byBill = new Map<string, RowEvent[]>()
   for (const e of events) {

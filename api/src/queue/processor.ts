@@ -872,7 +872,10 @@ async function applyCentralBill(
   // F5+B5: switched gate from `!existing.isStub` to `existing.matchType !== null` (canonical field).
   if (!isNew && existing?.aiProcessedAt && (existing.matchType !== null || existing.groupKey !== null) && queueChanges.length > 0) {
     // With the day's no-priority updates row, which stands for this update while the bill has no
-    // priority: in one batch at one time, so the two share a day and land or fail together.
+    // priority: in one batch at one time, so the two share a day and land or fail together. The
+    // time is read now, not at the message's start (`now`, before the AI call): a digest or a
+    // seen mark between the two would otherwise sit after an update dated before it, and miss it.
+    const writtenAt = nowDb()
     await db.batch([
       db.insert(feedEvents).values({
         id:        crypto.randomUUID(),
@@ -880,9 +883,9 @@ async function applyCentralBill(
         billId:    billInternalId,
         userId:    'system',
         metadata:  JSON.stringify({ changes: queueChanges }),
-        createdAt: now,
+        createdAt: writtenAt,
       }),
-      noteLegislativeEvent(db, billInternalId, now),
+      noteLegislativeEvent(db, billInternalId, writtenAt),
     ])
   }
 
@@ -1013,7 +1016,9 @@ async function reconcileCalendar(
       console.log('[calendar-reconcile] feed event', JSON.stringify({
         billId: msg.billId, tenantId: msg.tenantId, uid, changeType: ch.changeType,
       }))
-      // With the day's no-priority updates row, in one batch at one time (as for bill_updated above).
+      // With the day's no-priority updates row, in one batch at one time read just now (as for
+      // bill_updated above, and for the same reason: never the message's start).
+      const writtenAt = nowDb()
       await db.batch([
         db.insert(feedEvents).values({
           id: crypto.randomUUID(),
@@ -1021,9 +1026,9 @@ async function reconcileCalendar(
           billId: billInternalId,
           userId: 'system',
           metadata: JSON.stringify({ date: ch.date, time: ch.time, location: ch.location, description: ch.description }),
-          createdAt: now,
+          createdAt: writtenAt,
         }),
-        noteLegislativeEvent(db, billInternalId, now),
+        noteLegislativeEvent(db, billInternalId, writtenAt),
       ])
     }
   }
