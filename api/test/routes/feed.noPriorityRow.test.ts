@@ -14,7 +14,7 @@ import { associationConfig, bills, feedEvents } from '../../src/db/schema'
 type FeedEventBody = { id: string; type: string; billId: string | null; createdAt: string; metadata: Record<string, unknown> }
 type FeedBody = { events: FeedEventBody[]; total: number; latestEventAt: string | null }
 type ListBill = { id: string; billNumber: string; title: string; state: string | null; sessionSlug: string | null; isDraft: boolean; groupKey: string | null; summary: string | null }
-type ListEntry = { key: string; bills: ListBill[]; events: Array<{ id: string; type: string; billId: string; metadata: Record<string, unknown>; createdAt: string }> }
+type ListEntry = { key: string; newMatch: boolean; bills: ListBill[]; events: Array<{ id: string; type: string; billId: string; metadata: Record<string, unknown>; createdAt: string }> }
 type ListBody = { entries: ListEntry[]; total: number; page: number; limit: number; hasMore: boolean }
 type RowMeta = { count: number; firstBills: ListBill[]; lastAt: string }
 
@@ -505,6 +505,141 @@ describe('the no-priority updates row', () => {
       const id = await seedRow()
       expect((await list(id, '', memberToken)).entries).toHaveLength(1)
       expect(await list(id, '', memberToken)).toEqual(await list(id, '', adminToken))
+    })
+
+    describe('each entry\'s new-match state, for the amber dropdown an admin sees', () => {
+      const NEW = { matchType: 'keyword', newMatchAt: '2026-03-01 08:00:00' } as const
+      const byBill = (body: ListBody) => new Map(body.entries.map((e) => [e.bills[0].billNumber, e.newMatch]))
+
+      it('marks an untriaged keyword match that arrived as a new match, and no other bill', async () => {
+        for (const [number, score, more] of [
+          ['HB 1', 9, NEW],
+          ['HB 2', 8, { ...NEW, triagedAt: '2026-03-02 08:00:00' }],
+          ['HB 3', 7, { matchType: 'manual' as const }],
+          ['HB 4', 6, { matchType: 'keyword' as const }],
+        ] as const) await moved(await analyzed(number, score, more))
+        const id = await seedRow()
+
+        expect(byBill(await list(id))).toEqual(new Map([['HB 1', true], ['HB 2', false], ['HB 3', false], ['HB 4', false]]))
+      })
+
+      it('marks a companion group by the group, as the feed\'s cards do: new until any member is triaged', async () => {
+        const a = await analyzed('HB 10', 9, NEW)
+        const b = await analyzed('SB 10', 5, { matchType: 'manual' })
+        await group(a, b)
+        const c = await analyzed('HB 20', 4, NEW)
+        const d = await analyzed('SB 20', 3, { ...NEW, triagedAt: '2026-03-02 08:00:00' })
+        await group(c, d)
+        for (const x of [a, b, c, d]) await moved(x)
+        const id = await seedRow()
+
+        const body = await list(id)
+        expect(body.entries.map((e) => [e.bills.map((x) => x.billNumber), e.newMatch])).toEqual([[['HB 10', 'SB 10'], true], [['HB 20', 'SB 20'], false]])
+      })
+
+      it('is the same for a member and an admin', async () => {
+        await moved(await analyzed('HB 1', 5, NEW))
+        const id = await seedRow()
+        expect((await list(id, '', memberToken)).entries[0].newMatch).toBe(true)
+      })
+    })
+
+    describe('after an admin acts on an entry', () => {
+      const patch = (path: string, body?: unknown) =>
+        SELF.fetch(`http://localhost/api${path}`, { method: 'PATCH', headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) })
+
+      it('takes a bill out of the row and gives it its own card once its priority is set', async () => {
+        const keep = await analyzed('HB 1', 5)
+        const set = await analyzed('HB 2', 9)
+        await moved(keep)
+        const update = await moved(set)
+        const id = await seedRow()
+        expect(metaOf(await feed(), id).count).toBe(2)
+
+        expect((await patch(`/bills/${set}/priority`, { priority: 'high' })).status).toBe(200)
+
+        const body = await feed()
+        expect(metaOf(body, id).count).toBe(1)
+        expect(metaOf(body, id).firstBills.map((x) => x.billNumber)).toEqual(['HB 1'])
+        expect(body.events.find((e) => e.id === update)).toBeDefined()
+        expect((await list(id)).entries.map((e) => e.bills[0].id)).toEqual([keep])
+      })
+
+      it('takes a whole companion group out of the row when one member is prioritized', async () => {
+        const a = await analyzed('HB 1', 5)
+        const b = await analyzed('SB 1', 7)
+        await group(a, b)
+        await moved(a)
+        await moved(b)
+        await moved(await analyzed('HB 9', 1))
+        const id = await seedRow()
+        expect(metaOf(await feed(), id).count).toBe(2)
+
+        expect((await patch(`/bills/${a}/priority`, { priority: 'low' })).status).toBe(200)
+
+        expect(metaOf(await feed(), id).count).toBe(1)
+        expect((await list(id)).entries.map((e) => e.bills[0].billNumber)).toEqual(['HB 9'])
+      })
+
+      it('keeps a dismissed new match in the row, now a plain entry', async () => {
+        const b = await analyzed('HB 1', 5, { matchType: 'keyword', newMatchAt: '2026-03-01 08:00:00' })
+        await moved(b)
+        const id = await seedRow()
+        expect((await list(id)).entries[0].newMatch).toBe(true)
+
+        expect((await patch(`/bills/${b}/triage-dismiss`)).status).toBe(200)
+
+        const body = await list(id)
+        expect(body.entries.map((e) => [e.bills[0].id, e.newMatch])).toEqual([[b, false]])
+        expect(metaOf(await feed(), id).count).toBe(1)
+      })
+    })
+
+    describe('?removed, the entries a reader has already dropped from the pages it has', () => {
+      it('starts a page that many entries earlier, so a bill dropped from page one skips no one', async () => {
+        const ids: string[] = []
+        for (let i = 0; i < 7; i++) {
+          const b = await analyzed(`HB ${i + 1}`, 9 - i)
+          ids.push(b)
+          await moved(b)
+        }
+        const id = await seedRow()
+        const order = (await list(id, '?page=1&limit=100')).entries.map((e) => e.bills[0].id)
+        expect(order).toEqual(ids)
+
+        const pageOne = await list(id, '?page=1&limit=3')
+        expect(pageOne.entries.map((e) => e.bills[0].id)).toEqual(ids.slice(0, 3))
+        // The reader prioritizes the first of them: the row is now six bills.
+        await db().update(bills).set({ priority: 'high' }).where(eq(bills.id, ids[0]))
+
+        const without = await list(id, '?page=2&limit=3')
+        expect(without.entries.map((e) => e.bills[0].id)).toEqual(ids.slice(4, 7))
+        const withRemoved = await list(id, '?page=2&limit=3&removed=1')
+        expect(withRemoved.entries.map((e) => e.bills[0].id)).toEqual(ids.slice(3, 6))
+        expect(withRemoved.total).toBe(6)
+        expect(withRemoved.hasMore).toBe(false)
+        expect(withRemoved.page).toBe(2)
+      })
+
+      it('says there is more while entries remain past the shifted page', async () => {
+        for (let i = 0; i < 7; i++) await moved(await analyzed(`HB ${i + 1}`, 9 - i))
+        const id = await seedRow()
+        const first = (await list(id, '?page=1&limit=3')).entries[0].bills[0].id
+        await db().update(bills).set({ priority: 'high' }).where(eq(bills.id, first))
+        const body = await list(id, '?page=2&limit=3&removed=1')
+        expect(body.entries).toHaveLength(3)
+        expect(body.hasMore).toBe(true)
+      })
+
+      it('ignores a negative, fractional, or non-numeric value, and never starts before the first entry', async () => {
+        for (let i = 0; i < 4; i++) await moved(await analyzed(`HB ${i + 1}`, 9 - i))
+        const id = await seedRow()
+        const plain = (await list(id, '?page=1&limit=2')).entries.map((e) => e.key)
+        for (const removed of ['-3', '1.5', 'abc', '']) {
+          expect((await list(id, `?page=1&limit=2&removed=${removed}`)).entries.map((e) => e.key), removed).toEqual(plain)
+        }
+        expect((await list(id, '?page=1&limit=2&removed=5')).entries.map((e) => e.key)).toEqual(plain)
+      })
     })
 
     it('still lists a bulk edit\'s bills as it did', async () => {

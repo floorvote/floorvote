@@ -136,6 +136,29 @@ describe('the no-priority updates row: what a GET /feed costs', () => {
     })
   })
 
+  describe('the row\'s list, with companion groups and new matches (#920)', () => {
+    const list = async (qs: string) => {
+      const res = await SELF.fetch(`http://localhost/api/feed/events/row-2026-03-04/bills${qs}`, { headers: { Cookie: `session=${token}` } })
+      expect(res.status).toBe(200)
+      return await res.json() as { entries: Array<{ newMatch: boolean }> }
+    }
+
+    it('costs the same number of statements for 50 entries that are companion groups and new matches as for 2', async () => {
+      for (let i = 0; i < 60; i++) {
+        await update(await seedBill({ billNumber: `HB ${i}`, relevanceScore: 1 + (i % 10), matchType: 'keyword', newMatchAt: '2026-03-01 08:00:00' }), `2026-03-04 09:${String(i % 60).padStart(2, '0')}:00`)
+      }
+      await env.DB.prepare(`UPDATE bills SET group_key = 'g' || id`).run()
+      await row('2026-03-04')
+
+      const small = await capture(() => list('?page=1&limit=2'))
+      const full = await capture(() => list('?page=1'))
+      expect(small.result.entries.every((e) => e.newMatch)).toBe(true)
+      expect(full.result.entries).toHaveLength(50)
+      expect(full.result.entries.every((e) => e.newMatch)).toBe(true)
+      expect(full.statements.length).toBe(small.statements.length)
+    })
+  })
+
   // A realistic instance: 4,000 bills, 1,000 analyzed (50 prioritized, 60 in
   // companion pairs), and 30 days of 100 legislative updates a day, each day with
   // its row. Most bills move a few times a month, so the history the engagement
