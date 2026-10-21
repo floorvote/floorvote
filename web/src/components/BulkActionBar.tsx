@@ -699,7 +699,7 @@ export function BulkActionBar({
           eff: effVal(staged.position, initialValues?.position),
           isStaged: staged.position !== undefined,
           options: [
-            { value: null, label: 'No position' },
+            { value: null, label: 'Not set' },
             ...positionVocabulary.map(p => ({ value: p, label: p })),
           ],
           onSelect: val => setStagedField('position', val, initialValues?.position),

@@ -73,7 +73,7 @@ describe('Feed: an admin sees the priority control on each bill card', () => {
     const [first, second] = [screen.getByText('No Priority Bill'), screen.getByText('Has Priority Bill')]
     expect(first).toBeInTheDocument()
     expect(second).toBeInTheDocument()
-    expect(selects().map(s => (s as HTMLSelectElement).value).sort()).toEqual(['', 'medium'])
+    expect(selects().map(s => (s as HTMLSelectElement).value).sort()).toEqual(['__none__', 'medium'])
   })
 
   it('an owner gets it too', () => {
@@ -115,7 +115,7 @@ describe('Feed: choosing a priority updates the card in place', () => {
     expect(apiFetchMock).toHaveBeenCalledTimes(1)
     expect(apiFetchMock).toHaveBeenCalledWith('/bills/b1/priority', { method: 'PATCH', body: JSON.stringify({ priority: 'high' }) })
     // The other bill's card is untouched.
-    expect(selects().map(s => (s as HTMLSelectElement).value).sort()).toEqual(['', 'high'])
+    expect(selects().map(s => (s as HTMLSelectElement).value).sort()).toEqual(['__none__', 'high'])
   })
 
   it('changes a priority that is already set: High to Low saves and the card shows Low', async () => {
@@ -230,7 +230,7 @@ describe('Feed: a companion group\'s card', () => {
     renderFeed([...companions(), ev({ id: 'e9', billId: 'z9', billNumber: 'HB 9', billTitle: 'Unrelated', createdAt: '2026-02-01 07:00:00' })])
     const groupSelect = sel()
     fireEvent.change(groupSelect, { target: { value: 'low' } })
-    await waitFor(() => expect(selects().map(s => (s as HTMLSelectElement).value).sort()).toEqual(['', 'low']))
+    await waitFor(() => expect(selects().map(s => (s as HTMLSelectElement).value).sort()).toEqual(['__none__', 'low']))
   })
 
   it('Dismiss triages the group\'s card', async () => {
@@ -271,7 +271,7 @@ describe('Feed: a companion group\'s cards on other days', () => {
       ev({ id: 'e1', billId: 'z9', billNumber: 'HB 9', billTitle: 'Unrelated', createdAt: '2026-02-01 10:00:00' }),
     ])
     fireEvent.change(sel(), { target: { value: 'high' } })
-    await waitFor(() => expect(selects().map(s => (s as HTMLSelectElement).value)).toEqual(['high', '']))
+    await waitFor(() => expect(selects().map(s => (s as HTMLSelectElement).value)).toEqual(['high', '__none__']))
   })
 })
 
