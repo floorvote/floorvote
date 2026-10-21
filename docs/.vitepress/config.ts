@@ -85,6 +85,7 @@ export default withMermaid(
               collapsed: false,
               items: [
                 { text: 'Operating', link: '/self-hosting/operating' },
+                { text: 'Congress from GovInfo', link: '/self-hosting/congress' },
                 { text: 'Turnstile', link: '/self-hosting/turnstile' },
                 { text: 'Public demo site', link: '/self-hosting/demo' },
               ],

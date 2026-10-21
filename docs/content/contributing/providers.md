@@ -4,7 +4,7 @@ description: "How to add a data provider to FloorVote: the provider model, the r
 
 # Adding a data provider
 
-LegiScan supplies FloorVote's bill data for every state. A **provider** is an adapter that reads a legislature's own feed instead. DC, Maryland, and Virginia have providers today. You can add one for your state by copying a template directory, following this page, and testing the way maintainers do. You won't touch tenant, web, or pipeline code.
+LegiScan supplies FloorVote's bill data for every state. A **provider** is an adapter that reads a legislature's own feed instead. DC, Maryland, Virginia, and Congress have providers today. You can add one for your state by copying a template directory, following this page, and testing the way maintainers do. You won't touch tenant, web, or pipeline code.
 
 The [State coverage](/contributing/state-coverage) page lists the providers that exist and who maintains them. It lists what the code supports, not which provider a given deployment uses.
 
@@ -65,7 +65,7 @@ By default core only upserts a bill's roll calls on ingest, so a roll call you s
 
 Providers sync one of two ways:
 
-- **Snapshot.** The feed has no modified-since filter and no cheap change list, so each pass reads a session's records whole. You implement `snapshot` and `toEntry`, and central stores each changed record, hashes it, and hands it back for the ingest. DC, Maryland, and Virginia work this way, and so does the template.
+- **Snapshot.** The feed has no modified-since filter and no cheap change list, so each pass reads a session's records whole. You implement `snapshot` and `toEntry`, and central stores each changed record, hashes it, and hands it back for the ingest. DC, Maryland, Virginia, and Congress work this way, and so does the template.
 - **Listing.** The API can list changes cheaply. You implement `listMeasures` and `listChangeHashes`, as LegiScan does.
 
 Most legislatures publish a file or an API without change filters, so start with a snapshot.
@@ -160,7 +160,7 @@ it('syncs Maryland once claimed', async () => {
 })
 ```
 
-The LIMS, Maryland, and Virginia tests all use it, and the [template's test](https://github.com/floorvote/floorvote/blob/main/central/test/cron/template-provider.test.ts) is the smallest example. [`mga-provider.test.ts`](https://github.com/floorvote/floorvote/blob/main/central/test/cron/mga-provider.test.ts) is a full one. At a minimum, test that your provider:
+The LIMS, Maryland, Virginia, and Congress tests all use it, and the [template's test](https://github.com/floorvote/floorvote/blob/main/central/test/cron/template-provider.test.ts) is the smallest example. [`mga-provider.test.ts`](https://github.com/floorvote/floorvote/blob/main/central/test/cron/mga-provider.test.ts) is a full one. At a minimum, test that your provider:
 
 - stays off until an operator claims the state
 - syncs a claimed state, serves its bills through the bill API, and queues notifications for an instance that matches
@@ -206,7 +206,7 @@ curl -X POST "$CENTRAL/api/admin/state-providers/MD" \
   -d '{"provider":"mga"}'
 ```
 
-Central refuses the claim when the provider doesn't serve that state or isn't configured, and when the state's current provider has bills that instances track. Moving those bills without orphaning anyone's links takes a cutover, a separate operation that matches bills across providers and moves each matched bill onto the new provider's data, keeping its id so instances' links stay as they are. A new deployment, or a state no instance covers yet, can switch at once. A state whose provider later loses its key goes unsynced rather than falling back to LegiScan, since a fallback would duplicate every tracked bill.
+Central refuses the claim when the provider doesn't serve that state or isn't configured, and when the state's current provider has bills that instances track. Moving those bills without orphaning anyone's links takes a cutover, a separate operation that matches bills across providers and moves each matched bill onto the new provider's data, keeping its id so instances' links stay as they are. A new deployment, or a state no instance covers yet, can switch at once. A state whose provider later loses its key goes unsynced rather than falling back to LegiScan, since a fallback would duplicate every tracked bill. Congress has its own walkthrough, with a deadline for a deployment that already tracks it: [Congress from GovInfo](/self-hosting/congress).
 
 A provider's bills queue for ingest on `INGESTOR_QUEUE`, the queue LegiScan's bills use, unless the provider declares `ingestQueue` (the env key of a queue binding, such as `MGA_INGESTOR_QUEUE`) and the operator has bound it. Declare one when your API can't take concurrent calls, or when a state's first sync or a cutover queues thousands of bills. Without its own queue, that backlog holds up every LegiScan ingest behind it. When a provider that declares one is claimed, the operator **binds its queue before claiming or cutting over a large state**: create the queue in Cloudflare, uncomment the provider's producer and consumer in their `central/wrangler.toml` (copied from `wrangler.example.toml`) at `max_concurrency = 1`, and deploy central before claiming. If the binding is missing, the provider still works on the shared queue, only slower for everyone. Add your provider's commented binding and consumer to `central/wrangler.example.toml`, next to the others, with a one-line reason for its concurrency.
 
