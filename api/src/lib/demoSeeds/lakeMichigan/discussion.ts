@@ -39,7 +39,7 @@ const hb4427: DemoSeedComment[] = [
     content: '<p>Testimony is submitted. Thanks to <span data-type="mention" data-id="user:lm-user-la1" data-label="Devon Brook">@Devon Brook</span> for the fast turnaround.</p>', daysAgo: 31 },
   // Two days ahead of the Senate Local Government hearing (lm-hearing-1).
   { id: 'lm-c-108', externalId: 'legiscan:2029026', userId: 'lm-user-la1',
-    content: "<p>Final testimony is done for the Local Government hearing. I'll drive up to Lansing that morning.</p>", daysAgo: 0, minutesLater: -50 },
+    content: "<p>The hearing is in two days. I'll drive up to Lansing that morning and read our testimony in.</p>", daysAgo: 0, minutesLater: -50 },
   { id: 'lm-c-109', externalId: 'legiscan:2029026', userId: 'lm-user-comms',
     content: "<p>I'll send you printed copies of the brown alert one-pager to hand the committee.</p>", daysAgo: 0, minutesLater: -45 },
 ]
@@ -587,7 +587,7 @@ const usHb284: DemoSeedComment[] = [
     content: "<p>So much for waiting on appropriations. It's on the subcommittee's hearing list. I'll get our letter in the record.</p>", daysAgo: 0, minutesLater: -80 },
   // Notices the two cosponsors added that morning (lm-fe-t-us-hb284).
   { id: 'lm-c-106', externalId: 'legiscan:1910159', userId: 'lm-user-ed',
-    content: '<p>Kaptur and Stauber both signed on today. That puts both parties from both ends of the lake on it.</p>', daysAgo: 0, minutesLater: -30 },
+    content: '<p>Kaptur and Stauber both signed on today. One from each party, both from Great Lakes districts.</p>', daysAgo: 0, minutesLater: -30 },
 ]
 
 const usHb284Reactions: DemoSeedReaction[] = [
