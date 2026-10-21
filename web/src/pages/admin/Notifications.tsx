@@ -145,26 +145,8 @@ export function Notifications() {
         {loading ? (
           <div style={{ marginTop: 16, color: color.textMuted, fontSize: fontSize.sm }}>Loading…</div>
         ) : (
-          // Same order as the Account page's Notifications card: most frequent email first.
+          // Same order as the Account page's Notifications card: the digests, then conversation emails last.
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
-            <div style={settingBoxStyle}>
-              <div style={SETTING_BOX_HEADER}>
-                <div>
-                  <div style={SETTING_BOX_TITLE}>Send conversation emails to members</div>
-                  <div style={SETTING_BOX_DESC}>
-                    Covers mentions of a member, a role, @admins, or @everyone in comments, and replies on bills members have commented on, for the whole instance. Members can turn off their own reply notifications, in the app and by email, but not mention emails. This switch does not affect in-app notifications.
-                  </div>
-                </div>
-                <IosToggle
-                  checked={mentionEmails}
-                  disabled={demoLocked}
-                  busy={saving === 'mention'}
-                  onChange={(n) => { if (!n && !confirmOff('conversation emails', false)) return; updateMention(n) }}
-                  ariaLabel="Toggle conversation emails"
-                />
-              </div>
-            </div>
-
             <div style={settingBoxStyle}>
               <div style={SETTING_BOX_HEADER}>
                 <div>
@@ -254,6 +236,24 @@ export function Notifications() {
                     ))}
                   </select>
                 </div>
+              </div>
+            </div>
+
+            <div style={settingBoxStyle}>
+              <div style={SETTING_BOX_HEADER}>
+                <div>
+                  <div style={SETTING_BOX_TITLE}>Send conversation emails to members</div>
+                  <div style={SETTING_BOX_DESC}>
+                    Covers mentions of a member, a role, @admins, or @everyone in comments, and replies on bills members have commented on, for the whole instance. Members can turn off their own reply notifications, in the app and by email, but not mention emails. This switch does not affect in-app notifications.
+                  </div>
+                </div>
+                <IosToggle
+                  checked={mentionEmails}
+                  disabled={demoLocked}
+                  busy={saving === 'mention'}
+                  onChange={(n) => { if (!n && !confirmOff('conversation emails', false)) return; updateMention(n) }}
+                  ariaLabel="Toggle conversation emails"
+                />
               </div>
             </div>
           </div>
