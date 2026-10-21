@@ -94,7 +94,7 @@ export const LM_POSITIONS: DemoSeed['positions'] = [
   { id: 'lm-pos-14', externalId: 'legiscan:2150744', position: 'Amend',   setBy: 'lm-user-ed',  daysAgo: 50 },  // US HB8876
   // Monitor, not Support: lm-c-88 asks for the EPA-rule overlap to be sorted before a position.
   { id: 'lm-pos-15', externalId: 'legiscan:2058690', position: 'Monitor', setBy: 'lm-user-dep', daysAgo: 3, minutesLater: 5 },   // US HB6668
-  // Recorded with its priority, the day after the hearing notice (lm-c-113), as every high-priority bill carries one.
+  // Recorded with its priority, on the day of the hearing notice (lm-c-113), as every high-priority bill carries one.
   { id: 'lm-pos-16', externalId: 'legiscan:2129983', position: 'Support', setBy: 'demo-user',   daysAgo: 3, minutesLater: 94 },  // MI HB5674
 ]
 
@@ -147,7 +147,7 @@ const LM_FIELD_CHANGE_ROWS: FieldChangeRow[] = [
   // Ids follow the order of this list, so rows added later go last and leave the earlier ids as they were (#942).
   // MI HB4427: lowered after its testimony went in, a comment from the same persona (lm-c-114) giving the reason
   prio('legiscan:2029026', 'demo-user', 'high', 'low', 12, 3),
-  // MI HB5674: raised, with its position and fiscal impact, the day after its hearing notice (lm-c-113)
+  // MI HB5674: raised, with its position and fiscal impact, on the day of its hearing notice (lm-c-113)
   prio('legiscan:2129983', 'demo-user', 'medium', 'high', 3, 93),
   pos('legiscan:2129983', 'demo-user', 'Support', 3, 94),
   cf('legiscan:2129983', 'demo-user', 'lm-cf-1', null, 'Moderate ($10K-$100K)', 3, 95),

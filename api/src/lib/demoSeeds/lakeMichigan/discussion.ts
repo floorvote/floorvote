@@ -180,7 +180,7 @@ const hb5674: DemoSeedComment[] = [
     content: '<p>Happy to get this in front of the PTA coalition once it has a committee date.</p>', daysAgo: 5 },
   { id: 'lm-c-21', externalId: 'legiscan:2129983', userId: 'lm-user-data',
     content: "<p>About 40% of Michigan school buildings pre-date 1986 plumbing codes, for what it's worth.</p>", daysAgo: 3 },
-  // The day after the hearing notice, with the priority, position, and fiscal impact it names
+  // The day of the hearing notice, a little after it, with the priority, position, and fiscal impact it names
   // (lm-fe-p4, lm-pos-16, and the lm-cf-1 value, minutes later).
   { id: 'lm-c-113', externalId: 'legiscan:2129983', userId: 'demo-user',
     content: "<p>Hearing's set, so this goes to High. Recording our Support. Fiscal impact is Moderate, since every building gets tested.</p>", daysAgo: 3, minutesLater: 90 },

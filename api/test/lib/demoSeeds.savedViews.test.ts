@@ -28,7 +28,7 @@ const LM_FIXTURES: BillFixture[] = LM_BILLS.map(b => ({
 
 // The committee view reads referral rows central writes at sync, and the test tenant has none, so each case supplies
 // the ones its view needs: bills in WI Assembly Environment (one with it as the current committee, one referred on, one
-// of low priority the view's priority filter drops), two Michigan bills (one of low priority, so also dropped) and an
+// of low priority the view's priority filter drops), a Michigan and an
 // Illinois bill in other environment committees,
 // and a bill in a committee the view skips.
 type Referral = { externalId: string; committeeId: string; state: string; name: string; isCurrent: boolean }
@@ -36,12 +36,14 @@ const LM_REFERRALS: Referral[] = [
   { externalId: 'legiscan:2006944', committeeId: '4122', state: 'WI', name: 'Assembly Environment', isCurrent: true },
   { externalId: 'legiscan:2006749', committeeId: '4122', state: 'WI', name: 'Assembly Environment', isCurrent: false },
   { externalId: 'legiscan:2029026', committeeId: '5004', state: 'MI', name: 'House Natural Resources And Tourism', isCurrent: true },
-  { externalId: 'legiscan:2129983', committeeId: '5004', state: 'MI', name: 'House Natural Resources And Tourism', isCurrent: true },
   { externalId: 'legiscan:1906052', committeeId: '3958', state: 'IL', name: 'House Energy & Environment', isCurrent: true },
   { externalId: 'legiscan:2052600', committeeId: '4122', state: 'WI', name: 'Assembly Environment', isCurrent: true },
   { externalId: 'legiscan:2041788', committeeId: '9999', state: 'MI', name: 'House Appropriations', isCurrent: true },
 ]
 
+// The environment-committees count is 3, not 4: MI HB4427 sits in an environment committee here but is now low
+// priority (#942), so the view's priority filter drops it, and MI HB5674, the bill that took its place as high
+// priority, is in a Government Operations committee, not an environment one, so it never enters the view.
 const CASES: Array<{
   slug: string; fixtures: BillFixture[]; referrals: Referral[]; expectedTotals: Record<string, number>
 }> = [
@@ -49,7 +51,7 @@ const CASES: Array<{
     slug: 'lake-michigan', fixtures: LM_FIXTURES, referrals: LM_REFERRALS,
     expectedTotals: {
       'drinking-water-or-contaminants': 8, 'infrastructure-bills-with-no-position': 2,
-      'high-priority-in-michigan-and-wisconsin': 5, 'environment-committees-high-and-medium-priority': 4,
+      'high-priority-in-michigan-and-wisconsin': 5, 'environment-committees-high-and-medium-priority': 3,
     },
   },
 ]
