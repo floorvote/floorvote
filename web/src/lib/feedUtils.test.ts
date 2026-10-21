@@ -229,6 +229,27 @@ describe('filterPriorityEvents', () => {
   it('handles empty input', () => {
     expect(filterPriorityEvents([])).toHaveLength(0)
   })
+
+  // #921: the day's no-priority updates row resolved to this one bill, so the
+  // server sent its updates, marked, to be drawn as its card.
+  it('keeps a non-priority group of updates the server marked as the day\'s lone card', () => {
+    const group = makeGroup({
+      billPriority: null,
+      events: [
+        { ...makeEvent({ billId: 'b1', type: 'bill_updated', createdAt: '2026-04-20T10:00:00Z' }), noPriorityCard: true },
+        { ...makeEvent({ billId: 'b1', type: 'hearing_added', createdAt: '2026-04-20T09:00:00Z' }), noPriorityCard: true },
+      ] as FeedEvent[],
+    })
+    expect(filterPriorityEvents([group])).toEqual([group])
+  })
+
+  it('still removes a non-priority group of updates marked as no card', () => {
+    const group = makeGroup({
+      billPriority: null,
+      events: [{ ...makeEvent({ billId: 'b1', type: 'bill_updated', createdAt: '2026-04-20T10:00:00Z' }), noPriorityCard: false }] as FeedEvent[],
+    })
+    expect(filterPriorityEvents([group])).toHaveLength(0)
+  })
 })
 
 // ── filterFullyAnalyzed ──────────────────────────────────────────────────────
