@@ -240,6 +240,7 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
     ...seed.priorities.map((p) =>
       db.prepare(`UPDATE bills SET priority = ? WHERE external_id IN (?, ?)`).bind(p.priority, ...spellings(p.externalId)),
     ),
+    // Two binds per seeded priority, under D1's 100-bind limit (demoReset.neutralHandles.test.ts checks every seed).
     db.prepare(`UPDATE bills SET priority = NULL WHERE external_id NOT IN (${placeholdersFor(priorityExtIds)})`).bind(...priorityExtIds),
   ])
 

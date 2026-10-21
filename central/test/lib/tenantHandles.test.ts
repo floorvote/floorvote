@@ -86,6 +86,54 @@ describe('sendsNeutralHandles', () => {
     expect(await sendsNeutralHandles(env, 'ri', T0 + HANDLE_FORM_TTL_MS)).toBe(true)
   })
 
+  // The cache is per tenant, and an answer belongs to the binding it came from:
+  // a new binding object for the same tenant (a new invocation's env, or a
+  // redeploy) is asked again rather than trusted.
+  it('asks again when the same tenant arrives with a new binding object, even while the answer is fresh', async () => {
+    const first = vi.fn(async () => ({ neutralHandles: true }))
+    const second = vi.fn(async () => { throw new Error('rolled back') })
+    expect(await sendsNeutralHandles({ TENANT_CACHE_A: { capabilities: first } }, 'cache-a', T0)).toBe(true)
+    expect(await sendsNeutralHandles({ TENANT_CACHE_A: { capabilities: second } }, 'cache-a', T0 + 1)).toBe(false)
+    expect(first).toHaveBeenCalledTimes(1)
+    expect(second).toHaveBeenCalledTimes(1)
+  })
+
+  it('reuses the answer for the same tenant and the same binding object in another env', async () => {
+    const binding = { capabilities: vi.fn(async () => ({ neutralHandles: true })) }
+    expect(await sendsNeutralHandles({ TENANT_CACHE_B: binding }, 'cache-b', T0)).toBe(true)
+    expect(await sendsNeutralHandles({ TENANT_CACHE_B: binding, OTHER: 1 }, 'cache-b', T0 + 10)).toBe(true)
+    expect(binding.capabilities).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps each tenant\'s answer apart', async () => {
+    const yes = vi.fn(async () => ({ neutralHandles: true }))
+    const no = vi.fn(async () => ({ neutralHandles: false }))
+    const env = { TENANT_CACHE_C: { capabilities: yes }, TENANT_CACHE_D: { capabilities: no } }
+    expect(await sendsNeutralHandles(env, 'cache-c', T0)).toBe(true)
+    expect(await sendsNeutralHandles(env, 'cache-d', T0)).toBe(false)
+    expect(await sendsNeutralHandles(env, 'cache-c', T0 + 1)).toBe(true)
+    expect(await sendsNeutralHandles(env, 'cache-d', T0 + 1)).toBe(false)
+    expect(yes).toHaveBeenCalledTimes(1)
+    expect(no).toHaveBeenCalledTimes(1)
+  })
+
+  it('caches a failed call as legacy for the TTL, then asks again', async () => {
+    const capabilities = vi.fn(async () => { throw new Error('down') })
+    const env = { TENANT_CACHE_E: { capabilities } }
+    expect(await sendsNeutralHandles(env, 'cache-e', T0)).toBe(false)
+    expect(await sendsNeutralHandles(env, 'cache-e', T0 + HANDLE_FORM_TTL_MS - 1)).toBe(false)
+    expect(capabilities).toHaveBeenCalledTimes(1)
+    expect(await sendsNeutralHandles(env, 'cache-e', T0 + HANDLE_FORM_TTL_MS)).toBe(false)
+    expect(capabilities).toHaveBeenCalledTimes(2)
+  })
+
+  // A service binding stub need not be a plain object: workerd's RPC stubs can be
+  // callable. Any binding with a capabilities method is asked.
+  it('asks a function-typed binding that has a capabilities method', async () => {
+    const binding = Object.assign(() => undefined, { capabilities: async () => ({ neutralHandles: true }) })
+    expect(await sendsNeutralHandles({ TENANT_CACHE_F: binding }, 'cache-f', T0)).toBe(true)
+  })
+
   it('keeps no answer for longer than a few minutes', () => {
     expect(HANDLE_FORM_TTL_MS).toBeGreaterThan(0)
     expect(HANDLE_FORM_TTL_MS).toBeLessThanOrEqual(5 * 60_000)

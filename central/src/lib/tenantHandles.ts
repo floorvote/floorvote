@@ -16,20 +16,22 @@ import type { Env } from '../types'
  */
 export const HANDLE_FORM_TTL_MS = 60_000
 
-// Keyed by the binding itself, so an answer never outlives the binding it came from.
-const answers = new WeakMap<object, { neutral: boolean; until: number }>()
+// By tenant id. An answer counts only for the binding object it came from: a
+// different one for the same tenant is asked again, so a hit never depends on
+// the runtime handing back the same env object, and never outlives a redeploy.
+const answers = new Map<string, { binding: unknown; neutral: boolean; until: number }>()
 
 export async function sendsNeutralHandles(env: object, tenantId: string, now = Date.now()): Promise<boolean> {
   const rpc = resolveTenantRpc(env as Env, tenantId)
-  if (!rpc || typeof rpc !== 'object') return false
-  const cached = answers.get(rpc)
-  if (cached && now < cached.until) return cached.neutral
+  if (!rpc) return false
+  const cached = answers.get(tenantId)
+  if (cached && cached.binding === rpc && now < cached.until) return cached.neutral
   let neutral = false
   try {
     neutral = (await rpc.capabilities())?.neutralHandles === true
   } catch {
     neutral = false
   }
-  answers.set(rpc, { neutral, until: now + HANDLE_FORM_TTL_MS })
+  answers.set(tenantId, { binding: rpc, neutral, until: now + HANDLE_FORM_TTL_MS })
   return neutral
 }

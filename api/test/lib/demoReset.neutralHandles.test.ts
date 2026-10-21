@@ -34,6 +34,12 @@ describe('a demo reset over bills stored under the neutral handle', () => {
     await clearDb()
   })
 
+  // The reset clears every other bill's priority in one NOT IN that binds both
+  // spellings of each seeded priority. D1 refuses a statement over 100 binds.
+  it.each(Object.entries(DEMO_SEEDS))('keeps the %s seed\'s priority clear-out under D1\'s 100-bind limit at two spellings each', (_, s) => {
+    expect(s.priorities.length * 2).toBeLessThanOrEqual(100)
+  })
+
   it('the seed still names its bills by legacy handles, which is what this guards', () => {
     expect(seed.priorities.every(p => p.externalId.startsWith('legiscan:'))).toBe(true)
   })
