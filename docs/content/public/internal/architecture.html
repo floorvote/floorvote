@@ -350,7 +350,7 @@ flowchart TD
     <tr><td>Cron (hourly)</td><td>For matched changes</td><td>10/session/day + getBill per match</td><td>Steady state</td></tr>
     <tr><td><code>POST /tenants/reprocess/:tenantId</code></td><td>No</td><td>0</td><td>Refresh tenant rows from central. AI dedups on text hash.</td></tr>
     <tr><td><code>POST /admin/refresh-stubs/:tenantId</code></td><td>No</td><td>0</td><td>Same, scoped to <code>match_type=null</code> rows.</td></tr>
-    <tr><td><code>POST /admin/fetch-missing-texts/:tenantId</code></td><td>Yes</td><td>0 when the bill's detail is current, else 1/bill missing text</td><td>Heal text gaps.</td></tr>
+    <tr><td><code>POST /admin/fetch-missing-texts/:tenantId</code></td><td>Yes</td><td>0 when the bill's detail is current (+1 per failed state link), else 1/bill missing text</td><td>Heal text gaps.</td></tr>
     <tr><td><code>POST /admin/reingest-bill/:billId</code></td><td>Yes</td><td>1</td><td>Single-bill refresh.</td></tr>
     <tr><td><code>POST /admin/reingest-tenant/:tenantId</code></td><td>Yes (dry-run default)</td><td>1/matched bill</td><td>Bulk backfill. Pass <code>?confirm=true</code> to actually fire.</td></tr>
     <tr><td><code>POST /tenants/promote-bill/:tenantId/:billId</code></td><td>Yes, forceAI</td><td>1</td><td>Manual add: <code>match_type='manual'</code>.</td></tr>
