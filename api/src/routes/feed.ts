@@ -270,7 +270,8 @@ feedRouter.post('/seen', async (c) => {
 // Bills a bill-less event is about, read from metadata.billIds. Fetched on demand
 // when a Feed row is expanded rather than inlined in GET /feed: a bulk edit can name
 // up to 1000 bills and the Feed polls page 1 every 20 seconds. Ids whose bill has
-// since been deleted are skipped, so the list is what still exists.
+// since been deleted are skipped, so the list is what still exists. Each bill
+// carries its AI summary and the priority it wears, for its chip's hover card.
 //
 // A no-priority updates row names no bills: its list is resolved now, from its
 // day's events, by relevance, a page at a time (?page, ?limit, about 50 a page),
@@ -306,6 +307,7 @@ feedRouter.get('/events/:id/bills', async (c) => {
   const found: Array<{
     id: string; billNumber: string; title: string; abstract: string | null
     state: string; session: string | null; sessionSlug: string | null; isDraft: boolean; groupKey: string | null
+    summary: string | null; priority: 'high' | 'medium' | 'low' | null
   }> = []
   // D1 rejects more than 100 bound parameters per statement.
   for (let i = 0; i < ids.length; i += 90) {
@@ -313,12 +315,16 @@ feedRouter.get('/events/:id/bills', async (c) => {
       .select({
         id: bills.id, billNumber: bills.billNumber, title: bills.title, abstract: bills.abstract,
         state: bills.state, session: bills.session, sessionSlug: bills.sessionSlug, isDraft: bills.isDraft, groupKey: bills.groupKey,
+        summary: bills.tenantSummary, priority: bills.priority,
       })
       .from(bills)
       .where(inArray(bills.id, ids.slice(i, i + 90)))
       .all())
   }
   for (const b of found) byId.set(b.id, b)
+  // What a chip's hover card shows, as the sidebar's does: the bill's AI summary,
+  // and the priority it wears (its group's, when it is in one).
+  const groupPriorities = await loadGroupPriorities(db, found.map((b) => b.groupKey))
 
   return c.json({
     bills: ids.flatMap((id) => {
@@ -331,6 +337,8 @@ feedRouter.get('/events/:id/bills', async (c) => {
         sessionSlug: filedSlug(b),
         isDraft: b.isDraft ?? false,
         groupKey: b.groupKey ?? null,
+        summary: b.summary ?? null,
+        priority: priorityWorn({ priority: b.priority ?? null, groupKey: b.groupKey ?? null }, groupPriorities),
       }] : []
     }),
   })

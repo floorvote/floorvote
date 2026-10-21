@@ -34,6 +34,7 @@ const bulkEdit = (billIds: string[]): FeedEvent => ({
   metadata: { priority: 'high', count: billIds.length, billIds },
 })
 
+// The card caches a summary it fetched by bill id, so a test that has it fetch uses an id no other test uses.
 // The lazy summary fetch the hover card makes for a bill whose summary the list didn't send.
 function serve(bills: Listed[], lazy: Record<string, string | null> = {}) {
   apiFetchMock.mockImplementation(async (url: string) => {
@@ -76,13 +77,13 @@ describe('the new-matches row: hover cards on the expanded list\'s chips', () =>
   })
 
   it('shows the card for a bill with no summary as its title and priority alone, after asking for the summary once', async () => {
-    serve([bill('b1', 'HB101', { title: 'Ballot Access Act', summary: null, priority: 'low' })])
-    await renderOpen(matches(['b1']), NEW_MATCHES)
+    serve([bill('ns1', 'HB101', { title: 'Ballot Access Act', summary: null, priority: 'low' })])
+    await renderOpen(matches(['ns1']), NEW_MATCHES)
     hover(await screen.findByRole('link', { name: 'HB101' }))
 
     expect(await screen.findAllByText('Ballot Access Act')).toHaveLength(2)
     expect(screen.getByText('Low priority')).toBeInTheDocument()
-    expect(apiFetchMock).toHaveBeenCalledWith('/bills/b1')
+    expect(apiFetchMock).toHaveBeenCalledWith('/bills/ns1')
     expect(screen.queryByText('Moves the filing deadline.')).not.toBeInTheDocument()
   })
 
@@ -95,8 +96,8 @@ describe('the new-matches row: hover cards on the expanded list\'s chips', () =>
   })
 
   it('shows a summary the card had to fetch, when the list sent none', async () => {
-    serve([bill('b1', 'HB101', { summary: null })], { b1: 'Fetched on hover.' })
-    await renderOpen(matches(['b1']), NEW_MATCHES)
+    serve([bill('lz1', 'HB101', { summary: null })], { lz1: 'Fetched on hover.' })
+    await renderOpen(matches(['lz1']), NEW_MATCHES)
     hover(await screen.findByRole('link', { name: 'HB101' }))
     expect(await screen.findByText('Fetched on hover.')).toBeInTheDocument()
   })

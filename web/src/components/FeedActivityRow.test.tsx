@@ -64,15 +64,15 @@ describe('FeedActivityRow', () => {
 
     expect(apiFetchMock).toHaveBeenCalledWith('/feed/events/evt-1/bills')
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
-    const first = await screen.findByRole('link', { name: /HB101/ })
+    // Each entry is a chip linking to the bill and a title linking to it too (#923).
+    const first = await screen.findByRole('link', { name: 'HB101' })
     expect(first).toHaveAttribute('href', '/RI/2026/HB101')
-    expect(first).toHaveTextContent('Election Security Act')
+    expect(screen.getByRole('link', { name: 'Election Security Act' })).toHaveAttribute('href', '/RI/2026/HB101')
     // A draft with no title reads "Untitled draft", and falls back to its id URL.
-    const draft = screen.getByRole('link', { name: /SB202/ })
-    expect(draft).toHaveAttribute('href', '/bills/b2')
-    expect(draft).toHaveTextContent('Untitled draft')
+    expect(screen.getByRole('link', { name: 'SB202' })).toHaveAttribute('href', '/bills/b2')
+    expect(screen.getByRole('link', { name: 'Untitled draft' })).toHaveAttribute('href', '/bills/b2')
     // The id whose bill is gone is just absent.
-    expect(screen.getAllByRole('link')).toHaveLength(2)
+    expect(screen.getAllByRole('link')).toHaveLength(4)
   })
 
   it('fetches once, and collapses and re-expands from what it has', async () => {
@@ -131,8 +131,8 @@ describe('FeedActivityRow', () => {
       await userEvent.click(toggle)
 
       expect(apiFetchMock).toHaveBeenCalledWith('/feed/events/evt-m/bills')
-      expect(await screen.findByRole('link', { name: /HB101/ })).toHaveAttribute('href', '/RI/2026/HB101')
-      expect(screen.getByRole('link', { name: /SB202/ })).toHaveAttribute('href', '/bills/b2')
+      expect(await screen.findByRole('link', { name: 'HB101' })).toHaveAttribute('href', '/RI/2026/HB101')
+      expect(screen.getByRole('link', { name: 'SB202' })).toHaveAttribute('href', '/bills/b2')
       expect(screen.getByRole('link', { name: /see all new matches/i })).toHaveAttribute('href', '/bills?newMatches=1')
     })
 

@@ -52,7 +52,7 @@ describe('GET /feed/events/:id/bills: what a chip\'s hover card needs', () => {
     expect(bill.summary).toBe('Moves the filing deadline.')
   })
 
-  it('sends a null summary for a bill with none, so the card can tell it from one it has yet to fetch', async () => {
+  it('sends a null summary for a bill with none', async () => {
     const a = await seedBill({ billNumber: 'HB 1' })
     const [bill] = await listed(await seedMatches([a]))
     expect(bill.summary).toBeNull()

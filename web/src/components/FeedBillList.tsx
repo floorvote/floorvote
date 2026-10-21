@@ -18,6 +18,8 @@ export type FeedListBill = {
   groupKey?: string | null
   /** For the chip's hover card. Null or absent: the card fetches it. */
   summary?: string | null
+  /** The priority the bill wears (its group's, in a group), for the chip's hover card. Null or absent: none. */
+  priority?: 'high' | 'medium' | 'low' | null
 }
 
 /** One of an entry's events that day, which the entry draws as a card's row draws it. */
@@ -142,7 +144,7 @@ export function FeedBillChip({ bill, draftSrLabel }: { bill: FeedListBill; draft
   return (
     <BillBadge
       billNumber={bill.billNumber} state={bill.state} isDraft={bill.isDraft} mini to={pathOf(bill)} draftSrLabel={draftSrLabel}
-      hoverBill={{ billId: bill.id, title: bill.title, isDraft: bill.isDraft, summary: bill.summary ?? null, priority: null }}
+      hoverBill={{ billId: bill.id, title: bill.title, isDraft: bill.isDraft, summary: bill.summary ?? null, priority: bill.priority ?? null }}
     />
   )
 }

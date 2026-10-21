@@ -1,25 +1,16 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import type { FeedEvent } from '../lib/feedUtils'
 import { buildActivityRowModel, CARD_STYLE } from '../lib/billCardModel'
 import { relativeTime, absoluteTime, isUnreadItem } from '../lib/time'
-import { billUrl } from '../lib/sessionSlug'
-import { billDisplayTitle } from '../../../shared/billTitle'
-import { BillBadge } from './BillBadge'
-import { DraftChip } from './DraftChip'
+import { FeedBillList, type FeedListBill, type FeedListEntry, type FeedListPage } from './FeedBillList'
 import { PrioritySquare } from './PrioritySquare'
 import { color, radius, fontSize } from '../styles/tokens'
 import { billsListPath } from '../../../shared/billFilter'
-import { BILL_TITLE_TEXT } from '../lib/textStyles'
 
-type AffectedBill = {
-  id: string; billNumber: string; title: string
-  state: string | null; sessionSlug: string | null; isDraft: boolean
-  /** The bill's companion group. Members of one group read as one entry. Absent or null = in no group. */
-  groupKey?: string | null
-}
-type Load = { status: 'idle' } | { status: 'loading' } | { status: 'error' } | { status: 'done'; bills: AffectedBill[] }
+/** A bill the row names, as GET /feed/events/:id/bills sends it: what the shared list's chip and title need. */
+type AffectedBill = FeedListBill
 
 function MaterialIcon({ name, color: c, size = 14, fill = 0 }: { name: string; color: string; size?: number; fill?: 0 | 1 }) {
   return (
@@ -41,34 +32,33 @@ function MaterialIcon({ name, color: c, size = 14, fill = 0 }: { name: string; c
  * day's new matches: one activity row, expandable to the bills it names. A bill-less event has no bill
  * to head a card with, so this is not a GroupedBillCard. The bills load on first
  * expand (GET /feed/events/:id/bills), not with the feed, so a bulk edit that
- * names hundreds of bills costs nothing until someone asks to see them.
+ * names hundreds of bills costs nothing until someone asks to see them. They are
+ * listed by FeedBillList, the list the no-priority row shares, so each chip has
+ * the sidebar's hover card.
  */
 export function FeedActivityRow({ event, seenAt = null, currentUserId = null }: {
   event: FeedEvent; seenAt?: string | null; currentUserId?: string | null
 }) {
   const model = buildActivityRowModel(event)
   const [open, setOpen] = useState(false)
-  const [load, setLoad] = useState<Load>({ status: 'idle' })
+  // The list mounts on first expand and stays, hidden, when collapsed, so a
+  // second expand shows what it already loaded.
+  const [opened, setOpened] = useState(false)
   const [hovered, setHovered] = useState(false)
 
   const billIds = (event.metadata as Record<string, unknown>).billIds
   const expandable = Array.isArray(billIds) && billIds.length > 0
   const unread = isUnreadItem(model.createdAt, model.userId, seenAt, currentUserId)
 
-  async function fetchBills() {
-    setLoad({ status: 'loading' })
-    try {
-      const data = await apiFetch<{ bills: AffectedBill[] }>(`/feed/events/${event.id}/bills`)
-      setLoad({ status: 'done', bills: data.bills })
-    } catch {
-      setLoad({ status: 'error' })
-    }
-  }
+  // The endpoint names every bill at once, so the list is one page.
+  const loadPage = useCallback(async (): Promise<FeedListPage> => {
+    const data = await apiFetch<{ bills: AffectedBill[] }>(`/feed/events/${event.id}/bills`)
+    return { entries: asEntries(data.bills), hasMore: false }
+  }, [event.id])
 
   function toggle() {
-    const next = !open
-    setOpen(next)
-    if (next && load.status === 'idle') void fetchBills()
+    setOpen((was) => !was)
+    setOpened(true)
   }
 
   const content = (
@@ -117,21 +107,9 @@ export function FeedActivityRow({ event, seenAt = null, currentUserId = null }: 
         <div style={rowStyle}>{content}</div>
       )}
 
-      {open && (
-        <div style={{ borderTop: `1px solid ${CARD_STYLE.rowBorder}` }}>
-          {load.status === 'loading' && <Note>Loading…</Note>}
-          {load.status === 'error' && (
-            <Note>
-              Couldn’t load the bills.{' '}
-              <button type="button" onClick={() => void fetchBills()} style={{ all: 'unset', cursor: 'pointer', color: color.linkBlue, textDecoration: 'underline' }}>
-                Try again
-              </button>
-            </Note>
-          )}
-          {load.status === 'done' && load.bills.length === 0 && <Note>These bills are no longer available.</Note>}
-          {load.status === 'done' && asEntries(load.bills).map((members, i) => (
-            <BillLink key={members[0].id} bills={members} first={i === 0} />
-          ))}
+      {opened && (
+        <div style={{ display: open ? 'block' : 'none', borderTop: `1px solid ${CARD_STYLE.rowBorder}` }}>
+          <FeedBillList loadPage={loadPage} />
           {event.type === 'new_matches' && (
             <Link
               to={billsListPath({ newMatches: true })}
@@ -149,61 +127,17 @@ export function FeedActivityRow({ event, seenAt = null, currentUserId = null }: 
   )
 }
 
-function Note({ children }: { children: React.ReactNode }) {
-  return <div style={{ padding: '10px 14px', fontSize: fontSize.sm, color: color.textMuted }}>{children}</div>
-}
-
 // A companion group is one policy, so its bills are one entry (#638), listed
 // where its first member is. A bill in no group is an entry of its own.
-function asEntries(bills: AffectedBill[]): AffectedBill[][] {
-  const entries: AffectedBill[][] = []
-  const ofGroup = new Map<string, AffectedBill[]>()
+function asEntries(bills: AffectedBill[]): FeedListEntry[] {
+  const entries: FeedListEntry[] = []
+  const ofGroup = new Map<string, FeedListEntry>()
   for (const b of bills) {
-    const members = b.groupKey ? ofGroup.get(b.groupKey) : undefined
-    if (members) { members.push(b); continue }
-    const entry = [b]
-    entries.push(entry)
-    if (b.groupKey) ofGroup.set(b.groupKey, entry)
+    const entry = b.groupKey ? ofGroup.get(b.groupKey) : undefined
+    if (entry) { entry.bills.push(b); continue }
+    const created = { key: b.groupKey ? `group:${b.groupKey}` : b.id, bills: [b] }
+    entries.push(created)
+    if (b.groupKey) ofGroup.set(b.groupKey, created)
   }
   return entries
-}
-
-const billTo = (bill: AffectedBill) => billUrl({ id: bill.id, state: bill.state, sessionSlug: bill.sessionSlug, billNumber: bill.billNumber })
-
-// One entry: a badge linking to each of its bills, then the first one's title,
-// which links to the first too. A lone bill's entry is one link, as it always was.
-function BillLink({ bills, first }: { bills: AffectedBill[]; first: boolean }) {
-  const [hovered, setHovered] = useState(false)
-  const bill = bills[0]
-  const title = billDisplayTitle({ title: bill.title, isDraft: bill.isDraft })
-  const titleStyle = {
-    ...BILL_TITLE_TEXT, fontSize: fontSize.sm, color: color.textPrimary, flex: 1, minWidth: 0,
-    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-  } as const
-  const rowStyle = {
-    display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', textDecoration: 'none',
-    background: hovered ? color.surfaceMuted : color.white,
-    borderTop: first ? 'none' : `1px solid ${CARD_STYLE.rowBorder}`,
-  } as const
-  const hover = { onMouseEnter: () => setHovered(true), onMouseLeave: () => setHovered(false) }
-  if (bills.length === 1) {
-    return (
-      <Link to={billTo(bill)} data-bill-entry {...hover} style={rowStyle}>
-        <BillBadge billNumber={bill.billNumber} state={bill.state ?? undefined} isDraft={bill.isDraft} mini />
-        {bill.isDraft && <DraftChip />}
-        <span style={titleStyle}>{title}</span>
-      </Link>
-    )
-  }
-  return (
-    <div data-bill-entry {...hover} style={rowStyle}>
-      {bills.map((b) => (
-        <Link key={b.id} to={billTo(b)} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}>
-          <BillBadge billNumber={b.billNumber} state={b.state ?? undefined} isDraft={b.isDraft} mini />
-          {b.isDraft && <DraftChip />}
-        </Link>
-      ))}
-      <Link to={billTo(bill)} style={{ ...titleStyle, textDecoration: 'none' }}>{title}</Link>
-    </div>
-  )
 }
