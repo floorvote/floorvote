@@ -226,6 +226,12 @@ export const LM_CALENDAR_EVENTS: DemoSeedCalendarEvent[] = [
   { id: 'lm-hearing-4', externalId: 'legiscan:1906052', source: 'hearing', offsetDays: 13, time: '10:00:00', location: 'Illinois State Capitol, Room 118, Springfield', description: 'House Energy & Environment Committee — hearing' },
   { id: 'lm-hearing-5', externalId: 'legiscan:2061476', source: 'hearing', offsetDays: 18, time: '10:00:00', location: 'Indiana Statehouse, Room 156-B, Indianapolis', description: 'House Public Health Committee — hearing' },
   { id: 'lm-hearing-6', externalId: 'legiscan:2150744', source: 'hearing', offsetDays: 26, time: '10:00:00', location: 'Rayburn House Office Building, Washington DC', description: 'Subcommittee on Water, Wildlife and Fisheries — hearing' },
+  // One legislative hearing taking up two bills, as a subcommittee often does: US
+  // HB284 and HB583 were both really referred to Water Resources and Environment in
+  // January 2025, and neither has moved since. Two rows because a calendar row
+  // names one bill.
+  { id: 'lm-hearing-7', externalId: 'legiscan:1910159', source: 'hearing', offsetDays: 11, time: '10:00:00', location: 'Rayburn House Office Building, Room 2167, Washington DC', description: 'Subcommittee on Water Resources and Environment — hearing' },
+  { id: 'lm-hearing-8', externalId: 'legiscan:1933798', source: 'hearing', offsetDays: 11, time: '10:00:00', location: 'Rayburn House Office Building, Room 2167, Washington DC', description: 'Subcommittee on Water Resources and Environment — hearing' },
 
   { id: 'lm-event-1', externalId: null, source: 'custom', offsetDays: -5, time: null, location: 'Zoom', description: 'Monthly all-staff call' },
   { id: 'lm-event-2', externalId: 'legiscan:2055958', source: 'custom', offsetDays: 3, time: '17:00:00', location: null, description: 'Testimony deadline — MI HB5308 (watercraft invasive species decals)' },
@@ -515,13 +521,15 @@ export const LM_BILL_UPDATED_EVENTS: DemoSeedFeedEvent[] = [
  * absent parts, so the row still reads "Hearing scheduled: 10:00 AM · <location> ·
  * <committee> — hearing".
  */
-const hearingNotice = (id: string, calendarId: string, daysAgo: number): DemoSeedFeedEvent => {
+const hearingNotice = (
+  id: string, calendarId: string, daysAgo: number, type: 'hearing_added' | 'hearing_changed' = 'hearing_added',
+): DemoSeedFeedEvent => {
   const h = LM_CALENDAR_EVENTS.find(e => e.id === calendarId)
   if (!h || h.source !== 'hearing' || h.externalId === null) {
     throw new Error(`hearingNotice: no bill-linked hearing calendar entry ${calendarId}`)
   }
   return {
-    id, type: 'hearing_added', externalId: h.externalId, userId: 'system',
+    id, type, externalId: h.externalId, userId: 'system',
     metadata: { time: h.time, location: h.location, description: h.description },
     daysAgo,
   }
@@ -550,13 +558,37 @@ const LM_HEARING_NOTICES: Array<{ eventId: string; calendarId: string; daysAgo: 
   { eventId: 'lm-fe-h-il-hb1175', calendarId: 'lm-hearing-4', daysAgo: 16 },
   { eventId: 'lm-fe-h-in-hb1124', calendarId: 'lm-hearing-5', daysAgo: 6 },
   { eventId: 'lm-fe-h-us-hb8876', calendarId: 'lm-hearing-6', daysAgo: 5 },
+  // Ahead of the testimony thread (lm-c-1, daysAgo 33), which is planning for it.
+  { eventId: 'lm-fe-h-mi-hb4427', calendarId: 'lm-hearing-1', daysAgo: 34 },
+  // After HB284's own thread asks when it will move (lm-c-74, lm-c-75), and ahead of
+  // the replies to the notice (lm-c-103, lm-c-104).
+  { eventId: 'lm-fe-h-us-hb284', calendarId: 'lm-hearing-7', daysAgo: 2 },
+  { eventId: 'lm-fe-h-us-hb583', calendarId: 'lm-hearing-8', daysAgo: 2 },
 ]
 
 export const LM_HEARING_NOTICE_SOURCES: ReadonlyArray<{ eventId: string; calendarId: string }> =
   LM_HEARING_NOTICES
 
-export const LM_HEARING_EVENTS: DemoSeedFeedEvent[] =
-  LM_HEARING_NOTICES.map(n => hearingNotice(n.eventId, n.calendarId, n.daysAgo))
+/**
+ * Updates to an announced hearing, which is what the calendar reconciler emits when
+ * a committee moves one. The calendar row is the hearing as it now stands, so the
+ * update carries its fields, as a notice does. Each lands after its own notice, and
+ * on one of the busiest threads at the top of the feed, where it puts the hearing
+ * those threads are planning for back in view.
+ */
+const LM_HEARING_CHANGES: Array<{ eventId: string; calendarId: string; daysAgo: number }> = [
+  { eventId: 'lm-fe-hc-in-hb1124', calendarId: 'lm-hearing-5', daysAgo: 1 },
+  { eventId: 'lm-fe-hc-mi-hb5308', calendarId: 'lm-hearing-2', daysAgo: 2 },
+  { eventId: 'lm-fe-hc-mi-hb5674', calendarId: 'lm-hearing-3', daysAgo: 1 },
+]
+
+export const LM_HEARING_CHANGE_SOURCES: ReadonlyArray<{ eventId: string; calendarId: string }> =
+  LM_HEARING_CHANGES
+
+export const LM_HEARING_EVENTS: DemoSeedFeedEvent[] = [
+  ...LM_HEARING_NOTICES.map(n => hearingNotice(n.eventId, n.calendarId, n.daysAgo)),
+  ...LM_HEARING_CHANGES.map(n => hearingNotice(n.eventId, n.calendarId, n.daysAgo, 'hearing_changed')),
+]
 
 // Hand-written priority_set and position_set events. Task 4 imports this name.
 export const LM_ENGAGEMENT_EVENTS: DemoSeedFeedEvent[] = [
@@ -681,6 +713,31 @@ export const LM_RECENT_ACTIVITY_EVENTS: DemoSeedFeedEvent[] = [
   // US HB6668 — PFAS, Introduced.
   { id: 'lm-fe-r-us-hb6668-1', type: 'bill_updated', externalId: 'legiscan:2058690', userId: 'system', daysAgo: 4, metadata: { changes: [
     chg('action_added', { newValue: 'Referred to the Subcommittee on Water Resources and Environment.' }),
+  ] } },
+
+  // ── Activity between the discussion cards ──────────────────────────────────
+  // Coverage above put activity on the cards that also carry comments. These give
+  // the feed cards that are activity alone, on days nobody commented, the way bills
+  // move in a real session. All three are their bill's own latest real actions,
+  // verbatim, moved into the window like the rest of this block.
+
+  // US SB528 — HB284's Senate companion, so the feed shows these on HB284's card. It
+  // really did pass the Senate by unanimous consent and is held at the House desk,
+  // which is what the team's letter naming both bills (lm-c-sb528-1) is for.
+  { id: 'lm-fe-r-us-sb528-1', type: 'bill_updated', externalId: 'legiscan:1966402', userId: 'system', daysAgo: 13, metadata: { changes: [
+    chg('status_change', { oldValue: 'Introduced', newValue: 'Engrossed (passed one chamber)' }),
+    chg('action_added', { newValue: 'S.Amdt.6843 Amendment SA 6843 agreed to in Senate by Unanimous Consent.' }),
+    chg('action_added', { newValue: 'Passed Senate with an amendment by Unanimous Consent. (text: CR S5184)' }),
+  ] } },
+  { id: 'lm-fe-r-us-sb528-2', type: 'bill_updated', externalId: 'legiscan:1966402', userId: 'system', daysAgo: 9, metadata: { changes: [
+    chg('action_added', { newValue: 'Received in the House.' }),
+    chg('action_added', { newValue: 'Held at the desk.' }),
+  ] } },
+
+  // IL HB5268 — back in Rules, which is what lm-c-53 ("Still stuck in Rules") two
+  // days later is reacting to.
+  { id: 'lm-fe-r-il-hb5268-1', type: 'bill_updated', externalId: 'legiscan:2109237', userId: 'system', daysAgo: 8, metadata: { changes: [
+    chg('action_added', { newValue: 'Rule 19(a) / Re-referred to Rules Committee' }),
   ] } },
 ]
 

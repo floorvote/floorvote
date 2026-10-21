@@ -3,7 +3,7 @@ import { env } from 'cloudflare:test'
 import { clearDb, seedBill } from '../helpers'
 import { runDemoReset } from '../../src/lib/demoReset'
 import { DEMO_SEEDS, resolveDemoSeed } from '../../src/lib/demoSeeds'
-import { LM_BILLS, LM_COMPANION_BILLS, LM_HEARING_NOTICE_SOURCES } from '../../src/lib/demoSeeds/lakeMichigan/bills'
+import { LM_BILLS, LM_COMPANION_BILLS, LM_HEARING_CHANGE_SOURCES, LM_HEARING_NOTICE_SOURCES } from '../../src/lib/demoSeeds/lakeMichigan/bills'
 import {
   stripHtml, truncateWithEllipsis, COMMENT_PREVIEW_MAX, PASSIVE_EVENT_TYPES, type FeedEvent,
 } from '../../../shared/feedUtils'
@@ -282,6 +282,27 @@ describe('lake-michigan derived feed events', () => {
     }
   })
 
+  it('changes a hearing only after announcing it, detailed straight from the calendar', () => {
+    const sourceOf = new Map(LM_HEARING_CHANGE_SOURCES.map(x => [x.eventId, x.calendarId]))
+    const noticeOf = new Map(LM_HEARING_NOTICE_SOURCES.map(x => [x.calendarId, x.eventId]))
+    const changes = s.feedEvents.filter(e => e.type === 'hearing_changed')
+    expect(changes.map(e => e.id).sort()).toEqual([...sourceOf.keys()].sort())
+    for (const e of changes) {
+      const cal = s.calendarEvents.find(c => c.id === sourceOf.get(e.id))
+      expect(cal, `hearing change ${e.id} needs its source calendar entry`).toBeDefined()
+      expect(cal!.source).toBe('hearing')
+      expect(cal!.offsetDays, `${e.id} changes a hearing that has already happened`).toBeGreaterThan(0)
+      expect(e.userId).toBe('system')
+      expect(e.externalId).toBe(cal!.externalId)
+      // The calendar row is the hearing as it stands after the change.
+      expect(e.metadata).toEqual({ time: cal!.time, location: cal!.location, description: cal!.description })
+      // A change to a hearing the feed never announced reads as a correction to nothing.
+      const notice = s.feedEvents.find(x => x.id === noticeOf.get(cal!.id))
+      expect(notice, `${e.id} needs a notice for ${cal!.id}`).toBeDefined()
+      expect(notice!.daysAgo, `${e.id} lands before its notice`).toBeGreaterThan(e.daysAgo)
+    }
+  })
+
   it('uses only real change types and never fabricates a hearing notice as one', () => {
     // Hearing details ride on hearing_added rows, which is what the calendar
     // reconciler emits. A bill_updated change claiming a hearing notice would be a
@@ -527,6 +548,47 @@ describe('lake-michigan feed density', () => {
     // none of the 20 bills happens to have a real LegiScan action inside 14 days.
     expect(recent.some(e => PASSIVE_EVENT_TYPES.has(e.type as FeedEvent['type']))).toBe(true)
     expect(recent.some(e => e.type === 'comment_added')).toBe(true)
+  })
+
+  // The feed rolls a companion's events into its partner's card, so a card is a
+  // companion group's day, not a single bill's.
+  const cardOf = (e: { externalId: string; daysAgo: number }) =>
+    `${LM_COMPANION_BILLS.find(c => c.externalId === e.externalId)?.companionOf ?? e.externalId}::${e.daysAgo}`
+  const isActivity = (e: { type: string }) => PASSIVE_EVENT_TYPES.has(e.type as FeedEvent['type'])
+
+  it('gives every live bill discussed in the last 14 days legislative activity in that window too', () => {
+    // A thread with nothing happening to its bill reads as a chat room, not as a
+    // team reacting to legislation. Dead bills are exempt: nothing new can happen
+    // to them, and the seed never invents activity on one.
+    const recent = s.feedEvents.filter(e => e.daysAgo <= 14)
+    for (const b of LM_BILLS.filter(x => x.live)) {
+      const group = new Set([b.externalId, ...LM_COMPANION_BILLS.filter(c => c.companionOf === b.externalId).map(c => c.externalId)])
+      const onBill = recent.filter(e => group.has(e.externalId))
+      if (!onBill.some(e => e.type === 'comment_added')) continue
+      expect(onBill.some(isActivity), `${b.jurisdiction} ${b.billNumber} is discussed with no legislative activity`).toBe(true)
+    }
+  })
+
+  it('shows at least six cards in the last 14 days that are legislative activity alone', () => {
+    // Bills move without anyone commenting, and the feed should show that too,
+    // between the discussion cards rather than only underneath them.
+    const cards = new Map<string, Array<{ type: string }>>()
+    for (const e of s.feedEvents.filter(x => x.daysAgo <= 14)) {
+      cards.set(cardOf(e), [...(cards.get(cardOf(e)) ?? []), e])
+    }
+    const activityOnly = [...cards.entries()].filter(([, evs]) => evs.every(isActivity)).map(([k]) => k)
+    expect(activityOnly.length, activityOnly.join(', ')).toBeGreaterThanOrEqual(6)
+  })
+
+  it('puts legislative activity on at least half the cards of the last three days', () => {
+    // The first screen is what a visitor judges the product by, and the busiest
+    // threads sit there.
+    const cards = new Map<string, boolean>()
+    for (const e of s.feedEvents.filter(x => x.daysAgo <= 3)) {
+      cards.set(cardOf(e), (cards.get(cardOf(e)) ?? false) || isActivity(e))
+    }
+    const withActivity = [...cards.values()].filter(Boolean).length
+    expect(withActivity, `${withActivity} of ${cards.size} cards`).toBeGreaterThanOrEqual(cards.size / 2)
   })
 
   it('mentions teams, not just people', () => {

@@ -577,6 +577,9 @@ const usHb284: DemoSeedComment[] = [
     content: '<p><span data-type="mention" data-id="role:lm-role-us" data-label="Federal Team">@Federal Team</span> any read on when this moves, or are we just watching the appropriations bill instead?</p>', daysAgo: 6 },
   { id: 'lm-c-75', externalId: 'legiscan:1910159', userId: 'lm-user-fed',
     content: '<p>Watching the appropriations bill for now. GLRI funding levels usually move there before this bill ever gets a vote.</p>', daysAgo: 5 },
+  // Answers the subcommittee hearing notice (lm-fe-h-us-hb284, daysAgo 2).
+  { id: 'lm-c-103', externalId: 'legiscan:1910159', userId: 'lm-user-fed',
+    content: "<p>So much for waiting on appropriations. It's on the subcommittee's hearing list. I'll get our letter in the record.</p>", daysAgo: 1 },
 ]
 
 const usHb284Reactions: DemoSeedReaction[] = [
@@ -650,6 +653,9 @@ const usHb583: DemoSeedComment[] = [
     content: '<p>Same-day beach notification is the single biggest ask we hear from the public. Would love to see this move.</p>', daysAgo: 50 },
   { id: 'lm-c-84', externalId: 'legiscan:1933798', userId: 'demo-user',
     content: '<p>Nothing has moved on this since the January 2025 subcommittee referral.</p>', daysAgo: 45 },
+  // Answers the hearing notice (lm-fe-h-us-hb583, daysAgo 2), which takes it up with HB284.
+  { id: 'lm-c-104', externalId: 'legiscan:1933798', userId: 'lm-user-wq',
+    content: '<p>Same hearing as HB284. I can pull our beach closure numbers together for written testimony.</p>', daysAgo: 1 },
 ]
 
 const usHb583Reactions: DemoSeedReaction[] = [
