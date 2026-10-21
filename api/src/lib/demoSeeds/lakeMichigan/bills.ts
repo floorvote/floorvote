@@ -682,11 +682,6 @@ export const LM_RECENT_ACTIVITY_EVENTS: DemoSeedFeedEvent[] = [
     chg('action_added', { newValue: 'Committee Hearing Held' }),
     chg('action_added', { newValue: 'Substitute S-2 Offered' }),
   ] } },
-  // Follows lm-fe-r-mi-sb0771-1. Its placement on third reading is in the real
-  // history already (lm-fe-u-mi-sb0771-2), so only the adoption is reported here.
-  { id: 'lm-fe-r-mi-sb0771-2', type: 'bill_updated', externalId: 'legiscan:2095619', userId: 'system', daysAgo: 24, metadata: { changes: [
-    chg('action_added', { newValue: 'Substitute S-2 Adopted' }),
-  ] } },
 
   // MI HB4768 — Drinking Water, Introduced.
   { id: 'lm-fe-r-mi-hb4768-1', type: 'bill_updated', externalId: 'legiscan:2041788', userId: 'system', daysAgo: 3, metadata: { changes: [

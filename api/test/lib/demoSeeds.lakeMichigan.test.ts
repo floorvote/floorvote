@@ -324,7 +324,8 @@ describe('lake-michigan derived feed events', () => {
         .filter(c => c.changeType === 'action_added').map(c => ({ id: e.id, bill: e.externalId, action: norm(c.newValue) })))
     const history = actionsOf(LM_BILL_UPDATED_EVENTS)
     for (const r of actionsOf(LM_RECENT_ACTIVITY_EVENTS)) {
-      const copy = history.find(h => h.bill === r.bill && (h.action.includes(r.action) || r.action.includes(h.action)))
+      const copy = history.find(h => h.bill === r.bill && h.action !== '' && r.action !== ''
+        && (h.action.includes(r.action) || r.action.includes(h.action)))
       expect(copy, `${r.id} "${r.action}" repeats ${copy?.id}`).toBeUndefined()
     }
   })
