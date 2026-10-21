@@ -480,9 +480,11 @@ adminRoutes.post('/sync-keywords/:tenantId', guardCallerTenantParam(), async (c)
 
 // POST /admin/fetch-missing-texts/:tenantId
 // Finds all keyword-matched bills for a tenant that have no R2 text yet and
-// queues each to the ingestor (skipFetch omitted → calls getBill()).
-// Uses forceMetadata:true so the post-download tenant notification passes
-// through DEMO_MODE queue gates.  ~1 LegiScan API call per bill.
+// queues each to the ingestor. A bill whose stored detail is current goes with
+// skipFetch: its texts download from their state_links with no getBill() call,
+// so this works on a central with no provider key. The rest fetch the bill
+// first, ~1 provider call each. Uses forceMetadata:true so the post-download
+// tenant notification passes through DEMO_MODE queue gates.
 adminRoutes.post('/fetch-missing-texts/:tenantId', async (c) => {
   const tenantId = c.req.param('tenantId')
   const db = drizzle(c.env.DB, { schema })
@@ -495,8 +497,11 @@ adminRoutes.post('/fetch-missing-texts/:tenantId', async (c) => {
   const allBills = c.req.query('allBills') === 'true'
 
   // Bills for this tenant that have no bill_texts row with a non-null r2_key
-  const rows = await db.select({ billId: schema.billTenants.billId })
+  const rows = await db.select({
+    billId: schema.billTenants.billId, changeHash: bills.changeHash, detailHash: bills.detailHash,
+  })
     .from(schema.billTenants)
+    .leftJoin(bills, eq(bills.billId, schema.billTenants.billId))
     .leftJoin(
       schema.billTexts,
       and(eq(schema.billTexts.billId, schema.billTenants.billId), isNotNull(schema.billTexts.r2Key)),
@@ -508,12 +513,15 @@ adminRoutes.post('/fetch-missing-texts/:tenantId', async (c) => {
     ))
     .all()
 
+  // Detail fetched at the bill's current change: its texts rows are current too.
+  const textOnlyIds = new Set(rows.filter(r => r.detailHash !== null && r.detailHash === r.changeHash).map(r => r.billId))
+
   let queued = 0
   for (const { queue, billIds } of await groupByIngestQueue(rows.map(r => r.billId), c.env, db)) {
     for (let i = 0; i < billIds.length; i += 100) {
       await queue.sendBatch(
         billIds.slice(i, i + 100).map(billId => ({
-          body: { billId, forceMetadata: true } as IngestorMessage,
+          body: (textOnlyIds.has(billId) ? { billId, forceMetadata: true, skipFetch: true } : { billId, forceMetadata: true }) as IngestorMessage,
         }))
       )
       queued += Math.min(100, billIds.length - i)
@@ -521,7 +529,7 @@ adminRoutes.post('/fetch-missing-texts/:tenantId', async (c) => {
     }
   }
 
-  return c.json({ ok: true, tenantId, queued, total: rows.length })
+  return c.json({ ok: true, tenantId, queued, total: rows.length, textOnly: textOnlyIds.size })
 })
 
 // POST /admin/refetch-fragment-texts — re-download every stored document whose

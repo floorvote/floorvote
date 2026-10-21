@@ -820,3 +820,134 @@ describe('POST /admin/refetch-bill-text/:billId', () => {
     expect(body.skipFetch).toBeUndefined()
   })
 })
+
+// POST /admin/fetch-missing-texts/:tenantId
+describe('POST /admin/fetch-missing-texts/:tenantId', () => {
+  const ADMIN = { method: 'POST', headers: { 'x-admin-secret': 'test-secret' } }
+
+  /** A tenant, its session, and its bills, each with the detail hash the case needs. */
+  async function seed(rows: Array<{
+    billId: number
+    detailHash: string | null
+    matchType?: 'keyword' | 'manual' | null
+    storedText?: boolean
+  }>) {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.tenants).values({ tenantId: 'test-tenant', name: 'test-tenant', active: true, stateCoverage: '["RI"]' })
+    await db.insert(schema.sessions).values({
+      sessionId: 1, state: 'RI', stateId: 0, yearStart: 2026, yearEnd: 2026,
+      sessionName: '2026', sessionTitle: '2026', sessionTag: '',
+      prefile: 0, sineDie: 0, prior: 0, special: 0,
+    })
+    for (const r of rows) {
+      await db.insert(schema.bills).values({
+        billId: r.billId, sessionId: 1, state: 'RI', stateId: 0,
+        billNumber: `H${r.billId}`, title: `Bill ${r.billId}`,
+        changeHash: 'current', detailHash: r.detailHash, status: 1,
+      })
+      await db.insert(schema.billTenants).values({
+        billId: r.billId, tenantId: 'test-tenant', matchType: r.matchType === undefined ? 'manual' : r.matchType,
+      })
+      await db.insert(schema.billTexts).values({
+        docId: r.billId * 10, billId: r.billId, date: '2026-03-01', type: 'Introduced', typeId: 1,
+        mime: 'application/pdf', mimeId: 2, stateLink: `https://example.test/${r.billId}.pdf`,
+        r2Key: r.storedText ? `bills/legiscan-${r.billId}/texts/${r.billId * 10}.pdf` : null,
+      })
+    }
+  }
+
+  async function run(query = '') {
+    const { env: mockEnv, sendBatch } = envWithMockedQueue()
+    const res = await app.request(`/api/admin/fetch-missing-texts/test-tenant${query}`, ADMIN, mockEnv)
+    const messages = sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body))
+    return { res, body: await res.json() as any, messages, sendBatch }
+  }
+
+  it('returns 404 for an unknown tenant', async () => {
+    const { env: mockEnv, sendBatch } = envWithMockedQueue()
+    const res = await app.request('/api/admin/fetch-missing-texts/nobody', ADMIN, mockEnv)
+    expect(res.status).toBe(404)
+    expect(sendBatch).not.toHaveBeenCalled()
+  })
+
+  it('queues a bill whose stored detail is current to download its texts without a provider call', async () => {
+    await seed([{ billId: 101, detailHash: 'current' }])
+    const { res, messages } = await run()
+    expect(res.status).toBe(200)
+    expect(messages).toEqual([{ billId: 101, forceMetadata: true, skipFetch: true }])
+  })
+
+  it('fetches the bill first when its stored detail is stale', async () => {
+    await seed([{ billId: 102, detailHash: 'older' }])
+    const { messages } = await run()
+    expect(messages).toEqual([{ billId: 102, forceMetadata: true }])
+  })
+
+  it('fetches the bill first when its detail was never fetched', async () => {
+    await seed([{ billId: 103, detailHash: null }])
+    const { messages } = await run()
+    expect(messages).toEqual([{ billId: 103, forceMetadata: true }])
+  })
+
+  it('fetches a linked bill central has no row for', async () => {
+    // The join gives it no hashes at all, which must not read as current detail.
+    await seed([])
+    await drizzle(env.DB, { schema }).insert(schema.billTenants).values({ billId: 113, tenantId: 'test-tenant', matchType: 'manual' })
+    const { messages } = await run()
+    expect(messages).toEqual([{ billId: 113, forceMetadata: true }])
+  })
+
+  it('counts the text-only messages apart from the rest', async () => {
+    await seed([
+      { billId: 104, detailHash: 'current' },
+      { billId: 105, detailHash: 'current' },
+      { billId: 106, detailHash: 'older' },
+    ])
+    const { body } = await run()
+    expect(body).toMatchObject({ ok: true, tenantId: 'test-tenant', queued: 3, total: 3, textOnly: 2 })
+  })
+
+  it('leaves out a bill that already has stored text', async () => {
+    await seed([
+      { billId: 107, detailHash: 'current', storedText: true },
+      { billId: 108, detailHash: 'current' },
+    ])
+    const { messages, body } = await run()
+    expect(messages.map(m => m.billId)).toEqual([108])
+    expect(body).toMatchObject({ queued: 1, total: 1, textOnly: 1 })
+  })
+
+  it('leaves out a bill with no match type unless allBills is set', async () => {
+    await seed([
+      { billId: 109, detailHash: 'current', matchType: null },
+      { billId: 110, detailHash: 'current', matchType: 'keyword' },
+    ])
+    expect((await run()).messages.map(m => m.billId)).toEqual([110])
+  })
+
+  it('includes a bill with no match type under allBills, choosing its message the same way', async () => {
+    await seed([
+      { billId: 111, detailHash: 'current', matchType: null },
+      { billId: 112, detailHash: null, matchType: null },
+    ])
+    const { messages } = await run('?allBills=true')
+    expect(messages).toEqual(expect.arrayContaining([
+      { billId: 111, forceMetadata: true, skipFetch: true },
+      { billId: 112, forceMetadata: true },
+    ]))
+    expect(messages).toHaveLength(2)
+  })
+
+  it('sends more than 100 bills in batches of at most 100, each with its own message', async () => {
+    await seed(Array.from({ length: 150 }, (_, i) => ({ billId: 1000 + i, detailHash: i % 2 === 0 ? 'current' : 'older' })))
+    const { messages, sendBatch, body } = await run()
+    expect(sendBatch).toHaveBeenCalledTimes(2)
+    for (const call of sendBatch.mock.calls) expect(call[0].length).toBeLessThanOrEqual(100)
+    expect(messages).toHaveLength(150)
+    for (const m of messages) {
+      if ((m.billId - 1000) % 2 === 0) expect(m).toEqual({ billId: m.billId, forceMetadata: true, skipFetch: true })
+      else expect(m).toEqual({ billId: m.billId, forceMetadata: true })
+    }
+    expect(body).toMatchObject({ queued: 150, total: 150, textOnly: 75 })
+  }, 30_000)
+})
