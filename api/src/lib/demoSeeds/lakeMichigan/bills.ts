@@ -711,14 +711,14 @@ export const LM_RECENT_ACTIVITY_EVENTS: DemoSeedFeedEvent[] = [
   // kinds of change the provider reports besides hearings: cosponsors, documents,
   // amendments, and floor actions. None advances a bill or claims a vote. The
   // cosponsors are real ones (bills.co_sponsors); only when they joined is invented.
-  // Formats follow central's detect-changes.ts: a sponsor as "Cosponsor Name
+  // Formats follow central's detect-changes.ts: a sponsor as "Rep. Name
   // (Party)", a document or amendment by its type or title in `detail`, and only
   // the newest action when several arrive together.
 
   // US HB284 — two of its real cosponsors, a few hours before the reset.
   { id: 'lm-fe-t-us-hb284', type: 'bill_updated', externalId: 'legiscan:1910159', userId: 'system', daysAgo: 0, minutesLater: -95, metadata: { changes: [
-    chg('sponsor_added', { newValue: 'Cosponsor Marcy Kaptur (D)' }),
-    chg('sponsor_added', { newValue: 'Cosponsor Pete Stauber (R)' }),
+    chg('sponsor_added', { newValue: 'Rep. Marcy Kaptur (D)' }),
+    chg('sponsor_added', { newValue: 'Rep. Pete Stauber (R)' }),
   ] } },
   // IN HB1124 — Indiana's nonpartisan fiscal staff publish a note for a bill in
   // committee; this one has its Public Health hearing coming.

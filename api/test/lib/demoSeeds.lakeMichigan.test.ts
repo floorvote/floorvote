@@ -613,8 +613,9 @@ describe('lake-michigan feed density', () => {
     const top = s.feedEvents.filter(x => x.daysAgo <= 1)
     const cards = new Map<string, Array<{ type: string }>>()
     for (const e of top) cards.set(cardOf(e), [...(cards.get(cardOf(e)) ?? []), e])
-    const alone = [...cards.values()].filter(evs => evs.every(isActivity))
-    expect(alone.length, `${alone.length} cards of activity alone`).toBeGreaterThanOrEqual(4)
+    // A card of hearing rows alone does not count: the point is bills moving.
+    const alone = [...cards.values()].filter(evs => evs.every(isActivity) && evs.some(e => e.type === 'bill_updated'))
+    expect(alone.length, `${alone.length} cards of bill updates alone`).toBeGreaterThanOrEqual(4)
     const kinds = new Set(top.filter(e => e.type === 'bill_updated').flatMap(e =>
       (e.metadata as { changes: Array<{ changeType: string }> }).changes.map(c => c.changeType)))
     expect(kinds.size, `change types at the top: ${[...kinds].join(', ')}`).toBeGreaterThanOrEqual(3)
