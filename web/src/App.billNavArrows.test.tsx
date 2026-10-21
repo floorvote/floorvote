@@ -100,7 +100,7 @@ function listBill(n: number) {
 
 function answer(path: string): unknown {
   if (path === '/auth/me') {
-    return { id: 'u1', email: 'a@b.c', name: 'A', role: 'owner', subtitle: null, canVote: true, emailDigestEnabled: false, lastSeenFeed: null }
+    return { id: 'u1', email: 'a@b.c', name: 'A', role: 'owner', canVote: true, emailDigestEnabled: false, lastSeenFeed: null }
   }
   if (path === '/views') return { views: [] }
   if (path.startsWith('/bills?')) {

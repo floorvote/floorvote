@@ -19,7 +19,6 @@ import { attachmentSummaryText, loadCommentAttachments } from './attachments'
 import { sanitizeCommentHtml } from './sanitizeHtml'
 import { activeUser } from './accountDeletion'
 import { userDisplayNameSql } from './displayName'
-import { userTitleSql } from './userTitle'
 
 type Db = ReturnType<typeof getDb>
 
@@ -100,8 +99,6 @@ export type MentionNotificationView = NotificationBase & {
   authorId: string
   authorName: string | null
   authorTitle: string | null
-  /** The old name for `authorTitle`. Remove in the release after this one. */
-  authorSubtitle: string | null
   commentPreview: string
   commentHtml: string
   sourceType: MentionNotificationData['sourceType']
@@ -114,8 +111,6 @@ export type ReplyNotificationView = NotificationBase & {
   authorId: string
   authorName: string | null
   authorTitle: string | null
-  /** The old name for `authorTitle`. Remove in the release after this one. */
-  authorSubtitle: string | null
   commentPreview: string
   commentHtml: string
 }
@@ -212,7 +207,7 @@ export async function listNotifications(db: Db, recipientId: string): Promise<{ 
       commentContent: comments.content,
       actorId: users.id,
       actorName: userDisplayNameSql,
-      actorTitle: userTitleSql,
+      actorTitle: users.title,
       billId: bills.id,
       billNumber: bills.billNumber,
       billTitle: bills.title,
@@ -270,8 +265,6 @@ export async function listNotifications(db: Db, recipientId: string): Promise<{ 
           authorId: r.actorId,
           authorName: r.actorName,
           authorTitle: r.actorTitle,
-          // The old name for `authorTitle`. Remove in the release after this one.
-          authorSubtitle: r.actorTitle,
           ...commentBody(r.commentId, r.commentContent, fileBodies),
           sourceType: r.mention.sourceType,
           sourceLabel: r.mention.sourceType === 'role' ? (roleNames.get(r.mention.sourceId) ?? null) : null,
@@ -283,8 +276,6 @@ export async function listNotifications(db: Db, recipientId: string): Promise<{ 
           authorId: r.actorId,
           authorName: r.actorName,
           authorTitle: r.actorTitle,
-          // The old name for `authorTitle`. Remove in the release after this one.
-          authorSubtitle: r.actorTitle,
           ...commentBody(r.commentId, r.commentContent, fileBodies),
         }
     }

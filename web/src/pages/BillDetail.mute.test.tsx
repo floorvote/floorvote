@@ -36,7 +36,7 @@ vi.mock('../components/RichTextEditor', () => ({
 const authMock = vi.hoisted(() => ({ emailRepliesEnabled: true }))
 vi.mock('../hooks/useAuth', () => ({
   useAuth: () => ({
-    user: { id: 'u1', email: 'a@b.c', name: 'Alice', role: 'member', subtitle: null, emailRepliesEnabled: authMock.emailRepliesEnabled },
+    user: { id: 'u1', email: 'a@b.c', name: 'Alice', role: 'member', emailRepliesEnabled: authMock.emailRepliesEnabled },
     loading: false,
   }),
 }))

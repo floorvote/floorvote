@@ -19,7 +19,6 @@ import { loadCommentAttachments } from '../../lib/attachments'
 import { loadTaxonomyTagNameSet, filterTagsToTaxonomy } from '../../lib/taxonomy'
 import { parseSubjects, loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../../lib/billSubjects'
 import { displayName, userDisplayNameSql } from '../../lib/displayName'
-import { titleOf, userTitleSql } from '../../lib/userTitle'
 import { groupMemberIds, groupVotes, inGroupOf, loadGroupBills, loadGroupNotes, mergeGroupNotes } from '../../lib/companionGroups'
 import { loadFieldDefs, loadGroupTeamValues } from '../../lib/teamFields'
 import { isReplyParticipant } from '../../lib/replies'
@@ -186,7 +185,7 @@ export async function buildBillDetail(
         c: comments,
         userName: users.name,
         userEmail: users.email,
-        userTitle: userTitleSql,
+        userTitle: users.title,
       })
       .from(comments)
       .innerJoin(users, eq(comments.userId, users.id))
@@ -289,15 +288,14 @@ export async function buildBillDetail(
     : []
   const attachmentsByComment = await loadCommentAttachments(db, commentIds)
 
-  const reactionsByComment = new Map<string, Map<string, { count: number; userReacted: boolean; reactors: { name: string; title: string | null; subtitle: string | null }[] }>>()
+  const reactionsByComment = new Map<string, Map<string, { count: number; userReacted: boolean; reactors: { name: string; title: string | null }[] }>>()
   for (const { reaction: r, user: reactor } of reactionRows) {
     if (!reactionsByComment.has(r.commentId)) reactionsByComment.set(r.commentId, new Map())
     const emojiMap = reactionsByComment.get(r.commentId)!
     if (!emojiMap.has(r.emoji)) emojiMap.set(r.emoji, { count: 0, userReacted: false, reactors: [] })
     const entry = emojiMap.get(r.emoji)!
     entry.count++
-    // `subtitle` is the old name for `title`. Remove in the release after this one.
-    entry.reactors.push({ name: displayName(reactor), title: titleOf(reactor), subtitle: titleOf(reactor) })
+    entry.reactors.push({ name: displayName(reactor), title: reactor.title })
     if (r.userId === currentUser.id) entry.userReacted = true
   }
 
@@ -309,8 +307,6 @@ export async function buildBillDetail(
     userId: comment.userId,
     userName: userName || userEmail,
     userTitle,
-    // `subtitle` is the old name for `title`. Remove in the release after this one.
-    userSubtitle: userTitle,
     content: comment.content,
     createdAt: comment.createdAt,
     reactions: Array.from(reactionsByComment.get(comment.id)?.entries() ?? []).map(

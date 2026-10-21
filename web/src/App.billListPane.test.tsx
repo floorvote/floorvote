@@ -36,7 +36,7 @@ vi.mock('./lib/api', () => ({
   apiFetch: async (path: string) => {
     hoisted.calls.push(path)
     if (path === '/auth/me') {
-      return { id: 'u1', email: 'a@b.c', name: 'A', role: 'owner', subtitle: null, canVote: true, emailDigestEnabled: false, lastSeenFeed: null }
+      return { id: 'u1', email: 'a@b.c', name: 'A', role: 'owner', canVote: true, emailDigestEnabled: false, lastSeenFeed: null }
     }
     if (path === '/views') return { views: [{ id: 'v1', slug: 'urgent', name: 'Urgent', query: 'priority=high&sort=bill&dir=desc' }] }
     if (path.startsWith('/bills?')) {

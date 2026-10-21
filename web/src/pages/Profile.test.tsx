@@ -140,11 +140,10 @@ describe('Profile reply-emails switch', () => {
 describe('Profile title field', () => {
   beforeEach(() => vi.restoreAllMocks())
 
-  it('labels the line under a member\'s name "Title", never "Subtitle"', () => {
+  it('labels the line under a member\'s name "Title"', () => {
     mockConfig({})
     render(<MemoryRouter><Profile /></MemoryRouter>)
     expect(screen.getByLabelText('Title')).toBeInTheDocument()
-    expect(screen.queryByText(/subtitle/i)).not.toBeInTheDocument()
   })
 })
 

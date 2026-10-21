@@ -41,7 +41,7 @@ vi.mock('./lib/api', () => {
       hoisted.calls.push(path)
       if (hoisted.role === null) throw new ApiError(401, 'Not authenticated')
       if (path === '/auth/me') {
-        return { id: 'u1', email: 'a@b.c', name: 'A', role: hoisted.role, subtitle: null, canVote: true, emailDigestEnabled: false, lastSeenFeed: null }
+        return { id: 'u1', email: 'a@b.c', name: 'A', role: hoisted.role, canVote: true, emailDigestEnabled: false, lastSeenFeed: null }
       }
       if (path === '/config') return { positionVocabulary: ['Support', 'Oppose'], orgNoun: 'association', states: ['RI'] }
       if (path === '/users/me/bills' || path === '/config/custom-fields') return []

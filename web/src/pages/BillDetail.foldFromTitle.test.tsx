@@ -30,7 +30,7 @@ vi.mock('../components/RichTextEditor', () => ({ RichTextEditor: () => null }))
 vi.mock('../components/PositionBadge', () => ({ PositionBadge: ({ position }: { position: string }) => <span>{position}</span> }))
 vi.mock('../context/DemoContext', () => ({ useDemo: () => ({ demoLocked: false }) }))
 vi.mock('../hooks/useAuth', () => ({
-  useAuth: () => ({ user: { id: 'u1', email: 'a@b.c', name: 'Alice', role: 'member', subtitle: null, canVote: true }, loading: false }),
+  useAuth: () => ({ user: { id: 'u1', email: 'a@b.c', name: 'Alice', role: 'member', canVote: true }, loading: false }),
 }))
 vi.mock('../context/SidebarRefreshContext', () => ({ useSidebarRefresh: () => vi.fn() }))
 vi.mock('../context/NotificationsContext', () => ({ useNotifications: () => ({ unreadCount: 0, notifications: [], refresh: vi.fn() }) }))

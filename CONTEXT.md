@@ -8,7 +8,7 @@
 
 **Member**: anyone with a login in an instance, whatever their permission level. Avoid: "user" in product copy; "group member."
 
-**Title**: the line shown under a member's name ("Senior Policy Analyst, Elections"), which the member sets on their Profile page and the instance stores as `users.title`, and also as `users.subtitle` until a later migration drops that column. Not a bill's title. For a superadmin it is kept in central and copied into the instance at each sign-in, so it is read-only there. Avoid: "subtitle," its name before #539, which survives only in the old column and the API aliases until they are removed; "role," "position," or "job title" in product copy.
+**Title**: the line shown under a member's name ("Senior Policy Analyst, Elections"), which the member sets on their Profile page and the instance stores as `users.title`. Not a bill's title. For a superadmin it is kept in central and copied into the instance at each sign-in, so it is read-only there. Avoid: "subtitle," its name before #539 (migration 0120 dropped the column and the API aliases); "role," "position," or "job title" in product copy.
 
 **Permission level**: what a member may do in the instance: Owner, Admin, or Standard member. Avoid: "role," which means a named group (below).
 

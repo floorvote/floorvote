@@ -25,7 +25,7 @@ vi.mock('../lib/scrollUtils', () => ({ getScrollContainer: () => scroll }))
 vi.mock('../components/RichTextEditor', () => ({ RichTextEditor: () => null }))
 vi.mock('../components/PositionBadge', () => ({ PositionBadge: ({ position }: { position: string }) => <span>{position}</span> }))
 vi.mock('../hooks/useAuth', () => ({
-  useAuth: () => ({ user: { id: 'u1', email: 'a@b.c', name: 'Alice', role: 'member', subtitle: null, canVote: false }, loading: false }),
+  useAuth: () => ({ user: { id: 'u1', email: 'a@b.c', name: 'Alice', role: 'member', canVote: false }, loading: false }),
 }))
 vi.mock('../context/DemoContext', () => ({ useDemo: () => ({ demoMode: false, demoLocked: false, settled: true, demoResetAt: 'epoch-1' }) }))
 vi.mock('../context/SidebarRefreshContext', () => ({ useSidebarRefresh: () => vi.fn() }))

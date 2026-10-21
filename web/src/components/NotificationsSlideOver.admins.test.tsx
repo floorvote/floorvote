@@ -22,7 +22,7 @@ vi.mock('../lib/api', () => ({
           kind: 'mention', id: 'n1', commentId: 'c1', billId: 'b1',
           billNumber: 'SB123', billTitle: 'A test bill', billState: 'NJ', billIsDraft: false,
           sessionSlug: 'session-1',
-          authorId: 'u1', authorName: 'Sam Member', authorSubtitle: null,
+          authorId: 'u1', authorName: 'Sam Member',
           commentPreview: 'preview',
           commentHtml: '<p>Please prioritize this.</p>',
           sourceType: 'admins', sourceLabel: null,

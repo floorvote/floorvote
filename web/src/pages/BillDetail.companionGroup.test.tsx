@@ -57,7 +57,7 @@ vi.mock('../context/DemoContext', () => ({
 const authState = vi.hoisted(() => ({ role: 'admin' as 'member' | 'admin' | 'owner', canVote: true }))
 vi.mock('../hooks/useAuth', () => ({
   useAuth: () => ({
-    user: { id: 'u1', email: 'a@b.c', name: 'Alice', role: authState.role, subtitle: null, canVote: authState.canVote },
+    user: { id: 'u1', email: 'a@b.c', name: 'Alice', role: authState.role, canVote: authState.canVote },
     loading: false,
   }),
 }))
@@ -173,7 +173,7 @@ beforeEach(() => {
 })
 
 const comment = (id: string, billId: string, billNumber: string, createdAt: string, userName: string) => ({
-  id, billId, billNumber, userId: `u-${userName}`, userName, userSubtitle: null,
+  id, billId, billNumber, userId: `u-${userName}`, userName,
   content: `<p>${id} text</p>`, createdAt, reactions: [],
 })
 

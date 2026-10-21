@@ -34,7 +34,6 @@ import { isPreviouslyBounced, previouslyBouncedAddresses } from '../lib/bouncedA
 import { adminSendChecks, claimSend, releaseSend } from '../lib/adminSendLimits'
 import { mayChangeEmail, refuseSuperadmin, requestEmailChange } from '../lib/emailChange'
 import { centralEmail, type DeliveryStatus, type SuppressionStatus } from '../lib/centralEmail'
-import { userTitleSql } from '../lib/userTitle'
 import { AI_SETTING_KEYS, changedAiSettings, readAiSettingRecordFields, recordStatements } from '../lib/aiSettingAudit'
 import { readClaimLinksSetting, writeClaimLinksSetting } from '../lib/claimLinksSetting'
 
@@ -56,7 +55,7 @@ adminApiRouter.get('/members', async (c) => {
       email: users.email,
       name: users.name,
       role: users.role,
-      title: userTitleSql,
+      title: users.title,
       createdAt: users.createdAt,
       lastActive: users.lastActive,
       deactivatedAt: users.deactivatedAt,
@@ -135,8 +134,6 @@ adminApiRouter.get('/members', async (c) => {
       name: u.name,
       role: u.role,
       title: u.title,
-      // `subtitle` is the old name for `title`. Remove in the release after this one.
-      subtitle: u.title,
       createdAt: u.createdAt,
       lastActive: u.lastActive,
       deactivatedAt: u.deactivatedAt,

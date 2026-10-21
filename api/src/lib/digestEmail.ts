@@ -272,15 +272,15 @@ const VIEW_ENTRY_CHIP = { label: 'New in view', bg: color.bgAmberPriority, text:
 
 // Section opener: a 2px rule in the section's color, then its header (and an
 // optional line under it). The id is the contents box's anchor target.
-function renderSectionHeader(opts: { id: string; ruleColor: string; title: string; subtitle?: string; spaceAbove: boolean }): string {
-  const subtitleRow = opts.subtitle
-    ? `<tr><td style="padding:0 0 8px 0;font-size:${fontSize.xs}px;color:${color.textSecondary};">${escHtml(opts.subtitle)}</td></tr>`
+function renderSectionHeader(opts: { id: string; ruleColor: string; title: string; caption?: string; spaceAbove: boolean }): string {
+  const captionRow = opts.caption
+    ? `<tr><td style="padding:0 0 8px 0;font-size:${fontSize.xs}px;color:${color.textSecondary};">${escHtml(opts.caption)}</td></tr>`
     : ''
   return `
 <table id="${opts.id}" role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:${opts.spaceAbove ? 24 : 0}px 0 8px 0;border-top:2px solid ${opts.ruleColor};">
   <tbody>
     <tr><td style="padding:12px 0 6px 0;font-size:${fontSize.lg}px;font-weight:${fontWeight.bold};color:${color.textPrimary};">${escHtml(opts.title)}</td></tr>
-    ${subtitleRow}
+    ${captionRow}
   </tbody>
 </table>`
 }
@@ -348,7 +348,7 @@ function renderNewMatchSection(items: NewMatchDigestItem[], appUrl: string, forM
   return `${renderSectionHeader({
     id: NEW_MATCHES_ID, ruleColor: color.accentAmber, spaceAbove,
     title: countOf(cards.length, 'new match', 'new matches'),
-    subtitle: forMember ? undefined : 'Set a priority or dismiss each from the bill list.',
+    caption: forMember ? undefined : 'Set a priority or dismiss each from the bill list.',
   })}
 ${top.map(card => renderNewMatchCard(card, appUrl, forMember)).join('\n')}${seeAll}`
 }

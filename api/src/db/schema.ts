@@ -8,8 +8,6 @@ export const users = sqliteTable('users', {
   name: text('name').notNull().default(''),
   role: text('role', { enum: ['admin', 'member', 'owner'] }).notNull().default('member'),
   title: text('title'),
-  // The old name for `title`, kept in sync until the drop migration (follow-up issue), so the previous build still works if a deploy is rolled back.
-  subtitle: text('subtitle'),
   invitedBy: text('invited_by'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   lastActive: text('last_active').notNull().default(sql`(datetime('now'))`),

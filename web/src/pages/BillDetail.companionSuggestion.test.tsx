@@ -58,7 +58,7 @@ vi.mock('../context/DemoContext', () => ({
 const authState = vi.hoisted(() => ({ role: 'admin' as 'member' | 'admin' | 'owner' }))
 vi.mock('../hooks/useAuth', () => ({
   useAuth: () => ({
-    user: { id: 'u1', email: 'a@b.c', name: 'Alice', role: authState.role, subtitle: null, canVote: true },
+    user: { id: 'u1', email: 'a@b.c', name: 'Alice', role: authState.role, canVote: true },
     loading: false,
   }),
 }))

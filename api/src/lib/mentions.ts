@@ -15,7 +15,6 @@ import { renderBillCardOpen, BILL_CARD_CLOSE, renderCommentRow, formatEmailDateT
 import { renderEmailShell, emailButton, emailFooterLink } from './emailShell'
 import { sanitizeCommentHtml } from './sanitizeHtml'
 import { displayName } from './displayName'
-import { userTitleSql } from './userTitle'
 
 /** @mention emails are on unless an admin explicitly disabled them. */
 export async function mentionEmailsEnabled(db: ReturnType<typeof getDb>): Promise<boolean> {
@@ -454,7 +453,7 @@ async function sendMentionEmails(
 ): Promise<void> {
   const db = getDb(env.DB)
   const [author] = await db
-    .select({ name: users.name, email: users.email, title: userTitleSql })
+    .select({ name: users.name, email: users.email, title: users.title })
     .from(users)
     .where(eq(users.id, authorUserId))
     .all()

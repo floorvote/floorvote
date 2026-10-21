@@ -25,7 +25,6 @@ import type { AppEnv } from '../types'
 import { isValidEmail } from '../../../shared/email'
 import { confirmEmailChange, emailChangeLinkStatus, EMAIL_CHANGE_ERRORS } from '../lib/emailChange'
 import { reportNotMe, notMeLinkStatus, NOT_ME_ERRORS } from '../lib/emailChangeReport'
-import { titleOf, userTitleSql } from '../lib/userTitle'
 
 export const authRoutes = new Hono<AppEnv>()
 
@@ -424,9 +423,7 @@ authRoutes.get('/me', async (c) => {
             email: localUser!.email,
             name: localUser!.name,
             role: localUser!.role,
-            title: titleOf(localUser!),
-            // `subtitle` is the old name for `title`. Remove in the release after this one.
-            subtitle: titleOf(localUser!),
+            title: localUser!.title,
             canVote: !!localUser!.canVote,
             emailDigestEnabled: localUser!.emailDigestEnabled === 1,
             emailDigestMatchesEnabled: localUser!.emailDigestMatchesEnabled === 1,
@@ -454,7 +451,7 @@ authRoutes.get('/me', async (c) => {
       email: users.email,
       name: users.name,
       role: users.role,
-      title: userTitleSql,
+      title: users.title,
       canVote: users.canVote,
       emailDigestEnabled: users.emailDigestEnabled,
       emailDigestMatchesEnabled: users.emailDigestMatchesEnabled,
@@ -515,8 +512,6 @@ authRoutes.get('/me', async (c) => {
     name: sessionWithUser.name,
     role: sessionWithUser.role,
     title: sessionWithUser.title,
-    // `subtitle` is the old name for `title`. Remove in the release after this one.
-    subtitle: sessionWithUser.title,
     canVote: !!sessionWithUser.canVote,
     emailDigestEnabled: sessionWithUser.emailDigestEnabled === 1,
     emailDigestMatchesEnabled: sessionWithUser.emailDigestMatchesEnabled === 1,
