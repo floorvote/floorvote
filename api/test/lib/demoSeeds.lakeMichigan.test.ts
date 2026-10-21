@@ -3,6 +3,7 @@ import { env } from 'cloudflare:test'
 import { clearDb, seedBill } from '../helpers'
 import { runDemoReset } from '../../src/lib/demoReset'
 import { DEMO_SEEDS, resolveDemoSeed } from '../../src/lib/demoSeeds'
+import type { DemoSeedFeedEvent } from '../../src/lib/demoSeeds/types'
 import {
   LM_BILLS, LM_BILL_UPDATED_EVENTS, LM_COMPANION_BILLS, LM_HEARING_CHANGE_SOURCES, LM_HEARING_NOTICE_SOURCES,
   LM_RECENT_ACTIVITY_EVENTS,
@@ -607,16 +608,35 @@ describe('lake-michigan feed density', () => {
     expect(activityOnly.length, activityOnly.join(', ')).toBeGreaterThanOrEqual(6)
   })
 
-  it('opens the feed with cards of bill activity alone, and not only hearings', () => {
-    // The first screen should show bills moving on their own, in the kinds of
-    // change the provider reports, not a run of hearing notices.
-    const top = s.feedEvents.filter(x => x.daysAgo <= 1)
-    const cards = new Map<string, Array<{ type: string }>>()
-    for (const e of top) cards.set(cardOf(e), [...(cards.get(cardOf(e)) ?? []), e])
-    // A card of hearing rows alone does not count: the point is bills moving.
-    const alone = [...cards.values()].filter(evs => evs.every(isActivity) && evs.some(e => e.type === 'bill_updated'))
-    expect(alone.length, `${alone.length} cards of bill updates alone`).toBeGreaterThanOrEqual(4)
-    const kinds = new Set(top.filter(e => e.type === 'bill_updated').flatMap(e =>
+  // A day's cards in feed order: grouped as the feed groups them, newest event first.
+  const cardsOfDay = (day: number) => {
+    const cards = new Map<string, Array<DemoSeedFeedEvent>>()
+    for (const e of s.feedEvents.filter(x => x.daysAgo === day)) cards.set(cardOf(e), [...(cards.get(cardOf(e)) ?? []), e])
+    const at = (e: DemoSeedFeedEvent) => e.daysAgo * 1440 - (e.minutesLater ?? 0)
+    return [...cards.values()].sort((a, b) => Math.min(...a.map(at)) - Math.min(...b.map(at)))
+  }
+  // Rows a card draws: one per change in a bill update, one for anything else.
+  const rowsOf = (evs: DemoSeedFeedEvent[]) => evs.reduce((n, e) =>
+    n + (e.type === 'bill_updated' ? (e.metadata as { changes: unknown[] }).changes.length : 1), 0)
+  const kindOf = (evs: DemoSeedFeedEvent[]) =>
+    evs.every(isActivity) ? 'activity' : evs.some(isActivity) ? 'mixed' : 'social'
+
+  it("opens today's feed on a few full cards that take turns: mixed, discussion, activity", () => {
+    // Fewer cards with more in each reads like a team at work; a run of one-row
+    // cards reads like a log. Each kind takes its turn so the first screen shows
+    // all three.
+    const today = cardsOfDay(0)
+    expect(today.map(kindOf).slice(0, 4)).toEqual(['mixed', 'social', 'activity', 'mixed'])
+    for (const c of today) expect(rowsOf(c), `${cardOf(c[0])} rows`).toBeGreaterThanOrEqual(2)
+    expect(today.length).toBeLessThanOrEqual(5)
+    // The opening card carries two of each.
+    expect(rowsOf(today[0].filter(isActivity)), 'activity rows on the opening card').toBeGreaterThanOrEqual(2)
+    expect(rowsOf(today[0].filter(e => !isActivity(e))), 'discussion rows on the opening card').toBeGreaterThanOrEqual(2)
+  })
+
+  it('shows all three kinds of card yesterday too, and bill changes besides hearings at the top', () => {
+    expect(new Set(cardsOfDay(1).map(kindOf))).toEqual(new Set(['mixed', 'social', 'activity']))
+    const kinds = new Set(s.feedEvents.filter(x => x.daysAgo <= 1 && x.type === 'bill_updated').flatMap(e =>
       (e.metadata as { changes: Array<{ changeType: string }> }).changes.map(c => c.changeType)))
     expect(kinds.size, `change types at the top: ${[...kinds].join(', ')}`).toBeGreaterThanOrEqual(3)
   })

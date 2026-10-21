@@ -583,10 +583,12 @@ export const LM_HEARING_NOTICE_SOURCES: ReadonlyArray<{ eventId: string; calenda
  * on one of the busiest threads at the top of the feed, where it puts the hearing
  * those threads are planning for back in view.
  */
-const LM_HEARING_CHANGES: Array<{ eventId: string; calendarId: string; daysAgo: number; previousLocation: string }> = [
-  { eventId: 'lm-fe-hc-in-hb1124', calendarId: 'lm-hearing-5', daysAgo: 1, previousLocation: 'Indiana Statehouse, Room 156-C, Indianapolis' },
+const LM_HEARING_CHANGES: Array<{ eventId: string; calendarId: string; daysAgo: number; minutesLater?: number; previousLocation: string }> = [
+  { eventId: 'lm-fe-hc-in-hb1124', calendarId: 'lm-hearing-5', daysAgo: 1, minutesLater: -40, previousLocation: 'Indiana Statehouse, Room 156-C, Indianapolis' },
   { eventId: 'lm-fe-hc-mi-hb5308', calendarId: 'lm-hearing-2', daysAgo: 2, previousLocation: 'Binsfeld Office Building, Room 1300, Lansing' },
-  { eventId: 'lm-fe-hc-mi-hb5674', calendarId: 'lm-hearing-3', daysAgo: 1, previousLocation: 'Anderson House Office Building, Room 521, Lansing' },
+  { eventId: 'lm-fe-hc-mi-hb5674', calendarId: 'lm-hearing-3', daysAgo: 0, minutesLater: -260, previousLocation: 'Anderson House Office Building, Room 521, Lansing' },
+  // Gives HB4427's thread, quiet since its notice, something recent ahead of the hearing.
+  { eventId: 'lm-fe-hc-mi-hb4427', calendarId: 'lm-hearing-1', daysAgo: 5, previousLocation: 'Binsfeld Office Building, Room 1200, Lansing' },
   // These two stand in for re-dated copies of real actions (see LM_RECENT_ACTIVITY_EVENTS).
   { eventId: 'lm-fe-hc-il-hb1175', calendarId: 'lm-hearing-4', daysAgo: 12, previousLocation: 'Illinois State Capitol, Room 114, Springfield' },
   { eventId: 'lm-fe-hc-us-hb8876', calendarId: 'lm-hearing-6', daysAgo: 2, previousLocation: 'Longworth House Office Building, Washington DC' },
@@ -605,7 +607,10 @@ const announced = (n: { eventId: string; calendarId: string; daysAgo: number }):
 
 export const LM_HEARING_EVENTS: DemoSeedFeedEvent[] = [
   ...LM_HEARING_NOTICES.map(announced),
-  ...LM_HEARING_CHANGES.map(n => hearingNotice(n.eventId, n.calendarId, n.daysAgo, 'hearing_changed')),
+  ...LM_HEARING_CHANGES.map(n => ({
+    ...hearingNotice(n.eventId, n.calendarId, n.daysAgo, 'hearing_changed'),
+    ...(n.minutesLater !== undefined ? { minutesLater: n.minutesLater } : {}),
+  })),
 ]
 
 // Hand-written priority_set and position_set events. Task 4 imports this name.
@@ -715,30 +720,35 @@ export const LM_RECENT_ACTIVITY_EVENTS: DemoSeedFeedEvent[] = [
   // (Party)", a document or amendment by its type or title in `detail`, and only
   // the newest action when several arrive together.
 
-  // US HB284 — two of its real cosponsors, a few hours before the reset.
-  { id: 'lm-fe-t-us-hb284', type: 'bill_updated', externalId: 'legiscan:1910159', userId: 'system', daysAgo: 0, minutesLater: -95, metadata: { changes: [
+  // The order within a day is the feed's: a card sorts by its newest event, so
+  // minutesLater sets the sequence. Today runs mixed (HB284), discussion (HB4427),
+  // activity (HB1175), mixed (HB5674); yesterday mixed (HB1124), discussion
+  // (HB6668), activity (SB0771), discussion (HB583).
+
+  // US HB284 — two of its real cosponsors, under the team noticing them.
+  { id: 'lm-fe-t-us-hb284', type: 'bill_updated', externalId: 'legiscan:1910159', userId: 'system', daysAgo: 0, minutesLater: -140, metadata: { changes: [
     chg('sponsor_added', { newValue: 'Rep. Marcy Kaptur (D)' }),
     chg('sponsor_added', { newValue: 'Rep. Pete Stauber (R)' }),
   ] } },
   // IN HB1124 — Indiana's nonpartisan fiscal staff publish a note for a bill in
   // committee; this one has its Public Health hearing coming.
-  { id: 'lm-fe-t-in-hb1124', type: 'bill_updated', externalId: 'legiscan:2061476', userId: 'system', daysAgo: 0, minutesLater: -160, metadata: { changes: [
+  { id: 'lm-fe-t-in-hb1124', type: 'bill_updated', externalId: 'legiscan:2061476', userId: 'system', daysAgo: 1, minutesLater: -30, metadata: { changes: [
     chg('supplement_added', { detail: 'Fiscal Note' }),
   ] } },
   // MI SB0771 — on the order of third reading since June (its real record), which
   // is where the Michigan Senate routinely postpones a bill day to day.
-  { id: 'lm-fe-t-mi-sb0771', type: 'bill_updated', externalId: 'legiscan:2095619', userId: 'system', daysAgo: 0, minutesLater: -230, metadata: { changes: [
+  { id: 'lm-fe-t-mi-sb0771', type: 'bill_updated', externalId: 'legiscan:2095619', userId: 'system', daysAgo: 1, minutesLater: -180, metadata: { changes: [
     chg('action_added', { newValue: 'Postponed For The Day' }),
   ] } },
   // MI HB5674 — the House Fiscal Agency analyzes a bill ahead of its committee
   // hearing (lm-hearing-3, nine days out).
-  { id: 'lm-fe-t-mi-hb5674', type: 'bill_updated', externalId: 'legiscan:2129983', userId: 'system', daysAgo: 0, minutesLater: -300, metadata: { changes: [
+  { id: 'lm-fe-t-mi-hb5674', type: 'bill_updated', externalId: 'legiscan:2129983', userId: 'system', daysAgo: 0, minutesLater: -230, metadata: { changes: [
     chg('supplement_added', { detail: 'Analysis' }),
   ] } },
   // IL HB1175 — its Committee Amendment No. 1 was tabled in 2025 (real record); a
   // second one ahead of the Energy & Environment hearing (lm-hearing-4) goes to
   // Rules first, as every IL committee amendment does.
-  { id: 'lm-fe-t-il-hb1175', type: 'bill_updated', externalId: 'legiscan:1906052', userId: 'system', daysAgo: 1, metadata: { changes: [
+  { id: 'lm-fe-t-il-hb1175', type: 'bill_updated', externalId: 'legiscan:1906052', userId: 'system', daysAgo: 0, minutesLater: -95, metadata: { changes: [
     chg('amendment_added', { detail: 'House Committee Amendment No. 2' }),
     chg('action_added', { newValue: 'House Committee Amendment No. 2 Referred to Rules Committee' }),
   ] } },
