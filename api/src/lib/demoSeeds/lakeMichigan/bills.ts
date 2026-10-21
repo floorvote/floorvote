@@ -864,7 +864,7 @@ export const LM_NO_PRIORITY_ACTIONS: NoPriorityAction[] = [
 ]
 
 export const LM_NO_PRIORITY_EVENTS: DemoSeedFeedEvent[] = LM_NO_PRIORITY_ACTIONS.map((a, i) => ({
-  // `lm-fe-n-2107488-1` is that bill's first action in the table above.
+  // `lm-fe-n-2104855-1` is that bill's first action in the table above.
   id: `lm-fe-n-${a.externalId.replace('legiscan:', '')}-${LM_NO_PRIORITY_ACTIONS.slice(0, i).filter(x => x.externalId === a.externalId).length + 1}`,
   type: 'bill_updated' as const,
   externalId: a.externalId,
