@@ -889,10 +889,12 @@ async function applyCentralBill(
     ])
   }
 
-  // New keyword-match feed event: passive, system actor, written once per bill. An
-  // unprioritized bill's feed shows the day's new-matches row instead; once someone
-  // prioritizes the bill, its card (and the nav dot) takes the event, since the feed
-  // admits passive events on prioritized bills (see feed.ts / PASSIVE_EVENT_TYPES).
+  // New keyword-match feed event: passive, system actor, written once per bill. On an
+  // unprioritized bill it shows nowhere on the feed: a routine match is covered by the
+  // day's new-matches row (below), and a bulk match writes no row, so its event waits
+  // unseen. Once someone prioritizes the bill, its card (and the nav dot) takes the
+  // event, since the feed admits passive events on prioritized bills (see feed.ts /
+  // PASSIVE_EVENT_TYPES).
   // The write-once checks (here and at `priorMatchEvent`) read it too.
   //
   // Write-once is enforced against the feed_events table itself, not against

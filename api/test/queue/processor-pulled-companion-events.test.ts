@@ -186,6 +186,8 @@ describe('processCentralNotification: a pulled companion in a group', () => {
     const worklist = await db().select({ id: bills.id }).from(bills).where(newMatchWhere(0)).all()
     expect(worklist.map(b => b.id)).not.toContain('b-companion')
     const onFeed = (await feed()).map(e => e.type)
+    // The feed does show the group's update, so the absences below can fail on their own.
+    expect(onFeed).toContain('bill_updated')
     expect(onFeed).not.toContain('bill_matched')
     expect(onFeed).not.toContain('new_matches')
   })
