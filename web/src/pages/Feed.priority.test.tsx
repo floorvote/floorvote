@@ -113,6 +113,15 @@ describe('Feed: choosing a priority updates the card in place', () => {
     expect(selects().map(s => (s as HTMLSelectElement).value).sort()).toEqual(['', 'high'])
   })
 
+  it('changes a priority that is already set: High to Low saves and the card shows Low', async () => {
+    apiFetchMock.mockResolvedValue({ priority: 'low' })
+    renderFeed([ev({ id: 'e1', billPriority: 'high' })])
+    expect(sel()).toHaveDisplayValue('High Priority')
+    fireEvent.change(sel(), { target: { value: 'low' } })
+    await waitFor(() => expect(sel()).toHaveDisplayValue('Low Priority'))
+    expect(apiFetchMock).toHaveBeenCalledWith('/bills/b1/priority', { method: 'PATCH', body: JSON.stringify({ priority: 'low' }) })
+  })
+
   it('a card for a bill with several events shows the new priority once', async () => {
     apiFetchMock.mockResolvedValue({ priority: 'low' })
     renderFeed([ev({ id: 'e1' }), ev({ id: 'e2', createdAt: '2026-02-01 08:00:00' })])
