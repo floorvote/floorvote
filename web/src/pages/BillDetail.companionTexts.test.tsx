@@ -146,11 +146,11 @@ const chipLabels = (el: HTMLElement) => within(el).getAllByRole('button').map(b 
 const allChips = () => screen.queryAllByRole('button').filter(b => b.hasAttribute('aria-pressed'))
 const pressed = () => allChips().filter(b => b.getAttribute('aria-pressed') === 'true')
 const passageFrame = async () => {
-  await waitFor(() => expect((screen.getByTitle(/^Bill text/) as HTMLIFrameElement).getAttribute('src') ?? '').toMatch(/^blob:/), { timeout: 3000 })
+  await waitFor(() => expect((screen.getByTitle(/^Bill text/) as HTMLIFrameElement).title).toMatch(/passage highlighted/), { timeout: 3000 })
   return screen.getByTitle(/^Bill text/) as HTMLIFrameElement
 }
 const highlighted = async () => {
-  const doc = new DOMParser().parseFromString(await blobs[blobs.length - 1].text(), 'text/html')
+  const doc = new DOMParser().parseFromString(((screen.getByTitle(/passage highlighted/) as HTMLIFrameElement).getAttribute('srcdoc') ?? ''), 'text/html')
   return doc.getElementById(PASSAGE_ID)?.textContent ?? null
 }
 

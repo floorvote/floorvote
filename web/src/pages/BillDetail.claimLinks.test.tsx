@@ -141,11 +141,11 @@ const summaryBox = async () => {
 const sourceBadge = async () => within((await screen.findByText('AI Summary')).parentElement as HTMLElement).getByText('S200')
 const claimLink = (name: string) => screen.findByRole('link', { name })
 const passageFrame = async () => {
-  await waitFor(() => expect((screen.getByTitle(/^Bill text/) as HTMLIFrameElement).getAttribute('src') ?? '').toMatch(/^blob:/), { timeout: 3000 })
+  await waitFor(() => expect((screen.getByTitle(/^Bill text/) as HTMLIFrameElement).title).toMatch(/passage highlighted/), { timeout: 3000 })
   return screen.getByTitle(/^Bill text/) as HTMLIFrameElement
 }
 const highlighted = async () => {
-  const doc = new DOMParser().parseFromString(await blobs[blobs.length - 1].text(), 'text/html')
+  const doc = new DOMParser().parseFromString(((screen.getByTitle(/passage highlighted/) as HTMLIFrameElement).getAttribute('srcdoc') ?? ''), 'text/html')
   return doc.getElementById(PASSAGE_ID)?.textContent ?? null
 }
 
@@ -199,7 +199,7 @@ describe('claim links on a bill showing its own analysis', () => {
     const f = await passageFrame()
     fireEvent.load(f)
     expect(f).toHaveFocus()
-    expect(f.getAttribute('src')).toMatch(new RegExp(`#${PASSAGE_ID}$`))
+    expect(f.getAttribute('srcdoc')).toContain(`id="${PASSAGE_ID}"`)
   })
 
   it('says nothing about whose summary it is', async () => {

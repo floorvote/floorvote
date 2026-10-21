@@ -484,19 +484,22 @@ function markOne(doc: Document, html: string, passage: Passage, target: boolean)
 }
 
 /**
- * Move focus to the passage in a frame showing `markPassage`'s document from
- * `url`. Loading at the fragment scrolls to it, but Chromium runs the focusing
- * steps for a fragment's target only on a fragment navigation within a loaded
- * document, not on its first load. So the page focuses the frame, then goes to
- * the same fragment of the same document, which focuses the mark (its fixed
- * `tabindex="-1"`). The page navigates only its own frame, to the URL it made,
- * and reads nothing from it: the frame keeps `sandbox=""`. Where that can't be
- * done, focus stays on the frame, scrolled to the passage.
+ * Move focus to the passage in a frame whose srcdoc is `markPassage`'s
+ * document. The srcdoc loads with no fragment, so the page focuses the frame,
+ * then goes to the passage's fragment of that same document. That scrolls to
+ * the mark and focuses it (its fixed `tabindex="-1"`): Chromium runs the
+ * focusing steps for a fragment's target only on a fragment navigation within
+ * a loaded document. The page navigates only its own frame, and reads nothing
+ * from it: the frame keeps `sandbox=""`. Where that can't be done, focus stays
+ * on the frame.
+ *
+ * Not a blob: URL. A blob: document inherits the app's CSP, and WebKit
+ * enforces its `frame-ancestors 'none'` on it, so iOS showed a blank frame.
  */
-export function focusPassage(frame: HTMLIFrameElement, url: string): void {
+export function focusPassage(frame: HTMLIFrameElement): void {
   frame.focus()
   try {
-    frame.contentWindow?.location.replace(`${url}#${PASSAGE_ID}`)
+    frame.contentWindow?.location.replace(`about:srcdoc#${PASSAGE_ID}`)
   } catch {
     // Focus stays on the frame.
   }

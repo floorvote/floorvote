@@ -46,11 +46,11 @@ describe('BillTextPanel: an HTML claim with three passages', () => {
     render(<BillTextPanel billId="a100" texts={[TEXT]} externalOpen passage={htmlRequest()} />)
     const f = await waitFor(() => {
       const el = screen.getByTitle(/^Bill text/) as HTMLIFrameElement
-      expect(el.getAttribute('src') ?? '').toMatch(/^blob:/)
+      expect(el.title).toMatch(/passage highlighted/)
       return el
     })
-    expect(f.getAttribute('src')).toBe(`blob:test/${blobs.length}#${PASSAGE_ID}`)
-    const doc = new DOMParser().parseFromString(await blobs[blobs.length - 1].text(), 'text/html')
+    expect(f.hasAttribute('src')).toBe(false)
+    const doc = new DOMParser().parseFromString(((screen.getByTitle(/passage highlighted/) as HTMLIFrameElement).getAttribute('srcdoc') ?? ''), 'text/html')
     expect([...doc.querySelectorAll('mark[data-fv-passage]')].map(m => m.textContent)).toEqual([
       'The secretary shall adopt rules.', 'Each county shall have a drop box.', 'Boxes are emptied daily.',
     ])
