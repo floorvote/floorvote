@@ -1,6 +1,7 @@
 import { sql, type SQL } from 'drizzle-orm'
 import { feedEvents } from '../db/schema'
 import { LEGISLATIVE_EVENT_TYPES, NO_PRIORITY_UPDATES, PASSIVE_EVENT_TYPES } from '../../../shared/feedUtils'
+import { dbTsToEpoch } from '../../../shared/time'
 import { filedSlug } from './sessionSlug'
 import type { AppDb } from '../types'
 
@@ -13,6 +14,13 @@ import type { AppDb } from '../types'
 // row's when the default feed would hide it, and its card's when it would show
 // it. So a bill that gains a priority, or the team's attention that day, moves
 // from the row to its own card on the next read, and is never in both.
+//
+// Every query here starts from the day's events, through the created_at index,
+// and only then looks at each one's bill. Started from bills, a query visits
+// every analyzed bill and its whole history, and SQLite's planner starts there
+// once 0121's rebuild has left feed_events with no statistics. So the events
+// and bills are joined with CROSS JOIN, which SQLite never reorders.
+// test/routes/feed.noPriorityRow.cost.test.ts holds the plans to that.
 
 // Constant type lists, written into the SQL rather than bound: they repeat in
 // every subquery, and D1 allows only 100 bound parameters a statement.
@@ -20,36 +28,38 @@ const typeList = (types: Iterable<string>) => sql.raw([...types].map((t) => `'${
 const LEGISLATIVE = typeList(LEGISLATIVE_EVENT_TYPES)
 const PASSIVE = typeList(PASSIVE_EVENT_TYPES)
 
-/** The team engaged that day (any event the default feed counts as engagement) with a bill `sibBills` picks out of `feed_events sib`. */
-const engagedOn = (sibBills: SQL, day: SQL) => sql`EXISTS (
+/** The team engaged, on the UTC day of event `m`, with a bill `sibBills` picks out of `feed_events sib`. */
+const engagedThatDay = (sibBills: SQL) => sql`EXISTS (
     SELECT 1 FROM feed_events sib
      WHERE ${sibBills}
        AND sib.suppressed != 1
-       AND date(sib.created_at) = ${day}
+       AND date(sib.created_at) = date(m.created_at)
        AND sib.type NOT IN (${PASSIVE})
   )`
 
+/** The events and bills the rules below read, outer loop first. */
+const EVENTS_THEN_BILLS = sql`feed_events m CROSS JOIN bills mb ON mb.id = m.bill_id`
+
 /**
- * An event `m` (feed_events) on bill `mb` (bills) is the row's for UTC day
- * `day` (an SQL date, YYYY-MM-DD): a legislative event that day, on an analyzed
- * bill at or above the minimum relevance for new matches, whose companion group
- * has no priority and was not engaged with that day.
+ * An event `m` (feed_events) on bill `mb` (bills), stored in [from, to) (UTC
+ * dates, YYYY-MM-DD), is the row's for its day: a legislative event on an
+ * analyzed bill at or above the minimum relevance for new matches, whose
+ * companion group has no priority and was not engaged with that day.
  *
- * The range on m.created_at lets the created_at index find the day's events.
- * It is a day wider on each side than the day, so the two stored timestamp
- * formats both fall inside it, and date() then picks the day exactly.
+ * Both stored timestamp formats (`2026-03-04 09:00:00` and
+ * `2026-03-04T09:00:00Z`) begin with the UTC date, so comparing the raw column
+ * with the dates picks exactly the days in the range, through the index.
  */
-function standsFor(day: SQL, minRelevance: number): SQL {
-  return sql`m.suppressed != 1
+function standsFor(from: SQL, to: SQL, minRelevance: number): SQL {
+  return sql`m.created_at >= ${from} AND m.created_at < ${to}
+    AND m.suppressed != 1
     AND m.type IN (${LEGISLATIVE})
-    AND m.created_at >= date(${day}, '-1 day') AND m.created_at < date(${day}, '+2 days')
-    AND date(m.created_at) = ${day}
     AND mb.match_type IS NOT NULL
     AND COALESCE(mb.relevance_score, 0) >= ${minRelevance}
     AND mb.priority IS NULL
     AND (mb.group_key IS NULL OR NOT EXISTS (SELECT 1 FROM bills g WHERE g.group_key = mb.group_key AND g.priority IS NOT NULL))
-    AND NOT ${engagedOn(sql`sib.bill_id = mb.id`, day)}
-    AND (mb.group_key IS NULL OR NOT ${engagedOn(sql`sib.bill_id IN (SELECT g.id FROM bills g WHERE g.group_key = mb.group_key)`, day)})`
+    AND NOT ${engagedThatDay(sql`sib.bill_id = mb.id`)}
+    AND (mb.group_key IS NULL OR NOT ${engagedThatDay(sql`sib.bill_id IN (SELECT g.id FROM bills g WHERE g.group_key = mb.group_key)`)})`
 }
 
 /**
@@ -59,28 +69,62 @@ function standsFor(day: SQL, minRelevance: number): SQL {
  */
 export function rowStandsForABill(minRelevance: number): SQL {
   return sql`(${feedEvents.type} = ${NO_PRIORITY_UPDATES} AND EXISTS (
-    SELECT 1 FROM feed_events m JOIN bills mb ON mb.id = m.bill_id
-     WHERE ${standsFor(sql`date(${feedEvents.createdAt})`, minRelevance)}
+    SELECT 1 FROM ${EVENTS_THEN_BILLS}
+     WHERE ${standsFor(sql`date(${feedEvents.createdAt})`, sql`date(${feedEvents.createdAt}, '+1 day')`, minRelevance)}
   ))`
 }
 
-/** One entry of the row: a bill, or the members of one companion group that moved that day. */
-export type RowEntryKey = { key: string; relevance: number }
+/** The UTC date (YYYY-MM-DD) of a stored timestamp, in either format. */
+export const utcDay = (ts: string) => new Date(dbTsToEpoch(ts)).toISOString().slice(0, 10)
+const nextDay = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) + 86400_000).toISOString().slice(0, 10)
+const byId = (a: { id: string }, b: { id: string }) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 
 /**
- * The row's entries for the day of `createdAt` (the row's own timestamp), most
- * relevant first. A companion group is one entry, ranked by its most relevant
- * member that moved. Ties go by key, so pages of the list never overlap or skip.
+ * One entry of a day's row: a bill, or the members of one companion group that
+ * moved that day (a group is one policy), its most relevant member first.
  */
-export async function rowEntries(db: AppDb, createdAt: string, minRelevance: number): Promise<RowEntryKey[]> {
-  return await db.all(sql`
-    SELECT CASE WHEN mb.group_key IS NOT NULL THEN 'group:' || mb.group_key ELSE mb.id END AS key,
-           MAX(COALESCE(mb.relevance_score, 0)) AS relevance
-      FROM feed_events m JOIN bills mb ON mb.id = m.bill_id
-     WHERE ${standsFor(sql`date(${createdAt})`, minRelevance)}
-     GROUP BY key
-     ORDER BY relevance DESC, key ASC
-  `) as RowEntryKey[]
+export type DayEntry = { key: string; relevance: number; memberIds: string[] }
+
+/** A day of the row: its entries, most relevant first, and when its newest update landed (space format). */
+export type RowDay = { entries: DayEntry[]; lastAt: string }
+
+/**
+ * The row's entries for each of these UTC days, in one query: entries most
+ * relevant first, a companion group ranked by its most relevant member that
+ * moved, and ties by key, so pages of the list never overlap or skip. A day
+ * with no bill is absent from the map.
+ */
+export async function rowDays(db: AppDb, days: readonly string[], minRelevance: number): Promise<Map<string, RowDay>> {
+  const out = new Map<string, RowDay>()
+  if (days.length === 0) return out
+  const sorted = [...new Set(days)].sort()
+  const rows = await db.all(sql`
+    SELECT date(m.created_at) AS day, mb.id AS id, mb.group_key AS group_key,
+           COALESCE(mb.relevance_score, 0) AS relevance, MAX(datetime(m.created_at)) AS last_at
+      FROM ${EVENTS_THEN_BILLS}
+     WHERE ${standsFor(sql`${sorted[0]}`, sql`${nextDay(sorted[sorted.length - 1])}`, minRelevance)}
+       AND date(m.created_at) IN (SELECT value FROM json_each(${JSON.stringify(sorted)}))
+     GROUP BY day, mb.id
+  `) as Array<{ day: string; id: string; group_key: string | null; relevance: number; last_at: string }>
+
+  const members = new Map<string, Map<string, Array<{ id: string; relevance: number }>>>()
+  for (const r of rows) {
+    const key = r.group_key !== null ? `group:${r.group_key}` : r.id
+    const ofDay = members.get(r.day) ?? new Map<string, Array<{ id: string; relevance: number }>>()
+    ofDay.set(key, [...(ofDay.get(key) ?? []), { id: r.id, relevance: r.relevance }])
+    members.set(r.day, ofDay)
+    const day = out.get(r.day)
+    if (!day || r.last_at > day.lastAt) out.set(r.day, { entries: [], lastAt: r.last_at })
+  }
+  for (const [day, ofDay] of members) {
+    const entries = [...ofDay].map(([key, ms]) => {
+      ms.sort((a, b) => b.relevance - a.relevance || byId(a, b))
+      return { key, relevance: ms[0].relevance, memberIds: ms.map((m) => m.id) }
+    })
+    entries.sort((a, b) => b.relevance - a.relevance || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+    out.get(day)!.entries = entries
+  }
+  return out
 }
 
 /** A bill of the row, as a chip, its hover card, and its title need it. */
@@ -89,97 +133,80 @@ export type RowBill = {
   isDraft: boolean; groupKey: string | null; summary: string | null
 }
 
+/** These bills as the row shows them, in one query, by id. */
+export async function rowBills(db: AppDb, ids: readonly string[]): Promise<Map<string, RowBill>> {
+  const out = new Map<string, RowBill>()
+  if (ids.length === 0) return out
+  const rows = await db.all(sql`
+    SELECT b.id, b.bill_number, b.title, b.abstract, b.state, b.session, b.session_slug, b.is_draft, b.group_key, b.tenant_summary
+      FROM bills b WHERE b.id IN (SELECT value FROM json_each(${JSON.stringify([...new Set(ids)])}))
+  `) as Array<{
+    id: string; bill_number: string; title: string | null; abstract: string | null; state: string | null
+    session: string | null; session_slug: string | null; is_draft: number | null; group_key: string | null; tenant_summary: string | null
+  }>
+  for (const b of rows) {
+    out.set(b.id, {
+      id: b.id, billNumber: b.bill_number, title: b.title || b.abstract || '', state: b.state ?? null,
+      sessionSlug: filedSlug({ session: b.session, sessionSlug: b.session_slug }), isDraft: !!b.is_draft,
+      groupKey: b.group_key, summary: b.tenant_summary ?? null,
+    })
+  }
+  return out
+}
+
 /** A bill-less view of one of the row's events, which the web builds a card row from. */
 export type RowEvent = { id: string; type: string; billId: string; metadata: unknown; createdAt: string }
 
 export type RowEntry = { key: string; bills: RowBill[]; events: RowEvent[] }
 
-type BillRow = {
-  id: string; bill_number: string; title: string | null; abstract: string | null; state: string | null
-  session: string | null; session_slug: string | null; is_draft: number | null; group_key: string | null
-  tenant_summary: string | null; relevance_score: number | null
-}
-
-// D1 rejects more than 100 bound parameters a statement, and standsFor binds a few of its own.
-const CHUNK = 60
-const chunks = <T>(xs: readonly T[]) => Array.from({ length: Math.ceil(xs.length / CHUNK) }, (_, i) => xs.slice(i * CHUNK, (i + 1) * CHUNK))
-const keyOf = (b: { id: string; group_key: string | null }) => (b.group_key !== null ? `group:${b.group_key}` : b.id)
-
 /**
- * The bills of these entries that moved that day, each entry's most relevant
- * first (ties by id). A companion group's members that didn't move are left out.
- * With `withEvents`, each entry also carries its bills' events of the day, newest first.
+ * A page of the row's list for UTC day `day`: each entry's moved bills and
+ * their events that day, newest first. Three queries whatever the page's size.
  */
-export async function rowEntryDetails(
-  db: AppDb, createdAt: string, minRelevance: number, keys: readonly string[], withEvents: boolean,
-): Promise<RowEntry[]> {
-  const ids = keys.filter((k) => !k.startsWith('group:'))
-  const groups = keys.filter((k) => k.startsWith('group:')).map((k) => k.slice('group:'.length))
-  const day = sql`date(${createdAt})`
-  const found = new Map<string, BillRow>()
-  const select = (pick: SQL) => db.all(sql`
-    SELECT DISTINCT mb.id, mb.bill_number, mb.title, mb.abstract, mb.state, mb.session, mb.session_slug, mb.is_draft,
-           mb.group_key, mb.tenant_summary, mb.relevance_score
-      FROM feed_events m JOIN bills mb ON mb.id = m.bill_id
-     WHERE ${standsFor(day, minRelevance)} AND ${pick}
-  `) as Promise<BillRow[]>
-  const list = (xs: readonly string[]) => sql.join(xs.map((x) => sql`${x}`), sql`, `)
-  for (const part of chunks(ids)) for (const b of await select(sql`mb.group_key IS NULL AND mb.id IN (${list(part)})`)) found.set(b.id, b)
-  for (const part of chunks(groups)) for (const b of await select(sql`mb.group_key IN (${list(part)})`)) found.set(b.id, b)
-
-  const events = new Map<string, RowEvent[]>()
-  if (withEvents) {
-    for (const part of chunks([...found.keys()])) {
-      const rows = await db.all(sql`
-        SELECT m.id, m.type, m.bill_id, m.metadata, m.created_at
-          FROM feed_events m JOIN bills mb ON mb.id = m.bill_id
-         WHERE ${standsFor(day, minRelevance)} AND mb.id IN (${list(part)})
-      `) as Array<{ id: string; type: string; bill_id: string; metadata: string; created_at: string }>
-      for (const e of rows) {
-        const key = keyOf(found.get(e.bill_id)!)
-        const of = events.get(key) ?? []
-        of.push({ id: e.id, type: e.type, billId: e.bill_id, metadata: JSON.parse(e.metadata) as unknown, createdAt: e.created_at })
-        events.set(key, of)
-      }
-    }
+export async function rowPage(db: AppDb, day: string, minRelevance: number, entries: readonly DayEntry[]): Promise<RowEntry[]> {
+  const ids = entries.flatMap((e) => e.memberIds)
+  if (ids.length === 0) return []
+  const billsById = await rowBills(db, ids)
+  const events = await db.all(sql`
+    SELECT m.id, m.type, m.bill_id, m.metadata, m.created_at
+      FROM ${EVENTS_THEN_BILLS}
+     WHERE ${standsFor(sql`${day}`, sql`${nextDay(day)}`, minRelevance)}
+       AND m.bill_id IN (SELECT value FROM json_each(${JSON.stringify(ids)}))
+  `) as Array<{ id: string; type: string; bill_id: string; metadata: string; created_at: string }>
+  const byBill = new Map<string, RowEvent[]>()
+  for (const e of events) {
+    byBill.set(e.bill_id, [...(byBill.get(e.bill_id) ?? []), { id: e.id, type: e.type, billId: e.bill_id, metadata: JSON.parse(e.metadata) as unknown, createdAt: e.created_at }])
   }
-
-  const byKey = new Map<string, BillRow[]>()
-  for (const b of found.values()) byKey.set(keyOf(b), [...(byKey.get(keyOf(b)) ?? []), b])
-  const epoch = (ts: string) => Date.parse(ts.includes('T') ? ts : `${ts.replace(' ', 'T')}Z`)
-  return keys.flatMap((key) => {
-    const members = byKey.get(key)
-    if (!members) return []
-    members.sort((a, b) => (b.relevance_score ?? 0) - (a.relevance_score ?? 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-    return [{
-      key,
-      bills: members.map((b) => ({
-        id: b.id, billNumber: b.bill_number, title: b.title || b.abstract || '', state: b.state ?? null,
-        sessionSlug: filedSlug({ session: b.session, sessionSlug: b.session_slug }), isDraft: !!b.is_draft,
-        groupKey: b.group_key, summary: b.tenant_summary ?? null,
-      })),
-      events: (events.get(key) ?? []).sort((a, b) => epoch(b.createdAt) - epoch(a.createdAt) || (a.id < b.id ? 1 : -1)),
-    }]
-  })
+  return entries.map((entry) => ({
+    key: entry.key,
+    bills: entry.memberIds.flatMap((id) => billsById.get(id) ?? []),
+    events: entry.memberIds.flatMap((id) => byBill.get(id) ?? [])
+      .sort((a, b) => dbTsToEpoch(b.createdAt) - dbTsToEpoch(a.createdAt) || (a.id < b.id ? 1 : -1)),
+  }))
 }
 
 /**
- * Makes sure the day has its row, when a legislative event has just landed on
- * `billId`. Written for any analyzed bill, priority or not: the row is resolved
- * on every read, and one that stands for no bill never shows, so a priority
- * cleared later that day (a bulk edit leaves no event on the bill) still finds
- * the day's row. A bill with no match type is never the row's, so writes none.
+ * The write that makes sure the day has its row, for a legislative event just
+ * written on `billId` at `at` (space format). Run it in one batch with the
+ * event's own insert, at the event's time, so the two share a day and land or
+ * fail together: apart, an update at 23:59:59 could get its row on the next
+ * day, and a failure between them would leave an update no read shows.
  *
- * One insert that does nothing on the day's unique index (migration 0121, whose
- * WHERE the conflict target spells out as written, so SQLite matches the two), so
- * updates processed at the same moment share the row. The row keeps the time
- * of the day's first update: it never moves up past the team's own activity.
+ * Written for any analyzed bill, priority or not: the row is resolved on every
+ * read, and one that stands for no bill never shows, so a priority cleared
+ * later that day (a bulk edit leaves no event on the bill) still finds the
+ * day's row. A bill with no match type is never the row's, so writes none.
+ *
+ * One insert that does nothing on a conflict, and the only uniqueness it can
+ * meet is the day's unique index (migration 0121), so updates processed at the
+ * same moment share the row. An insert of a select, so it can join a batch.
+ * The row keeps the time of the day's first update, which orders it on the
+ * server. GET /feed sends its newest update's time too, which places it for the viewer.
  */
-export async function noteLegislativeEvent(db: AppDb, billId: string): Promise<void> {
-  await db.run(sql`
-    INSERT INTO feed_events (id, type, bill_id, user_id, metadata)
-    SELECT ${crypto.randomUUID()}, ${NO_PRIORITY_UPDATES}, NULL, 'system', '{}'
+export function noteLegislativeEvent(db: AppDb, billId: string, at: string) {
+  // Columns in feed_events' order: id, type, bill_id, user_id, metadata, suppressed, created_at.
+  return db.insert(feedEvents).select(sql`
+    SELECT ${crypto.randomUUID()}, ${NO_PRIORITY_UPDATES}, NULL, 'system', '{}', 0, ${at}
      WHERE EXISTS (SELECT 1 FROM bills WHERE id = ${billId} AND match_type IS NOT NULL)
-    ON CONFLICT (date(created_at)) WHERE type = 'no_priority_updates' DO NOTHING
-  `)
+  `).onConflictDoNothing()
 }

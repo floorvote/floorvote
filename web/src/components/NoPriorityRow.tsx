@@ -80,7 +80,8 @@ export function NoPriorityRow({ event }: { event: FeedEvent }) {
         </button>
         {firstBills.slice(0, 2).map((b) => (
           <span key={b.id} style={{ display: 'inline-flex' }}>
-            <FeedBillChip bill={b} />
+            {/* The header has no room for a visible Draft chip, so a draft's chip says so to a screen reader. */}
+            <FeedBillChip bill={b} draftSrLabel />
           </span>
         ))}
         {more > 0 && <span style={{ ...CHROME_TEXT, fontWeight: fontWeight.semibold }}>+{more}</span>}

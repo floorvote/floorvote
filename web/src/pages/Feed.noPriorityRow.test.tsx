@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, act, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
@@ -293,4 +293,109 @@ it('marks the list\'s scroll box for the tests', async () => {
   showFeed([row(2, [bill('b1', 'HB2'), bill('b2', 'SB5')])])
   await userEvent.click(toggle())
   await waitFor(() => expect(box()).not.toBeNull())
+})
+
+// The row keeps the time of its UTC day's first update, which orders it on the
+// server, and carries its newest update's time as metadata.lastAt. The viewer
+// sees it under their own day of that newest update, last in that day, below the
+// day's cards (#919 review).
+describe('the row\'s day', () => {
+  const originalTz = process.env.TZ
+  beforeEach(() => { process.env.TZ = 'America/New_York' })
+  afterEach(() => { process.env.TZ = originalTz })
+
+  const timed = (lastAt: string, createdAt: string): FeedEvent => {
+    const r = row(3, [bill('b1', 'HB2'), bill('b2', 'SB5')], createdAt)
+    return { ...r, metadata: { ...r.metadata, lastAt } }
+  }
+  const dayOf = (el: Element) => (el.closest('[data-feed-day]') as HTMLElement | null)?.dataset.feedDay
+  const lastInDay = (el: Element) => {
+    const day = el.closest('[data-feed-day]')!
+    const items = [...day.children].slice(1)
+    return items[items.length - 1].contains(el)
+  }
+
+  it('files a row first written at 00:30 UTC on the 5th under the 5th when it moved during the US day, last in the day', () => {
+    // 00:30 UTC on the 5th is the evening of the 4th in New York. The newest
+    // update, 18:00 UTC, is the afternoon of the 5th.
+    showFeed([
+      comment('c5', '2026-03-05 15:00:00'), // 10 a.m. on the 5th
+      timed('2026-03-05 18:00:00', '2026-03-05 00:30:00'),
+      comment('c4', '2026-03-04 20:00:00'), // 3 p.m. on the 4th
+    ])
+    expect(dayOf(toggle())).toBe('2026-03-05')
+    expect(lastInDay(toggle())).toBe(true)
+    expect(document.querySelectorAll('[data-feed-day="2026-03-04"] [data-no-priority-row]')).toHaveLength(0)
+  })
+
+  it('stays below the day\'s cards even when its newest update is the latest thing that day', () => {
+    showFeed([timed('2026-03-05 22:00:00', '2026-03-05 12:00:00'), comment('c5', '2026-03-05 15:00:00')])
+    expect(lastInDay(toggle())).toBe(true)
+    const card = screen.getByText('Prioritized Act')
+    expect(card.compareDocumentPosition(toggle()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('joins its day at the bottom when it arrives after cards of a later day', () => {
+    // Listed in the order a later page brings it: after the next day's card.
+    showFeed([
+      comment('c6', '2026-03-06 15:00:00'),
+      comment('c5', '2026-03-05 15:00:00'),
+      { ...comment('c5b', '2026-03-05 16:00:00'), billId: 'p2', billNumber: 'HB 901', billTitle: 'Second Act' },
+      timed('2026-03-05 14:00:00', '2026-03-05 01:00:00'),
+    ])
+    expect(dayOf(toggle())).toBe('2026-03-05')
+    expect(lastInDay(toggle())).toBe(true)
+  })
+
+  it('falls back to its own time when the server sends no lastAt', () => {
+    showFeed([row(3, [bill('b1', 'HB2'), bill('b2', 'SB5')], '2026-03-05 15:00:00')])
+    expect(dayOf(toggle())).toBe('2026-03-05')
+  })
+})
+
+describe('drafts in the row', () => {
+  it('names a collapsed draft chip as a draft for screen readers', () => {
+    showFeed([row(2, [bill('d1', 'D1', { isDraft: true, title: '', state: 'RI', sessionSlug: null }), bill('b2', 'SB5')])])
+    expect(screen.getByRole('link', { name: 'D1, draft' })).toBeInTheDocument()
+  })
+
+  it('marks each draft member of an expanded group entry with its own Draft chip', async () => {
+    hoisted.pages.set(1, {
+      entries: [entry(
+        [bill('d1', 'D1', { isDraft: true, title: '', groupKey: 'd1' }), bill('d2', 'D2', { isDraft: true, title: '', groupKey: 'd1' }), bill('b3', 'HB3', { groupKey: 'd1' })],
+        [action('u1', 'd1', 'Drafted')],
+      )],
+      total: 1, page: 1, limit: 50, hasMore: false,
+    })
+    showFeed([row(1, [bill('d1', 'D1', { isDraft: true, title: '', groupKey: 'd1' })])])
+    await userEvent.click(toggle())
+    const group = await waitFor(() => {
+      const el = box()?.querySelector('[data-bill-entry]') as HTMLElement | null
+      expect(el).not.toBeNull()
+      return el!
+    })
+    expect(within(group).getAllByText('Draft')).toHaveLength(2)
+  })
+})
+
+describe('paging the list as its bills change', () => {
+  it('lists an entry once when the next page repeats the last one', async () => {
+    const last = entry([bill('b2', 'SB5', { title: 'Repeated Act' })], [action('u2', 'b2', 'Referred')])
+    hoisted.pages.set(1, { entries: [entry([bill('b1', 'HB2', { title: 'First Act' })], [action('u1', 'b1', 'Referred')]), last], total: 3, page: 1, limit: 2, hasMore: true })
+    // A bill left the row between the fetches, so the second page starts one early.
+    hoisted.pages.set(2, { entries: [last, entry([bill('b3', 'HB3', { title: 'Third Act' })], [action('u3', 'b3', 'Referred')])], total: 2, page: 2, limit: 2, hasMore: false })
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    showFeed([row(3, [bill('b1', 'HB2'), bill('b2', 'SB5')])])
+    await userEvent.click(toggle())
+    await screen.findByRole('link', { name: 'Repeated Act' })
+    Object.defineProperty(box(), 'scrollHeight', { configurable: true, value: 1000 })
+    Object.defineProperty(box(), 'clientHeight', { configurable: true, value: 300 })
+    Object.defineProperty(box(), 'scrollTop', { configurable: true, value: 700 })
+    fireEvent.scroll(box())
+    await screen.findByRole('link', { name: 'Third Act' })
+    expect(screen.getAllByRole('link', { name: 'Repeated Act' })).toHaveLength(1)
+    expect(box().querySelectorAll('[data-bill-entry]')).toHaveLength(3)
+    expect(errors.mock.calls.map((c) => String(c[0])).filter((m) => /same key/i.test(m))).toEqual([])
+    errors.mockRestore()
+  })
 })

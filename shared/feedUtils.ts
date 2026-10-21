@@ -72,10 +72,18 @@ export type GroupedBillEvents = {
   events: FeedEvent[]
 }
 
+// The time an event is filed under the viewer's day by. The no-priority updates
+// row keeps its UTC day's first update as its time, which orders it on the
+// server, and GET /feed sends its newest update's time as metadata.lastAt: the
+// viewer's day of that one is the day it stands for, for them.
+function dayTimeOf(e: FeedEvent): string {
+  return e.type === 'no_priority_updates' && typeof e.metadata.lastAt === 'string' ? e.metadata.lastAt : e.createdAt
+}
+
 export function groupEventsByBillAndDay(events: FeedEvent[]): GroupedBillEvents[] {
   const map = new Map<string, GroupedBillEvents>()
   for (const e of events) {
-    const date = dbTsToLocalDay(e.createdAt)
+    const date = dbTsToLocalDay(dayTimeOf(e))
     // A bill-less event has no bill to share a group with, so it is its own group.
     // A companion group is one policy: its members' events share a card.
     const groupKey = e.billId === null ? null : (e.billGroupKey ?? null)

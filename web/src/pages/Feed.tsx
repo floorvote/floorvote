@@ -426,6 +426,10 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
     if (!groupsByDay.has(g.date)) groupsByDay.set(g.date, [])
     groupsByDay.get(g.date)!.push(g)
   }
+  // The no-priority updates row ends its day, below the day's cards, whenever
+  // its updates landed and whichever page brought it.
+  const isRow = (g: GroupedBillEvents) => g.billId === null && g.events[0].type === NO_PRIORITY_UPDATES
+  for (const [day, gs] of groupsByDay) groupsByDay.set(day, [...gs.filter((g) => !isRow(g)), ...gs.filter(isRow)])
   const sortedDays = Array.from(groupsByDay.keys()).sort((a, b) => b.localeCompare(a))
 
   return (
@@ -469,7 +473,7 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
 
 
         {sortedDays.map((day) => (
-          <div key={day}>
+          <div key={day} data-feed-day={day}>
             <DateDivider {...eventDateLabel(day)} stickyTop={headerHeight} />
             {groupsByDay.get(day)!.map(group => group.billId === null ? (
               group.events[0].type === NO_PRIORITY_UPDATES ? (

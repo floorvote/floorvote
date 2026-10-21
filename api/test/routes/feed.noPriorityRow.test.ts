@@ -16,7 +16,7 @@ type FeedBody = { events: FeedEventBody[]; total: number; latestEventAt: string 
 type ListBill = { id: string; billNumber: string; title: string; state: string | null; sessionSlug: string | null; isDraft: boolean; groupKey: string | null; summary: string | null }
 type ListEntry = { key: string; bills: ListBill[]; events: Array<{ id: string; type: string; billId: string; metadata: Record<string, unknown>; createdAt: string }> }
 type ListBody = { entries: ListEntry[]; total: number; page: number; limit: number; hasMore: boolean }
-type RowMeta = { count: number; firstBills: ListBill[] }
+type RowMeta = { count: number; firstBills: ListBill[]; lastAt: string }
 
 const DAY = '2026-03-04'
 const at = (time: string, day = DAY) => `${day} ${time}`
@@ -321,6 +321,42 @@ describe('the no-priority updates row', () => {
         const body = await feed()
         expect(rowOf(body, id)).toBeUndefined()
         expect(body.total).toBe(1)
+      })
+    })
+
+    describe('the row\'s time', () => {
+      // The row keeps the time of the day's first update, which orders it on the
+      // server. The client files it under the viewer's day of its newest update.
+      it('sends the time of the newest update it stands for, which follows a later update', async () => {
+        await moved(await analyzed('HB 1', 5), at('09:00:00'))
+        const id = await seedRow(DAY, '00:30:00')
+        expect(metaOf(await feed(), id).lastAt).toBe(at('09:00:00'))
+
+        await event(await analyzed('HB 2', 5), 'hearing_added', `${DAY}T21:15:00Z`, { date: '2026-03-10', time: null, location: 'Room 1', description: 'Committee' })
+        const body = await feed()
+        expect(metaOf(body, id).lastAt).toBe(at('21:15:00'))
+        expect(rowOf(body, id)!.createdAt).toBe(at('00:30:00'))
+      })
+
+      it('is not moved by a later update the row doesn\'t stand for', async () => {
+        await moved(await analyzed('HB 1', 5), at('09:00:00'))
+        await moved(await analyzed('HB 2', 5, { priority: 'high' }), at('22:00:00'))
+        const engaged = await analyzed('HB 3', 5)
+        await moved(engaged, at('23:00:00'))
+        await event(engaged, 'comment_added', at('23:30:00'), { preview: 'Looking.' }, adminId)
+        await event(await analyzed('HB 4', 5), 'bill_updated', at('23:45:00'), {}, 'system', true)
+        const id = await seedRow(DAY, '00:30:00')
+        expect(metaOf(await feed(), id).lastAt).toBe(at('09:00:00'))
+      })
+
+      it('gives each row on the page its own day\'s newest update', async () => {
+        await moved(await analyzed('HB 1', 5), at('09:00:00', '2026-03-03'))
+        await moved(await analyzed('HB 2', 5), at('14:00:00', '2026-03-04'))
+        const first = await seedRow('2026-03-03', '00:30:00')
+        const second = await seedRow('2026-03-04', '00:30:00')
+        const body = await feed()
+        expect(metaOf(body, first).lastAt).toBe(at('09:00:00', '2026-03-03'))
+        expect(metaOf(body, second).lastAt).toBe(at('14:00:00', '2026-03-04'))
       })
     })
 

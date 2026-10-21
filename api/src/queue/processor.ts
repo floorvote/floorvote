@@ -871,15 +871,19 @@ async function applyCentralBill(
   // detected changes from central.
   // F5+B5: switched gate from `!existing.isStub` to `existing.matchType !== null` (canonical field).
   if (!isNew && existing?.aiProcessedAt && (existing.matchType !== null || existing.groupKey !== null) && queueChanges.length > 0) {
-    await db.insert(feedEvents).values({
-      id:       crypto.randomUUID(),
-      type:     'bill_updated',
-      billId:   billInternalId,
-      userId:   'system',
-      metadata: JSON.stringify({ changes: queueChanges }),
-    })
-    // The day's no-priority updates row, which stands for this update while the bill has no priority.
-    await noteLegislativeEvent(db, billInternalId)
+    // With the day's no-priority updates row, which stands for this update while the bill has no
+    // priority: in one batch at one time, so the two share a day and land or fail together.
+    await db.batch([
+      db.insert(feedEvents).values({
+        id:        crypto.randomUUID(),
+        type:      'bill_updated',
+        billId:    billInternalId,
+        userId:    'system',
+        metadata:  JSON.stringify({ changes: queueChanges }),
+        createdAt: now,
+      }),
+      noteLegislativeEvent(db, billInternalId, now),
+    ])
   }
 
   // New keyword-match feed event: passive, system actor, written once per bill. Shows
@@ -1009,14 +1013,18 @@ async function reconcileCalendar(
       console.log('[calendar-reconcile] feed event', JSON.stringify({
         billId: msg.billId, tenantId: msg.tenantId, uid, changeType: ch.changeType,
       }))
-      await db.insert(feedEvents).values({
-        id: crypto.randomUUID(),
-        type: ch.changeType,
-        billId: billInternalId,
-        userId: 'system',
-        metadata: JSON.stringify({ date: ch.date, time: ch.time, location: ch.location, description: ch.description }),
-      })
-      await noteLegislativeEvent(db, billInternalId)
+      // With the day's no-priority updates row, in one batch at one time (as for bill_updated above).
+      await db.batch([
+        db.insert(feedEvents).values({
+          id: crypto.randomUUID(),
+          type: ch.changeType,
+          billId: billInternalId,
+          userId: 'system',
+          metadata: JSON.stringify({ date: ch.date, time: ch.time, location: ch.location, description: ch.description }),
+          createdAt: now,
+        }),
+        noteLegislativeEvent(db, billInternalId, now),
+      ])
     }
   }
 }

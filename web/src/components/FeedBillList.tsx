@@ -64,7 +64,12 @@ export function FeedBillList({ loadPage, emptyNote = 'These bills are no longer 
     try {
       const page = await loadPage(nextPage.current)
       nextPage.current += 1
-      setEntries((had) => [...had, ...page.entries])
+      // A bill that left the list between two pages shifts the next one back by
+      // an entry, so a page can repeat the last one: list each entry once.
+      setEntries((had) => {
+        const seen = new Set(had.map((e) => e.key))
+        return [...had, ...page.entries.filter((e) => !seen.has(e.key))]
+      })
       setHasMore(page.hasMore)
       setStatus('idle')
     } catch {
@@ -128,11 +133,15 @@ function MaterialIcon({ name, color: c, fill = 0, size = 14 }: { name: string; c
 
 const pathOf = (b: FeedListBill) => billUrl({ id: b.id, state: b.state, sessionSlug: b.sessionSlug, billNumber: b.billNumber })
 
-/** The chip a feed row shows for a bill: mini, linking to its page, with the sidebar's hover card. */
-export function FeedBillChip({ bill }: { bill: FeedListBill }) {
+/**
+ * The chip a feed row shows for a bill: mini, linking to its page, with the
+ * sidebar's hover card. `draftSrLabel` names a draft's chip as a draft for a
+ * screen reader, where no visible Draft chip sits beside it (BillBadge).
+ */
+export function FeedBillChip({ bill, draftSrLabel }: { bill: FeedListBill; draftSrLabel?: boolean }) {
   return (
     <BillBadge
-      billNumber={bill.billNumber} state={bill.state} isDraft={bill.isDraft} mini to={pathOf(bill)}
+      billNumber={bill.billNumber} state={bill.state} isDraft={bill.isDraft} mini to={pathOf(bill)} draftSrLabel={draftSrLabel}
       hoverBill={{ billId: bill.id, title: bill.title, isDraft: bill.isDraft, summary: bill.summary ?? null, priority: null }}
     />
   )
@@ -166,8 +175,13 @@ function Entry({ entry, first }: { entry: FeedListEntry; first: boolean }) {
   return (
     <div data-bill-entry style={{ padding: '8px 14px', borderTop: first ? 'none' : `1px solid ${CARD_STYLE.rowBorder}` }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-        {entry.bills.map((b) => <FeedBillChip key={b.id} bill={b} />)}
-        {lead.isDraft && <DraftChip />}
+        {/* Each draft member with its own Draft chip, as a companion group's card shows them. */}
+        {entry.bills.map((b) => (
+          <span key={b.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <FeedBillChip bill={b} />
+            {b.isDraft && <DraftChip />}
+          </span>
+        ))}
         <Link
           to={pathOf(lead)}
           style={{

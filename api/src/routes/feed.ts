@@ -10,7 +10,7 @@ import { activeUser } from '../lib/accountDeletion'
 import type { AppDb, AppEnv } from '../types'
 import { groupHasPriority, loadGroupPriorities, priorityWorn } from '../lib/teamFields'
 import { getNewMatchMinRelevance, loadUntriagedNewMatchGroups } from '../lib/newMatch'
-import { rowEntries, rowEntryDetails, rowStandsForABill } from '../lib/noPriorityRow'
+import { rowBills, rowDays, rowPage, rowStandsForABill, utcDay } from '../lib/noPriorityRow'
 
 export const feedRouter = new Hono<AppEnv>()
 
@@ -177,13 +177,25 @@ feedRouter.get('/', async (c) => {
   // one policy (#638), so it counts once: the row's `count` is its distinct cards.
   const matchCounts = await newMatchCounts(db, rows.filter((r) => r.type === 'new_matches'))
 
-  // Each no-priority updates row's bills, resolved now: how many entries, and
-  // the first two for its chips. The rest load when the row is expanded.
-  const rowSummaries = new Map<string, { count: number; firstBills: unknown[] }>()
-  for (const r of rows.filter((x) => x.type === NO_PRIORITY_UPDATES)) {
-    const entries = await rowEntries(db, r.createdAt, minRelevance)
-    const first = await rowEntryDetails(db, r.createdAt, minRelevance, entries.slice(0, 2).map((e) => e.key), false)
-    rowSummaries.set(r.id, { count: entries.length, firstBills: first.map((e) => e.bills[0]) })
+  // Each no-priority updates row's bills, resolved now for the whole page in
+  // two queries, however many rows it holds: how many entries, the first two
+  // for its chips, and the time of its newest update (lastAt), by which the
+  // viewer's feed files it under their own day. The rest load on expand.
+  const rowSummaries = new Map<string, { count: number; firstBills: unknown[]; lastAt: string }>()
+  const pageRows = rows.filter((x) => x.type === NO_PRIORITY_UPDATES)
+  if (pageRows.length > 0) {
+    const days = await rowDays(db, pageRows.map((r) => utcDay(r.createdAt)), minRelevance)
+    const leads = (day: string) => (days.get(day)?.entries ?? []).slice(0, 2).map((e) => e.memberIds[0])
+    const billsById = await rowBills(db, pageRows.flatMap((r) => leads(utcDay(r.createdAt))))
+    for (const r of pageRows) {
+      const day = days.get(utcDay(r.createdAt))
+      // A row whose bills left it between the page's query and this one counts 0, which the client hides.
+      rowSummaries.set(r.id, {
+        count: day?.entries.length ?? 0,
+        firstBills: leads(utcDay(r.createdAt)).flatMap((id) => billsById.get(id) ?? []),
+        lastAt: day?.lastAt ?? r.createdAt,
+      })
+    }
   }
   const metadataOf = (r: { id: string; metadata: string }): unknown => {
     const stored = JSON.parse(r.metadata) as object
@@ -276,10 +288,10 @@ feedRouter.get('/events/:id/bills', async (c) => {
     const page = Math.max(1, Number(c.req.query('page') || 1) || 1)
     const limit = Math.min(100, Math.max(1, Number(c.req.query('limit') || ROW_PAGE) || ROW_PAGE))
     const minRelevance = await getNewMatchMinRelevance(db)
-    const entries = await rowEntries(db, event.createdAt, minRelevance)
-    const keys = entries.slice((page - 1) * limit, page * limit).map((e) => e.key)
+    const day = utcDay(event.createdAt)
+    const entries = (await rowDays(db, [day], minRelevance)).get(day)?.entries ?? []
     return c.json({
-      entries: await rowEntryDetails(db, event.createdAt, minRelevance, keys, true),
+      entries: await rowPage(db, day, minRelevance, entries.slice((page - 1) * limit, page * limit)),
       total: entries.length,
       page,
       limit,
