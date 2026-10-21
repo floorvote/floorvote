@@ -182,6 +182,35 @@ describe('BillTextPanel: a claim\'s passage on the page bill\'s own text', () =>
       expect(claimLinks.focusPassage).toHaveBeenCalledWith(f)
     })
 
+    it('still moves focus when Bill texts is closed during the wait and opened again', async () => {
+      const { rerender } = render(<BillTextPanel billId="a100" texts={[TEXT_A]} externalOpen passage={own()} />)
+      fireEvent.load(await passageFrame())
+      rerender(<BillTextPanel billId="a100" texts={[TEXT_A]} externalOpen={false} passage={own()} />)
+      await waitFor(() => expect(screen.queryByTitle(/^Bill text/)).toBeNull())
+      nextFrame()
+      nextFrame()
+      rerender(<BillTextPanel billId="a100" texts={[TEXT_A]} externalOpen passage={own()} />)
+      const reopened = await passageFrame()
+      fireEvent.load(reopened)
+      nextFrame()
+      nextFrame()
+      expect(claimLinks.focusPassage).toHaveBeenCalledWith(reopened)
+      expect(claimLinks.scrollToPassage).not.toHaveBeenCalled()
+    })
+
+    it('focuses only the new request\'s frame when another claim is opened during the wait', async () => {
+      const { rerender } = render(<BillTextPanel billId="a100" texts={[TEXT_A]} externalOpen passage={own(1)} />)
+      const first = await passageFrame()
+      fireEvent.load(first)
+      rerender(<BillTextPanel billId="a100" texts={[TEXT_A]} externalOpen passage={own(2)} />)
+      await waitFor(() => expect(frame()).not.toBe(first))
+      const second = frame()
+      fireEvent.load(second)
+      nextFrame()
+      nextFrame()
+      expect(vi.mocked(claimLinks.focusPassage).mock.calls.map(c => c[0])).toEqual([second])
+    })
+
     it('leaves alone a frame that is gone before then', async () => {
       const { unmount } = render(<BillTextPanel billId="a100" texts={[TEXT_A]} externalOpen passage={own()} />)
       fireEvent.load(await passageFrame())

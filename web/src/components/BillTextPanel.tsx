@@ -629,14 +629,15 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, req
                             return
                           }
                           sentToPassage.current.add(frame)
-                          const firstShowing = focusedKeyRef.current !== passageShown.key
-                          if (firstShowing) focusedKeyRef.current = passageShown.key
+                          const key = passageShown.key
                           // Desktop Safari paints nothing in a frame sent to the
                           // passage before it has painted once, until the reader
                           // scrolls it. Two animation frames let it paint first.
+                          // A frame gone by then leaves its request unfocused.
                           requestAnimationFrame(() => requestAnimationFrame(() => {
                             if (!frame.isConnected) return
-                            if (firstShowing) {
+                            if (focusedKeyRef.current !== key) {
+                              focusedKeyRef.current = key
                               focusPassage(frame)
                             } else {
                               focusBefore.current.set(frame, document.activeElement)
