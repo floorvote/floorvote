@@ -339,7 +339,7 @@ describe('lake-michigan derived feed events', () => {
     for (const e of s.feedEvents.filter(x => x.type === 'bill_updated')) {
       const changes = (e.metadata as { changes: Array<{ changeType: string; newValue: string | null }> }).changes
       for (const ch of changes) {
-        expect(['status_change', 'action_added', 'vote_added', 'amendment_added'], `${e.id} changeType`)
+        expect(['status_change', 'action_added', 'vote_added', 'amendment_added', 'sponsor_added', 'supplement_added', 'text_added'], `${e.id} changeType`)
           .toContain(ch.changeType)
         expect(ch.newValue ?? '', `${e.id}`).not.toMatch(/hearing notice/i)
       }
@@ -605,6 +605,19 @@ describe('lake-michigan feed density', () => {
     }
     const activityOnly = [...cards.entries()].filter(([, evs]) => evs.every(isActivity)).map(([k]) => k)
     expect(activityOnly.length, activityOnly.join(', ')).toBeGreaterThanOrEqual(6)
+  })
+
+  it('opens the feed with cards of bill activity alone, and not only hearings', () => {
+    // The first screen should show bills moving on their own, in the kinds of
+    // change the provider reports, not a run of hearing notices.
+    const top = s.feedEvents.filter(x => x.daysAgo <= 1)
+    const cards = new Map<string, Array<{ type: string }>>()
+    for (const e of top) cards.set(cardOf(e), [...(cards.get(cardOf(e)) ?? []), e])
+    const alone = [...cards.values()].filter(evs => evs.every(isActivity))
+    expect(alone.length, `${alone.length} cards of activity alone`).toBeGreaterThanOrEqual(4)
+    const kinds = new Set(top.filter(e => e.type === 'bill_updated').flatMap(e =>
+      (e.metadata as { changes: Array<{ changeType: string }> }).changes.map(c => c.changeType)))
+    expect(kinds.size, `change types at the top: ${[...kinds].join(', ')}`).toBeGreaterThanOrEqual(3)
   })
 
   it('puts legislative activity on at least half the cards of the last three days', () => {

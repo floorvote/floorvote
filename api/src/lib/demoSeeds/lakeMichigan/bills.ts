@@ -705,6 +705,43 @@ export const LM_RECENT_ACTIVITY_EVENTS: DemoSeedFeedEvent[] = [
     chg('action_added', { newValue: 'Received in the House.' }),
     chg('action_added', { newValue: 'Held at the desk.' }),
   ] } },
+
+  // ── Top of the feed: bills moving on their own ─────────────────────────────
+  // The first screen opens on bills changing with no one commenting yet, in the
+  // kinds of change the provider reports besides hearings: cosponsors, documents,
+  // amendments, and floor actions. None advances a bill or claims a vote. The
+  // cosponsors are real ones (bills.co_sponsors); only when they joined is invented.
+  // Formats follow central's detect-changes.ts: a sponsor as "Cosponsor Name
+  // (Party)", a document or amendment by its type or title in `detail`, and only
+  // the newest action when several arrive together.
+
+  // US HB284 — two of its real cosponsors, a few hours before the reset.
+  { id: 'lm-fe-t-us-hb284', type: 'bill_updated', externalId: 'legiscan:1910159', userId: 'system', daysAgo: 0, minutesLater: -95, metadata: { changes: [
+    chg('sponsor_added', { newValue: 'Cosponsor Marcy Kaptur (D)' }),
+    chg('sponsor_added', { newValue: 'Cosponsor Pete Stauber (R)' }),
+  ] } },
+  // IN HB1124 — Indiana's nonpartisan fiscal staff publish a note for a bill in
+  // committee; this one has its Public Health hearing coming.
+  { id: 'lm-fe-t-in-hb1124', type: 'bill_updated', externalId: 'legiscan:2061476', userId: 'system', daysAgo: 0, minutesLater: -160, metadata: { changes: [
+    chg('supplement_added', { detail: 'Fiscal Note' }),
+  ] } },
+  // MI SB0771 — on the order of third reading since June (its real record), which
+  // is where the Michigan Senate routinely postpones a bill day to day.
+  { id: 'lm-fe-t-mi-sb0771', type: 'bill_updated', externalId: 'legiscan:2095619', userId: 'system', daysAgo: 0, minutesLater: -230, metadata: { changes: [
+    chg('action_added', { newValue: 'Postponed For The Day' }),
+  ] } },
+  // MI HB5674 — the House Fiscal Agency analyzes a bill ahead of its committee
+  // hearing (lm-hearing-3, nine days out).
+  { id: 'lm-fe-t-mi-hb5674', type: 'bill_updated', externalId: 'legiscan:2129983', userId: 'system', daysAgo: 0, minutesLater: -300, metadata: { changes: [
+    chg('supplement_added', { detail: 'Analysis' }),
+  ] } },
+  // IL HB1175 — its Committee Amendment No. 1 was tabled in 2025 (real record); a
+  // second one ahead of the Energy & Environment hearing (lm-hearing-4) goes to
+  // Rules first, as every IL committee amendment does.
+  { id: 'lm-fe-t-il-hb1175', type: 'bill_updated', externalId: 'legiscan:1906052', userId: 'system', daysAgo: 1, metadata: { changes: [
+    chg('amendment_added', { detail: 'House Committee Amendment No. 2' }),
+    chg('action_added', { newValue: 'House Committee Amendment No. 2 Referred to Rules Committee' }),
+  ] } },
 ]
 
 /**
