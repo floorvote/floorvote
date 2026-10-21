@@ -7,6 +7,10 @@ import { billUrl as buildBillUrl } from '../lib/sessionSlug'
 import { BillBadge } from './BillBadge'
 import { DraftChip } from './DraftChip'
 import { PriorityBadge } from './PriorityBadge'
+import { CompactPrioritySelect } from './CompactPrioritySelect'
+import { NewMatchChip } from './NewMatchChip'
+import { DismissAnnouncement } from './DismissAnnouncement'
+import { HoverTooltip } from './HoverTooltip'
 import { PrioritySquare } from './PrioritySquare'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 import { buildBillCardModel, billCardRowText, CARD_STYLE, type BillCardRow } from '../lib/billCardModel'
@@ -38,7 +42,15 @@ function MaterialIcon({ name, color, size = 14, fill = 0 }: {
 // PRIORITY_COLORS and the priority square; layout/markup here is NOT shared, so
 // structural changes (header, rows, spacing) won't reach the digest unless you
 // update digestEmail too.
-export function GroupedBillCard({ group, seenAt = null, currentUserId = null }: { group: GroupedBillEvents; seenAt?: string | null; currentUserId?: string | null }) {
+export function GroupedBillCard({ group, seenAt = null, currentUserId = null, isAdmin = false, onPriorityChange, onTriageDismiss }: {
+  group: GroupedBillEvents; seenAt?: string | null; currentUserId?: string | null
+  /** An admin gets the priority dropdown at the top right, as a Bills list row does; anyone else the read-only badge. */
+  isAdmin?: boolean
+  /** Called with the priority the dropdown saved (null when cleared), for the card's owner to show it. */
+  onPriorityChange?: (priority: 'high' | 'medium' | 'low' | null) => void
+  /** Called after the dropdown's Dismiss triaged the bill. */
+  onTriageDismiss?: () => void
+}) {
   const navigate = useNavigate()
   const { billId, billNumber, billState, billSessionSlug, billIsDraft } = group
   const model = buildBillCardModel(group)
@@ -48,6 +60,7 @@ export function GroupedBillCard({ group, seenAt = null, currentUserId = null }: 
   const { height, hasResized, handlePointerDown } = useVerticalResize(300, 60)
   const scrollRef = useRef<HTMLDivElement>(null)
   const [hasOverflow, setHasOverflow] = useState(false)
+  const [announcement, setAnnouncement] = useState('')
 
   const rows: BillCardRow[] = model.rows
   // A companion group's card holds events from several bills: each badge and each row opens its own.
@@ -66,6 +79,35 @@ export function GroupedBillCard({ group, seenAt = null, currentUserId = null }: 
     const b = id === null ? undefined : group.bills?.find(x => x.billId === id)
     return b ? buildBillUrl({ id: b.billId ?? undefined, state: b.billState, sessionSlug: b.billSessionSlug, billNumber: b.billNumber }) : billUrl
   }
+
+  // An untriaged new match (see lib/newMatch.ts): an amber state of the priority control, until a priority is set or it is dismissed.
+  const isNewMatch = !!group.billNewMatch && !model.priority
+
+  // Top right, where a Bills list row has the same control. The dropdown sits in
+  // the card, whose click and middle-click open the bill, so the wrapper keeps
+  // both from reaching the card (the select stops its own click, not an auxclick).
+  const priorityControl = isAdmin && billId !== null ? (() => {
+    const select = (
+      <CompactPrioritySelect
+        billId={billId}
+        current={model.priority}
+        onChange={(p) => onPriorityChange?.(p)}
+        newMatch={isNewMatch}
+        onDismiss={() => { setAnnouncement('Dismissed'); onTriageDismiss?.() }}
+      />
+    )
+    return (
+      <span
+        onClick={(e) => e.stopPropagation()}
+        onAuxClick={(e) => e.stopPropagation()}
+        style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}
+      >
+        <DismissAnnouncement message={announcement} />
+        {/* Only a new match's control needs a word: its label alone does not say what to do. */}
+        {isNewMatch ? <HoverTooltip text="New keyword match — set a priority or dismiss">{select}</HoverTooltip> : select}
+      </span>
+    )
+  })() : model.priority ? <PriorityBadge priority={model.priority} /> : isNewMatch ? <NewMatchChip /> : null
 
   function goTo(url: string, e: React.MouseEvent) {
     // ⌘/Ctrl/Shift-click → open in a new tab/window (middle-click handled by
@@ -121,7 +163,7 @@ export function GroupedBillCard({ group, seenAt = null, currentUserId = null }: 
               </>
             )}
           </div>
-          {model.priority && <PriorityBadge priority={model.priority} />}
+          {priorityControl}
         </div>
 
         <div style={{ padding: '4px 14px 10px' }}>

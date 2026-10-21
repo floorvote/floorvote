@@ -78,7 +78,8 @@ export function CompactPrioritySelect({ billId, current, onChange, isFiltered, m
           }
           const p = e.target.value === '' ? null : e.target.value as 'high' | 'medium' | 'low'
           apiFetch<{ priority: 'high' | 'medium' | 'low' | null; promoted?: boolean }>(`/bills/${billId}/priority`, { method: 'PATCH', body: JSON.stringify({ priority: p }) })
-            .then((result) => onChange(p, result))
+            // A failed save reports nothing: the select is controlled, so it stays on the saved priority.
+            .then((result) => onChange(p, result), () => {})
         }}
         style={{
           WebkitAppearance: 'none', appearance: 'none',

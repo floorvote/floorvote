@@ -86,7 +86,7 @@ describe('GroupedBillCard priority control: an admin', () => {
     apiFetchMock.mockResolvedValue({ priority: 'high', promoted: false })
     const { onPriorityChange, onTriageDismiss } = renderCard(makeGroup(), { isAdmin: true })
     fireEvent.change(select(), { target: { value: 'high' } })
-    await waitFor(() => expect(onPriorityChange).toHaveBeenCalledWith('high', expect.anything()))
+    await waitFor(() => expect(onPriorityChange).toHaveBeenCalledWith('high'))
     expect(apiFetchMock).toHaveBeenCalledTimes(1)
     expect(apiFetchMock).toHaveBeenCalledWith('/bills/bill-1/priority', { method: 'PATCH', body: JSON.stringify({ priority: 'high' }) })
     expect(onTriageDismiss).not.toHaveBeenCalled()
@@ -96,7 +96,7 @@ describe('GroupedBillCard priority control: an admin', () => {
     apiFetchMock.mockResolvedValue({ priority: null, promoted: false })
     const { onPriorityChange } = renderCard(makeGroup({ billPriority: 'low' }), { isAdmin: true })
     fireEvent.change(select(), { target: { value: '' } })
-    await waitFor(() => expect(onPriorityChange).toHaveBeenCalledWith(null, expect.anything()))
+    await waitFor(() => expect(onPriorityChange).toHaveBeenCalledWith(null))
     expect(apiFetchMock).toHaveBeenCalledWith('/bills/bill-1/priority', { method: 'PATCH', body: JSON.stringify({ priority: null }) })
   })
 
@@ -230,7 +230,7 @@ describe('GroupedBillCard priority control never opens the bill', () => {
 })
 
 describe('GroupedBillCard priority control: a companion group', () => {
-  const group = (billPriority: 'high' | null = 'medium', billNewMatch = false) => groupEventsByBillAndDay([
+  const group = (billPriority: 'high' | 'medium' | 'low' | null = 'medium', billNewMatch = false) => groupEventsByBillAndDay([
     ev({ id: 'e2', billId: 's1', billNumber: 'S 202', billPriority, billNewMatch, createdAt: '2026-01-01T12:00:00Z' }),
     ev({ id: 'e1', billId: 'h1', billNumber: 'H 101', billPriority, billNewMatch, createdAt: '2026-01-01T10:00:00Z' }),
   ] as FeedEvent[])[0]
@@ -246,7 +246,7 @@ describe('GroupedBillCard priority control: a companion group', () => {
     apiFetchMock.mockResolvedValue({ priority: 'low' })
     const { onPriorityChange } = renderCard(group(null), { isAdmin: true })
     fireEvent.change(select(), { target: { value: 'low' } })
-    await waitFor(() => expect(onPriorityChange).toHaveBeenCalledWith('low', expect.anything()))
+    await waitFor(() => expect(onPriorityChange).toHaveBeenCalledWith('low'))
     expect(apiFetchMock).toHaveBeenCalledTimes(1)
     expect(apiFetchMock).toHaveBeenCalledWith('/bills/s1/priority', { method: 'PATCH', body: JSON.stringify({ priority: 'low' }) })
   })
@@ -280,7 +280,7 @@ describe('GroupedBillCard priority control: a draft bill', () => {
     expect(select()).toHaveDisplayValue('Set priority')
     expectNotAmber(select())
     fireEvent.change(select(), { target: { value: 'medium' } })
-    await waitFor(() => expect(onPriorityChange).toHaveBeenCalledWith('medium', expect.anything()))
+    await waitFor(() => expect(onPriorityChange).toHaveBeenCalledWith('medium'))
     expect(apiFetchMock).toHaveBeenCalledWith('/bills/draft-7/priority', { method: 'PATCH', body: JSON.stringify({ priority: 'medium' }) })
   })
 

@@ -17,6 +17,7 @@ import { DateDivider } from '../components/ui/DateDivider'
 import { ScopeSelect, type ScopeSelectOption } from '../components/ui/ScopeSelect'
 import { useFeedUnread } from '../context/FeedUnreadContext'
 import { useAuth } from '../hooks/useAuth'
+import { useSidebarRefresh } from '../context/SidebarRefreshContext'
 import { getScrollContainer } from '../lib/scrollUtils'
 
 type FeedResponse = { events: FeedEvent[]; total: number; page: number; limit: number }
@@ -192,6 +193,12 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
 
   const { markSeen, endVisit, lastSeenFeed, initialized } = useFeedUnread()
   const { user } = useAuth()
+  const isAdmin = user?.role === 'admin' || user?.role === 'owner'
+  const refreshSidebar = useSidebarRefresh()
+  // The cards an admin has changed the priority or triage of on this visit, by day-group key.
+  // The default feed hides a card with no priority and only provider updates, so clearing
+  // a priority would drop the card from under the pointer; these stay until the feed reloads.
+  const editedCardsRef = useRef(new Set<string>())
   // Mirror the accumulating state into refs so the auto-fill loop reads the
   // latest values without being recreated on every append.
   const eventsRef = useRef(events)
@@ -278,6 +285,7 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
   const mountedRef = useRef(false)
   useEffect(() => {
     if (!mountedRef.current) { mountedRef.current = true; return }
+    editedCardsRef.current.clear()
     let cancelled = false
     const run = async () => {
       fillingRef.current = true; setLoading(true); setError(null)
@@ -368,6 +376,19 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
   // Feed scrolled down. Reset to the top on mount so Feed always opens at the top.
   useLayoutEffect(() => { getScrollContainer().scrollTop = 0 }, [])
 
+  // A card's priority control saves through the API itself; this shows the result without
+  // reloading the feed. The priority is a team field (see **Team field** in CONTEXT.md), so
+  // it changes on every event of the card's bill, or of its companion group whichever member
+  // the card was set through, on every day. Setting a priority triages the bill, so it
+  // is no longer a new match, and so does a Dismiss.
+  const showCardChange = useCallback((card: GroupedBillEvents, change: { billPriority?: GroupedBillEvents['billPriority']; billNewMatch: false }) => {
+    editedCardsRef.current.add(card.key)
+    setEvents(prev => prev.map(e =>
+      (card.groupKey != null ? e.billGroupKey === card.groupKey : e.billId === card.billId) ? { ...e, ...change } : e,
+    ))
+    refreshSidebar()
+  }, [refreshSidebar])
+
   async function handleNewActivityClick() {
     await loadLatest()
     getScrollContainer().scrollTo({ top: 0, behavior: 'smooth' })
@@ -389,7 +410,9 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
   }, [])
 
   const scopeFn = scopeMode === 'analyzed' ? filterFullyAnalyzed : filterPriorityEvents
-  const groups = scopeFn(groupEventsByBillAndDay(events))
+  const allGroups = groupEventsByBillAndDay(events)
+  const inScope = new Set(scopeFn(allGroups))
+  const groups = allGroups.filter(g => inScope.has(g) || editedCardsRef.current.has(g.key))
 
   // Group cards by day for separators
   const groupsByDay = new Map<string, GroupedBillEvents[]>()
@@ -445,7 +468,12 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
             {groupsByDay.get(day)!.map(group => group.billId === null ? (
               <FeedActivityRow key={group.key} event={group.events[0]} seenAt={seenAtRef.current} currentUserId={user?.id ?? null} />
             ) : (
-              <GroupedBillCard key={group.key} group={group} seenAt={seenAtRef.current} currentUserId={user?.id ?? null} />
+              <GroupedBillCard
+                key={group.key} group={group} seenAt={seenAtRef.current} currentUserId={user?.id ?? null}
+                isAdmin={isAdmin}
+                onPriorityChange={(billPriority) => showCardChange(group, { billPriority, billNewMatch: false })}
+                onTriageDismiss={() => showCardChange(group, { billNewMatch: false })}
+              />
             ))}
           </div>
         ))}

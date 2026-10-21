@@ -11,6 +11,7 @@ import { DraftChip } from './DraftChip'
 import { PrioritySquare } from './PrioritySquare'
 import { color, radius, fontSize } from '../styles/tokens'
 import { billsListPath } from '../../../shared/billFilter'
+import { BILL_TITLE_TEXT } from '../lib/textStyles'
 
 type AffectedBill = {
   id: string; billNumber: string; title: string
@@ -176,7 +177,7 @@ function BillLink({ bills, first }: { bills: AffectedBill[]; first: boolean }) {
   const bill = bills[0]
   const title = billDisplayTitle({ title: bill.title, isDraft: bill.isDraft })
   const titleStyle = {
-    fontSize: fontSize.sm, color: color.textPrimary, flex: 1, minWidth: 0,
+    ...BILL_TITLE_TEXT, fontSize: fontSize.sm, color: color.textPrimary, flex: 1, minWidth: 0,
     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
   } as const
   const rowStyle = {

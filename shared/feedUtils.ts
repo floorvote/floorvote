@@ -14,6 +14,11 @@ export type FeedEvent = {
   billSummary: string | null
   billPriority: string | null
   billMatchType: 'keyword' | 'manual' | null
+  // Whether the bill's card is an untriaged new match (see **New match** in
+  // CONTEXT.md): a keyword match with no priority that no one in its companion
+  // group has triaged. Optional, like the fields below, because producers other
+  // than GET /feed build FeedEvent-shaped objects; absent is read as "no".
+  billNewMatch?: boolean
   // Optional because several non-feed producers build FeedEvent-shaped objects
   // (api/src/lib/digestEmail.ts, api/src/lib/mentions.ts); absent is read as
   // "not a draft". The card model reads it to label an untitled draft.
@@ -51,6 +56,8 @@ export type GroupedBillEvents = {
   billSummary: string | null
   billPriority: string | null
   billMatchType: 'keyword' | 'manual' | null
+  /** The card's bill (or companion group) is an untriaged new match. Absent is read as no. */
+  billNewMatch?: boolean
   billIsDraft?: boolean
   /** The companion group the card stands for, or null for a bill in no group. Absent is read as null. */
   groupKey?: string | null
@@ -78,6 +85,7 @@ export function groupEventsByBillAndDay(events: FeedEvent[]): GroupedBillEvents[
         key, billId: e.billId, billNumber: e.billNumber,
         billTitle: e.billTitle, billSessionSlug: e.billSessionSlug, billState: e.billState,
         billSummary: e.billSummary, billPriority: e.billPriority, billMatchType: e.billMatchType,
+        billNewMatch: e.billNewMatch ?? false,
         billIsDraft: e.billIsDraft ?? false,
         groupKey,
         ...(groupKey !== null ? { bills: [] } : {}),

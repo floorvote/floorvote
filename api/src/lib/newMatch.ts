@@ -1,6 +1,7 @@
-import { and, eq, isNotNull, sql, type SQL } from 'drizzle-orm'
+import { and, eq, inArray, isNotNull, sql, type SQL } from 'drizzle-orm'
 import { associationConfig, bills } from '../db/schema'
 import { groupUntriaged, type BillsTable } from './teamFields'
+import { chunk } from './chunk'
 import type { AppDb } from '../types'
 
 /**
@@ -42,6 +43,31 @@ export function newMatchWhere(minRelevance: number, t: BillsTable = bills): SQL 
     groupUntriaged(t),
     sql`COALESCE(${t.relevanceScore}, 0) >= ${minRelevance}`,
   )!
+}
+
+/**
+ * Of these companion groups, the keys of those that read as an untriaged new
+ * match: some member is a keyword match that came in as a new match, and no
+ * member has a priority or is triaged (triaging or prioritizing any bill
+ * triages the group). The group-row aggregate of the Bills list, which draws a
+ * new match's amber priority dropdown from the same four fields, so a feed card
+ * and a bills row agree (`isUntriagedNewMatch` in web/src/lib/newMatch.ts).
+ * Minimum relevance gates the triage worklist only, never that amber state.
+ */
+export async function loadUntriagedNewMatchGroups(db: AppDb, groupKeys: ReadonlyArray<string | null | undefined>): Promise<Set<string>> {
+  const facts = new Map<string, { keyword: boolean; arrived: boolean; resolved: boolean }>()
+  for (const part of chunk([...new Set(groupKeys.filter((k): k is string => !!k))], 90)) {
+    for (const r of await db.select({
+      groupKey: bills.groupKey, matchType: bills.matchType, newMatchAt: bills.newMatchAt, priority: bills.priority, triagedAt: bills.triagedAt,
+    }).from(bills).where(inArray(bills.groupKey, part)).all()) {
+      const f = facts.get(r.groupKey!) ?? { keyword: false, arrived: false, resolved: false }
+      f.keyword ||= r.matchType === 'keyword'
+      f.arrived ||= r.newMatchAt !== null
+      f.resolved ||= r.priority !== null || r.triagedAt !== null
+      facts.set(r.groupKey!, f)
+    }
+  }
+  return new Set([...facts].filter(([, f]) => f.keyword && f.arrived && !f.resolved).map(([key]) => key))
 }
 
 /**
