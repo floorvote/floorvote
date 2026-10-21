@@ -86,7 +86,7 @@ migrations_dir = "migrations"
 
 Then deploy with `npm run deploy:central`. Both sets of names build the same worker and list the same migration files, and wrangler records an applied migration by its filename alone, so a database migrated under the old names has nothing new to apply under the new ones.
 
-- **What doesn't change.** The `legiscan` wrangler environment (`--env legiscan`), the deployed worker's name (`floorvote-central-legiscan`), your D1 database, bucket, and queue names, and the bill handle prefix all stay as they are.
+- **What doesn't change.** The `legiscan` wrangler environment (`--env legiscan`), the deployed worker's name (`floorvote-central-legiscan`), and your D1 database, bucket, and queue names all stay as they are. (The bill handle prefix changes in this release too, but separately: see [Neutral bill handles](#neutral-bill-handles).)
 - **`migrations-legiscan` is now a symlink to `migrations`.** A checkout without symlink support (Git for Windows with `core.symlinks` off) gets a plain file in its place, and wrangler then finds no migrations under the old name without saying so. Switch to `migrations_dir = "migrations"`, or check out on macOS, Linux, or WSL.
 - **Your own files in `central/migrations-legiscan/` need to move.** A checkout or fork with files of its own in that folder, committed or untracked, will see a refused pull or a git conflict, since the folder is now a link. Move them to `central/migrations/` under the same filenames, so wrangler still records them as applied and nothing runs twice.
 - **A fork that sets `SMOKE_BASE_URL` inline on `smoke:legiscan`** should move that to `smoke:central`, which `deploy:central` and `npm run deploy` now run. `smoke:legiscan` runs `smoke:central`.
@@ -101,3 +101,27 @@ A draft with engagement (votes, positions, comments, or notes) can now be delete
 
 - **Nothing to configure.** No migration. `POST /bills/bulk-delete` is new: admin only, refused in a demo, and up to 1,000 drafts a request. `DELETE /bills/:id` deletes a draft with engagement only with `?includeEngaged=1`; without it, it still answers 409.
 - **A locked demo shows these buttons disabled,** with the same "Locked in demo mode" hover as the other demo-locked controls.
+
+## Neutral bill handles
+
+Instances now store a central bill's handle as `bill:<n>`, not `legiscan:<n>`. The prefix always meant "central bill," not where the data came from, and central now runs providers besides LegiScan. Both forms mean the same bill, and instances and central accept either.
+
+- **Migration `0119` rewrites stored handles.** It rewrites `bills.external_id` and the two handle columns in `bill_identical_links`, and only well-formed `legiscan:<n>` values. It leaves bill ids, child rows (notes, votes, comments, texts, calendar entries), and `text_r2_key` alone. Hearing UIDs keep the legacy form for good, so subscribed calendars don't churn. A bill held under both spellings keeps both rows, and running the migration again changes nothing.
+- **Deploy in either order.** Central sends `bill:<n>` only to an instance that says it reads that form: queued messages ask the instance's `CentralApi.capabilities()` (cached for a minute), and the instance's own requests to central carry an `x-handle-form: neutral` header. Any other instance keeps receiving `legiscan:<n>`, and so does one central reaches only over HTTP, with no RPC binding. Upgrading central first is the intended order.
+- **Fork code that matches a prefix needs to change.** Build and parse handles with `shared/billHandle.ts` (or `central/src/lib/billHandle.ts` in central). A query or check for `LIKE 'legiscan:%'` misses every migrated row. See `docs/internal/fork-upgrade.md`.
+- **A demo instance's reset during the deploy.** `api/deploy.sh` applies migrations before the new Worker goes live. A demo reset that fires in that gap, or after a rollback to an older build, re-seeds nothing until the next reset under this build. Deploy a demo instance away from its reset times.
+
+## A member's "Title," and no more `subtitle`
+
+The line under a member's name is called "Title" everywhere now, on the Profile page, in the database, and in the API. It used to be "subtitle." The instance API no longer returns or accepts `subtitle` (or the `userSubtitle` and `authorSubtitle` aliases) anywhere it returned a member: sign-in, members, roles, bills, comments, the feed, notifications, and the export. It returns `title` only, and a `subtitle` sent in a profile update is ignored.
+
+- **Migrations `0105` and `0120` move the values.** `0105` adds `users.title` and copies every `subtitle` into it. `0120` copies any `subtitle` into a `title` that's still empty. A title already set wins. The `users.subtitle` column itself stays one more release, so the previous build keeps working while a deploy is under way, and a later release drops it.
+- **Fork code that reads or writes `users.subtitle` should move to `title` now.** Any query that names the column fails once the later release drops it.
+- **Clients that read `subtitle` from the API** need to read `title`. The web app already does.
+
+## Congress from GovInfo (optional)
+
+Central can now sync Congress (`US`) from GovInfo's public Bill Status data, with roll calls from the House Clerk and the Senate, in place of LegiScan. Nothing changes until an operator claims or cuts over `US`. Bills and votes need no key. An optional Congress.gov API key, `CONGRESS_API_KEY`, adds committee meetings. The steps are on the new operator page, **Congress from GovInfo** (`docs/content/self-hosting/congress.md`).
+
+- **Cut over before January 3, 2027,** if you track Congress through LegiScan now. After that date, a cutover matches only the 120th Congress's bills, and GovInfo's 120th session loses the plain slug.
+- **Wait for the follow-ups before confirming a cutover.** A cutover today leaves a second legislator row for anyone who sponsors none of the bills it reads (#912), and it can't fill the committee-meeting cache before the switch (#913). The dry run (`POST /api/admin/state-providers/US/cutover`, without `confirm`) is safe to run now.
