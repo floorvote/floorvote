@@ -19,7 +19,7 @@ import type { DemoSeed, DemoSeedComment, DemoSeedMention, DemoSeedReaction } fro
  */
 
 // ---------------------------------------------------------------------------
-// MI HB4427 — legiscan:2029026 (sewage/E. coli "brown alert")
+// MI HB4427 — legiscan:2029026
 // ---------------------------------------------------------------------------
 const hb4427: DemoSeedComment[] = [
   { id: 'lm-c-1', externalId: 'legiscan:2029026', userId: 'lm-user-la1',
@@ -37,11 +37,15 @@ const hb4427: DemoSeedComment[] = [
   // the feed card.
   { id: 'lm-c-6', externalId: 'legiscan:2029026', userId: 'demo-user',
     content: '<p>Testimony is submitted. Thanks to <span data-type="mention" data-id="user:lm-user-la1" data-label="Devon Brook">@Devon Brook</span> for the fast turnaround.</p>', daysAgo: 31 },
-  // Two days ahead of the Senate Local Government hearing (lm-hearing-1).
+  // The thread's last word, eight days ago and more than a week ahead of the Senate Local
+  // Government hearing (lm-hearing-1, nine days out). The bill has been at low priority
+  // since lm-c-114, so nothing of its own is newer than 7 days (#942).
+  { id: 'lm-c-114', externalId: 'legiscan:2029026', userId: 'demo-user',
+    content: '<p>Moving this to Low. Testimony is in, so nothing more is needed from us until the hearing.</p>', daysAgo: 12 },
   { id: 'lm-c-108', externalId: 'legiscan:2029026', userId: 'lm-user-la1',
-    content: "<p>The hearing is in two days. I'll drive up to Lansing that morning and read our testimony in.</p>", daysAgo: 0, minutesLater: -50 },
+    content: "<p>The hearing is a couple of weeks out. I'll plan to drive up to Lansing that morning and read our testimony in.</p>", daysAgo: 8 },
   { id: 'lm-c-109', externalId: 'legiscan:2029026', userId: 'lm-user-comms',
-    content: "<p>I'll send you printed copies of the brown alert one-pager to hand the committee.</p>", daysAgo: 0, minutesLater: -45 },
+    content: "<p>I'll send you printed copies of the one-pager to hand the committee.</p>", daysAgo: 8, minutesLater: 5 },
 ]
 
 // The two stacked pills the demo needs: four people on 👍 for lm-c-6 (the newest
@@ -176,6 +180,10 @@ const hb5674: DemoSeedComment[] = [
     content: '<p>Happy to get this in front of the PTA coalition once it has a committee date.</p>', daysAgo: 5 },
   { id: 'lm-c-21', externalId: 'legiscan:2129983', userId: 'lm-user-data',
     content: "<p>About 40% of Michigan school buildings pre-date 1986 plumbing codes, for what it's worth.</p>", daysAgo: 3 },
+  // The day after the hearing notice, with the priority, position, and fiscal impact it names
+  // (lm-fe-p4, lm-pos-16, and the lm-cf-1 value, minutes later).
+  { id: 'lm-c-113', externalId: 'legiscan:2129983', userId: 'demo-user',
+    content: "<p>Hearing's set, so this goes to High. Recording our Support. Fiscal impact is Moderate, since every building gets tested.</p>", daysAgo: 3, minutesLater: 90 },
 ]
 
 const hb5674Reactions: DemoSeedReaction[] = [
@@ -799,20 +807,28 @@ const usSb3457Votes: DemoSeed['votes'] = [
 // replies added on 2026-08-12 were removed: each narrated an invented procedural
 // step, and one contradicted its bill outright.
 //
-// Each sits a day after the hearing notice it answers (lm-fe-h-mi-hb5308 at
-// daysAgo 4, lm-fe-h-mi-hb5674 at 3), so the feed reads notice-then-response.
+// The first of each pair sits a day after the hearing notice it answers (lm-fe-h-mi-hb5308 at
+// daysAgo 4, lm-fe-h-mi-hb5674 at 3), so the feed reads notice-then-response. The
+// answers (lm-c-hc2, and lm-c-hc4 on) follow the room change each hearing had, and open
+// today's feed (#942).
 const hearingCoordination: DemoSeedComment[] = [
   { id: 'lm-c-hc1', externalId: 'legiscan:2055958', userId: 'lm-user-la1',
     content: '<p>Who can cover the Lansing hearing? I am double-booked with the county call that morning.</p>', daysAgo: 3 },
   { id: 'lm-c-hc2', externalId: 'legiscan:2055958', userId: 'lm-user-la2',
-    content: '<p>I can take it. I will bring the decal cost sheet from last session.</p>', daysAgo: 2 },
+    content: '<p>I can take it. I will bring the decal cost sheet from last session.</p>', daysAgo: 0, minutesLater: -105 },
   { id: 'lm-c-hc3', externalId: 'legiscan:2129983', userId: 'lm-user-wq',
-    content: '<p><span data-type="mention" data-id="role:lm-role-mi" data-label="Michigan Team">@Michigan Team</span> I will draft testimony for this one — first pass by Friday if anyone wants to review it.</p>', daysAgo: 2 },
+    content: '<p><span data-type="mention" data-id="role:lm-role-mi" data-label="Michigan Team">@Michigan Team</span> I will draft testimony for this one. First pass in a day or two if anyone wants to review it.</p>', daysAgo: 2 },
   { id: 'lm-c-hc4', externalId: 'legiscan:2129983', userId: 'lm-user-res',
     content: '<p>Happy to review. I have the school lead-testing numbers ready to fold in.</p>', daysAgo: 0, minutesLater: -200 },
-  // Reacts to the House Fiscal Agency analysis (lm-fe-t-mi-hb5674) posted that morning.
+  // Reads the House Fiscal Agency analysis (lm-fe-t-mi-hb5674) posted two days ago.
   { id: 'lm-c-110', externalId: 'legiscan:2129983', userId: 'lm-user-wq',
-    content: "<p>The fiscal agency's analysis is up. Its testing cost per building is lower than ours, which helps.</p>", daysAgo: 0, minutesLater: -150 },
+    content: "<p>I read the fiscal agency's analysis. Its testing cost per building is lower than ours, which helps.</p>", daysAgo: 0, minutesLater: -150 },
+  // The room moved after the first notice (lm-fe-hc-mi-hb5674), so these two keep the
+  // thread live on the day it leads the feed, two days ahead of the hearing.
+  { id: 'lm-c-111', externalId: 'legiscan:2129983', userId: 'lm-user-out',
+    content: "<p>The PTA coalition has two parents who want to speak at the hearing. I'll send them the room details this afternoon.</p>", daysAgo: 0, minutesLater: -100 },
+  { id: 'lm-c-112', externalId: 'legiscan:2129983', userId: 'lm-user-wq',
+    content: '<p>Send them Room 519. The room changed after the first notice, so the old one is still going around.</p>', daysAgo: 0, minutesLater: -60 },
 ]
 
 // hc3 is the one ask in this thread that carries a mention. hc1 makes the same

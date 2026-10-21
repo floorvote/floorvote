@@ -49,10 +49,10 @@ export const LM_BILLS: Array<{
 ]
 
 export const LM_PRIORITIES: Array<{ externalId: string; priority: 'high' | 'medium' | 'low' }> = [
-  { externalId: 'legiscan:2029026', priority: 'high' },  // MI HB4427
+  { externalId: 'legiscan:2029026', priority: 'low' },  // MI HB4427
   { externalId: 'legiscan:2041788', priority: 'low' },  // MI HB4768
   { externalId: 'legiscan:2055958', priority: 'high' },  // MI HB5308
-  { externalId: 'legiscan:2129983', priority: 'medium' },  // MI HB5674
+  { externalId: 'legiscan:2129983', priority: 'high' },  // MI HB5674
   { externalId: 'legiscan:2095619', priority: 'high' },  // MI SB0771
   { externalId: 'legiscan:2006944', priority: 'medium' },  // WI AB129
   { externalId: 'legiscan:2006749', priority: 'high' },  // WI AB131
@@ -94,6 +94,8 @@ export const LM_POSITIONS: DemoSeed['positions'] = [
   { id: 'lm-pos-14', externalId: 'legiscan:2150744', position: 'Amend',   setBy: 'lm-user-ed',  daysAgo: 50 },  // US HB8876
   // Monitor, not Support: lm-c-88 asks for the EPA-rule overlap to be sorted before a position.
   { id: 'lm-pos-15', externalId: 'legiscan:2058690', position: 'Monitor', setBy: 'lm-user-dep', daysAgo: 3, minutesLater: 5 },   // US HB6668
+  // Recorded with its priority, the day after the hearing notice (lm-c-113), as every high-priority bill carries one.
+  { id: 'lm-pos-16', externalId: 'legiscan:2129983', position: 'Support', setBy: 'demo-user',   daysAgo: 3, minutesLater: 94 },  // MI HB5674
 ]
 
 // Team field changes the activity lines show: who set what on a bill, oldest first within
@@ -142,6 +144,13 @@ const LM_FIELD_CHANGE_ROWS: FieldChangeRow[] = [
   prio('legiscan:1933798', 'lm-user-fed', 'low', 'medium', 60, 3),
   prio('legiscan:2058690', 'lm-user-wq', null, 'medium', 14, 3),
   pos('legiscan:2058690', 'lm-user-dep', 'Monitor', 3, 5),
+  // Ids follow the order of this list, so rows added later go last and leave the earlier ids as they were (#942).
+  // MI HB4427: lowered after its testimony went in, a comment from the same persona (lm-c-114) giving the reason
+  prio('legiscan:2029026', 'demo-user', 'high', 'low', 12, 3),
+  // MI HB5674: raised, with its position and fiscal impact, the day after its hearing notice (lm-c-113)
+  prio('legiscan:2129983', 'demo-user', 'medium', 'high', 3, 93),
+  pos('legiscan:2129983', 'demo-user', 'Support', 3, 94),
+  cf('legiscan:2129983', 'demo-user', 'lm-cf-1', null, 'Moderate ($10K-$100K)', 3, 95),
 ]
 
 export const LM_TEAM_FIELD_CHANGES: DemoSeedFieldChange[] =
@@ -149,7 +158,7 @@ export const LM_TEAM_FIELD_CHANGES: DemoSeedFieldChange[] =
 
 // Spread across bills so custom-field filtering returns results in every column.
 export const LM_CUSTOM_FIELD_VALUES: Array<{ externalId: string; fieldId: string; value: string; setBy: string; daysAgo: number }> = [
-  // Fiscal Impact (lm-cf-1) — 10 bills
+  // Fiscal Impact (lm-cf-1) — 11 bills
   { externalId: 'legiscan:2029026', fieldId: 'lm-cf-1', value: 'Moderate ($10K-$100K)', setBy: 'demo-user',   daysAgo: 270 }, // MI HB4427
   { externalId: 'legiscan:2055958', fieldId: 'lm-cf-1', value: 'Minimal (<$10K)',       setBy: 'demo-user',   daysAgo: 90 },  // MI HB5308
   { externalId: 'legiscan:2095619', fieldId: 'lm-cf-1', value: 'Significant (>$100K)',  setBy: 'demo-user',   daysAgo: 60 },  // MI SB0771
@@ -160,6 +169,7 @@ export const LM_CUSTOM_FIELD_VALUES: Array<{ externalId: string; fieldId: string
   { externalId: 'legiscan:2111275', fieldId: 'lm-cf-1', value: 'Significant (>$100K)',  setBy: 'lm-user-dep', daysAgo: 60 },  // IL SB4025
   { externalId: 'legiscan:2061476', fieldId: 'lm-cf-1', value: 'Minimal (<$10K)',       setBy: 'demo-user',   daysAgo: 4 }, // IN HB1124
   { externalId: 'legiscan:2150744', fieldId: 'lm-cf-1', value: 'Moderate ($10K-$100K)', setBy: 'lm-user-ed',  daysAgo: 50 },  // US HB8876
+  { externalId: 'legiscan:2129983', fieldId: 'lm-cf-1', value: 'Moderate ($10K-$100K)', setBy: 'demo-user',   daysAgo: 3 },   // MI HB5674
 
   // Working Group (lm-cf-2) — 12 bills, mapped from each bill's theme
   { externalId: 'legiscan:2029026', fieldId: 'lm-cf-2', value: 'Habitat',        setBy: 'demo-user',   daysAgo: 270 }, // MI HB4427 — Beaches & Shoreline
@@ -192,11 +202,11 @@ export const LM_CUSTOM_FIELD_VALUES: Array<{ externalId: string; fieldId: string
 
   // Testimony Submitted (lm-cf-5, binary) — 3 bills the team has filed on. Each
   // date is pinned to the thread that says so, since the flag and the comment are
-  // the same claim rendered two ways: lm-c-6 ("Testimony is submitted", daysAgo 1),
+  // the same claim rendered two ways: lm-c-6 ("Testimony is submitted", daysAgo 31),
   // lm-c-17 ("Testimony is in the record", daysAgo 3), and IL HB1175 where the ask
   // to lock in written testimony is lm-c-41 at daysAgo 5 and the drafting is still
   // in progress at lm-c-45 (daysAgo 2), so the filing has to postdate both.
-  { externalId: 'legiscan:2029026', fieldId: 'lm-cf-5', value: '1', setBy: 'demo-user',   daysAgo: 1 }, // MI HB4427
+  { externalId: 'legiscan:2029026', fieldId: 'lm-cf-5', value: '1', setBy: 'demo-user',   daysAgo: 31 }, // MI HB4427
   { externalId: 'legiscan:2095619', fieldId: 'lm-cf-5', value: '1', setBy: 'demo-user',   daysAgo: 3 }, // MI SB0771
   { externalId: 'legiscan:1906052', fieldId: 'lm-cf-5', value: '1', setBy: 'lm-user-dep', daysAgo: 1 }, // IL HB1175
 ]
@@ -216,9 +226,9 @@ export const LM_CUSTOM_FIELD_VALUES: Array<{ externalId: string; fieldId: string
 // goes to MI HB5674 instead — introduced, still sitting in the House Government
 // Operations Committee, and a House bill in a House committee.
 export const LM_CALENDAR_EVENTS: DemoSeedCalendarEvent[] = [
-  { id: 'lm-hearing-1', externalId: 'legiscan:2029026', source: 'hearing', offsetDays: 2,  time: '10:00:00', location: 'Binsfeld Office Building, Room 1100, Lansing', description: 'Senate Local Government Committee — hearing' },
+  { id: 'lm-hearing-1', externalId: 'legiscan:2029026', source: 'hearing', offsetDays: 9,  time: '10:00:00', location: 'Binsfeld Office Building, Room 1100, Lansing', description: 'Senate Local Government Committee — hearing' },
   { id: 'lm-hearing-2', externalId: 'legiscan:2055958', source: 'hearing', offsetDays: 5,  time: '10:00:00', location: 'Binsfeld Office Building, Room 1200, Lansing', description: 'Senate Natural Resources and Agriculture Committee — hearing' },
-  { id: 'lm-hearing-3', externalId: 'legiscan:2129983', source: 'hearing', offsetDays: 9,  time: '10:00:00', location: 'Anderson House Office Building, Room 519, Lansing', description: 'House Government Operations Committee — hearing' },
+  { id: 'lm-hearing-3', externalId: 'legiscan:2129983', source: 'hearing', offsetDays: 2,  time: '10:00:00', location: 'Anderson House Office Building, Room 519, Lansing', description: 'House Government Operations Committee — hearing' },
   // Energy & Environment, not Rules: Rules is where this bill was re-referred to
   // die (twice), so a hearing notice from Rules would be the least plausible thing
   // in the seed. Energy & Environment is the substantive IL House committee that
@@ -270,7 +280,7 @@ const chg = (changeType: string, f: { oldValue?: string | null; newValue?: strin
 // HB5268, for instance, never leave the "Introduced" bucket despite committee
 // activity, so no status_change is claimed for them.
 export const LM_BILL_UPDATED_EVENTS: DemoSeedFeedEvent[] = [
-  // MI HB4427 — Beaches & Shoreline, high, live (hearing +2)
+  // MI HB4427 — low, live (hearing +9)
   { id: 'lm-fe-u-mi-hb4427-1', type: 'bill_updated', externalId: 'legiscan:2029026', userId: 'system', daysAgo: 285, metadata: { changes: [
     chg('status_change', { oldValue: 'Introduced', newValue: 'Engrossed (passed one chamber)' }),
     chg('action_added', { newValue: 'Passed; Given Immediate Effect Roll Call #283 Yeas 94 Nays 10 Excused 0 Not Voting 6' }),
@@ -305,7 +315,7 @@ export const LM_BILL_UPDATED_EVENTS: DemoSeedFeedEvent[] = [
     chg('action_added', { newValue: 'Referred To Committee On Natural Resources And Agriculture' }),
   ] } },
 
-  // MI HB5674 — Drinking Water, medium, live (hearing +9)
+  // MI HB5674 — Drinking Water, high, live (hearing +2)
   { id: 'lm-fe-u-mi-hb5674-1', type: 'bill_updated', externalId: 'legiscan:2129983', userId: 'system', daysAgo: 159, metadata: { changes: [
     chg('status_change', { newValue: 'Introduced' }),
     chg('action_added', { newValue: 'Introduced By Representative Rep. Jennifer Wortz' }),
@@ -585,10 +595,11 @@ export const LM_HEARING_NOTICE_SOURCES: ReadonlyArray<{ eventId: string; calenda
  */
 const LM_HEARING_CHANGES: Array<{ eventId: string; calendarId: string; daysAgo: number; minutesLater?: number; previousLocation: string }> = [
   { eventId: 'lm-fe-hc-in-hb1124', calendarId: 'lm-hearing-5', daysAgo: 1, minutesLater: -40, previousLocation: 'Indiana Statehouse, Room 156-C, Indianapolis' },
-  { eventId: 'lm-fe-hc-mi-hb5308', calendarId: 'lm-hearing-2', daysAgo: 2, previousLocation: 'Binsfeld Office Building, Room 1300, Lansing' },
-  { eventId: 'lm-fe-hc-mi-hb5674', calendarId: 'lm-hearing-3', daysAgo: 0, minutesLater: -260, previousLocation: 'Anderson House Office Building, Room 521, Lansing' },
-  // Gives HB4427's thread, quiet since its notice, something recent ahead of the hearing.
-  { eventId: 'lm-fe-hc-mi-hb4427', calendarId: 'lm-hearing-1', daysAgo: 5, previousLocation: 'Binsfeld Office Building, Room 1200, Lansing' },
+  { eventId: 'lm-fe-hc-mi-hb5308', calendarId: 'lm-hearing-2', daysAgo: 0, minutesLater: -170, previousLocation: 'Binsfeld Office Building, Room 1300, Lansing' },
+  { eventId: 'lm-fe-hc-mi-hb5674', calendarId: 'lm-hearing-3', daysAgo: 2, minutesLater: -240, previousLocation: 'Anderson House Office Building, Room 521, Lansing' },
+  // HB4427's thread has been quiet since its notice. The room change lands the day before the
+  // team's last comments on it, and nothing of its own is newer than 7 days (#942).
+  { eventId: 'lm-fe-hc-mi-hb4427', calendarId: 'lm-hearing-1', daysAgo: 9, previousLocation: 'Binsfeld Office Building, Room 1200, Lansing' },
   // These two stand in for re-dated copies of real actions (see LM_RECENT_ACTIVITY_EVENTS).
   { eventId: 'lm-fe-hc-il-hb1175', calendarId: 'lm-hearing-4', daysAgo: 12, previousLocation: 'Illinois State Capitol, Room 114, Springfield' },
   { eventId: 'lm-fe-hc-us-hb8876', calendarId: 'lm-hearing-6', daysAgo: 2, previousLocation: 'Longworth House Office Building, Washington DC' },
@@ -616,10 +627,10 @@ export const LM_HEARING_EVENTS: DemoSeedFeedEvent[] = [
 // Hand-written priority_set and position_set events. Task 4 imports this name.
 export const LM_ENGAGEMENT_EVENTS: DemoSeedFeedEvent[] = [
   // Priority set — one per tracked bill
-  { id: 'lm-fe-p1',  type: 'priority_set', externalId: 'legiscan:2029026', userId: 'demo-user',   metadata: { priority: 'high' },   daysAgo: 280 }, // MI HB4427
+  { id: 'lm-fe-p1',  type: 'priority_set', externalId: 'legiscan:2029026', userId: 'demo-user',   metadata: { priority: 'low' },    daysAgo: 12, minutesLater: 3 }, // MI HB4427
   { id: 'lm-fe-p2',  type: 'priority_set', externalId: 'legiscan:2041788', userId: 'demo-user',   metadata: { priority: 'low' },    daysAgo: 363 }, // MI HB4768
   { id: 'lm-fe-p3',  type: 'priority_set', externalId: 'legiscan:2055958', userId: 'demo-user',   metadata: { priority: 'high' },   daysAgo: 100 }, // MI HB5308
-  { id: 'lm-fe-p4',  type: 'priority_set', externalId: 'legiscan:2129983', userId: 'demo-user',   metadata: { priority: 'medium' }, daysAgo: 159 }, // MI HB5674
+  { id: 'lm-fe-p4',  type: 'priority_set', externalId: 'legiscan:2129983', userId: 'demo-user',   metadata: { priority: 'high' },   daysAgo: 3, minutesLater: 93 }, // MI HB5674
   { id: 'lm-fe-p5',  type: 'priority_set', externalId: 'legiscan:2095619', userId: 'demo-user',   metadata: { priority: 'high' },   daysAgo: 68 },  // MI SB0771
   { id: 'lm-fe-p6',  type: 'priority_set', externalId: 'legiscan:2006944', userId: 'lm-user-dep',  metadata: { priority: 'medium' }, daysAgo: 133, minutesLater: 3 }, // WI AB129
   { id: 'lm-fe-p7',  type: 'priority_set', externalId: 'legiscan:2006749', userId: 'lm-user-ed',  metadata: { priority: 'high' },   daysAgo: 121, minutesLater: 3 }, // WI AB131
@@ -653,6 +664,7 @@ export const LM_ENGAGEMENT_EVENTS: DemoSeedFeedEvent[] = [
   { id: 'lm-fe-o13', type: 'position_set', externalId: 'legiscan:1910159', userId: 'lm-user-ed',  metadata: { position: 'Support' }, daysAgo: 6, minutesLater: 3 },
   { id: 'lm-fe-o14', type: 'position_set', externalId: 'legiscan:2150744', userId: 'lm-user-ed',  metadata: { position: 'Amend' },   daysAgo: 50 },
   { id: 'lm-fe-o15', type: 'position_set', externalId: 'legiscan:2058690', userId: 'lm-user-dep', metadata: { position: 'Monitor' }, daysAgo: 3, minutesLater: 5 },
+  { id: 'lm-fe-o16', type: 'position_set', externalId: 'legiscan:2129983', userId: 'demo-user',   metadata: { position: 'Support' }, daysAgo: 3, minutesLater: 94 },
 ]
 
 // ── Recent legislative activity (fictional) ─────────────────────────────────
@@ -721,8 +733,8 @@ export const LM_RECENT_ACTIVITY_EVENTS: DemoSeedFeedEvent[] = [
   // the newest action when several arrive together.
 
   // The order within a day is the feed's: a card sorts by its newest event, so
-  // minutesLater sets the sequence. Today runs mixed (HB284), discussion (HB4427),
-  // activity (HB1175), mixed (HB5674); yesterday mixed (HB1124), discussion
+  // minutesLater sets the sequence. Today runs mixed (HB284), discussion (HB5674),
+  // activity (HB1175), mixed (HB5308); yesterday mixed (HB1124), discussion
   // (HB6668), activity (SB0771), discussion (HB583).
 
   // US HB284 — two of its real cosponsors, under the team noticing them.
@@ -741,8 +753,8 @@ export const LM_RECENT_ACTIVITY_EVENTS: DemoSeedFeedEvent[] = [
     chg('action_added', { newValue: 'Postponed For The Day' }),
   ] } },
   // MI HB5674 — the House Fiscal Agency analyzes a bill ahead of its committee
-  // hearing (lm-hearing-3, nine days out).
-  { id: 'lm-fe-t-mi-hb5674', type: 'bill_updated', externalId: 'legiscan:2129983', userId: 'system', daysAgo: 0, minutesLater: -230, metadata: { changes: [
+  // hearing (lm-hearing-3, two days out when the thread picks it up today, lm-c-110).
+  { id: 'lm-fe-t-mi-hb5674', type: 'bill_updated', externalId: 'legiscan:2129983', userId: 'system', daysAgo: 2, minutesLater: -180, metadata: { changes: [
     chg('supplement_added', { detail: 'Analysis' }),
   ] } },
   // IL HB1175 — its Committee Amendment No. 1 was tabled in 2025 (real record); a

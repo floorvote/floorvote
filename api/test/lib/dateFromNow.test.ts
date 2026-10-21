@@ -89,7 +89,7 @@ describe('every seed survives the snap without a past/future flip', () => {
 // golden value has to be. Changing a seed offset must change this table too.
 const EXPECTED_OFFSETS: Record<string, Record<string, number>> = {
   'lake-michigan': {
-    'lm-hearing-1': 2, 'lm-hearing-2': 5, 'lm-hearing-3': 9,
+    'lm-hearing-1': 9, 'lm-hearing-2': 5, 'lm-hearing-3': 2,
     'lm-hearing-4': 13, 'lm-hearing-5': 18, 'lm-hearing-6': 26,
     // One subcommittee hearing taking up three bills, a row per bill.
     'lm-hearing-7': 11, 'lm-hearing-8': 11, 'lm-hearing-9': 11,

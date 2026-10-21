@@ -89,12 +89,12 @@ export const LAKE_MICHIGAN_SEED: DemoSeed = {
       ]),
     },
     {
-      // 3 bills: MI HB4768, MI HB5674, and IL HB5268, which the Infrastructure group owns and no one has taken a position on.
+      // 2 bills: MI HB4768 and IL HB5268, which the Infrastructure group owns and no one has taken a position on.
       id: 'lm-view-infrastructure-open', name: 'Infrastructure bills with no position', slug: 'infrastructure-bills-with-no-position',
       query: viewQuery([['field.working-group', 'Infrastructure'], ['position', 'none']]),
     },
     {
-      // 5 bills: MI HB4427, HB5308, SB0771, and WI AB131, SB56.
+      // 5 bills: MI HB5308, HB5674, SB0771, and WI AB131, SB56.
       id: 'lm-view-high-mi-wi', name: 'High priority in Michigan and Wisconsin', slug: 'high-priority-in-michigan-and-wisconsin',
       query: viewQuery([['priority', 'high'], ['state', 'MI'], ['state', 'WI']]),
     },
