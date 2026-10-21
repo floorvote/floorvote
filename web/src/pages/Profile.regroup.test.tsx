@@ -77,15 +77,15 @@ describe.each(['member', 'admin', 'owner'] as const)('Profile card regrouping, a
     expect(screen.queryByRole('heading', { name: 'Your Email' })).not.toBeInTheDocument()
   })
 
-  it('orders Notifications as replies, the digest (with its option nested), then the week-ahead email', () => {
+  it('orders Notifications like Team notifications: the digest (with its option nested), the week-ahead email, then replies last', () => {
     render(<MemoryRouter><Profile /></MemoryRouter>)
     const replies = screen.getByRole('switch', { name: repliesName })
     const digest = screen.getByRole('switch', { name: digestName })
     const weekAhead = screen.getByRole('switch', { name: weekAheadName })
-    inOrder(replies, digest, weekAhead)
+    inOrder(digest, weekAhead, replies)
     if (role === 'member') {
       const matches = screen.getByRole('switch', { name: matchesName })
-      inOrder(replies, digest, matches, weekAhead)
+      inOrder(digest, matches, weekAhead, replies)
       expect(document.getElementById('setting-email-digest')).toContainElement(matches)
       expect(document.getElementById('setting-week-ahead')).not.toContainElement(matches)
     } else {
