@@ -595,15 +595,17 @@ describe('collapsing and re-expanding the row', () => {
     fireEvent.scroll(box())
     await waitFor(() => expect(listCalls()).toHaveLength(2))
 
-    await userEvent.click(toggle()) // collapsed: the box is hidden, so it has no height
-    sizeBox(0, 0)
+    await userEvent.click(toggle())
+    // jsdom has no layout, so give the box a laid-out size that underflows: only the row being
+    // hidden can keep the list from loading page 3 here.
+    sizeBox(100, 300)
     release()
+    // The page landed, in the hidden box.
+    expect(await screen.findByRole('link', { name: 'Act on HB4', hidden: true })).toBeInTheDocument()
     await act(async () => {})
-    await waitFor(() => expect(hoisted.calls.length).toBeGreaterThan(0))
     expect(listCalls()).toEqual(['/feed/events/row/bills?page=1', '/feed/events/row/bills?page=2'])
 
     // Open again: the box has height, the entries are few, and more are on the server.
-    sizeBox(100, 300)
     await userEvent.click(toggle())
     expect(await screen.findByRole('link', { name: 'Act on HB5' })).toBeInTheDocument()
     expect(listCalls()).toEqual(['/feed/events/row/bills?page=1', '/feed/events/row/bills?page=2', '/feed/events/row/bills?page=3'])
