@@ -434,6 +434,6 @@ ${billOrder.map(id => renderBillCard(billGroups.get(id)!, input.appUrl)).join('\
     dateLabel: range,
     bodyHtml: `${contentsBox}${updatesSection}\n${newMatchSection}${viewSections ? `\n${viewSections}` : ''}`,
     ctaHtml,
-    footerHtml: emailFooterLink(`${input.appUrl}/profile#setting-email-digest`, 'Manage email settings'),
+    footerHtml: emailFooterLink(`${input.appUrl}/account#setting-email-digest`, 'Manage email settings'),
   })
 }

@@ -187,7 +187,7 @@ exports[`renderDigestEmail > renders the sample digest unchanged (extraction reg
             <div style="margin-top:18px;"><a href="https://x.test/bills" style="display:inline-block;background:#3b82f6;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:6px;">View bill updates</a></div>
           </td></tr>
           <tr><td style="padding:22px 20px 4px;border-top:1px solid #e2e8f0;text-align:center;">
-            <a href="https://x.test/profile#setting-email-digest" style="font-size:12px;color:#667386;text-decoration:underline;">Manage email settings</a>
+            <a href="https://x.test/account#setting-email-digest" style="font-size:12px;color:#667386;text-decoration:underline;">Manage email settings</a>
           </td></tr>
         </tbody>
       </table>

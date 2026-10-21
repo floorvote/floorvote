@@ -50,7 +50,7 @@ export type AttachmentSummary = { id: string; name: string; contentType: string;
 
 type Fail = { ok: false; status: 400 | 403 | 404 | 411 | 429 | 503; error: string }
 
-export const NOT_SET_UP = 'File attachments are not set up on this instance.'
+export const NOT_SET_UP = 'File attachments are not set up.'
 
 /** Whether uploads can work here: the bucket is bound, and it isn't a demo. */
 export function attachmentsEnabled(env: Env): boolean {
@@ -158,7 +158,7 @@ export async function uploadAttachment(
     if ((recent?.n ?? 0) >= UPLOADS_PER_HOUR) {
       return { ok: false, status: 429, error: 'Too many uploads in the last hour. Try again later.' }
     }
-    return { ok: false, status: 400, error: "This instance's file storage is full. An admin can free space by deleting comments with files." }
+    return { ok: false, status: 400, error: 'File storage is full. An admin can free space by deleting comments with files.' }
   }
 
   // From here a refusal marks the row deleted: it keeps counting toward the

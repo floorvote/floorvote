@@ -56,7 +56,7 @@ describe('the digest', () => {
     expect(messages).toHaveLength(2)
     for (const m of messages) {
       expect(m.purpose).toBe('bulk')
-      expect(m.headers?.['List-Unsubscribe']).toContain('/profile#setting-email-digest')
+      expect(m.headers?.['List-Unsubscribe']).toContain('/account#setting-email-digest')
       expect(m.subject).toBeTruthy()
       expect(m.html).toContain('H 1')
       // The From is the purpose's to decide, never the caller's.
@@ -99,7 +99,7 @@ describe('the week-ahead email', () => {
     expect(new Set(messages.map(m => m.html)).size).toBe(1)
     for (const m of messages) {
       expect(m.purpose).toBe('bulk')
-      expect(m.headers?.['List-Unsubscribe']).toContain('/profile#setting-week-ahead')
+      expect(m.headers?.['List-Unsubscribe']).toContain('/account#setting-week-ahead')
       expect(m.subject).toMatch(/Your week ahead/)
       expect(m.html).toContain('Public Hearing on HB 100')
       expect(m.from).toBeUndefined()

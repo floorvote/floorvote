@@ -95,7 +95,7 @@ describe('Profile Notifications section', () => {
     expect(replies).toBeChecked()
     expect(within(section).getByRole('switch', { name: /recent bill activity/i })).toBeInTheDocument()
     expect(within(section).getByRole('switch', { name: /upcoming hearings and events/i })).toBeInTheDocument()
-    expect(within(section).getByText("You'll always get an email when someone mentions you, your role, @admins, or @everyone.")).toBeInTheDocument()
+    expect(await within(section).findByText("You'll always get an email when someone mentions you or @everyone.")).toBeInTheDocument()
     expect(within(section).queryByRole('switch', { name: /mention/i })).not.toBeInTheDocument()
   })
 
@@ -104,7 +104,7 @@ describe('Profile Notifications section', () => {
     render(<MemoryRouter><Profile /></MemoryRouter>)
     const section = (screen.getByRole('heading', { level: 2, name: 'Notifications' })).parentElement as HTMLElement
 
-    expect(within(section).getByText("Notify me in FloorVote and by email when someone else comments on a bill I've commented on. To stop them on one bill, use Mute comments on that bill.")).toBeInTheDocument()
+    expect(within(section).getByText("Notify me in FloorVote and by email when someone else comments on a bill I've commented on. To stop them on one bill, select \u201cMute comments\u201d on that bill.")).toBeInTheDocument()
     expect(within(section).queryByText(/replies still appear in your notifications/i)).not.toBeInTheDocument()
   })
 
@@ -114,7 +114,7 @@ describe('Profile Notifications section', () => {
     ['setting-week-ahead', /upcoming hearings and events/i],
   ])('email-footer deep link #%s lands on and highlights its switch', async (id, name) => {
     mockConfig({ 'email-digest': { enabled: true }, 'week-ahead': { enabled: true } })
-    render(<MemoryRouter initialEntries={[`/profile#${id}`]}><Profile /></MemoryRouter>)
+    render(<MemoryRouter initialEntries={[`/account#${id}`]}><Profile /></MemoryRouter>)
     const row = document.getElementById(id) as HTMLElement
     expect(row).toContainElement(screen.getByRole('switch', { name }))
     await vi.waitFor(() => expect(row.style.boxShadow).not.toBe(''))

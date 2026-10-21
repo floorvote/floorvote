@@ -1,4 +1,4 @@
-import { createBrowserRouter, createRoutesFromElements, RouterProvider, Route, Navigate, Outlet, useMatches } from 'react-router-dom'
+import { createBrowserRouter, createRoutesFromElements, RouterProvider, Route, Navigate, Outlet, useLocation, useMatches } from 'react-router-dom'
 import { color, fontSize } from './styles/tokens'
 import { AuthProvider } from './context/AuthContext'
 import { DemoProvider, useDemo } from './context/DemoContext'
@@ -181,6 +181,11 @@ function RootHydrateFallback() {
   return <LoadingState variant="full" progress={{ current: null }} />
 }
 
+function AccountMoved() {
+  const { search, hash } = useLocation()
+  return <Navigate to={{ pathname: '/account', search, hash }} replace />
+}
+
 // Marks the bill detail routes for AppLayout's split pane (BillListPane).
 const BILL_ROUTE_HANDLE = { billListPane: true }
 
@@ -212,7 +217,10 @@ export const routes = createRoutesFromElements(
         <Route path="bills" element={<BillList />} loader={billListLoader} />
         <Route path="bills/:billId" element={<BillDetail />} loader={billDetailLoader} errorElement={<BillDetailError />} handle={BILL_ROUTE_HANDLE} />
         <Route path="calendar" element={<Calendar />} loader={calendarLoader} />
-        <Route path="profile" element={<Profile />} />
+        <Route path="account" element={<Profile />} />
+        {/* The Account page's old URL. Sent emails and their List-Unsubscribe
+            headers link to /profile#<setting>, so the hash and query carry over. */}
+        <Route path="profile" element={<AccountMoved />} />
         {/* The Settings → Draft bills page is retired: drafts are created from
             the Bills page and listed there under the Drafts filter, so old
             links and bookmarks land on that filtered list. Outside

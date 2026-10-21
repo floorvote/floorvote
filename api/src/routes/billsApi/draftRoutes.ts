@@ -72,7 +72,7 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
     // never get a canonical URL — reject rather than silently creating one.
     // A single-state tenant always has c.env.STATE set, so this never fires there.
     if (!state) {
-      return c.json({ error: 'This instance tracks multiple states. Include a state when creating a draft.' }, 400)
+      return c.json({ error: 'More than one state is tracked here. Include a state when creating a draft.' }, 400)
     }
     // Custom field values sent with the create request, in the same format and
     // under the same rules as the bill page's PUT /bills/:id/custom-fields.

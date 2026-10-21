@@ -68,6 +68,18 @@ function accountEventLabel(e: AccountAuthEvent, selfId: string): string {
   }
 }
 
+// Names only the mentions that can reach this member: everyone gets direct
+// and @everyone mentions, a role member their role's, an Admin or Owner @admins.
+function alwaysEmailedLine(isAdmin: boolean, roleCount: number): string {
+  const kinds = ['you']
+  if (roleCount === 1) kinds.push('your role')
+  if (roleCount > 1) kinds.push('one of your roles')
+  if (isAdmin) kinds.push('@admins')
+  kinds.push('@everyone')
+  const list = kinds.length === 2 ? kinds.join(' or ') : `${kinds.slice(0, -1).join(', ')}, or ${kinds[kinds.length - 1]}`
+  return `You'll always get an email when someone mentions ${list}.`
+}
+
 export function Profile() {
   usePageTitle('Account')
   const { user, setTitle, setName, setEmailDigestEnabled, setEmailDigestMatchesEnabled, setEmailRepliesEnabled } = useAuth()
@@ -124,6 +136,15 @@ export function Profile() {
   useEffect(() => {
     apiFetch<{ modules?: ModulesConfig }>('/config').then((c) => setModules(c.modules)).catch(() => {})
   }, [])
+
+  // How many roles this member is in, for the always-sent mention line. Until
+  // /roles answers, or if it fails, the line leaves roles out.
+  const [roleCount, setRoleCount] = useState(0)
+  useEffect(() => {
+    apiFetch<Array<{ members?: Array<{ id: string }> }>>('/roles')
+      .then((roles) => setRoleCount(Array.isArray(roles) ? roles.filter((r) => r.members?.some((m) => m.id === user?.id)).length : 0))
+      .catch(() => {})
+  }, [user?.id])
 
   // The saved views the member has included in their digest (#449), for the description and the chips.
   // A failed or empty read is no views: the description then says what it always did.
@@ -427,7 +448,7 @@ export function Profile() {
     setDemoting(true)
     try {
       await apiFetch(`/admin/members/${user.id}`, { method: 'PATCH', body: JSON.stringify({ role: demoteTarget }) })
-      window.location.href = demoteTarget === 'member' ? '/' : '/profile'
+      window.location.href = demoteTarget === 'member' ? '/' : '/account'
     } catch (err) {
       setDemoting(false)
       alert(err instanceof ApiError ? err.message : 'Failed to change your role.')
@@ -454,7 +475,7 @@ export function Profile() {
 
       {demoLocked && (
         <div style={{ fontSize: fontSize.sm, color: color.textSecondary, marginBottom: 16, padding: '8px 12px', background: color.surfaceSubtle, borderRadius: radius.md, border: `1px solid ${color.borderDefault}` }}>
-          This is a demo instance — settings are read-only.
+          This is a demo — settings are read-only.
         </div>
       )}
 
@@ -651,7 +672,7 @@ export function Profile() {
       <div style={SECTION_CARD}>
         <h2 style={CARD_TITLE}>Notifications</h2>
         <p style={{ ...HELPER_TEXT, marginTop: 0, marginBottom: 12 }}>
-          You'll always get an email when someone mentions you, your role, @admins, or @everyone.
+          {alwaysEmailedLine(user?.role === 'admin' || user?.role === 'owner', roleCount)}
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div
@@ -757,7 +778,7 @@ export function Profile() {
                 }}
               >
                 <div style={{ fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5 }}>
-                  <div id="digest-matches-label" style={{ fontWeight: fontWeight.medium, color: color.textPrimary }}>{digestMatchesLabel(modules)}</div>
+                  <div id="digest-matches-label" style={{ color: color.textPrimary }}>{digestMatchesLabel(modules)}</div>
                 </div>
                 <span
                   style={{
@@ -887,7 +908,7 @@ export function Profile() {
             <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, cursor: demoLocked ? 'not-allowed' : 'pointer' }}>
               <div style={{ fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5 }}>
                 <div style={{ fontWeight: fontWeight.bold, color: color.textPrimary }}>Replies on bills you've commented on</div>
-                <div>Notify me in FloorVote and by email when someone else comments on a bill I've commented on. To stop them on one bill, use Mute comments on that bill.</div>
+                <div>Notify me in FloorVote and by email when someone else comments on a bill I've commented on. To stop them on one bill, select “Mute comments” on that bill.</div>
               </div>
               <span
                 style={{

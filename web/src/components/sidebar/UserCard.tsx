@@ -10,7 +10,7 @@ export function UserCard({ user, isActive }: { user: User; isActive?: boolean })
   const highlighted = isActive || hovered
   return (
     <Link
-      to="/profile"
+      to="/account"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{

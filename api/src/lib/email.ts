@@ -30,10 +30,10 @@ export type { ProviderName, CloudflareEmailBinding }
 /**
  * RFC-2369 List-Unsubscribe header for recurring mail (digest, week-ahead),
  * pointing at the in-app opt-out the recipient already controls
- * (`/profile#<anchor>`). Improves bulk deliverability; no new endpoint needed.
+ * (`/account#<anchor>`). Improves bulk deliverability; no new endpoint needed.
  */
 export function unsubscribeHeaders(appUrl: string, anchor: string): Record<string, string> {
-  return { 'List-Unsubscribe': `<${appUrl}/profile#${anchor}>` }
+  return { 'List-Unsubscribe': `<${appUrl}/account#${anchor}>` }
 }
 
 export function wordmarkHtml(appUrl: string): string {

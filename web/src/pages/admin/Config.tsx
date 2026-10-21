@@ -816,7 +816,7 @@ export function Config() {
 
       {demoLocked && (
         <div style={{ fontSize: fontSize.sm, color: color.textSecondary, marginBottom: 16, padding: '8px 12px', background: color.surfaceSubtle, borderRadius: radius.md, border: `1px solid ${color.borderDefault}` }}>
-          This is a demo instance — settings are read-only.
+          This is a demo — settings are read-only.
         </div>
       )}
 

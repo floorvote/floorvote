@@ -130,6 +130,14 @@ describe('Profile: the digest new-match option wording', () => {
     expect(screen.queryByText(WEEKLY)).not.toBeInTheDocument()
   })
 
+  it('sets the option in regular weight, unlike the bold setting titles', async () => {
+    mockModules({ frequency: 'weekly', weeklyDay: '3' })
+    render(<MemoryRouter><Profile /></MemoryRouter>)
+    const label = await screen.findByText(WEEKLY)
+    expect(label.style.fontWeight).toBe('')
+    expect(screen.getByText('Email digest of recent bill activity').style.fontWeight).not.toBe('')
+  })
+
   it('shows the daily sentence before the config has loaded', () => {
     vi.spyOn(api, 'apiFetch').mockImplementation(() => new Promise(() => {}) as never)
     render(<MemoryRouter><Profile /></MemoryRouter>)

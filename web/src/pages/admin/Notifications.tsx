@@ -12,7 +12,7 @@ import { useSidebarRefresh } from '../../context/SidebarRefreshContext'
 import { useDemo } from '../../context/DemoContext'
 import { useConfig } from '../../context/ConfigContext'
 import { usePageTitle } from '../../hooks/usePageTitle'
-import { orgNotificationsLabel } from '../../lib/orgNoun'
+import { normalizeOrgNoun, orgNotificationsLabel } from '../../lib/orgNoun'
 import { color, radius, fontSize } from '../../styles/tokens'
 
 interface AdminConfigResponse {
@@ -36,7 +36,8 @@ export function Notifications() {
   const refreshSidebar = useSidebarRefresh()
   const { demoLocked } = useDemo()
   const { config } = useConfig()
-  const pageName = orgNotificationsLabel(config?.orgNoun)
+  const orgNoun = normalizeOrgNoun(config?.orgNoun)
+  const pageName = orgNotificationsLabel(orgNoun)
   usePageTitle(pageName)
   const [modules, setModules] = useState<ModulesConfig>({})
   const [mentionEmails, setMentionEmails] = useState(true)
@@ -133,14 +134,14 @@ export function Notifications() {
 
       {demoLocked && (
         <div style={{ fontSize: fontSize.sm, color: color.textSecondary, marginBottom: 16, padding: '8px 12px', background: color.surfaceSubtle, borderRadius: radius.md, border: `1px solid ${color.borderDefault}` }}>
-          This is a demo instance — settings are read-only.
+          This is a demo — settings are read-only.
         </div>
       )}
 
       <div style={{ ...CARD, padding: 24 }}>
         <h1 style={CARD_TITLE}>{pageName}</h1>
         <div style={{ fontSize: fontSize.sm, color: color.textSecondary, lineHeight: 1.6, marginTop: 4 }}>
-          These are settings for <strong>everyone in the instance</strong>, not just you—turning one off stops that email for all members. To change your own delivery, use the email preferences on your <Link to="/profile" style={{ color: color.linkBlue }}>Account page</Link>.
+          These are settings for <strong>every member of your {orgNoun}</strong>, not just you—turning one off stops that email for all members. To change your own delivery, use the email preferences on your <Link to="/account" style={{ color: color.linkBlue }}>Account page</Link>.
         </div>
         {loading ? (
           <div style={{ marginTop: 16, color: color.textMuted, fontSize: fontSize.sm }}>Loading…</div>
@@ -244,7 +245,7 @@ export function Notifications() {
                 <div>
                   <div style={SETTING_BOX_TITLE}>Send conversation emails to members</div>
                   <div style={SETTING_BOX_DESC}>
-                    Covers mentions of a member, a role, @admins, or @everyone in comments, and replies on bills members have commented on, for the whole instance. Members can turn off their own reply notifications, in the app and by email, but not mention emails. This switch does not affect in-app notifications.
+                    Covers mentions of a member, a role, @admins, or @everyone in comments, and replies on bills members have commented on, for your whole {orgNoun}. Members can turn off their own reply notifications, in the app and by email, but not mention emails. This switch does not affect in-app notifications.
                   </div>
                 </div>
                 <IosToggle

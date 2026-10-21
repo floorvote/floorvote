@@ -9,9 +9,9 @@ import { unsubscribeHeaders } from '../../src/lib/email'
 // API's own email helpers.
 
 describe('unsubscribeHeaders', () => {
-  it('builds an RFC-2369 List-Unsubscribe header pointing at the /profile setting anchor', () => {
+  it('builds an RFC-2369 List-Unsubscribe header pointing at the /account setting anchor', () => {
     expect(unsubscribeHeaders('https://ri.example.com', 'setting-email-digest')).toEqual({
-      'List-Unsubscribe': '<https://ri.example.com/profile#setting-email-digest>',
+      'List-Unsubscribe': '<https://ri.example.com/account#setting-email-digest>',
     })
   })
 })

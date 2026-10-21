@@ -79,7 +79,7 @@ describe('Profile self role-change (demote)', () => {
     expect(screen.queryByRole('button', { name: /Demote my account/ })).not.toBeInTheDocument()
   })
 
-  it('demotes an owner to admin: confirms, PATCHes the shared role endpoint, and redirects to /profile', async () => {
+  it('demotes an owner to admin: confirms, PATCHes the shared role endpoint, and redirects to /account', async () => {
     mockUser.role = 'owner'
     const spy = mockApi({ '/admin/members/u1': () => ({ ok: true }) })
     render(<MemoryRouter><Profile /></MemoryRouter>)
@@ -90,7 +90,7 @@ describe('Profile self role-change (demote)', () => {
         body: JSON.stringify({ role: 'admin' }),
       }))
     })
-    await waitFor(() => expect(window.location.href).toBe('/profile'))
+    await waitFor(() => expect(window.location.href).toBe('/account'))
   })
 
   it('demotes an admin to member: confirms, PATCHes the shared role endpoint, and redirects home', async () => {

@@ -46,12 +46,11 @@ describe('Notifications page', () => {
     expect(screen.getByRole('switch', { name: /conversation emails/i })).toBeInTheDocument()
   })
 
-  it('names the switch "Conversation emails", not "@-mention emails", and says it covers mentions and replies for the whole instance', async () => {
-    mockConfig()
-    render(<MemoryRouter><Notifications /></MemoryRouter>)
+  it('names the switch "Conversation emails", not "@-mention emails", and says it covers mentions and replies for the whole org, by its noun', async () => {
+    renderPage('coalition')
     expect(await screen.findByText('Send conversation emails to members')).toBeInTheDocument()
     expect(screen.queryByText(/@-mention emails/i)).not.toBeInTheDocument()
-    expect(screen.getByText(/mentions of a member, a role, @admins, or @everyone in comments, and replies on bills members have commented on, for the whole instance/i)).toBeInTheDocument()
+    expect(screen.getByText(/mentions of a member, a role, @admins, or @everyone in comments, and replies on bills members have commented on, for your whole coalition\./i)).toBeInTheDocument()
   })
 
   it('lists the switches in the Account page\'s order: recent activity, upcoming hearings, then conversation emails last', async () => {
@@ -65,10 +64,26 @@ describe('Notifications page', () => {
     ])
   })
 
-  it('frames the page as settings for everyone in the instance', async () => {
-    mockConfig()
-    render(<MemoryRouter><Notifications /></MemoryRouter>)
-    expect(await screen.findByText(/everyone in the instance/i)).toBeInTheDocument()
+  it('frames the page as settings for every member of the org, by its noun', async () => {
+    renderPage('association')
+    expect(await screen.findByText('every member of your association')).toBeInTheDocument()
+  })
+
+  it('falls back to "team" when no org noun is configured', async () => {
+    renderPage()
+    expect(await screen.findByText('every member of your team')).toBeInTheDocument()
+    expect(screen.getByText(/for your whole team\./i)).toBeInTheDocument()
+  })
+
+  it('never says "instance" in its copy', async () => {
+    renderPage()
+    await screen.findByText('Send conversation emails to members')
+    expect(document.body.textContent).not.toMatch(/instance/i)
+  })
+
+  it('links "Account page" to /account', async () => {
+    renderPage()
+    expect(await screen.findByRole('link', { name: 'Account page' })).toHaveAttribute('href', '/account')
   })
 
   it('stores the conversation switch under the existing mention_emails_enabled key', async () => {

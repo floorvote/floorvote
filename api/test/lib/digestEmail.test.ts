@@ -25,7 +25,7 @@ describe('renderDigestEmail', () => {
     expect(html).toContain('H 5174')
     expect(html).toContain('Status:')                  // formatBillUpdateDetail output
     expect(html).toContain('Manage email settings')
-    expect(html).toContain('https://staging.example.com/profile')
+    expect(html).toContain('https://staging.example.com/account#setting-email-digest')
   })
   it('uses real PRIORITY_COLORS (drift guard)', () => {
     const html = renderDigestEmail({ events: [ev({ priority: 'high' })], assocName: 'X', appUrl: 'https://x' })
@@ -96,7 +96,7 @@ describe('renderDigestEmail', () => {
   })
   it('points the manage-settings footer link at the email-digest setting anchor', () => {
     const html = renderDigestEmail({ events: [ev()], assocName: 'X', appUrl: 'https://x' })
-    expect(html).toContain('/profile#setting-email-digest')
+    expect(html).toContain('/account#setting-email-digest')
   })
   it('drops the priority-colored left edge (matches Pulse bill card)', () => {
     const html = renderDigestEmail({ events: [ev({ priority: 'high' })], assocName: 'X', appUrl: 'https://x' })

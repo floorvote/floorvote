@@ -7,7 +7,7 @@ import { useConfig } from '../context/ConfigContext'
 import { orgNotificationsLabel } from '../lib/orgNoun'
 
 const MEMBER_TABS = [
-  { to: '/profile', label: 'Account' },
+  { to: '/account', label: 'Account' },
 ]
 
 // The notifications tab is named after the instance's org noun (see

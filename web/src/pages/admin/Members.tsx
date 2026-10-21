@@ -1612,7 +1612,7 @@ export function Members() {
               <button onClick={() => setUnknownOpen(false)} style={{ background: 'none', border: 'none', fontSize: fontSize.xl, cursor: 'pointer', color: color.textMuted }}>×</button>
             </div>
             <p style={{ fontSize: fontSize.sm, color: color.textMuted, marginBottom: 16 }}>
-              Login attempts from email addresses not registered on this instance.
+              Login attempts from email addresses that don’t belong to a member.
             </p>
             {unknownLoading ? (
               <div style={{ fontSize: fontSize.sm, color: color.textMuted }}>Loading…</div>

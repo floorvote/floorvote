@@ -8,7 +8,7 @@ import { ApiError } from '../lib/api'
 
 // Mirrors App.tsx: a pathless layout route carries errorElement={<RootErrorBoundary />}
 // and the child route owns the loader/element that throws. `loader: null` models
-// the loader-less routes (/profile, every /admin/*) that sit under it too.
+// the loader-less routes (/account, every /admin/*) that sit under it too.
 function renderBoundary(child: { element?: React.ReactElement; loader?: (() => unknown) | null }) {
   const router = createMemoryRouter(
     [
@@ -113,7 +113,7 @@ describe('RootErrorBoundary', () => {
 
   it('falls back to a reload on a route with no loader to revalidate', async () => {
     const user = userEvent.setup()
-    // /profile and every /admin/* match no loader at all, so revalidate() is a
+    // /account and every /admin/* match no loader at all, so revalidate() is a
     // silent no-op. Their errors are render throws, which a reload can fix.
     const Thrower = makeThrower(() => new Error('render boom'))
     renderBoundary({ element: <Thrower />, loader: null })

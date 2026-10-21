@@ -4,11 +4,11 @@
 
 **Link**: the admin action that folds a draft bill's engagement (votes, positions, comments, notes, custom fields, calendar events) into its filed bill and deletes the draft. Where both carry the same engagement, the filed bill's wins. Avoid: "merge" as the name of the action.
 
-**Instance**: one organization's own FloorVote deployment, with its own data, people, and settings. Avoid: "tenant" in product copy; "site"; "workspace."
+**Instance**: one organization's own FloorVote deployment, with its own data, people, and settings. The word is for code, docs, and operators: member-facing copy says "your team," using the configured org noun (team by default), or leaves the word out ("This is a demo"). Avoid: "instance" and "tenant" in product copy; "site"; "workspace."
 
 **Member**: anyone with a login in an instance, whatever their permission level. Avoid: "user" in product copy; "group member."
 
-**Title**: the line shown under a member's name ("Senior Policy Analyst, Elections"), which the member sets on their Profile page and the instance stores as `users.title`. Not a bill's title. For a superadmin it is kept in central and copied into the instance at each sign-in, so it is read-only there. Avoid: "subtitle," its name before #539 (the API aliases are gone, and the old `users.subtitle` column is dropped in a later release); "role," "position," or "job title" in product copy.
+**Title**: the line shown under a member's name ("Senior Policy Analyst, Elections"), which the member sets on their Account page and the instance stores as `users.title`. Not a bill's title. For a superadmin it is kept in central and copied into the instance at each sign-in, so it is read-only there. Avoid: "subtitle," its name before #539 (the API aliases are gone, and the old `users.subtitle` column is dropped in a later release); "role," "position," or "job title" in product copy.
 
 **Permission level**: what a member may do in the instance: Owner, Admin, or Standard member. Avoid: "role," which means a named group (below).
 
@@ -111,6 +111,8 @@
 **Notification**: one stored item in a member's notifications panel, telling them about an event on a bill's comments, of a kind (a mention, a reply, or a reaction). Written when the event happens, marked read when the member opens the panel or the bill, and hidden once its comment is deleted. Avoid: "alert"; "mention" for a notification of another kind.
 
 **Muted bill**: a bill whose comments a member has muted, from the bill page or a reply email. It sends them no reply notifications, in the app or by email, but mentions on it (direct, role, @admins, or @everyone) still reach them. The bill page offers Mute only to a reply participant, a member with a live comment on the bill or in its companion group (the same rule the reply emails use, so the control and the emails agree), and only while the member's reply setting is on. A muted member sees Unmute, commented or not, while that setting is on. With the setting off the control is hidden and any mute stays on file. The button's hover says what each state means (who is notified, and that mentions still arrive). A member stays muted when a draft they muted is linked to its filed bill. A companion group is one conversation, so muting any of its bills mutes the group, and unmuting any of them unmutes it. Avoid: "unsubscribed," "unfollowed."
+
+**Account page**: the signed-in member's own settings page, at `/account`: name, title, email, notifications, and appearance. `/profile`, its old URL, redirects there with its query and `#setting-…` anchor, since emails already sent link to it. Avoid: "Profile page."
 
 **Reply setting**: the member's "Replies on bills you've commented on" switch on the Account page (`users.emailRepliesEnabled`). It governs reply notifications in the app and reply emails together, on every bill: with it off, a member gets no reply row in the panel and no reply email. It does not touch mentions, which always reach the app, with their email gated only by the instance's conversation emails. Muting one bill is the narrower control. Avoid: "reply emails setting."
 

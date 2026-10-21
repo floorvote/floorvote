@@ -99,7 +99,7 @@ describe.each(['member', 'admin', 'owner'] as const)('Profile card regrouping, a
     expect(card.getByRole('switch', { name: repliesName })).toBeInTheDocument()
     expect(card.getByRole('switch', { name: digestName })).toBeInTheDocument()
     expect(card.getByRole('switch', { name: weekAheadName })).toBeInTheDocument()
-    expect(card.getByText("You'll always get an email when someone mentions you, your role, @admins, or @everyone.")).toBeInTheDocument()
+    expect(card.getByText(/^You'll always get an email when someone mentions you/)).toBeInTheDocument()
   })
 
   it('puts the color mode control only in Appearance, once', () => {
@@ -127,8 +127,8 @@ describe.each(['member', 'admin', 'owner'] as const)('Profile card regrouping, a
     expect(colorMode).toContainElement(screen.getByRole('group', { name: 'Color mode' }))
   })
 
-  it('still lands /profile#setting-email-digest on the digest, inside Notifications', async () => {
-    render(<MemoryRouter initialEntries={['/profile#setting-email-digest']}><Profile /></MemoryRouter>)
+  it('still lands /account#setting-email-digest on the digest, inside Notifications', async () => {
+    render(<MemoryRouter initialEntries={['/account#setting-email-digest']}><Profile /></MemoryRouter>)
     const row = document.getElementById('setting-email-digest') as HTMLElement
     expect(cardOf('Notifications')).toContainElement(row)
     expect(row).toContainElement(screen.getByRole('switch', { name: digestName }))

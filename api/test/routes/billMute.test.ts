@@ -250,7 +250,7 @@ describe('muting comments on a bill', () => {
     expect(url.startsWith('https://floorvote.example.org/')).toBe(true)
     expect(ben.html).toContain('Mute this bill')
     expect(ben.html).toContain('Turn off reply notifications')
-    expect(ben.html).toContain('/profile#setting-email-replies')
+    expect(ben.html).toContain('/account#setting-email-replies')
     // The footer link opens a page that asks before muting, so a mail scanner
     // that follows links can't mute anything.
     expect(ben.html).toContain(`https://floorvote.example.org/mute-bill?token=${encodeURIComponent(tokenOf(url))}`)

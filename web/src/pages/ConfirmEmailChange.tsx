@@ -121,7 +121,7 @@ export function ConfirmEmailChange() {
         <p style={styles.error}>{error}</p>
         {byAdmin
           ? <a href="/" className="blue-link" style={styles.link}>Go to {PRODUCT_NAME}</a>
-          : <a href="/profile" className="blue-link" style={styles.link}>Go to your Account page</a>}
+          : <a href="/account" className="blue-link" style={styles.link}>Go to your Account page</a>}
       </Card>
     )
   }
@@ -132,7 +132,7 @@ export function ConfirmEmailChange() {
         <p style={styles.error}>{(byAdmin ? ADMIN_LINK_ERRORS : LINK_ERRORS)[status.status]}</p>
         {byAdmin
           ? <a href="/" className="blue-link" style={styles.link}>Go to {PRODUCT_NAME}</a>
-          : <a href="/profile" className="blue-link" style={styles.link}>Go to your Account page</a>}
+          : <a href="/account" className="blue-link" style={styles.link}>Go to your Account page</a>}
       </Card>
     )
   }

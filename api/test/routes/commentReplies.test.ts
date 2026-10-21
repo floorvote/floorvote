@@ -236,7 +236,7 @@ describe('replying to a bill notifies its other commenters', () => {
     await comment('ben', '<p>First</p>')
     send.mockClear()
     await comment('ann', '<p>Second</p>')
-    expect(sent()[0].html).toContain('/profile#setting-email-replies')
+    expect(sent()[0].html).toContain('/account#setting-email-replies')
   })
 
   // "Replies on bills you've commented on" (users.emailRepliesEnabled) governs

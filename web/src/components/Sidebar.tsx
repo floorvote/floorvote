@@ -58,7 +58,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
   const { hasUnread, visitHadUnread } = useFeedUnread()
   const isAdmin = user?.role === 'admin' || user?.role === 'owner'
   const location = useLocation()
-  const isOnProfile = location.pathname === '/profile'
+  const isOnAccount = location.pathname === '/account'
   const [stats, setStats] = useState<Stats | null>(null)
   const [config, setConfig] = useState<Config | null>(null)
   const [sidebarData, setSidebarData] = useState<SidebarData | null>(null)
@@ -944,7 +944,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
 
       {/* Pinned bottom: user section (does not scroll) */}
       <div style={{ flexShrink: 0, borderTop: `1px solid ${color.borderDefault}`, padding: '10px 8px' }}>
-        <UserCard user={user ? { name: user.name, email: user.email, title: user.title ?? undefined } : null} isActive={isOnProfile} />
+        <UserCard user={user ? { name: user.name, email: user.email, title: user.title ?? undefined } : null} isActive={isOnAccount} />
         <div ref={membersButtonRef} style={{ position: 'relative', padding: '6px 4px 2px 12px' }}>
           <button
             onClick={handleMembersClick}

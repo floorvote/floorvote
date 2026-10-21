@@ -24,7 +24,7 @@ export function RootErrorBoundary() {
 
   // "Try again" prefers revalidation — re-running the failed loader tears this
   // boundary down in place, no reload. But revalidate() is a silent no-op when no
-  // matched route has a loader (/profile, every /admin/*), and an error on those
+  // matched route has a loader (/account, every /admin/*), and an error on those
   // routes is by definition a render-time throw: exactly the case a reload can fix
   // and a revalidation cannot. Falling back keeps the button live everywhere.
   //

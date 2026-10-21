@@ -191,7 +191,7 @@ export function renderReplyEmail(input: ReplyEmailInput): string {
     ctaHtml: emailButton(escHtml(`${billHref}#comment-${comment.id}`), 'View comment'),
     footerHtml: [
       emailFooterLink(escHtml(muteUrl), 'Mute this bill'),
-      emailFooterLink(escHtml(`${appUrl}/profile#setting-email-replies`), 'Turn off reply notifications'),
+      emailFooterLink(escHtml(`${appUrl}/account#setting-email-replies`), 'Turn off reply notifications'),
       emailFooterLink(escHtml(appUrl), PRODUCT_NAME),
     ].join(' &nbsp;·&nbsp; '),
   })
