@@ -124,14 +124,16 @@ const dayEntries = (minRelevance: number) => sql`
  * (#921). A day of none shows neither. Never both on a day, so the page and its
  * total count each once, and pagination stays honest.
  *
- * The second rule holds on its own. A legislative update whose (day, entry)
- * matches a day of one entry belongs to that entry: dayEntries found the entry
- * by standsFor, whose priority and engagement checks are the companion
- * group's, so they cover every member. What standsFor asks of each bill alone
- * is its match type and relevance, so those two checks on the update's own
- * bill are what keep out a lone group's member that is not the row's (one
- * below the minimum relevance, or with no match type). The update then costs
- * its bill's columns and one probe of dayEntries, never its bill's history.
+ * A legislative update whose (day, entry) matches a day of one entry is that
+ * entry's: dayEntries found the entry by standsFor, whose group-level checks
+ * (no priority on the companion group, no engagement with it that day) hold for
+ * every member. standsFor also asks each bill its own priority and engagement,
+ * but an update failing those is one defaultVisible already shows, beside this
+ * rule in the same OR. What is left to ask of the update's own bill is its
+ * match type and relevance, which keep out a lone group's member that is not
+ * the row's (one below the minimum relevance, or with no match type). So the
+ * update costs its bill's columns and one probe of dayEntries, never its
+ * bill's history.
  *
  * Which bills are the row's is the complement of `defaultVisible` for
  * legislative updates: if groupHasPriority or engagementOnDay (routes/feed.ts)
