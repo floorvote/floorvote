@@ -11,8 +11,9 @@ import type { Env } from '../types'
  * or any answer but `neutralHandles: true`.
  *
  * The answer is kept for `HANDLE_FORM_TTL_MS`, yes or no, so a busy fan-out
- * asks each instance about once a minute, and an instance rolled back after
- * saying yes gets legacy handles again within that time.
+ * asks each instance about once a minute. An instance rolled back to release
+ * 1 after saying yes keeps receiving neutral handles until the answer expires,
+ * which is safe, since release 1 reads both spellings.
  */
 export const HANDLE_FORM_TTL_MS = 60_000
 
