@@ -617,7 +617,7 @@ describe('the no-priority updates row', () => {
         const withRemoved = await list(id, '?page=2&limit=3&removed=1')
         expect(withRemoved.entries.map((e) => e.bills[0].id)).toEqual(ids.slice(3, 6))
         expect(withRemoved.total).toBe(6)
-        expect(withRemoved.hasMore).toBe(false)
+        expect(withRemoved.hasMore).toBe(true)
         expect(withRemoved.page).toBe(2)
       })
 

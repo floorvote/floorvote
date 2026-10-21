@@ -4,7 +4,7 @@ import type { FeedEvent } from '../lib/feedUtils'
 import { CARD_STYLE } from '../lib/billCardModel'
 import { CHROME_TEXT } from '../lib/textStyles'
 import { color, fontSize, fontWeight, radius } from '../styles/tokens'
-import { FeedBillChip, FeedBillList, type FeedListBill, type FeedListPage } from './FeedBillList'
+import { FeedBillChip, FeedBillList, type FeedListBill, type FeedListEntry, type FeedListPage, type FeedListPriority } from './FeedBillList'
 
 function MaterialIcon({ name, color: c, size = 14 }: { name: string; color: string; size?: number }) {
   return (
@@ -31,8 +31,18 @@ const HEADER_BUTTON = {
  * GET /feed sends the count and the two (metadata.count, metadata.firstBills).
  * It has no time, since the date divider above it says the day, and no unread
  * mark, since it never lights the Feed dot.
+ *
+ * An admin sets a priority from each listed bill's dropdown, and a member sees
+ * the read-only label. A bill given a priority leaves the list, and `onPrioritized`
+ * hands its owner what is left, which `rowAfterPrioritized` turns into the
+ * row's new count and chips, so the row shrinks in place until the feed next loads.
  */
-export function NoPriorityRow({ event }: { event: FeedEvent }) {
+export function NoPriorityRow({ event, isAdmin = false, onPrioritized, onDismissed }: {
+  event: FeedEvent
+  isAdmin?: boolean
+  onPrioritized?: FeedListPriority['onPrioritized']
+  onDismissed?: FeedListPriority['onDismissed']
+}) {
   const meta = event.metadata as { count?: unknown; firstBills?: unknown }
   const count = Number(meta.count ?? 0)
   const firstBills = (Array.isArray(meta.firstBills) ? meta.firstBills : []) as FeedListBill[]
@@ -43,9 +53,15 @@ export function NoPriorityRow({ event }: { event: FeedEvent }) {
   const [hovered, setHovered] = useState(false)
 
   const loadPage = useCallback(
-    (page: number) => apiFetch<FeedListPage>(`/feed/events/${event.id}/bills?page=${page}`),
+    (page: number, dropped: number) =>
+      apiFetch<FeedListPage>(`/feed/events/${event.id}/bills?page=${page}${dropped > 0 ? `&removed=${dropped}` : ''}`),
     [event.id],
   )
+  const priority: FeedListPriority = {
+    isAdmin,
+    onPrioritized: (entry, p, remaining) => onPrioritized?.(entry, p, remaining),
+    onDismissed: (entry) => onDismissed?.(entry),
+  }
 
   function toggle() {
     setOpen((was) => !was)
@@ -92,9 +108,25 @@ export function NoPriorityRow({ event }: { event: FeedEvent }) {
 
       {opened && (
         <div style={{ display: open ? 'block' : 'none', borderTop: `1px solid ${CARD_STYLE.rowBorder}` }}>
-          <FeedBillList loadPage={loadPage} />
+          <FeedBillList loadPage={loadPage} priority={priority} />
         </div>
       )}
     </div>
   )
+}
+
+/**
+ * The row's metadata once `entry` has left its list: one fewer bill, and the two
+ * chips the list's remaining entries now lead with. The list holds the row from
+ * its first entry, so its first two remaining entries are the row's two most
+ * relevant; with fewer than two loaded, the chips it had less the leaver's.
+ */
+export function rowAfterPrioritized(meta: FeedEvent['metadata'], entry: FeedListEntry, remaining: FeedListEntry[]): FeedEvent['metadata'] {
+  const leaving = new Set(entry.bills.map((b) => b.id))
+  const had = (Array.isArray(meta.firstBills) ? meta.firstBills : []) as FeedListBill[]
+  return {
+    ...meta,
+    count: Math.max(0, Number(meta.count ?? 0) - 1),
+    firstBills: remaining.length >= 2 ? remaining.slice(0, 2).map((e) => e.bills[0]) : had.filter((b) => !leaving.has(b.id)),
+  }
 }

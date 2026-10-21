@@ -46,7 +46,7 @@ vi.mock('../hooks/useAuth', () => ({ useAuth: () => authMock() }))
 import { Feed } from './Feed'
 import { SidebarRefreshProvider, useRegisterSidebarRefresh } from '../context/SidebarRefreshContext'
 import { expectAmber, expectNotAmber } from '../test/amberStyle'
-import { expectClosedLabel, expectNoClosedLabel } from '../test/closedLabel'
+import { expectClosedLabel } from '../test/closedLabel'
 import type { FeedEvent } from '../lib/feedUtils'
 
 type Bill = { id: string; billNumber: string; title: string; state: string | null; sessionSlug: string | null; isDraft: boolean; groupKey: string | null; summary: string | null }
@@ -360,7 +360,7 @@ describe('using the dropdown', () => {
     await userEvent.click(select)
     fireEvent.mouseDown(select)
     fireEvent.click(select)
-    fireEvent.auxClick(select, { button: 1 })
+    fireEvent(select, new MouseEvent('auxclick', { bubbles: true, button: 1 }))
     expect(screen.getByTestId('where')).toHaveTextContent('/')
     expect(toggle()).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByRole('link', { name: 'Act on HB1' })).toBeInTheDocument()
@@ -447,7 +447,7 @@ describe('the rest of a long list, after bills have left it', () => {
     await choose(entryOf('Act on HB1'), 'high')
     await waitFor(() => expect(screen.queryByRole('link', { name: 'Act on HB1' })).toBeNull())
     scrollToEnd()
-    await waitFor(() => expect(hoisted.calls.filter((u) => u.includes('/bills?')).at(-1)).toBe('/feed/events/row/bills?page=3&removed=2'))
+    await waitFor(() => expect(hoisted.calls.filter((u) => u.includes('/bills?'))[2]).toBe('/feed/events/row/bills?page=3&removed=2'))
   })
 })
 

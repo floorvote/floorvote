@@ -7,7 +7,7 @@ import { LoadingState } from '../components/LoadingState'
 import type { FeedEvent } from '../lib/feedUtils'
 import { GroupedBillCard } from '../components/GroupedBillCard'
 import { FeedActivityRow } from '../components/FeedActivityRow'
-import { NoPriorityRow } from '../components/NoPriorityRow'
+import { NoPriorityRow, rowAfterPrioritized } from '../components/NoPriorityRow'
 import { groupEventsByBillAndDay, filterPriorityEvents, filterFullyAnalyzed, NO_PRIORITY_UPDATES } from '../lib/feedUtils'
 import type { GroupedBillEvents } from '../lib/feedUtils'
 import { eventDateLabel } from '../lib/calendarDate'
@@ -387,13 +387,16 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
   // it changes on every event of the card's bill, or of its companion group whichever member
   // the card was set through, on every day. Setting a priority triages the bill, so it
   // is no longer a new match, and so does a Dismiss.
-  const showCardChange = useCallback((card: GroupedBillEvents, change: { billPriority?: GroupedBillEvents['billPriority']; billNewMatch: false }) => {
-    editedCardsRef.current.add(card.key)
+  const showBillChange = useCallback((bill: Pick<GroupedBillEvents, 'billId' | 'groupKey'>, change: { billPriority?: GroupedBillEvents['billPriority']; billNewMatch: false }) => {
     setEvents(prev => prev.map(e =>
-      (card.groupKey != null ? e.billGroupKey === card.groupKey : e.billId === card.billId) ? { ...e, ...change } : e,
+      (bill.groupKey != null ? e.billGroupKey === bill.groupKey : e.billId === bill.billId) ? { ...e, ...change } : e,
     ))
     refreshSidebar()
   }, [refreshSidebar])
+  const showCardChange = useCallback((card: GroupedBillEvents, change: { billPriority?: GroupedBillEvents['billPriority']; billNewMatch: false }) => {
+    editedCardsRef.current.add(card.key)
+    showBillChange(card, change)
+  }, [showBillChange])
 
   async function handleNewActivityClick() {
     await loadLatest()
@@ -477,7 +480,17 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
             <DateDivider {...eventDateLabel(day)} stickyTop={headerHeight} />
             {groupsByDay.get(day)!.map(group => group.billId === null ? (
               group.events[0].type === NO_PRIORITY_UPDATES ? (
-                <NoPriorityRow key={group.key} event={group.events[0]} />
+                <NoPriorityRow
+                  key={group.key} event={group.events[0]} isAdmin={isAdmin}
+                  // A bill given a priority leaves the row, which shrinks in place; the next read of the
+                  // feed gives the bill a card of its own. Its cards elsewhere take the priority too.
+                  onPrioritized={(entry, billPriority, remaining) => {
+                    const rowId = group.events[0].id
+                    setEvents(prev => prev.map(e => (e.id === rowId ? { ...e, metadata: rowAfterPrioritized(e.metadata, entry, remaining) } : e)))
+                    showBillChange({ billId: entry.bills[0].id, groupKey: entry.bills[0].groupKey ?? null }, { billPriority, billNewMatch: false })
+                  }}
+                  onDismissed={(entry) => showBillChange({ billId: entry.bills[0].id, groupKey: entry.bills[0].groupKey ?? null }, { billNewMatch: false })}
+                />
               ) : (
                 <FeedActivityRow key={group.key} event={group.events[0]} seenAt={seenAtRef.current} currentUserId={user?.id ?? null} />
               )

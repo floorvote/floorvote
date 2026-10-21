@@ -70,6 +70,27 @@ export async function loadUntriagedNewMatchGroups(db: AppDb, groupKeys: Readonly
   return new Set([...facts].filter(([, f]) => f.keyword && f.arrived && !f.resolved).map(([key]) => key))
 }
 
+/** The columns that say whether a bill reads as an untriaged new match (see untriagedNewMatch). */
+export type NewMatchFacts = {
+  groupKey: string | null | undefined
+  matchType: string | null | undefined
+  newMatchAt: string | null | undefined
+  priority: string | null | undefined
+  triagedAt: string | null | undefined
+}
+
+/**
+ * Whether a bill reads as an untriaged new match: the amber state of its priority
+ * dropdown, on a feed card and on the no-priority row's list alike. A bill in a
+ * companion group reads as its group does, `groups` being the keys
+ * loadUntriagedNewMatchGroups found; a bill in no group reads its own columns.
+ */
+export function untriagedNewMatch(b: NewMatchFacts, groups: ReadonlySet<string>): boolean {
+  return b.groupKey
+    ? groups.has(b.groupKey)
+    : b.matchType === 'keyword' && b.newMatchAt != null && b.priority == null && b.triagedAt == null
+}
+
 /**
  * A new match that is routine (MatchProvenance in types.ts): the ones the digest
  * lists, and the feed shows. A bulk match, or one with no provenance, is left out.

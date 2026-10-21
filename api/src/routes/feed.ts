@@ -9,7 +9,7 @@ import { nowDb } from '../lib/dbTime'
 import { activeUser } from '../lib/accountDeletion'
 import type { AppDb, AppEnv } from '../types'
 import { groupHasPriority, loadGroupPriorities, priorityWorn } from '../lib/teamFields'
-import { getNewMatchMinRelevance, loadUntriagedNewMatchGroups } from '../lib/newMatch'
+import { getNewMatchMinRelevance, loadUntriagedNewMatchGroups, untriagedNewMatch } from '../lib/newMatch'
 import { rowBills, rowDays, rowPage, rowStandsForABill, utcDay } from '../lib/noPriorityRow'
 
 export const feedRouter = new Hono<AppEnv>()
@@ -169,9 +169,9 @@ feedRouter.get('/', async (c) => {
   // amber "New · Set priority" dropdown. A group is triaged as one (see
   // loadUntriagedNewMatchGroups); a bill in no group reads its own columns.
   const newMatchGroups = await loadUntriagedNewMatchGroups(db, rows.map((r) => r.billGroupKey))
-  const isNewMatch = (r: (typeof rows)[number]) => r.billGroupKey
-    ? newMatchGroups.has(r.billGroupKey)
-    : r.billMatchType === 'keyword' && r.billNewMatchAt != null && r.billPriority == null && r.billTriagedAt == null
+  const isNewMatch = (r: (typeof rows)[number]) => untriagedNewMatch({
+    groupKey: r.billGroupKey, matchType: r.billMatchType, newMatchAt: r.billNewMatchAt, priority: r.billPriority, triagedAt: r.billTriagedAt,
+  }, newMatchGroups)
 
   // The day's new-matches row names every matched bill, but a companion group is
   // one policy (#638), so it counts once: the row's `count` is its distinct cards.
@@ -274,7 +274,11 @@ feedRouter.post('/seen', async (c) => {
 //
 // A no-priority updates row names no bills: its list is resolved now, from its
 // day's events, by relevance, a page at a time (?page, ?limit, about 50 a page),
-// each entry with its bills' changes that day. See lib/noPriorityRow.
+// each entry with its bills' changes that day and whether it reads as an untriaged
+// new match. See lib/noPriorityRow. ?removed is how many entries the reader has
+// dropped from the pages it already has (an admin set their priority): the row
+// has shrunk by that many ahead of this page, so the page starts that much earlier
+// and no entry slips past between two pages.
 feedRouter.get('/events/:id/bills', async (c) => {
   const db = getDb(c.env.DB)
   const event = await db
@@ -289,13 +293,16 @@ feedRouter.get('/events/:id/bills', async (c) => {
     const limit = Math.min(100, Math.max(1, Number(c.req.query('limit') || ROW_PAGE) || ROW_PAGE))
     const minRelevance = await getNewMatchMinRelevance(db)
     const day = utcDay(event.createdAt)
+    const removedParam = c.req.query('removed') ?? ''
+    const removed = /^\d+$/.test(removedParam) ? Number(removedParam) : 0
+    const start = Math.max(0, (page - 1) * limit - removed)
     const entries = (await rowDays(db, [day], minRelevance)).get(day)?.entries ?? []
     return c.json({
-      entries: await rowPage(db, day, minRelevance, entries.slice((page - 1) * limit, page * limit)),
+      entries: await rowPage(db, day, minRelevance, entries.slice(start, start + limit)),
       total: entries.length,
       page,
       limit,
-      hasMore: page * limit < entries.length,
+      hasMore: start + limit < entries.length,
     })
   }
 

@@ -3,6 +3,7 @@ import { feedEvents } from '../db/schema'
 import { LEGISLATIVE_EVENT_TYPES, NO_PRIORITY_UPDATES, PASSIVE_EVENT_TYPES } from '../../../shared/feedUtils'
 import { dbTsToEpoch } from '../../../shared/time'
 import { filedSlug } from './sessionSlug'
+import { loadUntriagedNewMatchGroups, untriagedNewMatch, type NewMatchFacts } from './newMatch'
 import type { AppDb } from '../types'
 
 // The no-priority updates row (see **No-priority updates row** in CONTEXT.md):
@@ -133,35 +134,53 @@ export type RowBill = {
   isDraft: boolean; groupKey: string | null; summary: string | null
 }
 
-/** These bills as the row shows them, in one query, by id. */
-export async function rowBills(db: AppDb, ids: readonly string[]): Promise<Map<string, RowBill>> {
-  const out = new Map<string, RowBill>()
+/** These bills as the row shows them, in one query, by id, each with the columns that say whether it reads as a new match. */
+async function loadRowBills(db: AppDb, ids: readonly string[]): Promise<Map<string, { bill: RowBill; facts: NewMatchFacts }>> {
+  const out = new Map<string, { bill: RowBill; facts: NewMatchFacts }>()
   if (ids.length === 0) return out
   const rows = await db.all(sql`
-    SELECT b.id, b.bill_number, b.title, b.abstract, b.state, b.session, b.session_slug, b.is_draft, b.group_key, b.tenant_summary
+    SELECT b.id, b.bill_number, b.title, b.abstract, b.state, b.session, b.session_slug, b.is_draft, b.group_key, b.tenant_summary,
+           b.match_type, b.new_match_at, b.priority, b.triaged_at
       FROM bills b WHERE b.id IN (SELECT value FROM json_each(${JSON.stringify([...new Set(ids)])}))
   `) as Array<{
     id: string; bill_number: string; title: string | null; abstract: string | null; state: string | null
     session: string | null; session_slug: string | null; is_draft: number | null; group_key: string | null; tenant_summary: string | null
+    match_type: string | null; new_match_at: string | null; priority: string | null; triaged_at: string | null
   }>
   for (const b of rows) {
     out.set(b.id, {
-      id: b.id, billNumber: b.bill_number, title: b.title || b.abstract || '', state: b.state ?? null,
-      sessionSlug: filedSlug({ session: b.session, sessionSlug: b.session_slug }), isDraft: !!b.is_draft,
-      groupKey: b.group_key, summary: b.tenant_summary ?? null,
+      bill: {
+        id: b.id, billNumber: b.bill_number, title: b.title || b.abstract || '', state: b.state ?? null,
+        sessionSlug: filedSlug({ session: b.session, sessionSlug: b.session_slug }), isDraft: !!b.is_draft,
+        groupKey: b.group_key, summary: b.tenant_summary ?? null,
+      },
+      facts: { groupKey: b.group_key, matchType: b.match_type, newMatchAt: b.new_match_at, priority: b.priority, triagedAt: b.triaged_at },
     })
   }
   return out
 }
 
+/** These bills as the row shows them, in one query, by id. */
+export async function rowBills(db: AppDb, ids: readonly string[]): Promise<Map<string, RowBill>> {
+  return new Map([...await loadRowBills(db, ids)].map(([id, { bill }]) => [id, bill]))
+}
+
 /** A bill-less view of one of the row's events, which the web builds a card row from. */
 export type RowEvent = { id: string; type: string; billId: string; metadata: unknown; createdAt: string }
 
-export type RowEntry = { key: string; bills: RowBill[]; events: RowEvent[] }
+/**
+ * One entry of a page of the row's list. `newMatch`: the entry reads as an
+ * untriaged new match, as the feed's cards decide it (untriagedNewMatch), so an
+ * admin's dropdown for it is the amber "New · Set priority" with Dismiss. A
+ * group reads as its group does.
+ */
+export type RowEntry = { key: string; newMatch: boolean; bills: RowBill[]; events: RowEvent[] }
 
 /**
  * A page of the row's list for UTC day `day`: each entry's moved bills and
- * their events that day, newest first. Three queries whatever the page's size.
+ * their events that day, newest first, and whether it is a new match. Three
+ * queries whatever the page's size (a fourth when an entry is a companion group,
+ * which reads its members once for the whole page).
  * The events are read through the day's range, like every query here: the
  * unary + keeps SQLite from looking each bill up by bill_id instead, which
  * would read each one's whole history, a cost that grows through a session.
@@ -169,7 +188,8 @@ export type RowEntry = { key: string; bills: RowBill[]; events: RowEvent[] }
 export async function rowPage(db: AppDb, day: string, minRelevance: number, entries: readonly DayEntry[]): Promise<RowEntry[]> {
   const ids = entries.flatMap((e) => e.memberIds)
   if (ids.length === 0) return []
-  const billsById = await rowBills(db, ids)
+  const loaded = await loadRowBills(db, ids)
+  const newMatchGroups = await loadUntriagedNewMatchGroups(db, [...loaded.values()].map((l) => l.facts.groupKey))
   const events = await db.all(sql`
     SELECT m.id, m.type, m.bill_id, m.metadata, m.created_at
       FROM ${EVENTS_THEN_BILLS}
@@ -180,12 +200,17 @@ export async function rowPage(db: AppDb, day: string, minRelevance: number, entr
   for (const e of events) {
     byBill.set(e.bill_id, [...(byBill.get(e.bill_id) ?? []), { id: e.id, type: e.type, billId: e.bill_id, metadata: JSON.parse(e.metadata) as unknown, createdAt: e.created_at }])
   }
-  return entries.map((entry) => ({
-    key: entry.key,
-    bills: entry.memberIds.flatMap((id) => billsById.get(id) ?? []),
-    events: entry.memberIds.flatMap((id) => byBill.get(id) ?? [])
-      .sort((a, b) => dbTsToEpoch(b.createdAt) - dbTsToEpoch(a.createdAt) || (a.id < b.id ? 1 : -1)),
-  }))
+  return entries.map((entry) => {
+    // The entry's lead is its first bill that still exists: the bill its title names and a priority is set through.
+    const lead = entry.memberIds.map((id) => loaded.get(id)).find((l) => l !== undefined)
+    return {
+      key: entry.key,
+      newMatch: lead !== undefined && untriagedNewMatch(lead.facts, newMatchGroups),
+      bills: entry.memberIds.flatMap((id) => loaded.get(id)?.bill ?? []),
+      events: entry.memberIds.flatMap((id) => byBill.get(id) ?? [])
+        .sort((a, b) => dbTsToEpoch(b.createdAt) - dbTsToEpoch(a.createdAt) || (a.id < b.id ? 1 : -1)),
+    }
+  })
 }
 
 /**
