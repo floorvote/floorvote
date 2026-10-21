@@ -45,9 +45,9 @@ async function dashboardSignIn(jwt: string, e = asEnv([SUPER])) {
 const userRow = async (email: string) =>
   getDb(env.DB).select().from(users).where(eq(users.email, email)).get()
 
-// Both columns as stored. The raw query bypasses the schema, so it reads what the previous build would.
-const titleColumns = (email: string) =>
-  env.DB.prepare('SELECT title, subtitle FROM users WHERE email = ?').bind(email).first<{ title: string | null; subtitle: string | null }>()
+// The title as stored. The raw query bypasses the schema.
+const storedTitle = async (email: string) =>
+  (await env.DB.prepare('SELECT title FROM users WHERE email = ?').bind(email).first<{ title: string | null }>())?.title
 
 function patchMe(cookie: string, body: unknown, e = asEnv([SUPER])) {
   return app.request('/api/users/me', {
@@ -73,36 +73,37 @@ describe('dashboard sign-in applies the central profile', () => {
     expect(row?.title).toBe('Operator support')
   })
 
-  // The dashboard sign-in answers in the same shape as /auth/me, so it carries
-  // the old `subtitle` key too. Remove with the aliases (see titleAliases.test.ts).
-  it('answers with the title under both names, so a tab on the previous web bundle shows it', async () => {
+  // The dashboard sign-in answers in the same shape as /auth/me, which no longer
+  // carries the old `subtitle` key (see userTitle.test.ts).
+  it('answers with the title and no `subtitle` key', async () => {
     const { res, body } = await dashboardSignIn(await tokenWith('Ada Lovelace', 'Operator support'))
     expect(res.status).toBe(200)
-    expect([body.title, (body as Me & { subtitle: string | null }).subtitle]).toEqual(['Operator support', 'Operator support'])
+    expect(body.title).toBe('Operator support')
+    expect(body).not.toHaveProperty('subtitle')
   })
 
-  it('answers with a null title under both names when central has a blank one', async () => {
+  it('answers with a null title when central has a blank one', async () => {
     const { body } = await dashboardSignIn(await tokenWith('Ada Lovelace', ''))
-    expect([body.title, (body as Me & { subtitle: string | null }).subtitle]).toEqual([null, null])
+    expect(body.title).toBeNull()
+    expect(body).not.toHaveProperty('subtitle')
   })
 
-  it('answers a returning superadmin with the title under both names', async () => {
+  it('answers a returning superadmin with the stored title', async () => {
     await seedUser({ email: SUPER, role: 'admin', name: 'Ada', title: 'Existing title' })
     // A token from before profiles carries no title, so the stored one is what shows.
     const older = await signSuperadminJwt(SUPER, 'Token Name', TEST_SUPERADMIN_PRIV)
     const { body } = await dashboardSignIn(older)
-    expect([body.title, (body as Me & { subtitle: string | null }).subtitle]).toEqual(['Existing title', 'Existing title'])
+    expect(body.title).toBe('Existing title')
+    expect(body).not.toHaveProperty('subtitle')
   })
 
-  // The previous build reads `users.subtitle`, so the profile apply writes both
-  // columns until the drop migration (see titleColumns.test.ts).
-  it('writes the title to both columns on a new superadmin copy and on each refresh', async () => {
+  it('writes the title on a new superadmin copy and on each refresh', async () => {
     await dashboardSignIn(await tokenWith('Ada Lovelace', 'Operator support'))
-    expect(await titleColumns(SUPER)).toEqual({ title: 'Operator support', subtitle: 'Operator support' })
+    expect(await storedTitle(SUPER)).toBe('Operator support')
     await dashboardSignIn(await tokenWith('Ada King', 'Engineer'))
-    expect(await titleColumns(SUPER)).toEqual({ title: 'Engineer', subtitle: 'Engineer' })
+    expect(await storedTitle(SUPER)).toBe('Engineer')
     await dashboardSignIn(await tokenWith('Ada King', ''))
-    expect(await titleColumns(SUPER)).toEqual({ title: null, subtitle: null })
+    expect(await storedTitle(SUPER)).toBeNull()
   })
 
   it('overwrites an existing copy on each sign-in', async () => {
@@ -215,28 +216,26 @@ describe('PATCH /users/me for a superadmin', () => {
     expect((await userRow(SUPER))?.title).toBe('Operator support')
   })
 
-  // A tab on the previous web bundle sends `subtitle`, which a superadmin must
-  // not be able to use to get around the central-managed profile.
-  it('rejects a `subtitle` edit like a `title` one, and leaves both columns unchanged', async () => {
+  // `subtitle` is no longer a key the API reads, so it cannot be used to get
+  // around the central-managed profile: it changes nothing.
+  it('ignores a `subtitle` edit, so it cannot change the title', async () => {
     const cookie = await superCookie()
-    const before = await titleColumns(SUPER)
     const res = await patchMe(cookie, { subtitle: 'CEO' })
-    expect(res.status).toBe(403)
-    expect(((await res.json()) as { error: string }).error).toMatch(/admin dashboard/i)
-    expect((await userRow(SUPER))?.title).toBe('Operator support')
-    expect(await titleColumns(SUPER)).toEqual(before)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({})
+    expect(await storedTitle(SUPER)).toBe('Operator support')
   })
 
-  it('rejects a `subtitle` edit of null, which would clear the title', async () => {
+  it('ignores a `subtitle` edit of null, which cannot clear the title', async () => {
     const res = await patchMe(await superCookie(), { subtitle: null })
-    expect(res.status).toBe(403)
-    expect((await userRow(SUPER))?.title).toBe('Operator support')
+    expect(res.status).toBe(200)
+    expect(await storedTitle(SUPER)).toBe('Operator support')
   })
 
-  it('rejects `subtitle` sent beside `title`', async () => {
+  it('still rejects `title` sent beside `subtitle`, and leaves the title unchanged', async () => {
     const res = await patchMe(await superCookie(), { title: 'Operator support', subtitle: 'CEO' })
     expect(res.status).toBe(403)
-    expect((await userRow(SUPER))?.title).toBe('Operator support')
+    expect(await storedTitle(SUPER)).toBe('Operator support')
   })
 
   it('rejects the whole request, applying none of it, when name or title is mixed with other settings', async () => {

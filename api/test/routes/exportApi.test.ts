@@ -126,11 +126,11 @@ describe('Export API', () => {
     for (const r of rows) expect(r).not.toHaveProperty('subtitle')
   })
 
-  it('exports the title of a member only the previous build wrote, from subtitle', async () => {
-    await env.DB.prepare('INSERT INTO users (id, email, name, subtitle) VALUES (?, ?, ?, ?)').bind('legacy', 'legacy@example.com', 'Legacy', 'Written by the old build').run()
+  it('exports a null title for a member who has none', async () => {
+    await seedUser({ email: 'untitled@example.com' })
     const res = await app.request('/api/admin/export/users', { headers: { Cookie: adminCookie } }, env)
-    const row = (((await res.json()) as any).rows as Array<Record<string, unknown>>).find(r => r.email === 'legacy@example.com')!
-    expect(row.title).toBe('Written by the old build')
+    const row = (((await res.json()) as any).rows as Array<Record<string, unknown>>).find(r => r.email === 'untitled@example.com')!
+    expect(row.title).toBeNull()
     expect(row).not.toHaveProperty('subtitle')
   })
 

@@ -290,15 +290,14 @@ describe('runDemoReset with the default seed', () => {
     expect(await countRows('roles')).toBe(seed.roles.length)
   })
 
-  // The previous build reads users.subtitle, so the seeded roster writes both
-  // columns until the drop migration (see titleColumns.test.ts).
-  it('seeds each persona\'s title into both users.title and users.subtitle', async () => {
+  it('seeds each persona\'s title into users.title, a table that has no subtitle column', async () => {
     await runDemoReset(env.DB, seed)
-    const { results } = await env.DB.prepare('SELECT id, title, subtitle FROM users').all<{ id: string; title: string | null; subtitle: string | null }>()
+    const { results } = await env.DB.prepare('SELECT id, title FROM users').all<{ id: string; title: string | null }>()
     expect(results.length).toBe(seed.users.length)
     expect(results.filter(r => r.title !== null).length).toBeGreaterThan(0)
-    for (const r of results) expect(r.subtitle, r.id).toBe(r.title)
     expect(Object.fromEntries(results.map(r => [r.id, r.title]))).toEqual(Object.fromEntries(seed.users.map(u => [u.id, u.title])))
+    const columns = (await env.DB.prepare('PRAGMA table_info(users)').all<{ name: string }>()).results.map(c => c.name)
+    expect(columns).not.toContain('subtitle')
   })
 
   it('derives its keep-lists from the seed, not a hardcoded id list', async () => {

@@ -103,7 +103,7 @@ async function buildForkInstance() {
   insert(`INSERT INTO crm_contacts (id, person_key, contact_date, kind, summary, bill_id) VALUES ('cc-1', 'cm:Zachary Parker', '2026-09-20', 'meeting', 'Talked through the stadium bill.', ?)`, B0769)
   insert(`INSERT INTO crm_followups (id, person_key, due_date, text) VALUES ('cf-1', 'staff:staffer@example.org', '2026-10-01', 'Send our testimony.')`)
   // What the team itself holds, which upstream's code must leave alone.
-  // The fork's members carry the line under their name as `subtitle`. Migration 0105 copies it into a new `title` and keeps `subtitle`.
+  // The fork's members carry the line under their name as `subtitle`. Migration 0105 copies it into a new `title` and keeps `subtitle`, and 0120 then drops `subtitle`.
   insert(`INSERT INTO users (id, email, name, role, subtitle) VALUES ('u-1', 'member@example.org', 'A Member', 'admin', 'Policy Lead'), ('u-2', 'other@example.org', 'Another Member', 'member', NULL)`)
   insert(`INSERT INTO member_votes (id, user_id, bill_id, position) VALUES ('mv-1', 'u-1', ?, 'support'), ('mv-2', 'u-2', ?, 'oppose')`, B0769, B0769)
   insert(`INSERT INTO official_positions (id, bill_id, position, notes, set_by) VALUES ('op-1', ?, 'Support', 'Testified in favor.', 'u-1')`, B0769)
@@ -167,11 +167,12 @@ describe('a fork\'s instance, moved onto upstream', () => {
       { id: 'cm-1', recipient_id: 'u-1', kind: 'mention', comment_id: 'c-1', actor_id: 'u-2' },
     ])
     expect(await teamState()).toEqual(team)
-    // 0105 copies each member's subtitle into the new title and keeps the subtitle.
-    expect(await rows(`SELECT id, title, subtitle FROM users ORDER BY id`)).toEqual([
-      { id: 'u-1', title: 'Policy Lead', subtitle: 'Policy Lead' },
-      { id: 'u-2', title: null, subtitle: null },
+    // 0105 copies each member's subtitle into the new title, and 0120 drops the subtitle, so the title is all that is left.
+    expect(await rows(`SELECT * FROM users ORDER BY id`)).toEqual([
+      expect.objectContaining({ id: 'u-1', title: 'Policy Lead' }),
+      expect.objectContaining({ id: 'u-2', title: null }),
     ])
+    expect((await rows(`PRAGMA table_info(users)`)).map(c => c.name)).not.toContain('subtitle')
 
     const applied = (await rows('SELECT name FROM d1_migrations ORDER BY id')).map(r => r.name)
     expect(applied.slice(0, forkManifest.files.length)).toEqual(forkManifest.files.map(f => f.replace(/\.sql$/, '')))
