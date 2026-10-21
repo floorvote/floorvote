@@ -775,7 +775,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                                 nothing — unlike the marker in DraftChip.tsx.) */}
                             <div style={{ display: 'flex', marginLeft: 'auto', flexShrink: 0, position: 'relative', zIndex: 1 }}>
                               {isAdmin
-                                ? <CompactPrioritySelect billId={bill.id} current={bill.priority} onChange={(p) => handleSidebarPriorityChange(bill.id, p)} mini />
+                                ? <CompactPrioritySelect billId={bill.id} current={bill.priority} onChange={(p) => handleSidebarPriorityChange(bill.id, p)} mini errorAlign="right" />
                                 : <PriorityChip priority={bill.priority} mini />
                               }
                             </div>

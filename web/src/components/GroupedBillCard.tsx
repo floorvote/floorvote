@@ -94,6 +94,7 @@ export function GroupedBillCard({ group, seenAt = null, currentUserId = null, is
         onChange={(p) => onPriorityChange?.(p)}
         newMatch={isNewMatch}
         onDismiss={() => { setAnnouncement('Dismissed'); onTriageDismiss?.() }}
+        errorAlign="right"
       />
     )
     return (

@@ -6,10 +6,13 @@
  * was set on) take the new priority, with no reload of the feed.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 
 const apiFetchMock = vi.fn()
+// The feed's 20-second poll, held so a test can fire it.
+const poll = vi.hoisted(() => ({ fn: null as null | (() => Promise<void>) }))
+vi.mock('../hooks/usePolling', () => ({ usePolling: (fn: () => Promise<void>) => { poll.fn = fn; return { forceRefresh: () => {} } } }))
 vi.mock('../lib/api', () => ({
   apiFetch: (...args: unknown[]) => apiFetchMock(...args),
   ApiError: class extends Error {},
@@ -54,6 +57,7 @@ const sel = (): HTMLElement => screen.getAllByRole('combobox', { name: /priority
 const asAdmin = () => authMock.mockReturnValue({ user: { id: 'u1', role: 'admin' } })
 
 beforeEach(() => {
+  poll.fn = null
   apiFetchMock.mockReset()
   refreshSidebar.mockReset()
   asAdmin()
@@ -233,5 +237,90 @@ describe('Feed: a companion group\'s card', () => {
     renderFeed(companions({ billNewMatch: true }))
     fireEvent.change(sel(), { target: { value: 'dismiss' } })
     await waitFor(() => expect(sel()).toHaveDisplayValue('Set priority'))
+  })
+})
+
+describe('Feed: a cleared priority leaves the new-match state to the server', () => {
+  it('does not force "not a new match" when the priority is cleared', async () => {
+    apiFetchMock.mockResolvedValue({ priority: null })
+    // A priority set before triage was latched: clearing it makes the bill a new match again, as the server reads it.
+    renderFeed([ev({ id: 'e1', billPriority: 'medium', billNewMatch: true })])
+    expect(sel()).toHaveValue('medium')
+    fireEvent.change(sel(), { target: { value: '' } })
+    await waitFor(() => expect(sel()).toHaveDisplayValue('New · Set priority'))
+    expectAmber(sel())
+  })
+
+  it('a plain bill stays plain when its priority is cleared', async () => {
+    apiFetchMock.mockResolvedValue({ priority: null })
+    renderFeed([ev({ id: 'e1', billPriority: 'medium', billNewMatch: false })])
+    fireEvent.change(sel(), { target: { value: '' } })
+    await waitFor(() => expect(sel()).toHaveDisplayValue('Set priority'))
+    expectNotAmber(sel())
+  })
+})
+
+describe('Feed: a companion group\'s cards on other days', () => {
+  it('shows the group\'s new priority on its card from another day too', async () => {
+    apiFetchMock.mockResolvedValue({ priority: 'high' })
+    renderFeed([
+      ev({ id: 'e3', billId: 's1', billNumber: 'S 202', billGroupKey: 'h1', createdAt: '2026-02-03 12:00:00' }),
+      ev({ id: 'e1', billId: 'h1', billNumber: 'H 101', billGroupKey: 'h1', createdAt: '2026-02-01 10:00:00' }),
+    ])
+    expect(selects()).toHaveLength(2)
+    fireEvent.change(sel(), { target: { value: 'high' } })
+    await waitFor(() => expect(selects().map(s => (s as HTMLSelectElement).value)).toEqual(['high', 'high']))
+    expect(apiFetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves another day\'s card of an unrelated bill alone', async () => {
+    apiFetchMock.mockResolvedValue({ priority: 'high' })
+    renderFeed([
+      ev({ id: 'e3', billId: 's1', billNumber: 'S 202', billGroupKey: 'h1', createdAt: '2026-02-03 12:00:00' }),
+      ev({ id: 'e1', billId: 'z9', billNumber: 'HB 9', billTitle: 'Unrelated', createdAt: '2026-02-01 10:00:00' }),
+    ])
+    fireEvent.change(sel(), { target: { value: 'high' } })
+    await waitFor(() => expect(selects().map(s => (s as HTMLSelectElement).value)).toEqual(['high', '']))
+  })
+})
+
+describe('Feed: a card an admin cleared stays through a poll and goes after a scope switch', () => {
+  const passiveOnly = (over: Partial<FeedEvent> = {}) => ev({
+    id: 'e1', type: 'bill_updated', metadata: { changes: [{ changeType: 'action_added', newValue: 'Referred to committee' }] }, ...over,
+  })
+
+  it('keeps the edited card when a poll brings new activity', async () => {
+    apiFetchMock.mockResolvedValue({ priority: null })
+    renderFeed([passiveOnly({ billPriority: 'high' })])
+    fireEvent.change(sel(), { target: { value: '' } })
+    await waitFor(() => expect(sel()).toHaveDisplayValue('Set priority'))
+    // The server now has no priority on the bill and a newer provider update on it.
+    apiFetchMock.mockResolvedValue({
+      events: [passiveOnly({ id: 'e-new', createdAt: '2026-02-01 11:00:00' }), passiveOnly()], total: 2, page: 1, limit: 40,
+    })
+    await act(async () => { await poll.fn!() })
+    expect(screen.getByText('Mail Ballot Rules')).toBeInTheDocument()
+    expect(sel()).toHaveDisplayValue('Set priority')
+  })
+
+  it('drops a cleared passive-only card once the scope is switched away and back', async () => {
+    const reply = { events: [passiveOnly()], total: 1, page: 1, limit: 40 }
+    apiFetchMock.mockImplementation(async (path: string) => path.startsWith('/feed') ? reply : { priority: null })
+    renderFeed([passiveOnly({ billPriority: 'high' })])
+    fireEvent.change(sel(), { target: { value: '' } })
+    await waitFor(() => expect(sel()).toHaveDisplayValue('Set priority'))
+    expect(screen.getByText('Mail Ballot Rules')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /default feed/i }))
+    fireEvent.click(screen.getByText('All analyzed bills'))
+    // Every analyzed bill is listed, so the card is in this scope on its own.
+    await waitFor(() => expect(apiFetchMock).toHaveBeenCalledWith(expect.stringContaining('scope=analyzed')))
+    expect(await screen.findByText('Mail Ballot Rules')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /all analyzed bills/i }))
+    fireEvent.click(screen.getByText('Default feed'))
+    await waitFor(() => expect(apiFetchMock).toHaveBeenCalledWith(expect.stringContaining('scope=default')))
+    // No priority and only a provider update: the default feed hides it again.
+    await waitFor(() => expect(screen.queryByText('Mail Ballot Rules')).toBeNull())
   })
 })

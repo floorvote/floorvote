@@ -33,10 +33,16 @@ interface CompactPrioritySelectProps {
   newMatch?: boolean
   /** Called after Dismiss has triaged the bill. Only reachable on a new match. */
   onDismiss?: () => void
+  /**
+   * Which edge of the control the failure message ("Couldn't save priority...") hangs from. The message is wider
+   * than the control, so a control at the right edge of a card or the sidebar sets 'right' to keep it inside.
+   */
+  errorAlign?: 'left' | 'right'
 }
 
-export function CompactPrioritySelect({ billId, current, onChange, isFiltered, mini, placeholder = 'Set priority', newMatch, onDismiss }: CompactPrioritySelectProps) {
-  const [dismissError, setDismissError] = useState(false)
+export function CompactPrioritySelect({ billId, current, onChange, isFiltered, mini, placeholder = 'Set priority', newMatch, onDismiss, errorAlign = 'left' }: CompactPrioritySelectProps) {
+  // The message for the last failed request (a save or a Dismiss), shown until the next change.
+  const [error, setError] = useState<string | null>(null)
   const amber = !!newMatch && !current
   const c = current ? PRIORITY_COLORS[current] : amber ? NEW_MATCH : NO_PRIORITY
   const borderColor = current ? 'transparent' : amber ? color.borderAmber : color.borderDefault
@@ -69,17 +75,18 @@ export function CompactPrioritySelect({ billId, current, onChange, isFiltered, m
         onMouseDown={(e) => e.stopPropagation()}
         onChange={(e) => {
           e.stopPropagation()
+          setError(null)
           if (e.target.value === DISMISS) {
             // Triage with no priority. A failed request leaves the control as it
             // was, still a new match, so the admin can try again.
-            setDismissError(false)
-            apiFetch(`/bills/${billId}/triage-dismiss`, { method: 'PATCH' }).then(() => onDismiss?.()).catch(() => setDismissError(true))
+            apiFetch(`/bills/${billId}/triage-dismiss`, { method: 'PATCH' }).then(() => onDismiss?.()).catch(() => setError("Couldn't dismiss. Try again."))
             return
           }
           const p = e.target.value === '' ? null : e.target.value as 'high' | 'medium' | 'low'
           apiFetch<{ priority: 'high' | 'medium' | 'low' | null; promoted?: boolean }>(`/bills/${billId}/priority`, { method: 'PATCH', body: JSON.stringify({ priority: p }) })
-            // A failed save reports nothing: the select is controlled, so it stays on the saved priority.
-            .then((result) => onChange(p, result), () => {})
+            // A failed save leaves the control on the saved priority (the select is controlled) and says so.
+            // The rejection handler is the second argument, not a catch, so an error thrown by onChange is not swallowed.
+            .then((result) => onChange(p, result), () => setError("Couldn't save priority. Try again."))
         }}
         style={{
           WebkitAppearance: 'none', appearance: 'none',
@@ -104,12 +111,12 @@ export function CompactPrioritySelect({ billId, current, onChange, isFiltered, m
       }}>
         <ChevronDown size={mini ? 8 : 10} color={c.text} />
       </span>
-      {dismissError && (
+      {error && (
         <span role="alert" style={{
-          position: 'absolute', top: '100%', left: 0, marginTop: 2, whiteSpace: 'nowrap', zIndex: 1,
+          position: 'absolute', top: '100%', ...(errorAlign === 'right' ? { right: 0 } : { left: 0 }), marginTop: 2, whiteSpace: 'nowrap', zIndex: 1,
           fontSize: fontSize.xs, color: color.textErrorRed,
         }}>
-          Couldn&apos;t dismiss. Try again.
+          {error}
         </span>
       )}
     </div>

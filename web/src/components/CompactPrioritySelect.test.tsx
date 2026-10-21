@@ -278,3 +278,91 @@ describe('CompactPrioritySelect', () => {
     })
   })
 })
+
+describe('CompactPrioritySelect: a failed priority save', () => {
+  beforeEach(() => { apiFetchMock.mockReset() })
+  const select = () => screen.getByRole('combobox')
+
+  it('says so in an alert, does not call onChange, and stays on the saved priority', async () => {
+    apiFetchMock.mockRejectedValue(new Error('boom'))
+    const onChange = vi.fn()
+    render(<CompactPrioritySelect billId="b1" current="low" onChange={onChange} />)
+    fireEvent.change(select(), { target: { value: 'high' } })
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't save priority. Try again.")
+    expect(onChange).not.toHaveBeenCalled()
+    expect(select()).toHaveValue('low')
+  })
+
+  it('says so for a failed clear, too', async () => {
+    apiFetchMock.mockRejectedValue(new Error('boom'))
+    const onChange = vi.fn()
+    render(<CompactPrioritySelect billId="b1" current="low" onChange={onChange} />)
+    fireEvent.change(select(), { target: { value: '' } })
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't save priority. Try again.")
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('says so in the mini variant', async () => {
+    apiFetchMock.mockRejectedValue(new Error('boom'))
+    render(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} mini />)
+    fireEvent.change(select(), { target: { value: 'medium' } })
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't save priority. Try again.")
+  })
+
+  it('clears the message when the next save succeeds', async () => {
+    apiFetchMock.mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce({ priority: 'high' })
+    const onChange = vi.fn()
+    render(<CompactPrioritySelect billId="b1" current={null} onChange={onChange} />)
+    fireEvent.change(select(), { target: { value: 'high' } })
+    await screen.findByRole('alert')
+    fireEvent.change(select(), { target: { value: 'high' } })
+    await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1))
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('clears the message as soon as the next change starts', async () => {
+    apiFetchMock.mockRejectedValueOnce(new Error('boom')).mockReturnValueOnce(new Promise(() => {}))
+    render(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} />)
+    fireEvent.change(select(), { target: { value: 'high' } })
+    await screen.findByRole('alert')
+    fireEvent.change(select(), { target: { value: 'low' } })
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('shows one message at a time: a failed Dismiss then a failed save reads as the save', async () => {
+    apiFetchMock.mockRejectedValue(new Error('boom'))
+    render(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} newMatch onDismiss={vi.fn()} />)
+    fireEvent.change(select(), { target: { value: 'dismiss' } })
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't dismiss. Try again.")
+    fireEvent.change(select(), { target: { value: 'high' } })
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent("Couldn't save priority. Try again."))
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+  })
+
+  // The alert is wider than the control, which sits at the right edge of a card or the sidebar, so
+  // it can grow leftward there instead of running past an overflow-hidden edge.
+  it('hangs the alert from the control\'s left edge by default', async () => {
+    apiFetchMock.mockRejectedValue(new Error('boom'))
+    render(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} />)
+    fireEvent.change(select(), { target: { value: 'high' } })
+    const alert = await screen.findByRole('alert')
+    expect(alert.style.left).toBe('0px')
+    expect(alert.style.right).toBe('')
+  })
+
+  it('hangs the alert from the control\'s right edge when asked, for a control at a container\'s right edge', async () => {
+    apiFetchMock.mockRejectedValue(new Error('boom'))
+    render(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} errorAlign="right" />)
+    fireEvent.change(select(), { target: { value: 'high' } })
+    const alert = await screen.findByRole('alert')
+    expect(alert.style.right).toBe('0px')
+    expect(alert.style.left).toBe('')
+  })
+
+  it('aligns a failed Dismiss the same way', async () => {
+    apiFetchMock.mockRejectedValue(new Error('boom'))
+    render(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} newMatch onDismiss={vi.fn()} errorAlign="right" />)
+    fireEvent.change(select(), { target: { value: 'dismiss' } })
+    expect((await screen.findByRole('alert')).style.right).toBe('0px')
+  })
+})

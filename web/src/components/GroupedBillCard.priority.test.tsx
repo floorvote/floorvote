@@ -100,6 +100,15 @@ describe('GroupedBillCard priority control: an admin', () => {
     expect(apiFetchMock).toHaveBeenCalledWith('/bills/bill-1/priority', { method: 'PATCH', body: JSON.stringify({ priority: null }) })
   })
 
+  it('says so when the server refuses to save, hanging the message from the control\'s right edge so the card does not clip it', async () => {
+    apiFetchMock.mockRejectedValue(new Error('boom'))
+    renderCard(makeGroup(), { isAdmin: true })
+    fireEvent.change(select(), { target: { value: 'high' } })
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent("Couldn't save priority. Try again.")
+    expect(alert.style.right).toBe('0px')
+  })
+
   it('does not report a priority the server refused to save', async () => {
     apiFetchMock.mockRejectedValue(new Error('boom'))
     const { onPriorityChange } = renderCard(makeGroup({ billPriority: 'low' }), { isAdmin: true })
