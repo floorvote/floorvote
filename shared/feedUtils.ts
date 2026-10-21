@@ -2,7 +2,7 @@ import { dbTsToEpoch, dbTsToLocalDay } from './time'
 
 export type FeedEvent = {
   id: string
-  type: 'bill_added' | 'priority_set' | 'position_set' | 'comment_added' | 'vote_milestone' | 'bill_updated' | 'hearing_added' | 'hearing_changed' | 'hearing_cancelled' | 'bill_matched' | 'new_matches'
+  type: 'bill_added' | 'priority_set' | 'position_set' | 'comment_added' | 'vote_milestone' | 'bill_updated' | 'hearing_added' | 'hearing_changed' | 'hearing_cancelled' | 'bill_matched' | 'new_matches' | 'no_priority_updates'
   // Null for an event about no single bill, such as a bulk edit. Then the bill*
   // fields below are empty or null, and `metadata` says what the event is about
   // (a bulk edit lists its bills as metadata.billIds).
@@ -134,14 +134,37 @@ export type ChangeRecord = {
 // one NON-passive (engagement) event that day. Exported so the server-side
 // nav-dot signal (api feed route's latestEventAt) stays in lockstep with this
 // default-feed filter — otherwise the dot lights for events the feed hides.
+//
+// The no-priority updates row is passive too: it stands for legislative events,
+// so it never lights the dot, and the default feed admits it by its own rule
+// (below and in the feed route), not as engagement.
 export const PASSIVE_EVENT_TYPES = new Set<FeedEvent['type']>([
-  'bill_updated', 'hearing_added', 'hearing_changed', 'hearing_cancelled', 'bill_matched',
+  'bill_updated', 'hearing_added', 'hearing_changed', 'hearing_cancelled', 'bill_matched', 'no_priority_updates',
 ])
+
+/**
+ * The type of the feed's one row a day for legislative activity on analyzed
+ * bills with no priority (see **No-priority updates row** in CONTEXT.md). A
+ * bill-less event: GET /feed resolves which bills it stands for on every read
+ * and sends their count, and leaves out a row that resolves to none.
+ */
+export const NO_PRIORITY_UPDATES = 'no_priority_updates' satisfies FeedEvent['type']
+
+/**
+ * The passive events that put a bill in the no-priority updates row: a
+ * legislative change to the bill (status, action, text, sponsor, vote) or to
+ * one of its hearings. A match is not one: the new-matches row covers it.
+ */
+export const LEGISLATIVE_EVENT_TYPES: ReadonlyArray<FeedEvent['type']> = [
+  'bill_updated', 'hearing_added', 'hearing_changed', 'hearing_cancelled',
+]
 
 export function filterPriorityEvents(groups: GroupedBillEvents[]): GroupedBillEvents[] {
   return groups.filter(group =>
     group.billPriority !== null ||
-    group.events.some(e => !PASSIVE_EVENT_TYPES.has(e.type))
+    group.events.some(e => !PASSIVE_EVENT_TYPES.has(e.type)) ||
+    // The server sends the row only when it stands for at least one bill.
+    group.events.some(e => e.type === NO_PRIORITY_UPDATES && Number(e.metadata.count) > 0)
   )
 }
 

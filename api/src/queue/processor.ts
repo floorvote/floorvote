@@ -17,6 +17,7 @@ import { syncIdenticalCompanions } from '../lib/companionGroups'
 import { pullCompanions } from '../lib/companionAnalysis'
 import { nowDb } from '../lib/dbTime'
 import { addToNewMatchesRow } from '../lib/newMatch'
+import { noteLegislativeEvent } from '../lib/noPriorityRow'
 import { LEGACY_STATUS_ORDER, LEGISCAN_CODE_WORDS } from '../../../shared/legacyStatusOrder'
 import { httpUrl } from '../../../shared/httpUrl'
 import { handleForms, legacyHandle } from '../../../shared/billHandle'
@@ -877,6 +878,8 @@ async function applyCentralBill(
       userId:   'system',
       metadata: JSON.stringify({ changes: queueChanges }),
     })
+    // The day's no-priority updates row, which stands for this update while the bill has no priority.
+    await noteLegislativeEvent(db, billInternalId)
   }
 
   // New keyword-match feed event: passive, system actor, written once per bill. Shows
@@ -1013,6 +1016,7 @@ async function reconcileCalendar(
         userId: 'system',
         metadata: JSON.stringify({ date: ch.date, time: ch.time, location: ch.location, description: ch.description }),
       })
+      await noteLegislativeEvent(db, billInternalId)
     }
   }
 }

@@ -7,7 +7,8 @@ import { LoadingState } from '../components/LoadingState'
 import type { FeedEvent } from '../lib/feedUtils'
 import { GroupedBillCard } from '../components/GroupedBillCard'
 import { FeedActivityRow } from '../components/FeedActivityRow'
-import { groupEventsByBillAndDay, filterPriorityEvents, filterFullyAnalyzed } from '../lib/feedUtils'
+import { NoPriorityRow } from '../components/NoPriorityRow'
+import { groupEventsByBillAndDay, filterPriorityEvents, filterFullyAnalyzed, NO_PRIORITY_UPDATES } from '../lib/feedUtils'
 import type { GroupedBillEvents } from '../lib/feedUtils'
 import { eventDateLabel } from '../lib/calendarDate'
 import { usePolling } from '../hooks/usePolling'
@@ -35,6 +36,11 @@ const FILL_TARGET = 15
 // the opening view never feels smaller than a subsequent scroll's worth.
 const INITIAL_TARGET = 20
 const MAX_FILL_FETCHES = 10
+
+// The newest event the poll compares to tell new activity from none. The
+// no-priority updates row is passive, as it is for the Feed dot: on its own it
+// raises no "New activity" banner and loads nothing in place.
+const topEventId = (events: FeedEvent[]) => events.find((e) => e.type !== NO_PRIORITY_UPDATES)?.id ?? null
 
 export type FeedLoaderResult =
   | { data: FeedResponse }
@@ -188,7 +194,7 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
   useEffect(() => { scopeRef.current = scopeMode }, [scopeMode])
   const [hasNewActivity, setHasNewActivity] = useState(false)
   const skipFirstFetch = useRef(!!preloaded)
-  const topEventIdRef = useRef<string | null>(preloaded?.events[0]?.id ?? null)
+  const topEventIdRef = useRef<string | null>(topEventId(preloaded?.events ?? []))
   const sentinelRef = useRef<HTMLDivElement | null>(null)
 
   const { markSeen, endVisit, lastSeenFeed, initialized } = useFeedUnread()
@@ -271,7 +277,7 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
         const data = await apiFetch<FeedResponse>(`/feed?page=1&limit=${LIMIT}&scope=${scopeRef.current}`)
         if (cancelled) return
         setEvents(data.events); setPage(1); setTotal(data.total)
-        topEventIdRef.current = data.events[0]?.id ?? null
+        topEventIdRef.current = topEventId(data.events)
         await pumpPages(data.events, 1, data.total,
           (evs) => visibleCount(evs) >= INITIAL_TARGET)
       } catch { if (!cancelled) setError('Failed to load feed.') }
@@ -293,7 +299,7 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
         const data = await apiFetch<FeedResponse>(`/feed?page=1&limit=${LIMIT}&scope=${scopeMode}`)
         if (cancelled) return
         setEvents(data.events); setPage(1); setTotal(data.total)
-        topEventIdRef.current = data.events[0]?.id ?? null
+        topEventIdRef.current = topEventId(data.events)
         await pumpPages(data.events, 1, data.total,
           (evs) => visibleCount(evs) >= INITIAL_TARGET)
       } catch { if (!cancelled) setError('Failed to load feed.') }
@@ -330,13 +336,13 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
     setEvents(data.events)
     setPage(1)
     setTotal(data.total)
-    topEventIdRef.current = data.events[0]?.id ?? null
+    topEventIdRef.current = topEventId(data.events)
     setHasNewActivity(false)
   }, [])
 
   const pollFeed = useCallback(async () => {
     const data = await apiFetch<FeedResponse>(`/feed?page=1&limit=${LIMIT}&scope=${scopeRef.current}`)
-    const newTopId = data.events[0]?.id ?? null
+    const newTopId = topEventId(data.events)
     if (newTopId && newTopId !== topEventIdRef.current) {
       // New activity detected — auto-load silently if near top, else show banner.
       // The app scrolls inside <main>, not the window (window.scrollY is always 0).
@@ -466,7 +472,11 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
           <div key={day}>
             <DateDivider {...eventDateLabel(day)} stickyTop={headerHeight} />
             {groupsByDay.get(day)!.map(group => group.billId === null ? (
-              <FeedActivityRow key={group.key} event={group.events[0]} seenAt={seenAtRef.current} currentUserId={user?.id ?? null} />
+              group.events[0].type === NO_PRIORITY_UPDATES ? (
+                <NoPriorityRow key={group.key} event={group.events[0]} />
+              ) : (
+                <FeedActivityRow key={group.key} event={group.events[0]} seenAt={seenAtRef.current} currentUserId={user?.id ?? null} />
+              )
             ) : (
               <GroupedBillCard
                 key={group.key} group={group} seenAt={seenAtRef.current} currentUserId={user?.id ?? null}

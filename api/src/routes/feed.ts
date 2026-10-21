@@ -4,12 +4,13 @@ import { filedSlug } from '../lib/sessionSlug'
 import { requireAuth } from '../middleware/auth'
 import { getDb } from '../db/client'
 import { feedEvents, bills, users } from '../db/schema'
-import { PASSIVE_EVENT_TYPES } from '../../../shared/feedUtils'
+import { NO_PRIORITY_UPDATES, PASSIVE_EVENT_TYPES } from '../../../shared/feedUtils'
 import { nowDb } from '../lib/dbTime'
 import { activeUser } from '../lib/accountDeletion'
 import type { AppDb, AppEnv } from '../types'
 import { groupHasPriority, loadGroupPriorities, priorityWorn } from '../lib/teamFields'
-import { loadUntriagedNewMatchGroups } from '../lib/newMatch'
+import { getNewMatchMinRelevance, loadUntriagedNewMatchGroups } from '../lib/newMatch'
+import { rowEntries, rowEntryDetails, rowStandsForABill } from '../lib/noPriorityRow'
 
 export const feedRouter = new Hono<AppEnv>()
 
@@ -78,15 +79,24 @@ feedRouter.get('/', async (c) => {
   // treats as visible when its type is not passive. The analyzed scope filters on
   // the bill's match, which a bill-less event has no bill to fail. The new-matches
   // row is left out of it: this scope already lists every match, each as a
-  // bill_matched event, so the day's summary would only repeat them.
+  // bill_matched event, so the day's summary would only repeat them. The
+  // no-priority updates row is left out for the same reason: this scope lists
+  // each of its updates.
+  //
+  // The no-priority updates row is passive, so defaultVisible (and with it the
+  // nav dot below) never admits it. The default feed's list admits it by its own
+  // rule instead: on a day it stands for at least one bill, which are exactly
+  // the bills whose legislative events defaultVisible hides (lib/noPriorityRow).
+  const minRelevance = await getNewMatchMinRelevance(db)
   const baseWhere = scope === 'analyzed'
     ? and(
         ne(feedEvents.suppressed, true),
         ne(feedEvents.type, 'new_matches'),
+        ne(feedEvents.type, NO_PRIORITY_UPDATES),
         or(isNull(feedEvents.billId), isNotNull(bills.matchType)),
         activeUser,
       )
-    : and(ne(feedEvents.suppressed, true), activeUser, defaultVisible)
+    : and(ne(feedEvents.suppressed, true), activeUser, or(defaultVisible, rowStandsForABill(minRelevance)))
 
   const [rows, countRow, latestRow, seenRow] = await Promise.all([
     db
@@ -167,6 +177,21 @@ feedRouter.get('/', async (c) => {
   // one policy (#638), so it counts once: the row's `count` is its distinct cards.
   const matchCounts = await newMatchCounts(db, rows.filter((r) => r.type === 'new_matches'))
 
+  // Each no-priority updates row's bills, resolved now: how many entries, and
+  // the first two for its chips. The rest load when the row is expanded.
+  const rowSummaries = new Map<string, { count: number; firstBills: unknown[] }>()
+  for (const r of rows.filter((x) => x.type === NO_PRIORITY_UPDATES)) {
+    const entries = await rowEntries(db, r.createdAt, minRelevance)
+    const first = await rowEntryDetails(db, r.createdAt, minRelevance, entries.slice(0, 2).map((e) => e.key), false)
+    rowSummaries.set(r.id, { count: entries.length, firstBills: first.map((e) => e.bills[0]) })
+  }
+  const metadataOf = (r: { id: string; metadata: string }): unknown => {
+    const stored = JSON.parse(r.metadata) as object
+    if (matchCounts.has(r.id)) return { ...stored, count: matchCounts.get(r.id) }
+    if (rowSummaries.has(r.id)) return { ...stored, ...rowSummaries.get(r.id) }
+    return stored
+  }
+
   return c.json({
     events: rows.map((r) => ({
       id: r.id,
@@ -187,7 +212,7 @@ feedRouter.get('/', async (c) => {
       userId: r.userId,
       userName: r.userName || r.userEmail,
       userTitle: r.userTitle,
-      metadata: matchCounts.has(r.id) ? { ...(JSON.parse(r.metadata) as object), count: matchCounts.get(r.id) } : JSON.parse(r.metadata) as unknown,
+      metadata: metadataOf(r),
       createdAt: r.createdAt,
     })),
     total: countRow?.total ?? 0,
@@ -197,6 +222,9 @@ feedRouter.get('/', async (c) => {
     lastSeenFeed: seenRow?.lastSeenFeed ?? null,
   })
 })
+
+// A page of the no-priority updates row's expanded list.
+const ROW_PAGE = 50
 
 // Each new-matches row's count of new matches: its bills, with the members of one
 // companion group counted once. An id with no bill row (deleted since) counts as
@@ -231,14 +259,33 @@ feedRouter.post('/seen', async (c) => {
 // when a Feed row is expanded rather than inlined in GET /feed: a bulk edit can name
 // up to 1000 bills and the Feed polls page 1 every 20 seconds. Ids whose bill has
 // since been deleted are skipped, so the list is what still exists.
+//
+// A no-priority updates row names no bills: its list is resolved now, from its
+// day's events, by relevance, a page at a time (?page, ?limit, about 50 a page),
+// each entry with its bills' changes that day. See lib/noPriorityRow.
 feedRouter.get('/events/:id/bills', async (c) => {
   const db = getDb(c.env.DB)
   const event = await db
-    .select({ metadata: feedEvents.metadata })
+    .select({ type: feedEvents.type, metadata: feedEvents.metadata, createdAt: feedEvents.createdAt })
     .from(feedEvents)
     .where(eq(feedEvents.id, c.req.param('id')))
     .get()
   if (!event) return c.json({ error: 'not found' }, 404)
+
+  if (event.type === NO_PRIORITY_UPDATES) {
+    const page = Math.max(1, Number(c.req.query('page') || 1) || 1)
+    const limit = Math.min(100, Math.max(1, Number(c.req.query('limit') || ROW_PAGE) || ROW_PAGE))
+    const minRelevance = await getNewMatchMinRelevance(db)
+    const entries = await rowEntries(db, event.createdAt, minRelevance)
+    const keys = entries.slice((page - 1) * limit, page * limit).map((e) => e.key)
+    return c.json({
+      entries: await rowEntryDetails(db, event.createdAt, minRelevance, keys, true),
+      total: entries.length,
+      page,
+      limit,
+      hasMore: page * limit < entries.length,
+    })
+  }
 
   const named = (JSON.parse(event.metadata) as { billIds?: unknown }).billIds
   const ids = Array.isArray(named) ? named.filter((x): x is string => typeof x === 'string') : []
