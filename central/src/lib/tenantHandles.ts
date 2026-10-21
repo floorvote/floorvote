@@ -1,4 +1,4 @@
-import { resolveTenantRpc } from './tenantRpc'
+import { resolveTenantRpc, tenantRpcBindingName } from './tenantRpc'
 import type { Env } from '../types'
 
 /**
@@ -16,22 +16,31 @@ import type { Env } from '../types'
  */
 export const HANDLE_FORM_TTL_MS = 60_000
 
-// By tenant id. An answer counts only for the binding object it came from: a
-// different one for the same tenant is asked again, so a hit never depends on
-// the runtime handing back the same env object, and never outlives a redeploy.
-const answers = new Map<string, { binding: unknown; neutral: boolean; until: number }>()
+// By the tenant's binding name (TENANT_<ID>), so every spelling of a tenant id
+// that reaches the same binding shares one answer. Not by the binding object,
+// which the runtime may hand out fresh on each invocation. A tenant's binding
+// can't change within an isolate (bindings are fixed per central deploy), and a
+// tenant rolled back to release 1 within the TTL still reads neutral handles
+// correctly, so a cached yes is safe for its whole life.
+const answers = new Map<string, { neutral: boolean; until: number }>()
+
+/** Forget every cached answer. For tests, which reuse tenant ids with different bindings. */
+export function forgetHandleForms(): void {
+  answers.clear()
+}
 
 export async function sendsNeutralHandles(env: object, tenantId: string, now = Date.now()): Promise<boolean> {
   const rpc = resolveTenantRpc(env as Env, tenantId)
   if (!rpc) return false
-  const cached = answers.get(tenantId)
-  if (cached && cached.binding === rpc && now < cached.until) return cached.neutral
+  const key = tenantRpcBindingName(tenantId)
+  const cached = answers.get(key)
+  if (cached && now < cached.until) return cached.neutral
   let neutral = false
   try {
     neutral = (await rpc.capabilities())?.neutralHandles === true
   } catch {
     neutral = false
   }
-  answers.set(tenantId, { binding: rpc, neutral, until: now + HANDLE_FORM_TTL_MS })
+  answers.set(key, { neutral, until: now + HANDLE_FORM_TTL_MS })
   return neutral
 }

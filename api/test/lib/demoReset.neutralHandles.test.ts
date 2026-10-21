@@ -36,8 +36,25 @@ describe('a demo reset over bills stored under the neutral handle', () => {
 
   // The reset clears every other bill's priority in one NOT IN that binds both
   // spellings of each seeded priority. D1 refuses a statement over 100 binds.
-  it.each(Object.entries(DEMO_SEEDS))('keeps the %s seed\'s priority clear-out under D1\'s 100-bind limit at two spellings each', (_, s) => {
-    expect(s.priorities.length * 2).toBeLessThanOrEqual(100)
+  it.each(Object.entries(DEMO_SEEDS))('keeps the %s seed\'s priority clear-out under D1\'s 100-bind limit', async (_, s) => {
+    const binds: number[] = []
+    const db = new Proxy(env.DB, {
+      get(target, prop) {
+        if (prop === 'prepare') {
+          return (sql: string) => {
+            const stmt = target.prepare(sql)
+            if (!/UPDATE bills SET priority = NULL WHERE external_id NOT IN/.test(sql)) return stmt
+            return new Proxy(stmt, { get(t, p) { return p === 'bind' ? (...v: unknown[]) => { binds.push(v.length); return t.bind(...v) } : Reflect.get(t, p, t) } })
+          }
+        }
+        const v = Reflect.get(target, prop, target)
+        return typeof v === 'function' ? v.bind(target) : v
+      },
+    })
+    await runDemoReset(db, s)
+    expect(binds).toHaveLength(1)
+    expect(binds[0]).toBeGreaterThan(0)
+    expect(binds[0]).toBeLessThanOrEqual(100)
   })
 
   it('the seed still names its bills by legacy handles, which is what this guards', () => {

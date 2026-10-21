@@ -12,11 +12,18 @@
 // effect (found in api, #807). By the time a beforeAll runs, the test file's
 // own imports and mocks are registered, so loading the module then is the
 // same as the test file importing it itself.
-import { beforeAll } from 'vitest'
+import { beforeAll, beforeEach } from 'vitest'
 
 beforeAll(async () => {
   const { env, applyD1Migrations } = await import('cloudflare:test')
   const { legiscanMigrations, parseMigrations, rememberSchema } = await import('./helpers/migrations')
   await applyD1Migrations(env.DB, parseMigrations(legiscanMigrations))
   await rememberSchema()
+})
+
+// The handle-form cache (lib/tenantHandles.ts) lives for the isolate, keyed by
+// tenant. Tests reuse tenant ids with different bindings, so each starts empty.
+beforeEach(async () => {
+  const { forgetHandleForms } = await import('../src/lib/tenantHandles')
+  forgetHandleForms()
 })

@@ -86,16 +86,22 @@ describe('sendsNeutralHandles', () => {
     expect(await sendsNeutralHandles(env, 'ri', T0 + HANDLE_FORM_TTL_MS)).toBe(true)
   })
 
-  // The cache is per tenant, and an answer belongs to the binding it came from:
-  // a new binding object for the same tenant (a new invocation's env, or a
-  // redeploy) is asked again rather than trusted.
-  it('asks again when the same tenant arrives with a new binding object, even while the answer is fresh', async () => {
+  // The cache is per tenant binding name (TENANT_<ID>), not per binding object:
+  // the runtime may hand each invocation a fresh binding object, and a tenant's
+  // binding can't change within an isolate (bindings are fixed per central deploy).
+  it('reuses a fresh answer when the same tenant arrives with a different binding object', async () => {
     const first = vi.fn(async () => ({ neutralHandles: true }))
-    const second = vi.fn(async () => { throw new Error('rolled back') })
+    const second = vi.fn(async () => ({ neutralHandles: true }))
     expect(await sendsNeutralHandles({ TENANT_CACHE_A: { capabilities: first } }, 'cache-a', T0)).toBe(true)
-    expect(await sendsNeutralHandles({ TENANT_CACHE_A: { capabilities: second } }, 'cache-a', T0 + 1)).toBe(false)
-    expect(first).toHaveBeenCalledTimes(1)
-    expect(second).toHaveBeenCalledTimes(1)
+    expect(await sendsNeutralHandles({ TENANT_CACHE_A: { capabilities: second } }, 'cache-a', T0 + 1)).toBe(true)
+    expect(first.mock.calls.length + second.mock.calls.length).toBe(1)
+  })
+
+  it('shares one entry between spellings of a tenant id that resolve to the same binding', async () => {
+    const capabilities = vi.fn(async () => ({ neutralHandles: true }))
+    expect(await sendsNeutralHandles({ TENANT_RI: { capabilities } }, 'ri', T0)).toBe(true)
+    expect(await sendsNeutralHandles({ TENANT_RI: { capabilities: vi.fn(async () => ({ neutralHandles: false })) } }, 'RI', T0 + 1)).toBe(true)
+    expect(capabilities).toHaveBeenCalledTimes(1)
   })
 
   it('reuses the answer for the same tenant and the same binding object in another env', async () => {

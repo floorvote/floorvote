@@ -35,9 +35,13 @@ export interface TenantRpc {
   unknownLoginAttempts(): Promise<Array<{ id: string; email: string; ipCountry: string | null; userAgent: string | null; createdAt: string }>>
 }
 
+/** The env key of a tenant's CentralApi service binding: tenant id "my-org" is TENANT_MY_ORG. */
+export function tenantRpcBindingName(tenantId: string): string {
+  return `TENANT_${tenantId.toUpperCase().replaceAll('-', '_')}`
+}
+
 /** Resolve the per-tenant service binding, or null if this tenant isn't bound. */
 export function resolveTenantRpc(env: Env, tenantId: string): TenantRpc | null {
-  const key = `TENANT_${tenantId.toUpperCase().replaceAll('-', '_')}`
-  const binding = env[key]
+  const binding = env[tenantRpcBindingName(tenantId)]
   return binding ? (binding as unknown as TenantRpc) : null
 }
