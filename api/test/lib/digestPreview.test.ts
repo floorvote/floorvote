@@ -364,7 +364,7 @@ describe('renderDigestEmail: the ten-card cap', () => {
   })
 })
 
-describe('renderDigestEmail: new-matches subtitle, admin and member', () => {
+describe('renderDigestEmail: new-matches caption, admin and member', () => {
   it('an admin or owner keeps "Set a priority or dismiss each from the bill list."', () => {
     const html = render({ events: updates(2), newMatches: matches(3) })
     expect(html).toContain('Set a priority or dismiss each from the bill list.')
@@ -378,7 +378,7 @@ describe('renderDigestEmail: new-matches subtitle, admin and member', () => {
     expect(html).not.toMatch(/dismiss/i)
     expect(html).toMatch(/>\s*3 new matches\s*</)
   })
-  it('the admin and member digests differ only by that subtitle and the cards\' pill, a link for an admin and a label for a member', () => {
+  it('the admin and member digests differ only by that caption and the cards\' pill, a link for an admin and a label for a member', () => {
     const strip = (h: string) => h
       .replace(/<tr><td[^>]*>Set a priority or dismiss each from the bill list\.<\/td><\/tr>/, '')
       .replace(/<a [^>]*>(<span [^>]*>)New · Set priority(<\/span>)<\/a>/g, '$1New match$2')

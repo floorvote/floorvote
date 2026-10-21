@@ -1,0 +1,22 @@
+-- First half of finishing the rename of a member's line under their name from
+-- `subtitle` to `title` (#539, #564). Migration 0105 added `title` and kept
+-- `subtitle`, so the previous build, which reads and writes both, kept working
+-- through that deploy.
+--
+-- This migration only copies across any `subtitle` that has no `title`, which is
+-- a member a build older than #547 wrote after 0105 ran. A `title` already set
+-- wins, since the previous build always wrote both columns and the two differ
+-- only when an older build edited a title, with no telling which is newer.
+--
+-- The column stays one more release. A deploy applies migrations before it
+-- swaps the Worker, so the previous build is still serving, and it selects every
+-- `users` column on each signed-in request. Dropping `subtitle` here would fail
+-- every one of those requests until the new Worker is live. This build never
+-- names `subtitle`, and the column is nullable, so it runs fine beside it.
+--
+-- A later migration drops the column and does nothing else. It must not repeat
+-- this copy, or a title a member clears in between would come back.
+--
+-- No semicolons in these comments. api/test/helpers.ts splits migration files
+-- on the statement terminator before it strips comment lines.
+UPDATE users SET title = subtitle WHERE title IS NULL AND subtitle IS NOT NULL;

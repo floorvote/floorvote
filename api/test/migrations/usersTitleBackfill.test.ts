@@ -2,14 +2,15 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { resetDb, applyMigrations, seedSession } from '../helpers'
 
-// Migration 0120 finishes the rename of users.subtitle to users.title (#539,
-// #564). 0105 added `title` and kept `subtitle`, so the previous build kept
-// working through the deploy and a rollback. Once that build is gone, 0120
-// copies any `subtitle` that has no `title` across, then drops `subtitle`.
-describe('migration 0120_drop_users_subtitle', () => {
+// Migration 0120 is the first half of finishing the rename of users.subtitle to
+// users.title (#539, #564). 0105 added `title` and kept `subtitle`. 0120 copies
+// any `subtitle` that has no `title` across and KEEPS `subtitle`, because a
+// deploy applies migrations before it swaps the Worker, and the build still
+// serving selects every users column. A later migration drops the column.
+describe('migration 0120_users_title_backfill', () => {
   beforeEach(async () => {
     await resetDb()
-    // The database as a build from before the drop leaves it: both columns exist.
+    // The database as it stands before the backfill: both columns exist.
     await applyMigrations({ before: '0120' })
   })
 
@@ -18,17 +19,15 @@ describe('migration 0120_drop_users_subtitle', () => {
       .bind(id, `${id}@example.com`, id, title, subtitle).run()
   const columns = async () => (await env.DB.prepare('PRAGMA table_info(users)').all<{ name: string }>()).results.map(c => c.name)
   const titles = async () => (await env.DB.prepare('SELECT id, title FROM users ORDER BY id').all()).results
+  const subtitles = async () => (await env.DB.prepare('SELECT id, subtitle FROM users ORDER BY id').all()).results
 
-  it('drops users.subtitle and keeps users.title', async () => {
-    expect(await columns()).toEqual(expect.arrayContaining(['title', 'subtitle']))
+  it('keeps both users.title and users.subtitle, so the build still serving keeps working', async () => {
     await applyMigrations()
-    const after = await columns()
-    expect(after).not.toContain('subtitle')
-    expect(after).toContain('title')
+    expect(await columns()).toEqual(expect.arrayContaining(['title', 'subtitle']))
   })
 
-  it('loses no value: a member with only a subtitle, only a title, and both each keep one title', async () => {
-    await insert('only-subtitle', { title: null, subtitle: 'Written by the old build' })
+  it('loses no value: a member with only a subtitle, only a title, and both each end with one title', async () => {
+    await insert('only-subtitle', { title: null, subtitle: 'Written by an older build' })
     await insert('only-title', { title: 'Senior Policy Analyst, Elections', subtitle: null })
     await insert('both-same', { title: 'Registrar', subtitle: 'Registrar' })
 
@@ -36,7 +35,7 @@ describe('migration 0120_drop_users_subtitle', () => {
 
     expect(await titles()).toEqual([
       { id: 'both-same', title: 'Registrar' },
-      { id: 'only-subtitle', title: 'Written by the old build' },
+      { id: 'only-subtitle', title: 'Written by an older build' },
       { id: 'only-title', title: 'Senior Policy Analyst, Elections' },
     ])
   })
@@ -45,6 +44,18 @@ describe('migration 0120_drop_users_subtitle', () => {
     await insert('differ', { title: 'Current', subtitle: 'Stale' })
     await applyMigrations()
     expect(await titles()).toEqual([{ id: 'differ', title: 'Current' }])
+  })
+
+  it('leaves every subtitle as it was, since the drop is a later migration', async () => {
+    await insert('only-subtitle', { title: null, subtitle: 'Written by an older build' })
+    await insert('differ', { title: 'Current', subtitle: 'Stale' })
+    await insert('neither', { title: null, subtitle: null })
+    await applyMigrations()
+    expect(await subtitles()).toEqual([
+      { id: 'differ', subtitle: 'Stale' },
+      { id: 'neither', subtitle: null },
+      { id: 'only-subtitle', subtitle: 'Written by an older build' },
+    ])
   })
 
   it('leaves a member with neither a title nor a subtitle with a null title', async () => {
@@ -76,8 +87,8 @@ describe('migration 0120_drop_users_subtitle', () => {
 
   it('runs on a database with no users', async () => {
     await applyMigrations()
-    expect(await columns()).not.toContain('subtitle')
     expect(await titles()).toEqual([])
+    expect(await columns()).toEqual(expect.arrayContaining(['title', 'subtitle']))
   })
 
   it('keeps every other column of a member, and the rows that point at them', async () => {
@@ -96,16 +107,18 @@ describe('migration 0120_drop_users_subtitle', () => {
   it('is recorded as applied once, so a second run changes nothing', async () => {
     await insert('u', { title: null, subtitle: 'Once' })
     await applyMigrations()
+    // A title cleared after the backfill stays cleared: the migration does not run again.
+    await env.DB.prepare('UPDATE users SET title = NULL WHERE id = ?').bind('u').run()
     await applyMigrations()
-    expect(await titles()).toEqual([{ id: 'u', title: 'Once' }])
-    const applied = (await env.DB.prepare('SELECT name FROM d1_migrations WHERE name = ?').bind('0120_drop_users_subtitle').all()).results
+    expect(await titles()).toEqual([{ id: 'u', title: null }])
+    const applied = (await env.DB.prepare('SELECT name FROM d1_migrations WHERE name = ?').bind('0120_users_title_backfill').all()).results
     expect(applied).toHaveLength(1)
   })
 
-  it('rejects an insert that names subtitle, which the previous build would send', async () => {
+  it('still accepts the previous build\'s inserts and updates of subtitle after the migration', async () => {
     await applyMigrations()
-    await expect(
-      env.DB.prepare('INSERT INTO users (id, email, name, subtitle) VALUES (?, ?, ?, ?)').bind('late', 'late@example.com', 'late', 'x').run(),
-    ).rejects.toThrow(/subtitle/)
+    await env.DB.prepare('INSERT INTO users (id, email, name, subtitle) VALUES (?, ?, ?, ?)').bind('late', 'late@example.com', 'late', 'Written by the previous build').run()
+    await env.DB.prepare('UPDATE users SET subtitle = ? WHERE id = ?').bind('Edited', 'late').run()
+    expect(await subtitles()).toEqual([{ id: 'late', subtitle: 'Edited' }])
   })
 })

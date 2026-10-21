@@ -8,9 +8,10 @@ import { writeNotifications } from '../../src/lib/notifications'
 
 // A member's line under their name is `users.title` and nothing else (#539,
 // #564). Migration 0105 renamed it in two steps and kept `subtitle` for one
-// release, with the API accepting and returning `subtitle` as an alias. Migration
-// 0120 dropped the column, so the API no longer returns `subtitle` anywhere and
-// no longer reads it from a request.
+// release, with the API accepting and returning `subtitle` as an alias. This
+// build no longer declares the column (a later migration drops it, see
+// userTitleBesideSubtitle.test.ts), so the API no longer returns `subtitle`
+// anywhere and no longer reads it from a request.
 
 const call = (path: string, init: RequestInit = {}) => SELF.fetch(`http://localhost/api${path}`, init)
 
@@ -34,7 +35,7 @@ beforeEach(async () => {
 })
 
 describe('the schema', () => {
-  it('has no subtitle column on users', () => {
+  it('declares no subtitle column on users', () => {
     expect(Object.keys(getTableColumns(users))).not.toContain('subtitle')
     expect(Object.keys(getTableColumns(users))).toContain('title')
   })

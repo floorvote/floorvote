@@ -6,7 +6,7 @@ import { resetDb, applyMigrations } from '../helpers'
 // member's line under their name across, and KEEPS subtitle. The rename is two
 // steps so a rollback, and the window between the migration and the new build
 // going live, both leave the previous build working: it still reads and writes
-// subtitle. Migration 0120 (#564) drops subtitle, so these tests stop short of it.
+// subtitle. A later migration (a follow-up issue) drops subtitle.
 describe('migration 0105_users_title', () => {
   beforeEach(async () => {
     await resetDb()
@@ -24,7 +24,7 @@ describe('migration 0105_users_title', () => {
     await insert('unicode', 'Clerk · Cranston')
     await insert('blank', '')
 
-    await applyMigrations({ before: '0120' })
+    await applyMigrations()
 
     const { results } = await env.DB.prepare('SELECT id, title FROM users ORDER BY id').all()
     expect(results).toEqual([
@@ -39,7 +39,7 @@ describe('migration 0105_users_title', () => {
     await insert('with-title', 'Senior Policy Analyst, Elections')
     await insert('no-title', null)
 
-    await applyMigrations({ before: '0120' })
+    await applyMigrations()
 
     expect(await columns()).toEqual(expect.arrayContaining(['title', 'subtitle']))
     const { results } = await env.DB.prepare('SELECT id, subtitle FROM users ORDER BY id').all()
@@ -51,7 +51,7 @@ describe('migration 0105_users_title', () => {
 
   it('still accepts the previous build\'s inserts and updates of subtitle after the migration', async () => {
     await insert('u', 'Before')
-    await applyMigrations({ before: '0120' })
+    await applyMigrations()
     // What the previous build does after the migration, in its own SQL.
     await env.DB.prepare('INSERT INTO users (id, email, name, subtitle) VALUES (?, ?, ?, ?)').bind('late', 'late@example.com', 'late', 'Written by the old build').run()
     await env.DB.prepare('UPDATE users SET subtitle = ? WHERE id = ?').bind('Edited by the old build', 'u').run()
@@ -60,7 +60,7 @@ describe('migration 0105_users_title', () => {
   })
 
   it('leaves both columns null for a member created with no title', async () => {
-    await applyMigrations({ before: '0120' })
+    await applyMigrations()
     await env.DB.prepare('INSERT INTO users (id, email, name) VALUES (?, ?, ?)').bind('n', 'n@example.com', 'n').run()
     expect(await env.DB.prepare('SELECT title, subtitle FROM users WHERE id = ?').bind('n').first()).toEqual({ title: null, subtitle: null })
   })

@@ -290,14 +290,13 @@ describe('runDemoReset with the default seed', () => {
     expect(await countRows('roles')).toBe(seed.roles.length)
   })
 
-  it('seeds each persona\'s title into users.title, a table that has no subtitle column', async () => {
+  it('seeds each persona\'s title into users.title alone, leaving the not-yet-dropped subtitle column null', async () => {
     await runDemoReset(env.DB, seed)
-    const { results } = await env.DB.prepare('SELECT id, title FROM users').all<{ id: string; title: string | null }>()
+    const { results } = await env.DB.prepare('SELECT id, title, subtitle FROM users').all<{ id: string; title: string | null; subtitle: string | null }>()
     expect(results.length).toBe(seed.users.length)
     expect(results.filter(r => r.title !== null).length).toBeGreaterThan(0)
     expect(Object.fromEntries(results.map(r => [r.id, r.title]))).toEqual(Object.fromEntries(seed.users.map(u => [u.id, u.title])))
-    const columns = (await env.DB.prepare('PRAGMA table_info(users)').all<{ name: string }>()).results.map(c => c.name)
-    expect(columns).not.toContain('subtitle')
+    for (const r of results) expect(r.subtitle, r.id).toBeNull()
   })
 
   it('derives its keep-lists from the seed, not a hardcoded id list', async () => {
