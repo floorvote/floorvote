@@ -84,6 +84,17 @@ describe('CompactPrioritySelect', () => {
       expect(select).not.toHaveAccessibleDescription()
     })
 
+    it('gives every option its own visible text colour while empty, since the select\'s own text is transparent', () => {
+      render(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} newMatch onDismiss={vi.fn()} />)
+      const options = within(screen.getByRole('combobox')).getAllByRole('option', { hidden: true })
+      expect(options.length).toBeGreaterThan(0)
+      for (const o of options) {
+        const style = o.getAttribute('style') ?? ''
+        expect(style).toMatch(/(^|;|\s)color: (?!transparent)\S/)
+        expect(style).toMatch(/text-fill-color: (?!transparent)\S/)
+      }
+    })
+
     it('hides the select\'s own text under the label while empty, and keeps its text colour token for the menu', () => {
       render(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} />)
       expect(screen.getByRole('combobox').getAttribute('style')).toMatch(/text-fill-color: transparent/)

@@ -46,6 +46,17 @@ describe('CompactPositionSelect', () => {
       expect(select()).toHaveAccessibleDescription('Set position')
     })
 
+    it('gives every option its own visible text colour while empty, since the select\'s own text is transparent', () => {
+      render(<CompactPositionSelect billId="b1" current={null} options={OPTIONS} onChange={vi.fn()} />)
+      const options = within(select()).getAllByRole('option', { hidden: true })
+      expect(options.length).toBeGreaterThan(0)
+      for (const o of options) {
+        const style = o.getAttribute('style') ?? ''
+        expect(style).toMatch(/(^|;|\s)color: (?!transparent)\S/)
+        expect(style).toMatch(/text-fill-color: (?!transparent)\S/)
+      }
+    })
+
     it('hides the select\'s own text under the label while empty', () => {
       render(<CompactPositionSelect billId="b1" current={null} options={OPTIONS} onChange={vi.fn()} />)
       expect(select().getAttribute('style')).toMatch(/text-fill-color: transparent/)
