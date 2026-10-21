@@ -34,3 +34,9 @@ export function parseHandle(raw: string): number | null {
   const m = HANDLE_RE.exec(raw)
   return m ? Number(m[1]) : null
 }
+
+// Stubs for the red step of #647.
+export const HANDLE_FORM_HEADER = ''
+export function toLegacyHandle(billId: number): string { return toHandle(billId) }
+export function toTenantHandle(billId: number, _neutral: boolean): string { return toHandle(billId) }
+export function readsNeutralHandles(_value: string | null | undefined): boolean { return false }

@@ -286,6 +286,35 @@ describe('runSync → runFullPass', () => {
     expect(messages[0].body).toEqual({ tenantId: 'test-mon', billId: 'legiscan:50', stubOnly: true })
   })
 
+  // Release 2 of the neutral handle rename (#305): the stub names the bill by
+  // its neutral handle to an instance whose binding reports neutral handles.
+  it('names a new stub by the neutral handle to an instance that reads neutral handles', async () => {
+    const db = drizzle(env.DB, { schema })
+    const etHour = getCurrentEtHour()
+    await db.insert(sessions).values({
+      sessionId: 9200, state: 'DC', stateId: 51, yearStart: 2025, yearEnd: 2026,
+      sessionTitle: 'T', sessionName: 'T',
+      fullSyncHoursEt: JSON.stringify([etHour]), rawSyncHoursEt: JSON.stringify([]),
+    })
+    await db.insert(tenants).values({ tenantId: 'test-mon', name: 'T', stateCoverage: JSON.stringify(['DC']), active: true })
+    vi.mocked(legiscan.getMasterListBySession).mockResolvedValue([
+      { bill_id: 50, number: 'B50', change_hash: 'h', title: 'Bridge Naming',
+        description: 'rename a bridge', status: 1, status_date: '2025-01-01',
+        last_action: 'introduced', last_action_date: '2025-01-01', url: 'https://x/50' },
+    ] as any)
+    const tenantSendBatch = vi.fn().mockResolvedValue(undefined)
+    const mockEnv = {
+      ...(env as any),
+      INGESTOR_QUEUE: { sendBatch: vi.fn(), send: vi.fn() },
+      TENANT_QUEUE_TEST_MON: { sendBatch: tenantSendBatch, send: vi.fn() },
+      TENANT_TEST_MON: { capabilities: async () => ({ neutralHandles: true }) },
+    }
+
+    await runSync(mockEnv, db)
+
+    expect(tenantSendBatch.mock.calls[0][0][0].body).toEqual({ tenantId: 'test-mon', billId: 'bill:50', stubOnly: true })
+  })
+
   it('does not deliver a stub for an existing null link that did not change', async () => {
     const db = drizzle(env.DB, { schema })
     const etHour = getCurrentEtHour()

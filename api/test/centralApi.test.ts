@@ -8,6 +8,13 @@ beforeEach(async () => {
 })
 
 describe('CentralApi RPC entrypoint', () => {
+  // Release 2 of the neutral handle rename (#305): central sends `bill:<n>` only
+  // to an instance that says it reads it, here, and `legiscan:<n>` otherwise.
+  it('capabilities() reports that the instance reads neutral bill handles', async () => {
+    const entry = new CentralApi(createExecutionContext(), env)
+    expect(await entry.capabilities()).toEqual({ neutralHandles: true })
+  })
+
   it('engagementStats() returns a snapshot with metrics', async () => {
     const entry = new CentralApi(createExecutionContext(), env)
     const snap = await entry.engagementStats()

@@ -242,6 +242,42 @@ describe('the Council\'s calendar', () => {
     expect(sent.calendar.events).toEqual([expect.objectContaining({ identityKey: 'hearing|2026-10-23|public hearing on b26-0769', coveredBy: 'council-2405@lims.dccouncil.gov' })])
   })
 
+  // Release 2 of the neutral handle rename (#305): an instance that predates
+  // release 1 would treat `bill:<n>` as a bill it doesn't hold, so central names
+  // agenda bills and covered entries by the neutral handle only when the request
+  // says the instance reads it, and by the legacy handle otherwise.
+  it('names agenda bills and covered entries by legacy handles to an instance that does not ask for neutral ones', async () => {
+    await claimDc()
+    await syncBills()
+    await syncCalendar()
+    const { byUid } = await eventsFor()
+    expect(byUid.get('council-2405@lims.dccouncil.gov')).toMatchObject({
+      bills: [`legiscan:${B0769}`],
+      covers: [{ billId: `legiscan:${B0769}`, identityKey: 'hearing|2026-10-23|public hearing on b26-0769' }],
+    })
+    expect(byUid.get('council-2428@lims.dccouncil.gov')).toMatchObject({ bills: [`legiscan:${HN}`], covers: [expect.objectContaining({ billId: `legiscan:${HN}` })] })
+  })
+
+  it('names agenda bills and covered entries by neutral handles to an instance whose request says it reads them', async () => {
+    await claimDc()
+    await syncBills()
+    await syncCalendar()
+    const { app } = await import('../../src/index')
+    const res = await app.fetch(new Request(`http://central/api/tenants/oca/body-events?${WINDOW}`, {
+      headers: { 'x-admin-secret': 'test-secret', 'x-handle-form': 'neutral' },
+    }), makeEnv().env)
+    expect(res.status).toBe(200)
+    const byUid = new Map<string, any>(((await res.json()) as any).events.map((e: any) => [e.uid, e]))
+    expect(byUid.get('council-2405@lims.dccouncil.gov')).toMatchObject({
+      bills: [`bill:${B0769}`],
+      covers: [{ billId: `bill:${B0769}`, identityKey: 'hearing|2026-10-23|public hearing on b26-0769' }],
+    })
+    expect(byUid.get('council-2428@lims.dccouncil.gov')).toMatchObject({ bills: [`bill:${HN}`], covers: [expect.objectContaining({ billId: `bill:${HN}` })] })
+    // Every other field is the same as the legacy answer's.
+    const legacy = (await eventsFor()).byUid.get('council-2405@lims.dccouncil.gov')
+    expect({ ...byUid.get('council-2405@lims.dccouncil.gov'), bills: legacy.bills, covers: legacy.covers }).toEqual(legacy)
+  })
+
   it('keeps covering a bill entry once it is cancelled, so the cancellation shows once', async () => {
     await claimDc()
     await syncBills()

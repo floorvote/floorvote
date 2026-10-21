@@ -9,9 +9,10 @@ import { hearingUid } from '../../src/lib/hearingUid'
 import { clearDb, seedBill } from '../helpers'
 import { processBill } from '../../src/lib/llm'
 
-// Release 1 of the neutral handle rename (#305): a tenant accepts a bill handle
-// in either form, a neutral one from a future central included, and applies it
-// to the same bill. What it stores, and every calendar UID, stays legacy.
+// The neutral handle rename (#305): a tenant accepts a bill handle in either
+// form and applies it to the same bill. Release 2 stores the neutral form for a
+// bill it doesn't hold yet, and keeps a bill it holds under the spelling it is
+// stored by. Every calendar UID stays legacy.
 
 vi.mock('../../src/lib/llm', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/lib/llm')>()
@@ -86,22 +87,22 @@ describe('a tenant receiving a neutral bill handle', () => {
     expect(rows[0]).toMatchObject({ id, externalId: 'legiscan:999', title: 'Mail ballot processing 999' })
   })
 
-  it('stores a new bill under the legacy handle, and its legacy twin then updates that row', async () => {
+  it('stores a new bill under the neutral handle, and its legacy twin then updates that row', async () => {
     await process(msg('bill:500', { matchType: 'keyword' }))
     let rows = await allBills()
     expect(rows).toHaveLength(1)
-    expect(rows[0].externalId).toBe('legiscan:500')
+    expect(rows[0].externalId).toBe('bill:500')
     await process(msg('legiscan:500', { matchType: 'keyword' }))
     rows = await allBills()
     expect(rows).toHaveLength(1)
-    expect(rows[0].externalId).toBe('legiscan:500')
+    expect(rows[0].externalId).toBe('bill:500')
   })
 
-  it('stores a stub-only neutral delivery under the legacy handle, and the legacy twin finds it', async () => {
+  it('stores a stub-only neutral delivery under the neutral handle, and the legacy twin finds it', async () => {
     await process(msg('bill:501', { stubOnly: true, matchType: 'keyword' }))
     await process(msg('legiscan:501', { stubOnly: true, matchType: 'keyword' }))
     const rows = await allBills()
-    expect(rows.map(r => r.externalId)).toEqual(['legiscan:501'])
+    expect(rows.map(r => r.externalId)).toEqual(['bill:501'])
   })
 
   // A central that predates release 1 reads `bill:502` as NaN and answers 400, so a tenant
@@ -118,11 +119,11 @@ describe('a tenant receiving a neutral bill handle', () => {
     expect(textFetched).toEqual(['legiscan:503'])
   })
 
-  it('records an identical companion under the legacy handle, never a neutral one', async () => {
+  it('records an identical companion under the neutral handle', async () => {
     related[600] = [{ sastBillId: 601, kind: 'identical' }]
     await process(msg('bill:600', { matchType: 'keyword' }))
     const links = await db().select().from(billIdenticalLinks).all()
-    expect(links.map(l => [l.externalId, l.companionExternalId])).toEqual([['legiscan:600', 'legiscan:601']])
+    expect(links.map(l => [l.externalId, l.companionExternalId])).toEqual([['bill:600', 'bill:601']])
   })
 
   it('does not duplicate a companion link when the legacy twin arrives next', async () => {
@@ -164,7 +165,7 @@ describe('a sync batch mixing legacy and neutral handles', () => {
       expect(m.ack).toHaveBeenCalledTimes(1)
     }
     const rows = await allBills()
-    expect(rows.map(r => r.externalId).sort()).toEqual(['legiscan:700', 'legiscan:701', 'legiscan:702'])
+    expect(rows.map(r => r.externalId).sort()).toEqual(['bill:700', 'bill:701', 'bill:702'])
   })
 
   it('gives the same result whichever form comes first', async () => {
@@ -316,20 +317,21 @@ describe('a tenant whose rows are already stored under the neutral handle', () =
     const batch = ['legiscan:840', 'bill:841', 'bill:840', 'legiscan:841', 'legiscan:842'].map(h => ({ body: msg(h, { matchType: 'keyword' }), attempts: 1, ack: vi.fn(), retry: vi.fn() }))
     await processQueue(batch as any, testEnv as any, db())
     expect(batch.every(m => m.ack.mock.calls.length === 1 && m.retry.mock.calls.length === 0)).toBe(true)
-    expect((await allBills()).map(r => r.externalId).sort()).toEqual(['bill:840', 'bill:841', 'legiscan:842'])
+    expect((await allBills()).map(r => r.externalId).sort()).toEqual(['bill:840', 'bill:841', 'bill:842'])
   })
 
-  it.each(['legiscan:900', 'bill:900'])('updates the legacy row, and only it, when both spellings are stored and a %s delivery arrives', async (handle) => {
-    // Both rows can exist only if the bill was duplicated before this fix. The delivery must
-    // pick one deterministically (the form this release stores), add no third row, and leave
+  it.each(['legiscan:900', 'bill:900'])('updates the neutral row, and only it, when both spellings are stored and a %s delivery arrives', async (handle) => {
+    // Both rows can exist only if the bill was duplicated before release 1, and the
+    // migration then leaves the legacy row as it is. The delivery must pick one
+    // deterministically (the form this release stores), add no third row, and leave
     // the other as it was.
     const legacy = await seedBill({ billNumber: 'H 900', state: 'RI', session: '2026 Regular Session', externalId: 'legiscan:900', title: 'legacy row', matchType: 'keyword', priority: 'high', aiProcessedAt: '2026-06-01T00:00:00Z' })
     const neutral = await seedBill({ billNumber: 'H 900b', state: 'RI', session: '2026 Regular Session', externalId: 'bill:900', title: 'neutral row', matchType: 'keyword', priority: 'high', aiProcessedAt: '2026-06-01T00:00:00Z' })
     await process(msg(handle))
     const rows = await allBills()
     expect(rows).toHaveLength(2)
-    expect(rows.find(r => r.id === legacy)).toMatchObject({ externalId: 'legiscan:900', title: 'Mail ballot processing 900' })
-    expect(rows.find(r => r.id === neutral)).toMatchObject({ externalId: 'bill:900', title: 'neutral row' })
+    expect(rows.find(r => r.id === neutral)).toMatchObject({ externalId: 'bill:900', title: 'Mail ballot processing 900' })
+    expect(rows.find(r => r.id === legacy)).toMatchObject({ externalId: 'legiscan:900', title: 'legacy row' })
   })
 
   it('still updates the row when the migration renames it between the lookup and the write', async () => {
@@ -374,5 +376,61 @@ describe('a tenant whose rows are already stored under the neutral handle', () =
     expect(m.retry).toHaveBeenCalledTimes(1)
     const row = await db().select({ aiError: bills.aiError }).from(bills).where(eq(bills.id, id)).get()
     expect(row?.aiError).toContain('AI provider shed (attempt 2')
+  })
+})
+
+// Release 2, the reverse order (#305): the instance migrates and runs release 2
+// while central still sends legacy handles (central deploys after it, or an
+// older central is still running). Every delivery is legacy, and every row,
+// migrated or new, still resolves, with no duplicate, a neutral stored form, and
+// legacy UIDs.
+describe('a release-2 instance fed by a central that still sends legacy handles', () => {
+  beforeEach(async () => {
+    await clearDb()
+    vi.clearAllMocks()
+    stubCentral()
+  })
+
+  it('stores a bill it does not hold yet under the neutral handle', async () => {
+    await process(msg('legiscan:1000', { matchType: 'keyword' }))
+    expect((await allBills()).map(r => r.externalId)).toEqual(['bill:1000'])
+  })
+
+  it('applies legacy deliveries to migrated rows, unmigrated rows, and new bills alike, one row each', async () => {
+    const migrated = await seedBill({ billNumber: 'H 1001', state: 'RI', session: '2026 Regular Session', externalId: 'bill:1001', matchType: 'keyword', priority: 'high', aiProcessedAt: '2026-06-01T00:00:00Z' })
+    const unmigrated = await seedBill({ billNumber: 'H 1002', state: 'RI', session: '2026 Regular Session', externalId: 'legiscan:1002', matchType: 'keyword', priority: 'high', aiProcessedAt: '2026-06-01T00:00:00Z' })
+    for (const h of ['legiscan:1001', 'legiscan:1002', 'legiscan:1003', 'legiscan:1001']) await process(msg(h, { matchType: 'keyword' }))
+    const rows = (await allBills()).map(r => [r.id, r.externalId, r.title])
+    expect(rows).toHaveLength(3)
+    expect(rows).toContainEqual([migrated, 'bill:1001', 'Mail ballot processing 1001'])
+    expect(rows).toContainEqual([unmigrated, 'legiscan:1002', 'Mail ballot processing 1002'])
+    expect(rows.find(r => r[1] === 'bill:1003')).toBeDefined()
+  })
+
+  it('writes the legacy UID for a migrated row\'s hearing, whichever form delivers it', async () => {
+    const id = await seedBill({ billNumber: 'H 1004', state: 'RI', session: '2026 Regular Session', externalId: 'bill:1004', matchType: 'keyword', priority: 'high', aiProcessedAt: '2026-06-01T00:00:00Z' })
+    await process(msg('legiscan:1004', { calendar: calendarBlock() }))
+    await process(msg('bill:1004', { calendar: calendarBlock() }))
+    const rows = await db().select().from(calendarEvents).all()
+    expect(rows.map(r => [r.billId, r.uid, r.sequence])).toEqual([[id, 'hearing-legiscan-1004-1-house-cmte-on-elections@ri', 0]])
+  })
+
+  it('records a companion by the neutral handle and finds a migrated link', async () => {
+    related[1010] = [{ sastBillId: 1011, kind: 'identical' }]
+    await process(msg('legiscan:1010', { matchType: 'keyword' }))
+    await process(msg('legiscan:1010', { matchType: 'keyword' }))
+    const links = await db().select().from(billIdenticalLinks).all()
+    expect(links.map(l => [l.externalId, l.companionExternalId])).toEqual([['bill:1010', 'bill:1011']])
+  })
+
+  it('asks central by the legacy handle and says it reads neutral handles', async () => {
+    const seen: Request[] = []
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      seen.push(new Request(url, init))
+      return Promise.resolve(new Response(JSON.stringify(centralBillJson(1020)), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    }))
+    await process(msg('bill:1020', { matchType: 'keyword' }))
+    expect(new URL(seen[0].url).pathname).toBe('/api/bills/legiscan:1020')
+    expect(seen[0].headers.get('x-handle-form')).toBe('neutral')
   })
 })

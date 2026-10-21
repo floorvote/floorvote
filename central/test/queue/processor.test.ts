@@ -980,6 +980,25 @@ describe('match provenance fan-out', () => {
     expect(a.send.mock.calls[0][0].matchProvenance).toBe('bulk')
     expect(b.send.mock.calls[0][0].matchProvenance).toBe('routine')
   })
+
+  // Release 2 of the neutral handle rename (#305), central deploying first: of
+  // two instances on one bill, the one whose binding reports neutral handles is
+  // told `bill:<n>`, and the one that doesn't (an older release, or no binding)
+  // keeps getting `legiscan:<n>`.
+  it.each([
+    ['an older release', { deliveryProbe: async () => ({ probe: null }) }],
+    ['no CentralApi binding', undefined],
+  ])('names the bill by the neutral handle to a capable instance and the legacy one to %s', async (_, older) => {
+    const db = drizzle(env.DB, { schema })
+    await linkTwoTenants(db)
+    const { e, a, b } = envWithTenantQueues()
+    const run = { ...e, TENANT_PROV_A: { capabilities: async () => ({ neutralHandles: true }) }, ...(older ? { TENANT_PROV_B: older } : {}) }
+
+    await processIngestorQueue(makeBatch(9001, { skipFetch: true }), run, db)
+
+    expect(a.send.mock.calls[0][0].billId).toBe('bill:9001')
+    expect(b.send.mock.calls[0][0].billId).toBe('legiscan:9001')
+  })
 })
 
 

@@ -1,0 +1,1 @@
+-- Stub for the red step of #647 (release 2 of the neutral handle rename).

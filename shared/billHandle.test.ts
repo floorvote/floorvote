@@ -1,13 +1,14 @@
 import { describe, it, expect } from 'vitest'
-import { HANDLE_PREFIXES, NEUTRAL_HANDLE_PREFIX, chunkedForms, handleForms, isHandle, legacyHandle, normalizeHandle, parseHandle, toHandle, toLegacyHandle } from './billHandle'
+import { HANDLE_FORM_HEADER, HANDLE_PREFIXES, NEUTRAL_HANDLE_PREFIX, chunkedForms, handleForms, isHandle, legacyHandle, normalizeHandle, parseHandle, toHandle, toLegacyHandle } from './billHandle'
 
 describe('bill handles', () => {
-  it('builds the legacy legiscan: form', () => {
-    expect(toHandle(501)).toBe('legiscan:501')
+  it('builds the neutral bill: form', () => {
+    expect(toHandle(501)).toBe('bill:501')
   })
 
   it('parses a handle back to the central bill id', () => {
     expect(parseHandle('legiscan:501')).toBe(501)
+    expect(parseHandle('bill:501')).toBe(501)
     expect(parseHandle(toHandle(2099974))).toBe(2099974)
   })
 
@@ -38,8 +39,8 @@ describe('bill handles', () => {
   })
 })
 
-// Release 1 of the neutral rename (#305): both forms parse, and only the legacy
-// form is built. A neutral handle names the same central bill as its legacy twin.
+// The neutral rename (#305): both forms parse. Release 2 builds and stores the
+// neutral form. A neutral handle names the same central bill as its legacy twin.
 describe('neutral bill handles', () => {
   // Central row ids come from any provider, so any positive integer is a shape:
   // small, large, and past 2^31.
@@ -51,14 +52,22 @@ describe('neutral bill handles', () => {
     expect(isHandle(`bill:${id}`)).toBe(true)
   })
 
-  it('still builds the legacy form, so central and tenants agree during the rollout', () => {
-    expect(toHandle(501)).toBe('legiscan:501')
+  it('builds the neutral form, and the legacy form only on request', () => {
+    for (const id of ids) expect(toHandle(id)).toBe(`bill:${id}`)
     expect(toLegacyHandle(501)).toBe('legiscan:501')
   })
 
-  it('normalizeHandle rewrites a neutral handle to the stored (legacy) form', () => {
-    expect(normalizeHandle('bill:501')).toBe('legiscan:501')
-    expect(normalizeHandle('legiscan:501')).toBe('legiscan:501')
+  it('normalizeHandle rewrites a legacy handle to the stored (neutral) form', () => {
+    expect(normalizeHandle('legiscan:501')).toBe('bill:501')
+    expect(normalizeHandle('bill:501')).toBe('bill:501')
+  })
+
+  it.each(['legiscan:', 'legiscan:0', 'legiscan:abc', 'legiscan:12x', 'legiscan:012'])('normalizeHandle leaves the malformed %s as it is', (value) => {
+    expect(normalizeHandle(value)).toBe(value)
+  })
+
+  it('names the request header a tenant sends to read neutral handles from central', () => {
+    expect(HANDLE_FORM_HEADER).toBe('x-handle-form')
   })
 
   it.each([
@@ -109,7 +118,8 @@ describe('neutral bill handles', () => {
 })
 
 // A tenant row can hold either spelling (release 2's migration rewrites them while an
-// older worker is still running), so a lookup by handle matches both (#305).
+// older worker is still running, and a bill can be held in both), so a lookup by
+// handle matches both (#305).
 describe('looking a bill up by handle', () => {
   it.each(['legiscan:501', 'bill:501'])('handleForms(%s) is both spellings of the bill, legacy first', (handle) => {
     expect(handleForms(handle)).toEqual(['legiscan:501', 'bill:501'])

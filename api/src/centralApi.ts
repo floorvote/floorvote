@@ -46,6 +46,11 @@ export class CentralApi extends WorkerEntrypoint<Env> {
     return sendSampleEmail(this.env, getDb(this.env.DB), to, type)
   }
 
+  // Stub for the red step of #647.
+  async capabilities(): Promise<{ neutralHandles: boolean }> {
+    return { neutralHandles: false }
+  }
+
   async deliveryProbe(): Promise<{ probe: DeliveryProbeRecord | null }> {
     return { probe: await readDeliveryProbe(getDb(this.env.DB)) }
   }

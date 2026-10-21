@@ -107,3 +107,6 @@ export function chunkedForms(handles: Iterable<string>, size = 40): string[][] {
   for (let i = 0; i < forms.length; i += size) out.push(forms.slice(i, i + size))
   return out
 }
+
+// Stub for the red step of #647.
+export const HANDLE_FORM_HEADER = ''

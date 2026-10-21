@@ -5,9 +5,10 @@ import * as schema from '../../src/db/schema'
 import { app } from '../../src/index'
 import { clearDb } from '../helpers/migrations'
 
-// Release 1 of the neutral handle rename (#305): central's bill routes take a
-// bill by its neutral handle as readily as by its legacy one or a bare id, and
-// every handle central sends is still the legacy form.
+// The neutral handle rename (#305): central's bill routes take a bill by its
+// neutral handle as readily as by its legacy one or a bare id. Release 2 names
+// the bill by its neutral handle only to an instance whose request says it
+// reads one (the x-handle-form header), and by its legacy handle otherwise.
 
 const headers = { 'x-admin-secret': 'test-secret', 'Content-Type': 'application/json' }
 
@@ -34,11 +35,29 @@ describe('GET /bills/:id by neutral handle', () => {
     expect(await (await get(String(id))).json()).toEqual(legacy)
   })
 
-  it('still sends the legacy handle as the bill\'s billId, whichever form asked', async () => {
+  it('sends the legacy handle as the bill\'s billId to a caller that does not ask for neutral, whichever form asked', async () => {
     for (const asked of ['bill:101', 'legiscan:101', '101']) {
       const body = await (await get(asked)).json() as { billId: string }
       expect(body.billId).toBe('legiscan:101')
     }
+  })
+
+  it('sends the neutral handle as the bill\'s billId to a caller whose request says it reads one, whichever form asked', async () => {
+    for (const asked of ['bill:101', 'legiscan:101', '101']) {
+      const res = await app.request(`/api/bills/${asked}`, { headers: { ...headers, 'x-handle-form': 'neutral' } }, env)
+      expect(((await res.json()) as { billId: string }).billId).toBe('bill:101')
+    }
+  })
+
+  it.each([['legacy'], [''], ['NEUTRAL'], ['bill']])('sends the legacy handle for an x-handle-form of %j', async (value) => {
+    const res = await app.request('/api/bills/bill:101', { headers: { ...headers, 'x-handle-form': value } }, env)
+    expect(((await res.json()) as { billId: string }).billId).toBe('legiscan:101')
+  })
+
+  it('serves the same bill either way, apart from its billId', async () => {
+    const legacy = await (await get('legiscan:101')).json() as Record<string, unknown>
+    const neutral = await (await app.request('/api/bills/legiscan:101', { headers: { ...headers, 'x-handle-form': 'neutral' } }, env)).json() as Record<string, unknown>
+    expect({ ...neutral, billId: legacy.billId }).toEqual(legacy)
   })
 
   it('serves the changes feed by neutral handle', async () => {
