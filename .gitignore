@@ -6,6 +6,8 @@ dist/
 *.local
 .env
 .env.secrets
+# Per-deployment values and opt-outs for scripts/new-instance.sh.
+scripts/.env.ops
 .DS_Store
 tsconfig.tsbuildinfo
 

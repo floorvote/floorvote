@@ -653,4 +653,10 @@ describe('new-instance.sh, anonymous setup report: documented', () => {
     expect(header.replace(/\s*\n#\s*/g, ' ')).toMatch(/no terminal on stdin the answer is no, unless FLOORVOTE_INSTALL_PING is (set to )?yes/)
     expect(section).toMatch(/No terminal, no question\.\*\*[^\n]*unless[^\n]*FLOORVOTE_INSTALL_PING[^\n]*yes/)
   })
+
+  // The docs and the header both send operators to scripts/.env.ops for the
+  // opt-out, so git must never pick that file up.
+  it('keeps scripts/.env.ops out of git', () => {
+    expect(() => execFileSync('git', ['check-ignore', '-q', 'scripts/.env.ops'], { cwd: repoRoot })).not.toThrow()
+  })
 })
