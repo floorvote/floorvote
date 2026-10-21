@@ -22,7 +22,7 @@ vi.mock('../../src/cron/sync', () => ({
   registerWithCentral: vi.fn().mockResolvedValue(undefined),
 }))
 
-const BILL_ID = 'legiscan:9101'
+const BILL_ID = 'bill:9101'
 
 const centralBill = {
   billId: BILL_ID,

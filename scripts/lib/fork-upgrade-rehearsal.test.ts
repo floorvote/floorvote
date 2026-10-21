@@ -152,6 +152,17 @@ describe('the fork upgrade rehearsal', () => {
     expect(blind.forkTables).toEqual([])
   })
 
+  // 0119 moves handles to the neutral prefix (#305): the same central bill under
+  // the other spelling passes, and a handle that names another bill still fails.
+  it('accepts a bill whose handle only changes spelling, and fails one whose central id changes', () => {
+    const neutral = rehearse(forkCopy('instance'), 'instance', 'instance', upstreamMigrations('instance'))
+    expect(neutral.checks.find(c => c.name.startsWith('Every bill keeps its id and central id'))).toMatchObject({ ok: true })
+
+    const moved = [...upstreamMigrations('instance'), { name: '9999_move_a_bill.sql', sql: `UPDATE bills SET external_id = 'bill:1' WHERE bill_number = 'B26-0769'` }]
+    const report = rehearse(forkCopy('instance'), 'instance', 'instance', moved)
+    expect(report.checks.find(c => c.name.startsWith('Every bill keeps its id and central id'))).toMatchObject({ ok: false })
+  })
+
   it('fails before upgrading when LegiScan bills in DC are tracked, since the claim of DC would be refused', () => {
     const db = forkCopy('central')
     db.exec(`INSERT INTO bills (bill_id, session_id, state, state_id, bill_number, change_hash, title) VALUES (2001234, 2100, 'DC', 51, 'B26-0001', 'h', 'From LegiScan')`)

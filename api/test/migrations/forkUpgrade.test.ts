@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { normalizeHandle } from '../../../shared/billHandle'
 import { env, applyD1Migrations } from 'cloudflare:test'
 import { resetDb, migrationsFromFiles } from '../helpers'
 import { getDb } from '../../src/db/client'
@@ -177,7 +178,10 @@ describe('a fork\'s instance, moved onto upstream', () => {
     expect(applied.slice(0, forkManifest.files.length)).toEqual(forkManifest.files.map(f => f.replace(/\.sql$/, '')))
     expect(applied.slice(forkManifest.files.length)).toEqual(expect.arrayContaining(['0075_auth_events_email_changed', '0079_calendar_event_kind', '0082_calendar_event_covered_by']))
     expect(await forkTables()).toEqual(before)
-    expect(await rows('SELECT id, external_id FROM bills ORDER BY id')).toEqual(billIds)
+    // 0119 moves each handle to the neutral prefix (#305) and keeps every bill id.
+    expect(await rows('SELECT id, external_id FROM bills ORDER BY id'))
+      .toEqual(billIds.map(b => ({ ...b, external_id: normalizeHandle(b.external_id as string | null) })))
+    expect((await rows('SELECT external_id FROM bills')).every(b => String(b.external_id).startsWith('bill:'))).toBe(true)
     expect(await calendarIds()).toEqual(calendar)
     // The fork's deadline row is a bill entry of kind deadline now (0079), and its Council rows wait for the mirror.
     expect(await rows(`SELECT source, kind, COUNT(*) AS n FROM calendar_events GROUP BY source, kind ORDER BY source, kind`)).toEqual([

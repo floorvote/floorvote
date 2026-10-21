@@ -109,7 +109,7 @@ describe('the title key at ingest', () => {
   it('stores them for a bill the delivery creates', async () => {
     served = { titleKey: KEY, body: 'H' }
     await processCentralNotification({ tenantId: 'test-org', billId: 'legiscan:555', stubOnly: true }, testEnv as never, getDb(env.DB))
-    const row = await getDb(env.DB).select({ titleKey: bills.titleKey, chamber: bills.chamber }).from(bills).where(eq(bills.externalId, 'legiscan:555')).get()
+    const row = await getDb(env.DB).select({ titleKey: bills.titleKey, chamber: bills.chamber }).from(bills).where(eq(bills.externalId, 'bill:555')).get()
     expect(row).toEqual({ titleKey: KEY, chamber: 'H' })
   })
 

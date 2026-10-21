@@ -212,7 +212,7 @@ export type CalendarBlock = {
 
 export type NotificationMessage = {
   tenantId: string
-  billId: string   // the bill handle, "legiscan:{bill_id}" (toHandle in lib/billHandle; central sends the legacy form, and tenants also accept "bill:{bill_id}")
+  billId: string   // the bill handle, "bill:{bill_id}" (toHandle in lib/billHandle), sent as "legiscan:{bill_id}" to an instance that doesn't read neutral handles (lib/tenantDelivery.ts)
   forceMetadata?: boolean
   forceAI?: boolean
   interactive?: true     // only set when true; omitted for all background paths

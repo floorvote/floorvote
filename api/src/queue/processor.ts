@@ -285,15 +285,16 @@ export async function processCentralNotification(
   db: AppDb,
 ): Promise<void> {
   if (msg.tenantId !== env.TENANT_ID) return
+  // A delivery check (scripts/verify-instance.sh): record that it arrived, under
+  // the handle central sent, and stop. It must reach no bill write, no feed
+  // event, and no analysis.
+  if (msg.probe !== undefined) return recordDeliveryProbe(msg, env, db)
+
   // A handle may arrive in either form (#305). Everything below, including the
   // bill lookup and the handle it is stored under, sees the spelling this
   // instance stores for the bill. Only the reads from central and the calendar
   // UIDs use the legacy one.
   msg = { ...msg, billId: await resolveStoredHandle(db, msg.billId) }
-
-  // A delivery check (scripts/verify-instance.sh): record that it arrived and
-  // stop. It must reach no bill write, no feed event, and no analysis.
-  if (msg.probe !== undefined) return recordDeliveryProbe(msg, env, db)
 
   // When this copy of the bill was read: texts stored later come from a newer one.
   const fetchedAt = nowDb()

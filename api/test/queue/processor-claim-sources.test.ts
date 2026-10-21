@@ -35,7 +35,7 @@ vi.mock('../../src/lib/claimSourceCounts', async (importOriginal) => {
   return { ...actual, recordClaimSourcesCutOff: recordCutOffMock }
 })
 
-const BILL_ID = 'legiscan:9001'
+const BILL_ID = 'bill:9001'
 
 // Invented bill. Two versions: the text endpoint serves 5001 (the one with a
 // stored copy), while the newest by date is 5002, which is what

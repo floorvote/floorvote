@@ -36,7 +36,7 @@ vi.stubGlobal('fetch', fetchMock)
 
 import { template } from '../../src/providers/template'
 import { TEMPLATE_BASE } from '../../src/providers/template/client'
-import { toHandle } from '../../src/lib/billHandle'
+import { toLegacyHandle } from '../../src/lib/billHandle'
 import { mainSeam, resetCentral } from '../helpers/mainSeam'
 
 const FILE_2026 = `${TEMPLATE_BASE}/2026/bills.json`
@@ -79,12 +79,12 @@ describe('the template provider at the main seam', () => {
     // Only HB 1 matches the instance's keyword, so only it is ingested.
     expect(seam.queuedIds(run)).toEqual([hb1])
 
-    expect(await seam.getJson(`/bills/${toHandle(hb1)}`)).toMatchObject({
+    expect(await seam.getJson(`/bills/${toLegacyHandle(hb1)}`)).toMatchObject({
       number: 'HB 1', state: 'ZZ', title: 'Public Library Hours Act',
       stateUrl: 'https://legislature.example/bills/2026/HB1',
     })
     const sent = seam.sentToTenant(run)
-    expect(sent).toContainEqual(expect.objectContaining({ billId: toHandle(hb1) }))
+    expect(sent).toContainEqual(expect.objectContaining({ billId: toLegacyHandle(hb1) }))
   })
 
   it('fails closed on an answer the mapping doesn\'t read, writing nothing', async () => {

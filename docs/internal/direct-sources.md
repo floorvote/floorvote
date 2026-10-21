@@ -73,7 +73,7 @@ The bill shape can grow fields when a source needs them; that is a smaller chang
 
 - The tables under a bill (`bill_history`, `bill_texts`, `roll_calls`, …) don't need the column: one source writes a bill and everything under it.
 - Code that needs to know where a bill came from reads the column. It no longer tests id ranges.
-- Tenants keep addressing bills as `legiscan:<int>` for now. The prefix now means "central bill id", and renaming it touches about fifteen parse sites across tenant and web for no change in behavior. That can be its own PR later.
+- Tenants kept addressing bills as `legiscan:<int>` at first. The prefix means "central bill id", and the neutral `bill:<int>` replaced it later over two releases (#305, #647).
 
 ### Ids come from one table
 
@@ -203,5 +203,5 @@ Each is a draft stacked on the previous one, starting from #206.
 - **Carried-over Virginia bills.** Should a bill carried over from 2026 be the same FloorVote bill in 2027, or a new bill linked to the old one? This proposal follows LegiScan (new bill, linked), so a team's positions and notes don't move automatically.
 - **Virginia's API terms** say "personal and non-commercial use only". So bill text from the LIS API is opt-in: the Virginia module reads only the public CSVs unless a deployment sets `LIS_API_KEY`, which takes on those terms, and without it Virginia bills have no text. Whether a deployment may use the API commercially is for that deployment to settle with DLAS.
 - **Maryland votes and amendments** are published only as HTML pages and PDFs. They are left out until someone needs them.
-- **The tenant id prefix.** `legiscan:<int>` could become a neutral prefix in a later PR.
+- **The tenant id prefix.** `legiscan:<int>` became the neutral `bill:<int>` (#305, #647).
 - **The cutover tool**, for moving a state that tenants already track from LegiScan to a direct source.

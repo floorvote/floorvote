@@ -47,9 +47,9 @@ export async function startFakeCentral(initial: Partial<FakeOptions> = {}): Prom
       if (!opts.bound && path.startsWith('/api/tenants/ri/')) return send(501, { error: 'tenant not bound' })
       if (path === '/api/tenants/ri/verify-delivery') {
         nonce = body.nonce
-        return send(200, { ok: true, nonce, billId: 'legiscan:1', via: 'binding' })
+        return send(200, { ok: true, nonce, billId: 'bill:1', via: 'binding' })
       }
-      if (path === '/api/tenants/ri/delivery-probe') return send(200, { probe: { nonce, billId: 'legiscan:1', receivedAt: 'now', readStatus: 200 } })
+      if (path === '/api/tenants/ri/delivery-probe') return send(200, { probe: { nonce, billId: 'bill:1', receivedAt: 'now', readStatus: 200 } })
       if (path === '/api/tenants/ri/verify-ai') return send(200, { status: 'ok', billNumber: 'HB 1', tags: 2, relevanceScore: 7, usedFullText: true })
       if (path === '/api/tenants/ri/send-sample-email') return send(200, { ok: true, provider: 'resend', to: body.to })
       return send(404, { error: 'not found' })

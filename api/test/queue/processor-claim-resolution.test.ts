@@ -38,7 +38,7 @@ vi.mock('../../src/lib/claimResolution', async (importOriginal) => {
 })
 
 const centralBill = {
-  billId: 'legiscan:9001',
+  billId: 'bill:9001',
   sessionId: '2100',
   state: 'ZZ',
   number: 'HB 77',
@@ -60,7 +60,7 @@ const centralBill = {
 }
 
 const testEnv = { ...env, TENANT_ID: 'test-org', CENTRAL_API_URL: 'https://central.test' } as any
-const msg: TenantQueueMessage = { tenantId: 'test-org', billId: 'legiscan:9001' }
+const msg: TenantQueueMessage = { tenantId: 'test-org', billId: 'bill:9001' }
 
 const analysis = { affectedCitations: [], summary: 'Requires a drop box in each county.', tags: ['Voting'], relevanceScore: 7 }
 const QUOTE = 'Each county shall provide at least one drop box.'
@@ -79,7 +79,7 @@ function central(html: string, docId = '5001') {
 }
 
 async function row() {
-  return (await env.DB.prepare('SELECT * FROM bills WHERE external_id = ?').bind('legiscan:9001').first()) as Record<string, unknown>
+  return (await env.DB.prepare('SELECT * FROM bills WHERE external_id = ?').bind('bill:9001').first()) as Record<string, unknown>
 }
 const stored = async () => JSON.parse((await row()).claim_sources as string) as ResolvedClaimSource[]
 
@@ -213,8 +213,8 @@ describe('resolving each claim source as it is stored', () => {
 // member's. Claim sources resolve against the analyzed member's own document,
 // and are read through that member, never through the page's bill.
 describe('a companion group whose members\' texts differ', () => {
-  const A = { billId: 'legiscan:9001', docId: '6001', number: 'A 100' }
-  const S = { billId: 'legiscan:9002', docId: '6002', number: 'S 200' }
+  const A = { billId: 'bill:9001', docId: '6001', number: 'A 100' }
+  const S = { billId: 'bill:9002', docId: '6002', number: 'S 200' }
   const textA = '<p>A 100. Introduced by the Assembly Committee on Elections.</p><p>Section 1. Each county shall provide at least one drop box.</p><p>Section 2. Boxes are emptied daily.</p>'
   const textS = '<p>S 200 -- Senate Committee on Rules, second reading, as amended, with a longer header.</p><p>Section 1. Each county shall provide at least one drop box.</p><p>Section 2. Drop boxes shall be emptied each business day by two employees.</p>'
   const docA = billHtmlToText(textA)

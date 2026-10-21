@@ -25,7 +25,7 @@ vi.mock('../../src/lib/llm', async (importOriginal) => {
   }
 })
 
-const BILL_ID = 'legiscan:789'
+const BILL_ID = 'bill:789'
 const V1 = '2026-05-21T00:00:00Z'
 const V2 = '2026-06-02T08:30:00Z'
 const V3 = '2026-06-09T16:45:00Z'

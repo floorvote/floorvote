@@ -15,7 +15,7 @@ vi.mock('../../src/lib/llm', async (importOriginal) => {
   return { ...actual, processBill: vi.fn().mockResolvedValue({ summary: 'S', tags: [], relevanceScore: 7 }) }
 })
 
-const BILL_ID = 'legiscan:4710'
+const BILL_ID = 'bill:4710'
 
 const centralBill = {
   billId: BILL_ID,

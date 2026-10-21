@@ -22,7 +22,8 @@ import { resolveTenantRpc } from '../lib/tenantRpc'
 import { mergeCoverage } from '../lib/coverage'
 import { isSafeTenantApiUrl } from '../lib/safeUrl'
 import { guardCallerTenantParam, guardCallerTenantBody, CALLER_TENANT_HEADER } from '../lib/callerTenant'
-import { toHandle } from '../lib/billHandle'
+import { HANDLE_FORM_HEADER, readsNeutralHandles, toHandle, toTenantHandle } from '../lib/billHandle'
+import { sendsNeutralHandles } from '../lib/tenantHandles'
 import { refreshRequestedBills } from '../lib/fetchRequests'
 
 const REPROCESS_LIMIT = 1000
@@ -737,12 +738,14 @@ tenantsRoutes.get('/:tenantId/body-events', guardCallerTenantParam(), async (c) 
 
   const db = drizzle(c.env.DB, { schema })
   const { owners, capabilities, coverage } = await tenantCapabilities(db, tenantId)
+  // Agenda bills and covered entries in the form the instance reads (#305).
+  const neutral = readsNeutralHandles(c.req.header(HANDLE_FORM_HEADER))
 
   const events: BodyEventDetail[] = []
   for (const [state, caps] of Object.entries(capabilities)) {
     if (!caps.bodyEvents) continue
     const provider = findProvider(owners.get(state))
-    if (provider) events.push(...await bodyEventDetails(db, provider, state, from, to))
+    if (provider) events.push(...await bodyEventDetails(db, provider, state, from, to, id => toTenantHandle(id, neutral)))
   }
   // null, not a missing key, when central has no usable dashboard address: the instance forgets the
   // address on null, and keeps what it has on a missing key (an older central).
@@ -1025,7 +1028,8 @@ tenantsRoutes.post('/:tenantId/verify-delivery', async (c) => {
   const billId = await pickVerificationBill(db, parseCoverage(row))
   if (billId === null) return c.json({ error: 'central has no stored bill to send' }, 404)
 
-  const handle = toHandle(billId)
+  // The form the instance reads (#305), which deliverToTenant sends it in too.
+  const handle = toTenantHandle(billId, await sendsNeutralHandles(c.env, tenantId))
   const via = await deliverToTenant(c.env, tenantId, row.queueId ?? null, { tenantId, billId: handle, probe: nonce })
   if (via === 'dropped') {
     return c.json({ error: `no delivery path for tenant ${tenantId} (no queue binding or queue_id)` }, 409)
@@ -1049,7 +1053,7 @@ tenantsRoutes.post('/:tenantId/verify-ai', async (c) => {
   const billId = await pickVerificationBill(db, parseCoverage(row))
   if (billId === null) return c.json({ error: 'central has no stored bill to analyze' }, 404)
   try {
-    return c.json(await rpc.verifyAi(toHandle(billId)))
+    return c.json(await rpc.verifyAi(toTenantHandle(billId, await sendsNeutralHandles(c.env, tenantId))))
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : 'tenant call failed' }, 502)
   }

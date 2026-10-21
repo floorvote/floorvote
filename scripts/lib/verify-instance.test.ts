@@ -153,12 +153,12 @@ function makeWorld(overrides: Record<string, Route> = {}, opts: { probeArrivesAf
     }),
     [`POST ${CENTRAL}/api/tenants/ri/verify-delivery`]: ({ body }) => {
       nonce = body?.nonce ?? 'n-1'
-      return { json: { ok: true, nonce, billId: 'legiscan:42', via: 'binding' } }
+      return { json: { ok: true, nonce, billId: 'bill:42', via: 'binding' } }
     },
     [`GET ${CENTRAL}/api/tenants/ri/delivery-probe`]: () => {
       polls += 1
       if (polls < arrivesAfter) return { json: { probe: null } }
-      return { json: { probe: { nonce, billId: 'legiscan:42', receivedAt: '2026-10-14 12:00:00', readStatus: opts.probeReadStatus ?? 200 } } }
+      return { json: { probe: { nonce, billId: 'bill:42', receivedAt: '2026-10-14 12:00:00', readStatus: opts.probeReadStatus ?? 200 } } }
     },
     [`POST ${CENTRAL}/api/tenants/ri/verify-ai`]: () => ({ json: { status: 'ok', billNumber: 'HB 1', tags: 2, relevanceScore: 7 } }),
     [`POST ${CENTRAL}/api/tenants/ri/send-sample-email`]: () => ({ json: { ok: true, provider: 'cloudflare' } }),
@@ -361,12 +361,12 @@ describe('check 3: queue delivery', () => {
     const { by } = await run(world)
     expect(by('delivery').status).toBe('pass')
     expect(world.calls.filter(c => c.url.endsWith('/delivery-probe'))).toHaveLength(3)
-    expect(by('delivery').detail).toContain('legiscan:42')
+    expect(by('delivery').detail).toContain('bill:42')
   })
 
   it('ignores a probe left over from an earlier run', async () => {
     const world = makeWorld({
-      [`GET ${CENTRAL}/api/tenants/ri/delivery-probe`]: () => ({ json: { probe: { nonce: 'stale', billId: 'legiscan:1', receivedAt: 'x', readStatus: 200 } } }),
+      [`GET ${CENTRAL}/api/tenants/ri/delivery-probe`]: () => ({ json: { probe: { nonce: 'stale', billId: 'bill:1', receivedAt: 'x', readStatus: 200 } } }),
     })
     const { by } = await run(world)
     expect(by('delivery').status).toBe('fail')

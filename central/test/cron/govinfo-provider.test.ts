@@ -27,7 +27,7 @@ vi.stubGlobal('fetch', fetchMock)
 import { govinfo } from '../../src/providers/govinfo'
 import { clearRollCallCaches } from '../../src/providers/govinfo/client'
 import { rollCallNetwork } from '../helpers/govinfoRollCalls'
-import { toHandle } from '../../src/lib/billHandle'
+import { toLegacyHandle } from '../../src/lib/billHandle'
 import { mainSeam, resetCentral, type Run } from '../helpers/mainSeam'
 import { BILL_TYPES, buildListing, buildZip, fileType, fixtureFiles, serveZip, zipLayout } from '../helpers/govinfoZip'
 import { runSnapshotSync } from '../../src/cron/sync-snapshots'
@@ -82,7 +82,7 @@ const seam = mainSeam(govinfo, { tenantId: 'usteam' })
 const { makeRun, queuedIds, sentToTenant, getJson, sync, syncAndIngest } = seam
 const claim = (provider = 'govinfo') => seam.claim('US', provider)
 const billId = (number: string) => seam.billIdOf(number)
-const bill = async (number: string) => getJson(`/bills/${toHandle(await billId(number))}`)
+const bill = async (number: string) => getJson(`/bills/${toLegacyHandle(await billId(number))}`)
 const db = () => drizzle(env.DB, { schema })
 /** A forced run, as an operator's Sync now sends: a read in full, whatever the stored ETag. */
 const forcedSync = (run = makeRun()) => runSnapshotSync(govinfo, run.env as any, db(), { force: true })
@@ -233,7 +233,7 @@ describe('Congress from GovInfo Bill Status', () => {
     const hb3132 = await billId('HB3132')
     expect(queuedIds(run)).toEqual([hb3132])
     const sent = sentToTenant(run)
-    expect(sent.filter((m: any) => !m.stubOnly).map((m: any) => m.billId)).toEqual([toHandle(hb3132)])
+    expect(sent.filter((m: any) => !m.stubOnly).map((m: any) => m.billId)).toEqual([toLegacyHandle(hb3132)])
     expect(sent.filter((m: any) => m.stubOnly)).toHaveLength(BILLS.length - 1)
   })
 
@@ -1080,7 +1080,7 @@ describe('between full reads (#616)', () => {
     expect(calls.filter(isZip)).toEqual([])
     const hb3132 = await billId('HB3132')
     expect(queuedIds(run)).toEqual([hb3132])
-    expect(sentToTenant(run).filter((m: any) => !m.stubOnly).map((m: any) => m.billId)).toEqual([toHandle(hb3132)])
+    expect(sentToTenant(run).filter((m: any) => !m.stubOnly).map((m: any) => m.billId)).toEqual([toLegacyHandle(hb3132)])
     expect(await bill('HB3132')).toMatchObject({ lastAction: 'Reported by the Committee on Veterans\' Affairs. H. Rept. 119-1.' })
   })
 
@@ -1318,7 +1318,7 @@ describe('between full reads (#616)', () => {
       expect(await bill('HB3132')).toMatchObject({ lastAction: 'Reported by the Committee on Veterans\' Affairs. H. Rept. 119-1.' })
       const hb3132 = await billId('HB3132')
       expect(queuedIds(run)).not.toContain(hb3132)
-      expect(sentToTenant(run).filter((m: any) => m.billId === toHandle(hb3132) && !m.stubOnly)).toEqual([])
+      expect(sentToTenant(run).filter((m: any) => m.billId === toLegacyHandle(hb3132) && !m.stubOnly)).toEqual([])
       // And the pass after it has nothing to move forward again.
       later('2026-10-20T01:30:00Z')
       const next = makeRun()

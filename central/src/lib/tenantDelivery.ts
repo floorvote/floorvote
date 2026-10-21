@@ -5,9 +5,16 @@
 // unchanged. Tenants WITHOUT a binding fall back to HTTP publish by queue_id,
 // which is what makes onboarding self-service (no central redeploy). When neither
 // is available the message is dropped and the caller logs it.
+//
+// It is also where a message's bill handle takes the form the instance reads
+// (#305): `bill:<n>` for an instance whose CentralApi binding reports neutral
+// handles, `legiscan:<n>` for any other (lib/tenantHandles.ts), whatever form
+// the caller built. Every message to an instance names its bill in `billId`.
 
 import { getTenantQueue } from './tenantQueue'
 import { publishMessage, publishBatch, queuesRestEnabled } from './queuesRest'
+import { inTenantForm } from './billHandle'
+import { sendsNeutralHandles } from './tenantHandles'
 
 type DeliveryEnv = { CF_QUEUES_TOKEN?: string; CF_ACCOUNT_ID?: string; [key: string]: unknown }
 
@@ -15,6 +22,21 @@ type DeliveryEnv = { CF_QUEUES_TOKEN?: string; CF_ACCOUNT_ID?: string; [key: str
 const BATCH_MAX = 100
 
 export type DeliveryOutcome = 'binding' | 'http' | 'dropped' | 'noop'
+
+const billIdOf = (body: unknown): string | null => {
+  const id = body && typeof body === 'object' ? (body as { billId?: unknown }).billId : undefined
+  return typeof id === 'string' ? id : null
+}
+
+/** The bodies with each `billId` in the form the instance reads. Asks the instance only when one names a bill. */
+async function inTenantHandleForm(env: DeliveryEnv, tenantId: string, bodies: unknown[]): Promise<unknown[]> {
+  if (!bodies.some(b => billIdOf(b) !== null)) return bodies
+  const neutral = await sendsNeutralHandles(env, tenantId)
+  return bodies.map(b => {
+    const id = billIdOf(b)
+    return id === null ? b : { ...(b as object), billId: inTenantForm(id, neutral) }
+  })
+}
 
 /** Deliver one message to a tenant. Binding-first, HTTP fallback by queueId. */
 export async function deliverToTenant(
@@ -24,15 +46,14 @@ export async function deliverToTenant(
   body: unknown,
 ): Promise<DeliveryOutcome> {
   const binding = getTenantQueue(env, tenantId)
+  if (!binding && !(queueId && queuesRestEnabled(env))) return 'dropped'
+  const [sent] = await inTenantHandleForm(env, tenantId, [body])
   if (binding) {
-    await binding.send(body)
+    await binding.send(sent)
     return 'binding'
   }
-  if (queueId && queuesRestEnabled(env)) {
-    await publishMessage(env, queueId, body)
-    return 'http'
-  }
-  return 'dropped'
+  await publishMessage(env, queueId!, sent)
+  return 'http'
 }
 
 /** Deliver many messages to a tenant. Binding-first (chunked), HTTP fallback by queueId. */
@@ -44,15 +65,14 @@ export async function deliverBatchToTenant(
 ): Promise<DeliveryOutcome> {
   if (bodies.length === 0) return 'noop'
   const binding = getTenantQueue(env, tenantId)
+  if (!binding && !(queueId && queuesRestEnabled(env))) return 'dropped'
+  const sent = await inTenantHandleForm(env, tenantId, bodies)
   if (binding) {
-    for (let i = 0; i < bodies.length; i += BATCH_MAX) {
-      await binding.sendBatch(bodies.slice(i, i + BATCH_MAX).map((b) => ({ body: b })))
+    for (let i = 0; i < sent.length; i += BATCH_MAX) {
+      await binding.sendBatch(sent.slice(i, i + BATCH_MAX).map((b) => ({ body: b })))
     }
     return 'binding'
   }
-  if (queueId && queuesRestEnabled(env)) {
-    await publishBatch(env, queueId, bodies)
-    return 'http'
-  }
-  return 'dropped'
+  await publishBatch(env, queueId!, sent)
+  return 'http'
 }

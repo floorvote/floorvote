@@ -84,7 +84,7 @@ import { runSync } from '../../src/cron/sync'
 import { processIngestorQueue } from '../../src/queue/processor'
 import { getCurrentEtHour } from '../../src/lib/sync-schedule'
 import { limsBillId, limsSessionId } from '../../src/providers/lims/ids'
-import { toHandle } from '../../src/lib/billHandle'
+import { toHandle, toLegacyHandle } from '../../src/lib/billHandle'
 import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
 
 const LIMS = 'https://lims.dccouncil.gov/api/v2/PublicData/'
@@ -241,7 +241,7 @@ async function row<T = any>(sql: string, ...binds: unknown[]): Promise<T> {
   return env.DB.prepare(sql).bind(...binds).first() as Promise<T>
 }
 
-const calendarOf = (run: Run, billId: number) => sentToTenant(run).filter((m: any) => m.billId === toHandle(billId) && m.calendar).pop()
+const calendarOf = (run: Run, billId: number) => sentToTenant(run).filter((m: any) => m.billId === toLegacyHandle(billId) && m.calendar).pop()
 
 async function seedLegiscanDc() {
   const db = drizzle(env.DB, { schema })
@@ -332,6 +332,7 @@ describe('a cutover\'s dry run', () => {
 
     expect(body).toMatchObject({ dryRun: true, state: 'DC', from: 'legiscan', to: 'lims', sessions: ['2025-2026 Council Period 26'] })
     // Bills: matched on session year, kind of session, and number, keeping their handles.
+    // The report is the operator's, so it names bills by the neutral handle (#305).
     expect(body.bills.matched).toBe(2)
     expect(body.bills.list).toEqual(expect.arrayContaining([
       { billId: toHandle(B0400), number: 'B26-0400', nativeKey: 'B26-0400', from: '2025-2026 Council Period 26', to: '2025-2026 Council Period 26', tracked: true },
@@ -425,18 +426,18 @@ describe('a cutover', () => {
     // id instances hold, and gave the monitored one LIMS's status.
     expect(queued(run.limsQueue).map(b => b.billId)).toContain(B0400)
     expect(queued(run.limsQueue).map(b => b.billId)).not.toContain(limsBillId('B26-0400'))
-    const stub = sentToTenant(run).find((m: any) => m.billId === toHandle(B0001))
+    const stub = sentToTenant(run).find((m: any) => m.billId === toLegacyHandle(B0001))
     expect(stub).toMatchObject({ stubOnly: true })
 
     // Between the cutover and the first ingest, LegiScan's documents and votes are gone.
-    const interim = await getJson(`/bills/${toHandle(B0400)}`)
+    const interim = await getJson(`/bills/${toLegacyHandle(B0400)}`)
     expect(interim.texts).toEqual([])
     expect(interim.supplements).toEqual([])
     expect(interim.votes).toEqual([])
 
     await drain(run.limsQueue, run)
-    const bill = await getJson(`/bills/${toHandle(B0400)}`)
-    expect(bill).toMatchObject({ billId: toHandle(B0400), number: 'B26-0400', status: 'Official Law', statusStage: 'enacted' })
+    const bill = await getJson(`/bills/${toLegacyHandle(B0400)}`)
+    expect(bill).toMatchObject({ billId: toLegacyHandle(B0400), number: 'B26-0400', status: 'Official Law', statusStage: 'enacted' })
     // The bill moved to LIMS's Council Period, which shares LegiScan's name, so its slug is cp26-2.
     expect(bill).toMatchObject({ sessionId: String(limsSessionId(26)), sessionSlug: 'cp26-2' })
     // LIMS's documents and votes only, never mixed with LegiScan's.
@@ -450,7 +451,7 @@ describe('a cutover', () => {
     expect(firstReading.legislatorVotes).toContainEqual({ personId: String(PARKER), name: 'Zachary Parker', vote: 'Yes', url: null, party: null })
 
     // The first ingest is quiet: the instance is told the bill moved, but of no change.
-    const notified = sentToTenant(run).filter((m: any) => m.billId === toHandle(B0400) && !m.stubOnly)
+    const notified = sentToTenant(run).filter((m: any) => m.billId === toLegacyHandle(B0400) && !m.stubOnly)
     expect(notified).toHaveLength(1)
     expect(notified[0].changes).toBeUndefined()
     expect(notified[0].calendar.changes).toEqual([])
@@ -471,7 +472,7 @@ describe('a cutover', () => {
     expect(bill.calendar.find((c: any) => c.date === '2025-11-13').description).toMatch(/Public Hearing on B26-0400/)
 
     // The bill LIMS doesn't have stays LegiScan's, as it was.
-    const left = await getJson(`/bills/${toHandle(B9999)}`)
+    const left = await getJson(`/bills/${toLegacyHandle(B9999)}`)
     expect(left.texts.map((t: any) => t.docId)).toEqual(['5009'])
     // LegiScan's DC sessions leave the active list: nothing syncs them now.
     expect(await row('SELECT prior, sine_die FROM sessions WHERE session_id = ?', LS_SESSION)).toEqual({ prior: 1, sine_die: 1 })
@@ -496,7 +497,7 @@ describe('a cutover', () => {
     const { lims } = await import('../../src/providers/lims')
     await runSnapshotSync(lims, next.env, drizzle(env.DB, { schema }), { force: true })
     await drain(next.limsQueue, next)
-    const msg = sentToTenant(next).find((m: any) => m.billId === toHandle(B0400) && !m.stubOnly)
+    const msg = sentToTenant(next).find((m: any) => m.billId === toLegacyHandle(B0400) && !m.stubOnly)
     expect(msg.changes).toEqual([expect.objectContaining({ changeType: 'action_added', detail: '2026-09-01' })])
   })
 
@@ -510,7 +511,7 @@ describe('a cutover', () => {
     serve([])
     const { run } = await cutOver()
     await drain(run.limsQueue, run)
-    const quiet = sentToTenant(run).find((m: any) => m.billId === toHandle(B0400) && !m.stubOnly)
+    const quiet = sentToTenant(run).find((m: any) => m.billId === toLegacyHandle(B0400) && !m.stubOnly)
     expect(quiet.changes).toBeUndefined()
     // No calendar block: instances keep the entries they have, and so does central.
     expect(quiet.calendar).toBeUndefined()
@@ -524,7 +525,7 @@ describe('a cutover', () => {
     const { lims } = await import('../../src/providers/lims')
     await runSnapshotSync(lims, next.env, drizzle(env.DB, { schema }), { force: true })
     await drain(next.limsQueue, next)
-    const carried = sentToTenant(next).find((m: any) => m.billId === toHandle(B0400) && !m.stubOnly)
+    const carried = sentToTenant(next).find((m: any) => m.billId === toLegacyHandle(B0400) && !m.stubOnly)
     expect(carried.changes).toBeUndefined()
     expect(carried.calendar.events.map((e: any) => e.identityKey)).toEqual(expect.arrayContaining(['1|committee on youth affairs', '3|committee on youth affairs']))
     expect(await row('SELECT carried_from FROM bills WHERE bill_id = ?', B0400)).toEqual({ carried_from: null })
@@ -593,7 +594,7 @@ describe('a cutover beside other work', () => {
     return message
   }
   const quietFirstIngest = (run: Run) => {
-    const sent = sentToTenant(run).filter((m: any) => m.billId === toHandle(B0400) && !m.stubOnly)
+    const sent = sentToTenant(run).filter((m: any) => m.billId === toLegacyHandle(B0400) && !m.stubOnly)
     expect(sent).toHaveLength(1)
     expect(sent[0].changes).toBeUndefined()
     expect(sent[0].calendar.changes).toEqual([])
@@ -617,7 +618,7 @@ describe('a cutover beside other work', () => {
 
     await drain(run.limsQueue, run)
     quietFirstIngest(run)
-    expect((await getJson(`/bills/${toHandle(B0400)}`)).texts.map((t: any) => t.docId)).not.toContain('5002')
+    expect((await getJson(`/bills/${toLegacyHandle(B0400)}`)).texts.map((t: any) => t.docId)).not.toContain('5002')
   })
 
   it('keeps the first LIMS ingest quiet after a LegiScan ingest that wrote around the cutover', async () => {
@@ -629,7 +630,7 @@ describe('a cutover beside other work', () => {
 
     await drain(run.limsQueue, run)
     quietFirstIngest(run)
-    expect((await getJson(`/bills/${toHandle(B0400)}`)).texts.map((t: any) => t.docId)).not.toContain('5002')
+    expect((await getJson(`/bills/${toLegacyHandle(B0400)}`)).texts.map((t: any) => t.docId)).not.toContain('5002')
     expect(await row('SELECT carried_from FROM bills WHERE bill_id = ?', B0400)).toEqual({ carried_from: null })
   })
 
@@ -674,11 +675,11 @@ describe('a cutover beside other work', () => {
     const again = makeEnv()
     await runSync(again.env, drizzle(env.DB, { schema }))
     await drain(again.ingestor, again)
-    const bill = await getJson(`/bills/${toHandle(B0400)}`)
+    const bill = await getJson(`/bills/${toLegacyHandle(B0400)}`)
     // Only LegiScan's documents and votes, with nothing of LIMS's left behind.
     expect(bill.texts.map((t: any) => t.docId)).toEqual(['5002'])
     expect(bill.votes).toEqual([])
-    const msg = sentToTenant(again).find((m: any) => m.billId === toHandle(B0400) && !m.stubOnly)
+    const msg = sentToTenant(again).find((m: any) => m.billId === toLegacyHandle(B0400) && !m.stubOnly)
     expect(msg.changes).toBeUndefined()
     expect(msg.calendar.changes).toEqual([])
     expect(await row('SELECT COUNT(*) AS n FROM bill_change_log WHERE bill_id = ?', B0400)).toEqual({ n: 0 })
@@ -700,8 +701,8 @@ describe('a cutover beside other work', () => {
     await runSync(again.env, drizzle(env.DB, { schema }))
     expect(queued(again.ingestor).map(b => b.billId)).toContain(B0400)
     await drain(again.ingestor, again)
-    expect((await getJson(`/bills/${toHandle(B0400)}`)).texts.map((t: any) => t.docId)).toEqual(['5002'])
-    const msg = sentToTenant(again).find((m: any) => m.billId === toHandle(B0400) && !m.stubOnly)
+    expect((await getJson(`/bills/${toLegacyHandle(B0400)}`)).texts.map((t: any) => t.docId)).toEqual(['5002'])
+    const msg = sentToTenant(again).find((m: any) => m.billId === toLegacyHandle(B0400) && !m.stubOnly)
     expect(msg.changes).toBeUndefined()
     expect(await row('SELECT carried_from FROM bills WHERE bill_id = ?', B0400)).toEqual({ carried_from: null })
 
@@ -727,7 +728,7 @@ describe('a cutover beside other work', () => {
     const { lims } = await import('../../src/providers/lims')
     await runSnapshotSync(lims, next.env, drizzle(env.DB, { schema }))
     await drain(next.limsQueue, next)
-    const bill = await getJson(`/bills/${toHandle(B0400)}`)
+    const bill = await getJson(`/bills/${toLegacyHandle(B0400)}`)
     expect(bill.sponsors.map((s: any) => s.personId)).toEqual([String(PARKER), String(BONDS)])
     expect(bill.votes.find((v: any) => v.date === '2026-03-03').legislatorVotes)
       .toContainEqual({ personId: String(PARKER), name: 'Zachary Parker', vote: 'Yes', url: null, party: null })
@@ -754,7 +755,7 @@ describe('a cutover beside other work', () => {
     await drain(run.limsQueue, run)
     expect(await row('SELECT match_type FROM bill_tenants WHERE bill_id = ?', B0001)).toEqual({ match_type: null })
     expect(await row('SELECT carried_from FROM bills WHERE bill_id = ?', B0001)).toEqual({ carried_from: null })
-    const bill = await getJson(`/bills/${toHandle(B0001)}`)
+    const bill = await getJson(`/bills/${toLegacyHandle(B0001)}`)
     expect(bill.texts.map((t: any) => t.docId)).not.toContain('5011')
     expect(bill.actions.length).toBeGreaterThan(0)
   })
@@ -767,7 +768,7 @@ describe('a cutover beside other work', () => {
     await env.DB.prepare(`INSERT INTO people (people_id, name, provider) VALUES (?, 'Zachary Parker', 'lims')`).bind(1_000_000_900).run()
     const again = makeEnv()
     await processIngestorQueue({ messages: [{ body: { billId: B0400 }, ack: vi.fn(), retry: vi.fn() }] } as any, again.env, drizzle(env.DB, { schema }))
-    expect((await getJson(`/bills/${toHandle(B0400)}`)).sponsors.map((s: any) => s.personId)).toEqual([String(PARKER), String(BONDS)])
+    expect((await getJson(`/bills/${toLegacyHandle(B0400)}`)).sponsors.map((s: any) => s.personId)).toEqual([String(PARKER), String(BONDS)])
   })
 
   it('stops waiting for a calendar after three ingests without one, and cancels the old entries', async () => {
@@ -780,7 +781,7 @@ describe('a cutover beside other work', () => {
     const ingest = async () => {
       const r = makeEnv()
       await processIngestorQueue({ messages: [{ body: { billId: B0400 }, ack: vi.fn(), retry: vi.fn() }] } as any, r.env, drizzle(env.DB, { schema }))
-      return sentToTenant(r).find((m: any) => m.billId === toHandle(B0400))
+      return sentToTenant(r).find((m: any) => m.billId === toLegacyHandle(B0400))
     }
     expect((await ingest()).calendar).toBeUndefined()
     expect(await row('SELECT carried_from, carried_waits FROM bills WHERE bill_id = ?', B0400)).toEqual({ carried_from: 'legiscan', carried_waits: 2 })
@@ -809,12 +810,12 @@ describe('a moved bill no instance tracks', () => {
     expect(order).toContainEqual({ billId: B0001, firstIngestFor: 'lims' })
     expect(order.findIndex(b => b.billId === B0400)).toBeLessThan(order.findIndex(b => b.billId === B0001))
     expect(run.ingestor.sendBatch).not.toHaveBeenCalled()
-    const before = await getJson(`/bills/${toHandle(B0001)}`)
+    const before = await getJson(`/bills/${toLegacyHandle(B0001)}`)
     expect(before.texts).toEqual([])
     expect(before.votes).toEqual([])
 
     await drain(run.limsQueue, run)
-    const bill = await getJson(`/bills/${toHandle(B0001)}`)
+    const bill = await getJson(`/bills/${toLegacyHandle(B0001)}`)
     expect(bill).toMatchObject({ number: 'B26-0001', status: 'Enacted', sessionSlug: 'cp26-2' })
     // LIMS's documents and votes, with none of LegiScan's left.
     expect(bill.texts.length).toBeGreaterThan(0)
@@ -826,7 +827,7 @@ describe('a moved bill no instance tracks', () => {
     expect(await row('SELECT carried_from FROM bills WHERE bill_id = ?', B0001)).toEqual({ carried_from: null })
 
     // Instances are told of no change, and nothing became tracked.
-    const sent = sentToTenant(run).filter((m: any) => m.billId === toHandle(B0001))
+    const sent = sentToTenant(run).filter((m: any) => m.billId === toLegacyHandle(B0001))
     expect(sent.length).toBeGreaterThan(0)
     for (const m of sent) {
       expect(m.changes).toBeUndefined()
@@ -851,12 +852,12 @@ describe('a moved bill no instance tracks', () => {
     const readAtSend: string[] = []
     run.tenantQueue.sendBatch.mockImplementation(async (msgs: { body: any }[]) => {
       for (const { body } of msgs) {
-        if (body.stubOnly && body.billId === toHandle(B0001)) readAtSend.push((await getJson(`/bills/${toHandle(B0001)}`)).status)
+        if (body.stubOnly && body.billId === toLegacyHandle(B0001)) readAtSend.push((await getJson(`/bills/${toLegacyHandle(B0001)}`)).status)
       }
     })
     expect((await cutover(run, '?confirm=true')).status).toBe(200)
     expect(readAtSend).toEqual(['Enacted'])
-    expect(sentToTenant(run).filter((m: any) => m.stubOnly).map((m: any) => m.billId)).not.toContain(toHandle(B0400))
+    expect(sentToTenant(run).filter((m: any) => m.stubOnly).map((m: any) => m.billId)).not.toContain(toLegacyHandle(B0400))
   })
 
   it('is queued again by a forced sync while its first ingest waits, at no second LIMS call', async () => {
@@ -900,7 +901,7 @@ describe('a moved bill no instance tracks', () => {
     const after = makeEnv()
     await ingest(matched, after)
     expect(calls.filter(u => u.endsWith('LegislationDetails/B26-0001'))).toHaveLength(2)
-    expect(sentToTenant(after)).toContainEqual(expect.objectContaining({ billId: toHandle(B0001), matchType: 'keyword' }))
+    expect(sentToTenant(after)).toContainEqual(expect.objectContaining({ billId: toLegacyHandle(B0001), matchType: 'keyword' }))
   })
 
   it('skips an ingestAll message still waiting when an undo lands, so it costs no getBill', async () => {
@@ -949,8 +950,8 @@ describe('a moved bill no instance tracks', () => {
     expect(queued(again.ingestor).map(b => b.billId)).not.toContain(B0001)
     await drain(again.ingestor, again)
     expect(legiscanCalls('getBill').filter(u => !u.includes(`id=${B0400}`))).toEqual([])
-    expect(sentToTenant(again)).toContainEqual(expect.objectContaining({ billId: toHandle(B0001), stubOnly: true }))
-    expect(await getJson(`/bills/${toHandle(B0001)}`)).toMatchObject({ status: 'Introduced' })
+    expect(sentToTenant(again)).toContainEqual(expect.objectContaining({ billId: toLegacyHandle(B0001), stubOnly: true }))
+    expect(await getJson(`/bills/${toLegacyHandle(B0001)}`)).toMatchObject({ status: 'Introduced' })
   })
 
   // #364: the untracked moved bill keeps carried_from for good, since LegiScan
@@ -1016,8 +1017,8 @@ describe('undoing a cutover', () => {
       expect.objectContaining({ state: 'DC', provider: 'legiscan', previousProvider: 'lims' }),
     ])
     // Back in LegiScan's session, under the same handle, with LIMS's documents cleared.
-    const back = await getJson(`/bills/${toHandle(B0400)}`)
-    expect(back).toMatchObject({ billId: toHandle(B0400), sessionId: String(LS_SESSION), sessionSlug: 'cp26' })
+    const back = await getJson(`/bills/${toLegacyHandle(B0400)}`)
+    expect(back).toMatchObject({ billId: toLegacyHandle(B0400), sessionId: String(LS_SESSION), sessionSlug: 'cp26' })
     expect(back.texts).toEqual([])
     expect(await row('SELECT prior, sine_die FROM sessions WHERE session_id = ?', LS_SESSION)).toEqual({ prior: 0, sine_die: 0 })
     expect(await row('SELECT prior, sine_die FROM sessions WHERE session_id = ?', limsSessionId(26))).toEqual({ prior: 1, sine_die: 1 })
@@ -1029,10 +1030,10 @@ describe('undoing a cutover', () => {
     expect(queued(again.ingestor).map(b => b.billId)).toContain(B0400)
     await drain(again.ingestor, again)
 
-    const rewritten = await getJson(`/bills/${toHandle(B0400)}`)
+    const rewritten = await getJson(`/bills/${toLegacyHandle(B0400)}`)
     expect(rewritten.texts.map((t: any) => t.docId)).toEqual(['5002'])
     expect(rewritten.sponsors.map((s: any) => s.personId)).toEqual([String(PARKER)])
-    const msg = sentToTenant(again).find((m: any) => m.billId === toHandle(B0400) && !m.stubOnly)
+    const msg = sentToTenant(again).find((m: any) => m.billId === toLegacyHandle(B0400) && !m.stubOnly)
     expect(msg.changes).toBeUndefined()
     expect(msg.calendar.changes).toEqual([])
     // The entries instances had through both moves keep their identities.

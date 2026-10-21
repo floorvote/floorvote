@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { parseHandle } from '../../shared/billHandle'
 
 /**
  * The fork upgrade rehearsal (docs/internal/fork-upgrade.md): a copy of a
@@ -465,7 +466,9 @@ function instanceChecks(db: DatabaseSync, before: Snapshot, report: RehearsalRep
   }
   check(changed.length === 0, `Every calendar event keeps its id, UID, SEQUENCE, and status (${b.calendar.size})`, changed.slice(0, 10).join(', '))
   const bills = new Map(rows(db, 'SELECT id, external_id FROM bills').map(r => [String(r.id), String(r.external_id ?? '')]))
-  const billChanges = [...b.bills].filter(([id, ext]) => bills.get(id) !== ext).map(([id]) => id)
+  // The same central bill under either spelling: 0119 moves every handle to the neutral prefix (#305).
+  const sameBill = (was: string, now: string | undefined) => now === was || (now !== undefined && parseHandle(was) !== null && parseHandle(now) === parseHandle(was))
+  const billChanges = [...b.bills].filter(([id, ext]) => !sameBill(ext, bills.get(id))).map(([id]) => id)
   check(billChanges.length === 0, `Every bill keeps its id and central id (${b.bills.size})`, billChanges.slice(0, 10).join(', '))
   const dangling = danglingLinks(db)
   check(dangling <= b.links, 'Every bill and event the fork\'s own rows point at is still there', `${dangling - b.links} more dangling than before`)

@@ -35,7 +35,7 @@ import { clearRollCallCaches } from '../../src/providers/govinfo/client'
 import { clearMeetingCaches, DETAILS_PER_PASS, earlierCongressStillNeeded, LIST_PAGE_SIZE, QUARANTINE_AFTER } from '../../src/providers/govinfo/meetings'
 import { runBodyEventSync } from '../../src/cron/body-events'
 import { bodyEventMonths } from '../../src/lib/bodyEvents'
-import { toHandle } from '../../src/lib/billHandle'
+import { toLegacyHandle } from '../../src/lib/billHandle'
 import { providerContext } from '../../src/lib/providerContext'
 import { mainSeam, resetCentral, type Run } from '../helpers/mainSeam'
 import { buildListing, buildZip, fileType, fixtureFiles, serveZip } from '../helpers/govinfoZip'
@@ -80,7 +80,7 @@ const keyless = mainSeam(govinfo, { tenantId: 'usteam' })
 const { makeRun, sentToTenant, getJson, queuedIds } = seam
 const db = () => drizzle(env.DB, { schema })
 const billId = (number: string) => seam.billIdOf(number)
-const bill = async (number: string) => getJson(`/bills/${toHandle(await billId(number))}`)
+const bill = async (number: string) => getJson(`/bills/${toLegacyHandle(await billId(number))}`)
 
 function serveZips() {
   return (type: string) => serveZip(buildZip(
@@ -172,7 +172,7 @@ async function eventOf(meetingId: string): Promise<any> {
 }
 /** The calendar block of the last notification an ingest queued for the instance about a bill, after checking there is one. */
 function calendarOf(run: Run, id: number): any {
-  const calendar = sentToTenant(run).filter((m: any) => m.billId === toHandle(id) && m.calendar).pop()?.calendar
+  const calendar = sentToTenant(run).filter((m: any) => m.billId === toLegacyHandle(id) && m.calendar).pop()?.calendar
   expect(calendar, `a calendar notification for bill ${id}`).toBeDefined()
   return calendar
 }
@@ -404,7 +404,7 @@ describe('a meeting that takes up two bills', () => {
     linkBills()
     await pass()
     const e = await eventOf(UPCOMING)
-    expect(e.bills.sort()).toEqual([toHandle(await billId('HB131')), toHandle(await billId('HB43'))].sort())
+    expect(e.bills.sort()).toEqual([toLegacyHandle(await billId('HB131')), toLegacyHandle(await billId('HB43'))].sort())
     expect(e.agenda.map((a: any) => a.billNumber)).toEqual([null, 'HB43', 'HB131'])
     expect(e.agenda.slice(1).map((a: any) => a.topic)).toEqual(['H.R. 43', 'H.R. 131'])
     expect(e.covers).toHaveLength(2)
@@ -461,7 +461,7 @@ describe('a meeting that takes up two bills', () => {
     expect((await billEntries('HB43')).map((c: any) => c.date)).toEqual(['2026-10-23'])
     const e = (await eventOf(UPCOMING))
     expect(e.agenda.map((a: any) => a.billNumber)).toEqual([null, 'HB9999999', 'HB43'])
-    expect(e.bills).toEqual([toHandle(await billId('HB43'))])
+    expect(e.bills).toEqual([toLegacyHandle(await billId('HB43'))])
   })
 
   it('takes a bill type\'s number as LegiScan writes it: a House resolution is HR', async () => {

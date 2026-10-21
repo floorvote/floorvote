@@ -22,7 +22,7 @@ vi.stubGlobal('fetch', fetchMock)
 
 import { lims } from '../../src/providers/lims'
 import { limsBillId, limsPeopleId } from '../../src/providers/lims/ids'
-import { toHandle } from '../../src/lib/billHandle'
+import { toLegacyHandle } from '../../src/lib/billHandle'
 import { mainSeam, resetCentral, type Run } from '../helpers/mainSeam'
 
 const LIMS = 'https://lims.dccouncil.gov/api/v2/PublicData/'
@@ -111,7 +111,7 @@ describe('DC from LIMS', () => {
     expect(queuedIds(run).sort()).toEqual(Object.keys(bulk).map(n => limsBillId(n)!).sort())
     expect(run.ingestor.sendBatch).not.toHaveBeenCalled()
 
-    const bill = await getJson(`/bills/${toHandle(B0400)}`)
+    const bill = await getJson(`/bills/${toLegacyHandle(B0400)}`)
     // The id a fork's production already gave B26-0400, packed from the number.
     expect(bill.billId).toBe('legiscan:1012600400')
     expect(bill).toMatchObject({
@@ -151,20 +151,20 @@ describe('DC from LIMS', () => {
     // The Mayor's deadline is still a calendar entry, with the id it had.
     expect(bill.calendar.filter((c: any) => c.type === 'Deadline').map((c: any) => [c.date, c.description])).toEqual([['2026-04-28', "Mayor's response due"]])
 
-    const reprogramming = await getJson(`/bills/${toHandle(REPROG)}`)
+    const reprogramming = await getJson(`/bills/${toLegacyHandle(REPROG)}`)
     expect(reprogramming).toMatchObject({ status: 'New', statusStage: 'introduced', billType: 'Reprogramming' })
     expect(reprogramming.extras.fields.map((f: any) => [f.key, f.value, f.placement])).toEqual([
       ['requestedBy', 'Mayor', 'meta'],
       ['commentCommittees', 'Youth Affairs', 'detail'],
     ])
-    const notice = await getJson(`/bills/${toHandle(HN)}`)
+    const notice = await getJson(`/bills/${toLegacyHandle(HN)}`)
     expect(notice).toMatchObject({ status: 'Not Applicable', statusStage: null, statusRank: 0 })
     expect(notice.calendar).toEqual([expect.objectContaining({ date: '2026-10-02', location: 'Committee on Health' })])
     expect(notice.extras).toBeNull()
 
     // Each tracked bill reaches the tenant as a full ingest.
     const full = sentToTenant(run).filter((m: any) => !m.stubOnly).map((m: any) => m.billId)
-    expect(full).toEqual(expect.arrayContaining([toHandle(B0400), toHandle(HN), toHandle(REPROG)]))
+    expect(full).toEqual(expect.arrayContaining([toLegacyHandle(B0400), toLegacyHandle(HN), toLegacyHandle(REPROG)]))
     expect(calls.filter(u => !u.includes('lims.dccouncil.gov'))).toEqual([])
   })
 
@@ -178,7 +178,7 @@ describe('DC from LIMS', () => {
     const types = new Set(labels.billTypes.map((t: any) => t.value.toLowerCase()))
     const statuses = new Set(labels.statuses.map((s: any) => s.label))
     for (const number of Object.keys(bulk)) {
-      const bill = await getJson(`/bills/${toHandle(limsBillId(number)!)}`)
+      const bill = await getJson(`/bills/${toLegacyHandle(limsBillId(number)!)}`)
       expect(types.has(String(bill.billType).toLowerCase()), `${number}: ${bill.billType}`).toBe(true)
       expect(statuses.has(bill.status), `${number}: ${bill.status}`).toBe(true)
     }
@@ -199,7 +199,7 @@ describe('DC from LIMS', () => {
     feed['LegislationDetails/B26-0400'] = () => json({ ...JSON.parse(details0400Raw), actions: null })
     expect((await ingest(B0400)).retry).not.toHaveBeenCalled()
     expect(await stored()).toEqual(before)
-    expect((await getJson(`/bills/${toHandle(B0400)}`)).votes.length).toBe(before.rolls.length)
+    expect((await getJson(`/bills/${toLegacyHandle(B0400)}`)).votes.length).toBe(before.rolls.length)
   })
 
   it('keeps a meeting video only as an http(s) link', async () => {
@@ -208,7 +208,7 @@ describe('DC from LIMS', () => {
     feed['LegislationDetails/B26-0400'] = () => json(details)
     await claimDc()
     await syncAndIngest()
-    const bill = await getJson(`/bills/${toHandle(B0400)}`)
+    const bill = await getJson(`/bills/${toLegacyHandle(B0400)}`)
     expect(bill.actions.find((a: any) => a.date === '2025-11-13').videoUrl).toBeNull()
     expect(bill.actions.filter((a: any) => a.videoUrl)).toHaveLength(4)
   })
@@ -218,7 +218,7 @@ describe('DC from LIMS', () => {
     feed['LegislationDetails/B26-0001'] = () => json({ ...listedOnlyDetails('B26-0001', 80), status: 'Expired' })
     await claimDc()
     await syncAndIngest()
-    expect(await getJson(`/bills/${toHandle(limsBillId('B26-0001')!)}`))
+    expect(await getJson(`/bills/${toLegacyHandle(limsBillId('B26-0001')!)}`))
       .toMatchObject({ status: 'Expired', statusStage: 'enacted', statusRank: 706 })
   })
 
@@ -236,7 +236,7 @@ describe('DC from LIMS', () => {
     expect(messages.map(m => m.body.billId)).toEqual([B0400])
 
     expect(calls).toEqual(expect.arrayContaining([`${LIMS}Members/26`, `${LIMS}Members/27`]))
-    const bill = await getJson(`/bills/${toHandle(B0400)}`)
+    const bill = await getJson(`/bills/${toLegacyHandle(B0400)}`)
     expect(bill.sponsors.map((s: any) => s.name)).toEqual(['Zachary Parker', 'Anita Bonds'])
   })
 
@@ -271,7 +271,7 @@ describe('committees from LIMS (#299)', () => {
     await syncAndIngest()
 
     // LegislationDetails names them "Youth Affairs" and "Judiciary and Public Safety".
-    const bill = await getJson(`/bills/${toHandle(B0400)}`)
+    const bill = await getJson(`/bills/${toLegacyHandle(B0400)}`)
     expect(bill.committee).toBeNull()
     expect(bill.referrals.map((r: any) => [r.date, r.name, r.chamber])).toEqual([
       ['2025-10-07', 'Committee on Youth Affairs', 'C'],
@@ -280,12 +280,12 @@ describe('committees from LIMS (#299)', () => {
     // Minted from central's id table, clear of LegiScan's ids and LIMS's packed ranges.
     for (const r of bill.referrals) expect(Number(r.committeeId)).toBeGreaterThan(3_000_000_000)
 
-    const notice = await getJson(`/bills/${toHandle(HN)}`)
+    const notice = await getJson(`/bills/${toLegacyHandle(HN)}`)
     expect(notice.referrals).toEqual([expect.objectContaining({ name: 'Committee on Health', committeeId: expect.any(String) })])
 
     // "Retained by the Council" names no committee. The committee asked for
     // comments stays an extra, not a referral.
-    const reprogramming = await getJson(`/bills/${toHandle(REPROG)}`)
+    const reprogramming = await getJson(`/bills/${toLegacyHandle(REPROG)}`)
     expect(reprogramming.referrals).toEqual([{ date: '2026-09-25', committeeId: null, name: 'Retained by the Council', chamber: 'C' }])
 
     const rows = await drizzle(env.DB, { schema }).select().from(schema.committees).all()
@@ -300,14 +300,14 @@ describe('committees from LIMS (#299)', () => {
     feed['LegislationDetails/HN26-0171'] = () => json({ ...JSON.parse(detailsHnRaw), committeesReferredTo: ['youth  affairs'] })
     await claimDc()
     await syncAndIngest()
-    const youth = (await getJson(`/bills/${toHandle(B0400)}`)).referrals[0]
-    const notice = (await getJson(`/bills/${toHandle(HN)}`)).referrals[0]
+    const youth = (await getJson(`/bills/${toLegacyHandle(B0400)}`)).referrals[0]
+    const notice = (await getJson(`/bills/${toLegacyHandle(HN)}`)).referrals[0]
     expect(notice.committeeId).toBe(youth.committeeId)
     expect(notice.name).toBe(youth.name)
 
     // The ids hold across ingests.
     await ingest(B0400)
-    expect((await getJson(`/bills/${toHandle(B0400)}`)).referrals[0].committeeId).toBe(youth.committeeId)
+    expect((await getJson(`/bills/${toLegacyHandle(B0400)}`)).referrals[0].committeeId).toBe(youth.committeeId)
   })
 })
 
@@ -317,7 +317,7 @@ describe('DC from LIMS fails closed', () => {
     await claimDc()
     await syncAndIngest()
     return {
-      bill: await getJson(`/bills/${toHandle(B0400)}`),
+      bill: await getJson(`/bills/${toLegacyHandle(B0400)}`),
       sessions: await getJson('/bills/sessions?state=DC'),
     }
   }
@@ -343,7 +343,7 @@ describe('DC from LIMS fails closed', () => {
     await expect(sync(run)).rejects.toThrow(/LIMS/)
     expect(run.queue.sendBatch).not.toHaveBeenCalled()
     expect(sentToTenant(run)).toEqual([])
-    expect(await getJson(`/bills/${toHandle(B0400)}`)).toEqual(before.bill)
+    expect(await getJson(`/bills/${toLegacyHandle(B0400)}`)).toEqual(before.bill)
   })
 
   it.each([
@@ -356,7 +356,7 @@ describe('DC from LIMS fails closed', () => {
     await sync(run)
     expect(run.queue.sendBatch).not.toHaveBeenCalled()
     expect(sentToTenant(run)).toEqual([])
-    expect(await getJson(`/bills/${toHandle(B0400)}`)).toEqual(before.bill)
+    expect(await getJson(`/bills/${toLegacyHandle(B0400)}`)).toEqual(before.bill)
   })
 
   it.each([
@@ -372,7 +372,7 @@ describe('DC from LIMS fails closed', () => {
     expect(run.queue.sendBatch).not.toHaveBeenCalled()
     expect(sentToTenant(run)).toEqual([])
     expect(await getJson('/bills/sessions?state=DC')).toEqual(before.sessions)
-    expect(await getJson(`/bills/${toHandle(B0400)}`)).toEqual(before.bill)
+    expect(await getJson(`/bills/${toLegacyHandle(B0400)}`)).toEqual(before.bill)
   })
 
   it('keeps its Council Periods when CouncilPeriods answers with an empty list', async () => {
@@ -397,7 +397,7 @@ describe('DC from LIMS fails closed', () => {
     await expect(sync(run)).rejects.toThrow(/LIMS/)
     expect(run.queue.sendBatch).not.toHaveBeenCalled()
     expect(sentToTenant(run)).toEqual([])
-    expect(await getJson(`/bills/${toHandle(B0400)}`)).toEqual(before.bill)
+    expect(await getJson(`/bills/${toLegacyHandle(B0400)}`)).toEqual(before.bill)
   })
 
   it('keeps syncing when Members answers null, as a period not yet seated might', async () => {
@@ -408,7 +408,7 @@ describe('DC from LIMS fails closed', () => {
     await sync(run)
     expect(calls.some(u => u.endsWith('/BulkData/1/26'))).toBe(true)
     expect(sentToTenant(run)).toEqual([])
-    expect(await getJson(`/bills/${toHandle(B0400)}`)).toEqual(before.bill)
+    expect(await getJson(`/bills/${toLegacyHandle(B0400)}`)).toEqual(before.bill)
   })
 
   it.each([
@@ -432,7 +432,7 @@ describe('DC from LIMS fails closed', () => {
     expect(message.retry).toHaveBeenCalled()
     expect(message.ack).not.toHaveBeenCalled()
     expect(sentToTenant(run)).toEqual([])
-    expect(await getJson(`/bills/${toHandle(B0400)}`)).toEqual(before.bill)
+    expect(await getJson(`/bills/${toLegacyHandle(B0400)}`)).toEqual(before.bill)
   })
 })
 
@@ -455,10 +455,10 @@ describe('DC calendar entries', () => {
     })
   }
   const SECOND = historyRow('Nov 06, 2026', 'Public Hearing on B26-0769')
-  const lastCalendar = (run: Run, billId: number) => sentToTenant(run).filter((m: any) => m.billId === toHandle(billId) && m.calendar).pop()?.calendar
+  const lastCalendar = (run: Run, billId: number) => sentToTenant(run).filter((m: any) => m.billId === toLegacyHandle(billId) && m.calendar).pop()?.calendar
   const keys = (calendar: any) => calendar.events.map((e: any) => e.identityKey)
   const changeList = (calendar: any) => calendar.changes.map((c: any) => [c.changeType, c.identityKey])
-  const billCalendar = async (billId: number) => (await getJson(`/bills/${toHandle(billId)}`)).calendar.map((c: any) => [c.kind, c.date, c.description])
+  const billCalendar = async (billId: number) => (await getJson(`/bills/${toLegacyHandle(billId)}`)).calendar.map((c: any) => [c.kind, c.date, c.description])
 
   beforeEach(async () => {
     // Track B26-0769, whose Council hearing is still to come.

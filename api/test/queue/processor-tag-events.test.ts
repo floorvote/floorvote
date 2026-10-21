@@ -17,7 +17,7 @@ vi.mock('../../src/lib/llm', async (importOriginal) => {
   return { ...actual, processBill: vi.fn() }
 })
 
-const BILL_ID = 'legiscan:4242'
+const BILL_ID = 'bill:4242'
 const centralBill = {
   billId: BILL_ID, sessionId: 'nj:2026', state: 'NJ', number: 'A4242',
   title: 'An Act concerning energy', abstract: 'Concerns energy.',

@@ -7,7 +7,7 @@ import { processCentralNotification } from '../../src/queue/processor'
 import { bills } from '../../src/db/schema'
 import type { TenantQueueMessage } from '../../src/types'
 
-const BILL_ID = 'legiscan:3000000001'
+const BILL_ID = 'bill:3000000001'
 
 function centralBill(extra: Record<string, unknown> = {}) {
   return {

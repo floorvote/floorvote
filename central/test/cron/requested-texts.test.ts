@@ -30,7 +30,7 @@ import { applyMasterList } from '../../src/cron/sync'
 import { processIngestorQueue } from '../../src/queue/processor'
 import { FETCH_REQUEST_DAYS } from '../../src/lib/fetchRequests'
 import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
-import { toHandle } from '../../src/lib/billHandle'
+import { toLegacyHandle } from '../../src/lib/billHandle'
 import * as legiscan from '../../src/providers/legiscan/client'
 
 const db = () => drizzle(env.DB, { schema })
@@ -118,7 +118,7 @@ describe('the sync ingests a bill an instance asked for, which no instance track
 
     const newText = await db().select().from(billTexts).where(eq(billTexts.docId, 7002)).get()
     expect(newText?.r2Key).toBeTruthy()
-    expect(tenantQueue.send).toHaveBeenCalledWith(expect.objectContaining({ tenantId: TENANT, billId: toHandle(70), matchType: null }))
+    expect(tenantQueue.send).toHaveBeenCalledWith(expect.objectContaining({ tenantId: TENANT, billId: toLegacyHandle(70), matchType: null }))
   })
 
   it('ingests nothing for a bill whose request is older than the request window', async () => {

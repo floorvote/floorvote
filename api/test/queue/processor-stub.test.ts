@@ -19,7 +19,7 @@ vi.mock('../../src/lib/llm', async (importOriginal) => {
   }
 })
 
-const BILL_ID = 'legiscan:42'
+const BILL_ID = 'bill:42'
 
 const fakeCentralBill = {
   billId: BILL_ID,

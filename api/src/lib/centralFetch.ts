@@ -1,3 +1,4 @@
+import { HANDLE_FORM_HEADER, HANDLE_FORM_NEUTRAL } from '../../../shared/billHandle'
 import type { Env } from '../types'
 
 /**
@@ -26,6 +27,10 @@ import type { Env } from '../types'
  * (`/bills/...`, `/tenants/...`, `/admin/...`); this is the single place that
  * prepends `/api`.
  *
+ * Every request says this instance reads neutral bill handles
+ * (`HANDLE_FORM_HEADER`, #305), so central names bills to it as `bill:<n>` in
+ * its answers. An older instance sends no header and gets `legiscan:<n>`.
+ *
  * IMPORTANT: the LegiScan central `TenantApi` entrypoint is DENY-BY-DEFAULT
  * (central/src/lib/tenantSurface.ts). A path NOT on that allowlist is 403'd
  * before it reaches the route — silently, on every tenant. When you add a new
@@ -34,13 +39,14 @@ import type { Env } from '../types'
  */
 export function centralFetch(env: Env, path: string, init?: RequestInit): Promise<Response> {
   const apiPath = `/api${path}`
+  const headers: Record<string, string> = {
+    ...Object.fromEntries(new Headers(init?.headers).entries()),
+    [HANDLE_FORM_HEADER]: HANDLE_FORM_NEUTRAL,
+  }
   if (env.CENTRAL) {
-    return env.CENTRAL.fetch(new Request(`https://central${apiPath}`, init))
+    return env.CENTRAL.fetch(new Request(`https://central${apiPath}`, { ...init, headers }))
   }
 
-  const headers = {
-    ...(init?.headers as Record<string, string> | undefined),
-    'x-admin-secret': env.CENTRAL_ADMIN_SECRET ?? '',
-  }
+  headers['x-admin-secret'] = env.CENTRAL_ADMIN_SECRET ?? ''
   return fetch(`${env.CENTRAL_API_URL}${apiPath}`, { ...init, headers })
 }

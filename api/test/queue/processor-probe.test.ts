@@ -35,6 +35,15 @@ describe('delivery probe message', () => {
     expect(String(fetchMock.mock.calls[0][0])).toContain('/api/bills/legiscan:42')
   })
 
+  // Release 2 of #305: a capable instance is probed with `bill:<n>`. It records
+  // the handle as central sent it, and still reads the bill back by the legacy one.
+  it.each(['bill:42', 'legiscan:42'])('records a %s probe under the handle central sent', async (handle) => {
+    const db = getDb(env.DB)
+    await processCentralNotification(probe({ billId: handle }), testEnv, db)
+    expect(await readDeliveryProbe(db)).toMatchObject({ nonce: 'nonce-1', billId: handle, readStatus: 200 })
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/bills/legiscan:42')
+  })
+
   it('does not track the bill, analyze it, or write a feed event', async () => {
     const db = getDb(env.DB)
     await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['bill']) })

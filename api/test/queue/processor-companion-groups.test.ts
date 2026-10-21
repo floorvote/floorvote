@@ -147,7 +147,7 @@ describe('companion groups at ingest', () => {
 
     central.set('legiscan:999', { number: 'A999', relatedBills: [] })
     await deliver('legiscan:999')
-    const a999 = (await getDb(env.DB).select({ id: bills.id }).from(bills).where(eq(bills.externalId, 'legiscan:999')).get())!.id
+    const a999 = (await getDb(env.DB).select({ id: bills.id }).from(bills).where(eq(bills.externalId, 'bill:999')).get())!.id
     const key = [a999, 'b1713'].sort()[0]
     expect(await groupKeyOf('b1713')).toBe(key)
     expect(await groupKeyOf(a999)).toBe(key)

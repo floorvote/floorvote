@@ -90,7 +90,7 @@ export type MatchProvenance = 'routine' | 'bulk'
 
 export type TenantQueueMessage = {
   tenantId: string
-  billId: string // the bill handle, "legiscan:{bill_id}" or its neutral twin "bill:{bill_id}" (normalizeHandle in shared/billHandle; older data and tests may hold legacy "ocd-bill/{uuid}" ids)
+  billId: string // the bill handle, "bill:{bill_id}", or its legacy twin "legiscan:{bill_id}" from an older central (normalizeHandle in shared/billHandle; older data and tests may hold legacy "ocd-bill/{uuid}" ids)
   forceMetadata?: boolean // Skip providerUpdatedAt dedup; re-upsert metadata; still gates AI on keywords
   forceAI?: boolean // Skip text-hash dedup AND keyword gate; always run the model (Gemini)
   /** Set ONLY by central's direct operator reprocess (never through a tenant binding): lets this message run AI on a DEMO_MODE tenant. */

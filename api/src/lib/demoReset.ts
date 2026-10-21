@@ -1,5 +1,6 @@
 import type { DemoSeed } from './demoSeeds'
 import { FIELD_CHANGED, type FieldChangedMetadata } from '../../../shared/teamFields'
+import { legacyHandle, normalizeHandle } from '../../../shared/billHandle'
 
 /** N days ago in the SQLite space format that stored timestamps require.
  *  Counts BACKWARD: positive n is the past, and n = 0 is now. This is the seed's
@@ -41,6 +42,16 @@ export const dateFromNow = (offsetDays: number, nowMs: number = Date.now()) => {
 }
 
 const placeholdersFor = (ids: readonly unknown[]) => ids.map(() => '?').join(',')
+
+/**
+ * A seed names its bills by handle, and the instance may store a bill under
+ * either spelling (#305: migration 0119 makes them `bill:<n>`, while the seed
+ * says `legiscan:<n>`). So every lookup of a seed's bill matches both, binding
+ * `...spellings(externalId)`, and takes the stored (neutral) spelling first
+ * should both be held.
+ */
+const BILL_BY_HANDLE = '(SELECT id FROM bills WHERE external_id IN (?, ?) ORDER BY external_id LIMIT 1)'
+const spellings = (externalId: string): [string, string] => [legacyHandle(externalId), normalizeHandle(externalId)]
 
 /**
  * Restore a demo tenant to the canonical state described by `seed`.
@@ -201,7 +212,7 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
   ))
 
   // Step 4: Re-seed engagement data. Every bill-linked insert uses the
-  // INSERT ... SELECT ... WHERE (SELECT id FROM bills WHERE external_id = ?) IS NOT NULL
+  // INSERT ... SELECT ... WHERE BILL_BY_HANDLE IS NOT NULL
   // idiom so a seed row whose bill has not been ingested yet no-ops instead of
   // failing the batch.
 
@@ -223,11 +234,11 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
   // matched. The processor only sets new_match_at alongside a fresh AI result
   // (isFirstKeywordMatch in queue/processor.ts), and AI dedups on an unchanged
   // text hash, so cleared rows stay cleared.
-  const priorityExtIds = seed.priorities.map((p) => p.externalId)
+  const priorityExtIds = seed.priorities.flatMap((p) => spellings(p.externalId))
   await batch([
     db.prepare(`UPDATE bills SET triaged_at = NULL, triaged_by = NULL, new_match_at = NULL`),
     ...seed.priorities.map((p) =>
-      db.prepare(`UPDATE bills SET priority = ? WHERE external_id = ?`).bind(p.priority, p.externalId),
+      db.prepare(`UPDATE bills SET priority = ? WHERE external_id IN (?, ?)`).bind(p.priority, ...spellings(p.externalId)),
     ),
     db.prepare(`UPDATE bills SET priority = NULL WHERE external_id NOT IN (${placeholdersFor(priorityExtIds)})`).bind(...priorityExtIds),
   ])
@@ -239,9 +250,9 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
     const setAt = daysAgoDb(p.daysAgo, p.minutesLater)
     return db.prepare(
       `INSERT OR IGNORE INTO official_positions (id, bill_id, position, set_by, created_at, updated_at)
-       SELECT ?, (SELECT id FROM bills WHERE external_id = ? LIMIT 1), ?, ?, ?, ?
-       WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
-    ).bind(p.id, p.externalId, p.position, p.setBy, setAt, setAt, p.externalId)
+       SELECT ?, ${BILL_BY_HANDLE}, ?, ?, ?, ?
+       WHERE ${BILL_BY_HANDLE} IS NOT NULL`
+    ).bind(p.id, ...spellings(p.externalId), p.position, p.setBy, setAt, setAt, ...spellings(p.externalId))
   }))
 
   // Member votes spread across several bills
@@ -249,18 +260,18 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
     const ts = daysAgoDb(v.daysAgo)
     return db.prepare(
       `INSERT OR IGNORE INTO member_votes (id, bill_id, user_id, position, created_at, updated_at)
-       SELECT ?, (SELECT id FROM bills WHERE external_id = ? LIMIT 1), ?, ?, ?, ?
-       WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
-    ).bind(v.id, v.externalId, v.userId, v.position, ts, ts, v.externalId)
+       SELECT ?, ${BILL_BY_HANDLE}, ?, ?, ?, ?
+       WHERE ${BILL_BY_HANDLE} IS NOT NULL`
+    ).bind(v.id, ...spellings(v.externalId), v.userId, v.position, ts, ts, ...spellings(v.externalId))
   }))
 
   // Comments — some include @mentions (span[data-type=mention] format)
   await batch(seed.comments.map((c) =>
     db.prepare(
       `INSERT OR IGNORE INTO comments (id, bill_id, user_id, content, created_at)
-       SELECT ?, (SELECT id FROM bills WHERE external_id = ? LIMIT 1), ?, ?, ?
-       WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
-    ).bind(c.id, c.externalId, c.userId, c.content, daysAgoDb(c.daysAgo, c.minutesLater), c.externalId),
+       SELECT ?, ${BILL_BY_HANDLE}, ?, ?, ?
+       WHERE ${BILL_BY_HANDLE} IS NOT NULL`
+    ).bind(c.id, ...spellings(c.externalId), c.userId, c.content, daysAgoDb(c.daysAgo, c.minutesLater), ...spellings(c.externalId)),
   ))
 
   // Mention notifications — one row per (comment, notified user), unread, from
@@ -292,9 +303,9 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
   await batch(seed.feedEvents.map((e) =>
     db.prepare(
       `INSERT OR IGNORE INTO feed_events (id, type, bill_id, user_id, metadata, created_at)
-       SELECT ?, ?, (SELECT id FROM bills WHERE external_id = ? LIMIT 1), ?, ?, ?
-       WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
-    ).bind(e.id, e.type, e.externalId, e.userId, JSON.stringify(e.metadata), daysAgoDb(e.daysAgo, e.minutesLater), e.externalId),
+       SELECT ?, ?, ${BILL_BY_HANDLE}, ?, ?, ?
+       WHERE ${BILL_BY_HANDLE} IS NOT NULL`
+    ).bind(e.id, e.type, ...spellings(e.externalId), e.userId, JSON.stringify(e.metadata), daysAgoDb(e.daysAgo, e.minutesLater), ...spellings(e.externalId)),
   ))
 
   // Mark demo-user as having seen the feed as of now. All seeded feed events carry
@@ -307,9 +318,9 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
   await batch(seed.customFieldValues.map((v) =>
     db.prepare(
       `INSERT OR IGNORE INTO bill_custom_field_values (bill_id, field_id, value, set_by, updated_at)
-       SELECT (SELECT id FROM bills WHERE external_id = ? LIMIT 1), ?, ?, ?, ?
-       WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
-    ).bind(v.externalId, v.fieldId, v.value, v.setBy, daysAgoDb(v.daysAgo), v.externalId),
+       SELECT ${BILL_BY_HANDLE}, ?, ?, ?, ?
+       WHERE ${BILL_BY_HANDLE} IS NOT NULL`
+    ).bind(...spellings(v.externalId), v.fieldId, v.value, v.setBy, daysAgoDb(v.daysAgo), ...spellings(v.externalId)),
   ))
 
   // Activity lines: the seed's team field changes, in the metadata shape recordFieldChanges
@@ -327,18 +338,18 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
     }
     return db.prepare(
       `INSERT OR IGNORE INTO team_events (id, bill_id, type, actor_user_id, metadata, created_at)
-       SELECT ?, (SELECT id FROM bills WHERE external_id = ? LIMIT 1), ?, ?, ?, ?
-       WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
-    ).bind(c.id, c.externalId, FIELD_CHANGED, c.userId, JSON.stringify(metadata), daysAgoDb(c.daysAgo, c.minutesLater), c.externalId)
+       SELECT ?, ${BILL_BY_HANDLE}, ?, ?, ?, ?
+       WHERE ${BILL_BY_HANDLE} IS NOT NULL`
+    ).bind(c.id, ...spellings(c.externalId), FIELD_CHANGED, c.userId, JSON.stringify(metadata), daysAgoDb(c.daysAgo, c.minutesLater), ...spellings(c.externalId))
   }))
 
   // Personal notes for demo-user
   await batch(seed.notes.map((n) =>
     db.prepare(
       `INSERT OR IGNORE INTO notes (id, bill_id, user_id, content, created_at)
-       SELECT ?, (SELECT id FROM bills WHERE external_id = ? LIMIT 1), 'demo-user', ?, ?
-       WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
-    ).bind(n.id, n.externalId, n.content, daysAgoDb(n.daysAgo), n.externalId),
+       SELECT ?, ${BILL_BY_HANDLE}, 'demo-user', ?, ?
+       WHERE ${BILL_BY_HANDLE} IS NOT NULL`
+    ).bind(n.id, ...spellings(n.externalId), n.content, daysAgoDb(n.daysAgo), ...spellings(n.externalId)),
   ))
 
   // Saved views: wipe and re-insert, so a view a visitor deleted, rewrote, or added
@@ -367,8 +378,8 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
         ).bind(e.id, `${e.id}@example.com`, e.source, dateFromNow(e.offsetDays), e.time, e.location, e.description)
       : db.prepare(
           `INSERT OR IGNORE INTO calendar_events (id, uid, bill_id, source, sequence, date, time, location, description, status, event_hash)
-           SELECT ?, ?, (SELECT id FROM bills WHERE external_id = ? LIMIT 1), ?, 0, ?, ?, ?, ?, 'confirmed', NULL
-           WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
-        ).bind(e.id, `${e.id}@example.com`, e.externalId, e.source, dateFromNow(e.offsetDays), e.time, e.location, e.description, e.externalId),
+           SELECT ?, ?, ${BILL_BY_HANDLE}, ?, 0, ?, ?, ?, ?, 'confirmed', NULL
+           WHERE ${BILL_BY_HANDLE} IS NOT NULL`
+        ).bind(e.id, `${e.id}@example.com`, ...spellings(e.externalId), e.source, dateFromNow(e.offsetDays), e.time, e.location, e.description, ...spellings(e.externalId)),
   ))
 }

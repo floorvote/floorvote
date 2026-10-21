@@ -588,7 +588,7 @@ It hands the result to `ingestMeasure`, which unconditionally:
 
 ### notifyTenants
 
-Reads `bill_tenants` rows for this bill (joined to `tenants` for `queue_id`), then sends one message per covering tenant to that tenant's queue: `{ tenantId, billId: 'legiscan:<id>', forceMetadata, forceAI, matchType, changes }`, plus that tenant's own `matchProvenance` when the ingestor message declared one for it. Sets `bill_tenants.notified_at`.
+Reads `bill_tenants` rows for this bill (joined to `tenants` for `queue_id`), then sends one message per covering tenant to that tenant's queue: `{ tenantId, billId: 'bill:<id>', forceMetadata, forceAI, matchType, changes }` (`legiscan:<id>` for an instance that doesn't report neutral handles; `lib/tenantDelivery.ts` picks the form), plus that tenant's own `matchProvenance` when the ingestor message declared one for it. Sets `bill_tenants.notified_at`.
 
 Delivery goes through `deliverToTenant` ([central/src/lib/tenantDelivery.ts](../../central/src/lib/tenantDelivery.ts)): **binding-first** — if a static `TENANT_QUEUE_<ID>` producer binding exists it uses `queue.send`/`sendBatch` (unchanged) — else it **HTTP-publishes by `queue_id`** via the Queues REST API (`CF_QUEUES_TOKEN`), so a tenant onboarded without a static binding still receives bills. Only when neither exists is the message dropped (logged).
 

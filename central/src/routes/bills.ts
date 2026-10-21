@@ -7,7 +7,7 @@ import { textCacheKey, getCachedText, putCachedText } from '../lib/billTextCache
 import { pdfStreamOrNull, startsWithPdfMagic } from '../lib/storedPdf'
 import { decodeStoredHtml } from '../lib/decodeHtml'
 import { resolveItemDate } from '../lib/itemDate'
-import { parseHandle, toHandle } from '../lib/billHandle'
+import { HANDLE_FORM_HEADER, parseHandle, readsNeutralHandles, toTenantHandle } from '../lib/billHandle'
 import { DEFAULT_PROVIDER_ID, findProvider, getProvider } from '../providers'
 import { ownerOfState } from '../lib/stateProviders'
 import { relationshipKind, statusFields, titleCompanionKey, vocabularyLabels } from '../lib/vocabulary'
@@ -313,7 +313,8 @@ billsRoutes.get('/:id', async (c) => {
   }))
 
   return c.json({
-    billId: toHandle(bill.billId),
+    // In the form the instance reads: neutral only when its request says so (#305).
+    billId: toTenantHandle(bill.billId, readsNeutralHandles(c.req.header(HANDLE_FORM_HEADER))),
     sessionId:   String(bill.sessionId),
     sessionName: session?.sessionName ?? null,
     // The SESSION in the bill's /STATE/SESSION/BILL URL. Tenants store it and

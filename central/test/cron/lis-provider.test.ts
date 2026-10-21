@@ -19,7 +19,7 @@ vi.stubGlobal('fetch', fetchMock)
 
 import { lis } from '../../src/providers/lis'
 import { LIS_FILES, LIS_FILES_BASE, type LisFile, type LisFiles } from '../../src/providers/lis/client'
-import { toHandle } from '../../src/lib/billHandle'
+import { toLegacyHandle } from '../../src/lib/billHandle'
 import { mainSeam, resetCentral } from '../helpers/mainSeam'
 
 const s2026 = () => JSON.parse(s2026Raw) as LisFiles
@@ -88,7 +88,7 @@ describe('Virginia from the LIS data files', () => {
     const { run } = await syncAndIngest()
     expect(queuedIds(run).sort()).toEqual(await allBills('lis'))
 
-    const bill = await getJson(`/bills/${toHandle(await billId('HB1'))}`)
+    const bill = await getJson(`/bills/${toLegacyHandle(await billId('HB1'))}`)
     expect(bill).toMatchObject({
       number: 'HB1', state: 'VA', status: 'Approved by the Governor', statusStage: 'enacted', statusRank: 702, billType: 'B',
       stateUrl: 'https://lis.virginia.gov/bill-details/20261/HB1', texts: [],
@@ -126,7 +126,7 @@ describe('Virginia from the LIS data files', () => {
 
     expect(calls.length).toBeGreaterThan(0)
     const full = sentToTenant(run).filter((m: any) => !m.stubOnly).map((m: any) => m.billId)
-    expect(full).toEqual(expect.arrayContaining([toHandle(await billId('HB1')), toHandle(await billId('HB61'))]))
+    expect(full).toEqual(expect.arrayContaining([toLegacyHandle(await billId('HB1')), toLegacyHandle(await billId('HB61'))]))
   })
 
   it('maps every bill to a bill type and status Virginia\'s labels list', async () => {
@@ -140,7 +140,7 @@ describe('Virginia from the LIS data files', () => {
     const statuses = new Set(labels.statuses.map((s: any) => s.label))
     const seen = []
     for (const number of ['HB1', 'HB9', 'HB61', 'HB133', 'HB447', 'HR1']) {
-      const bill = await getJson(`/bills/${toHandle(await billId(number))}`)
+      const bill = await getJson(`/bills/${toLegacyHandle(await billId(number))}`)
       expect(types.has(String(bill.billType).toLowerCase()), `${number}: ${bill.billType}`).toBe(true)
       expect(statuses.has(bill.status), `${number}: ${bill.status}`).toBe(true)
       seen.push(bill.status)
@@ -151,7 +151,7 @@ describe('Virginia from the LIS data files', () => {
 
 describe('Virginia votes and committees', () => {
   const countOf = (v: any, option: string) => v.counts.find((c: any) => c.option === option)?.value
-  const votesOf = async (number: string) => (await getJson(`/bills/${toHandle(await billId(number))}`)).votes as any[]
+  const votesOf = async (number: string) => (await getJson(`/bills/${toLegacyHandle(await billId(number))}`)).votes as any[]
   const replaceOnce = (text: string, from: string, to: string) => {
     expect(text).toContain(from)
     return text.replace(from, to)
@@ -206,7 +206,7 @@ describe('Virginia votes and committees', () => {
       expect(votes.every(v => countOf(v, 'yes') + countOf(v, 'no') > 0 && v.legislatorVotes.length > 0), number).toBe(true)
       expect(votes.every(v => v.legislatorVotes.every((l: any) => l.vote !== 'Not Voting' || countOf(v, 'yes') > 0)), number).toBe(true)
       // The history still says it happened.
-      const bill = await getJson(`/bills/${toHandle(await billId(number))}`)
+      const bill = await getJson(`/bills/${toLegacyHandle(await billId(number))}`)
       expect(bill.actions.map((a: any) => a.description)).toContain('Passed by for the day  Block Vote (Voice Vote)')
     }
     const db = drizzle(env.DB, { schema })
@@ -266,7 +266,7 @@ describe('Virginia votes and committees', () => {
     await claim('lis')
     await syncAndIngest()
 
-    const bill = await getJson(`/bills/${toHandle(await billId('HB1'))}`)
+    const bill = await getJson(`/bills/${toLegacyHandle(await billId('HB1'))}`)
     expect(bill.status).toBe('Passed the House')
     expect(bill.committee).toMatchObject({ name: 'Finance and Appropriations', chamber: 'S' })
     expect(bill.referrals.map((r: any) => [r.chamber, r.name])).toEqual([
@@ -275,7 +275,7 @@ describe('Virginia votes and committees', () => {
     // The pending committee is the committee of the last referral, one committees row.
     expect(bill.committee.committeeId).toBe(bill.referrals[3].committeeId)
     // A bill that is done with committees (HB 61 passed both chambers) waits in none.
-    expect((await getJson(`/bills/${toHandle(await billId('HB61'))}`)).committee).toBeNull()
+    expect((await getJson(`/bills/${toLegacyHandle(await billId('HB61'))}`)).committee).toBeNull()
   })
 })
 
@@ -288,10 +288,10 @@ describe('a carried-over bill', () => {
     const old = await billId('HB9', '20261')
     const carried = await billId('HB9', '20271')
     expect(carried).not.toBe(old)
-    const bill = await getJson(`/bills/${toHandle(carried)}`)
+    const bill = await getJson(`/bills/${toLegacyHandle(carried)}`)
     expect(bill).toMatchObject({ status: 'Continued from last session', statusStage: 'in_committee' })
     expect(bill.relatedBills).toEqual([expect.objectContaining({ identifier: 'HB9', sastBillId: old, relationType: 'carry-over' })])
-    expect(await getJson(`/bills/${toHandle(old)}`)).toMatchObject({ status: 'Continued to next session', relatedBills: [] })
+    expect(await getJson(`/bills/${toLegacyHandle(old)}`)).toMatchObject({ status: 'Continued to next session', relatedBills: [] })
   })
 
   it('links nothing when central never synced the session it came from, and mints no id for it', async () => {
@@ -300,7 +300,7 @@ describe('a carried-over bill', () => {
     await claim('lis')
     await syncAndIngest()
 
-    const bill = await getJson(`/bills/${toHandle(await billId('HB9', '20271'))}`)
+    const bill = await getJson(`/bills/${toLegacyHandle(await billId('HB9', '20271'))}`)
     expect(bill.relatedBills).toEqual([])
     const db = drizzle(env.DB, { schema })
     const keys = (await db.select().from(schema.providerIds).where(eq(schema.providerIds.kind, 'bill')).all()).map(r => r.nativeKey)
@@ -327,7 +327,7 @@ describe('Virginia dockets on the calendar', () => {
   it('puts each committee docket on the calendar as a hearing', async () => {
     await claim('lis')
     await syncAndIngest()
-    const bill = await getJson(`/bills/${toHandle(await billId('HB61'))}`)
+    const bill = await getJson(`/bills/${toLegacyHandle(await billId('HB61'))}`)
     expect(bill.calendar.map((e: any) => [e.date, e.description, e.kind, e.type])).toEqual(expect.arrayContaining([
       ['2026-02-25', 'Senate General Laws and Technology docket', 'hearing', 'Hearing'],
       ['2026-03-03', 'Senate Finance and Appropriations docket', 'hearing', 'Hearing'],
@@ -340,7 +340,7 @@ describe('Virginia dockets on the calendar', () => {
     serve('20261', withDockets('"S05","10/05/2026","1","HB61"\n"S05","10/12/2026","1","HB61"\n'))
     await claim('lis')
     const { run } = await syncAndIngest()
-    const [cal] = calendarOf(run, toHandle(await billId('HB61')))
+    const [cal] = calendarOf(run, toLegacyHandle(await billId('HB61')))
     const upcoming = cal.events.filter((e: any) => e.date >= '2026-10-01')
     expect(upcoming.map((e: any) => e.description)).toEqual(['Senate Finance and Appropriations docket', 'Senate Finance and Appropriations docket'])
     expect(new Set(upcoming.map((e: any) => e.identityKey)).size).toBe(2)
@@ -350,7 +350,7 @@ describe('Virginia dockets on the calendar', () => {
     serve('20261', withDockets('"S05","10/05/2026","1","HB61"\n'))
     await claim('lis')
     await syncAndIngest()
-    const handle = toHandle(await billId('HB61'))
+    const handle = toLegacyHandle(await billId('HB61'))
     const upcoming = async () => (await getJson(`/bills/${handle}`)).calendar.filter((e: any) => e.date === '2026-10-05')
     expect(await upcoming()).toHaveLength(1)
 
@@ -376,7 +376,7 @@ describe('failing closed', () => {
   async function firstPass() {
     await claim('lis')
     await syncAndIngest()
-    return getJson(`/bills/${toHandle(await billId('HB1'))}`)
+    return getJson(`/bills/${toLegacyHandle(await billId('HB1'))}`)
   }
 
   /**
@@ -399,7 +399,7 @@ describe('failing closed', () => {
     const before = await firstPass()
     sessions['20261'][file] = null
     await failingPass(`LIS 20261: ${LIS_FILES[file]} is missing`)
-    expect(await getJson(`/bills/${toHandle(await billId('HB1'))}`)).toEqual(before)
+    expect(await getJson(`/bills/${toLegacyHandle(await billId('HB1'))}`)).toEqual(before)
   })
 
   it('fails on the first pass too, storing nothing', async () => {
@@ -473,14 +473,14 @@ describe('files cut down to their header', () => {
   it.each(['history', 'sponsors', 'votes', 'fiscal'] as const)('fails on a header-only %s, rather than rebuilding every bill without it', async file => {
     await claim('lis')
     await syncAndIngest()
-    const before = await getJson(`/bills/${toHandle(await billId('HB1'))}`)
+    const before = await getJson(`/bills/${toLegacyHandle(await billId('HB1'))}`)
     const served = sessions['20261'][file]!
     served.text = header(served.text)
     served.etag = '"cut"'
     const run = makeRun()
     await expect(sync(run)).rejects.toThrow(`LIS 20261 ${file}: no rows for`)
     expect(queued(run)).toEqual([])
-    expect(await getJson(`/bills/${toHandle(await billId('HB1'))}`)).toEqual(before)
+    expect(await getJson(`/bills/${toLegacyHandle(await billId('HB1'))}`)).toEqual(before)
   })
 
   it('fails on header-only dockets once the last pass found bills on them, so no docket is cancelled', async () => {
@@ -536,14 +536,14 @@ describe('reading the files with their ETags', () => {
     await syncAndIngest()
     expect(heads().filter(f => f !== 'bills')).toEqual([])
     expect(gets().sort()).toEqual(Object.keys(LIS_FILES).sort())
-    const before = await getJson(`/bills/${toHandle(await billId('HB1'))}`)
+    const before = await getJson(`/bills/${toLegacyHandle(await billId('HB1'))}`)
 
     calls = []
     await sync(makeRun())
     // At 5 ET the session list refreshes too, which checks BILLS.CSV once more.
     expect([...new Set(heads())].sort()).toEqual(Object.keys(LIS_FILES).sort())
     expect(gets()).toEqual([])
-    expect(await getJson(`/bills/${toHandle(await billId('HB1'))}`)).toEqual(before)
+    expect(await getJson(`/bills/${toLegacyHandle(await billId('HB1'))}`)).toEqual(before)
   })
 
   it('reads every file when one changed, and checks against the new ETags next time', async () => {
@@ -558,7 +558,7 @@ describe('reading the files with their ETags', () => {
     const { run } = await syncAndIngest()
     expect(gets().sort()).toEqual(Object.keys(LIS_FILES).sort())
     expect(queuedIds(run)).toEqual([await billId('HB1')])
-    expect((await getJson(`/bills/${toHandle(await billId('HB1'))}`)).title).toMatch(/^Minimum wage; raises/)
+    expect((await getJson(`/bills/${toLegacyHandle(await billId('HB1'))}`)).title).toMatch(/^Minimum wage; raises/)
 
     calls = []
     await sync(makeRun())

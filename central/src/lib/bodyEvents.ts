@@ -3,7 +3,7 @@ import { bills, billCalendar, bodyEventBills, bodyEvents, committees, sessions }
 import { CALENDAR_KINDS, isCalendarKind } from '../../../shared/calendarKinds'
 import { calendarKind, MISSED_PULLS_TO_CANCEL, sentIdentity, type CalendarRow } from './billCalendar'
 import { upsertCommitteeRows } from './committees'
-import { toHandle } from './billHandle'
+import { toLegacyHandle } from './billHandle'
 import type { BodyEvent, CalendarKind, Provider } from '../providers'
 import type { Db } from '../types'
 
@@ -469,9 +469,13 @@ export interface BodyEventDetail {
 
 /**
  * A provider's events in a state from `from` to `to`, as instances receive
- * them, with the bill calendar entries each covers.
+ * them, with the bill calendar entries each covers. Bills are named by
+ * `handle`: the legacy form unless the instance reads the neutral one (#305).
  */
-export async function bodyEventDetails(db: Db, provider: Provider, state: string, from: string, to: string): Promise<BodyEventDetail[]> {
+export async function bodyEventDetails(
+  db: Db, provider: Provider, state: string, from: string, to: string,
+  handle: (billId: number) => string = toLegacyHandle,
+): Promise<BodyEventDetail[]> {
   const rows = await db.select().from(bodyEvents)
     .where(and(eq(bodyEvents.provider, provider.id), eq(bodyEvents.state, state), gte(bodyEvents.date, from), lte(bodyEvents.date, to)))
     .orderBy(asc(bodyEvents.date), asc(bodyEvents.time), asc(bodyEvents.id)).all()
@@ -500,7 +504,7 @@ export async function bodyEventDetails(db: Db, provider: Provider, state: string
         const cover = chooseCover(calendarKind(provider, entry.typeId), entry.date, covers.get(entry.billId) ?? [])
         if (!cover) continue
         const list = covered.get(cover.id) ?? []
-        const ref = { billId: toHandle(entry.billId), identityKey: sentIdentity(entry) }
+        const ref = { billId: handle(entry.billId), identityKey: sentIdentity(entry) }
         if (!list.some(x => x.billId === ref.billId && x.identityKey === ref.identityKey)) list.push(ref)
         covered.set(cover.id, list)
       }
@@ -527,7 +531,7 @@ export async function bodyEventDetails(db: Db, provider: Provider, state: string
     url: r.url,
     eventHash: r.eventHash,
     cancelled: !!r.cancelledAt,
-    bills: (links.get(r.id) ?? []).sort((a, b) => a - b).map(toHandle),
+    bills: (links.get(r.id) ?? []).sort((a, b) => a - b).map(id => handle(id)),
     covers: covered.get(r.id) ?? [],
   }))
 }
