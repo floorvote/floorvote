@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { eq, desc, count, ne, and, or, sql, isNull, isNotNull, notInArray, inArray, type SQL } from 'drizzle-orm'
+import { eq, desc, count, ne, and, or, sql, isNotNull, notInArray, inArray, type SQL } from 'drizzle-orm'
 import { filedSlug } from '../lib/sessionSlug'
 import { requireAuth } from '../middleware/auth'
 import { getDb } from '../db/client'
@@ -20,7 +20,6 @@ feedRouter.get('/', async (c) => {
   const page = Math.max(1, Number(c.req.query('page') || 1))
   const limit = Math.min(100, Math.max(1, Number(c.req.query('limit') || 20)))
   const offset = (page - 1) * limit
-  const scope = c.req.query('scope') as 'default' | 'analyzed' | undefined
 
   const db = getDb(c.env.DB)
   const currentUser = c.get('user')
@@ -75,31 +74,21 @@ feedRouter.get('/', async (c) => {
   // users.deactivatedAt NULL, and isNull(NULL) is true — so those are unaffected.
   //
   // The bills join is a left join so an event with no bill (a bulk edit) still
-  // returns: such a row has NULL bills columns, which the default scope already
-  // treats as visible when its type is not passive. The analyzed scope filters on
-  // the bill's match, which a bill-less event has no bill to fail. The new-matches
-  // row is left out of it: this scope already lists every match, each as a
-  // bill_matched event, so the day's summary would only repeat them. The
-  // no-priority updates row is left out for the same reason: this scope lists
-  // each of its updates.
+  // returns: such a row has NULL bills columns, which defaultVisible treats as
+  // visible when its type is not passive.
   //
   // The no-priority updates row is passive, so defaultVisible (and with it the
-  // nav dot below) never admits it. The default feed's list admits it by its own
+  // nav dot below) never admits it. The feed's list admits it by its own
   // rule instead, from the bills whose legislative events defaultVisible hides
   // (lib/noPriorityRow): on a day those make two or more entries, the row; on a
   // day they make one, that entry's updates, which the client draws as the
   // bill's card (#921). Never both, so the total counts each once. Those updates
   // are passive too, so they never move the dot either.
+  //
+  // There is one feed: this route reads no `scope` (the "All analyzed bills" one
+  // is gone, #922), so a client that still sends the parameter gets this feed.
   const minRelevance = await getNewMatchMinRelevance(db)
-  const baseWhere = scope === 'analyzed'
-    ? and(
-        ne(feedEvents.suppressed, true),
-        ne(feedEvents.type, 'new_matches'),
-        ne(feedEvents.type, NO_PRIORITY_UPDATES),
-        or(isNull(feedEvents.billId), isNotNull(bills.matchType)),
-        activeUser,
-      )
-    : and(ne(feedEvents.suppressed, true), activeUser, defaultFeedShows(defaultVisible, minRelevance))
+  const baseWhere = and(ne(feedEvents.suppressed, true), activeUser, defaultFeedShows(defaultVisible, minRelevance))
 
   const [rows, countRow, latestRow, seenRow] = await Promise.all([
     db
@@ -196,7 +185,7 @@ feedRouter.get('/', async (c) => {
   const rowSummaries = new Map<string, { count: number; firstBills: unknown[]; lastAt: string }>()
   const loneCards = new Set<string>()
   const pageRows = rows.filter((x) => x.type === NO_PRIORITY_UPDATES)
-  const loneCandidates = scope === 'analyzed' ? [] : rows.filter((r) =>
+  const loneCandidates = rows.filter((r) =>
     r.billId !== null && LEGISLATIVE_EVENT_TYPES.includes(r.type) && wornPriority(r) === null)
   if (pageRows.length > 0 || loneCandidates.length > 0) {
     const days = await rowDays(db, [...pageRows, ...loneCandidates].map((r) => utcDay(r.createdAt)), minRelevance)

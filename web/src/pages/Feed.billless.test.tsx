@@ -1,5 +1,5 @@
 import { it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 
 vi.mock('../lib/api', () => ({
@@ -40,15 +40,4 @@ it('renders a bill-less event as an activity row beside per-bill cards', () => {
   expect(screen.getByText('Other Bill')).toBeInTheDocument()
   // The bulk event is not a card headed by some bill.
   expect(screen.getAllByText('HB 9')).toHaveLength(1)
-})
-
-it('offers "All analyzed bills" in the feed scope menu', () => {
-  render(
-    <MemoryRouter>
-      <Feed preloaded={{ events: [], total: 0, page: 1, limit: 40 } as never} />
-    </MemoryRouter>,
-  )
-  fireEvent.click(screen.getByRole('button', { name: /default feed/i }))
-  expect(screen.getByText('All analyzed bills')).toBeInTheDocument()
-  expect(screen.queryByText(/fully analyzed/i)).toBeNull()
 })

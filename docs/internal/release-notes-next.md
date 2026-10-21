@@ -101,3 +101,11 @@ A draft with engagement (votes, positions, comments, or notes) can now be delete
 
 - **Nothing to configure.** No migration. `POST /bills/bulk-delete` is new: admin only, refused in a demo, and up to 1,000 drafts a request. `DELETE /bills/:id` deletes a draft with engagement only with `?includeEngaged=1`; without it, it still answers 409.
 - **A locked demo shows these buttons disabled,** with the same "Locked in demo mode" hover as the other demo-locked controls.
+
+## One feed, with a daily row for bills with no priority
+
+The Feed is one view now. Its scope dropdown, with the "All analyzed bills" scope, is gone. Legislative activity on analyzed bills with no priority gets one row a day instead: "Updates on 9 bills with no priority," then the two most relevant bills as chips and a count of the rest. Opening the row lists every bill that moved, most relevant first, with that day's changes. Admins can set a priority from the row, which takes the bill out of it and gives the bill a card of its own from then on. A day when only one such bill moved shows that bill as a regular card, with "Set priority" at its top right for admins. Team activity keeps its full cards, as before.
+
+- **Instance migration only.** Instance migration 0121 adds the row's event type, `no_priority_updates`, to `feed_events`. Central doesn't change. `GET /feed` reads no `scope` any more, so an old client or bookmark that sends `scope=analyzed` gets the one feed.
+- **The row starts with the deploy.** The queue processor writes it as legislative changes land, so days before the deploy have no row, and the movement on them isn't listed anywhere on the Feed. The bills' own pages still show it.
+- **Notifications don't change.** The row and the one-bill card never light the Feed dot, raise the "New activity" banner, or appear in the digest email.

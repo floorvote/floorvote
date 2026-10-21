@@ -63,12 +63,6 @@ describe('GET /feed — bill-less events', () => {
     expect(body.events.map((e) => e.billId)).toEqual([null, a])
   })
 
-  it('shows it in the analyzed scope even though no bill is analyzed for it', async () => {
-    const id = await seedBillless([(await seedBill({ billNumber: 'HB 1', matchType: null }))])
-    const body = await get(memberToken, '?scope=analyzed')
-    expect(body.events.map((e) => e.id)).toEqual([id])
-  })
-
   it('lights the nav dot for a bill-less event someone else wrote', async () => {
     await seedBillless([await seedBill()], '2026-03-01 10:00:00')
     expect((await get(memberToken)).latestEventAt).toBe('2026-03-01 10:00:00')

@@ -64,15 +64,6 @@ describe('GET /feed — the new-matches row', () => {
     expect((await feed()).latestEventAt).toBe('2026-03-01 10:00:00')
   })
 
-  it('keeps the row out of the analyzed scope, which already lists every match', async () => {
-    const a = await seedBill({ billNumber: 'HB 1' })
-    await getDb(env.DB).insert(feedEvents).values({ id: 'matched', type: 'bill_matched', billId: a, userId: 'system' })
-    await seedRow([a])
-
-    const body = await feed(adminToken, '?scope=analyzed')
-    expect(body.events.map((e) => e.id)).toEqual(['matched'])
-  })
-
   it('lists the row\'s bills for a member who expands it', async () => {
     const a = await seedBill({ billNumber: 'HB 1', title: 'First' })
     const b = await seedBill({ billNumber: 'HB 2', title: 'Second' })

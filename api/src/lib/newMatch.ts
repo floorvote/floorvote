@@ -10,8 +10,8 @@ import type { AppDb } from '../types'
  * the feed's new-matches row. Stored in association_config as
  * `new_match_min_relevance`. Default 0 — every keyword match surfaces. Invalid or
  * negative values are treated as 0. The per-bill feed `bill_matched` event is NOT
- * gated by this threshold (the analyzed-scope feed is the comprehensive match
- * record).
+ * gated by this threshold: it is the record that a bill matched, and it shows as
+ * a row on the bill's card once the bill has a priority.
  */
 export async function getNewMatchMinRelevance(db: AppDb): Promise<number> {
   const row = await db.select().from(associationConfig)

@@ -162,7 +162,7 @@ export function buildBillCardModel(group: GroupedBillEvents): BillCardModel {
     } else if (event.type === 'bill_matched') {
       // Passive, system-generated: a new keyword match became fully analyzed. Handled
       // inline (not via USER_EVENT_ICONS) so it stays out of the email-icon generator —
-      // this event never appears in digest emails, only the "analyzed" feed scope.
+      // this event never appears in digest emails, only on the card of a bill with a priority.
       rows.push({
         key: event.id, iconName: 'new_releases', iconColor: color.accentBlue, iconFill: 0,
         text: 'New bill matching your keywords', bg: color.white, hash: '',

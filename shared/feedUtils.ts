@@ -185,11 +185,6 @@ export function filterPriorityEvents(groups: GroupedBillEvents[]): GroupedBillEv
   )
 }
 
-// A bill-less group has no bill whose analysis could be missing, so it stays.
-export function filterFullyAnalyzed(groups: GroupedBillEvents[]): GroupedBillEvents[] {
-  return groups.filter(group => group.billId === null || group.billMatchType !== null)
-}
-
 export function formatBillUpdateDetail(record: ChangeRecord): string {
   switch (record.changeType) {
     case 'status_change':

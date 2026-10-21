@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { groupEventsByBillAndDay, filterPriorityEvents, filterFullyAnalyzed, formatBillUpdateDetail, stripHtml } from './feedUtils'
+import { groupEventsByBillAndDay, filterPriorityEvents, formatBillUpdateDetail, stripHtml } from './feedUtils'
 import type { FeedEvent, GroupedBillEvents } from './feedUtils'
 
 // Day bucketing/labeling is timezone-sensitive by design — it must read in the
@@ -252,78 +252,14 @@ describe('filterPriorityEvents', () => {
   })
 })
 
-// ── filterFullyAnalyzed ──────────────────────────────────────────────────────
-
-describe('filterFullyAnalyzed', () => {
-  function makeGroup(overrides: { billMatchType: 'keyword' | 'manual' | null; events: FeedEvent[] }): GroupedBillEvents {
-    return {
-      key: `bill-${overrides.billMatchType}::2026-04-20`,
-      billId: 'bill-1',
-      billNumber: 'S1234',
-      billSessionSlug: '2026',
-      billState: 'RI',
-      billTitle: 'Test Bill',
-      billSummary: null,
-      billPriority: null,
-      billMatchType: overrides.billMatchType,
-      events: overrides.events,
-      date: '2026-04-20',
-    }
-  }
-
-  it('keeps groups with billMatchType keyword', () => {
-    const group = makeGroup({
-      billMatchType: 'keyword',
-      events: [makeEvent({ billId: 'b1', type: 'bill_updated', createdAt: '2026-04-20T10:00:00Z' })],
-    })
-    expect(filterFullyAnalyzed([group])).toHaveLength(1)
-  })
-
-  it('keeps groups with billMatchType manual', () => {
-    const group = makeGroup({
-      billMatchType: 'manual',
-      events: [makeEvent({ billId: 'b1', type: 'comment_added', createdAt: '2026-04-20T10:00:00Z' })],
-    })
-    expect(filterFullyAnalyzed([group])).toHaveLength(1)
-  })
-
-  it('removes groups with billMatchType null', () => {
-    const group = makeGroup({
-      billMatchType: null,
-      events: [makeEvent({ billId: 'b1', type: 'bill_updated', createdAt: '2026-04-20T10:00:00Z' })],
-    })
-    expect(filterFullyAnalyzed([group])).toHaveLength(0)
-  })
-
-  it('keeps all event types for included groups (does not strip bill_updated)', () => {
-    const group = makeGroup({
-      billMatchType: 'keyword',
-      events: [
-        makeEvent({ billId: 'b1', type: 'bill_updated', createdAt: '2026-04-20T10:00:00Z' }),
-        makeEvent({ billId: 'b1', type: 'comment_added', createdAt: '2026-04-20T09:00:00Z' }),
-      ],
-    })
-    const result = filterFullyAnalyzed([group])
-    expect(result[0].events).toHaveLength(2)
-  })
-
-  it('handles empty input', () => {
-    expect(filterFullyAnalyzed([])).toHaveLength(0)
-  })
-})
-
-describe('filters with bill-less events', () => {
+describe('the filter with bill-less events', () => {
   const group = (type: FeedEvent['type']) => groupEventsByBillAndDay([
     makeEvent({ billId: null, type, createdAt: '2026-04-20T10:00:00Z' }),
   ])
 
-  it('filterPriorityEvents keeps a bill-less engagement event and drops a bill-less passive one', () => {
+  it('keeps a bill-less engagement event and drops a bill-less passive one', () => {
     expect(filterPriorityEvents(group('priority_set'))).toHaveLength(1)
     expect(filterPriorityEvents(group('bill_matched'))).toHaveLength(0)
-  })
-
-  it('filterFullyAnalyzed keeps a bill-less event, which has no bill to be unanalyzed', () => {
-    expect(filterFullyAnalyzed(group('priority_set'))).toHaveLength(1)
   })
 })
 

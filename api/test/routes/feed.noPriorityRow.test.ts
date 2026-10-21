@@ -392,14 +392,6 @@ describe('the no-priority updates row', () => {
       expect(metaOf(await feed(memberToken), id)).toEqual(metaOf(await feed(adminToken), id))
     })
 
-    it('keeps the row out of the analyzed scope, which lists every update on its own', async () => {
-      const b = await analyzed('HB 1', 5)
-      const update = await moved(b)
-      await seedRow()
-      const body = await feed(adminToken, '?scope=analyzed')
-      expect(body.events.map((e) => e.id)).toEqual([update])
-    })
-
     it('leaves a bill-less bulk edit and the new-matches row as they were', async () => {
       await moved(await analyzed('HB 1', 5))
       await moved(await analyzed('HB 2', 5))
@@ -719,14 +711,6 @@ describe('the no-priority updates row', () => {
       await seedRow('2026-03-05', '01:00:00')
       const body = await feed()
       expect(cardsOf(body)).toEqual([next, late])
-    })
-
-    it('leaves the analyzed scope as it was, with no lone card marked', async () => {
-      const update = await moved(await analyzed('HB 1', 5))
-      await seedRow()
-      const body = await feed(adminToken, '?scope=analyzed')
-      expect(body.events.map((e) => e.id)).toEqual([update])
-      expect(cardsOf(body)).toEqual([])
     })
   })
 
