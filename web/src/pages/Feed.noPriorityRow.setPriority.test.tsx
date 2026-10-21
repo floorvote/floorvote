@@ -538,6 +538,90 @@ describe('a box with nothing left to scroll', () => {
   })
 })
 
+describe('a list drained of every loaded entry', () => {
+  it('asks for the next page, counting the bills dropped, and lists what comes, with no box to measure and no scroll', async () => {
+    hoisted.pages.set(2, { entries: [entry([C]), entry([D])], total: 3, page: 2, limit: 50, hasMore: false })
+    await openRow([row(3, [A, B])], [entry([A])], true)
+
+    await choose(entryOf('Act on HB1'), 'high')
+
+    expect(await screen.findByRole('link', { name: 'Act on HB3' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Act on HB4' })).toBeInTheDocument()
+    expect(hoisted.calls.filter((u) => u.includes('/bills?'))).toEqual(['/feed/events/row/bills?page=1', '/feed/events/row/bills?page=2&removed=1'])
+    expect(screen.queryByText(/no longer available/)).toBeNull()
+  })
+
+  it('does not ask again once the last page has come back, even with nothing in the box', async () => {
+    hoisted.pages.set(2, { entries: [], total: 0, page: 2, limit: 50, hasMore: false })
+    await openRow([row(2, [A, B])], [entry([A])], true)
+    await choose(entryOf('Act on HB1'), 'high')
+    await waitFor(() => expect(hoisted.calls.filter((u) => u.includes('/bills?'))).toHaveLength(2))
+    await act(async () => {})
+    expect(hoisted.calls.filter((u) => u.includes('/bills?'))).toHaveLength(2)
+  })
+})
+
+describe('collapsing and re-expanding the row', () => {
+  const sizeBox = (scrollHeight: number, clientHeight: number) => {
+    Object.defineProperty(box(), 'scrollHeight', { configurable: true, value: scrollHeight })
+    Object.defineProperty(box(), 'clientHeight', { configurable: true, value: clientHeight })
+  }
+  const listCalls = () => hoisted.calls.filter((u) => u.includes('/bills?'))
+
+  it('keeps the entries that are left, and the row\'s count, without asking for page one again', async () => {
+    await openRow([row(3, [A, B])], [entry([A]), entry([B]), entry([C])])
+    await choose(entryOf('Act on HB1'), 'high')
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'Act on HB1' })).toBeNull())
+
+    await userEvent.click(toggle())
+    expect(toggle()).toHaveAttribute('aria-expanded', 'false')
+    await userEvent.click(toggle())
+
+    expect(screen.queryByRole('link', { name: 'Act on HB1' })).toBeNull()
+    expect(screen.getByRole('link', { name: 'Act on HB2' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Act on HB3' })).toBeInTheDocument()
+    expect(toggle()).toHaveAccessibleName('Updates on 2 bills with no priority')
+    expect(listCalls()).toEqual(['/feed/events/row/bills?page=1'])
+  })
+
+  it('loads nothing by itself for a page that lands while the row is collapsed, and picks up once it is open again', async () => {
+    let release!: () => void
+    hoisted.held.set(2, new Promise<void>((resolve) => { release = resolve }))
+    hoisted.pages.set(2, { entries: [entry([D])], total: 5, page: 2, limit: 50, hasMore: true })
+    hoisted.pages.set(3, { entries: [entry([E])], total: 5, page: 3, limit: 50, hasMore: false })
+    await openRow([row(5, [A, B])], [entry([A]), entry([B]), entry([C])], true)
+    sizeBox(1000, 300)
+    Object.defineProperty(box(), 'scrollTop', { configurable: true, value: 700, writable: true })
+    fireEvent.scroll(box())
+    await waitFor(() => expect(listCalls()).toHaveLength(2))
+
+    await userEvent.click(toggle()) // collapsed: the box is hidden, so it has no height
+    sizeBox(0, 0)
+    release()
+    await act(async () => {})
+    await waitFor(() => expect(hoisted.calls.length).toBeGreaterThan(0))
+    expect(listCalls()).toEqual(['/feed/events/row/bills?page=1', '/feed/events/row/bills?page=2'])
+
+    // Open again: the box has height, the entries are few, and more are on the server.
+    sizeBox(100, 300)
+    await userEvent.click(toggle())
+    expect(await screen.findByRole('link', { name: 'Act on HB5' })).toBeInTheDocument()
+    expect(listCalls()).toEqual(['/feed/events/row/bills?page=1', '/feed/events/row/bills?page=2', '/feed/events/row/bills?page=3'])
+  })
+
+  it('still loads by itself after a removal once it has been re-expanded', async () => {
+    hoisted.pages.set(2, { entries: [entry([D])], total: 4, page: 2, limit: 50, hasMore: false })
+    await openRow([row(4, [A, B])], [entry([A]), entry([B]), entry([C])], true)
+    await userEvent.click(toggle())
+    await userEvent.click(toggle())
+    expect(listCalls()).toEqual(['/feed/events/row/bills?page=1'])
+    sizeBox(100, 300)
+    await choose(entryOf('Act on HB1'), 'high')
+    expect(await screen.findByRole('link', { name: 'Act on HB4' })).toBeInTheDocument()
+    expect(listCalls()).toEqual(['/feed/events/row/bills?page=1', '/feed/events/row/bills?page=2&removed=1'])
+  })
+})
+
 describe('a bill that leaves while the next page is on its way', () => {
   const scrollToEnd = () => {
     Object.defineProperty(box(), 'scrollHeight', { configurable: true, value: 1000 })
