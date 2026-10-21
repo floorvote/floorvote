@@ -655,12 +655,13 @@ export const LM_ENGAGEMENT_EVENTS: DemoSeedFeedEvent[] = [
 // any legislative activity appears. That misrepresents the product, whose whole
 // point is legislative activity arriving alongside the team's reaction to it.
 //
-// These events are INVENTED, unlike every other event in this file. They are
-// written to be plausible for each bill's real chamber and status: nothing here
-// advances a bill that is dead, enacts one that is pending, or claims a roll
-// call. They are committee referrals, hearings, substitutions and readings —
-// the procedural texture of a live session. The seed's bannerText names them as
-// fictional alongside the hearing dates.
+// These events are INVENTED, unlike every other event in this file: either the
+// action is made up, or its date is (several are a bill's real actions moved into
+// the window). They are written to be plausible for each bill's real chamber and
+// status: nothing here advances a bill that is dead, enacts one that is pending,
+// or claims a roll call. They are committee referrals, hearings, substitutions
+// and readings — the procedural texture of a live session. The seed's bannerText
+// names them as fictional alongside the hearing dates.
 //
 // If the manifest is ever refreshed with newer real actions, delete this block
 // rather than growing it.
