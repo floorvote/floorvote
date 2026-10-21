@@ -6,10 +6,10 @@ import { DEMO_SEEDS, resolveDemoSeed } from '../../src/lib/demoSeeds'
 import type { DemoSeedFeedEvent } from '../../src/lib/demoSeeds/types'
 import {
   LM_BILLS, LM_BILL_UPDATED_EVENTS, LM_COMPANION_BILLS, LM_HEARING_CHANGE_SOURCES, LM_HEARING_NOTICE_SOURCES,
-  LM_RECENT_ACTIVITY_EVENTS,
+  LM_RECENT_ACTIVITY_EVENTS, LM_NO_PRIORITY_ACTIONS,
 } from '../../src/lib/demoSeeds/lakeMichigan/bills'
 import {
-  stripHtml, truncateWithEllipsis, COMMENT_PREVIEW_MAX, PASSIVE_EVENT_TYPES, type FeedEvent,
+  stripHtml, truncateWithEllipsis, COMMENT_PREVIEW_MAX, PASSIVE_EVENT_TYPES, LEGISLATIVE_EVENT_TYPES, type FeedEvent,
 } from '../../../shared/feedUtils'
 import { LM_USER_ROLES } from '../../src/lib/demoSeeds/lakeMichigan/roster'
 
@@ -664,6 +664,163 @@ describe('lake-michigan feed density', () => {
     const used = new Set(s.reactions.map(r => r.emoji))
     expect(used.size, `only ${[...used].join(' ')} in use`).toBeGreaterThanOrEqual(5)
     expect(used.has('😭'), 'no reaction registers a bad outcome').toBe(true)
+  })
+
+  /**
+   * The bills with no priority (#925). Their events sit in `noPriorityEvents`, apart
+   * from the team's, and the feed gathers them into one row a day (#918). These
+   * helpers model that row the way the feed resolves it, from the seed alone: which
+   * bills a day's row stands for, and where it falls among the day's cards.
+   */
+  describe('the no-priority row', () => {
+    const WINDOW = 14 // days 0 to 13, the recent window the density checks above use
+    const seeded = s.noPriorityEvents ?? []
+    const seededBills = [...new Set(seeded.map(e => e.externalId))]
+    const LEGISLATIVE = new Set<string>(LEGISLATIVE_EVENT_TYPES)
+    // A companion group is one policy: it shares its tracked partner's priority and card.
+    const groupOf = (ext: string) => LM_COMPANION_BILLS.find(c => c.externalId === ext)?.companionOf ?? ext
+    const hasPriority = (ext: string) => s.priorities.some(p => p.externalId === groupOf(ext))
+    const atOf = (e: DemoSeedFeedEvent) => e.daysAgo * 1440 - (e.minutesLater ?? 0)
+    const changesOf = (e: DemoSeedFeedEvent) =>
+      (e.metadata as { changes: Array<{ changeType: string; newValue: string | null }> }).changes
+
+    /** The bills a day's row stands for: a legislative event that day on a bill whose
+     *  companion group has no priority and that nobody engaged with that day (the
+     *  feed's rule, api/src/lib/noPriorityRow.ts), one entry per group. */
+    const qualifyingOn = (day: number) => {
+      const ofDay = [...s.feedEvents, ...seeded].filter(e => e.daysAgo === day)
+      const engaged = new Set(ofDay.filter(e => !isActivity(e)).map(e => groupOf(e.externalId)))
+      return [...new Set(ofDay.filter(e => LEGISLATIVE.has(e.type)).map(e => groupOf(e.externalId)))]
+        .filter(g => !hasPriority(g) && !engaged.has(g))
+    }
+
+    /** A day's cards in feed order, the row among them. Two or more bills are one row,
+     *  which the feed puts last in its day. A lone bill is its own full card (#921),
+     *  ordered by the time of its events like any card. */
+    const feedOfDay = (day: number) => {
+      const cards: Array<{ kind: string; at: number; bills: string[] }> = cardsOfDay(day).map(evs => ({
+        kind: kindOf(evs), at: Math.min(...evs.map(atOf)), bills: [cardOf(evs[0]).split('::')[0]],
+      }))
+      const bills = qualifyingOn(day)
+      if (bills.length === 0) return cards
+      const lone = bills.length === 1
+      const at = lone ? Math.min(...seeded.filter(e => e.daysAgo === day).map(atOf)) : Infinity
+      return [...cards, { kind: lone ? 'lone' : 'row', at, bills }].sort((a, b) => a.at - b.at)
+    }
+    const windowDays = Array.from({ length: WINDOW }, (_, i) => i)
+    const teamCards = windowDays.reduce((n, d) => n + cardsOfDay(d).length, 0)
+    const rowDays = windowDays.filter(d => qualifyingOn(d).length > 0)
+
+    it('seeds bill_updated events on about a dozen bills, each carrying an action', () => {
+      expect(seededBills.length, 'about a dozen bills').toBeGreaterThanOrEqual(10)
+      expect(seededBills.length, 'about a dozen bills').toBeLessThanOrEqual(14)
+      for (const e of seeded) {
+        expect(e.type).toBe('bill_updated')
+        expect(e.userId).toBe('system')
+        expect(changesOf(e).length, `${e.id} changes`).toBeGreaterThan(0)
+        for (const c of changesOf(e)) {
+          expect(c.changeType, `${e.id} change type`).toBe('action_added')
+          expect(c.newValue, `${e.id} action`).toEqual(expect.any(String))
+          expect(c.newValue!.trim().length, `${e.id} action`).toBeGreaterThan(0)
+        }
+      }
+    })
+
+    it("takes each action from the bill's own history and re-dates it into the recent window", () => {
+      expect(LM_NO_PRIORITY_ACTIONS.length).toBeGreaterThan(0)
+      // The events say exactly what the table of real actions says, bill by bill and day by day.
+      const fromEvents = seeded.flatMap(e => changesOf(e).map(c => `${e.externalId}|${e.daysAgo}|${c.newValue}`)).sort()
+      expect(fromEvents).toEqual(LM_NO_PRIORITY_ACTIONS.map(a => `${a.externalId}|${a.daysAgo}|${a.action}`).sort())
+      const windowStart = Date.now() - WINDOW * 86400_000
+      for (const a of LM_NO_PRIORITY_ACTIONS) {
+        expect(a.actionDate, `${a.billNumber} action date`).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+        // A real action from before the window, now shown inside it.
+        expect(Date.parse(a.actionDate), `${a.billNumber} "${a.action}" is already recent`).toBeLessThan(windowStart)
+        expect(a.daysAgo, `${a.billNumber} "${a.action}" lands outside the window`).toBeGreaterThanOrEqual(0)
+        expect(a.daysAgo, `${a.billNumber} "${a.action}" lands outside the window`).toBeLessThan(WINDOW)
+      }
+      // The bill's actions keep their order: the older one is shown on the earlier day.
+      for (const ext of seededBills) {
+        const own = LM_NO_PRIORITY_ACTIONS.filter(a => a.externalId === ext)
+          .sort((x, y) => x.actionDate.localeCompare(y.actionDate))
+        const days = own.map(a => a.daysAgo)
+        expect(days, `${own[0]?.billNumber} actions out of order`).toEqual([...days].sort((x, y) => y - x))
+      }
+    })
+
+    it('repeats no action, and none the bill history already reports', () => {
+      // Same containment test as the recent-activity check above, over these events.
+      const norm = (v: string | null) => (v ?? '').toLowerCase().replace(/\s+/g, ' ').replace(/[.\s]+$/, '')
+      const actionsOf = (evs: DemoSeedFeedEvent[]) => evs.flatMap(e =>
+        changesOf(e).filter(c => c.changeType === 'action_added').map(c => ({ id: e.id, bill: e.externalId, action: norm(c.newValue) })))
+      const mine = actionsOf(seeded)
+      expect(mine.length).toBeGreaterThan(0)
+      const others = [...actionsOf(LM_BILL_UPDATED_EVENTS), ...actionsOf(LM_RECENT_ACTIVITY_EVENTS)]
+      const contains = (a: string, b: string) => a !== '' && b !== '' && (a.includes(b) || b.includes(a))
+      for (const [i, r] of mine.entries()) {
+        const copy = others.find(h => h.bill === r.bill && contains(h.action, r.action))
+        expect(copy, `${r.id} "${r.action}" repeats ${copy?.id}`).toBeUndefined()
+        const twice = mine.find((h, j) => j !== i && h.bill === r.bill && contains(h.action, r.action))
+        expect(twice, `${r.id} "${r.action}" repeats ${twice?.id}`).toBeUndefined()
+      }
+    })
+
+    it('has no priority or team activity on any bill it seeds, so every one lands in the row and none is a card of its own', () => {
+      expect(seededBills.length).toBeGreaterThan(0)
+      const tracked = new Set([...s.priorities.map(p => p.externalId), ...LM_COMPANION_BILLS.map(c => c.externalId)])
+      const teamIds = new Set(s.feedEvents.map(e => e.id))
+      for (const e of seeded) expect(teamIds.has(e.id), `${e.id} reuses a team event's id`).toBe(false)
+      for (const ext of seededBills) {
+        expect(tracked.has(ext), `${ext} is one of the team's bills`).toBe(false)
+        expect(s.feedEvents.filter(e => e.externalId === ext).map(e => e.id), `${ext} has earlier feed events`).toEqual([])
+        for (const [what, rows] of Object.entries({
+          comments: s.comments, votes: s.votes, notes: s.notes, positions: s.positions,
+          fieldValues: s.customFieldValues, fieldChanges: s.teamFieldChanges, calendar: s.calendarEvents,
+        })) {
+          expect((rows as Array<{ externalId: string | null }>).filter(r => r.externalId === ext).length, `${ext} has ${what}`).toBe(0)
+        }
+      }
+      // Whatever day one of these events is on, the day's row stands for the bill, and the
+      // day's cards (the team's) carry no event of it.
+      for (const day of new Set(seeded.map(e => e.daysAgo))) {
+        const bills = new Set(seeded.filter(e => e.daysAgo === day).map(e => e.externalId))
+        expect(new Set(qualifyingOn(day)), `day ${day}`).toEqual(bills)
+        for (const c of cardsOfDay(day)) {
+          for (const e of c) expect(bills.has(e.externalId), `${e.id} is on a card of its own`).toBe(false)
+        }
+      }
+    })
+
+    it('shows a row of two or more bills on most days of the window, and exactly one bill on at least one', () => {
+      const counts = windowDays.map(d => qualifyingOn(d).length)
+      expect(counts.filter(n => n >= 2).length, `bills a day: ${counts.join(' ')}`).toBeGreaterThan(WINDOW / 2)
+      expect(counts.filter(n => n === 1).length, `bills a day: ${counts.join(' ')}`).toBeGreaterThanOrEqual(1)
+      // Outside the window the seed adds nothing: the feed's older days stay the team's.
+      expect(seeded.every(e => e.daysAgo < WINDOW)).toBe(true)
+    })
+
+    it("never opens a day on the row, and gives it no more than one row per three cards of the team's", () => {
+      expect(rowDays.length).toBeGreaterThan(0)
+      for (const d of rowDays) {
+        const feed = feedOfDay(d)
+        expect(cardsOfDay(d).length, `day ${d} has no team card to precede the row`).toBeGreaterThanOrEqual(1)
+        expect(feed[0].kind, `day ${d} opens on the row: ${feed.map(c => c.kind).join(', ')}`).toMatch(/^(mixed|social|activity)$/)
+        // A row of two or more is the day's last card.
+        if (qualifyingOn(d).length >= 2) expect(feed[feed.length - 1].kind, `day ${d}`).toBe('row')
+      }
+      expect(rowDays.length, `${rowDays.length} rows among ${teamCards} cards`).toBeLessThanOrEqual(teamCards / 3)
+      // And enough of them to be seen: about one row for every three to five cards.
+      expect(rowDays.length, `${rowDays.length} rows among ${teamCards} cards`).toBeGreaterThanOrEqual(teamCards / 6)
+    })
+
+    it("sits below today's pinned cards, and the first screen's four still take their turns", () => {
+      const today = feedOfDay(0)
+      expect(today.map(c => c.kind)).toEqual(['mixed', 'social', 'activity', 'mixed', 'row'])
+      expect(today.length).toBeLessThanOrEqual(5)
+      // The row never pushes a pinned card out of the top four.
+      expect(cardsOfDay(0).map(kindOf).slice(0, 4)).toEqual(['mixed', 'social', 'activity', 'mixed'])
+      for (const c of cardsOfDay(0)) expect(rowsOf(c), `${cardOf(c[0])} rows`).toBeGreaterThanOrEqual(2)
+    })
   })
 })
 

@@ -773,3 +773,20 @@ export const LM_COMPANION_BILLS: Array<{
   { externalId: 'legiscan:1966402', jurisdiction: 'US', billNumber: 'SB528',  companionOf: 'legiscan:1910159' },
   { externalId: 'legiscan:2058679', jurisdiction: 'US', billNumber: 'SB3457', companionOf: 'legiscan:2058690' },
 ]
+
+/** One real action of a bill with no priority, and the recent day it is shown on. */
+export type NoPriorityAction = {
+  externalId: string
+  /** For reading the table only. The feed shows the bill's own number and title. */
+  billNumber: string
+  /** The date the bill's history gives the action. */
+  actionDate: string
+  /** Verbatim from the bill's stored history. */
+  action: string
+  daysAgo: number
+  minutesLater?: number
+}
+
+export const LM_NO_PRIORITY_ACTIONS: NoPriorityAction[] = []
+
+export const LM_NO_PRIORITY_EVENTS: DemoSeedFeedEvent[] = []

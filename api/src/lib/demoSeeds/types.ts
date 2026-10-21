@@ -193,6 +193,12 @@ export type DemoSeed = {
   reactions: DemoSeedReaction[]
   mentions: DemoSeedMention[]
   feedEvents: DemoSeedFeedEvent[]
+  /** Legislative activity on analyzed bills with no priority and no team activity.
+   *  Kept apart from `feedEvents`, which describe the team's bills. The reset writes
+   *  these like any feed event, then the day's `no_priority_updates` row for each
+   *  UTC day they land on, as the queue processor does when a legislative event
+   *  lands on an analyzed bill. Omit for a seed with none. */
+  noPriorityEvents?: DemoSeedFeedEvent[]
   customFieldValues: Array<{ externalId: string; fieldId: string; value: string; setBy: string; daysAgo: number }>
   notes: Array<{ id: string; externalId: string; content: string; daysAgo: number }>
   calendarEvents: DemoSeedCalendarEvent[]
