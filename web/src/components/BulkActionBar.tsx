@@ -699,7 +699,7 @@ export function BulkActionBar({
           eff: effVal(staged.position, initialValues?.position),
           isStaged: staged.position !== undefined,
           options: [
-            { value: null, label: 'Not set' },
+            { value: null, label: 'No position' },
             ...positionVocabulary.map(p => ({ value: p, label: p })),
           ],
           onSelect: val => setStagedField('position', val, initialValues?.position),
@@ -715,7 +715,7 @@ export function BulkActionBar({
             isStaged: staged.priority !== undefined,
             isPriority: true,
             options: [
-              { value: null, label: 'Not set' },
+              { value: null, label: 'No priority' },
               { value: 'high', label: 'High' },
               { value: 'medium', label: 'Medium' },
               { value: 'low', label: 'Low' },

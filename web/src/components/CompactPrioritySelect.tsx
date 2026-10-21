@@ -7,6 +7,9 @@ const NO_PRIORITY = { fill: color.white, text: color.textMuted, dot: color.borde
 // An untriaged new match: the same control in amber.
 const NEW_MATCH = { fill: color.bgAmberPriority, text: color.textAmberDark }
 const DISMISS = 'dismiss'
+// The menu's "No priority" choice. Its value is a sentinel, because the select's empty value ('') belongs to the hidden
+// closed-label option below; two options can't both be the empty value and be told apart.
+const CLEAR = '__none__'
 const PRIORITY_LABELS = { high: 'High Priority', medium: 'Medium Priority', low: 'Low Priority' } as const
 
 function ChevronDown({ size = 10, color }: { size?: number; color: string }) {
@@ -85,7 +88,9 @@ export function CompactPrioritySelect({ billId, current, onChange, isFiltered, m
             apiFetch(`/bills/${billId}/triage-dismiss`, { method: 'PATCH' }).then(() => onDismiss?.()).catch(() => setError("Couldn't dismiss. Try again."))
             return
           }
-          const p = e.target.value === '' ? null : e.target.value as 'high' | 'medium' | 'low'
+          const p = e.target.value === CLEAR ? null : e.target.value as 'high' | 'medium' | 'low'
+          // "No priority" on a bill that has none changes nothing: no request, no refetch.
+          if (p === null && !current) return
           const id = ++latestSave.current
           apiFetch<{ priority: 'high' | 'medium' | 'low' | null; promoted?: boolean }>(`/bills/${billId}/priority`, { method: 'PATCH', body: JSON.stringify({ priority: p }) })
             // A failed save leaves the control on the saved priority (the select is controlled) and says so.
@@ -106,7 +111,11 @@ export function CompactPrioritySelect({ billId, current, onChange, isFiltered, m
           outlineOffset: 2,
         }}
       >
-        <option value="">{amber ? 'New · Set priority' : placeholder}</option>
+        {/* The closed label ("Set priority", or the amber "New · Set priority"). A native select shows its selected
+            option's text when closed, so this option carries it, but hidden and disabled so the open menu doesn't list it:
+            the menu's empty choice is "No priority" below. */}
+        <option value="" hidden disabled>{selectedLabel}</option>
+        <option value={CLEAR}>No priority</option>
         <option value="high">{PRIORITY_LABELS.high}</option>
         <option value="medium">{PRIORITY_LABELS.medium}</option>
         <option value="low">{PRIORITY_LABELS.low}</option>

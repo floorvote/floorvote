@@ -2,6 +2,9 @@ import { apiFetch } from '../lib/api'
 import { POSITION_COLORS } from '../lib/chipStyles'
 import { color, fontSize, fontWeight, radius } from '../styles/tokens'
 
+// The menu's "No position" choice. Its value is a sentinel, not '', because '' belongs to the hidden closed-label option,
+// and not a word like 'none', which a position vocabulary could contain.
+const CLEAR = '__none__'
 const NO_POSITION = { bg: color.white, color: color.textMuted, border: color.borderDefault }
 
 function ChevronDown({ color }: { color: string }) {
@@ -33,7 +36,9 @@ export function CompactPositionSelect({ billId, current, options, onChange, isFi
         onMouseDown={(e) => e.stopPropagation()}
         onChange={(e) => {
           e.stopPropagation()
-          const p = e.target.value === '' ? null : e.target.value
+          const p = e.target.value === CLEAR ? null : e.target.value
+          // "No position" on a bill that has none changes nothing: no request.
+          if (p === null && current === null) return
           if (p !== null) {
             apiFetch(`/bills/${billId}/position`, { method: 'POST', body: JSON.stringify({ position: p }) })
               .then(() => onChange(p))
@@ -52,7 +57,9 @@ export function CompactPositionSelect({ billId, current, options, onChange, isFi
           outlineOffset: 2,
         }}
       >
-        <option value="">Not set</option>
+        {/* The closed label. Hidden and disabled so the open menu doesn't list it: its empty choice is "No position". */}
+        <option value="" hidden disabled>Set position</option>
+        <option value={CLEAR}>No position</option>
         {options.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
       </select>
       <span style={{
