@@ -108,7 +108,7 @@ export function NoPriorityRow({ event, isAdmin = false, onPrioritized, onDismiss
 
       {opened && (
         <div style={{ display: open ? 'block' : 'none', borderTop: `1px solid ${CARD_STYLE.rowBorder}` }}>
-          <FeedBillList loadPage={loadPage} priority={priority} />
+          <FeedBillList loadPage={loadPage} priority={priority} visible={open} />
         </div>
       )}
     </div>

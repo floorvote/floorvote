@@ -67,10 +67,12 @@ const NEAR_END_PX = 120
  * it already has (by setting their priority): the list behind it has shrunk by
  * that many ahead of the next page, which is to start that much earlier.
  */
-export function FeedBillList({ loadPage, emptyNote = 'These bills are no longer available.', priority }: {
+export function FeedBillList({ loadPage, emptyNote = 'These bills are no longer available.', priority, visible = true }: {
   loadPage: (page: number, dropped: number) => Promise<FeedListPage>
   emptyNote?: string
   priority?: FeedListPriority
+  /** False while the list is mounted but hidden (a collapsed row): a hidden box has no height, so it loads nothing by itself. */
+  visible?: boolean
 }) {
   const [entries, setEntriesState] = useState<FeedListEntry[]>([])
   // The entries as the latest change left them, for a handler that runs before the next render.
@@ -125,9 +127,9 @@ export function FeedBillList({ loadPage, emptyNote = 'These bills are no longer 
     // that overflows. Setting priorities empties it, so one that has been laid out and no
     // longer overflows loads the next page itself, until the box overflows again or the
     // last page has arrived. (An unmeasured box, as when hidden, has no height to judge by.)
-    const laidOut = el.clientHeight > 0 || entries.length === 0
+    const laidOut = visible && (el.clientHeight > 0 || entries.length === 0)
     if (!overflow && laidOut && hasMore && status === 'idle') void load()
-  }, [height, entries.length, hasMore, status, load])
+  }, [height, entries.length, hasMore, status, load, visible])
 
   function prioritized(entry: FeedListEntry, p: 'high' | 'medium' | 'low') {
     dropped.current += 1
