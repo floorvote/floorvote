@@ -35,6 +35,7 @@ export function FeedEntryPriority({ entry, isAdmin, onPrioritized, onDismissed }
     <CompactPrioritySelect
       billId={lead.id}
       current={null}
+      ariaLabel={newMatch ? `Priority for ${lead.billNumber} (new match: set a priority or dismiss)` : `Priority for ${lead.billNumber}`}
       onChange={(p) => { if (p !== null) onPrioritized(p) }}
       newMatch={newMatch}
       onDismiss={() => { setAnnouncement('Dismissed'); onDismissed() }}
@@ -44,8 +45,9 @@ export function FeedEntryPriority({ entry, isAdmin, onPrioritized, onDismissed }
   return (
     <span style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
       <DismissAnnouncement message={announcement} />
-      {/* Only a new match's control needs a word: its label alone does not say what to do. */}
-      {newMatch ? <HoverTooltip text="New keyword match — set a priority or dismiss">{select}</HoverTooltip> : select}
+      {/* Only a new match's control needs a word: its label alone does not say what to do. The wrapper stays
+          when the word goes (Dismiss), so the select is not remounted and keyboard focus stays on it. */}
+      <HoverTooltip text={newMatch ? 'New keyword match — set a priority or dismiss' : ''}>{select}</HoverTooltip>
     </span>
   )
 }

@@ -90,7 +90,15 @@ export function FeedBillList({ loadPage, emptyNote = 'These bills are no longer 
     busy.current = true
     setStatus('loading')
     try {
-      const page = await loadPage(nextPage.current, dropped.current)
+      // A bill that leaves while the page is on its way makes the server's list start one
+      // entry earlier than the request assumed, so a page asked for before it left starts
+      // an entry late and misses one. Ask for that page again, counting it.
+      let page: FeedListPage
+      for (;;) {
+        const sent = dropped.current
+        page = await loadPage(nextPage.current, sent)
+        if (dropped.current === sent) break
+      }
       nextPage.current += 1
       // A bill that left the list between two pages shifts the next one back by
       // an entry, so a page can repeat the last one: list each entry once.
@@ -110,8 +118,16 @@ export function FeedBillList({ loadPage, emptyNote = 'These bills are no longer 
 
   useLayoutEffect(() => {
     const el = boxRef.current
-    if (el) setOverflows(el.scrollHeight > el.clientHeight)
-  }, [height, entries.length])
+    if (!el) return
+    const overflow = el.scrollHeight > el.clientHeight
+    setOverflows(overflow)
+    // The next page loads when the reader scrolls to the end of the box, which takes a box
+    // that overflows. Setting priorities empties it, so one that has been laid out and no
+    // longer overflows loads the next page itself, until the box overflows again or the
+    // last page has arrived. (An unmeasured box, as when hidden, has no height to judge by.)
+    const laidOut = el.clientHeight > 0 || entries.length === 0
+    if (!overflow && laidOut && hasMore && status === 'idle') void load()
+  }, [height, entries.length, hasMore, status, load])
 
   function prioritized(entry: FeedListEntry, p: 'high' | 'medium' | 'low') {
     dropped.current += 1
