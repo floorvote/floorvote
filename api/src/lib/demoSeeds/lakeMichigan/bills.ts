@@ -783,11 +783,17 @@ export const LM_COMPANION_BILLS: Array<{
 // visitor would never see it. These events give a dozen of them activity across
 // the recent window, so the row shows, among the team's cards.
 //
+// The row counts only bills the demo has analyzed (a bill with a match type), and the
+// demo analyzes a delivered bill only when it matches the demo's keywords. So every
+// bill here is one that does (the guard in demoSeeds.lakeMichigan.analyzed.test.ts
+// runs the real matcher on each); a bill that matches no keyword is delivered but
+// never analyzed, and its events would write no row.
+//
 // Each action below is one of the bill's own, verbatim from its stored history,
 // shown on a recent day instead of its real date (the dates differ, as in
 // LM_RECENT_ACTIVITY_EVENTS, and the banner names the recent activity as fictional).
 // A bill's actions keep their real order. They are procedural (assignments,
-// reports, readings, amendments), never a vote, a passage, or an enactment, so
+// reports, readings, deadlines), never a vote, a passage, or an enactment, so
 // nothing here advances a bill past where its record has it. None of these bills
 // is tracked, has a companion, or has a comment, vote, or position, so each has no
 // earlier feed event and none repeats an action shown elsewhere.
@@ -819,39 +825,42 @@ const np = (
 ): NoPriorityAction => ({ externalId, billNumber, actionDate, action, daysAgo, ...(minutesLater !== undefined ? { minutesLater } : {}) })
 
 export const LM_NO_PRIORITY_ACTIONS: NoPriorityAction[] = [
-  // Today: two bills.
-  np('legiscan:2107488', 'IL SB3381', '2026-03-12', 0, 'Second Reading'),
-  np('legiscan:2152881', 'MI HB6038', '2026-06-16', 0, 'Substitute (h-1) Adopted'),
+  // Today: three bills.
+  np('legiscan:2104855', 'IL SB3309', '2026-07-02', 0, 'Pursuant to Senate Rule 3-9(b) / Referred to Assignments'),
+  np('legiscan:2065195', 'IN HB1239', '2026-01-05', 0, 'First reading: referred to Committee on Environmental Affairs'),
+  np('legiscan:2065523', 'IN HB1297', '2026-01-06', 0, 'First reading: referred to Committee on Utilities, Energy and Telecommunications'),
   // Yesterday: three.
-  np('legiscan:1961471', 'IL HB3433', '2025-03-19', 1, 'Placed on Calendar 2nd Reading - Short Debate'),
-  np('legiscan:2029663', 'MI HB4477', '2026-04-21', 1, 'Read A Second Time'),
-  np('legiscan:2067187', 'IN HB1398', '2026-01-20', 1, 'Second reading: ordered engrossed'),
-  // 2 days ago: two.
-  np('legiscan:2101857', 'MI HB5485', '2026-07-02', 2, 'Placed On Third Reading'),
-  np('legiscan:1961538', 'IL HB3457', '2025-03-13', 2, 'To Tax Policy: Other Taxes Subcommittee'),
+  np('legiscan:2135407', 'MI SB0855', '2026-04-21', 1, 'Referred To Committee Of The Whole With Substitute (s-1)'),
+  np('legiscan:2061495', 'IN HB1110', '2026-01-05', 1, 'First reading: referred to Committee on Environmental Affairs'),
+  np('legiscan:2155128', 'MI HB6143', '2026-06-30', 1, 'Referred To Committee On Natural Resources And Tourism'),
+  // 2 days ago: three.
+  np('legiscan:2041821', 'MI SB0505', '2026-03-11', 2, 'Referred To Committee Of The Whole With Substitute (s-1)'),
+  np('legiscan:2153386', 'MI HB6066', '2026-06-09', 2, 'Referred To Committee On Government Operations'),
+  np('legiscan:2144527', 'MI HB5842', '2026-04-21', 2, 'Referred To Committee On Appropriations'),
   // 3 days ago: none.
   // 4 days ago: two.
-  np('legiscan:2152881', 'MI HB6038', '2026-06-11', 4, 'Reported With Recommendation With Substitute (h-1)'),
-  np('legiscan:2111379', 'IL HB5593', '2026-03-13', 4, 'House Committee Amendment No. 1 Referred to Rules Committee'),
-  // 5 days ago: two.
-  np('legiscan:2107488', 'IL SB3381', '2026-02-17', 5, 'Assigned to Judiciary'),
-  np('legiscan:2067187', 'IN HB1398', '2026-01-15', 5, 'Committee report: amend do pass, adopted'),
+  np('legiscan:2104855', 'IL SB3309', '2026-05-15', 4, 'Rule 2-10 Committee/3rd Reading Deadline Established As May 22, 2026'),
+  np('legiscan:1928265', 'IL SB0117', '2025-01-17', 4, 'Referred to Assignments'),
+  // 5 days ago: three.
+  np('legiscan:2135407', 'MI SB0855', '2026-04-21', 5, 'Reported Favorably With Substitute (s-1) 4/16/2026'),
+  np('legiscan:2041821', 'MI SB0505', '2026-03-11', 5, 'Reported Favorably With Substitute (s-1) 3/10/2026'),
+  np('legiscan:2035723', 'MI HB4568', '2025-06-05', 5, 'Referred To Committee On Appropriations'),
   // 6 days ago: none.
   // 7 days ago: a lone bill, ahead of that day's team card.
-  np('legiscan:2038872', 'MI HB4708', '2026-04-15', 7, 'Reported With Recommendation Without Amendment', -45),
+  np('legiscan:2156259', 'US HB9836', '2026-07-22', 7, 'Introduced in House', -45),
   // 8 days ago: none.
   // 9 days ago: two.
-  np('legiscan:1945910', 'IL HB1873', '2025-02-25', 9, 'Assigned to Energy & Environment Committee'),
-  np('legiscan:2027870', 'US SB1523', '2025-05-21', 9, 'Committee on Commerce, Science, and Transportation. Ordered to be reported with an amendment in the nature of a substitute favorably.'),
+  np('legiscan:2104855', 'IL SB3309', '2026-04-24', 9, 'Rule 2-10 Committee/3rd Reading Deadline Established As May 15, 2026'),
+  np('legiscan:2153386', 'MI HB6066', '2026-06-09', 9, 'Read A First Time'),
   // 10 days ago: two.
-  np('legiscan:1961538', 'IL HB3457', '2025-03-11', 10, 'Assigned to Revenue & Finance Committee'),
-  np('legiscan:2029663', 'MI HB4477', '2026-03-18', 10, 'Reported With Recommendation With Substitute (h-2)'),
+  np('legiscan:2135407', 'MI SB0855', '2026-04-14', 10, 'Reassigned To Committee On Appropriations'),
+  np('legiscan:2041821', 'MI SB0505', '2025-08-14', 10, 'Referred To Committee On Natural Resources And Agriculture'),
   // 11 days ago: none, since the team has no card that day for a row to follow.
   // 12 days ago: two.
-  np('legiscan:1961471', 'IL HB3433', '2025-03-11', 12, 'Assigned to Agriculture & Conservation Committee'),
-  np('legiscan:2101857', 'MI HB5485', '2026-07-02', 12, 'Motion To Discharge Committee Approved'),
+  np('legiscan:2104855', 'IL SB3309', '2026-02-17', 12, 'Assigned to Appropriations'),
+  np('legiscan:1928265', 'IL SB0117', '2025-01-17', 12, 'First Reading'),
   // 13 days ago: a lone bill.
-  np('legiscan:2025978', 'MI SB0246', '2025-06-17', 13, 'Referred To Committee Of The Whole With Substitute (s-1)', -45),
+  np('legiscan:2135407', 'MI SB0855', '2026-03-18', 13, 'Rules Suspended', -45),
 ]
 
 export const LM_NO_PRIORITY_EVENTS: DemoSeedFeedEvent[] = LM_NO_PRIORITY_ACTIONS.map((a, i) => ({
