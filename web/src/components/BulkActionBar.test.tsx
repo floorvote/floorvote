@@ -98,10 +98,10 @@ describe('BulkActionBar: the empty choice in the priority and position menus', (
     expect(radioLabels()).not.toContain('Not set')
   })
 
-  it('names the empty position choice "No position", not "Not set"', () => {
+  it('keeps "Not set" for the empty position choice, since "No Position" can be a real stance in the vocabulary', () => {
     render(<Harness />)
     fireEvent.click(positionPill())
-    expect(radioLabels()).toEqual(['No position', 'Support', 'Oppose'])
+    expect(radioLabels()).toEqual(['Not set', 'Support', 'Oppose'])
   })
 
   it('staging "No priority" on a prioritized bill queues a clear', () => {
@@ -112,10 +112,10 @@ describe('BulkActionBar: the empty choice in the priority and position menus', (
     expect(screen.getByRole('button', { name: /Apply to 1 bill/i })).toBeEnabled()
   })
 
-  it('staging "No position" on a bill with a position queues a clear', () => {
+  it('staging "Not set" on a bill with a position queues a clear', () => {
     render(<Harness selectedBills={[{ id: 'bill-1', priority: null, position: 'Support' }]} />)
     fireEvent.click(positionPill())
-    fireEvent.click(screen.getByText('No position'))
+    fireEvent.click(screen.getByText('Not set'))
     expect(screen.getByTitle('Undo Position change')).toBeInTheDocument()
   })
 })

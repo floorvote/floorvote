@@ -2,63 +2,84 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CompactPositionSelect } from './CompactPositionSelect'
+import { expectClosedLabel, expectNoClosedLabel } from '../test/closedLabel'
 
 const apiFetchMock = vi.fn()
 vi.mock('../lib/api', () => ({ apiFetch: (...args: unknown[]) => apiFetchMock(...args) }))
 
 const OPTIONS = ['Support', 'Oppose', 'Monitor']
 const select = () => screen.getByRole('combobox', { name: 'Position' }) as HTMLSelectElement
-const optionLabels = () => within(select()).getAllByRole('option').map(o => o.textContent)
+const optionLabels = () => within(select()).getAllByRole('option', { hidden: true }).map(o => o.textContent)
 
 describe('CompactPositionSelect', () => {
   beforeEach(() => { apiFetchMock.mockReset() })
 
   describe('an empty position', () => {
-    it('reads "Set position" when closed, not "Not set"', () => {
+    it('reads "Set position" when closed, drawn over the select', () => {
       render(<CompactPositionSelect billId="b1" current={null} options={OPTIONS} onChange={vi.fn()} />)
-      expect(select()).toHaveDisplayValue('Set position')
-      expect(screen.queryByText('Not set')).toBeNull()
+      expectClosedLabel(select(), 'Set position')
     })
 
-    it('lists "No position" first, then the vocabulary, with no "Set position" entry', () => {
+    it('lists "Not set" first, then the vocabulary, with no "Set position" entry', () => {
       render(<CompactPositionSelect billId="b1" current={null} options={OPTIONS} onChange={vi.fn()} />)
-      expect(optionLabels()).toEqual(['No position', 'Support', 'Oppose', 'Monitor'])
-      expect(optionLabels()).not.toContain('Set position')
+      expect(optionLabels()).toEqual(['Not set', 'Support', 'Oppose', 'Monitor'])
     })
 
-    it('keeps the closed label out of the menu: a hidden, disabled option', () => {
+    it('has no placeholder option: nothing is hidden or disabled, and "Not set" is the selected option', () => {
       render(<CompactPositionSelect billId="b1" current={null} options={OPTIONS} onChange={vi.fn()} />)
       const all = within(select()).getAllByRole('option', { hidden: true }) as HTMLOptionElement[]
-      expect(all.map(o => o.textContent)).toEqual(['Set position', 'No position', 'Support', 'Oppose', 'Monitor'])
-      expect(all[0]).toHaveAttribute('hidden')
-      expect(all[0].disabled).toBe(true)
-      expect(all[0].selected).toBe(true)
-      for (const o of all.slice(1)) { expect(o.disabled).toBe(false); expect(o).not.toHaveAttribute('hidden') }
-    })
-
-    it('announces "Set position" as its value, with "No position" a separate unselected choice', () => {
-      render(<CompactPositionSelect billId="b1" current={null} options={OPTIONS} onChange={vi.fn()} />)
+      for (const o of all) { expect(o.disabled).toBe(false); expect(o).not.toHaveAttribute('hidden') }
       expect(select().selectedOptions).toHaveLength(1)
-      expect(select().selectedOptions[0].textContent).toBe('Set position')
-      expect((screen.getByRole('option', { name: 'No position' }) as HTMLOptionElement).selected).toBe(false)
+      expect(select().selectedOptions[0].textContent).toBe('Not set')
     })
 
-    it('choosing "No position" when there is no position makes no request', async () => {
+    it('lets the pointer through the label, and hides it from the accessibility tree', () => {
+      render(<CompactPositionSelect billId="b1" current={null} options={OPTIONS} onChange={vi.fn()} />)
+      const label = select().parentElement!.querySelector('[data-closed-label]') as HTMLElement
+      expect(label.style.pointerEvents).toBe('none')
+      expect(label).toHaveAttribute('aria-hidden', 'true')
+    })
+
+    it('keeps the accessible name "Position" and describes the control with the closed prompt', () => {
+      render(<CompactPositionSelect billId="b1" current={null} options={OPTIONS} onChange={vi.fn()} />)
+      expect(select()).toHaveAccessibleName('Position')
+      expect(select()).toHaveAccessibleDescription('Set position')
+    })
+
+    it('hides the select\'s own text under the label while empty', () => {
+      render(<CompactPositionSelect billId="b1" current={null} options={OPTIONS} onChange={vi.fn()} />)
+      expect(select().getAttribute('style')).toMatch(/text-fill-color: transparent/)
+    })
+
+    it('arrow keys move off "Not set" to the first position, which saves it', async () => {
+      apiFetchMock.mockResolvedValue({})
       const onChange = vi.fn()
       render(<CompactPositionSelect billId="b1" current={null} options={OPTIONS} onChange={onChange} />)
+      const next = select().options[select().selectedIndex + 1]
+      expect(next.textContent).toBe('Support')
+      fireEvent.change(select(), { target: { value: next.value } })
+      await waitFor(() => expect(onChange).toHaveBeenCalledWith('Support'))
+      expect(apiFetchMock).toHaveBeenCalledWith('/bills/b1/position', { method: 'POST', body: JSON.stringify({ position: 'Support' }) })
+    })
+
+    it('choosing "Not set" when there is no position makes no request', async () => {
+      const onChange = vi.fn()
+      const user = userEvent.setup()
+      render(<CompactPositionSelect billId="b1" current={null} options={OPTIONS} onChange={onChange} />)
+      await user.selectOptions(select(), 'Not set')
       fireEvent.change(select(), { target: { value: '__none__' } })
       await Promise.resolve()
       expect(apiFetchMock).not.toHaveBeenCalled()
       expect(onChange).not.toHaveBeenCalled()
-      expect(select()).toHaveDisplayValue('Set position')
+      expectClosedLabel(select(), 'Set position')
     })
 
-    it('tells a vocabulary entry named "No Position" apart from the menu\'s "No position" choice', async () => {
+    it('lists a vocabulary stance named "No Position" as its own entry, distinct from "Not set"', async () => {
       apiFetchMock.mockResolvedValue({})
       const onChange = vi.fn()
       const user = userEvent.setup()
       render(<CompactPositionSelect billId="b1" current="Support" options={['Support', 'No Position']} onChange={onChange} />)
-      expect(optionLabels()).toEqual(['No position', 'Support', 'No Position'])
+      expect(optionLabels()).toEqual(['Not set', 'Support', 'No Position'])
       await user.selectOptions(select(), 'No Position')
       await waitFor(() => expect(onChange).toHaveBeenCalledWith('No Position'))
       expect(apiFetchMock).toHaveBeenCalledWith('/bills/b1/position', { method: 'POST', body: JSON.stringify({ position: 'No Position' }) })
@@ -66,13 +87,20 @@ describe('CompactPositionSelect', () => {
   })
 
   describe('a set position', () => {
-    it('shows the position and lists "No position" first', () => {
+    it('shows the position, with no label over it and no description', () => {
       render(<CompactPositionSelect billId="b1" current="Oppose" options={OPTIONS} onChange={vi.fn()} />)
       expect(select()).toHaveDisplayValue('Oppose')
-      expect(optionLabels()).toEqual(['No position', 'Support', 'Oppose', 'Monitor'])
+      expectNoClosedLabel(select())
+      expect(select()).not.toHaveAccessibleDescription()
+      expect(select().getAttribute('style')).not.toMatch(/text-fill-color: transparent/)
     })
 
-    it('choosing "No position" sends the DELETE and reports null, then the closed control reads "Set position"', async () => {
+    it('lists "Not set" first', () => {
+      render(<CompactPositionSelect billId="b1" current="Oppose" options={OPTIONS} onChange={vi.fn()} />)
+      expect(optionLabels()).toEqual(['Not set', 'Support', 'Oppose', 'Monitor'])
+    })
+
+    it('choosing "Not set" sends the DELETE and reports null, then the closed control reads "Set position"', async () => {
       apiFetchMock.mockResolvedValue({})
       const onChange = vi.fn()
       const { rerender } = render(<CompactPositionSelect billId="b1" current="Support" options={OPTIONS} onChange={onChange} />)
@@ -81,15 +109,15 @@ describe('CompactPositionSelect', () => {
       expect(apiFetchMock).toHaveBeenCalledTimes(1)
       expect(apiFetchMock).toHaveBeenCalledWith('/bills/b1/position', { method: 'DELETE' })
       rerender(<CompactPositionSelect billId="b1" current={null} options={OPTIONS} onChange={onChange} />)
-      expect(select()).toHaveDisplayValue('Set position')
+      expectClosedLabel(select(), 'Set position')
     })
 
-    it('picking "No position" by name clears it the same way', async () => {
+    it('picking "Not set" by name clears it the same way', async () => {
       apiFetchMock.mockResolvedValue({})
       const onChange = vi.fn()
       const user = userEvent.setup()
       render(<CompactPositionSelect billId="b1" current="Monitor" options={OPTIONS} onChange={onChange} />)
-      await user.selectOptions(select(), 'No position')
+      await user.selectOptions(select(), 'Not set')
       await waitFor(() => expect(onChange).toHaveBeenCalledWith(null))
     })
 

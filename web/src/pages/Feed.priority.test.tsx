@@ -27,6 +27,7 @@ import { Feed } from './Feed'
 import { SidebarRefreshProvider, useRegisterSidebarRefresh } from '../context/SidebarRefreshContext'
 import { expectAmber, expectNotAmber } from '../test/amberStyle'
 import type { FeedEvent } from '../lib/feedUtils'
+import { expectClosedLabel } from '../test/closedLabel'
 
 const base = {
   billSessionSlug: '2026rs', billState: 'RI', billSummary: null, billPriority: null, billMatchType: 'keyword' as const,
@@ -138,7 +139,7 @@ describe('Feed: choosing a priority updates the card in place', () => {
     apiFetchMock.mockResolvedValue({ priority: null })
     renderFeed([ev({ id: 'e1', billPriority: 'medium' })])
     fireEvent.change(sel(), { target: { value: '__none__' } })
-    await waitFor(() => expect(sel()).toHaveDisplayValue('Set priority'))
+    await waitFor(() => expectClosedLabel(sel(), 'Set priority'))
     expect(apiFetchMock).toHaveBeenCalledWith('/bills/b1/priority', { method: 'PATCH', body: JSON.stringify({ priority: null }) })
   })
 
@@ -150,7 +151,7 @@ describe('Feed: choosing a priority updates the card in place', () => {
       metadata: { changes: [{ changeType: 'action_added', newValue: 'Referred to committee' }] },
     })])
     fireEvent.change(sel(), { target: { value: '__none__' } })
-    await waitFor(() => expect(sel()).toHaveDisplayValue('Set priority'))
+    await waitFor(() => expectClosedLabel(sel(), 'Set priority'))
     expect(screen.getByText('Mail Ballot Rules')).toBeInTheDocument()
   })
 
@@ -185,9 +186,9 @@ describe('Feed: Dismiss on a new match', () => {
   it('triages the bill and turns the control into a plain "Set priority"', async () => {
     apiFetchMock.mockResolvedValue({ ok: true })
     renderFeed([ev({ id: 'e1', billNewMatch: true }), ev({ id: 'e2', createdAt: '2026-02-01 08:00:00', billNewMatch: true })])
-    expect(sel()).toHaveDisplayValue('New · Set priority')
+    expectClosedLabel(sel(), 'New · Set priority')
     fireEvent.change(sel(), { target: { value: 'dismiss' } })
-    await waitFor(() => expect(sel()).toHaveDisplayValue('Set priority'))
+    await waitFor(() => expectClosedLabel(sel(), 'Set priority'))
     expectNotAmber(sel())
     expect(apiFetchMock).toHaveBeenCalledWith('/bills/b1/triage-dismiss', { method: 'PATCH' })
     expect(refreshSidebar).toHaveBeenCalledTimes(1)
@@ -236,7 +237,7 @@ describe('Feed: a companion group\'s card', () => {
     apiFetchMock.mockResolvedValue({ ok: true })
     renderFeed(companions({ billNewMatch: true }))
     fireEvent.change(sel(), { target: { value: 'dismiss' } })
-    await waitFor(() => expect(sel()).toHaveDisplayValue('Set priority'))
+    await waitFor(() => expectClosedLabel(sel(), 'Set priority'))
   })
 })
 
@@ -245,7 +246,7 @@ describe('Feed: clearing a priority on a plain bill', () => {
     apiFetchMock.mockResolvedValue({ priority: null })
     renderFeed([ev({ id: 'e1', billPriority: 'medium', billNewMatch: false })])
     fireEvent.change(sel(), { target: { value: '__none__' } })
-    await waitFor(() => expect(sel()).toHaveDisplayValue('Set priority'))
+    await waitFor(() => expectClosedLabel(sel(), 'Set priority'))
     expectNotAmber(sel())
   })
 })
@@ -283,14 +284,14 @@ describe('Feed: a card an admin cleared stays through a poll and goes after a sc
     apiFetchMock.mockResolvedValue({ priority: null })
     renderFeed([passiveOnly({ billPriority: 'high' })])
     fireEvent.change(sel(), { target: { value: '__none__' } })
-    await waitFor(() => expect(sel()).toHaveDisplayValue('Set priority'))
+    await waitFor(() => expectClosedLabel(sel(), 'Set priority'))
     // The server now has no priority on the bill and a newer provider update on it.
     apiFetchMock.mockResolvedValue({
       events: [passiveOnly({ id: 'e-new', createdAt: '2026-02-01 11:00:00' }), passiveOnly()], total: 2, page: 1, limit: 40,
     })
     await act(async () => { await poll.fn!() })
     expect(screen.getByText('Mail Ballot Rules')).toBeInTheDocument()
-    expect(sel()).toHaveDisplayValue('Set priority')
+    expectClosedLabel(sel(), 'Set priority')
   })
 
   it('drops a cleared passive-only card once the scope is switched away and back', async () => {
@@ -298,7 +299,7 @@ describe('Feed: a card an admin cleared stays through a poll and goes after a sc
     apiFetchMock.mockImplementation(async (path: string) => path.startsWith('/feed') ? reply : { priority: null })
     renderFeed([passiveOnly({ billPriority: 'high' })])
     fireEvent.change(sel(), { target: { value: '__none__' } })
-    await waitFor(() => expect(sel()).toHaveDisplayValue('Set priority'))
+    await waitFor(() => expectClosedLabel(sel(), 'Set priority'))
     expect(screen.getByText('Mail Ballot Rules')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /default feed/i }))

@@ -5,6 +5,7 @@ import { BillDetail } from './BillDetail'
 import * as api from '../lib/api'
 import { expectAmber, expectNotAmber } from '../test/amberStyle'
 import { PRIORITY_COLORS } from '../lib/chipStyles'
+import { expectClosedLabel } from '../test/closedLabel'
 
 // ── Scaffolding copied from BillDetail.test.tsx ────────────────────────────────
 
@@ -376,7 +377,7 @@ describe('BillDetail: a new match as a state of the priority dropdown', () => {
   it('shows an admin the amber "New · Set priority" dropdown with Dismiss as its last option', async () => {
     renderBillDetail({ demoLocked: false, overrides: NEW })
     const select = await screen.findByRole('combobox', { name: /priority/i })
-    expect(select).toHaveDisplayValue('New · Set priority')
+    expectClosedLabel(select, 'New · Set priority')
     expectAmber(select)
     expect(optionLabels(select)).toEqual(['No priority', 'High Priority', 'Medium Priority', 'Low Priority', 'Dismiss (reviewed, no priority)'])
     expect(screen.queryByRole('button', { name: /dismiss/i })).toBeNull()
@@ -399,7 +400,7 @@ describe('BillDetail: a new match as a state of the priority dropdown', () => {
     const select = await screen.findByRole('combobox', { name: /priority/i })
     spy.mockClear() // the spy is shared across tests and keeps earlier calls
     fireEvent.change(select, { target: { value: 'dismiss' } })
-    await waitFor(() => expect(screen.getByRole('combobox', { name: /priority/i })).toHaveDisplayValue('Set priority'))
+    await waitFor(() => expectClosedLabel(screen.getByRole('combobox', { name: /priority/i }), 'Set priority'))
     expect(spy).toHaveBeenCalledWith('/bills/42/triage-dismiss', { method: 'PATCH' })
     expect(paths(spy).filter(p => p.endsWith('/priority'))).toEqual([])
     const after = screen.getByRole('combobox', { name: /priority/i })
@@ -420,14 +421,14 @@ describe('BillDetail: a new match as a state of the priority dropdown', () => {
   it('is not amber once the bill has been triaged', async () => {
     renderBillDetail({ demoLocked: false, overrides: { ...NEW, triagedAt: '2025-01-06 00:00:00' } })
     const select = await screen.findByRole('combobox', { name: /priority/i })
-    expect(select).toHaveDisplayValue('Set priority')
+    expectClosedLabel(select, 'Set priority')
     expectNotAmber(select)
   })
 
   it('reads "Set priority" for an admin on a bill that is not a new match', async () => {
     renderBillDetail({ demoLocked: false, overrides: { matchType: 'manual' } })
     const select = await screen.findByRole('combobox', { name: /priority/i })
-    expect(select).toHaveDisplayValue('Set priority')
+    expectClosedLabel(select, 'Set priority')
     expect(optionLabels(select)).toEqual(['No priority', 'High Priority', 'Medium Priority', 'Low Priority'])
     expect(screen.queryByText('Priority not set')).toBeNull()
   })

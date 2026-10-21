@@ -256,6 +256,7 @@ import { AuthProvider } from '../../context/AuthContext'
 import { SidebarRefreshProvider, useRegisterSidebarRefresh } from '../../context/SidebarRefreshContext'
 import { ConfigContext } from '../../context/ConfigContext'
 import { MAX_SUBJECT_FILTERS } from '../../../../shared/limits'
+import { expectClosedLabel } from '../../test/closedLabel'
 
 function Wrapper({ children }: { children: ReactNode }) {
   return (
@@ -1591,11 +1592,11 @@ describe('BillList new-match dismiss — counts and sidebar chip', () => {
     renderWithSidebarSpy()
     await screen.findByText('Fresh Match')
     const selects = () => screen.getAllByRole('combobox', { name: /priority/i })
-    expect(selects()[0]).toHaveDisplayValue('New · Set priority')
+    expectClosedLabel(selects()[0], 'New · Set priority')
 
     fireEvent.change(selects()[0], { target: { value: 'dismiss' } })
 
-    await waitFor(() => expect(selects()[0]).toHaveDisplayValue('Set priority'))
+    await waitFor(() => expectClosedLabel(selects()[0], 'Set priority'))
     expect(screen.queryByText('New · Set priority')).toBeNull()
   })
 

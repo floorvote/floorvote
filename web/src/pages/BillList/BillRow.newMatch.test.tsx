@@ -5,6 +5,7 @@ import { BillRow } from './BillRow'
 import type { Bill } from './types'
 import { expectAmber, expectNotAmber } from '../../test/amberStyle'
 import { PRIORITY_COLORS } from '../../lib/chipStyles'
+import { expectClosedLabel } from '../../test/closedLabel'
 
 const apiFetchMock = vi.fn()
 vi.mock('../../lib/api', () => ({ apiFetch: (...args: unknown[]) => apiFetchMock(...args) }))
@@ -79,7 +80,7 @@ describe('BillRow: an admin sees a new match as an amber state of the priority d
     const selects = prioritySelects()
     expect(selects).toHaveLength(2)
     for (const s of selects) {
-      expect(s).toHaveDisplayValue('New · Set priority')
+      expectClosedLabel(s, 'New · Set priority')
       expectAmber(s)
     }
   })
@@ -160,7 +161,7 @@ describe('BillRow: a bill that is not a new match', () => {
   it('shows an empty priority as a plain "Set priority" dropdown for an admin', () => {
     renderRow(true, { matchType: 'manual' })
     for (const s of prioritySelects()) {
-      expect(s).toHaveDisplayValue('Set priority')
+      expectClosedLabel(s, 'Set priority')
       expect(optionLabels(s)).toEqual(['No priority', 'High Priority', 'Medium Priority', 'Low Priority'])
     }
   })

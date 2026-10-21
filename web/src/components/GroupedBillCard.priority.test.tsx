@@ -14,6 +14,7 @@ import { ConfigContext, type AppConfig } from '../context/ConfigContext'
 import { GroupedBillCard } from './GroupedBillCard'
 import { groupEventsByBillAndDay, type FeedEvent, type GroupedBillEvents } from '../lib/feedUtils'
 import { expectAmber, expectNotAmber } from '../test/amberStyle'
+import { expectClosedLabel } from '../test/closedLabel'
 
 const apiFetchMock = vi.fn()
 vi.mock('../lib/api', () => ({ apiFetch: (...args: unknown[]) => apiFetchMock(...args) }))
@@ -65,7 +66,7 @@ afterEach(() => vi.restoreAllMocks())
 describe('GroupedBillCard priority control: an admin', () => {
   it('sees "Set priority" when the bill has none', () => {
     renderCard(makeGroup(), { isAdmin: true })
-    expect(select()).toHaveDisplayValue('Set priority')
+    expectClosedLabel(select(), 'Set priority')
     expectNotAmber(select())
   })
 
@@ -126,7 +127,7 @@ describe('GroupedBillCard priority control: an untriaged new match', () => {
 
   it('is the amber "New · Set priority" dropdown with Dismiss as its last option', () => {
     renderCard(makeGroup(NEW), { isAdmin: true })
-    expect(select()).toHaveDisplayValue('New · Set priority')
+    expectClosedLabel(select(), 'New · Set priority')
     expectAmber(select())
     expect(optionLabels(select())).toEqual(['No priority', 'High Priority', 'Medium Priority', 'Low Priority', 'Dismiss (reviewed, no priority)'])
   })
@@ -286,7 +287,7 @@ describe('GroupedBillCard priority control: a draft bill', () => {
   it('gets the same control as on the Bills list, PATCHing the draft\'s id', async () => {
     apiFetchMock.mockResolvedValue({ priority: 'medium' })
     const { onPriorityChange } = renderCard(makeGroup({ billIsDraft: true, billId: 'draft-7', billMatchType: null }), { isAdmin: true })
-    expect(select()).toHaveDisplayValue('Set priority')
+    expectClosedLabel(select(), 'Set priority')
     expectNotAmber(select())
     fireEvent.change(select(), { target: { value: 'medium' } })
     await waitFor(() => expect(onPriorityChange).toHaveBeenCalledWith('medium'))
