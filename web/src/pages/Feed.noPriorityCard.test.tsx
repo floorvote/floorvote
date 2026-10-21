@@ -195,6 +195,17 @@ describe('the poll, with a lone card newer than anything else', () => {
     expect(screen.queryByRole('button', { name: /new activity/i })).toBeNull()
   })
 
+  // Review round 2: a no-priority bill the team commented on that day shows its
+  // updates through that comment, so a later update on it is new activity.
+  it('still raises the banner for a later update on a no-priority bill the team engaged with that day', async () => {
+    const engaged = { ...comment('c1', '2026-03-04 10:00:00'), billId: 'p2', billNumber: 'HB901', billTitle: 'Older Act', billPriority: null }
+    renderFeed([engaged])
+    scrolledTo(600)
+    apiFetchMock.mockResolvedValue({ events: [lone('u1', { billId: 'p2', billNumber: 'HB901', billTitle: 'Older Act', createdAt: '2026-03-04 18:00:00', noPriorityCard: false }), engaged], total: 2, page: 1, limit: 40 })
+    await act(async () => { await poll.fn!() })
+    expect(screen.getByRole('button', { name: /new activity/i })).toBeInTheDocument()
+  })
+
   it('still raises the banner for a prioritized bill\'s new update', async () => {
     renderFeed([comment('c1', '2026-03-04 10:00:00')])
     scrolledTo(600)
