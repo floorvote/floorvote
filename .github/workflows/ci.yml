@@ -175,6 +175,15 @@ jobs:
         working-directory: central
       - run: npm test
         working-directory: central
+      # central's dashboard SPA is a third package with its own lockfile.
+      # `npm ci` here is what catches a lockfile that no longer matches its
+      # package.json, which otherwise surfaces only as a dirty tree mid-deploy.
+      - run: npm ci
+        working-directory: central/web
+      - run: npm run build
+        working-directory: central/web
+      - run: npm test
+        working-directory: central/web
 
   # web is split the same way: tsc, lint and build in one job, the jsdom
   # suite in two shards, and `check-web` as the fan-in.
