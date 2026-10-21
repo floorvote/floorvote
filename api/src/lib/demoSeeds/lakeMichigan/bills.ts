@@ -245,8 +245,10 @@ export const LM_CALENDAR_EVENTS: DemoSeedCalendarEvent[] = [
   //
   // The two past hearings are pinned to bills that have no UPCOMING hearing, so
   // no bill ends up with the same committee meeting twice, and each lines up with
-  // that bill's own invented activity: SB0771's 'Committee Hearing Held' at day
-  // 27, and HB5268 sitting in Energy & Environment since day 10.
+  // that bill's own feed: SB0771's 'Committee Hearing Held' at day 27, and
+  // HB5268's notice at day 9, which its thread reports on (lm-c-53). HB5268's
+  // amendment went to Energy & Environment, so that committee taking it up is
+  // plausible even though the bill itself sits in Rules.
   { id: 'lm-hearing-past-1', externalId: 'legiscan:2095619', source: 'hearing', offsetDays: -27, time: '09:00:00', location: 'Binsfeld Office Building, Room 1100, Lansing', description: 'Senate Natural Resources and Agriculture Committee — hearing' },
   { id: 'lm-hearing-past-2', externalId: 'legiscan:2109237', source: 'hearing', offsetDays: -6,  time: '13:00:00', location: 'Illinois State Capitol, Room 118, Springfield', description: 'House Energy & Environment Committee — hearing' },
 
@@ -564,6 +566,9 @@ const LM_HEARING_NOTICES: Array<{ eventId: string; calendarId: string; daysAgo: 
   // the replies to the notice (lm-c-103, lm-c-104).
   { eventId: 'lm-fe-h-us-hb284', calendarId: 'lm-hearing-7', daysAgo: 2 },
   { eventId: 'lm-fe-h-us-hb583', calendarId: 'lm-hearing-8', daysAgo: 2 },
+  // Three days ahead of the hearing itself (lm-hearing-past-2, 6 days ago), which
+  // lm-c-53 reports on that day.
+  { eventId: 'lm-fe-h-il-hb5268', calendarId: 'lm-hearing-past-2', daysAgo: 9 },
 ]
 
 export const LM_HEARING_NOTICE_SOURCES: ReadonlyArray<{ eventId: string; calendarId: string }> =
@@ -572,21 +577,29 @@ export const LM_HEARING_NOTICE_SOURCES: ReadonlyArray<{ eventId: string; calenda
 /**
  * Updates to an announced hearing, which is what the calendar reconciler emits when
  * a committee moves one. The calendar row is the hearing as it now stands, so the
- * update carries its fields, as a notice does. Each lands after its own notice, and
+ * update carries its fields, and the notice carries the room it was first set for. Each lands after its own notice, and
  * on one of the busiest threads at the top of the feed, where it puts the hearing
  * those threads are planning for back in view.
  */
-const LM_HEARING_CHANGES: Array<{ eventId: string; calendarId: string; daysAgo: number }> = [
-  { eventId: 'lm-fe-hc-in-hb1124', calendarId: 'lm-hearing-5', daysAgo: 1 },
-  { eventId: 'lm-fe-hc-mi-hb5308', calendarId: 'lm-hearing-2', daysAgo: 2 },
-  { eventId: 'lm-fe-hc-mi-hb5674', calendarId: 'lm-hearing-3', daysAgo: 1 },
+const LM_HEARING_CHANGES: Array<{ eventId: string; calendarId: string; daysAgo: number; previousLocation: string }> = [
+  { eventId: 'lm-fe-hc-in-hb1124', calendarId: 'lm-hearing-5', daysAgo: 1, previousLocation: 'Indiana Statehouse, Room 156-C, Indianapolis' },
+  { eventId: 'lm-fe-hc-mi-hb5308', calendarId: 'lm-hearing-2', daysAgo: 2, previousLocation: 'Binsfeld Office Building, Room 1300, Lansing' },
+  { eventId: 'lm-fe-hc-mi-hb5674', calendarId: 'lm-hearing-3', daysAgo: 1, previousLocation: 'Anderson House Office Building, Room 521, Lansing' },
 ]
 
-export const LM_HEARING_CHANGE_SOURCES: ReadonlyArray<{ eventId: string; calendarId: string }> =
+export const LM_HEARING_CHANGE_SOURCES: ReadonlyArray<{ eventId: string; calendarId: string; previousLocation: string }> =
   LM_HEARING_CHANGES
 
+// A moved hearing's notice went out with its earlier room, so the change shows the
+// move rather than repeating the notice.
+const announced = (n: { eventId: string; calendarId: string; daysAgo: number }): DemoSeedFeedEvent => {
+  const e = hearingNotice(n.eventId, n.calendarId, n.daysAgo)
+  const moved = LM_HEARING_CHANGES.find(c => c.calendarId === n.calendarId)
+  return moved ? { ...e, metadata: { ...e.metadata, location: moved.previousLocation } } : e
+}
+
 export const LM_HEARING_EVENTS: DemoSeedFeedEvent[] = [
-  ...LM_HEARING_NOTICES.map(n => hearingNotice(n.eventId, n.calendarId, n.daysAgo)),
+  ...LM_HEARING_NOTICES.map(announced),
   ...LM_HEARING_CHANGES.map(n => hearingNotice(n.eventId, n.calendarId, n.daysAgo, 'hearing_changed')),
 ]
 
@@ -718,8 +731,8 @@ export const LM_RECENT_ACTIVITY_EVENTS: DemoSeedFeedEvent[] = [
   // ── Activity between the discussion cards ──────────────────────────────────
   // Coverage above put activity on the cards that also carry comments. These give
   // the feed cards that are activity alone, on days nobody commented, the way bills
-  // move in a real session. All three are their bill's own latest real actions,
-  // verbatim, moved into the window like the rest of this block.
+  // move in a real session. Both are SB528's own latest real actions, verbatim,
+  // moved into the window like the rest of this block.
 
   // US SB528 — HB284's Senate companion, so the feed shows these on HB284's card. It
   // really did pass the Senate by unanimous consent and is held at the House desk,
@@ -732,12 +745,6 @@ export const LM_RECENT_ACTIVITY_EVENTS: DemoSeedFeedEvent[] = [
   { id: 'lm-fe-r-us-sb528-2', type: 'bill_updated', externalId: 'legiscan:1966402', userId: 'system', daysAgo: 9, metadata: { changes: [
     chg('action_added', { newValue: 'Received in the House.' }),
     chg('action_added', { newValue: 'Held at the desk.' }),
-  ] } },
-
-  // IL HB5268 — back in Rules, which is what lm-c-53 ("Still stuck in Rules") two
-  // days later is reacting to.
-  { id: 'lm-fe-r-il-hb5268-1', type: 'bill_updated', externalId: 'legiscan:2109237', userId: 'system', daysAgo: 8, metadata: { changes: [
-    chg('action_added', { newValue: 'Rule 19(a) / Re-referred to Rules Committee' }),
   ] } },
 ]
 

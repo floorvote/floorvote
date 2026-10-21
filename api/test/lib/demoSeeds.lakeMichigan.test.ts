@@ -264,7 +264,10 @@ describe('lake-michigan derived feed events', () => {
       expect(cal, `hearing event ${e.id} needs its source calendar entry`).toBeDefined()
       expect(cal!.source).toBe('hearing')
       expect(e.externalId).toBe(cal!.externalId)
-      expect(e.metadata).toEqual({ time: cal!.time, location: cal!.location, description: cal!.description })
+      // A hearing the committee later moved was announced in its earlier room; the
+      // calendar holds where it ended up.
+      const moved = LM_HEARING_CHANGE_SOURCES.find(x => x.calendarId === cal!.id)
+      expect(e.metadata).toEqual({ time: cal!.time, location: moved?.previousLocation ?? cal!.location, description: cal!.description })
       // The point of the type change: no invented LegiScan action string rides along.
       expect(e.metadata, `${e.id} must not carry bill_updated changes`).not.toHaveProperty('changes')
     }
@@ -294,8 +297,12 @@ describe('lake-michigan derived feed events', () => {
       expect(cal!.offsetDays, `${e.id} changes a hearing that has already happened`).toBeGreaterThan(0)
       expect(e.userId).toBe('system')
       expect(e.externalId).toBe(cal!.externalId)
-      // The calendar row is the hearing as it stands after the change.
+      // The calendar row is the hearing as it stands after the change, and the change
+      // has to show something new, or it reads as a correction to nothing.
       expect(e.metadata).toEqual({ time: cal!.time, location: cal!.location, description: cal!.description })
+      const previous = LM_HEARING_CHANGE_SOURCES.find(x => x.eventId === e.id)!.previousLocation
+      expect(previous, `${e.id} names no earlier room`).toEqual(expect.any(String))
+      expect(previous, `${e.id} moves the hearing nowhere`).not.toBe(cal!.location)
       // A change to a hearing the feed never announced reads as a correction to nothing.
       const notice = s.feedEvents.find(x => x.id === noticeOf.get(cal!.id))
       expect(notice, `${e.id} needs a notice for ${cal!.id}`).toBeDefined()

@@ -420,7 +420,7 @@ const ilHb5268: DemoSeedComment[] = [
   { id: 'lm-c-90', externalId: 'legiscan:2109237', userId: 'lm-user-dep',
     content: "<p>Voting no. Even a narrow sale sets a diversion precedent under the compact, and we can't walk that back.</p>", daysAgo: 87 },
   { id: 'lm-c-53', externalId: 'legiscan:2109237', userId: 'demo-user',
-    content: '<p>Still stuck in Rules. Checking back next month.</p>', daysAgo: 6 },
+    content: '<p>The environment committee heard it today and took no vote. Still in Rules, so checking back next month.</p>', daysAgo: 6 },
 ]
 
 const ilHb5268Reactions: DemoSeedReaction[] = [
@@ -742,7 +742,7 @@ const ab59Votes: DemoSeed['votes'] = [
 
 const usSb528: DemoSeedComment[] = [
   { id: 'lm-c-sb528-1', externalId: 'legiscan:1966402', userId: 'lm-user-ed',
-    content: '<p>SB528 is the Senate companion to HB284. Same ask, so our letters should name both bills.</p>', daysAgo: 7 },
+    content: '<p>SB528 passed the Senate, and it is the companion to HB284. Our letters to the House should name both bills.</p>', daysAgo: 7 },
   { id: 'lm-c-sb528-2', externalId: 'legiscan:1966402', userId: 'lm-user-fed',
     content: "<p>I'll draft one letter that names both bills and send it around before we go out.</p>", daysAgo: 6 },
   { id: 'lm-c-sb528-3', externalId: 'legiscan:1966402', userId: 'lm-user-grants',
