@@ -520,6 +520,24 @@ describe('the no-priority updates row', () => {
       expect(body.total).toBe(2)
     })
 
+    it('gives a lone companion group\'s card only its qualifying members\' updates, not a member below the minimum relevance or one with no match type', async () => {
+      await db().insert(associationConfig).values({ key: 'new_match_min_relevance', value: '5' })
+      const qualifying = await analyzed('HB 1', 6)
+      const low = await analyzed('SB 1', 2)
+      const unmatched = await analyzed('HB 2', 9, { matchType: null })
+      await group(qualifying, low, unmatched)
+      const update = await moved(qualifying, at('09:00:00'))
+      await moved(low, at('10:00:00'))
+      await moved(unmatched, at('11:00:00'))
+      const id = await seedRow()
+
+      const body = await feed()
+      expect(rowOf(body, id)).toBeUndefined()
+      expect(body.events.map((e) => e.id)).toEqual([update])
+      expect(cardsOf(body)).toEqual([update])
+      expect(body.total).toBe(1)
+    })
+
     it('leaves a lone bill\'s card beside a prioritized bill\'s card, each its own', async () => {
       const lone = await moved(await analyzed('HB 1', 5), at('09:00:00'))
       const p = await analyzed('HB 2', 9, { priority: 'high' })
