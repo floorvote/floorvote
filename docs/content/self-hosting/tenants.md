@@ -564,6 +564,38 @@ Run it after you have redeployed central and the instance on the same release: i
 
 The script reads the same configuration `new-instance.sh` does (`scripts/.env.ops`, `central/.dev.vars`), so a deployment with its own `RESOURCE_PREFIX`, domain, and central needs no flags. Pass `--central-url`, `--admin-secret`, `--app-url`, `--worker-url`, or `--prefix` to override any of it, and run `./scripts/verify-instance.sh --help` for the rest. By default it expects the build to be this checkout's commit; if the instance was deployed from another, pass `--expect-build <sha>` (or `--expect-build any`).
 
+## The optional setup report
+
+FloorVote is self-hosted, so the project never sees an install. To learn whether setup works and which step trips people up, `scripts/new-instance.sh` can send one anonymous note when it ends. It asks once, before it preflights, and the answer defaults to No:
+
+```text
+Send an anonymous setup report? [y/N]
+```
+
+Before you answer it prints exactly what it would send, and if you say yes it prints the report again as it goes out. The whole report is these four fields:
+
+```json
+{
+  "event": "tenant_setup",
+  "outcome": "verified",
+  "step": "verify",
+  "version": "2026-10-21"
+}
+```
+
+- `outcome` is `verified` when the run passes [verification](#verify-the-instance-end-to-end), `unverified` when the instance is provisioned but verification fails, or `failed` when a step fails.
+- `step` is the script's name for the step the run ended on, such as `verify`, `bind`, or `preflight`, never a number.
+- `version` is the date of your checkout's latest commit. It says how current your copy is, and it is a date rather than a commit hash so that a fork's own history can't be traced back to it.
+
+It never includes your slug, states, team name, admin name or email, Cloudflare account ID, or any URL. floorvote.org stores only these four fields. It doesn't log your IP address or any other request details, though Cloudflare, which hosts the site, sees the connection like any web host.
+
+The script sends nothing unless you agree:
+
+- **No terminal, no question.** Run from CI, an agent, or any shell without a terminal on stdin, it doesn't ask and doesn't send.
+- **Answer once.** Set `FLOORVOTE_INSTALL_PING=yes` or `FLOORVOTE_INSTALL_PING=no` in your environment or in `scripts/.env.ops`, and it stops asking. A value in the environment wins over the file. If you run setup for your own team's deployment often, set it to `no`.
+- **Preflight and Ctrl-C.** `--preflight-only` never sends, and neither does a run you interrupt with Ctrl-C.
+- **It can't break setup.** The report goes out with a five-second limit and its response is discarded. If you're offline, or the site is down, the run's result and exit code are the same as without it.
+
 ## When do bills start flowing in?
 
 Registration stores the team's keywords and state coverage and provisions its queue, but doesn't itself queue any bills. Delivery is driven by the hourly **central cron**, and timing depends on whether central already tracks the state:

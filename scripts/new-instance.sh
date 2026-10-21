@@ -49,6 +49,14 @@
 # exits non-zero. Run it any time on an existing instance:
 #   ./scripts/verify-instance.sh <slug> [--ai] [--to <email>]
 #
+# Optional, anonymous setup report: before it preflights, the script asks once
+# (default No) whether to send floorvote.org four fields when the run ends: that
+# setup passed verification, or the step that failed. It prints the exact payload
+# first. Set FLOORVOTE_INSTALL_PING=yes or no (in the environment or scripts/.env.ops)
+# to answer without being asked. With no terminal on stdin the answer is no, and
+# --preflight-only never reports. A report that fails to send never changes the
+# run's result. See "The optional setup report" in docs/content/self-hosting/tenants.md.
+#
 # After the script completes, the only manual step is verifying the custom domain
 # (printed at the end). Bills begin flowing on the next central full-sync pass
 # (5/13/23 ET) unless you seeded historical data.
@@ -66,7 +74,10 @@ CENTRAL_DIR="$REPO_ROOT/central"
 # defaults below.
 ENV_OPS_FILE="$SCRIPT_DIR/.env.ops"
 ENV_OPS_LOADED=0
+# A FLOORVOTE_INSTALL_PING set for this one run wins over the file's value.
+_PING_FROM_ENV="${FLOORVOTE_INSTALL_PING-}"
 [[ -f "$ENV_OPS_FILE" ]] && { set -a; source "$ENV_OPS_FILE"; set +a; ENV_OPS_LOADED=1; }
+[[ -z "$_PING_FROM_ENV" ]] || FLOORVOTE_INSTALL_PING="$_PING_FROM_ENV"
 
 # Resource-name prefix for this deployment's Workers / D1 / queues. Default "floorvote"
 # matches the docs. A rebranded deployment sets RESOURCE_PREFIX (e.g. "acme") ONCE and
@@ -109,6 +120,7 @@ step() {
     log "↷ Skipping step $STEP_NUM: $*"
     return 1
   fi
+  INSTALL_PING_STEP="$key"
   echo
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] ━━━ Step $STEP_NUM: $* ━━━"
   return 0
@@ -247,6 +259,79 @@ RATELIMIT_NS_ID=$(grep 'namespace_id' "$API_DIR/wrangler.toml" 2>/dev/null \
   | grep -o '"[0-9]*"' | tr -d '"' | grep -v -e '^2099$' -e '^2098$' | sort -n | tail -1 || true)
 RATELIMIT_NS_ID=$(( ${RATELIMIT_NS_ID:-2000} + 1 ))
 MUTE_RATELIMIT_NS_ID=$(( RATELIMIT_NS_ID + 1 ))
+
+# ── Anonymous setup report (opt-in) ───────────────────────────────────────────
+# Decided once, before preflight. Four coarse fields go to floorvote.org when the
+# run ends: event, outcome (verified, unverified, or failed), step (the key of the
+# step that was running), and version (the checkout's commit date). Nothing about
+# the team is sent. Never on --preflight-only, never without a terminal to ask on
+# unless FLOORVOTE_INSTALL_PING=yes, and a send that fails never changes the exit
+# code or the summary. docs/content/self-hosting/tenants.md documents it.
+INSTALL_PING_URL="${FLOORVOTE_INSTALL_PING_URL:-https://floorvote.org/api/install-event}"
+INSTALL_PING=no
+INSTALL_PING_STEP=preflight
+INSTALL_PING_OUTCOME=""
+INSTALL_PING_INTERRUPTED=0
+INSTALL_PING_VERSION=""
+
+send_install_ping() {
+  local rc="$1" outcome="$INSTALL_PING_OUTCOME"
+  [[ "$INSTALL_PING" == "yes" && $INSTALL_PING_INTERRUPTED -eq 0 ]] || return 0
+  if [[ -z "$outcome" ]]; then
+    # No verdict: a clean exit is an operator who declined, not a failure.
+    [[ $rc -ne 0 ]] || return 0
+    outcome=failed
+  fi
+  command -v curl >/dev/null 2>&1 || return 0
+  local payload
+  printf -v payload '{"event":"tenant_setup","outcome":"%s","step":"%s","version":"%s"}' \
+    "$outcome" "$INSTALL_PING_STEP" "$INSTALL_PING_VERSION"
+  log "Sending the anonymous setup report: $payload"
+  curl -s --max-time 5 -X POST -H 'content-type: application/json' --data "$payload" \
+    "$INSTALL_PING_URL" >/dev/null 2>&1 || true
+}
+
+on_exit() {
+  local rc=$?
+  trap - ERR
+  set +e
+  send_install_ping "$rc"
+  exit "$rc"
+}
+
+if [[ $PREFLIGHT_ONLY -eq 0 ]]; then
+  # The commit date, read now: the run adds commits of its own. A checkout with no
+  # readable date (no git history) cannot report, so it neither asks nor sends.
+  INSTALL_PING_VERSION="$(git -C "$REPO_ROOT" log -1 --format=%cs 2>/dev/null || true)"
+  if [[ "$INSTALL_PING_VERSION" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    case "$(printf '%s' "${FLOORVOTE_INSTALL_PING:-}" | tr '[:upper:]' '[:lower:]')" in
+      yes) INSTALL_PING=yes ;;
+      no)  INSTALL_PING=no ;;
+      *)
+        [[ -z "${FLOORVOTE_INSTALL_PING:-}" ]] || log_warn "FLOORVOTE_INSTALL_PING must be yes or no -- ignoring '${FLOORVOTE_INSTALL_PING}'"
+        if [[ -t 0 ]]; then
+          echo
+          echo "  FloorVote can send one anonymous note when this script ends: whether setup passed"
+          echo "  verification, or which step failed. It helps the project see where setup trips"
+          echo "  people up. It would send exactly this, and nothing else:"
+          echo
+          echo "    {\"event\":\"tenant_setup\",\"outcome\":\"verified\",\"step\":\"verify\",\"version\":\"${INSTALL_PING_VERSION}\"}"
+          echo
+          echo "  (outcome is verified, unverified, or failed. step is the setup step it ended on.)"
+          echo "  It never includes your slug, states, names, emails, account ID, or URLs."
+          echo "  Set FLOORVOTE_INSTALL_PING=yes or no in the environment or scripts/.env.ops to skip this question."
+          _ping_answer=""
+          read -rp "Send an anonymous setup report? [y/N] " _ping_answer || true
+          [[ "$_ping_answer" =~ ^[Yy]([Ee][Ss])?$ ]] && INSTALL_PING=yes
+        fi
+        ;;
+    esac
+  fi
+  # Ctrl-C (and a terminated run) is the operator stopping, not a failed setup.
+  trap 'INSTALL_PING_INTERRUPTED=1; exit 130' INT
+  trap 'INSTALL_PING_INTERRUPTED=1; exit 143' TERM HUP
+  trap on_exit EXIT
+fi
 
 # ── Setup log file ─────────────────────────────────────────────────────────────
 LOG_DIR="$REPO_ROOT/logs"
@@ -923,9 +1008,11 @@ if step verify "Verify the instance end to end"; then
     # The summary below still prints, since its manual steps apply either way;
     # the run then exits non-zero.
     VERIFY_FAILED=1
+    INSTALL_PING_OUTCOME=unverified
     log_warn "Instance '${SLUG}' is provisioned, but it did not pass verification. See the failures above."
   else
     log_ok "Instance verified end to end"
+    INSTALL_PING_OUTCOME=verified
   fi
 fi
 
