@@ -739,12 +739,13 @@ describe('lake-michigan feed density', () => {
         expect(a.daysAgo, `${a.billNumber} "${a.action}" lands outside the window`).toBeGreaterThanOrEqual(0)
         expect(a.daysAgo, `${a.billNumber} "${a.action}" lands outside the window`).toBeLessThan(WINDOW)
       }
-      // The bill's actions keep their order: the older one is shown on the earlier day.
-      for (const ext of seededBills) {
-        const own = LM_NO_PRIORITY_ACTIONS.filter(a => a.externalId === ext)
-          .sort((x, y) => x.actionDate.localeCompare(y.actionDate))
-        const days = own.map(a => a.daysAgo)
-        expect(days, `${own[0]?.billNumber} actions out of order`).toEqual([...days].sort((x, y) => y - x))
+      // The bill's actions keep their order: the older one is shown on the earlier day
+      // (two actions of one real date carry no order to keep).
+      for (const a of LM_NO_PRIORITY_ACTIONS) {
+        for (const b of LM_NO_PRIORITY_ACTIONS.filter(x => x.externalId === a.externalId && x.actionDate > a.actionDate)) {
+          expect(a.daysAgo, `${a.billNumber}: "${a.action}" (${a.actionDate}) is shown after "${b.action}" (${b.actionDate})`)
+            .toBeGreaterThanOrEqual(b.daysAgo)
+        }
       }
     })
 
@@ -807,6 +808,10 @@ describe('lake-michigan feed density', () => {
         expect(feed[0].kind, `day ${d} opens on the row: ${feed.map(c => c.kind).join(', ')}`).toMatch(/^(mixed|social|activity)$/)
         // A row of two or more is the day's last card.
         if (qualifyingOn(d).length >= 2) expect(feed[feed.length - 1].kind, `day ${d}`).toBe('row')
+        // A lone bill is ordered by time, so it must be strictly older than the day's top card:
+        // a tie would leave the order to the feed's tiebreak.
+        const lone = feed.find(c => c.kind === 'lone')
+        if (lone) expect(lone.at, `day ${d}: the lone bill is not older than the top card`).toBeGreaterThan(feed[0].at)
       }
       expect(rowDays.length, `${rowDays.length} rows among ${teamCards} cards`).toBeLessThanOrEqual(teamCards / 3)
       // And enough of them to be seen: about one row for every three to five cards.

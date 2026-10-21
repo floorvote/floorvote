@@ -1,6 +1,7 @@
 import type { DemoSeed } from './demoSeeds'
 import { FIELD_CHANGED, type FieldChangedMetadata } from '../../../shared/teamFields'
 import { legacyHandle, normalizeHandle } from '../../../shared/billHandle'
+import { NO_PRIORITY_UPDATES } from '../../../shared/feedUtils'
 
 /** N days ago in the SQLite space format that stored timestamps require.
  *  Counts BACKWARD: positive n is the past, and n = 0 is now. This is the seed's
@@ -300,13 +301,40 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
   ))
 
   // Feed events
-  await batch(seed.feedEvents.map((e) =>
+  const feedEventInsert = (e: DemoSeed['feedEvents'][number], at: string) =>
     db.prepare(
       `INSERT OR IGNORE INTO feed_events (id, type, bill_id, user_id, metadata, created_at)
        SELECT ?, ?, ${BILL_BY_HANDLE}, ?, ?, ?
        WHERE ${BILL_BY_HANDLE} IS NOT NULL`
-    ).bind(e.id, e.type, ...spellings(e.externalId), e.userId, JSON.stringify(e.metadata), daysAgoDb(e.daysAgo, e.minutesLater), ...spellings(e.externalId)),
-  ))
+    ).bind(e.id, e.type, ...spellings(e.externalId), e.userId, JSON.stringify(e.metadata), at, ...spellings(e.externalId))
+  await batch(seed.feedEvents.map((e) => feedEventInsert(e, daysAgoDb(e.daysAgo, e.minutesLater))))
+
+  // Legislative activity on bills with no priority (#925), and the row it makes. The
+  // queue processor writes the day's no-priority updates row with the first
+  // legislative event that lands on an analyzed bill, one row per UTC day at that
+  // event's time (noteLegislativeEvent in lib/noPriorityRow.ts), and the feed lists
+  // the day's bills from the events at read time. So the reset does the same with
+  // the days these events were stored on: a row at the day's first event, for a day
+  // with an event on a bill the tenant holds and has analyzed. The days come from
+  // the stored timestamps, not the seed's day offsets, so a reset just after
+  // midnight UTC keeps one row per day the events really landed on.
+  const noPriority = (seed.noPriorityEvents ?? []).map((e) => ({ e, at: daysAgoDb(e.daysAgo, e.minutesLater) }))
+  await batch(noPriority.map(({ e, at }) => feedEventInsert(e, at)))
+  const noPriorityDays = new Map<string, { at: string; externalIds: Set<string> }>()
+  for (const { e, at } of noPriority) {
+    const day = noPriorityDays.get(at.slice(0, 10)) ?? { at, externalIds: new Set<string>() }
+    if (at < day.at) day.at = at
+    day.externalIds.add(e.externalId)
+    noPriorityDays.set(at.slice(0, 10), day)
+  }
+  await batch([...noPriorityDays].map(([date, { at, externalIds }]) => {
+    const handles = [...externalIds].flatMap(spellings)
+    return db.prepare(
+      `INSERT OR IGNORE INTO feed_events (id, type, bill_id, user_id, metadata, suppressed, created_at)
+       SELECT ?, ?, NULL, 'system', '{}', 0, ?
+       WHERE EXISTS (SELECT 1 FROM bills WHERE external_id IN (${placeholdersFor(handles)}) AND match_type IS NOT NULL)`
+    ).bind(`demo-fe-npu-${date}`, NO_PRIORITY_UPDATES, at, ...handles)
+  }))
 
   // Mark demo-user as having seen the feed as of now. All seeded feed events carry
   // past timestamps, so a "now" baseline keeps the Feed nav dot dark for fresh
