@@ -4,6 +4,13 @@ import userEvent from '@testing-library/user-event'
 import { BillTextPanel, type HtmlPassageRequest } from './BillTextPanel'
 import { billHtmlToText } from '../../../shared/billHtmlToText'
 import { PASSAGE_ID } from '../lib/claimLinks'
+import * as claimLinks from '../lib/claimLinks'
+
+// The real functions, watched: the tests count how often the frame is sent to the passage.
+vi.mock('../lib/claimLinks', async () => {
+  const actual = await vi.importActual<typeof import('../lib/claimLinks')>('../lib/claimLinks')
+  return { ...actual, focusPassage: vi.fn(actual.focusPassage), scrollToPassage: vi.fn(actual.scrollToPassage) }
+})
 
 // Opening a claim's passage in the bill text panel (#571). The text stays in a
 // `sandbox=""` frame, which the page can't reach into, so the highlight goes
@@ -35,6 +42,8 @@ let blobs: Blob[]
 beforeEach(() => {
   fetched = []
   blobs = []
+  vi.mocked(claimLinks.focusPassage).mockClear()
+  vi.mocked(claimLinks.scrollToPassage).mockClear()
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input)
     fetched.push(url)
@@ -88,6 +97,57 @@ describe('BillTextPanel: a claim\'s passage on the page bill\'s own text', () =>
     await waitFor(() => expect(frame()).not.toBe(first))
     fireEvent.load(frame())
     expect(document.activeElement).toBe(frame())
+  })
+
+  // Going to the passage loads the frame's document again, which fires load again.
+  it('goes to the passage once per frame, not again on the load that going there causes', async () => {
+    render(<BillTextPanel billId="a100" texts={[TEXT_A]} externalOpen passage={own()} />)
+    const f = await passageFrame()
+    fireEvent.load(f)
+    fireEvent.load(f)
+    fireEvent.load(f)
+    expect(vi.mocked(claimLinks.focusPassage).mock.calls.length + vi.mocked(claimLinks.scrollToPassage).mock.calls.length).toBe(1)
+  })
+
+  it('scrolls to the passage again, without moving focus, when Bill texts is closed and opened', async () => {
+    const { rerender } = render(<BillTextPanel billId="a100" texts={[TEXT_A]} externalOpen passage={own()} />)
+    const first = await passageFrame()
+    fireEvent.load(first)
+    rerender(<BillTextPanel billId="a100" texts={[TEXT_A]} externalOpen={false} passage={own()} />)
+    await waitFor(() => expect(screen.queryByTitle(/^Bill text/)).toBeNull())
+    rerender(<BillTextPanel billId="a100" texts={[TEXT_A]} externalOpen passage={own()} />)
+    const reopened = await passageFrame()
+    expect(reopened).not.toBe(first)
+    fireEvent.load(reopened)
+    expect(claimLinks.scrollToPassage).toHaveBeenCalledWith(reopened)
+    expect(vi.mocked(claimLinks.focusPassage).mock.calls.map(c => c[0])).toEqual([first])
+  })
+
+  // Chromium focuses the frame when it loads at the passage, focused or not.
+  it('leaves focus where it was when a frame shown again pulls it in on going to the passage', async () => {
+    const page = (open: boolean) => <><button>Bill texts</button><BillTextPanel billId="a100" texts={[TEXT_A]} externalOpen={open} passage={own()} /></>
+    const { rerender } = render(page(true))
+    fireEvent.load(await passageFrame())
+    rerender(page(false))
+    await waitFor(() => expect(screen.queryByTitle(/^Bill text/)).toBeNull())
+    const toggle = screen.getByRole('button', { name: 'Bill texts' })
+    toggle.focus()
+    rerender(page(true))
+    const reopened = await passageFrame()
+    // The frame's own load sends it to the passage (jsdom may fire it unprompted).
+    if (!vi.mocked(claimLinks.scrollToPassage).mock.calls.some(c => c[0] === reopened)) fireEvent.load(reopened)
+    expect(claimLinks.scrollToPassage).toHaveBeenCalledWith(reopened)
+    reopened.focus()  // the browser, loading the frame at the passage
+    fireEvent.load(reopened)  // the load that going there causes
+    expect(document.activeElement).toBe(toggle)
+  })
+
+  it('keeps focus in the frame on a request\'s own first showing', async () => {
+    render(<><button>Elsewhere</button><BillTextPanel billId="a100" texts={[TEXT_A]} externalOpen passage={own()} /></>)
+    const f = await passageFrame()
+    fireEvent.load(f)
+    fireEvent.load(f)
+    expect(document.activeElement).toBe(f)
   })
 
   it('goes back to the plain text, and lets the highlight go, when the reader picks another version', async () => {

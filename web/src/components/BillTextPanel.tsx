@@ -9,7 +9,7 @@ import { parseHandle } from '../../../shared/billHandle'
 import type { GroupBillTexts } from '../../../shared/companionGroups'
 import { orderGroupTexts } from '../lib/groupTexts'
 import { claimGlow, CLAIM_GLOW_FLASH } from '../lib/claimGlow'
-import { focusPassage, markPassage, type ClaimDocument, type PageQuote, type Passage, type Span } from '../lib/claimLinks'
+import { focusPassage, markPassage, scrollToPassage, type ClaimDocument, type PageQuote, type Passage, type Span } from '../lib/claimLinks'
 import { describePageTarget, looksLikePdf, pdfPageTarget } from '../lib/pdfPages'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 
@@ -229,8 +229,14 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, req
   const passageShown = requestShown && !isPdfRequest(requestShown) ? requestShown : null
   const marked = useMemo(() => (passageShown && content !== null ? markPassage(content, [passageShown, ...(passageShown.rest ?? [])]) : null), [passageShown, content])
   const passageMissing = passageShown !== null && content !== null && marked === null
-  // Focus moves to the passage's frame once per request, when it loads.
+  // Each passage frame goes to the passage on its first load, since going there
+  // loads it again. Focus moves to it once per request, so a frame shown again
+  // (Bill texts closed and opened) scrolls without taking focus.
+  const sentToPassage = useRef(new WeakSet<HTMLIFrameElement>())
   const focusedKeyRef = useRef<number | null>(null)
+  // Where focus was when a frame shown again went to the passage. Chromium
+  // focuses a frame that loads at a fragment, so the load that follows puts it back.
+  const focusBefore = useRef(new WeakMap<HTMLIFrameElement, Element | null>())
 
   // A PDF claim (#572): the PDF opens at the cited page, and its quote shows
   // beside it, since the page can't highlight a PDF. Focus moves to the quote,
@@ -615,9 +621,21 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, req
                         style={{ width: '100%', height: '100%', border: 'none', display: 'block', background: color.white }}
                         title="Bill text, with the claim's passage highlighted"
                         onLoad={e => {
-                          if (focusedKeyRef.current === passageShown.key) return
-                          focusedKeyRef.current = passageShown.key
-                          focusPassage(e.currentTarget)
+                          const frame = e.currentTarget
+                          if (sentToPassage.current.has(frame)) {
+                            const before = focusBefore.current.get(frame)
+                            focusBefore.current.delete(frame)
+                            if (before instanceof HTMLElement && document.activeElement === frame) before.focus({ preventScroll: true })
+                            return
+                          }
+                          sentToPassage.current.add(frame)
+                          if (focusedKeyRef.current === passageShown.key) {
+                            focusBefore.current.set(frame, document.activeElement)
+                            scrollToPassage(frame)
+                          } else {
+                            focusedKeyRef.current = passageShown.key
+                            focusPassage(frame)
+                          }
                         }}
                       />
                     ) : (

@@ -250,7 +250,6 @@ describe('a claim-opened bill text when the page moves to another bill', () => {
     moveTo(view, '42')
     await user.click(await claimLink())
     await waitFor(() => expect(frame().title).toMatch(/passage highlighted/))
-    expect(frame().title).toMatch(/passage highlighted/)
   })
 
   it("a URL that names one of the next bill's texts opens that text, not the claim's", async () => {

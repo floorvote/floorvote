@@ -484,23 +484,31 @@ function markOne(doc: Document, html: string, passage: Passage, target: boolean)
 }
 
 /**
- * Move focus to the passage in a frame whose srcdoc is `markPassage`'s
- * document. The srcdoc loads with no fragment, so the page focuses the frame,
- * then goes to the passage's fragment of that same document. That scrolls to
- * the mark and focuses it (its fixed `tabindex="-1"`): Chromium runs the
- * focusing steps for a fragment's target only on a fragment navigation within
- * a loaded document. The page navigates only its own frame, and reads nothing
- * from it: the frame keeps `sandbox=""`. Where that can't be done, focus stays
- * on the frame.
+ * Send a frame whose srcdoc is `markPassage`'s document to the passage. Going
+ * to `about:srcdoc#…` loads the srcdoc again at the mark's fragment, so the
+ * browser scrolls there, and it fires the frame's `load` again: call this once
+ * per frame. The page navigates only its own frame, and reads nothing from it:
+ * the frame keeps `sandbox=""`. Where that can't be done, the frame stays at
+ * the top of the document.
  *
  * Not a blob: URL. A blob: document inherits the app's CSP, and WebKit
  * enforces its `frame-ancestors 'none'` on it, so iOS showed a blank frame.
  */
-export function focusPassage(frame: HTMLIFrameElement): void {
-  frame.focus()
+export function scrollToPassage(frame: HTMLIFrameElement): void {
   try {
     frame.contentWindow?.location.replace(`about:srcdoc#${PASSAGE_ID}`)
   } catch {
-    // Focus stays on the frame.
+    // The frame stays where it is.
   }
+}
+
+/**
+ * Move focus to the passage: focus the frame, then send it to the passage
+ * (`scrollToPassage`). Loading at the fragment from a focused frame focuses the
+ * mark (its fixed `tabindex="-1"`). Where the frame can't be navigated, focus
+ * stays on the frame.
+ */
+export function focusPassage(frame: HTMLIFrameElement): void {
+  frame.focus()
+  scrollToPassage(frame)
 }
