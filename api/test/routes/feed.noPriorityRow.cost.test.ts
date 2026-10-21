@@ -224,7 +224,11 @@ describe('the no-priority updates row: what a GET /feed costs', () => {
         const plan = await planOf(s)
         expect(plan, `plan of:\n${s.sql}\n\n${plan}`).toContain('USING INDEX idx_feed_events_created ')
         // No alias of feed_events inside the row's rules is ever scanned whole.
-        expect(plan, `plan of:\n${s.sql}\n\n${plan}`).not.toMatch(/SCAN (m|o|f|sib)\b/)
+        expect(plan, `plan of:\n${s.sql}\n\n${plan}`).not.toMatch(/SCAN (m|o|sib)\b/)
+        // Each day is sorted into row or card once a statement, not once an update:
+        // the days' subquery reads nothing of the event it is asked about.
+        expect(plan, `plan of:\n${s.sql}\n\n${plan}`).toMatch(/^LIST SUBQUERY \d+\nMATERIALIZE day_first$/m)
+        expect(plan, `plan of:\n${s.sql}\n\n${plan}`).toContain('SCAN r USING INDEX idx_feed_events_no_priority_updates_day')
       }
     })
 

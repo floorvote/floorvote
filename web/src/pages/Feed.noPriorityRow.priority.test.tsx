@@ -47,6 +47,13 @@ const xUpdate: FeedEvent = {
   metadata: { changes: [{ changeType: 'action_added', oldValue: null, newValue: 'Referred to committee', detail: null }] },
 } as FeedEvent
 
+// Y's update on the 4th, sent as its card once the row is Y alone (#921).
+const yUpdate: FeedEvent = {
+  ...base, id: 'u2', type: 'bill_updated', billId: 'by', billNumber: 'SB8', billTitle: 'Canvass Act', noPriorityCard: true,
+  userId: 'system', userName: '', createdAt: '2026-03-04 13:00:00',
+  metadata: { changes: [{ changeType: 'action_added', oldValue: null, newValue: 'Reported favorably', detail: null }] },
+} as FeedEvent
+
 beforeEach(() => {
   poll.fn = null
   apiFetchMock.mockReset()
@@ -73,14 +80,17 @@ it('takes a bill out of the row on the next read once its card sets a priority, 
   expect(rowToggle()).toHaveAccessibleName('Updates on 2 bills with no priority')
 
   // The next read: the server resolves the row without the bill, and its update is a card.
-  const after = [comment, xUpdate, row(1, [Y])].map((e) => (e.billId === 'bx' ? { ...e, billPriority: 'high' } : e))
+  // That leaves the row one bill, so the server sends that bill's update as its card
+  // instead of the row (#921).
+  const after = [comment, xUpdate, yUpdate].map((e) => (e.billId === 'bx' ? { ...e, billPriority: 'high' } : e))
   apiFetchMock.mockImplementation(async (url: string) => (url.startsWith('/feed?') ? { events: [{ ...comment, id: 'c2', createdAt: '2026-03-05 09:00:00' }, ...after], total: 4, page: 1, limit: 40 } : undefined))
   await act(async () => { await poll.fn!() })
 
-  await waitFor(() => expect(rowToggle()).toHaveAccessibleName('Updates on 1 bill with no priority'))
+  await waitFor(() => expect(screen.queryByRole('button', { name: /updates on \d+ bills? with no priority/i })).toBeNull())
   const day = document.querySelector('[data-feed-day="2026-03-04"]') as HTMLElement
   expect(within(day).getByText('Action: Referred to committee')).toBeInTheDocument()
-  const header = rowToggle().parentElement as HTMLElement
-  expect(within(header).queryByRole('link', { name: 'HB7' })).toBeNull()
-  expect(within(header).getByRole('link', { name: 'SB8' })).toBeInTheDocument()
+  expect(within(day).getByText('Canvass Act')).toBeInTheDocument()
+  expect(within(day).getByText('Action: Reported favorably')).toBeInTheDocument()
+  // Each bill once: its own card, never a chip of a row as well.
+  expect(within(day).getAllByText('Ballot Access Act')).toHaveLength(1)
 })

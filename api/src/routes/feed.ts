@@ -4,13 +4,13 @@ import { filedSlug } from '../lib/sessionSlug'
 import { requireAuth } from '../middleware/auth'
 import { getDb } from '../db/client'
 import { feedEvents, bills, users } from '../db/schema'
-import { NO_PRIORITY_UPDATES, PASSIVE_EVENT_TYPES } from '../../../shared/feedUtils'
+import { LEGISLATIVE_EVENT_TYPES, NO_PRIORITY_UPDATES, PASSIVE_EVENT_TYPES } from '../../../shared/feedUtils'
 import { nowDb } from '../lib/dbTime'
 import { activeUser } from '../lib/accountDeletion'
 import type { AppDb, AppEnv } from '../types'
 import { groupHasPriority, loadGroupPriorities, priorityWorn } from '../lib/teamFields'
 import { getNewMatchMinRelevance, loadUntriagedNewMatchGroups, untriagedNewMatch } from '../lib/newMatch'
-import { rowBills, rowDays, rowPage, rowStandsForABill, utcDay } from '../lib/noPriorityRow'
+import { defaultFeedShows, rowBills, rowDays, rowPage, utcDay } from '../lib/noPriorityRow'
 
 export const feedRouter = new Hono<AppEnv>()
 
@@ -85,8 +85,11 @@ feedRouter.get('/', async (c) => {
   //
   // The no-priority updates row is passive, so defaultVisible (and with it the
   // nav dot below) never admits it. The default feed's list admits it by its own
-  // rule instead: on a day it stands for at least one bill, which are exactly
-  // the bills whose legislative events defaultVisible hides (lib/noPriorityRow).
+  // rule instead, from the bills whose legislative events defaultVisible hides
+  // (lib/noPriorityRow): on a day those make two or more entries, the row; on a
+  // day they make one, that entry's updates, which the client draws as the
+  // bill's card (#921). Never both, so the total counts each once. Those updates
+  // are passive too, so they never move the dot either.
   const minRelevance = await getNewMatchMinRelevance(db)
   const baseWhere = scope === 'analyzed'
     ? and(
@@ -96,7 +99,7 @@ feedRouter.get('/', async (c) => {
         or(isNull(feedEvents.billId), isNotNull(bills.matchType)),
         activeUser,
       )
-    : and(ne(feedEvents.suppressed, true), activeUser, or(defaultVisible, rowStandsForABill(minRelevance)))
+    : and(ne(feedEvents.suppressed, true), activeUser, defaultFeedShows(defaultVisible, minRelevance))
 
   const [rows, countRow, latestRow, seenRow] = await Promise.all([
     db
@@ -177,14 +180,30 @@ feedRouter.get('/', async (c) => {
   // one policy (#638), so it counts once: the row's `count` is its distinct cards.
   const matchCounts = await newMatchCounts(db, rows.filter((r) => r.type === 'new_matches'))
 
+  // A worn priority per row: a companion group's events wear the group's.
+  const wornPriority = (r: (typeof rows)[number]) =>
+    priorityWorn({ priority: r.billPriority ?? null, groupKey: r.billGroupKey ?? null }, groupPriorities)
+
   // Each no-priority updates row's bills, resolved now for the whole page in
   // two queries, however many rows it holds: how many entries, the first two
   // for its chips, and the time of its newest update (lastAt), by which the
   // viewer's feed files it under their own day. The rest load on expand.
+  //
+  // The same read of the page's days marks the updates that stand in for a row
+  // of one (#921): a legislative update on the one entry its UTC day's row
+  // resolves to. The client draws them as that bill's card, where its rule for
+  // the default feed would otherwise hide them, and they raise no banner.
   const rowSummaries = new Map<string, { count: number; firstBills: unknown[]; lastAt: string }>()
+  const loneCards = new Set<string>()
   const pageRows = rows.filter((x) => x.type === NO_PRIORITY_UPDATES)
-  if (pageRows.length > 0) {
-    const days = await rowDays(db, pageRows.map((r) => utcDay(r.createdAt)), minRelevance)
+  const loneCandidates = scope === 'analyzed' ? [] : rows.filter((r) =>
+    r.billId !== null && LEGISLATIVE_EVENT_TYPES.includes(r.type) && wornPriority(r) === null)
+  if (pageRows.length > 0 || loneCandidates.length > 0) {
+    const days = await rowDays(db, [...pageRows, ...loneCandidates].map((r) => utcDay(r.createdAt)), minRelevance)
+    for (const r of loneCandidates) {
+      const entries = days.get(utcDay(r.createdAt))?.entries ?? []
+      if (entries.length === 1 && entries[0].memberIds.includes(r.billId!)) loneCards.add(r.id)
+    }
     const leads = (day: string) => (days.get(day)?.entries ?? []).slice(0, 2).map((e) => e.memberIds[0])
     const billsById = await rowBills(db, pageRows.flatMap((r) => leads(utcDay(r.createdAt))))
     for (const r of pageRows) {
@@ -214,7 +233,7 @@ feedRouter.get('/', async (c) => {
       billNumber: r.billNumber ?? '',
       billTitle: r.billTitle || r.billAbstract || '',
       billSummary: r.billSummary ?? null,
-      billPriority: priorityWorn({ priority: r.billPriority ?? null, groupKey: r.billGroupKey ?? null }, groupPriorities),
+      billPriority: wornPriority(r),
       billGroupKey: r.billGroupKey ?? null,
       billMatchType: r.billMatchType ?? null,
       billNewMatch: isNewMatch(r),
@@ -225,6 +244,7 @@ feedRouter.get('/', async (c) => {
       userName: r.userName || r.userEmail,
       userTitle: r.userTitle,
       metadata: metadataOf(r),
+      noPriorityCard: loneCards.has(r.id),
       createdAt: r.createdAt,
     })),
     total: countRow?.total ?? 0,

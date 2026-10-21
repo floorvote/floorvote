@@ -1,5 +1,5 @@
-import { sql, type SQL } from 'drizzle-orm'
-import { feedEvents } from '../db/schema'
+import { or, sql, type SQL } from 'drizzle-orm'
+import { bills, feedEvents } from '../db/schema'
 import { LEGISLATIVE_EVENT_TYPES, NO_PRIORITY_UPDATES, PASSIVE_EVENT_TYPES } from '../../../shared/feedUtils'
 import { dbTsToEpoch } from '../../../shared/time'
 import { filedSlug } from './sessionSlug'
@@ -14,7 +14,9 @@ import type { AppDb } from '../types'
 // passive events (routes/feed.ts): a bill's legislative event of the day is the
 // row's when the default feed would hide it, and its card's when it would show
 // it. So a bill that gains a priority, or the team's attention that day, moves
-// from the row to its own card on the next read, and is never in both.
+// from the row to its own card on the next read, and is never in both. A day
+// whose row stands for one entry (a bill, or one companion group) shows that
+// entry's updates as its card in the row's place (#921, defaultFeedShows).
 //
 // Every query here starts from the day's events, through the created_at index,
 // and only then looks at each one's bill. Started from bills, a query visits
@@ -29,50 +31,113 @@ const typeList = (types: Iterable<string>) => sql.raw([...types].map((t) => `'${
 const LEGISLATIVE = typeList(LEGISLATIVE_EVENT_TYPES)
 const PASSIVE = typeList(PASSIVE_EVENT_TYPES)
 
-/** The team engaged, on the UTC day of event `m`, with a bill `sibBills` picks out of `feed_events sib`. */
-const engagedThatDay = (sibBills: SQL) => sql`EXISTS (
+/** The names an event and its bill go by in a query: `m` and `mb` in the row's own queries. */
+type Aliases = { ev: SQL; bill: SQL }
+const M: Aliases = { ev: sql.raw('m'), bill: sql.raw('mb') }
+/** Another event of the same day and its bill, which a lone day is told from a row by. */
+const O: Aliases = { ev: sql.raw('o'), bill: sql.raw('ob') }
+
+/** The team engaged, on the UTC day of event `on.ev`, with a bill `sibBills` picks out of `feed_events sib`. */
+const engagedThatDay = (on: Aliases, sibBills: SQL) => sql`EXISTS (
     SELECT 1 FROM feed_events sib
      WHERE ${sibBills}
        AND sib.suppressed != 1
-       AND date(sib.created_at) = date(m.created_at)
+       AND date(sib.created_at) = date(${on.ev}.created_at)
        AND sib.type NOT IN (${PASSIVE})
   )`
 
 /** The events and bills the rules below read, outer loop first. */
-const EVENTS_THEN_BILLS = sql`feed_events m CROSS JOIN bills mb ON mb.id = m.bill_id`
+const eventsThenBills = ({ ev, bill }: Aliases) => sql`feed_events ${ev} CROSS JOIN bills ${bill} ON ${bill}.id = ${ev}.bill_id`
+const EVENTS_THEN_BILLS = eventsThenBills(M)
+
+/**
+ * The entry a bill is in a day's row: its companion group's, or its own. The
+ * same keys rowDays gives its entries.
+ */
+const entryOf = (bill: SQL) => sql`COALESCE('group:' || ${bill}.group_key, ${bill}.id)`
 
 /**
  * An event `m` (feed_events) on bill `mb` (bills), stored in [from, to) (UTC
  * dates, YYYY-MM-DD), is the row's for its day: a legislative event on an
  * analyzed bill at or above the minimum relevance for new matches, whose
- * companion group has no priority and was not engaged with that day.
+ * companion group has no priority and was not engaged with that day. `as`
+ * names the event and bill otherwise.
  *
  * Both stored timestamp formats (`2026-03-04 09:00:00` and
  * `2026-03-04T09:00:00Z`) begin with the UTC date, so comparing the raw column
  * with the dates picks exactly the days in the range, through the index.
  */
-function standsFor(from: SQL, to: SQL, minRelevance: number): SQL {
-  return sql`m.created_at >= ${from} AND m.created_at < ${to}
-    AND m.suppressed != 1
-    AND m.type IN (${LEGISLATIVE})
-    AND mb.match_type IS NOT NULL
-    AND COALESCE(mb.relevance_score, 0) >= ${minRelevance}
-    AND mb.priority IS NULL
-    AND (mb.group_key IS NULL OR NOT EXISTS (SELECT 1 FROM bills g WHERE g.group_key = mb.group_key AND g.priority IS NOT NULL))
-    AND NOT ${engagedThatDay(sql`sib.bill_id = mb.id`)}
-    AND (mb.group_key IS NULL OR NOT ${engagedThatDay(sql`sib.bill_id IN (SELECT g.id FROM bills g WHERE g.group_key = mb.group_key)`)})`
+function standsFor(from: SQL, to: SQL, minRelevance: number, as: Aliases = M): SQL {
+  const { ev: m, bill: mb } = as
+  return sql`${m}.created_at >= ${from} AND ${m}.created_at < ${to}
+    AND ${m}.suppressed != 1
+    AND ${m}.type IN (${LEGISLATIVE})
+    AND ${mb}.match_type IS NOT NULL
+    AND COALESCE(${mb}.relevance_score, 0) >= ${minRelevance}
+    AND ${mb}.priority IS NULL
+    AND (${mb}.group_key IS NULL OR NOT EXISTS (SELECT 1 FROM bills g WHERE g.group_key = ${mb}.group_key AND g.priority IS NOT NULL))
+    AND NOT ${engagedThatDay(as, sql`sib.bill_id = ${mb}.id`)}
+    AND (${mb}.group_key IS NULL OR NOT ${engagedThatDay(as, sql`sib.bill_id IN (SELECT g.id FROM bills g WHERE g.group_key = ${mb}.group_key)`)})`
 }
 
+/** What a day's row is, for the whole feed: `MANY` for two or more entries, else its one entry's key. */
+const MANY = '*'
+
 /**
- * For GET /feed's WHERE: the row on `feed_events` stands for at least one
- * bill. A row that resolves to none is left out of the page and the total, so
- * pagination stays honest.
+ * Each day with a row and at least one entry, once for the whole statement:
+ * (day, MANY) for a day of two or more entries, and (day, its entry's key) for
+ * a day of one. A subquery that reads nothing of the feed's own event, so
+ * SQLite builds it once and each event only probes it, where asking each
+ * hidden update whether another entry moved its day would read that day again
+ * for every one of them.
+ *
+ * Days come from the rows themselves, through the rows' own index (0121). For
+ * each, its first event of the row's names one entry; then one more pass looks
+ * for another, passing over the first entry's own updates before reading their
+ * bill's engagement. The first is materialized so it is read once a day, not
+ * again for each use. A day costs two passes over its events at most, and on a
+ * busy day each pass stops at its first find.
  */
-export function rowStandsForABill(minRelevance: number): SQL {
-  return sql`(${feedEvents.type} = ${NO_PRIORITY_UPDATES} AND EXISTS (
-    SELECT 1 FROM ${EVENTS_THEN_BILLS}
-     WHERE ${standsFor(sql`date(${feedEvents.createdAt})`, sql`date(${feedEvents.createdAt}, '+1 day')`, minRelevance)}
-  ))`
+const dayEntries = (minRelevance: number) => sql`
+  WITH day_first AS MATERIALIZED (
+    SELECT date(r.created_at) AS day, (
+      SELECT ${entryOf(M.bill)} FROM ${EVENTS_THEN_BILLS}
+       WHERE ${standsFor(sql`date(r.created_at)`, sql`date(r.created_at, '+1 day')`, minRelevance)}
+       LIMIT 1
+    ) AS entry
+      FROM feed_events r
+     WHERE r.type = ${sql.raw(`'${NO_PRIORITY_UPDATES}'`)}
+  )
+  SELECT day_first.day, CASE WHEN EXISTS (
+      SELECT 1 FROM ${eventsThenBills(O)}
+       WHERE ${entryOf(O.bill)} != day_first.entry
+         AND ${standsFor(sql`day_first.day`, sql`date(day_first.day, '+1 day')`, minRelevance, O)}
+    ) THEN ${sql.raw(`'${MANY}'`)} ELSE day_first.entry END
+    FROM day_first
+   WHERE day_first.entry IS NOT NULL`
+
+/**
+ * GET /feed's rule for the default feed: an event `defaultVisible` shows, or
+ * one that takes the place of its UTC day's no-priority updates row. That is the
+ * row itself on a day of two or more entries, and on a day of one, each update
+ * of that one bill or companion group, which the feed shows as its card instead
+ * (#921). A day of none shows neither. Never both on a day, so the page and its
+ * total count each once, and pagination stays honest.
+ *
+ * The two are joined here, not by the caller, because the second leans on the
+ * first: it is only asked of an event `defaultVisible` hides, and of a
+ * legislative update, hidden means exactly what standsFor asks of it beyond
+ * its own bill's columns (no priority on its companion group, and no
+ * engagement that day). So an update is checked by its bill's columns and then
+ * its day (one probe of dayEntries), and never reads its bill's history twice.
+ */
+export function defaultFeedShows(defaultVisible: SQL | undefined, minRelevance: number): SQL | undefined {
+  const isRow = sql`${feedEvents.type} = ${NO_PRIORITY_UPDATES}`
+  const inTheRowsPlace = sql`((${isRow} OR (${feedEvents.type} IN (${LEGISLATIVE})
+      AND ${bills.matchType} IS NOT NULL
+      AND COALESCE(${bills.relevanceScore}, 0) >= ${minRelevance}))
+    AND (date(${feedEvents.createdAt}), CASE WHEN ${isRow} THEN ${sql.raw(`'${MANY}'`)} ELSE ${entryOf(sql`${bills}`)} END) IN (${dayEntries(minRelevance)}))`
+  return or(defaultVisible, inTheRowsPlace)
 }
 
 /** The UTC date (YYYY-MM-DD) of a stored timestamp, in either format. */

@@ -124,8 +124,9 @@ describe('the lone bill\'s card', () => {
       lone('u1', { billGroupKey: 'b1' }),
     ])
     expect(selects()).toHaveLength(1)
-    expect(screen.getByText('Action: Reported favorably')).toBeInTheDocument()
-    expect(screen.getByText('Action: Referred to committee')).toBeInTheDocument()
+    // A group's card names each row's bill beside its change.
+    expect(screen.getByText(/Reported favorably/)).toBeInTheDocument()
+    expect(screen.getByText(/Referred to committee/)).toBeInTheDocument()
     expect(screen.getAllByRole('link', { name: /SB8/ }).length).toBeGreaterThan(0)
     expect(screen.getAllByRole('link', { name: /HB7/ }).length).toBeGreaterThan(0)
   })

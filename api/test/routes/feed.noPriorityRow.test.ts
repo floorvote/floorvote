@@ -84,12 +84,13 @@ describe('the no-priority updates row', () => {
     it('gives each of the first bills what a chip and its hover card need', async () => {
       const b = await analyzed('HB 7', 8, { title: 'Ballot Access Act', tenantSummary: 'Moves the filing deadline.', state: 'RI', sessionSlug: '2026' })
       await moved(b)
+      await moved(await analyzed('HB 1', 2))
       const id = await seedRow()
 
-      expect(metaOf(await feed(), id).firstBills).toEqual([{
+      expect(metaOf(await feed(), id).firstBills[0]).toEqual({
         id: b, billNumber: 'HB 7', title: 'Ballot Access Act', state: 'RI', sessionSlug: '2026', isDraft: false, groupKey: null,
         summary: 'Moves the filing deadline.',
-      }])
+      })
     })
 
     it('shows no row for a day none of whose updates qualify, and leaves it out of the total', async () => {
@@ -125,8 +126,9 @@ describe('the no-priority updates row', () => {
       const b = await analyzed('HB 1', 5)
       await moved(b, at('09:00:00'))
       await moved(b, at('15:00:00'), 'Hearing held')
+      await moved(await analyzed('HB 2', 5))
       const id = await seedRow()
-      expect(metaOf(await feed(), id).count).toBe(1)
+      expect(metaOf(await feed(), id).count).toBe(2)
     })
 
     it('resolves each day\'s row from that day\'s updates only', async () => {
