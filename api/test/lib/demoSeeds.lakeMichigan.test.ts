@@ -634,6 +634,74 @@ describe('lake-michigan feed density', () => {
     expect(rowsOf(today[0].filter(e => !isActivity(e))), 'discussion rows on the opening card').toBeGreaterThanOrEqual(2)
   })
 
+  // The lead bill (#942). The demo opens on a bill a visitor wants to read, not on the one
+  // the team has left behind: MI HB4427 is demoted and quiet, MI HB5674 leads the first screen.
+  describe("today's lead bill (#942)", () => {
+    const HB4427 = 'legiscan:2029026'
+    const HB5674 = 'legiscan:2129983'
+    const priorityOf = (ext: string) => s.priorities.find(p => p.externalId === ext)?.priority
+
+    it("makes today's second card MI HB5674's discussion card, with at least two rows", () => {
+      const second = cardsOfDay(0)[1]
+      expect(cardOf(second[0])).toBe(`${HB5674}::0`)
+      expect(kindOf(second)).toBe('social')
+      expect(rowsOf(second)).toBeGreaterThanOrEqual(2)
+    })
+
+    it('keeps MI HB4427 off the first screen of today (the top four cards)', () => {
+      for (const c of cardsOfDay(0).slice(0, 4)) expect(cardOf(c[0]), 'a top-four card').not.toContain(HB4427)
+    })
+
+    it('keeps MI HB4427 off today altogether, so nothing of its own is among the cards', () => {
+      expect(cardsOfDay(0).map(c => cardOf(c[0]))).not.toContain(`${HB4427}::0`)
+    })
+
+    it('demotes MI HB4427 to low priority and keeps it a tracked bill', () => {
+      expect(priorityOf(HB4427)).toBe('low')
+      expect(LM_BILLS.map(b => b.externalId)).toContain(HB4427)
+    })
+
+    it('gives MI HB4427 no feed event, custom-field change, position, or priority change in the last 7 days', () => {
+      const recent = s.feedEvents.filter(e => e.externalId === HB4427 && e.daysAgo <= 7)
+      expect(recent.map(e => e.id), 'feed events in the last 7 days').toEqual([])
+      expect(s.customFieldValues.filter(v => v.externalId === HB4427 && v.daysAgo <= 7), 'custom-field changes').toEqual([])
+      expect(s.positions.filter(p => p.externalId === HB4427 && p.daysAgo <= 7), 'positions').toEqual([])
+      expect(s.teamFieldChanges.filter(c => c.externalId === HB4427 && c.daysAgo <= 7), 'team field changes').toEqual([])
+      expect(s.comments.filter(c => c.externalId === HB4427 && c.daysAgo <= 7), 'comments').toEqual([])
+    })
+
+    it("gives MI HB4427's low priority a dated change that its own history explains", () => {
+      const change = s.teamFieldChanges.filter(c => c.externalId === HB4427 && c.field === 'priority').at(-1)
+      expect(change, 'a priority change').toBeDefined()
+      expect([change!.old, change!.new]).toEqual(['high', 'low'])
+    })
+
+    it('makes MI HB5674 high priority, with a hearing scheduled in two days', () => {
+      expect(priorityOf(HB5674)).toBe('high')
+      const hearings = s.calendarEvents.filter(c => c.externalId === HB5674 && c.source === 'hearing')
+      expect(hearings.map(h => h.offsetDays)).toEqual([2])
+    })
+
+    it('gives MI HB5674 an official position, as every high-priority bill has one', () => {
+      expect(s.positions.find(o => o.externalId === HB5674)?.position).toBe('Support')
+      for (const p of s.priorities.filter(x => x.priority === 'high')) {
+        expect(s.positions.some(o => o.externalId === p.externalId), `${p.externalId} has a position`).toBe(true)
+      }
+    })
+
+    it('gives MI HB5674 a working group and a fiscal impact, as the other high-priority bills have', () => {
+      for (const fieldId of ['lm-cf-1', 'lm-cf-2']) {
+        expect(s.customFieldValues.some(v => v.externalId === HB5674 && v.fieldId === fieldId), fieldId).toBe(true)
+      }
+    })
+
+    it('has MI HB5674 voice a priority, position, and fiscal-impact change in its thread, ahead of the hearing', () => {
+      const changes = s.teamFieldChanges.filter(c => c.externalId === HB5674)
+      expect(new Set(changes.map(c => c.field))).toEqual(new Set(['priority', 'position', 'customField']))
+      for (const c of changes) expect(c.daysAgo, `${c.id} lands before the hearing`).toBeGreaterThan(0)
+    })
+  })
+
   it('shows all three kinds of card yesterday too, and bill changes besides hearings at the top', () => {
     expect(new Set(cardsOfDay(1).map(kindOf))).toEqual(new Set(['mixed', 'social', 'activity']))
     const kinds = new Set(s.feedEvents.filter(x => x.daysAgo <= 1 && x.type === 'bill_updated').flatMap(e =>
