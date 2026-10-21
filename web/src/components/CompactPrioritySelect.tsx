@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { PRIORITY_COLORS } from '../lib/chipStyles'
 import { color, radius as radiusTokens, fontWeight, fontSize } from '../styles/tokens'
@@ -43,6 +43,9 @@ interface CompactPrioritySelectProps {
 export function CompactPrioritySelect({ billId, current, onChange, isFiltered, mini, placeholder = 'Set priority', newMatch, onDismiss, errorAlign = 'left' }: CompactPrioritySelectProps) {
   // The message for the last failed request (a save or a Dismiss), shown until the next change.
   const [error, setError] = useState<string | null>(null)
+  // The id of the latest priority save. Only the latest one may report: a slow earlier save that settles after a later one
+  // must not call onChange with the older value or show an error about a value the later save replaced.
+  const latestSave = useRef(0)
   const amber = !!newMatch && !current
   const c = current ? PRIORITY_COLORS[current] : amber ? NEW_MATCH : NO_PRIORITY
   const borderColor = current ? 'transparent' : amber ? color.borderAmber : color.borderDefault
@@ -83,10 +86,14 @@ export function CompactPrioritySelect({ billId, current, onChange, isFiltered, m
             return
           }
           const p = e.target.value === '' ? null : e.target.value as 'high' | 'medium' | 'low'
+          const id = ++latestSave.current
           apiFetch<{ priority: 'high' | 'medium' | 'low' | null; promoted?: boolean }>(`/bills/${billId}/priority`, { method: 'PATCH', body: JSON.stringify({ priority: p }) })
             // A failed save leaves the control on the saved priority (the select is controlled) and says so.
             // The rejection handler is the second argument, not a catch, so an error thrown by onChange is not swallowed.
-            .then((result) => onChange(p, result), () => setError("Couldn't save priority. Try again."))
+            .then(
+              (result) => { if (id === latestSave.current) onChange(p, result) },
+              () => { if (id === latestSave.current) setError("Couldn't save priority. Try again.") },
+            )
         }}
         style={{
           WebkitAppearance: 'none', appearance: 'none',

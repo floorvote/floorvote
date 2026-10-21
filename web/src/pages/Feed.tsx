@@ -380,8 +380,8 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
   // reloading the feed. The priority is a team field (see **Team field** in CONTEXT.md), so
   // it changes on every event of the card's bill, or of its companion group whichever member
   // the card was set through, on every day. Setting a priority triages the bill, so it
-  // is no longer a new match, and so does a Dismiss. Clearing one triages nothing, so the flag stays as the server gave it.
-  const showCardChange = useCallback((card: GroupedBillEvents, change: { billPriority?: GroupedBillEvents['billPriority']; billNewMatch?: false }) => {
+  // is no longer a new match, and so does a Dismiss.
+  const showCardChange = useCallback((card: GroupedBillEvents, change: { billPriority?: GroupedBillEvents['billPriority']; billNewMatch: false }) => {
     editedCardsRef.current.add(card.key)
     setEvents(prev => prev.map(e =>
       (card.groupKey != null ? e.billGroupKey === card.groupKey : e.billId === card.billId) ? { ...e, ...change } : e,
@@ -471,7 +471,7 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
               <GroupedBillCard
                 key={group.key} group={group} seenAt={seenAtRef.current} currentUserId={user?.id ?? null}
                 isAdmin={isAdmin}
-                onPriorityChange={(billPriority) => showCardChange(group, billPriority === null ? { billPriority } : { billPriority, billNewMatch: false })}
+                onPriorityChange={(billPriority) => showCardChange(group, { billPriority, billNewMatch: false })}
                 onTriageDismiss={() => showCardChange(group, { billNewMatch: false })}
               />
             ))}

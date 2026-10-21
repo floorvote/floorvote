@@ -365,4 +365,53 @@ describe('CompactPrioritySelect: a failed priority save', () => {
     fireEvent.change(select(), { target: { value: 'dismiss' } })
     expect((await screen.findByRole('alert')).style.right).toBe('0px')
   })
+
+  describe('a slow earlier save that settles after a later one', () => {
+    const deferred = () => {
+      let resolve!: (v: unknown) => void
+      let reject!: (e: unknown) => void
+      const promise = new Promise((res, rej) => { resolve = res; reject = rej })
+      return { promise, resolve, reject }
+    }
+
+    it('shows no error when the earlier save fails after the later one succeeded, and keeps the later value', async () => {
+      const a = deferred()
+      apiFetchMock.mockReturnValueOnce(a.promise).mockResolvedValueOnce({ priority: 'low' })
+      const onChange = vi.fn()
+      const { rerender } = render(<CompactPrioritySelect billId="b1" current={null} onChange={onChange} />)
+      fireEvent.change(select(), { target: { value: 'high' } })   // A, slow
+      fireEvent.change(select(), { target: { value: 'low' } })    // B
+      await waitFor(() => expect(onChange).toHaveBeenCalledWith('low', { priority: 'low' }))
+      rerender(<CompactPrioritySelect billId="b1" current="low" onChange={onChange} />)
+      a.reject(new Error('timeout'))
+      await new Promise(r => setTimeout(r, 20))
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(select()).toHaveValue('low')
+      expect(onChange).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not report the earlier save when it succeeds after the later one did', async () => {
+      const a = deferred()
+      apiFetchMock.mockReturnValueOnce(a.promise).mockResolvedValueOnce({ priority: 'low' })
+      const onChange = vi.fn()
+      render(<CompactPrioritySelect billId="b1" current={null} onChange={onChange} />)
+      fireEvent.change(select(), { target: { value: 'high' } })
+      fireEvent.change(select(), { target: { value: 'low' } })
+      await waitFor(() => expect(onChange).toHaveBeenCalledWith('low', { priority: 'low' }))
+      a.resolve({ priority: 'high' })
+      await new Promise(r => setTimeout(r, 20))
+      expect(onChange).toHaveBeenCalledTimes(1)
+    })
+
+    it('still shows the error when the latest save is the one that fails', async () => {
+      const a = deferred()
+      const b = deferred()
+      apiFetchMock.mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise)
+      render(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} />)
+      fireEvent.change(select(), { target: { value: 'high' } })
+      fireEvent.change(select(), { target: { value: 'low' } })
+      b.reject(new Error('boom'))
+      expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't save priority. Try again.")
+    })
+  })
 })

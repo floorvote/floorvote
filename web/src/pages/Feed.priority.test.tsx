@@ -240,17 +240,7 @@ describe('Feed: a companion group\'s card', () => {
   })
 })
 
-describe('Feed: a cleared priority leaves the new-match state to the server', () => {
-  it('does not force "not a new match" when the priority is cleared', async () => {
-    apiFetchMock.mockResolvedValue({ priority: null })
-    // A priority set before triage was latched: clearing it makes the bill a new match again, as the server reads it.
-    renderFeed([ev({ id: 'e1', billPriority: 'medium', billNewMatch: true })])
-    expect(sel()).toHaveValue('medium')
-    fireEvent.change(sel(), { target: { value: '' } })
-    await waitFor(() => expect(sel()).toHaveDisplayValue('New · Set priority'))
-    expectAmber(sel())
-  })
-
+describe('Feed: clearing a priority on a plain bill', () => {
   it('a plain bill stays plain when its priority is cleared', async () => {
     apiFetchMock.mockResolvedValue({ priority: null })
     renderFeed([ev({ id: 'e1', billPriority: 'medium', billNewMatch: false })])
