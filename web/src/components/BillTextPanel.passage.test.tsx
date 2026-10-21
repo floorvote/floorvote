@@ -66,6 +66,8 @@ const passageFrame = async () => {
   await waitFor(() => expect(frame().title).toMatch(/passage highlighted/))
   return frame()
 }
+/** Two animation frames: the panel sends a frame to its passage once it has painted. */
+const painted = () => new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r())))
 const passageDoc = () => new DOMParser().parseFromString(frame().getAttribute('srcdoc') ?? '', 'text/html')
 
 describe('BillTextPanel: a claim\'s passage on the page bill\'s own text', () => {
@@ -84,6 +86,7 @@ describe('BillTextPanel: a claim\'s passage on the page bill\'s own text', () =>
     render(<BillTextPanel billId="a100" texts={[TEXT_A]} externalOpen passage={own()} />)
     const f = await passageFrame()
     fireEvent.load(f)
+    await painted()
     expect(document.activeElement).toBe(f)
   })
 
@@ -91,11 +94,13 @@ describe('BillTextPanel: a claim\'s passage on the page bill\'s own text', () =>
     const { rerender } = render(<BillTextPanel billId="a100" texts={[TEXT_A]} externalOpen passage={own(1)} />)
     const first = await passageFrame()
     fireEvent.load(first)
+    await painted()
     first.blur()
     rerender(<BillTextPanel billId="a100" texts={[TEXT_A]} externalOpen passage={own(2)} />)
     // A new frame for the new request, so its load moves focus again.
     await waitFor(() => expect(frame()).not.toBe(first))
     fireEvent.load(frame())
+    await painted()
     expect(document.activeElement).toBe(frame())
   })
 
@@ -106,6 +111,7 @@ describe('BillTextPanel: a claim\'s passage on the page bill\'s own text', () =>
     fireEvent.load(f)
     fireEvent.load(f)
     fireEvent.load(f)
+    await painted()
     expect(vi.mocked(claimLinks.focusPassage).mock.calls.length + vi.mocked(claimLinks.scrollToPassage).mock.calls.length).toBe(1)
   })
 
@@ -113,12 +119,14 @@ describe('BillTextPanel: a claim\'s passage on the page bill\'s own text', () =>
     const { rerender } = render(<BillTextPanel billId="a100" texts={[TEXT_A]} externalOpen passage={own()} />)
     const first = await passageFrame()
     fireEvent.load(first)
+    await painted()
     rerender(<BillTextPanel billId="a100" texts={[TEXT_A]} externalOpen={false} passage={own()} />)
     await waitFor(() => expect(screen.queryByTitle(/^Bill text/)).toBeNull())
     rerender(<BillTextPanel billId="a100" texts={[TEXT_A]} externalOpen passage={own()} />)
     const reopened = await passageFrame()
     expect(reopened).not.toBe(first)
     fireEvent.load(reopened)
+    await painted()
     expect(claimLinks.scrollToPassage).toHaveBeenCalledWith(reopened)
     expect(vi.mocked(claimLinks.focusPassage).mock.calls.map(c => c[0])).toEqual([first])
   })
@@ -128,14 +136,16 @@ describe('BillTextPanel: a claim\'s passage on the page bill\'s own text', () =>
     const page = (open: boolean) => <><button>Bill texts</button><BillTextPanel billId="a100" texts={[TEXT_A]} externalOpen={open} passage={own()} /></>
     const { rerender } = render(page(true))
     fireEvent.load(await passageFrame())
+    await painted()
     rerender(page(false))
     await waitFor(() => expect(screen.queryByTitle(/^Bill text/)).toBeNull())
     const toggle = screen.getByRole('button', { name: 'Bill texts' })
     toggle.focus()
     rerender(page(true))
     const reopened = await passageFrame()
-    // The frame's own load sends it to the passage (jsdom may fire it unprompted).
-    if (!vi.mocked(claimLinks.scrollToPassage).mock.calls.some(c => c[0] === reopened)) fireEvent.load(reopened)
+    // The frame's own load sends it to the passage once it has painted.
+    fireEvent.load(reopened)
+    await painted()
     expect(claimLinks.scrollToPassage).toHaveBeenCalledWith(reopened)
     reopened.focus()  // the browser, loading the frame at the passage
     fireEvent.load(reopened)  // the load that going there causes
@@ -146,8 +156,41 @@ describe('BillTextPanel: a claim\'s passage on the page bill\'s own text', () =>
     render(<><button>Elsewhere</button><BillTextPanel billId="a100" texts={[TEXT_A]} externalOpen passage={own()} /></>)
     const f = await passageFrame()
     fireEvent.load(f)
+    await painted()
     fireEvent.load(f)
     expect(document.activeElement).toBe(f)
+  })
+
+  // Desktop Safari paints nothing in a frame sent to the passage before it has
+  // painted once, until the reader scrolls it. So the panel waits two frames.
+  describe('waiting for the frame to paint', () => {
+    let queued: FrameRequestCallback[]
+    const nextFrame = () => { queued.splice(0).forEach(cb => cb(0)) }
+    beforeEach(() => {
+      queued = []
+      vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => queued.push(cb))
+    })
+
+    it('goes to the passage only after the frame has had two animation frames', async () => {
+      render(<BillTextPanel billId="a100" texts={[TEXT_A]} externalOpen passage={own()} />)
+      const f = await passageFrame()
+      fireEvent.load(f)
+      expect(claimLinks.focusPassage).not.toHaveBeenCalled()
+      nextFrame()
+      expect(claimLinks.focusPassage).not.toHaveBeenCalled()
+      nextFrame()
+      expect(claimLinks.focusPassage).toHaveBeenCalledWith(f)
+    })
+
+    it('leaves alone a frame that is gone before then', async () => {
+      const { unmount } = render(<BillTextPanel billId="a100" texts={[TEXT_A]} externalOpen passage={own()} />)
+      fireEvent.load(await passageFrame())
+      unmount()
+      nextFrame()
+      nextFrame()
+      expect(claimLinks.focusPassage).not.toHaveBeenCalled()
+      expect(claimLinks.scrollToPassage).not.toHaveBeenCalled()
+    })
   })
 
   it('goes back to the plain text, and lets the highlight go, when the reader picks another version', async () => {

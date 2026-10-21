@@ -198,7 +198,7 @@ describe('claim links on a bill showing its own analysis', () => {
     await user.keyboard('{Enter}')
     const f = await passageFrame()
     fireEvent.load(f)
-    expect(f).toHaveFocus()
+    await waitFor(() => expect(f).toHaveFocus())
     expect(f.getAttribute('srcdoc')).toContain(`id="${PASSAGE_ID}"`)
   })
 
