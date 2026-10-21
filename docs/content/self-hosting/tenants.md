@@ -587,7 +587,7 @@ Before you answer it prints exactly what it would send, and if you say yes it pr
 - `step` is the script's name for the step the run ended on, such as `verify`, `bind`, or `preflight`, never a number.
 - `version` is the date of your checkout's latest commit. It says how current your copy is, and it is a date rather than a commit hash so that a fork's own history can't be traced back to it.
 
-It never includes your slug, states, team name, admin name or email, Cloudflare account ID, or any URL. floorvote.org counts each report as these four fields and stores nothing else from it: no IP address, user agent, or country. Cloudflare, which hosts floorvote.org, sees the connection like any web host and may keep its own short-lived request logs.
+It never includes your slug, states, team name, admin name or email, Cloudflare account ID, or any URL. The counter stores only these four fields: no IP address, user agent, or country. Cloudflare, which hosts floorvote.org, sees the connection like any web host, and its request logs may hold connection details for a short time.
 
 The script sends nothing unless you agree:
 

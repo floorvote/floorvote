@@ -52,10 +52,11 @@
 # Optional, anonymous setup report: before it preflights, the script asks once
 # (default No) whether to send floorvote.org four fields when the run ends: that
 # setup passed verification, or the step that failed. It prints the exact payload
-# first. Set FLOORVOTE_INSTALL_PING=yes or no (in the environment or scripts/.env.ops)
-# to answer without being asked. With no terminal on stdin the answer is no, unless
-# FLOORVOTE_INSTALL_PING is set to yes, and --preflight-only never reports. A
-# report that fails to send never changes the run's result. See "The optional setup report" in docs/content/self-hosting/tenants.md.
+# first. Set FLOORVOTE_INSTALL_PING=yes or no (in the environment or
+# scripts/.env.ops) to answer without being asked. With no terminal on stdin the
+# answer is no, unless FLOORVOTE_INSTALL_PING is set to yes, and --preflight-only
+# never reports. A report that fails to send never changes the run's result. See
+# "The optional setup report" in docs/content/self-hosting/tenants.md.
 #
 # After the script completes, the only manual step is verifying the custom domain
 # (printed at the end). Bills begin flowing on the next central full-sync pass

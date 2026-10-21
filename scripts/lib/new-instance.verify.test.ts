@@ -544,9 +544,9 @@ describe('new-instance.sh, anonymous setup report: it never gets in the way', ()
     const { code, out } = await run.done
     // The script's own INT handling ends the run with 130. Without it, bash 3.2 (macOS) dies of the
     // signal (no exit code), and bash 5 carries on when the tool exits 1 on its own, which reports failed.
-    expect(code).toBe(130)
-    expect(out).not.toContain('tenant_setup')
     expect(installEvent.posts).toHaveLength(0)
+    expect(out).not.toContain('tenant_setup')
+    expect(code).toBe(130)
   }, 60_000)
 
   it.each([
