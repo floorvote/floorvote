@@ -35,3 +35,23 @@ describe('truncateWithEllipsis', () => {
     expect(truncateWithEllipsis('ab cdef', 3)).toBe('ab…')
   })
 })
+
+describe('groupEventsByBillAndDay: the new-match flag', () => {
+  it('carries a bill\'s untriaged-new-match flag onto its group', () => {
+    const [g] = groupEventsByBillAndDay([{ ...ev('a', 'b1', '2026-06-06 09:00:00'), billNewMatch: true }])
+    expect(g.billNewMatch).toBe(true)
+  })
+
+  it('reads an event with no flag as not a new match', () => {
+    const [g] = groupEventsByBillAndDay([ev('a', 'b1', '2026-06-06 09:00:00')])
+    expect(g.billNewMatch).toBe(false)
+  })
+
+  it('gives a companion group\'s card the flag of its events', () => {
+    const [g] = groupEventsByBillAndDay([
+      { ...ev('a', 'b1', '2026-06-06 09:00:00'), billGroupKey: 'b1', billNewMatch: true },
+      { ...ev('b', 'b2', '2026-06-06 10:00:00'), billGroupKey: 'b1', billNewMatch: true },
+    ])
+    expect(g.billNewMatch).toBe(true)
+  })
+})
