@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { expectNotAmber } from '../test/amberStyle'
@@ -196,11 +196,11 @@ describe('Sidebar vote live region', () => {
 describe('Sidebar priority select', () => {
   beforeEach(() => { hoisted.voteShouldFail = false; hoisted.role = 'admin' })
 
-  it('lists "Set priority" first, then the three priorities, and no Dismiss', async () => {
+  it('lists "No priority" first, then the three priorities, and no Dismiss', async () => {
     const { root } = renderSidebar()
     const select = await screen.findByRole('combobox', { name: /priority/i })
-    const labels = Array.from(select.querySelectorAll('option')).map(o => o.textContent)
-    expect(labels).toEqual(['Set priority', 'High Priority', 'Medium Priority', 'Low Priority'])
+    const labels = within(select).getAllByRole('option').map(o => o.textContent)
+    expect(labels).toEqual(['No priority', 'High Priority', 'Medium Priority', 'Low Priority'])
     expect(select).toHaveDisplayValue('High Priority')
     expect(screen.queryByText('Not set')).toBeNull()
     root.remove()

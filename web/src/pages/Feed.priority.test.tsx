@@ -137,7 +137,7 @@ describe('Feed: choosing a priority updates the card in place', () => {
   it('clearing the priority shows "Set priority" again', async () => {
     apiFetchMock.mockResolvedValue({ priority: null })
     renderFeed([ev({ id: 'e1', billPriority: 'medium' })])
-    fireEvent.change(sel(), { target: { value: '' } })
+    fireEvent.change(sel(), { target: { value: '__none__' } })
     await waitFor(() => expect(sel()).toHaveDisplayValue('Set priority'))
     expect(apiFetchMock).toHaveBeenCalledWith('/bills/b1/priority', { method: 'PATCH', body: JSON.stringify({ priority: null }) })
   })
@@ -149,7 +149,7 @@ describe('Feed: choosing a priority updates the card in place', () => {
       id: 'e1', type: 'bill_updated', billPriority: 'high',
       metadata: { changes: [{ changeType: 'action_added', newValue: 'Referred to committee' }] },
     })])
-    fireEvent.change(sel(), { target: { value: '' } })
+    fireEvent.change(sel(), { target: { value: '__none__' } })
     await waitFor(() => expect(sel()).toHaveDisplayValue('Set priority'))
     expect(screen.getByText('Mail Ballot Rules')).toBeInTheDocument()
   })
@@ -244,7 +244,7 @@ describe('Feed: clearing a priority on a plain bill', () => {
   it('a plain bill stays plain when its priority is cleared', async () => {
     apiFetchMock.mockResolvedValue({ priority: null })
     renderFeed([ev({ id: 'e1', billPriority: 'medium', billNewMatch: false })])
-    fireEvent.change(sel(), { target: { value: '' } })
+    fireEvent.change(sel(), { target: { value: '__none__' } })
     await waitFor(() => expect(sel()).toHaveDisplayValue('Set priority'))
     expectNotAmber(sel())
   })
@@ -282,7 +282,7 @@ describe('Feed: a card an admin cleared stays through a poll and goes after a sc
   it('keeps the edited card when a poll brings new activity', async () => {
     apiFetchMock.mockResolvedValue({ priority: null })
     renderFeed([passiveOnly({ billPriority: 'high' })])
-    fireEvent.change(sel(), { target: { value: '' } })
+    fireEvent.change(sel(), { target: { value: '__none__' } })
     await waitFor(() => expect(sel()).toHaveDisplayValue('Set priority'))
     // The server now has no priority on the bill and a newer provider update on it.
     apiFetchMock.mockResolvedValue({
@@ -297,7 +297,7 @@ describe('Feed: a card an admin cleared stays through a poll and goes after a sc
     const reply = { events: [passiveOnly()], total: 1, page: 1, limit: 40 }
     apiFetchMock.mockImplementation(async (path: string) => path.startsWith('/feed') ? reply : { priority: null })
     renderFeed([passiveOnly({ billPriority: 'high' })])
-    fireEvent.change(sel(), { target: { value: '' } })
+    fireEvent.change(sel(), { target: { value: '__none__' } })
     await waitFor(() => expect(sel()).toHaveDisplayValue('Set priority'))
     expect(screen.getByText('Mail Ballot Rules')).toBeInTheDocument()
 

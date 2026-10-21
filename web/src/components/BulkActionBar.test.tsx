@@ -86,6 +86,40 @@ describe('BulkActionBar single-select pills', () => {
   })
 })
 
+describe('BulkActionBar: the empty choice in the priority and position menus', () => {
+  const positionPill = () => screen.getByRole('button', { name: /Position:/i })
+  const radioLabels = () => screen.getAllByRole('radio').map(r => r.closest('label')?.textContent ?? r.getAttribute('aria-label'))
+
+  it('names the empty priority choice "No priority", not "Not set"', () => {
+    render(<Harness />)
+    fireEvent.click(priorityPill())
+    expect(screen.getByText('No priority')).toBeInTheDocument()
+    expect(radioLabels()).toEqual(['No priority', 'High', 'Medium', 'Low'])
+    expect(radioLabels()).not.toContain('Not set')
+  })
+
+  it('names the empty position choice "No position", not "Not set"', () => {
+    render(<Harness />)
+    fireEvent.click(positionPill())
+    expect(radioLabels()).toEqual(['No position', 'Support', 'Oppose'])
+  })
+
+  it('staging "No priority" on a prioritized bill queues a clear', () => {
+    render(<Harness selectedBills={[{ id: 'bill-1', priority: 'high', position: null }]} />)
+    fireEvent.click(priorityPill())
+    fireEvent.click(screen.getByText('No priority'))
+    expect(screen.getByTitle('Undo Priority change')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Apply to 1 bill/i })).toBeEnabled()
+  })
+
+  it('staging "No position" on a bill with a position queues a clear', () => {
+    render(<Harness selectedBills={[{ id: 'bill-1', priority: null, position: 'Support' }]} />)
+    fireEvent.click(positionPill())
+    fireEvent.click(screen.getByText('No position'))
+    expect(screen.getByTitle('Undo Position change')).toBeInTheDocument()
+  })
+})
+
 describe('BulkActionBar — dismiss new matches', () => {
   const dismissBtn = () => screen.queryByRole('button', { name: /Dismiss new matches/i })
 

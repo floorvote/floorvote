@@ -88,7 +88,7 @@ describe('BillRow: an admin sees a new match as an amber state of the priority d
     renderRow(true, NEW_MATCH)
     expect(screen.queryByRole('button', { name: /dismiss/i })).toBeNull()
     for (const s of prioritySelects()) {
-      expect(optionLabels(s)).toEqual(['New · Set priority', 'High Priority', 'Medium Priority', 'Low Priority', 'Dismiss (reviewed, no priority)'])
+      expect(optionLabels(s)).toEqual(['No priority', 'High Priority', 'Medium Priority', 'Low Priority', 'Dismiss (reviewed, no priority)'])
     }
   })
 
@@ -136,7 +136,7 @@ describe('BillRow: an admin sees a new match as an amber state of the priority d
     for (const s of prioritySelects()) {
       expectNotAmber(s)
       expect(optionLabels(s)).not.toContain('Dismiss (reviewed, no priority)')
-      expect(optionLabels(s)[0]).toBe('Set priority')
+      expect(optionLabels(s)[0]).toBe('No priority')
     }
   })
 })
@@ -161,7 +161,7 @@ describe('BillRow: a bill that is not a new match', () => {
     renderRow(true, { matchType: 'manual' })
     for (const s of prioritySelects()) {
       expect(s).toHaveDisplayValue('Set priority')
-      expect(optionLabels(s)).toEqual(['Set priority', 'High Priority', 'Medium Priority', 'Low Priority'])
+      expect(optionLabels(s)).toEqual(['No priority', 'High Priority', 'Medium Priority', 'Low Priority'])
     }
   })
 

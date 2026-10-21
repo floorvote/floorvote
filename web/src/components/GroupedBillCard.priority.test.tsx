@@ -95,7 +95,7 @@ describe('GroupedBillCard priority control: an admin', () => {
   it('clearing the priority PATCHes null and reports null', async () => {
     apiFetchMock.mockResolvedValue({ priority: null, promoted: false })
     const { onPriorityChange } = renderCard(makeGroup({ billPriority: 'low' }), { isAdmin: true })
-    fireEvent.change(select(), { target: { value: '' } })
+    fireEvent.change(select(), { target: { value: '__none__' } })
     await waitFor(() => expect(onPriorityChange).toHaveBeenCalledWith(null))
     expect(apiFetchMock).toHaveBeenCalledWith('/bills/bill-1/priority', { method: 'PATCH', body: JSON.stringify({ priority: null }) })
   })
@@ -128,7 +128,7 @@ describe('GroupedBillCard priority control: an untriaged new match', () => {
     renderCard(makeGroup(NEW), { isAdmin: true })
     expect(select()).toHaveDisplayValue('New · Set priority')
     expectAmber(select())
-    expect(optionLabels(select())).toEqual(['New · Set priority', 'High Priority', 'Medium Priority', 'Low Priority', 'Dismiss (reviewed, no priority)'])
+    expect(optionLabels(select())).toEqual(['No priority', 'High Priority', 'Medium Priority', 'Low Priority', 'Dismiss (reviewed, no priority)'])
   })
 
   it('Dismiss triages the bill, reports it, and announces it, without setting a priority', async () => {

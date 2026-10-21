@@ -378,7 +378,7 @@ describe('BillDetail: a new match as a state of the priority dropdown', () => {
     const select = await screen.findByRole('combobox', { name: /priority/i })
     expect(select).toHaveDisplayValue('New · Set priority')
     expectAmber(select)
-    expect(optionLabels(select)).toEqual(['New · Set priority', 'High Priority', 'Medium Priority', 'Low Priority', 'Dismiss (reviewed, no priority)'])
+    expect(optionLabels(select)).toEqual(['No priority', 'High Priority', 'Medium Priority', 'Low Priority', 'Dismiss (reviewed, no priority)'])
     expect(screen.queryByRole('button', { name: /dismiss/i })).toBeNull()
   })
 
@@ -404,7 +404,7 @@ describe('BillDetail: a new match as a state of the priority dropdown', () => {
     expect(paths(spy).filter(p => p.endsWith('/priority'))).toEqual([])
     const after = screen.getByRole('combobox', { name: /priority/i })
     expectNotAmber(after)
-    expect(optionLabels(after)).toEqual(['Set priority', 'High Priority', 'Medium Priority', 'Low Priority'])
+    expect(optionLabels(after)).toEqual(['No priority', 'High Priority', 'Medium Priority', 'Low Priority'])
   })
 
   it('announces a successful Dismiss in a polite live region', async () => {
@@ -428,7 +428,7 @@ describe('BillDetail: a new match as a state of the priority dropdown', () => {
     renderBillDetail({ demoLocked: false, overrides: { matchType: 'manual' } })
     const select = await screen.findByRole('combobox', { name: /priority/i })
     expect(select).toHaveDisplayValue('Set priority')
-    expect(optionLabels(select)).toEqual(['Set priority', 'High Priority', 'Medium Priority', 'Low Priority'])
+    expect(optionLabels(select)).toEqual(['No priority', 'High Priority', 'Medium Priority', 'Low Priority'])
     expect(screen.queryByText('Priority not set')).toBeNull()
   })
 
