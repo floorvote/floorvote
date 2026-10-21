@@ -63,7 +63,7 @@ export function MuteBillLink() {
         <p style={styles.body}>
           You won't be notified of new comments on <strong>{muted.billNumber}</strong>. Mentions still reach you.
         </p>
-        <p style={styles.body}>To unmute, open the bill and choose Unmute comments.</p>
+        <p style={styles.body}>To unmute, open the bill and select “Unmute comments.”</p>
         <a href={muted.billPath} className="blue-link" style={styles.link}>Open the bill</a>
       </Card>
     )

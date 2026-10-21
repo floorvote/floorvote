@@ -52,7 +52,7 @@ const MODULES: Record<string, DemoSeedModule> = {
 export const LM_ORG = {
   associationName: 'Lake Michigan Alliance',
   bannerText:
-    'Demo instance. The bills are real legislation from Michigan, Wisconsin, Illinois, Indiana, and ' +
+    'This is a demo. The bills are real legislation from Michigan, Wisconsin, Illinois, Indiana, and ' +
     'Congress — the organization, its staff, the hearing dates, and the most recent legislative ' +
     'activity are fictional. Anything you change resets every few hours.',
   orgNoun: 'alliance',

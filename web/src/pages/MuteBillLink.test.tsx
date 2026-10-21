@@ -50,6 +50,7 @@ describe('MuteBillLink', () => {
     expect(await screen.findByRole('heading', { name: 'Comments Muted' })).toBeInTheDocument()
     expect(screen.getByText(/HB 1/)).toBeInTheDocument()
     expect(screen.getByText(/mentions still reach you/i)).toBeInTheDocument()
+    expect(screen.getByText('To unmute, open the bill and select “Unmute comments.”')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /open the bill/i })).toHaveAttribute('href', '/RI/2026/HB 1')
     expect(posts(spy)).toEqual([['/mute-link', { method: 'POST', body: JSON.stringify({ token: 'abc.def' }) }]])
   })

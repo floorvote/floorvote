@@ -48,6 +48,9 @@ describe('lake-michigan seed registration', () => {
     // not be surprised by an action that never happened.
     expect(b).toContain('the organization, its staff, the hearing dates, and the most recent legislative activity are fictional')
     expect(b).toMatch(/resets every few hours/i)
+    // Member-facing copy never says "instance".
+    expect(b.startsWith('This is a demo.')).toBe(true)
+    expect(b).not.toMatch(/instance/i)
   })
 
   it('ships no keyword that is empty or duplicated', () => {
