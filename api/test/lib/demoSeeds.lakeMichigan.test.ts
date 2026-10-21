@@ -3,7 +3,10 @@ import { env } from 'cloudflare:test'
 import { clearDb, seedBill } from '../helpers'
 import { runDemoReset } from '../../src/lib/demoReset'
 import { DEMO_SEEDS, resolveDemoSeed } from '../../src/lib/demoSeeds'
-import { LM_BILLS, LM_COMPANION_BILLS, LM_HEARING_CHANGE_SOURCES, LM_HEARING_NOTICE_SOURCES } from '../../src/lib/demoSeeds/lakeMichigan/bills'
+import {
+  LM_BILLS, LM_BILL_UPDATED_EVENTS, LM_COMPANION_BILLS, LM_HEARING_CHANGE_SOURCES, LM_HEARING_NOTICE_SOURCES,
+  LM_RECENT_ACTIVITY_EVENTS,
+} from '../../src/lib/demoSeeds/lakeMichigan/bills'
 import {
   stripHtml, truncateWithEllipsis, COMMENT_PREVIEW_MAX, PASSIVE_EVENT_TYPES, type FeedEvent,
 } from '../../../shared/feedUtils'
@@ -307,6 +310,22 @@ describe('lake-michigan derived feed events', () => {
       const notice = s.feedEvents.find(x => x.id === noticeOf.get(cal!.id))
       expect(notice, `${e.id} needs a notice for ${cal!.id}`).toBeDefined()
       expect(notice!.daysAgo, `${e.id} lands before its notice`).toBeGreaterThan(e.daysAgo)
+    }
+  })
+
+  it('moves no action into the recent window that the bill history already reports', () => {
+    // LM_BILL_UPDATED_EVENTS is the real record. Reporting one of its actions again
+    // at a recent date shows the bill doing the same thing twice, months apart,
+    // while its actions tab lists it once. Containment catches a shortened copy as
+    // well as an exact one.
+    const norm = (v: string | null) => (v ?? '').toLowerCase().replace(/\s+/g, ' ').replace(/[.\s]+$/, '')
+    const actionsOf = (evs: typeof LM_BILL_UPDATED_EVENTS) => evs.flatMap(e =>
+      (e.metadata as { changes: Array<{ changeType: string; newValue: string | null }> }).changes
+        .filter(c => c.changeType === 'action_added').map(c => ({ id: e.id, bill: e.externalId, action: norm(c.newValue) })))
+    const history = actionsOf(LM_BILL_UPDATED_EVENTS)
+    for (const r of actionsOf(LM_RECENT_ACTIVITY_EVENTS)) {
+      const copy = history.find(h => h.bill === r.bill && (h.action.includes(r.action) || r.action.includes(h.action)))
+      expect(copy, `${r.id} "${r.action}" repeats ${copy?.id}`).toBeUndefined()
     }
   })
 

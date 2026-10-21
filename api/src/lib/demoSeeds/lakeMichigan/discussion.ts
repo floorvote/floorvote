@@ -680,6 +680,9 @@ const usHb6668: DemoSeedComment[] = [
     content: "<p>Some of this may already be covered by the EPA's own PFAS rule. If so, part of the bill is redundant.</p>", daysAgo: 9 },
   { id: 'lm-c-88', externalId: 'legiscan:2058690', userId: 'demo-user',
     content: '<p><span data-type="mention" data-id="role:lm-role-contam" data-label="Contaminants">@Contaminants</span> can you sort out how this interacts with the EPA\'s existing PFAS rule before we take a position?</p>', daysAgo: 4 },
+  // Answers the hearing notice (lm-fe-h-us-hb6668, daysAgo 2), and lm-c-88 above.
+  { id: 'lm-c-105', externalId: 'legiscan:2058690', userId: 'lm-user-dep',
+    content: "<p>It's on the same subcommittee hearing as HB284. I'll have the EPA rule answer before then.</p>", daysAgo: 1 },
 ]
 
 const usHb6668Reactions: DemoSeedReaction[] = [

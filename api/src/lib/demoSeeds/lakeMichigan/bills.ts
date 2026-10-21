@@ -226,12 +226,13 @@ export const LM_CALENDAR_EVENTS: DemoSeedCalendarEvent[] = [
   { id: 'lm-hearing-4', externalId: 'legiscan:1906052', source: 'hearing', offsetDays: 13, time: '10:00:00', location: 'Illinois State Capitol, Room 118, Springfield', description: 'House Energy & Environment Committee — hearing' },
   { id: 'lm-hearing-5', externalId: 'legiscan:2061476', source: 'hearing', offsetDays: 18, time: '10:00:00', location: 'Indiana Statehouse, Room 156-B, Indianapolis', description: 'House Public Health Committee — hearing' },
   { id: 'lm-hearing-6', externalId: 'legiscan:2150744', source: 'hearing', offsetDays: 26, time: '10:00:00', location: 'Rayburn House Office Building, Washington DC', description: 'Subcommittee on Water, Wildlife and Fisheries — hearing' },
-  // One legislative hearing taking up two bills, as a subcommittee often does: US
-  // HB284 and HB583 were both really referred to Water Resources and Environment in
-  // January 2025, and neither has moved since. Two rows because a calendar row
+  // One legislative hearing taking up three bills, as a subcommittee often does: US
+  // HB284, HB583, and HB6668 were all really referred to Water Resources and
+  // Environment, and none has moved since. One row per bill because a calendar row
   // names one bill.
   { id: 'lm-hearing-7', externalId: 'legiscan:1910159', source: 'hearing', offsetDays: 11, time: '10:00:00', location: 'Rayburn House Office Building, Room 2167, Washington DC', description: 'Subcommittee on Water Resources and Environment — hearing' },
   { id: 'lm-hearing-8', externalId: 'legiscan:1933798', source: 'hearing', offsetDays: 11, time: '10:00:00', location: 'Rayburn House Office Building, Room 2167, Washington DC', description: 'Subcommittee on Water Resources and Environment — hearing' },
+  { id: 'lm-hearing-9', externalId: 'legiscan:2058690', source: 'hearing', offsetDays: 11, time: '10:00:00', location: 'Rayburn House Office Building, Room 2167, Washington DC', description: 'Subcommittee on Water Resources and Environment — hearing' },
 
   { id: 'lm-event-1', externalId: null, source: 'custom', offsetDays: -5, time: null, location: 'Zoom', description: 'Monthly all-staff call' },
   { id: 'lm-event-2', externalId: 'legiscan:2055958', source: 'custom', offsetDays: 3, time: '17:00:00', location: null, description: 'Testimony deadline — MI HB5308 (watercraft invasive species decals)' },
@@ -563,9 +564,10 @@ const LM_HEARING_NOTICES: Array<{ eventId: string; calendarId: string; daysAgo: 
   // Ahead of the testimony thread (lm-c-1, daysAgo 33), which is planning for it.
   { eventId: 'lm-fe-h-mi-hb4427', calendarId: 'lm-hearing-1', daysAgo: 34 },
   // After HB284's own thread asks when it will move (lm-c-74, lm-c-75), and ahead of
-  // the replies to the notice (lm-c-103, lm-c-104).
+  // the replies to the notice (lm-c-103, lm-c-104, lm-c-105).
   { eventId: 'lm-fe-h-us-hb284', calendarId: 'lm-hearing-7', daysAgo: 2 },
   { eventId: 'lm-fe-h-us-hb583', calendarId: 'lm-hearing-8', daysAgo: 2 },
+  { eventId: 'lm-fe-h-us-hb6668', calendarId: 'lm-hearing-9', daysAgo: 2 },
   // Three days ahead of the hearing itself (lm-hearing-past-2, 6 days ago), which
   // lm-c-53 reports on that day.
   { eventId: 'lm-fe-h-il-hb5268', calendarId: 'lm-hearing-past-2', daysAgo: 9 },
@@ -585,6 +587,9 @@ const LM_HEARING_CHANGES: Array<{ eventId: string; calendarId: string; daysAgo: 
   { eventId: 'lm-fe-hc-in-hb1124', calendarId: 'lm-hearing-5', daysAgo: 1, previousLocation: 'Indiana Statehouse, Room 156-C, Indianapolis' },
   { eventId: 'lm-fe-hc-mi-hb5308', calendarId: 'lm-hearing-2', daysAgo: 2, previousLocation: 'Binsfeld Office Building, Room 1300, Lansing' },
   { eventId: 'lm-fe-hc-mi-hb5674', calendarId: 'lm-hearing-3', daysAgo: 1, previousLocation: 'Anderson House Office Building, Room 521, Lansing' },
+  // These two stand in for re-dated copies of real actions (see LM_RECENT_ACTIVITY_EVENTS).
+  { eventId: 'lm-fe-hc-il-hb1175', calendarId: 'lm-hearing-4', daysAgo: 12, previousLocation: 'Illinois State Capitol, Room 114, Springfield' },
+  { eventId: 'lm-fe-hc-us-hb8876', calendarId: 'lm-hearing-6', daysAgo: 2, previousLocation: 'Longworth House Office Building, Washington DC' },
 ]
 
 export const LM_HEARING_CHANGE_SOURCES: ReadonlyArray<{ eventId: string; calendarId: string; previousLocation: string }> =
@@ -666,57 +671,21 @@ export const LM_ENGAGEMENT_EVENTS: DemoSeedFeedEvent[] = [
 // If the manifest is ever refreshed with newer real actions, delete this block
 // rather than growing it.
 export const LM_RECENT_ACTIVITY_EVENTS: DemoSeedFeedEvent[] = [
-  // MI HB5308 — Invasive Species, Engrossed, so second-chamber committee work.
-  { id: 'lm-fe-r-mi-hb5308-2', type: 'bill_updated', externalId: 'legiscan:2055958', userId: 'system', daysAgo: 12, metadata: { changes: [
-    chg('action_added', { newValue: 'Referred To Committee On Natural Resources And Agriculture' }),
-  ] } },
+  // None of these repeats an action LM_BILL_UPDATED_EVENTS already reports for its
+  // bill (a seed test holds that): a copy at a recent date shows the bill doing the
+  // same thing twice, months apart. Where a bill's thread needs recent activity and
+  // its record has nothing new, it gets a hearing notice or a hearing change from
+  // its calendar row instead (LM_HEARING_NOTICES, LM_HEARING_CHANGES).
 
   // MI SB0771 — Septic & Wastewater, still Introduced; committee activity only.
   { id: 'lm-fe-r-mi-sb0771-1', type: 'bill_updated', externalId: 'legiscan:2095619', userId: 'system', daysAgo: 27, metadata: { changes: [
     chg('action_added', { newValue: 'Committee Hearing Held' }),
     chg('action_added', { newValue: 'Substitute S-2 Offered' }),
   ] } },
-
-  // IN HB1124 — Drinking Water, Introduced; Indiana reads bills by number.
-
-  // US HB8876 — Invasive Species, Introduced; federal committee referral.
-  { id: 'lm-fe-r-us-hb8876-1', type: 'bill_updated', externalId: 'legiscan:2150744', userId: 'system', daysAgo: 6, metadata: { changes: [
-    chg('action_added', { newValue: 'Referred to the Subcommittee on Water, Wildlife and Fisheries' }),
-  ] } },
-
-  // IL HB5268 — Water Withdrawal, Introduced; IL uses committee deadlines.
-
-  // MI HB5674 — Drinking Water, Introduced.
-  { id: 'lm-fe-r-mi-hb5674-1', type: 'bill_updated', externalId: 'legiscan:2129983', userId: 'system', daysAgo: 3, metadata: { changes: [
-    chg('action_added', { newValue: 'Referred To Committee On Government Operations' }),
-  ] } },
-
-  // ── Top-of-feed coverage ───────────────────────────────────────────────────
-  // The six bills a visitor meets first are the ones carrying the newest
-  // comments: MI HB4427, MI SB0771, IL HB1175, IN HB1124, MI HB5308 and US
-  // HB8876. Without these, five of the six showed only social activity above the
-  // fold, and the feed read as a comment stream rather than as legislation and
-  // reaction interleaved — the single thing this view exists to demonstrate.
-  // Each entry below continues that bill's own sequence rather than contradicting
-  // it, and none claims a roll call.
-
-  // MI HB4427 — Engrossed, sitting in Senate Local Government per its real history.
-
-  // IL HB1175 — still Introduced; a Rules re-referral moves nothing, which suits
-  // a bill the manifest never advances out of that bucket.
-  { id: 'lm-fe-r-il-hb1175-1', type: 'bill_updated', externalId: 'legiscan:1906052', userId: 'system', daysAgo: 12, metadata: { changes: [
-    chg('action_added', { newValue: 'Re-referred to Rules Committee' }),
-  ] } },
-
-  // MI SB0771 — follows lm-fe-r-mi-sb0771-1 (hearing held, substitute offered) at day 5.
+  // Follows lm-fe-r-mi-sb0771-1. Its placement on third reading is in the real
+  // history already (lm-fe-u-mi-sb0771-2), so only the adoption is reported here.
   { id: 'lm-fe-r-mi-sb0771-2', type: 'bill_updated', externalId: 'legiscan:2095619', userId: 'system', daysAgo: 24, metadata: { changes: [
     chg('action_added', { newValue: 'Substitute S-2 Adopted' }),
-    chg('action_added', { newValue: 'Placed On Order Of Third Reading With Substitute (s-2)' }),
-  ] } },
-
-  // US HB8876 — follows lm-fe-r-us-hb8876-1 (subcommittee referral) at day 6.
-  { id: 'lm-fe-r-us-hb8876-2', type: 'bill_updated', externalId: 'legiscan:2150744', userId: 'system', daysAgo: 2, metadata: { changes: [
-    chg('action_added', { newValue: 'Subcommittee Hearings Held' }),
   ] } },
 
   // MI HB4768 — Drinking Water, Introduced.
@@ -724,16 +693,10 @@ export const LM_RECENT_ACTIVITY_EVENTS: DemoSeedFeedEvent[] = [
     chg('action_added', { newValue: 'Referred To Committee On Regulatory Reform' }),
   ] } },
 
-  // US HB6668 — PFAS, Introduced.
-  { id: 'lm-fe-r-us-hb6668-1', type: 'bill_updated', externalId: 'legiscan:2058690', userId: 'system', daysAgo: 4, metadata: { changes: [
-    chg('action_added', { newValue: 'Referred to the Subcommittee on Water Resources and Environment.' }),
-  ] } },
-
   // ── Activity between the discussion cards ──────────────────────────────────
-  // Coverage above put activity on the cards that also carry comments. These give
-  // the feed cards that are activity alone, on days nobody commented, the way bills
-  // move in a real session. Both are SB528's own latest real actions, verbatim,
-  // moved into the window like the rest of this block.
+  // These give the feed cards that are activity alone, on days nobody commented,
+  // the way bills move in a real session. Both are SB528's own latest real actions,
+  // verbatim, moved into the window; neither is in LM_BILL_UPDATED_EVENTS.
 
   // US SB528 — HB284's Senate companion, so the feed shows these on HB284's card. It
   // really did pass the Senate by unanimous consent and is held at the House desk,
