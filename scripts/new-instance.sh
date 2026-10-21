@@ -53,9 +53,9 @@
 # (default No) whether to send floorvote.org four fields when the run ends: that
 # setup passed verification, or the step that failed. It prints the exact payload
 # first. Set FLOORVOTE_INSTALL_PING=yes or no (in the environment or scripts/.env.ops)
-# to answer without being asked. With no terminal on stdin the answer is no, and
-# --preflight-only never reports. A report that fails to send never changes the
-# run's result. See "The optional setup report" in docs/content/self-hosting/tenants.md.
+# to answer without being asked. With no terminal on stdin the answer is no, unless
+# FLOORVOTE_INSTALL_PING is set to yes, and --preflight-only never reports. A
+# report that fails to send never changes the run's result. See "The optional setup report" in docs/content/self-hosting/tenants.md.
 #
 # After the script completes, the only manual step is verifying the custom domain
 # (printed at the end). Bills begin flowing on the next central full-sync pass
@@ -329,6 +329,9 @@ if [[ $PREFLIGHT_ONLY -eq 0 ]]; then
   fi
   # Ctrl-C (and a terminated run) is the operator stopping, not a failed setup.
   trap 'INSTALL_PING_INTERRUPTED=1; exit 130' INT
+  # Like INT, these wait for the step that is running before they take effect, so a plain `kill` aimed
+  # at this script alone doesn't stop it until that command ends. That is acceptable: Ctrl-C and closing
+  # the terminal signal the running command as well, which is how an operator stops a run.
   trap 'INSTALL_PING_INTERRUPTED=1; exit 143' TERM HUP
   trap on_exit EXIT
 fi

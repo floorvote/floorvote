@@ -251,7 +251,7 @@ function freshWork(opts: { commitDate?: string; bound?: boolean } = {}): string 
 
 /** Swap a branch of the fake wrangler (or add one) in a work dir. */
 function fakeWrangler(dir: string, from: string, to: string) {
-  fs.writeFileSync(path.join(dir, 'bin/npx'), FAKE_NPX.replace(from, to), { mode: 0o755 })
+  fs.writeFileSync(path.join(dir, 'bin/npx'), FAKE_NPX.replace(from, () => to), { mode: 0o755 })
 }
 
 const reported = (): any[] => installEvent.posts.map((p) => JSON.parse(p.body))
@@ -506,6 +506,15 @@ describe('new-instance.sh, anonymous setup report: it never gets in the way', ()
 
   // A fake wrangler whose `d1 create` waits for the test, so the run can be stopped mid-step.
   const BLOCKING_D1 = `"d1 create") touch "$FAKE_WORK/blocked"; while [[ ! -e "$FAKE_WORK/release" ]]; do /bin/sleep 0.1; done; echo "✘ [ERROR] stopped" >&2; exit 1 ;;`
+  // The same, but a node process that handles SIGINT itself and exits 1, as a node tool such as wrangler
+  // can. A shell fake would die of the signal and leave the script's own handling untested: here the
+  // script sees an ordinary failed step, so only its own INT handling keeps the report from going out.
+  const HANDLING_D1 = `"d1 create") exec node -e '
+    const fs = require("fs"), w = process.env.FAKE_WORK;
+    process.on("SIGINT", () => { console.error("✘ [ERROR] interrupted"); process.exit(1); });
+    fs.writeFileSync(w + "/wrangler.pid", String(process.pid));
+    fs.writeFileSync(w + "/blocked", "");
+    setInterval(() => {}, 1000);' ;;`
   const waitFor = async (file: string) => {
     for (let i = 0; i < 300 && !fs.existsSync(file); i++) await new Promise((r) => setTimeout(r, 50))
     expect(fs.existsSync(file)).toBe(true)
@@ -524,13 +533,18 @@ describe('new-instance.sh, anonymous setup report: it never gets in the way', ()
 
   it('sends nothing when the run is interrupted with Ctrl-C (SIGINT) mid-step', async () => {
     const dir = freshWork()
-    fakeWrangler(dir, `"d1 create") echo 'database_id = "db-123"' ;;`, BLOCKING_D1)
-    const run = startProvision([], undefined, dir, { ...YES, FLOORVOTE_INSTALL_PING_URL: reportUrl() }, true)
+    fakeWrangler(dir, `"d1 create") echo 'database_id = "db-123"' ;;`, HANDLING_D1)
+    const run = startProvision([], undefined, dir, { ...YES, FLOORVOTE_INSTALL_PING_URL: reportUrl() })
     await waitFor(path.join(dir, 'blocked'))
-    // Ctrl-C reaches the whole foreground process group, so signal the group.
-    process.kill(-run.child.pid!, 'SIGINT')
+    // Ctrl-C reaches the script and the tool it is waiting on. The script's log tee would get it too, and
+    // dying takes the script's own output with it, which hides what the script does next, so signal the
+    // two that matter and leave the tee alone.
+    process.kill(Number(fs.readFileSync(path.join(dir, 'wrangler.pid'), 'utf8')), 'SIGINT')
+    process.kill(run.child.pid!, 'SIGINT')
     const { code, out } = await run.done
-    expect(code).not.toBe(0)
+    // The script's own INT handling ends the run with 130. Without it, bash 3.2 (macOS) dies of the
+    // signal (no exit code), and bash 5 carries on when the tool exits 1 on its own, which reports failed.
+    expect(code).toBe(130)
     expect(out).not.toContain('tenant_setup')
     expect(installEvent.posts).toHaveLength(0)
   }, 60_000)
@@ -610,6 +624,10 @@ describe('new-instance.sh, anonymous setup report: documented', () => {
     expect(section).toContain('FLOORVOTE_INSTALL_PING')
     expect(section).toMatch(/\[y\/N\]|defaults? to (No|no)/)
     expect(section).toMatch(/slug/i)
+    // Says only what is checkable: no absolute about what the host records, and Cloudflare's own logs are named.
+    expect(section).not.toMatch(/doesn't log|does not log|nothing else is (ever )?recorded/i)
+    expect(section).toMatch(/Cloudflare/)
+    expect(section).toMatch(/request logs/i)
     expect(section).toMatch(/email/i)
     expect(section).toMatch(/account ID/i)
   })
@@ -628,5 +646,11 @@ describe('new-instance.sh, anonymous setup report: documented', () => {
   it('is mentioned in the script header, beside the other options', () => {
     const header = fs.readFileSync(path.join(repoRoot, 'scripts/new-instance.sh'), 'utf8').split('\nset -euo pipefail')[0]
     expect(header).toContain('FLOORVOTE_INSTALL_PING')
+  })
+
+  it('says, in the header and the docs, that no terminal means no question unless the variable is yes', () => {
+    const header = fs.readFileSync(path.join(repoRoot, 'scripts/new-instance.sh'), 'utf8').split('\nset -euo pipefail')[0]
+    expect(header.replace(/\s*\n#\s*/g, ' ')).toMatch(/no terminal on stdin the answer is no, unless FLOORVOTE_INSTALL_PING is (set to )?yes/)
+    expect(section).toMatch(/No terminal, no question\.\*\*[^\n]*unless[^\n]*FLOORVOTE_INSTALL_PING[^\n]*yes/)
   })
 })

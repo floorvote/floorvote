@@ -587,11 +587,11 @@ Before you answer it prints exactly what it would send, and if you say yes it pr
 - `step` is the script's name for the step the run ended on, such as `verify`, `bind`, or `preflight`, never a number.
 - `version` is the date of your checkout's latest commit. It says how current your copy is, and it is a date rather than a commit hash so that a fork's own history can't be traced back to it.
 
-It never includes your slug, states, team name, admin name or email, Cloudflare account ID, or any URL. floorvote.org stores only these four fields. It doesn't log your IP address or any other request details, though Cloudflare, which hosts the site, sees the connection like any web host.
+It never includes your slug, states, team name, admin name or email, Cloudflare account ID, or any URL. floorvote.org counts each report as these four fields and stores nothing else from it: no IP address, user agent, or country. Cloudflare, which hosts floorvote.org, sees the connection like any web host and may keep its own short-lived request logs.
 
 The script sends nothing unless you agree:
 
-- **No terminal, no question.** Run from CI, an agent, or any shell without a terminal on stdin, it doesn't ask and doesn't send.
+- **No terminal, no question.** Run from CI, an agent, or any shell without a terminal on stdin, it doesn't ask and doesn't send, unless you have set `FLOORVOTE_INSTALL_PING=yes`.
 - **Answer once.** Set `FLOORVOTE_INSTALL_PING=yes` or `FLOORVOTE_INSTALL_PING=no` in your environment or in `scripts/.env.ops`, and it stops asking. A value in the environment wins over the file. If you run setup for your own team's deployment often, set it to `no`.
 - **Preflight and Ctrl-C.** `--preflight-only` never sends, and neither does a run you interrupt with Ctrl-C.
 - **It can't break setup.** The report goes out with a five-second limit and its response is discarded. If you're offline, or the site is down, the run's result and exit code are the same as without it.
