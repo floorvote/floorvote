@@ -184,6 +184,25 @@ describe('the poll, with a lone card newer than anything else', () => {
     expect(screen.queryByRole('button', { name: /new activity/i })).toBeNull()
   })
 
+  // The server can admit a lone update and lose its mark to a priority set
+  // between two of its reads; the Feed then hides it, so it must not raise the
+  // banner for a card nobody can see.
+  it('raises no banner for a no-priority bill\'s passive update the server sent unmarked', async () => {
+    renderFeed([comment('c1', '2026-03-04 10:00:00')])
+    scrolledTo(600)
+    apiFetchMock.mockResolvedValue({ events: [lone('u1', { createdAt: '2026-03-04 18:00:00', noPriorityCard: false }), comment('c1', '2026-03-04 10:00:00')], total: 2, page: 1, limit: 40 })
+    await act(async () => { await poll.fn!() })
+    expect(screen.queryByRole('button', { name: /new activity/i })).toBeNull()
+  })
+
+  it('still raises the banner for a prioritized bill\'s new update', async () => {
+    renderFeed([comment('c1', '2026-03-04 10:00:00')])
+    scrolledTo(600)
+    apiFetchMock.mockResolvedValue({ events: [lone('u1', { createdAt: '2026-03-04 18:00:00', noPriorityCard: false, billPriority: 'high' }), comment('c1', '2026-03-04 10:00:00')], total: 2, page: 1, limit: 40 })
+    await act(async () => { await poll.fn!() })
+    expect(screen.getByRole('button', { name: /new activity/i })).toBeInTheDocument()
+  })
+
   it('still raises the banner for the team\'s new activity beside it', async () => {
     renderFeed([comment('c1', '2026-03-04 10:00:00')])
     scrolledTo(600)

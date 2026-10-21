@@ -4,7 +4,7 @@ import { apiFetch } from '../lib/api'
 import { apiFetchForLoader, UNBLOCK_AT_MS } from '../lib/loaderFetch'
 import { createProgressBox, type ProgressBox } from '../lib/retryFetch'
 import { LoadingState } from '../components/LoadingState'
-import type { FeedEvent } from '../lib/feedUtils'
+import { PASSIVE_EVENT_TYPES, type FeedEvent } from '../lib/feedUtils'
 import { GroupedBillCard } from '../components/GroupedBillCard'
 import { FeedActivityRow } from '../components/FeedActivityRow'
 import { NoPriorityRow, rowAfterPrioritized } from '../components/NoPriorityRow'
@@ -40,9 +40,12 @@ const MAX_FILL_FETCHES = 10
 // The newest event the poll compares to tell new activity from none. The
 // no-priority updates row is passive, as it is for the Feed dot: on its own it
 // raises no "New activity" banner and loads nothing in place. Nor does the card
-// the server sends in place of a row of one bill (#921).
+// the server sends in place of a row of one bill (#921), nor a passive update on
+// a bill with no priority that came unmarked: the server admitted it as that
+// card, then saw the bill change before marking it, so the Feed hides it.
 const topEventId = (events: FeedEvent[]) =>
-  events.find((e) => e.type !== NO_PRIORITY_UPDATES && !e.noPriorityCard)?.id ?? null
+  events.find((e) => e.type !== NO_PRIORITY_UPDATES && !e.noPriorityCard &&
+    !(PASSIVE_EVENT_TYPES.has(e.type) && e.billPriority === null))?.id ?? null
 
 export type FeedLoaderResult =
   | { data: FeedResponse }
