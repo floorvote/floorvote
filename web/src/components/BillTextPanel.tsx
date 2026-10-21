@@ -223,7 +223,7 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, req
 
   // The highlighted document, for a frame that keeps `sandbox=""`: the mark is
   // put in before it renders, and the frame goes to the mark's fragment once it
-  // loads so the browser scrolls to it (focusPassage in lib/claimLinks.ts).
+  // loads so the browser scrolls to it (scrollToPassage and focusPassage in lib/claimLinks.ts, per frame below).
   // Null when the passage isn't in the document.
   const requestShown = activePassage && activePassage.document.docId === selectedDocId ? activePassage : null
   const passageShown = requestShown && !isPdfRequest(requestShown) ? requestShown : null
