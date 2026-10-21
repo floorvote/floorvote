@@ -125,3 +125,11 @@ Central can now sync Congress (`US`) from GovInfo's public Bill Status data, wit
 
 - **Cut over before January 3, 2027,** if you track Congress through LegiScan now. After that date, a cutover matches only the 120th Congress's bills, and GovInfo's 120th session loses the plain slug.
 - **Wait for the follow-ups before confirming a cutover.** A cutover today leaves a second legislator row for anyone who sponsors none of the bills it reads (#912), and it can't fill the committee-meeting cache before the switch (#913). The dry run (`POST /api/admin/state-providers/US/cutover`, without `confirm`) is safe to run now.
+
+## One feed, with a daily row for bills with no priority
+
+The Feed is one view now. Its scope dropdown, with the "All analyzed bills" scope, is gone. Legislative activity on analyzed bills with no priority gets one row a day instead: "Updates on 9 bills with no priority," then the two most relevant bills as chips and a count of the rest. Opening the row lists every bill that moved, most relevant first, with that day's changes. Admins can set a priority from the row, which takes the bill out of it and gives the bill a card of its own from then on. A day when only one such bill moved shows that bill as a regular card, with "Set priority" at its top right for admins. Team activity keeps its full cards, as before.
+
+- **Instance migration only.** Instance migration 0121 adds the row's event type, `no_priority_updates`, to `feed_events`. Central doesn't change. `GET /feed` reads no `scope` any more, so an old client or bookmark that sends `scope=analyzed` gets the one feed.
+- **The row starts with the deploy.** The queue processor writes it as legislative changes land, so days before the deploy have no row, and the movement on them isn't listed anywhere on the Feed. The bills' own pages still show it.
+- **Notifications don't change.** The row and the one-bill card never light the Feed dot, raise the "New activity" banner, or appear in the digest email.

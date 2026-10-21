@@ -194,6 +194,18 @@ describe('Feed: Dismiss on a new match', () => {
     expect(refreshSidebar).toHaveBeenCalledTimes(1)
   })
 
+  it('leaves keyboard focus on the same control when Dismiss turns it plain', async () => {
+    apiFetchMock.mockResolvedValue({ ok: true })
+    renderFeed([ev({ id: 'e1', billNewMatch: true })])
+    const before = sel()
+    before.focus()
+    expect(before).toHaveFocus()
+    fireEvent.change(before, { target: { value: 'dismiss' } })
+    await waitFor(() => expectClosedLabel(sel(), 'Set priority'))
+    expect(sel()).toBe(before)
+    expect(before).toHaveFocus()
+  })
+
   it('a failed Dismiss leaves the amber control in place', async () => {
     apiFetchMock.mockRejectedValue(new Error('boom'))
     renderFeed([ev({ id: 'e1', billNewMatch: true })])
@@ -275,7 +287,7 @@ describe('Feed: a companion group\'s cards on other days', () => {
   })
 })
 
-describe('Feed: a card an admin cleared stays through a poll and goes after a scope switch', () => {
+describe('Feed: a card an admin cleared stays through a poll', () => {
   const passiveOnly = (over: Partial<FeedEvent> = {}) => ev({
     id: 'e1', type: 'bill_updated', metadata: { changes: [{ changeType: 'action_added', newValue: 'Referred to committee' }] }, ...over,
   })
@@ -292,26 +304,5 @@ describe('Feed: a card an admin cleared stays through a poll and goes after a sc
     await act(async () => { await poll.fn!() })
     expect(screen.getByText('Mail Ballot Rules')).toBeInTheDocument()
     expectClosedLabel(sel(), 'Set priority')
-  })
-
-  it('drops a cleared passive-only card once the scope is switched away and back', async () => {
-    const reply = { events: [passiveOnly()], total: 1, page: 1, limit: 40 }
-    apiFetchMock.mockImplementation(async (path: string) => path.startsWith('/feed') ? reply : { priority: null })
-    renderFeed([passiveOnly({ billPriority: 'high' })])
-    fireEvent.change(sel(), { target: { value: '__none__' } })
-    await waitFor(() => expectClosedLabel(sel(), 'Set priority'))
-    expect(screen.getByText('Mail Ballot Rules')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: /default feed/i }))
-    fireEvent.click(screen.getByText('All analyzed bills'))
-    // Every analyzed bill is listed, so the card is in this scope on its own.
-    await waitFor(() => expect(apiFetchMock).toHaveBeenCalledWith(expect.stringContaining('scope=analyzed')))
-    expect(await screen.findByText('Mail Ballot Rules')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: /all analyzed bills/i }))
-    fireEvent.click(screen.getByText('Default feed'))
-    await waitFor(() => expect(apiFetchMock).toHaveBeenCalledWith(expect.stringContaining('scope=default')))
-    // No priority and only a provider update: the default feed hides it again.
-    await waitFor(() => expect(screen.queryByText('Mail Ballot Rules')).toBeNull())
   })
 })

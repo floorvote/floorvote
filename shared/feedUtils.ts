@@ -28,6 +28,12 @@ export type FeedEvent = {
   // them into one card. Optional because producers other than GET /feed build
   // FeedEvent-shaped objects; absent is read as "in no group".
   billGroupKey?: string | null
+  // A legislative update on the one bill (or companion group) its UTC day's
+  // no-priority updates row resolved to: GET /feed sends that entry's updates in
+  // the row's place, to be drawn as its card (#921). Passive like the row, so it
+  // raises no "New activity" banner. Optional because producers other than GET
+  // /feed build FeedEvent-shaped objects; absent is read as "no".
+  noPriorityCard?: boolean
   userId: string
   userName: string
   userTitle: string | null
@@ -171,14 +177,12 @@ export function filterPriorityEvents(groups: GroupedBillEvents[]): GroupedBillEv
   return groups.filter(group =>
     group.billPriority !== null ||
     group.events.some(e => !PASSIVE_EVENT_TYPES.has(e.type)) ||
-    // The server sends the row only when it stands for at least one bill.
-    group.events.some(e => e.type === NO_PRIORITY_UPDATES && Number(e.metadata.count) > 0)
+    // The server sends the row only when it stands for two or more entries
+    // (one, after an admin prioritizes from it in place, until the next load).
+    group.events.some(e => e.type === NO_PRIORITY_UPDATES && Number(e.metadata.count) > 0) ||
+    // A row of one: the server sends that bill's updates as its card instead.
+    group.events.some(e => e.noPriorityCard === true)
   )
-}
-
-// A bill-less group has no bill whose analysis could be missing, so it stays.
-export function filterFullyAnalyzed(groups: GroupedBillEvents[]): GroupedBillEvents[] {
-  return groups.filter(group => group.billId === null || group.billMatchType !== null)
 }
 
 export function formatBillUpdateDetail(record: ChangeRecord): string {

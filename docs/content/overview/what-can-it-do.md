@@ -49,6 +49,8 @@ Daily or weekly digests round up changes on prioritized bills and matches. A wee
 
 A single feed shows everything happening across your tracked bills and your team—new bills, comments, votes, and position changes—so members can easily stay on top of the conversation.
 
+Bills with a priority get a card for every change, and a bill with no priority gets one for any day the team comments, votes, or takes a position on it. Legislative activity on the rest of your analyzed bills gets one row a day instead: "Updates on 9 bills with no priority," followed by the two most relevant bills as chips and a count of the others. Open the row to see every bill that moved, most relevant first, with that day's changes. Admins can set a priority from the row, which gives the bill a card of its own from then on. On a day when only one of those bills moved, it shows as a regular card, with "Set priority" at the top right for admins. The row never lights the Feed dot and never goes in the email digest.
+
 ## Searchable bills page
 
 Every bill in the states you are tracking is accessible on one page.

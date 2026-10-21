@@ -231,7 +231,8 @@ export function HoverTooltip({ text, children, placement: placementProp, maxWidt
     return centered(r)
   }
 
-  const bubble = anchor
+  // No text, no bubble: a caller whose tooltip comes and goes keeps one tree shape, and so keeps focus.
+  const bubble = anchor && text
     ? (
       <span
         ref={bubbleRef}
