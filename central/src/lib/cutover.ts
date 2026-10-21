@@ -186,7 +186,8 @@ async function planContext(provider: Provider, env: Env, db: Db) {
     },
     people: () => (held ??= base.people()),
     // A plan reads the provider's cache, and its writes stand. The calendar preview reads only the meetings
-    // govinfo has already cached and writes none, since nothing in a plan asks the Congress.gov API for any.
+    // govinfo has already cached and writes no meeting entries, since nothing in a plan asks the Congress.gov API
+    // for any. The plan's snapshot does still write and drop govinfo's own bookkeeping, such as its snapshot digest.
     // The entries a provider keeps to stop an alert repeating (`alerted/...`) are real state about real alerts:
     // a plan must neither set one, which would silence the next real alert, nor clear one.
     cache: {
