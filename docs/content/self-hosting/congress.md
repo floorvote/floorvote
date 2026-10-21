@@ -29,7 +29,7 @@ curl -X POST "$CENTRAL/api/admin/state-providers/US" \
   -d '{"provider":"govinfo"}'
 ```
 
-Central answers 200 and the state starts syncing from GovInfo. The hourly job does its first full read at its next full pass (5, 13, and 23 Eastern), or you can start it now with `POST /api/admin/providers/govinfo/sync`, which reads in full. A full read of the 119th Congress downloads eight zip files, 54 MB in all, and takes a few seconds of CPU, so no `cpu_ms` limit needs to change.
+Central answers 200, and the state starts syncing from GovInfo once at least one active instance covers `US`. The hourly job does its first full read at its next full pass (5, 13, and 23 Eastern), or you can start it now with `POST /api/admin/providers/govinfo/sync`, which reads in full. A full read of the 119th Congress downloads eight zip files, 54 MB in all, and takes a few seconds of CPU, so no `cpu_ms` limit needs to change.
 
 If an instance does track Congress bills from LegiScan, central answers 409 and names the instances and how many bills they track. The row doesn't change. Only a cutover moves those bills.
 
@@ -37,7 +37,7 @@ If an instance does track Congress bills from LegiScan, central answers 409 and 
 
 A cutover moves Congress's bills and legislators to GovInfo without writing to any instance's database. Each matched bill keeps its row and its handle, so every instance's copy and every link to it stay as they are. There is no dashboard control for it: the claim and the cutover are admin routes, called with `x-admin-secret`, and the States page on the dashboard shows the result ("Claimed" or "Cut over", with the date).
 
-1. **Set `CONGRESS_API_KEY` first,** if you want committee meetings. Central starts reading them only once GovInfo owns `US`, so the key has to be in place when you switch.
+1. **Set `CONGRESS_API_KEY` first,** if you want committee meetings. Central starts reading meetings only once GovInfo owns `US`. Setting the key before you switch starts the meeting read at the switch and shortens the window described under [Committee meetings](#committee-meetings-and-the-first-read).
 2. **Run the dry run.** It reads GovInfo's files for the current Congress and matches them to the bills and legislators central holds, and it writes nothing but the API call log:
 
    ```bash
@@ -46,8 +46,8 @@ A cutover moves Congress's bills and legislators to GovInfo without writing to a
      -d '{"provider":"govinfo"}' > us-cutover-dry-run.json
    ```
 
-3. **Read the report.** It lists the bills that matched and the ones that didn't on each side, the legislators matched by Bioguide id and by name (name matches are weak when chamber and district don't both confirm), any ambiguous or conflicting matches, the tracked bills whose keywords the new titles won't match, and, when committee meetings have been read, the calendar entries that keep their identity, are cancelled, or are added.
-4. **Confirm.** The same request with `?confirm=true` carries out the cutover and starts GovInfo's first sync. The response says how many bills and legislators moved, and whether that sync worked. If it reports an error, the cutover stands, and the hourly sync tries again.
+3. **Read the report.** It lists the bills that matched and the ones that didn't on each side, the legislators matched by Bioguide id and by name (name matches are weak when chamber and district don't both confirm), any ambiguous or conflicting matches, the tracked bills whose keywords the new titles won't match, and, when committee meetings have been read, the calendar entries that keep their identity, are cancelled, or are added. Legislators are matched only through the sponsors of the bills the plan reads, so a legislator with no tracked bill is not in the report and gets a second `people` row later.
+4. **Confirm.** The same request with `?confirm=true` carries out the cutover and starts GovInfo's first sync. The response says how many bills and legislators moved, and whether that sync worked. If it reports an error, the cutover stands, and the hourly sync tries again. That sync covers bills only. Committee meetings start with the next hourly body-event job, so run `POST /api/admin/providers/govinfo/sync` once right after you confirm, which also starts the meeting read and shortens the window described under [Committee meetings](#committee-meetings-and-the-first-read).
 5. **Undo it if needed.** `POST /api/admin/state-providers/US/undo-cutover` is a dry run too, and `?confirm=true` puts Congress back on LegiScan.
 
 The first sync queues a first ingest for every moved bill. GovInfo has no ingest queue of its own, so those ingests share central's queue with LegiScan's bills and take a while to drain. They make no LegiScan calls. After a cutover, ask the admin of each instance that covers Congress to re-pick the committees in their event rules, because GovInfo mints its own committee ids. The [sync pipeline notes](https://github.com/floorvote/floorvote/blob/main/docs/internal/sync-pipeline.md) cover what a cutover does to calendars, ids, and queues in full.
@@ -56,7 +56,7 @@ The first sync queues a first ingest for every moved bill. GovInfo has no ingest
 
 Central reads committee meetings once for each state GovInfo owns that at least one instance covers, and then keeps them in its `provider_cache` table, so it never reads a meeting twice. The 119th Congress had 2,767 meetings in October 2026. A pass reads at most 60 meeting details an hour, paced at 10 requests a minute, so the first full read takes about one to two days after the key is set and `US` is switched.
 
-Until that read finishes, GovInfo can't say a bill has no meeting, because the meeting may be one not read yet. Central marks the read as finished by writing a `warm/119` row for `govinfo` into `provider_cache`, and until it exists:
+Until that read finishes, GovInfo can't say a bill has no meeting, because the meeting may be one not read yet. Central marks the read as finished by writing a `warm/<congress>` row for `govinfo` into `provider_cache` (`warm/119` for the 119th Congress), and until it exists:
 
 - Bills sync with no calendar at all, which central treats as no word on the entries a bill already has.
 - A bill that moved in a cutover keeps the hearings it carried from LegiScan, but only for so long. After three ingests with no calendar, central stops waiting and cancels them, so a busy bill that is ingested that often before the read finishes loses its LegiScan hearings. The meetings the read finds are added to its calendar afterward.
@@ -79,7 +79,7 @@ Do the cutover before January 3, 2027. Two things happen around then:
 
 ## The session slug
 
-A cutover doesn't hand LegiScan's session slug to GovInfo. LegiScan's 119th Congress session keeps `119th-congress`, and GovInfo's 119th Congress session becomes `119th-congress-2`, so a moved bill's URL changes to `/US/119th-congress-2/HB1` the next time it reaches an instance. Old links keep working: each instance falls back to the slug the session's name asks for, as long as no other bill answers to the same address. The same happens on a claim, since LegiScan's session already holds the plain slug.
+A cutover doesn't hand LegiScan's session slug to GovInfo. LegiScan's 119th Congress session keeps `119th-congress`, and GovInfo's 119th Congress session becomes `119th-congress-2`, so a moved bill's URL changes to `/US/119th-congress-2/HB1` the next time it reaches an instance. Old links keep working: each instance falls back to the slug the session's name asks for, as long as no other bill answers to the same address. The same happens on a claim if LegiScan has synced Congress here, since its session already holds the plain slug. A deployment that never did gives GovInfo's session `119th-congress`.
 
 ## The credit
 

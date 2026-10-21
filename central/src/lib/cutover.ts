@@ -185,10 +185,10 @@ async function planContext(provider: Provider, env: Env, db: Db) {
       return out
     },
     people: () => (held ??= base.people()),
-    // A plan reads the provider's cache, and its writes stand: the calendar preview keeps the meetings it reads
-    // (govinfo) so the same plan's snapshot can use them, and the API budget isn't spent twice. But the entries
-    // a provider keeps to stop an alert repeating (`alerted/...`) are real state about real alerts: a plan
-    // must neither set one, which would silence the next real alert, nor clear one.
+    // A plan reads the provider's cache, and its writes stand. The calendar preview reads only the meetings
+    // govinfo has already cached and writes none, since nothing in a plan asks the Congress.gov API for any.
+    // The entries a provider keeps to stop an alert repeating (`alerted/...`) are real state about real alerts:
+    // a plan must neither set one, which would silence the next real alert, nor clear one.
     cache: {
       list: prefix => base.cache.list(prefix),
       put: entries => base.cache.put(Object.fromEntries(Object.entries(entries).filter(([k]) => !k.startsWith(ALERT_KEYS)))),
