@@ -9,7 +9,7 @@ import { runBodyEventSync } from './cron/body-events'
 import { PROVIDERS } from './providers'
 import { checkVoteDatasets, VOTE_DATASET_CHECK_HOUR_ET } from './cron/vote-datasets'
 import { getCurrentEtHour } from './lib/sync-schedule'
-import { pullEngagementStats, shouldRunEngagementPull } from './cron/engagement-pull'
+import { pullEngagementStats, ENGAGEMENT_PULL_CRON, fallbackPullDue } from './cron/engagement-pull'
 import { processIngestorQueue } from './queue/processor'
 import { processDeadLetterQueue } from './queue/deadLetters'
 import { billsRoutes } from './routes/bills'
@@ -70,6 +70,9 @@ app.get('*', (c) => {
   return assets ? assets.fetch(c.req.raw) : c.notFound()
 })
 
+/** The hour the hourly tick runs central's daily jobs. */
+const DAILY_JOBS_UTC_HOUR = 6
+
 export default {
   fetch: app.fetch,
 
@@ -90,8 +93,12 @@ export default {
     )
   },
 
-  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     const db = drizzle(env.DB, { schema })
+    if (event.cron === ENGAGEMENT_PULL_CRON) {
+      ctx.waitUntil(runJob(env, 'engagement-pull', () => pullEngagementStats(env, db)))
+      return
+    }
     // Slugs for sessions written without one: every existing session on the
     // first tick after migration 0031, and any a seed script wrote since. The
     // plain slug goes to the owning provider's session, which it reads from
@@ -116,8 +123,13 @@ export default {
     if (getCurrentEtHour() === VOTE_DATASET_CHECK_HOUR_ET) {
       ctx.waitUntil(runJob(env, 'vote-datasets', () => checkVoteDatasets(env, db)))
     }
-    if (shouldRunEngagementPull(new Date())) {
-      ctx.waitUntil(runJob(env, 'engagement-pull', () => pullEngagementStats(env, db)))
+    // The engagement pull runs on its own cron (ENGAGEMENT_PULL_CRON). This
+    // pulls at 07:00 only for a config that doesn't schedule it.
+    const now = new Date()
+    ctx.waitUntil(runJob(env, 'engagement-pull', async () => {
+      if (await fallbackPullDue(db, now)) await pullEngagementStats(env, db)
+    }))
+    if (now.getUTCHours() === DAILY_JOBS_UTC_HOUR) {
       ctx.waitUntil(runJob(env, 'd1-anomaly-watch', () => runAnomalyWatch(env)))
       ctx.waitUntil(runJob(env, 'prune-revoked-jtis', () => pruneRevokedSuperadminJtis(db)))
       // Its own job, so a failure here never stops the others. See CALL_LOG_RETENTION_DAYS.

@@ -157,8 +157,11 @@ EMAIL_PROVIDER = "cloudflare"
 # and nothing else changes. The provider asks the API for no more than 10 requests
 # a minute, so a key set for the first time fills in the calendar over a day or two.
 
+# Hourly: the sync and central's daily jobs. 06:15 UTC: the daily engagement
+# pull, in its own invocation so the sync's outbound calls can't delay the
+# tenant round trips it times. Without it, the 07:00 hourly tick pulls instead.
 [env.legiscan.triggers]
-crons = ["0 * * * *"]
+crons = ["0 * * * *", "15 6 * * *"]
 
 [[env.legiscan.send_email]]
 name = "EMAIL"

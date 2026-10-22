@@ -133,3 +133,10 @@ The Feed is one view now. Its scope dropdown, with the "All analyzed bills" scop
 - **Instance migration only.** Instance migration 0121 adds the row's event type, `no_priority_updates`, to `feed_events`. Central doesn't change. `GET /feed` reads no `scope` any more, so an old client or bookmark that sends `scope=analyzed` gets the one feed.
 - **The row starts with the deploy.** The queue processor writes it as legislative changes land, so days before the deploy have no row, and the movement on them isn't listed anywhere on the Feed. The bills' own pages still show it.
 - **Notifications don't change.** The row and the one-bill card never light the Feed dot, raise the "New activity" banner, or appear in the digest email.
+
+## The engagement pull runs at 06:15 UTC
+
+Central's daily engagement pull now runs on its own cron, `15 6 * * *`, instead of on the 06:00 hourly tick. On that tick it shared Workers' per-invocation limit on outbound calls with the hourly sync, which held its calls to the instances back for up to a minute, so the "slow or failing" email named every instance as slow when none was.
+
+- **Add the cron to your central's config:** `crons = ["0 * * * *", "15 6 * * *"]` under `[env.legiscan.triggers]`, as in `wrangler.example.toml`.
+- **Without it, the pull still runs**, from the 07:00 hourly tick, with the sync's calls competing for the same limit as before.

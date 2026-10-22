@@ -4,7 +4,7 @@ import { drizzle } from 'drizzle-orm/d1'
 import { eq } from 'drizzle-orm'
 import * as schema from '../../src/db/schema'
 import { clearDb } from '../helpers/migrations'
-import { pullEngagementStats, pullEngagementStatsForTenant, shouldRunEngagementPull } from '../../src/cron/engagement-pull'
+import { pullEngagementStats, pullEngagementStatsForTenant } from '../../src/cron/engagement-pull'
 import { sendOpsAlert } from '../../src/lib/jobAlert'
 
 vi.mock('../../src/lib/jobAlert', async (importOriginal) => ({
@@ -416,17 +416,5 @@ describe('inactive tenants', () => {
     await pullEngagementStats({ ...TEST_ENV, D_LATENCY_THRESHOLD_MS: '5000' }, db)
     const t = await db.select().from(schema.tenants).where(eq(schema.tenants.tenantId, 'retired')).get()
     expect(t?.lastSeenAt ?? null).toBeNull()
-  })
-})
-
-describe('shouldRunEngagementPull', () => {
-  it('returns true at UTC hour 6', () => {
-    const d = new Date('2026-05-29T06:00:00Z')
-    expect(shouldRunEngagementPull(d)).toBe(true)
-  })
-  it('returns false at other hours', () => {
-    expect(shouldRunEngagementPull(new Date('2026-05-29T05:59:00Z'))).toBe(false)
-    expect(shouldRunEngagementPull(new Date('2026-05-29T07:00:00Z'))).toBe(false)
-    expect(shouldRunEngagementPull(new Date('2026-05-29T00:00:00Z'))).toBe(false)
   })
 })

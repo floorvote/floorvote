@@ -230,6 +230,27 @@ async function sendSlowTenantAlert(env: Env, flagged: ProbeResult[], threshold: 
   await sendOpsAlert(env, { subject, text, html })
 }
 
-export function shouldRunEngagementPull(now: Date): boolean {
-  return now.getUTCHours() === 6
+/**
+ * The pull's own cron, in its own invocation. The pull times each tenant's
+ * round trip, and on the hourly tick it shared Workers' per-invocation limit on
+ * outbound calls with the sync, which held its RPCs back for up to a minute.
+ * Quarter past six clears the hourly sync, which finishes within about six
+ * minutes of the hour.
+ */
+export const ENGAGEMENT_PULL_CRON = '15 6 * * *'
+
+/** The hourly tick that pulls instead, for a config without ENGAGEMENT_PULL_CRON. */
+const FALLBACK_PULL_UTC_HOUR = 7
+
+/**
+ * Whether the hourly tick at `now` should run the pull: at FALLBACK_PULL_UTC_HOUR,
+ * when no tenant has a row for the day. A config that schedules
+ * ENGAGEMENT_PULL_CRON has pulled by then, so this costs it one read.
+ */
+export async function fallbackPullDue(db: DB, now: Date): Promise<boolean> {
+  if (now.getUTCHours() !== FALLBACK_PULL_UTC_HOUR) return false
+  const row = await db.select({ tenantId: schema.tenantStats.tenantId }).from(schema.tenantStats)
+    .where(eq(schema.tenantStats.statDate, now.toISOString().slice(0, 10)))
+    .get()
+  return !row
 }
