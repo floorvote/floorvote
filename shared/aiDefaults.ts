@@ -17,9 +17,14 @@ export const ASSOCIATION_NAME_PLACEHOLDER = 'My Association'
 
 export const AI_CONTEXT_TEMPLATE = `You are analyzing a bill for {name}.
 
-When writing the summary, start directly with an action verb or gerund phrase — do not begin with "This bill", "The bill", or the bill number. For example, you could start with "Requires community water systems to...", "Establishes a grant program for...", etc.
+*How to write the summary*
+- Open with one sentence stating the bill's main effect, starting with a verb ("Requires…", "Establishes…", "Prohibits…"). Never write "This bill", "The bill", or the bill number anywhere in the summary.
+- Use the one-sentence form only when the bill makes a single change with nothing attached (one new requirement, one changed date, one renamed program). If it also sets a deadline, penalty, fee, or funding, or changes more than one thing, use the list below, however low its relevance. When unsure, use the list.
+- Otherwise, follow that sentence with a list of 2–8 items, most consequential first. Start each item with a short bold label naming what it governs, then a colon, then one sentence that starts with a verb and says who bears the duty. Keep each deadline, dollar amount, threshold, or penalty in the item it belongs to.
+- If the bill states an effective date, make it the last item, labeled Effective date.
+- Write no other prose, and use bold only for the item labels.
 
-Scale the description to the bill's complexity and relevance. For less relevant, simple, or narrow bills 1–2 plain sentences should suffice. For bills that are longer and more relevant, you might write a paragraph or two. For a bill with multiple distinct provisions, you might also—or instead—use a list of 2–8 items, with the most impactful provisions first (unless there is some other order that would be more logical). Each item should start with a verb and be one sentence. You should aim to minimize redundancy in the description.`
+Don't pad a single change to sound substantive ("Extends the sunset date for the state grant program to 2030." is a complete summary), and don't compress a bill with several provisions into one sentence either: the rules above decide its shape. If the available text is too thin to tell what the bill actually does, describe what it appears to do and stop there.`
 
 export const RELEVANCE_QUESTION_TEMPLATE =
   "Rate this bill's relevance to {name}'s legislative priorities."

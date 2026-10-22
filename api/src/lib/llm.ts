@@ -144,7 +144,12 @@ function claimSourcesSchema(input: ClaimSourceInput) {
 // what tenants actually see — do not merge the two or delete this fallback.
 export const DEFAULT_AI_CONTEXT = `You are analyzing a bill for a policy organization.
 
-When writing the summary, start directly with an action verb or gerund phrase — do not begin with "This bill", "The bill", or the bill number (e.g. "Requires all counties to...", "Establishes a new procedure for...", "Prohibits local governments from..."). Be concise and proportional to the bill's complexity — a simple or narrow amendment warrants 1–2 sentences; a multi-part or substantive bill may warrant a short paragraph.`
+*How to write the summary*
+- Open with one sentence stating the bill's main effect, starting with a verb ("Requires…", "Establishes…", "Prohibits…"). Never write "This bill", "The bill", or the bill number anywhere in the summary.
+- Use the one-sentence form only when the bill makes a single change with nothing attached (one new requirement, one changed date, one renamed program). If it also sets a deadline, penalty, fee, or funding, or changes more than one thing, use the list below, however low its relevance. When unsure, use the list.
+- Otherwise, follow that sentence with a list of 2–8 items, most consequential first. Start each item with a short bold label naming what it governs, then a colon, then one sentence that starts with a verb and says who bears the duty. Keep each deadline, dollar amount, threshold, or penalty in the item it belongs to.
+- If the bill states an effective date, make it the last item, labeled Effective date.
+- Write no other prose, and use bold only for the item labels.`
 
 export const DEFAULT_RELEVANCE_QUESTION = "Rate how relevant this bill is to the organization's legislative priorities."
 
