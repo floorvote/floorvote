@@ -13,6 +13,7 @@ import { assignSessionSlugs } from '../lib/sessionSlugs'
 import { insertLinkWhileOwner, loadStateOwners, ownerOf, ownerOfState } from '../lib/stateProviders'
 import { queueCalendarRechecks } from '../lib/billCalendar'
 import { fetchRequestCutoff, refreshRequestedBills } from '../lib/fetchRequests'
+import { errorMessage, recoveryFrom, sendRecoveries, streakAlerts, throwAll, type Recovery, type SessionFailure } from './passAlerts'
 
 const BATCH = 80
 const FLUSH_BATCH = 500
@@ -105,6 +106,17 @@ export async function loadTrackedStates(
   return trackedStates
 }
 
+/** The name the hourly cron runs the LegiScan sync under (index.ts), which its alert emails carry. */
+export const LEGISCAN_SYNC_JOB = 'ls-sync'
+
+/**
+ * The hourly LegiScan sync. A session whose pass fails doesn't stop the others:
+ * its failed pass is logged, and the run throws (and so alerts, in one email for
+ * every session) only for a session on a multiple of FAILED_PASSES_BEFORE_ALERT
+ * failed passes in a row (passAlerts.ts). A session that alerted gets one email
+ * when it syncs again. An empty answer, a session with no bills yet, is a pass
+ * that finished.
+ */
 export async function runSync(env: Env, db: Db): Promise<void> {
   const activeTenants = await db.select().from(tenants).where(eq(tenants.active, true)).all()
   if (activeTenants.length === 0) return
@@ -151,6 +163,7 @@ export async function runSync(env: Env, db: Db): Promise<void> {
     syncEnabled: sessions.syncEnabled,
     fullSyncHoursEt: sessions.fullSyncHoursEt,
     rawSyncHoursEt: sessions.rawSyncHoursEt,
+    lastSyncedAt: sessions.lastSyncedAt,
   })
     .from(sessions)
     .where(and(inArray(sessions.state, [...trackedStates]), eq(sessions.provider, provider.id)))
@@ -178,6 +191,8 @@ export async function runSync(env: Env, db: Db): Promise<void> {
     // full-pass hours only.
     .filter(({ mode }) => mode === 'full' || (mode === 'raw' && !!provider.listChangeHashes))
 
+  const failures: SessionFailure[] = []
+  const recoveries: Recovery[] = []
   const tasks = sessionsToProcess.map(async ({ session, mode }) => {
     const coveringTenants = tenantsByState.get(session.state) ?? []
     if (coveringTenants.length === 0) {
@@ -192,15 +207,32 @@ export async function runSync(env: Env, db: Db): Promise<void> {
       } else {
         await runRawPass(session, coveringTenants, provider, env, db)
       }
+      // Before the stamp, which ends the streak the recovery is read from.
+      const recovered = await recoveryFrom(db, session)
       await db.update(sessions)
         .set({ lastSyncedAt: nowDb() })
         .where(eq(sessions.sessionId, session.sessionId))
+      if (recovered) recoveries.push(recovered)
     } catch (err) {
       console.error(`[sync-ls] failed for session ${session.sessionId}:`, err)
+      const logged = await logSyncPass(db, {
+        syncedAt: nowDb(),
+        state: session.state,
+        sessionId: session.sessionId,
+        sessionName: session.sessionName,
+        billsChecked: 0,
+        billsChanged: 0,
+        billsQueued: 0,
+        status: 'failed',
+        error: errorMessage(err),
+      }, { tolerate: true, label: `${session.state} ${session.sessionName} (failed)` })
+      failures.push({ session, error: err instanceof Error ? err : new Error(String(err)), logged })
     }
   })
 
   await Promise.allSettled(tasks)
+  await sendRecoveries(env, LEGISCAN_SYNC_JOB, recoveries)
+  throwAll('sync-ls', await streakAlerts(db, 'sync-ls', failures))
 }
 
 async function refreshSessions(state: string, provider: Provider, env: Env, db: Db): Promise<void> {

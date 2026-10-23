@@ -32,10 +32,17 @@ vi.mock('../../src/lib/sync-schedule', async () => {
   const actual = await vi.importActual<typeof import('../../src/lib/sync-schedule')>('../../src/lib/sync-schedule')
   return { ...actual, getCurrentEtHour: vi.fn(() => 5) }
 })
+vi.mock('../../src/lib/jobAlert', async () => {
+  const actual = await vi.importActual<typeof import('../../src/lib/jobAlert')>('../../src/lib/jobAlert')
+  return { ...actual, sendOpsAlert: vi.fn().mockResolvedValue(undefined) }
+})
 const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
 
-import { FAILED_PASSES_BEFORE_ALERT, runHourlySnapshotSync, runSnapshotSync } from '../../src/cron/sync-snapshots'
+import { runHourlySnapshotSync, runSnapshotSync } from '../../src/cron/sync-snapshots'
+import { FAILED_PASSES_BEFORE_ALERT } from '../../src/cron/passAlerts'
+import { sendOpsAlert } from '../../src/lib/jobAlert'
+import { PRODUCT_NAME } from '../../../shared/brand'
 import { lims } from '../../src/providers/lims'
 import { mga } from '../../src/providers/mga'
 import { lis } from '../../src/providers/lis'
@@ -545,12 +552,16 @@ describe('the hourly cron\'s alert', () => {
     expect((err!.cause as Error).message).toBe('Network connection lost.')
   })
 
-  it('keeps throwing while the session keeps failing', async () => {
+  it('stays quiet on the passes after an alert, and alerts again on the 4th of them', async () => {
     limsDown()
     const { env: e } = makeEnv()
     await expect(hourly(lims, e, FAILED_PASSES_BEFORE_ALERT)).rejects.toThrow()
+    for (let i = 1; i < FAILED_PASSES_BEFORE_ALERT; i++) {
+      nextHour()
+      await expect(runHourlySnapshotSync(lims, e, db())).resolves.toBeUndefined()
+    }
     nextHour()
-    await expect(runHourlySnapshotSync(lims, e, db())).rejects.toThrow(`${FAILED_PASSES_BEFORE_ALERT + 1} passes in a row`)
+    await expect(runHourlySnapshotSync(lims, e, db())).rejects.toThrow(`${2 * FAILED_PASSES_BEFORE_ALERT} passes in a row`)
   })
 
   it('starts the count again after a pass that finishes', async () => {
@@ -643,5 +654,73 @@ describe('the hourly cron\'s alert', () => {
     limsDown()
     const { env: e } = makeEnv()
     await expect(runSnapshotSync(lims, e, db(), { force: true })).rejects.toThrow('Network connection lost.')
+  })
+})
+
+describe('the email once a session that alerted syncs again', () => {
+  let clock = 0
+  const nextHour = () => vi.setSystemTime(clock += 3_600_000)
+  beforeEach(() => { clock = Date.parse('2026-10-20T12:00:00Z'); vi.setSystemTime(clock) })
+  const limsDown = () => vi.mocked(limsClient.getBulkData).mockRejectedValue(new Error('Network connection lost.'))
+  const limsUp = () => vi.mocked(limsClient.getBulkData).mockResolvedValue([bulk['B26-0400']])
+  // Each failing pass an hour on, swallowing the alert the last one throws.
+  async function failFor(provider: typeof lims, e: any, passes: number) {
+    for (let i = 0; i < passes; i++) { await runHourlySnapshotSync(provider, e, db()).catch(() => {}); nextHour() }
+  }
+  const resolvedEmails = () => vi.mocked(sendOpsAlert).mock.calls.map(c => c[1]).filter(m => m.subject.includes('resolved'))
+
+  it('sends one, naming the session and how many passes failed, on the pass that finishes', async () => {
+    const { env: e } = makeEnv()
+    limsDown()
+    await failFor(lims, e, FAILED_PASSES_BEFORE_ALERT)
+    limsUp()
+    await runHourlySnapshotSync(lims, e, db())
+    const [session] = await sessionRows()
+    const sent = resolvedEmails()
+    expect(sent).toHaveLength(1)
+    expect(sent[0].subject).toBe(`[${PRODUCT_NAME}] resolved: lims-sync`)
+    expect(sent[0].text).toContain(`DC ${session.sessionName}`)
+    expect(sent[0].text).toContain(`${FAILED_PASSES_BEFORE_ALERT} failed passes in a row`)
+  })
+
+  it('sends none for a session that recovers before it alerted', async () => {
+    const { env: e } = makeEnv()
+    limsDown()
+    await failFor(lims, e, FAILED_PASSES_BEFORE_ALERT - 1)
+    limsUp()
+    await runHourlySnapshotSync(lims, e, db())
+    expect(resolvedEmails()).toHaveLength(0)
+  })
+
+  it('sends it once, not again on the passes after', async () => {
+    const { env: e } = makeEnv()
+    limsDown()
+    await failFor(lims, e, FAILED_PASSES_BEFORE_ALERT)
+    limsUp()
+    await runHourlySnapshotSync(lims, e, db())
+    nextHour()
+    await runHourlySnapshotSync(lims, e, db())
+    expect(resolvedEmails()).toHaveLength(1)
+  })
+
+  it('sends one for several sessions that recover in the same run', async () => {
+    vi.mocked(mgaClient.mgaSessionExists).mockImplementation(async code => code === MGA_CODE || code === MGA_CODE_2)
+    vi.mocked(mgaClient.getMgaSession).mockRejectedValue(new Error('every file 522'))
+    const { env: e } = makeEnv()
+    await failFor(mga, e, FAILED_PASSES_BEFORE_ALERT)
+    vi.mocked(mgaClient.getMgaSession).mockImplementation(async code => (code === MGA_CODE || code === MGA_CODE_2 ? mgaFile() : null))
+    await runHourlySnapshotSync(mga, e, db())
+    const sent = resolvedEmails()
+    expect(sent).toHaveLength(1)
+    for (const s of await sessionRows()) expect(sent[0].text).toContain(s.sessionName)
+  })
+
+  it('sends one when "run now" is the pass that finishes', async () => {
+    const { env: e } = makeEnv()
+    limsDown()
+    await failFor(lims, e, FAILED_PASSES_BEFORE_ALERT)
+    limsUp()
+    await runSnapshotSync(lims, e, db(), { force: true })
+    expect(resolvedEmails()).toHaveLength(1)
   })
 })
