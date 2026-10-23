@@ -2,9 +2,9 @@ import { Hono } from 'hono'
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from './db/schema'
-import { runSync } from './cron/sync'
+import { LEGISCAN_SYNC_JOB, runSync } from './cron/sync'
 import { assignSessionSlugs } from './lib/sessionSlugs'
-import { isSnapshotProvider, runHourlySnapshotSync } from './cron/sync-snapshots'
+import { isSnapshotProvider, runHourlySnapshotSync, snapshotJobName } from './cron/sync-snapshots'
 import { runBodyEventSync } from './cron/body-events'
 import { PROVIDERS } from './providers'
 import { checkVoteDatasets, VOTE_DATASET_CHECK_HOUR_ET } from './cron/vote-datasets'
@@ -104,16 +104,16 @@ export default {
     // plain slug goes to the owning provider's session, which it reads from
     // state_providers itself.
     ctx.waitUntil(runJob(env, 'session-slugs', () => assignSessionSlugs(db)))
-    ctx.waitUntil(runJob(env, 'ls-sync', () => runSync(env, db)))
+    // Each sync job alerts for a session on every FAILED_PASSES_BEFORE_ALERT-th
+    // failed pass in a row (cron/passAlerts.ts), not for one dropped connection.
+    ctx.waitUntil(runJob(env, LEGISCAN_SYNC_JOB, () => runSync(env, db)))
     // One job per snapshot provider, so one failing never stops another, run
     // one after another: a pass holds a session's whole snapshot in memory
     // (Virginia's largest session needs a 40 MB heap), and two at
     // once could pass a Worker's 128 MB. See "Memory" in docs/internal/sync-pipeline.md.
-    // A job alerts only for a session that has failed several passes in a
-    // row (FAILED_PASSES_BEFORE_ALERT), not for one dropped connection.
     ctx.waitUntil((async () => {
       for (const provider of PROVIDERS.filter(isSnapshotProvider)) {
-        await runJob(env, `${provider.id}-sync`, () => runHourlySnapshotSync(provider, env, db))
+        await runJob(env, snapshotJobName(provider), () => runHourlySnapshotSync(provider, env, db))
       }
     })())
     // The legislature's own calendar, for providers that publish one, as its own job.

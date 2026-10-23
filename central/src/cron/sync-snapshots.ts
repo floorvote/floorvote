@@ -1,5 +1,5 @@
-import { eq, and, or, inArray, notInArray, lt, gt, gte, isNull, isNotNull, asc, sql } from 'drizzle-orm'
-import { sessions, bills, billTenants, tenants, people, providerRecords, sessionSyncLog } from '../db/schema'
+import { eq, and, or, inArray, notInArray, lt, gt, isNull, isNotNull, asc, sql } from 'drizzle-orm'
+import { sessions, bills, billTenants, tenants, people, providerRecords } from '../db/schema'
 import { decideMode, getCurrentEtHour } from '../lib/sync-schedule'
 import { nowDb } from '../lib/dbTime'
 import { terminalStatuses } from '../lib/vocabulary'
@@ -7,6 +7,7 @@ import { providerContext } from '../lib/providerContext'
 import { ingestQueueFor, providerConfigured } from '../lib/providerRouting'
 import { loadStateOwners, ownerOfState, statesOwnedBy } from '../lib/stateProviders'
 import { applyMasterList, firstIngestBudget, logSyncPass } from './sync'
+import { errorMessage, recoveryFrom, sendRecoveries, streakAlerts, throwAll, type Recovery, type SessionFailure } from './passAlerts'
 import { assignSessionSlugs } from '../lib/sessionSlugs'
 import { carriedBillIds, carriedPeopleIds, withCarriedBillIds, withCarriedPeople } from '../lib/carriedIds'
 import type { Provider, ProviderContext, ProviderPerson, ProviderRecord, StoredSession, SyncSession } from '../providers'
@@ -31,9 +32,6 @@ const FLUSH_BATCH = 200
 /** Stored records read per query when a feed answers 304. */
 const STORED_PAGE = 500
 
-/** The longest error message a failed pass's log row keeps. */
-const ERROR_LOG_MAX = 500
-
 export interface SnapshotPassReport { sessionId: number; sessionName: string; records: number; queued: number; refreshed: number }
 
 type Covering = { tenantId: string; stateCoverage: string; queueId: string | null }
@@ -46,15 +44,10 @@ export function isSnapshotProvider(provider: Provider | undefined): provider is 
   return !!provider?.states && !!provider.selectSessions && !!provider.snapshot && !!provider.toEntry
 }
 
-/**
- * How many passes in a row a session fails before the hourly cron alerts. A
- * provider's server drops a connection or answers 522 now and then, and the
- * next pass reads the session fine; the States page shows every failed pass.
- */
-export const FAILED_PASSES_BEFORE_ALERT = 4
-
-/** A session whose pass threw, and whether its failed row was logged. */
-type SessionFailure = { session: SessionRow; error: Error; logged: boolean }
+/** The name the hourly cron runs a provider's sync under (index.ts), which its alert emails carry. */
+export function snapshotJobName(provider: Provider): string {
+  return `${provider.id}-sync`
+}
 
 /**
  * `force` (the admin "run now" route) ignores the hour of day: the provider
@@ -64,57 +57,28 @@ type SessionFailure = { session: SessionRow; error: Error; logged: boolean }
 export async function runSnapshotSync(
   provider: Provider, env: Env, db: Db, opts: { force?: boolean } = {},
 ): Promise<SnapshotPassReport[]> {
-  const { reports, failures } = await syncSessions(provider, env, db, opts)
-  throwAll(provider, failures.map(f => f.error))
+  const { reports, failures, recoveries } = await syncSessions(provider, env, db, opts)
+  await sendRecoveries(env, snapshotJobName(provider), recoveries)
+  throwAll(`sync-${provider.id}`, failures.map(f => f.error))
   return reports
 }
 
 /**
- * The hourly cron's sync, which throws (and so alerts) only for a session that
- * has failed FAILED_PASSES_BEFORE_ALERT passes in a row. A failure outside a
- * session's pass still throws at once.
+ * The hourly cron's sync, which throws (and so alerts) for a session on its
+ * FAILED_PASSES_BEFORE_ALERT-th failed pass in a row and every one of that many
+ * after (passAlerts.ts), and emails once when a session that alerted syncs
+ * again. A failure outside a session's pass still throws at once.
  */
 export async function runHourlySnapshotSync(provider: Provider, env: Env, db: Db): Promise<void> {
-  const { failures } = await syncSessions(provider, env, db, {})
-  const alerts: Error[] = []
-  for (const { session, error, logged } of failures) {
-    // A failed pass that couldn't be logged can't be counted, so it alerts.
-    if (!logged) { alerts.push(error); continue }
-    const inARow = await failedPassesInARow(db, session)
-    if (inARow < FAILED_PASSES_BEFORE_ALERT) {
-      console.warn(`[sync-${provider.id}] ${session.sessionName}: ${inARow} failed in a row; alerting at ${FAILED_PASSES_BEFORE_ALERT}`)
-      continue
-    }
-    const alert = new Error(`${session.state} ${session.sessionName}: ${inARow} passes in a row failed. Latest: ${errorMessage(error)}`, { cause: error })
-    alert.stack = error.stack
-    alerts.push(alert)
-  }
-  throwAll(provider, alerts)
-}
-
-function throwAll(provider: Provider, errors: Error[]): void {
-  if (errors.length === 1) throw errors[0]
-  if (errors.length > 1) throw new AggregateError(errors, `[sync-${provider.id}] ${errors.length} sessions failed: ${errors.map(e => e.message).join('; ')}`)
-}
-
-/**
- * The session's failed passes since its last finished one, which stamps
- * last_synced_at. A pass that logs its counts and then fails leaves an ok row,
- * but no stamp, so it counts as failed here as it does on the States page.
- */
-async function failedPassesInARow(db: Db, session: SessionRow): Promise<number> {
-  const [row] = await db.select({ n: sql<number>`COUNT(*)` }).from(sessionSyncLog).where(and(
-    eq(sessionSyncLog.sessionId, session.sessionId),
-    eq(sessionSyncLog.status, 'failed'),
-    session.lastSyncedAt ? gte(sessionSyncLog.syncedAt, session.lastSyncedAt) : undefined,
-  )).all()
-  return Number(row?.n ?? 0)
+  const { failures, recoveries } = await syncSessions(provider, env, db, {})
+  await sendRecoveries(env, snapshotJobName(provider), recoveries)
+  throwAll(`sync-${provider.id}`, await streakAlerts(db, `sync-${provider.id}`, failures))
 }
 
 async function syncSessions(
   provider: Provider, env: Env, db: Db, opts: { force?: boolean },
-): Promise<{ reports: SnapshotPassReport[]; failures: SessionFailure[] }> {
-  const none = { reports: [], failures: [] }
+): Promise<{ reports: SnapshotPassReport[]; failures: SessionFailure[]; recoveries: Recovery[] }> {
+  const none = { reports: [], failures: [], recoveries: [] }
   if (!isSnapshotProvider(provider)) return none
   const owned = statesOwnedBy(await loadStateOwners(db), provider.id)
   if (owned.length === 0) return none
@@ -149,6 +113,7 @@ async function syncSessions(
   // whether to throw it.
   const reports: SnapshotPassReport[] = []
   const failures: SessionFailure[] = []
+  const recoveries: Recovery[] = []
   // One budget of first full ingests for all the sessions (Provider.ingestAll).
   const firstIngests = await firstIngestBudget(db, provider)
   for (const session of toSync) {
@@ -160,26 +125,17 @@ async function syncSessions(
     try {
       const counts = await runSnapshotPass(provider, session, covering, env, db, ctx, force, firstIngests)
       reports.push({ sessionId: session.sessionId, sessionName: session.sessionName, ...counts })
+      // Before the stamp, which ends the streak the recovery is read from.
+      const recovered = await recoveryFrom(db, session)
       await db.update(sessions).set({ lastSyncedAt: nowDb() }).where(eq(sessions.sessionId, session.sessionId))
+      if (recovered) recoveries.push(recovered)
     } catch (err) {
       console.error(`[sync-${provider.id}] ${session.sessionName} failed:`, err)
       const logged = await logOutcome(db, session, { status: 'failed', error: errorMessage(err) })
       failures.push({ session, error: err instanceof Error ? err : new Error(String(err)), logged })
     }
   }
-  return { reports, failures }
-}
-
-/**
- * An error's message for the log, cut to ERROR_LOG_MAX characters. A failed
- * query's own message is the SQL and every bound value (a stored record's JSON,
- * say), so the database's error under it is logged instead.
- */
-function errorMessage(err: unknown): string {
-  let e: unknown = err
-  while (e instanceof Error && e.message.startsWith('Failed query:') && e.cause instanceof Error) e = e.cause
-  const message = e instanceof Error ? e.message : String(e)
-  return message.length > ERROR_LOG_MAX ? `${message.slice(0, ERROR_LOG_MAX - 1)}…` : message
+  return { reports, failures, recoveries }
 }
 
 /**

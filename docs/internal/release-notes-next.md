@@ -140,3 +140,13 @@ Central's daily engagement pull now runs on its own cron, `15 6 * * *`, instead 
 
 - **Add the cron to your central's config:** `crons = ["0 * * * *", "15 6 * * *"]` under `[env.legiscan.triggers]`, as in `wrangler.example.toml`.
 - **Without it, the pull still runs**, from the 07:00 hourly tick, with the sync's calls competing for the same limit as before.
+
+## Sync alerts: every 4th failure, LegiScan states, and a resolved email
+
+Central's sync failure emails change in three ways.
+
+- **Fewer repeats.** A session that keeps failing emails on its 4th failed pass in a row and every 4th after (the 8th, the 12th), not on every pass from the 4th on. For Maryland, Virginia, and DC, which pass hourly, that is one email every four hours of an outage instead of one an hour.
+- **LegiScan states alert now.** A LegiScan pass that failed used to be logged only to the Worker's console. It now writes a failed row to the sync log, shows as failed on the States and Sync pages, and alerts by the same rule, with every state on an alerting pass in one `cron failed: ls-sync` email. On LegiScan's default hours, the first alert comes six to ten hours into an outage. A session with no bills, or a light check that finds no changes, never counts as a failure.
+- **A resolved email.** A session that alerted gets one `resolved: <job>` email on the pass that finishes, naming how many passes failed and since when. A failure that clears before it alerted sends nothing.
+
+**Nothing to configure.** The emails go to `ALERT_EMAILS`, as every job alert does, and there's no migration. The threshold counts passes, so a session given fewer sync hours alerts later: on one pass a day, the first alert comes on day 4.
