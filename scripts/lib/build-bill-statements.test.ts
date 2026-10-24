@@ -326,6 +326,46 @@ describe('a re-seeded bill', () => {
     expect(count(db, 'bill_sponsors')).toBe(completeBill.sponsors.length)
   })
 
+  it("replaces an ingest's companions, subjects, and referrals instead of adding to them", () => {
+    const db = migrated()
+    db.exec(`INSERT INTO bill_sasts (id, bill_id, type_id, type, sast_bill_number, sast_bill_id) VALUES ('uuid-5', 12345, ${completeBill.sasts[0].type_id}, '${completeBill.sasts[0].type}', '${completeBill.sasts[0].sast_bill_number}', ${completeBill.sasts[0].sast_bill_id})`)
+    db.exec(`INSERT INTO bill_subjects (id, bill_id, subject_id, subject_name) VALUES ('uuid-6', 12345, ${completeBill.subjects[0].subject_id}, 'x')`)
+    db.exec(`INSERT INTO bill_referrals (id, bill_id, date, committee_id, chamber, chamber_id, name) VALUES ('uuid-7', 12345, '${completeBill.referrals[0].date}', ${completeBill.referrals[0].committee_id}, 'A', 26, 'x')`)
+    seed(db)
+    expect(count(db, 'bill_sasts')).toBe(completeBill.sasts.length)
+    expect(count(db, 'bill_subjects')).toBe(completeBill.subjects.length)
+    expect(count(db, 'bill_referrals')).toBe(completeBill.referrals.length)
+  })
+
+  it('leaves companions, subjects, and referrals alone when the dump leaves them out', () => {
+    const db = migrated()
+    seed(db)
+    const { sasts: _a, subjects: _b, referrals: _c, ...withoutThem } = completeBill
+    seed(db, withoutThem)
+    expect(count(db, 'bill_sasts')).toBe(completeBill.sasts.length)
+    expect(count(db, 'bill_subjects')).toBe(completeBill.subjects.length)
+    expect(count(db, 'bill_referrals')).toBe(completeBill.referrals.length)
+  })
+
+  it.each([
+    ['the dump has no hash', { text_hash: null }, 'th'],
+    ['the dump has an empty hash', { text_hash: '' }, 'th'],
+  ])('keeps the stored copy when %s, and the stored hash', (_label, change, kept) => {
+    const db = migrated()
+    seed(db)
+    db.exec(`UPDATE bill_texts SET r2_key = 'k' WHERE doc_id = 1000`)
+    seed(db, { ...completeBill, texts: [{ ...completeBill.texts[0], ...change }] })
+    expect(text(db)).toMatchObject({ r2_key: 'k', text_hash: kept })
+  })
+
+  it('keeps the stored copy when central held no hash for it', () => {
+    const db = migrated()
+    seed(db)
+    db.exec(`UPDATE bill_texts SET r2_key = 'k', text_hash = NULL WHERE doc_id = 1000`)
+    seed(db)
+    expect(text(db)).toMatchObject({ r2_key: 'k', text_hash: 'th' })
+  })
+
   it('leaves history and sponsors alone when the dump leaves them out', () => {
     const db = migrated()
     seed(db)

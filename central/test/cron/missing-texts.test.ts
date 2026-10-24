@@ -29,13 +29,14 @@ afterEach(() => { vi.useRealTimers() })
 async function seedBill(billId: number, opts: {
   matchType?: 'keyword' | 'manual' | null
   fetchRequestedAt?: string | null
+  detailHash?: string | null
   linked?: boolean
   textsFetchedAt?: string | null
   texts?: Array<{ r2Key?: string | null; attemptedAt?: string | null; stateLink?: string | null }>
 } = {}) {
   await db().insert(schema.bills).values({
     billId, sessionId: 1, state: 'WI', stateId: 0, billNumber: `AB${billId}`, title: `Bill ${billId}`,
-    changeHash: 'h', detailHash: 'h', status: 1,
+    changeHash: 'h', detailHash: opts.detailHash === undefined ? 'h' : opts.detailHash, status: 1,
     textsFetchedAt: opts.textsFetchedAt === undefined ? HOURS_AGO(5) : opts.textsFetchedAt,
   })
   if (opts.linked !== false) {
@@ -121,9 +122,14 @@ describe('queueMissingTexts', () => {
   })
 
   it('leaves alone a bill whose first ingest has not stamped its texts as fetched', async () => {
-    // A quiet first full ingest stamps texts_fetched_at only once it has written everything.
-    await seedBill(9, { textsFetchedAt: null })
+    // A quiet first full ingest stamps texts_fetched_at and detail_hash only once it has written everything.
+    await seedBill(9, { textsFetchedAt: null, detailHash: null })
     expect((await run()).messages).toEqual([])
+  })
+
+  it('queues a seeded bill, whose detail is stamped though no ingest stamped its texts', async () => {
+    await seedBill(18, { textsFetchedAt: null })
+    expect((await run()).messages.map(m => m.billId)).toEqual([18])
   })
 
   it('stamps the texts it queues as attempted, and only those', async () => {

@@ -145,6 +145,26 @@ export function runInChunks(
   }
 }
 
+/**
+ * Whole bills' statements, packed into chunks of at most `max` statements. A
+ * bill's statements replace its child rows (a DELETE, then its INSERTs), so a
+ * bill is never split across two executions: one past `max` runs alone.
+ */
+export function packBills(bills: string[][], max: number): string[][] {
+  const chunks: string[][] = []
+  let chunk: string[] = []
+  for (const bill of bills) {
+    if (bill.length === 0) continue
+    if (chunk.length > 0 && chunk.length + bill.length > max) {
+      chunks.push(chunk)
+      chunk = []
+    }
+    chunk.push(...bill)
+  }
+  if (chunk.length > 0) chunks.push(chunk)
+  return chunks
+}
+
 /** Clean up any leftover temp SQL files (call in process exit handlers). */
 export function cleanupTmpFiles(): void {
   for (const f of _tmpFiles) { try { unlinkSync(f) } catch {} }
@@ -210,13 +230,13 @@ VALUES (${num(p.people_id)}, ${esc(p.person_hash)}, ${num(p.state_id)}, ${esc(p.
   const FLUSH_EVERY = 30
   let billCount = 0
   let errorCount = 0
-  let pending: string[] = []
+  let pending: string[][] = []
   // Clear `pending` only AFTER the SQL succeeds. runInChunks throws on a
   // non-transient wrangler/D1 failure; keeping the buffer on throw means the
   // batch is never silently lost, and the throw propagates to abort the seed.
   const flush = () => {
     if (pending.length === 0) return
-    runInChunks(pending, opts, 50)
+    for (const chunk of packBills(pending, 50)) runSql(chunk, opts)
     pending = []
   }
 
@@ -230,7 +250,7 @@ VALUES (${num(p.people_id)}, ${esc(p.person_hash)}, ${num(p.state_id)}, ${esc(p.
     try {
       const b = JSON.parse(decoder.decode(files[name])).bill
       if (!b) continue
-      pending.push(...buildBillStatements(b, state, sessionId))
+      pending.push(buildBillStatements(b, state, sessionId))
       billCount++
     } catch (err) {
       errorCount++

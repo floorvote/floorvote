@@ -44,9 +44,12 @@ export async function queueMissingTexts(env: Env, db: Db): Promise<{ queued: num
       isNull(billTexts.r2Key),
       isNull(billTexts.fetchAttemptedAt),
       isNotNull(billTexts.stateLink),
-      // A first full ingest stamps this only once it has written everything.
-      isNotNull(bills.textsFetchedAt),
-      lt(bills.textsFetchedAt, dbTimeAgo(INGEST_SETTLE_MS)),
+      or(
+        lt(bills.textsFetchedAt, dbTimeAgo(INGEST_SETTLE_MS)),
+        // A bulk seed stamps the detail but not the texts. A first full ingest
+        // stamps both only once it has written everything, so it's left alone.
+        and(isNull(bills.textsFetchedAt), isNotNull(bills.detailHash)),
+      ),
     ))
     .orderBy(asc(billTexts.billId))
     .limit(MISSING_TEXTS_PER_RUN)
