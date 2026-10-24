@@ -107,9 +107,35 @@ describe('queueMissingTexts', () => {
     expect((await run()).messages).toEqual([])
   })
 
-  it('queues a bill whose ingest never stamped its texts as fetched', async () => {
+  it('leaves alone a bill whose first ingest has not stamped its texts as fetched', async () => {
+    // A quiet first full ingest stamps texts_fetched_at only once it has written everything.
     await seedBill(9, { textsFetchedAt: null })
-    expect((await run()).messages.map(m => m.billId)).toEqual([9])
+    expect((await run()).messages).toEqual([])
+  })
+
+  it('stamps the texts it queues as attempted, and only those', async () => {
+    await seedBill(13, { texts: [{}, { r2Key: 'bills/legiscan-13/texts/131.pdf' }] })
+    await seedBill(14, { matchType: null })
+    await run()
+    const rows = await db().select().from(schema.billTexts).all()
+    const attempted = Object.fromEntries(rows.map(r => [r.docId, r.fetchAttemptedAt]))
+    expect(attempted[130]).toBe('2026-10-24 12:00:00')
+    expect(attempted[131]).toBeNull()
+    expect(attempted[140]).toBeNull()
+  })
+
+  it('does not queue a swept bill again when its download never finished', async () => {
+    // A download that hangs or errors before stamping its attempt must not
+    // bring the bill back every hour.
+    await seedBill(15)
+    expect((await run()).messages.map(m => m.billId)).toEqual([15])
+    vi.setSystemTime(new Date('2026-10-24T13:00:00Z'))
+    expect((await run()).messages).toEqual([])
+  })
+
+  it('reads the unattempted texts through a partial index', async () => {
+    const plan = await env.DB.prepare(`EXPLAIN QUERY PLAN SELECT bill_id FROM bill_texts WHERE r2_key IS NULL AND fetch_attempted_at IS NULL AND state_link IS NOT NULL`).all()
+    expect(JSON.stringify(plan.results)).toContain('idx_bill_texts_unattempted')
   })
 
   it('queues a bill once when it has several texts missing, or one missing beside one stored', async () => {

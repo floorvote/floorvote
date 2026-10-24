@@ -1,6 +1,6 @@
-import { and, asc, eq, isNotNull, isNull, or, lt } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNotNull, isNull, lt } from 'drizzle-orm'
 import { bills, billTenants, billTexts } from '../db/schema'
-import { dbTimeAgo } from '../lib/dbTime'
+import { dbTimeAgo, nowDb } from '../lib/dbTime'
 import { groupByIngestQueue } from '../lib/providerRouting'
 import type { Db, Env, IngestorMessage } from '../types'
 
@@ -13,6 +13,9 @@ export const MISSING_TEXTS_PER_RUN = 50
 /** A bill ingested more recently than this may still be downloading its texts. */
 const INGEST_SETTLE_MS = 60 * 60 * 1000
 
+/** D1 binds at most 100 parameters. */
+const STAMP_CHUNK = 90
+
 /**
  * Queue the tracked bills whose texts no download attempt ever reached.
  *
@@ -21,9 +24,9 @@ const INGEST_SETTLE_MS = 60 * 60 * 1000
  * `fetch_attempted_at`, on a bill whose detail reads as current. No later sync
  * revisits it, and the instance shows "Text not cached" until the bill changes
  * upstream. Each queued bill downloads its missing texts from their state
- * links (the `skipFetch` path), which stamps every attempt, so a text is picked
- * up once. A failed attempt is left to POST /admin/refetch-bill-text, since its
- * fallback may spend a provider call.
+ * links (the `skipFetch` path). The sweep stamps the texts it picks as
+ * attempted, so it picks each one once; a download that fails records its
+ * error, and retrying it is POST /admin/refetch-bill-text's job.
  */
 export async function queueMissingTexts(env: Env, db: Db): Promise<{ queued: number }> {
   const rows = await db.selectDistinct({ billId: billTexts.billId })
@@ -34,7 +37,9 @@ export async function queueMissingTexts(env: Env, db: Db): Promise<{ queued: num
       isNull(billTexts.r2Key),
       isNull(billTexts.fetchAttemptedAt),
       isNotNull(billTexts.stateLink),
-      or(isNull(bills.textsFetchedAt), lt(bills.textsFetchedAt, dbTimeAgo(INGEST_SETTLE_MS))),
+      // A first full ingest stamps this only once it has written everything.
+      isNotNull(bills.textsFetchedAt),
+      lt(bills.textsFetchedAt, dbTimeAgo(INGEST_SETTLE_MS)),
     ))
     .orderBy(asc(billTexts.billId))
     .limit(MISSING_TEXTS_PER_RUN)
@@ -47,6 +52,18 @@ export async function queueMissingTexts(env: Env, db: Db): Promise<{ queued: num
         body: { billId, forceMetadata: true, skipFetch: true } as IngestorMessage,
       })))
     }
+  }
+  // Stamped as attempted once queued, so a download that hangs or errors before
+  // stamping its own attempt never brings the bill back. Only the rows picked:
+  // a failed text the same message retries keeps its own record.
+  const queuedAt = nowDb()
+  for (let i = 0; i < billIds.length; i += STAMP_CHUNK) {
+    await db.update(billTexts).set({ fetchAttemptedAt: queuedAt }).where(and(
+      inArray(billTexts.billId, billIds.slice(i, i + STAMP_CHUNK)),
+      isNull(billTexts.r2Key),
+      isNull(billTexts.fetchAttemptedAt),
+      isNotNull(billTexts.stateLink),
+    ))
   }
   return { queued: billIds.length }
 }
