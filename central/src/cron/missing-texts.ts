@@ -1,7 +1,8 @@
-import { and, asc, eq, inArray, isNotNull, isNull, lt } from 'drizzle-orm'
+import { and, asc, eq, gt, inArray, isNotNull, isNull, lt, or } from 'drizzle-orm'
 import { bills, billTenants, billTexts } from '../db/schema'
 import { dbTimeAgo, nowDb } from '../lib/dbTime'
 import { groupByIngestQueue } from '../lib/providerRouting'
+import { fetchRequestCutoff } from '../lib/fetchRequests'
 import type { Db, Env, IngestorMessage } from '../types'
 
 /**
@@ -17,7 +18,8 @@ const INGEST_SETTLE_MS = 60 * 60 * 1000
 const STAMP_CHUNK = 90
 
 /**
- * Queue the tracked bills whose texts no download attempt ever reached.
+ * Queue the bills instances read whose texts no download attempt ever reached:
+ * tracked bills, and leads an instance has asked for (lib/fetchRequests.ts).
  *
  * An ingest writes a bill's detail and its text rows before it downloads the
  * texts, so one that dies in between leaves texts with no `r2_key` and no
@@ -32,7 +34,12 @@ export async function queueMissingTexts(env: Env, db: Db): Promise<{ queued: num
   const rows = await db.selectDistinct({ billId: billTexts.billId })
     .from(billTexts)
     .innerJoin(bills, eq(bills.billId, billTexts.billId))
-    .innerJoin(billTenants, and(eq(billTenants.billId, billTexts.billId), isNotNull(billTenants.matchType)))
+    .innerJoin(billTenants, and(
+      eq(billTenants.billId, billTexts.billId),
+      // Tracked, or read without tracking while the instance's request is in
+      // effect: a companion group's lead, whose text the tracked bill's page shows.
+      or(isNotNull(billTenants.matchType), gt(billTenants.fetchRequestedAt, fetchRequestCutoff())),
+    ))
     .where(and(
       isNull(billTexts.r2Key),
       isNull(billTexts.fetchAttemptedAt),

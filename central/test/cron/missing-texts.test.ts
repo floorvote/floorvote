@@ -28,6 +28,7 @@ afterEach(() => { vi.useRealTimers() })
 
 async function seedBill(billId: number, opts: {
   matchType?: 'keyword' | 'manual' | null
+  fetchRequestedAt?: string | null
   linked?: boolean
   textsFetchedAt?: string | null
   texts?: Array<{ r2Key?: string | null; attemptedAt?: string | null; stateLink?: string | null }>
@@ -40,6 +41,7 @@ async function seedBill(billId: number, opts: {
   if (opts.linked !== false) {
     await db().insert(schema.billTenants).values({
       billId, tenantId: 'test-tenant', matchType: opts.matchType === undefined ? 'manual' : opts.matchType,
+      fetchRequestedAt: opts.fetchRequestedAt ?? null,
     })
   }
   const texts = opts.texts ?? [{}]
@@ -93,6 +95,17 @@ describe('queueMissingTexts', () => {
   it('leaves out a bill no instance tracks', async () => {
     await seedBill(5, { matchType: null })
     await seedBill(6, { linked: false })
+    expect((await run()).messages).toEqual([])
+  })
+
+  it('queues a lead an instance reads without tracking it, while its request is recent', async () => {
+    // A companion group's lead: the instance shows its text on the tracked bill's page.
+    await seedBill(16, { matchType: null, fetchRequestedAt: HOURS_AGO(2) })
+    expect((await run()).messages).toEqual([{ billId: 16, forceMetadata: true, skipFetch: true }])
+  })
+
+  it('leaves out a lead whose request has lapsed', async () => {
+    await seedBill(17, { matchType: null, fetchRequestedAt: HOURS_AGO(24 * 100) })
     expect((await run()).messages).toEqual([])
   })
 
