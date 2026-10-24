@@ -69,21 +69,40 @@ ON CONFLICT(committee_id) DO UPDATE SET name = excluded.name, chamber = excluded
 WHERE committees.provider = 'legiscan' AND excluded.session_id >= committees.session_id;`)
   }
 
+  // History and sponsors are replaced, as an ingest replaces them: the ingest
+  // writes its own ids, so adding the seed's beside them would list every
+  // action and sponsor twice on a bill central already ingested. A dump that
+  // leaves a collection out says nothing about it, so what central holds stays.
+  if (Array.isArray(b.history)) stmts.push(`DELETE FROM bill_history WHERE bill_id = ${num(b.bill_id)};`)
   for (let i = 0; i < (b.history ?? []).length; i++) {
     const h = b.history[i]
     stmts.push(`INSERT OR IGNORE INTO bill_history (id, bill_id, date, action, chamber, chamber_id, importance, seq)
 VALUES (${esc(`${b.bill_id}-${i}`)}, ${num(b.bill_id)}, ${esc(h.date)}, ${esc(h.action)}, ${esc(h.chamber)}, ${num(h.chamber_id)}, ${num(h.importance ?? 1)}, ${num(i)});`)
   }
 
+  if (Array.isArray(b.sponsors)) stmts.push(`DELETE FROM bill_sponsors WHERE bill_id = ${num(b.bill_id)};`)
   for (let i = 0; i < (b.sponsors ?? []).length; i++) {
     const s = b.sponsors[i]
     stmts.push(`INSERT OR IGNORE INTO bill_sponsors (id, bill_id, people_id, sponsor_type_id, sponsor_order, committee_sponsor, committee_id)
 VALUES (${esc(`${b.bill_id}-${s.people_id ?? 0}-${s.sponsor_order ?? i}`)}, ${num(b.bill_id)}, ${num(s.people_id)}, ${num(s.sponsor_type_id ?? 1)}, ${num(s.sponsor_order ?? i)}, ${num(s.committee_sponsor ?? 0)}, ${num(s.committee_id ?? null)});`)
   }
 
+  // A text is upserted, never replaced: REPLACE would drop the r2_key and
+  // download record of a text central already stored, and nothing downloads it
+  // again. A dump naming a different hash is a new version, so its stored copy
+  // and record are dropped and the new version downloads.
   for (const t of (b.texts ?? [])) {
-    stmts.push(`INSERT OR REPLACE INTO bill_texts (doc_id, bill_id, date, type, type_id, mime, mime_id, url, state_link, text_size, text_hash, alt_bill_text, alt_mime, alt_mime_id, alt_state_link, alt_text_size, alt_text_hash)
-VALUES (${num(t.doc_id)}, ${num(b.bill_id)}, ${esc(t.date)}, ${esc(t.type)}, ${num(t.type_id ?? 1)}, ${esc(t.mime ?? 'text/html')}, ${num(t.mime_id ?? 1)}, ${esc(t.url)}, ${esc(t.state_link)}, ${num(t.text_size)}, ${esc(t.text_hash)}, ${num(t.alt_bill_text ?? 0)}, ${esc(t.alt_mime)}, ${num(t.alt_mime_id)}, ${esc(t.alt_state_link)}, ${num(t.alt_text_size)}, ${esc(t.alt_text_hash)});`)
+    stmts.push(`INSERT INTO bill_texts (doc_id, bill_id, date, type, type_id, mime, mime_id, url, state_link, text_size, text_hash, alt_bill_text, alt_mime, alt_mime_id, alt_state_link, alt_text_size, alt_text_hash)
+VALUES (${num(t.doc_id)}, ${num(b.bill_id)}, ${esc(t.date)}, ${esc(t.type)}, ${num(t.type_id ?? 1)}, ${esc(t.mime ?? 'text/html')}, ${num(t.mime_id ?? 1)}, ${esc(t.url)}, ${esc(t.state_link)}, ${num(t.text_size)}, ${esc(t.text_hash)}, ${num(t.alt_bill_text ?? 0)}, ${esc(t.alt_mime)}, ${num(t.alt_mime_id)}, ${esc(t.alt_state_link)}, ${num(t.alt_text_size)}, ${esc(t.alt_text_hash)})
+ON CONFLICT(doc_id) DO UPDATE SET
+  r2_key = CASE WHEN excluded.text_hash IS bill_texts.text_hash THEN bill_texts.r2_key END,
+  fetch_error = CASE WHEN excluded.text_hash IS bill_texts.text_hash THEN bill_texts.fetch_error END,
+  fetch_attempted_at = CASE WHEN excluded.text_hash IS bill_texts.text_hash THEN bill_texts.fetch_attempted_at END,
+  bill_id = excluded.bill_id, date = excluded.date, type = excluded.type, type_id = excluded.type_id,
+  mime = excluded.mime, mime_id = excluded.mime_id, url = excluded.url, state_link = excluded.state_link,
+  text_size = excluded.text_size, text_hash = excluded.text_hash, alt_bill_text = excluded.alt_bill_text,
+  alt_mime = excluded.alt_mime, alt_mime_id = excluded.alt_mime_id, alt_state_link = excluded.alt_state_link,
+  alt_text_size = excluded.alt_text_size, alt_text_hash = excluded.alt_text_hash;`)
   }
 
   for (const s of (b.supplements ?? [])) {

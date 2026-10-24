@@ -268,3 +268,79 @@ describe('the seeded detail marker', () => {
     expect(marker(db)).toEqual({ change_hash: 'abc123', detail_hash: 'abc123', detail_requested_hash: null, detail_requested_at: null })
   })
 })
+
+describe('a re-seeded bill', () => {
+  // A seed run over bills central already ingested must not undo the ingest:
+  // a text it stored keeps its stored copy, and the bill's history and
+  // sponsors aren't written a second time under the seed's own ids.
+  const migrated = () => {
+    const db = new DatabaseSync(':memory:')
+    const dir = join(__dirname, '../../central/migrations')
+    for (const file of readdirSync(dir).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(join(dir, file), 'utf8'))
+    return db
+  }
+  const seed = (db: DatabaseSync, bill: any = completeBill) => { for (const s of buildBillStatements(bill, 'WI', 2154)) db.exec(s) }
+  const text = (db: DatabaseSync) => db.prepare(
+    'SELECT r2_key, fetch_error, fetch_attempted_at, text_hash, date FROM bill_texts WHERE doc_id = 1000').get()
+  const count = (db: DatabaseSync, table: string) => (db.prepare(`SELECT COUNT(*) n FROM ${table} WHERE bill_id = 12345`).get() as any).n
+
+  it('keeps a stored text, its download record, and its hash', () => {
+    const db = migrated()
+    seed(db)
+    db.exec(`UPDATE bill_texts SET r2_key = 'bills/legiscan-12345/texts/1000.html', fetch_attempted_at = '2026-02-01 00:00:00' WHERE doc_id = 1000`)
+    seed(db)
+    expect(text(db)).toEqual({ r2_key: 'bills/legiscan-12345/texts/1000.html', fetch_error: null, fetch_attempted_at: '2026-02-01 00:00:00', text_hash: 'th', date: '2026-01-15' })
+  })
+
+  it("updates a stored text's details from the dump", () => {
+    const db = migrated()
+    seed(db)
+    db.exec(`UPDATE bill_texts SET r2_key = 'k', fetch_attempted_at = '2026-02-01 00:00:00' WHERE doc_id = 1000`)
+    seed(db, { ...completeBill, texts: [{ ...completeBill.texts[0], date: '2026-01-16' }] })
+    expect(text(db)).toMatchObject({ r2_key: 'k', date: '2026-01-16' })
+  })
+
+  it('drops the stored copy when the dump names a different text hash, so the new version downloads', () => {
+    const db = migrated()
+    seed(db)
+    db.exec(`UPDATE bill_texts SET r2_key = 'k', fetch_error = 'old error', fetch_attempted_at = '2026-02-01 00:00:00' WHERE doc_id = 1000`)
+    seed(db, { ...completeBill, texts: [{ ...completeBill.texts[0], text_hash: 'th2' }] })
+    expect(text(db)).toEqual({ r2_key: null, fetch_error: null, fetch_attempted_at: null, text_hash: 'th2', date: '2026-01-15' })
+  })
+
+  it("replaces an ingest's history and sponsors instead of adding to them", () => {
+    const db = migrated()
+    // What an ingest writes: its own ids.
+    db.exec(`INSERT INTO bill_history (id, bill_id, date, action, chamber, chamber_id, importance, seq) VALUES ('uuid-1', 12345, '2026-01-15', 'Introduced', 'A', 26, 1, 0), ('uuid-2', 12345, '2026-02-01', 'Referred to committee', 'A', 26, 1, 1)`)
+    db.exec(`INSERT INTO bill_sponsors (id, bill_id, people_id, sponsor_type_id, sponsor_order, committee_sponsor) VALUES ('uuid-3', 12345, 5001, 1, 1, 0), ('uuid-4', 12345, 5002, 2, 2, 0)`)
+    seed(db)
+    expect(count(db, 'bill_history')).toBe(completeBill.history.length)
+    expect(count(db, 'bill_sponsors')).toBe(completeBill.sponsors.length)
+  })
+
+  it('writes history and sponsors once when seeded twice', () => {
+    const db = migrated()
+    seed(db)
+    seed(db)
+    expect(count(db, 'bill_history')).toBe(completeBill.history.length)
+    expect(count(db, 'bill_sponsors')).toBe(completeBill.sponsors.length)
+  })
+
+  it('leaves history and sponsors alone when the dump leaves them out', () => {
+    const db = migrated()
+    seed(db)
+    const { history: _h, sponsors: _s, ...withoutThem } = completeBill
+    seed(db, withoutThem)
+    expect(count(db, 'bill_history')).toBe(completeBill.history.length)
+    expect(count(db, 'bill_sponsors')).toBe(completeBill.sponsors.length)
+  })
+
+  it("leaves another bill's history and sponsors alone", () => {
+    const db = migrated()
+    db.exec(`INSERT INTO bill_history (id, bill_id, date, action, chamber, chamber_id, importance, seq) VALUES ('other', 999, '2026-01-15', 'Introduced', 'A', 26, 1, 0)`)
+    db.exec(`INSERT INTO bill_sponsors (id, bill_id, people_id, sponsor_type_id, sponsor_order, committee_sponsor) VALUES ('other', 999, 5001, 1, 1, 0)`)
+    seed(db)
+    expect((db.prepare('SELECT COUNT(*) n FROM bill_history WHERE bill_id = 999').get() as any).n).toBe(1)
+    expect((db.prepare('SELECT COUNT(*) n FROM bill_sponsors WHERE bill_id = 999').get() as any).n).toBe(1)
+  })
+})
