@@ -6,6 +6,7 @@ import { runSync } from './cron/sync'
 import { assignSessionSlugs } from './lib/sessionSlugs'
 import { isSnapshotProvider, runHourlySnapshotSync } from './cron/sync-snapshots'
 import { runBodyEventSync } from './cron/body-events'
+import { queueMissingTexts } from './cron/missing-texts'
 import { PROVIDERS } from './providers'
 import { checkVoteDatasets, VOTE_DATASET_CHECK_HOUR_ET } from './cron/vote-datasets'
 import { getCurrentEtHour } from './lib/sync-schedule'
@@ -120,6 +121,8 @@ export default {
     for (const provider of PROVIDERS.filter(p => p.listBodyEvents)) {
       ctx.waitUntil(runJob(env, `${provider.id}-body-events`, () => runBodyEventSync(provider, env, db)))
     }
+    // Texts an ingest wrote but died before downloading (cron/missing-texts.ts).
+    ctx.waitUntil(runJob(env, 'missing-texts', () => queueMissingTexts(env, db)))
     if (getCurrentEtHour() === VOTE_DATASET_CHECK_HOUR_ET) {
       ctx.waitUntil(runJob(env, 'vote-datasets', () => checkVoteDatasets(env, db)))
     }
