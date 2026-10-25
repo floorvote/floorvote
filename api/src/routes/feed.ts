@@ -10,7 +10,7 @@ import { activeUser } from '../lib/accountDeletion'
 import type { AppDb, AppEnv } from '../types'
 import { groupHasPriority, loadGroupPriorities, priorityWorn } from '../lib/teamFields'
 import { getNewMatchMinRelevance, loadUntriagedNewMatchGroups, untriagedNewMatch } from '../lib/newMatch'
-import { defaultFeedShows, rowBills, rowDays, rowPage, utcDay } from '../lib/noPriorityRow'
+import { defaultFeedShows, entryLeads, rowDays, rowPage, utcDay, type DayEntry, type RowDay } from '../lib/noPriorityRow'
 
 export const feedRouter = new Hono<AppEnv>()
 
@@ -187,23 +187,34 @@ feedRouter.get('/', async (c) => {
   const pageRows = rows.filter((x) => x.type === NO_PRIORITY_UPDATES)
   const loneCandidates = rows.filter((r) =>
     r.billId !== null && LEGISLATIVE_EVENT_TYPES.includes(r.type) && wornPriority(r) === null)
-  if (pageRows.length > 0 || loneCandidates.length > 0) {
-    const days = await rowDays(db, [...pageRows, ...loneCandidates].map((r) => utcDay(r.createdAt)), minRelevance)
-    for (const r of loneCandidates) {
-      const entries = days.get(utcDay(r.createdAt))?.entries ?? []
-      if (entries.length === 1 && entries[0].memberIds.includes(r.billId!)) loneCards.add(r.id)
-    }
-    const leads = (day: string) => (days.get(day)?.entries ?? []).slice(0, 2).map((e) => e.memberIds[0])
-    const billsById = await rowBills(db, pageRows.flatMap((r) => leads(utcDay(r.createdAt))))
-    for (const r of pageRows) {
-      const day = days.get(utcDay(r.createdAt))
-      // A row whose bills left it between the page's query and this one counts 0, which the client hides.
-      rowSummaries.set(r.id, {
-        count: day?.entries.length ?? 0,
-        firstBills: leads(utcDay(r.createdAt)).flatMap((id) => billsById.get(id) ?? []),
-        lastAt: day?.lastAt ?? r.createdAt,
-      })
-    }
+  const days = pageRows.length > 0 || loneCandidates.length > 0
+    ? await rowDays(db, [...pageRows, ...loneCandidates].map((r) => utcDay(r.createdAt)), minRelevance)
+    : new Map<string, RowDay>()
+  for (const r of loneCandidates) {
+    const entries = days.get(utcDay(r.createdAt))?.entries ?? []
+    if (entries.length === 1 && entries[0].memberIds.includes(r.billId!)) loneCards.add(r.id)
+  }
+
+  // The bill each chip and card is named by, for the whole page in two queries (one with no companion
+  // group on it): a row's chip is its entry's, and every companion group's card, no-priority or not, is
+  // named by the group's lead (#945), which need not be the member that moved, with the group's analysis.
+  // Sent on each of the card's events as groupLead, so its title, summary, and priority dropdown are the
+  // lead's: a priority set from any group card is the group's, set through its lead.
+  const firstEntries = (day: string) => (days.get(day)?.entries ?? []).slice(0, 2)
+  const groupCards = new Map<string, DayEntry>()
+  for (const r of rows) {
+    if (r.billId !== null && r.billGroupKey) groupCards.set(`group:${r.billGroupKey}`, { key: `group:${r.billGroupKey}`, relevance: 0, memberIds: [r.billId] })
+  }
+  const named = await entryLeads(db, [...pageRows.flatMap((r) => firstEntries(utcDay(r.createdAt))), ...groupCards.values()])
+  const groupLeadOf = (r: (typeof rows)[number]) => (r.billId !== null && r.billGroupKey ? named.get(`group:${r.billGroupKey}`) : undefined)
+  for (const r of pageRows) {
+    const day = days.get(utcDay(r.createdAt))
+    // A row whose bills left it between the page's query and this one counts 0, which the client hides.
+    rowSummaries.set(r.id, {
+      count: day?.entries.length ?? 0,
+      firstBills: firstEntries(utcDay(r.createdAt)).flatMap((e) => named.get(e.key) ?? []),
+      lastAt: day?.lastAt ?? r.createdAt,
+    })
   }
   const metadataOf = (r: { id: string; metadata: string }): unknown => {
     const stored = JSON.parse(r.metadata) as object
@@ -234,6 +245,7 @@ feedRouter.get('/', async (c) => {
       userTitle: r.userTitle,
       metadata: metadataOf(r),
       noPriorityCard: loneCards.has(r.id),
+      ...(groupLeadOf(r) ? { groupLead: groupLeadOf(r) } : {}),
       createdAt: r.createdAt,
     })),
     total: countRow?.total ?? 0,

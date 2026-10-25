@@ -3,7 +3,8 @@ import { env, createExecutionContext } from 'cloudflare:test'
 import { inArray, eq } from 'drizzle-orm'
 import { clearDb, appFetch, stubFetch, seedUser, seedSession, seedBill, seedBillText } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { memberVotes, officialPositions, comments, notes, calendarEvents, associationConfig } from '../../src/db/schema'
+import { bills, memberVotes, officialPositions, comments, notes, calendarEvents, associationConfig } from '../../src/db/schema'
+import { loadGroupTeamValues } from '../../src/lib/teamFields'
 import { app } from '../../src/index'
 import { DEMO_BILL_COMMENT_CAP } from '../../src/routes/billsApi/engagementRoutes'
 
@@ -871,6 +872,38 @@ describe('PATCH /bills/:id/priority — promotion to full analysis', () => {
     })
     expect((await res.json() as { promoted: boolean }).promoted).toBe(false)
     expect(promoteCalled()).toBe(false)
+  })
+
+  // A pulled companion (#378) has no match type because its group holds a tracked
+  // bill. A priority set on it from its own page promotes it, as on any monitored
+  // bill: the Feed's row and lone card set a group's priority through its lead
+  // instead (#945), so they never land on a companion that doesn't lead.
+  it('promotes a pulled companion when its priority is set from its own page, and the group reads the priority', async () => {
+    const tracked = await seedBill({ externalId: 'legiscan:9010', matchType: 'keyword' })
+    const pulled = await seedBill({ externalId: 'legiscan:9011', matchType: null })
+    await getDb(env.DB).update(bills).set({ groupKey: [tracked, pulled].sort()[0] }).where(inArray(bills.id, [tracked, pulled]))
+    const res = await appFetch(`http://localhost/api/bills/${pulled}/priority`, {
+      method: 'PATCH',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ priority: 'high' }),
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ priority: 'high', promoted: true })
+    expect(promoteCalled()).toBe(true)
+    expect((await loadGroupTeamValues(getDb(env.DB), tracked)).priority?.priority).toBe('high')
+  })
+
+  it('still promotes a monitored bill in a group with no tracked bill', async () => {
+    const a = await seedBill({ externalId: 'legiscan:9020', matchType: null })
+    const b = await seedBill({ externalId: 'legiscan:9021', matchType: null })
+    await getDb(env.DB).update(bills).set({ groupKey: [a, b].sort()[0] }).where(inArray(bills.id, [a, b]))
+    const res = await appFetch(`http://localhost/api/bills/${a}/priority`, {
+      method: 'PATCH',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ priority: 'high' }),
+    })
+    expect((await res.json() as { promoted: boolean }).promoted).toBe(true)
+    expect(promoteCalled()).toBe(true)
   })
 
   it('does not promote when clearing priority', async () => {

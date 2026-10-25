@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { env } from 'cloudflare:test'
-import { eq, sql } from 'drizzle-orm'
+import { env, SELF } from 'cloudflare:test'
+import { and, eq, sql } from 'drizzle-orm'
 import { processCentralNotification } from '../../src/queue/processor'
 import { getDb } from '../../src/db/client'
-import { bills, feedEvents } from '../../src/db/schema'
-import { groupByHand } from '../../src/lib/companionGroups'
-import { clearDb, seedBill, seedUser } from '../helpers'
+import { associationConfig, bills, feedEvents } from '../../src/db/schema'
+import { groupByHand, splitFromGroup } from '../../src/lib/companionGroups'
+import { clearDb, seedBill, seedSession, seedUser } from '../helpers'
 
 // The no-priority updates row (#919) is written by the processor as passive
 // legislative events land on analyzed bills: one bill-less row a day. Which
@@ -108,9 +108,25 @@ describe('processCentralNotification: the no-priority updates row', () => {
     expect(await rows()).toHaveLength(1)
   })
 
-  it('writes no row for an update on a bill with no match type', async () => {
+  // #945: a companion group qualifies for the row through any member, so an update
+  // on a pulled companion makes the day's row when its group holds a match.
+  it('writes the row for an update on a bill with no match type, in a group with a match', async () => {
     await deliver('legiscan:3', { changes: actionChange })
     expect(await typesOf('H 3')).toContain('bill_updated')
+    expect(await rows()).toHaveLength(1)
+  })
+
+  it('writes no row for an update on a grouped bill with no match type whose group holds no match', async () => {
+    await db().update(bills).set({ matchType: null }).where(eq(bills.id, 'a-1'))
+    await deliver('legiscan:3', { changes: actionChange })
+    expect(await typesOf('H 3')).toContain('bill_updated')
+    expect(await rows()).toHaveLength(0)
+  })
+
+  it('writes no event and no row for a bill with no match type in no group', async () => {
+    await splitFromGroup(db(), 'c-3', await seedUser({ role: 'admin', email: 'split@example.com' }))
+    await deliver('legiscan:3', { changes: actionChange })
+    expect(await typesOf('H 3')).toEqual([])
     expect(await rows()).toHaveLength(0)
   })
 
@@ -125,9 +141,32 @@ describe('processCentralNotification: the no-priority updates row', () => {
     expect(await rows()).toHaveLength(1)
   })
 
-  it('writes no row for a hearing on a bill with no match type', async () => {
+  it('writes the row for a hearing on a bill with no match type, in a group with a match', async () => {
     await deliver('legiscan:3', { calendar: hearingBlock() })
     expect(await typesOf('H 3')).toEqual(['hearing_added'])
-    expect(await rows()).toHaveLength(0)
+    expect(await rows()).toHaveLength(1)
+  })
+
+  // The path #945 is about, end to end: a full delivery of an analyzed pulled
+  // companion (no match type of its own) whose group holds a tracked bill at or
+  // above the minimum relevance. Its update makes the day's row, and the feed
+  // shows it: alone on its day, as the group's lone card (#921).
+  it('shows a pulled companion\'s update, delivered in full, on the feed through its group', async () => {
+    await db().insert(associationConfig).values({ key: 'new_match_min_relevance', value: '5' })
+    await db().update(bills).set({ relevanceScore: 2 }).where(eq(bills.id, 'c-3'))
+    await deliver('legiscan:3', { changes: actionChange })
+
+    const [update] = await db().select({ id: feedEvents.id }).from(feedEvents)
+      .where(and(eq(feedEvents.billId, 'c-3'), eq(feedEvents.type, 'bill_updated'))).all()
+    expect(update).toBeDefined()
+    expect(await rows()).toHaveLength(1)
+
+    const token = await seedSession(await seedUser({ name: 'Mia Member', email: 'mia@example.com' }))
+    const res = await SELF.fetch('http://localhost/api/feed', { headers: { Cookie: `session=${token}` } })
+    expect(res.status).toBe(200)
+    const body = await res.json() as { events: Array<{ id: string; type: string; billGroupKey: string | null; noPriorityCard?: boolean }>; total: number }
+    expect(body.events.map((e) => [e.id, e.noPriorityCard])).toEqual([[update.id, true]])
+    expect(body.events[0].billGroupKey).toBe('a-1')
+    expect(body.total).toBe(1)
   })
 })

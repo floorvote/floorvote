@@ -34,11 +34,30 @@ export type FeedEvent = {
   // raises no "New activity" banner. Optional because producers other than GET
   // /feed build FeedEvent-shaped objects; absent is read as "no".
   noPriorityCard?: boolean
+  // On a companion group's card, the bill the card is named by: the group's lead
+  // (see **Lead bill** in CONTEXT.md), which need not be the member whose event
+  // it is, with the analysis the group shows. Its title, summary, and priority
+  // dropdown are the lead's, so a priority set from any group card is the
+  // group's, set through its lead (#945). GET /feed sends it on every event of a
+  // bill in a group; absent on other events and from other producers.
+  groupLead?: GroupLead
   userId: string
   userName: string
   userTitle: string | null
   metadata: Record<string, unknown>
   createdAt: string
+}
+
+/** A group card's lead bill, as GET /feed sends it: the shape of the row's chips. */
+export type GroupLead = {
+  id: string
+  billNumber: string
+  title: string
+  state: string | null
+  sessionSlug: string | null
+  isDraft: boolean
+  groupKey: string | null
+  summary: string | null
 }
 
 /** A bill with events in a group's card, as the card's header and its rows name it. */
@@ -68,10 +87,11 @@ export type GroupedBillEvents = {
   /** The companion group the card stands for, or null for a bill in no group. Absent is read as null. */
   groupKey?: string | null
   /**
-   * The bills with events in a group's card, the newest event's bill first and
-   * each once. Only a group's card has it: one card, many bills, so each row
-   * names its bill and the header lists them. The fields above describe the
-   * first of them.
+   * The bills of a group's card, each once: its lead first when its events
+   * carry one (groupLead, which need not have events of its own), then the bills
+   * with events, newest event's first. Only a group's card has it: one card,
+   * many bills, so each row names its bill and the header lists them. The
+   * fields above describe the first of them.
    */
   bills?: GroupedBill[]
   date: string         // YYYY-MM-DD
@@ -88,6 +108,7 @@ function dayTimeOf(e: FeedEvent): string {
 
 export function groupEventsByBillAndDay(events: FeedEvent[]): GroupedBillEvents[] {
   const map = new Map<string, GroupedBillEvents>()
+  const namedByLead = new Set<string>()
   for (const e of events) {
     const date = dbTsToLocalDay(dayTimeOf(e))
     // A bill-less event has no bill to share a group with, so it is its own group.
@@ -107,6 +128,19 @@ export function groupEventsByBillAndDay(events: FeedEvent[]): GroupedBillEvents[
       })
     }
     const g = map.get(key)!
+    // A group's card is named by its lead, listed first in its header.
+    const lead = groupKey !== null ? e.groupLead : undefined
+    if (lead && !namedByLead.has(key)) {
+      namedByLead.add(key)
+      Object.assign(g, {
+        billId: lead.id, billNumber: lead.billNumber, billTitle: lead.title, billSessionSlug: lead.sessionSlug,
+        billState: lead.state, billSummary: lead.summary, billIsDraft: lead.isDraft,
+      })
+      g.bills = [
+        { billId: lead.id, billNumber: lead.billNumber, billState: lead.state, billSessionSlug: lead.sessionSlug, billIsDraft: lead.isDraft },
+        ...g.bills!.filter((b) => b.billId !== lead.id),
+      ]
+    }
     g.events.push(e)
     if (g.bills && !g.bills.some(b => b.billId === e.billId)) {
       g.bills.push({

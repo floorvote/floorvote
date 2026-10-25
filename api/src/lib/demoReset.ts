@@ -315,7 +315,8 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
   // event's time (noteLegislativeEvent in lib/noPriorityRow.ts), and the feed lists
   // the day's bills from the events at read time. So the reset does the same with
   // the days these events were stored on: a row at the day's first event, for a day
-  // with an event on a bill the tenant holds and has analyzed. The days come from
+  // with an event on a bill the tenant holds and has analyzed, or on a member of a
+  // companion group with one (#945). The days come from
   // the stored timestamps, not the seed's day offsets, so a reset just after
   // midnight UTC keeps one row per day the events really landed on.
   const noPriority = (seed.noPriorityEvents ?? []).map((e) => ({ e, at: daysAgoDb(e.daysAgo, e.minutesLater) }))
@@ -332,7 +333,10 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
     return db.prepare(
       `INSERT OR IGNORE INTO feed_events (id, type, bill_id, user_id, metadata, suppressed, created_at)
        SELECT ?, ?, NULL, 'system', '{}', 0, ?
-       WHERE EXISTS (SELECT 1 FROM bills WHERE external_id IN (${placeholdersFor(handles)}) AND match_type IS NOT NULL)`
+       WHERE EXISTS (
+         SELECT 1 FROM bills b WHERE b.external_id IN (${placeholdersFor(handles)}) AND (b.match_type IS NOT NULL
+           OR (b.group_key IS NOT NULL AND EXISTS (SELECT 1 FROM bills g WHERE g.group_key = b.group_key AND g.match_type IS NOT NULL)))
+       )`
     ).bind(`demo-fe-npu-${date}`, NO_PRIORITY_UPDATES, at, ...handles)
   }))
 

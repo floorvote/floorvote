@@ -68,7 +68,7 @@ describe('processCentralNotification: a pulled companion in a group', () => {
   async function feed(qs = '') {
     const res = await SELF.fetch(`http://localhost/api/feed${qs}`, { headers: { Cookie: cookie } })
     expect(res.status).toBe(200)
-    return (await res.json() as { events: Array<{ type: string; billId: string | null; billGroupKey: string | null; billPriority: string | null }> }).events
+    return (await res.json() as { events: Array<{ type: string; billId: string | null; billGroupKey: string | null; billPriority: string | null; noPriorityCard?: boolean }> }).events
   }
   async function calendar() {
     const res = await SELF.fetch(`http://localhost/api/calendar/events?from=${isoDay(-30)}&to=${isoDay(60)}`, { headers: { Cookie: cookie } })
@@ -192,7 +192,7 @@ describe('processCentralNotification: a pulled companion in a group', () => {
     expect(onFeed).not.toContain('new_matches')
   })
 
-  it('keeps its events and rows when the group\'s priority is cleared, and shows none of them until a priority is set again', async () => {
+  it('keeps its events and rows when the group\'s priority is cleared: off the calendar, and on the feed as the no-priority card (#945) until a priority is set again', async () => {
     await setGroupPriority(null)
     serve(COMPANION, 'S 200', '2026-06-03T00:00:00Z')
     await deliver(COMPANION, { calendar: calendarBlock(), changes: actionChange })
@@ -201,13 +201,19 @@ describe('processCentralNotification: a pulled companion in a group', () => {
     expect(await db().select().from(calendarEvents).where(eq(calendarEvents.billId, 'b-companion')).all()).toHaveLength(1)
     expect((await db().select().from(feedEvents).where(eq(feedEvents.billId, 'b-companion')).all()).map(e => e.type).sort())
       .toEqual(['bill_updated', 'hearing_added'])
-    // Read time hides it: a group with no priority shows nothing on the calendar, and its passive events stay out of the default feed.
+    // Read time decides: a group with no priority shows nothing on the calendar. On the feed its
+    // legislative events are the no-priority updates row's, through its tracked mate (#945), and
+    // alone on their day they show as the group's lone card (#921), never as prioritized ones.
     expect((await calendar()).filter(e => e.source === 'hearing')).toHaveLength(0)
-    expect((await feed()).filter(e => e.billId === 'b-companion')).toHaveLength(0)
+    const unprioritized = (await feed()).filter(e => e.billId === 'b-companion')
+    expect(unprioritized.map(e => e.type).sort()).toEqual(['bill_updated', 'hearing_added'])
+    expect(unprioritized.every(e => e.noPriorityCard === true && e.billPriority === null)).toBe(true)
 
     await setGroupPriority('high')
     expect((await calendar()).filter(e => e.source === 'hearing')).toHaveLength(1)
-    expect((await feed()).filter(e => e.billId === 'b-companion').length).toBeGreaterThan(0)
+    const prioritized = (await feed()).filter(e => e.billId === 'b-companion')
+    expect(prioritized.length).toBeGreaterThan(0)
+    expect(prioritized.every(e => e.noPriorityCard !== true && e.billPriority === 'high')).toBe(true)
   })
 })
 

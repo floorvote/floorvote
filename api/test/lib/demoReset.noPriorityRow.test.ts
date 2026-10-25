@@ -108,11 +108,24 @@ describe('a demo reset over bills with no priority', () => {
     expect(await rows()).toEqual([])
   })
 
-  it('writes no row for a bill with no match type, which the processor treats as not analyzed', async () => {
+  it('writes no row for a bill with no match type in no companion group, which the processor treats as not analyzed', async () => {
     await deliverBills({ matchType: null })
     await runDemoReset(env.DB, seed)
     expect((await eventsOfSeededBills()).length).toBeGreaterThan(0)
     expect(await rows()).toEqual([])
+  })
+
+  it('writes the row for a bill with no match type in a companion group with a match, as the processor does (#945)', async () => {
+    await deliverBills({ matchType: null })
+    const [first] = seededBills
+    await seedBill({ id: 'bill-companion', externalId: 'legiscan:999999', billNumber: 'SB 999', title: 'Companion', state: 'MI', priority: null, matchType: 'keyword', relevanceScore: 5 })
+    const pulled = `bill-${parseHandle(first)}`
+    const key = [pulled, 'bill-companion'].sort()[0]
+    await env.DB.prepare(`UPDATE bills SET group_key = ? WHERE id IN (?, ?)`).bind(key, pulled, 'bill-companion').run()
+    await runDemoReset(env.DB, seed)
+    const stored = (await eventsOfSeededBills()).filter(e => e.bill_id === pulled)
+    expect(stored.length).toBeGreaterThan(0)
+    expect((await rows()).map(r => r.day)).toEqual([...billsByDay(stored).keys()].sort())
   })
 
   it("writes a row only for the days of the bills the tenant holds", async () => {

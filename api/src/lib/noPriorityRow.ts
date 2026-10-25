@@ -4,11 +4,14 @@ import { LEGISLATIVE_EVENT_TYPES, NO_PRIORITY_UPDATES, PASSIVE_EVENT_TYPES } fro
 import { dbTsToEpoch } from '../../../shared/time'
 import { filedSlug } from './sessionSlug'
 import { loadUntriagedNewMatchGroups, untriagedNewMatch, type NewMatchFacts } from './newMatch'
+import { billValueColumns, resolveTeamValues } from './teamFields'
 import type { AppDb } from '../types'
 
 // The no-priority updates row (see **No-priority updates row** in CONTEXT.md):
 // the feed's one bill-less row a day for legislative activity on analyzed bills
-// with no priority. The row stores nothing about its bills. They are resolved
+// with no priority. A companion group is one policy, so a member's activity is
+// the row's when any member of its group qualifies (#945, `qualifies`). The row
+// stores nothing about its bills. They are resolved
 // here, on every read, from the day's events, by the rule `standsFor` below,
 // which is the exact complement of the default feed's rule for showing a bill's
 // passive events (routes/feed.ts): a bill's legislative event of the day is the
@@ -57,11 +60,23 @@ const EVENTS_THEN_BILLS = eventsThenBills(M)
 const entryOf = (bill: SQL) => sql`COALESCE('group:' || ${bill}.group_key, ${bill}.id)`
 
 /**
+ * Bill `bill` (bills, or an alias of it) can be the row's: it has a match type
+ * and meets the minimum relevance for new matches, or a member of its companion
+ * group does (#945). A group is one policy, so once one member qualifies, every
+ * member's movement is the group's entry, a pulled companion's included. A bill
+ * in no group keeps the per-bill rule. The first arm is the bill's own columns,
+ * so a bill that qualifies by itself never reads its group.
+ */
+const qualifies = (bill: SQL, minRelevance: number) => sql`((${bill}.match_type IS NOT NULL AND COALESCE(${bill}.relevance_score, 0) >= ${minRelevance})
+    OR (${bill}.group_key IS NOT NULL AND EXISTS (
+      SELECT 1 FROM bills q WHERE q.group_key = ${bill}.group_key AND q.match_type IS NOT NULL AND COALESCE(q.relevance_score, 0) >= ${minRelevance}
+    )))`
+
+/**
  * An event `m` (feed_events) on bill `mb` (bills), stored in [from, to) (UTC
- * dates, YYYY-MM-DD), is the row's for its day: a legislative event on an
- * analyzed bill at or above the minimum relevance for new matches, whose
- * companion group has no priority and was not engaged with that day. `as`
- * names the event and bill otherwise.
+ * dates, YYYY-MM-DD), is the row's for its day: a legislative event on a bill
+ * that `qualifies`, whose companion group has no priority and was not engaged
+ * with that day. `as` names the event and bill otherwise.
  *
  * Both stored timestamp formats (`2026-03-04 09:00:00` and
  * `2026-03-04T09:00:00Z`) begin with the UTC date, so comparing the raw column
@@ -72,8 +87,7 @@ function standsFor(from: SQL, to: SQL, minRelevance: number, as: Aliases = M): S
   return sql`${m}.created_at >= ${from} AND ${m}.created_at < ${to}
     AND ${m}.suppressed != 1
     AND ${m}.type IN (${LEGISLATIVE})
-    AND ${mb}.match_type IS NOT NULL
-    AND COALESCE(${mb}.relevance_score, 0) >= ${minRelevance}
+    AND ${qualifies(mb, minRelevance)}
     AND ${mb}.priority IS NULL
     AND (${mb}.group_key IS NULL OR NOT EXISTS (SELECT 1 FROM bills g WHERE g.group_key = ${mb}.group_key AND g.priority IS NOT NULL))
     AND NOT ${engagedThatDay(as, sql`sib.bill_id = ${mb}.id`)}
@@ -126,14 +140,16 @@ const dayEntries = (minRelevance: number) => sql`
  *
  * A legislative update whose (day, entry) matches a day of one entry is that
  * entry's: dayEntries found the entry by standsFor, whose group-level checks
- * (no priority on the companion group, no engagement with it that day) hold for
- * every member. standsFor also asks each bill its own priority and engagement,
- * but an update failing those is one defaultVisible already shows, beside this
- * rule in the same OR. What is left to ask of the update's own bill is its
- * match type and relevance, which keep out a lone group's member that is not
- * the row's (one below the minimum relevance, or with no match type). So the
- * update costs its bill's columns and one probe of dayEntries, never its
- * bill's history.
+ * (no priority on the companion group, no engagement with it that day, and,
+ * for a group, that a member qualifies) hold for every member. standsFor also
+ * asks each bill its own priority and engagement, but an update failing those
+ * is one defaultVisible already shows, beside this rule in the same OR. So
+ * every member of a lone group shows, a pulled companion's updates included
+ * (#945). The update's bill is asked `qualifies` again, which the match
+ * implies, as a cheap filter: its own columns for an ungrouped bill or one that
+ * qualifies itself, so an update that can't be the row's never probes
+ * dayEntries. The update costs its bill's columns, at most a look at its group,
+ * and one probe of dayEntries, never its bill's history.
  *
  * Which bills are the row's is the complement of `defaultVisible` for
  * legislative updates: if groupHasPriority or engagementOnDay (routes/feed.ts)
@@ -143,8 +159,7 @@ const dayEntries = (minRelevance: number) => sql`
 export function defaultFeedShows(defaultVisible: SQL | undefined, minRelevance: number): SQL | undefined {
   const isRow = sql`${feedEvents.type} = ${NO_PRIORITY_UPDATES}`
   const inTheRowsPlace = sql`((${isRow} OR (${feedEvents.type} IN (${LEGISLATIVE})
-      AND ${bills.matchType} IS NOT NULL
-      AND COALESCE(${bills.relevanceScore}, 0) >= ${minRelevance}))
+      AND ${qualifies(sql`${bills}`, minRelevance)}))
     AND (date(${feedEvents.createdAt}), CASE WHEN ${isRow} THEN ${sql.raw(`'${MANY}'`)} ELSE ${entryOf(sql`${bills}`)} END) IN (${dayEntries(minRelevance)}))`
   return or(defaultVisible, inTheRowsPlace)
 }
@@ -157,6 +172,8 @@ const byId = (a: { id: string }, b: { id: string }) => (a.id < b.id ? -1 : a.id 
 /**
  * One entry of a day's row: a bill, or the members of one companion group that
  * moved that day (a group is one policy), its most relevant member first.
+ * `relevance` ranks the entry: a bill's own, or a group's most relevant
+ * qualifying member's, moved or not (#945).
  */
 export type DayEntry = { key: string; relevance: number; memberIds: string[] }
 
@@ -165,9 +182,11 @@ export type RowDay = { entries: DayEntry[]; lastAt: string }
 
 /**
  * The row's entries for each of these UTC days, in one query: entries most
- * relevant first, a companion group ranked by its most relevant member that
- * moved, and ties by key, so pages of the list never overlap or skip. A day
- * with no bill is absent from the map.
+ * relevant first, a companion group ranked by its most relevant qualifying
+ * member (one with a match type at or above the minimum, whether it moved or
+ * not, #945), and ties by key, so pages of the list never overlap or skip. A
+ * group's moved members are listed most relevant first by their own scores. A
+ * day with no bill is absent from the map.
  */
 export async function rowDays(db: AppDb, days: readonly string[], minRelevance: number): Promise<Map<string, RowDay>> {
   const out = new Map<string, RowDay>()
@@ -175,18 +194,24 @@ export async function rowDays(db: AppDb, days: readonly string[], minRelevance: 
   const sorted = [...new Set(days)].sort()
   const rows = await db.all(sql`
     SELECT date(m.created_at) AS day, mb.id AS id, mb.group_key AS group_key,
-           COALESCE(mb.relevance_score, 0) AS relevance, MAX(datetime(m.created_at)) AS last_at
+           COALESCE(mb.relevance_score, 0) AS relevance,
+           CASE WHEN mb.group_key IS NULL THEN COALESCE(mb.relevance_score, 0) ELSE (
+             SELECT MAX(COALESCE(q.relevance_score, 0)) FROM bills q
+              WHERE q.group_key = mb.group_key AND q.match_type IS NOT NULL AND COALESCE(q.relevance_score, 0) >= ${minRelevance}
+           ) END AS entry_relevance,
+           MAX(datetime(m.created_at)) AS last_at
       FROM ${EVENTS_THEN_BILLS}
      WHERE ${standsFor(sql`${sorted[0]}`, sql`${nextDay(sorted[sorted.length - 1])}`, minRelevance)}
        AND date(m.created_at) IN (SELECT value FROM json_each(${JSON.stringify(sorted)}))
      GROUP BY day, mb.id
-  `) as Array<{ day: string; id: string; group_key: string | null; relevance: number; last_at: string }>
+  `) as Array<{ day: string; id: string; group_key: string | null; relevance: number; entry_relevance: number; last_at: string }>
 
-  const members = new Map<string, Map<string, Array<{ id: string; relevance: number }>>>()
+  type Member = { id: string; relevance: number; entryRelevance: number }
+  const members = new Map<string, Map<string, Member[]>>()
   for (const r of rows) {
     const key = r.group_key !== null ? `group:${r.group_key}` : r.id
-    const ofDay = members.get(r.day) ?? new Map<string, Array<{ id: string; relevance: number }>>()
-    ofDay.set(key, [...(ofDay.get(key) ?? []), { id: r.id, relevance: r.relevance }])
+    const ofDay = members.get(r.day) ?? new Map<string, Member[]>()
+    ofDay.set(key, [...(ofDay.get(key) ?? []), { id: r.id, relevance: r.relevance, entryRelevance: r.entry_relevance }])
     members.set(r.day, ofDay)
     const day = out.get(r.day)
     if (!day || r.last_at > day.lastAt) out.set(r.day, { entries: [], lastAt: r.last_at })
@@ -194,7 +219,7 @@ export async function rowDays(db: AppDb, days: readonly string[], minRelevance: 
   for (const [day, ofDay] of members) {
     const entries = [...ofDay].map(([key, ms]) => {
       ms.sort((a, b) => b.relevance - a.relevance || byId(a, b))
-      return { key, relevance: ms[0].relevance, memberIds: ms.map((m) => m.id) }
+      return { key, relevance: ms[0].entryRelevance, memberIds: ms.map((m) => m.id) }
     })
     entries.sort((a, b) => b.relevance - a.relevance || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
     out.get(day)!.entries = entries
@@ -239,6 +264,53 @@ export async function rowBills(db: AppDb, ids: readonly string[]): Promise<Map<s
   return new Map([...await loadRowBills(db, ids)].map(([id, { bill }]) => [id, bill]))
 }
 
+/**
+ * Each of these companion groups' lead bill (see **Lead bill** in CONTEXT.md)
+ * and the analysis summary the group shows, which is the lead's, or while the
+ * lead has none, the one teamFields falls back to. One query whatever the
+ * number of groups: every member of every group, through the group_key index,
+ * resolved by the same rule every member's page reads (resolveTeamValues).
+ * None when there are no groups.
+ */
+export async function groupLeads(db: AppDb, groupKeys: ReadonlyArray<string | null>): Promise<Map<string, { leadId: string; summary: string | null }>> {
+  const out = new Map<string, { leadId: string; summary: string | null }>()
+  const keys = [...new Set(groupKeys.filter((k): k is string => k !== null))]
+  if (keys.length === 0) return out
+  const members = await db.select({ ...billValueColumns, groupKey: bills.groupKey }).from(bills)
+    .where(sql`${bills.groupKey} IN (SELECT value FROM json_each(${JSON.stringify(keys)}))`).all()
+  for (const key of keys) {
+    const ofGroup = members.filter((m) => m.groupKey === key)
+    const values = resolveTeamValues({ bills: ofGroup, positions: [], customFields: [] }, new Set(ofGroup.map((m) => m.id)))
+    if (values.leadBillId !== null) out.set(key, { leadId: values.leadBillId, summary: values.analysis?.tenantSummary ?? null })
+  }
+  return out
+}
+
+/** A row entry's companion group key, or null for a bill's own entry. */
+const groupKeyOf = (entry: DayEntry) => (entry.key.startsWith('group:') ? entry.key.slice('group:'.length) : null)
+
+/** The bill an entry is named by: a group's lead, or the entry's own bill. */
+const leadIdOf = (entry: DayEntry, leads: ReadonlyMap<string, { leadId: string }>) =>
+  leads.get(groupKeyOf(entry) ?? '')?.leadId ?? entry.memberIds[0]
+
+/**
+ * The bill each of these entries is named by, as the row's chips and a lone
+ * card show it: a companion group's lead (which need not have moved), with the
+ * group's analysis as its summary, or a bill's own. Two queries whatever the
+ * number of entries (one when none is a group), keyed by entry.
+ */
+export async function entryLeads(db: AppDb, entries: readonly DayEntry[]): Promise<Map<string, RowBill>> {
+  const leads = await groupLeads(db, entries.map(groupKeyOf))
+  const named = await rowBills(db, entries.map((e) => leadIdOf(e, leads)))
+  const out = new Map<string, RowBill>()
+  for (const entry of entries) {
+    const bill = named.get(leadIdOf(entry, leads))
+    const lead = leads.get(groupKeyOf(entry) ?? '')
+    if (bill) out.set(entry.key, lead ? { ...bill, summary: lead.summary } : bill)
+  }
+  return out
+}
+
 /** A bill-less view of one of the row's events, which the web builds a card row from. */
 export type RowEvent = { id: string; type: string; billId: string; metadata: unknown; createdAt: string }
 
@@ -246,15 +318,18 @@ export type RowEvent = { id: string; type: string; billId: string; metadata: unk
  * One entry of a page of the row's list. `newMatch`: the entry reads as an
  * untriaged new match, as the feed's cards decide it (untriagedNewMatch), so an
  * admin's dropdown for it is the amber "New · Set priority" with Dismiss. A
- * group reads as its group does.
+ * group reads as its group does. `bills`: the bill the entry is named by
+ * first (a group's lead, with the group's analysis), then the members that
+ * moved, each once.
  */
 export type RowEntry = { key: string; newMatch: boolean; bills: RowBill[]; events: RowEvent[] }
 
 /**
- * A page of the row's list for UTC day `day`: each entry's moved bills and
- * their events that day, newest first, and whether it is a new match. Three
- * queries whatever the page's size (a fourth when an entry is a companion group,
- * which reads its members once for the whole page).
+ * A page of the row's list for UTC day `day`: each entry's lead and moved
+ * bills and their events that day, newest first, and whether it is a new
+ * match. Three queries whatever the page's size (five when an entry is a
+ * companion group, whose members are read once for the whole page: for its
+ * lead, and for its new-match state).
  * The events are read through the day's range, like every query here: the
  * unary + keeps SQLite from looking each bill up by bill_id instead, which
  * would read each one's whole history, a cost that grows through a session.
@@ -262,7 +337,8 @@ export type RowEntry = { key: string; newMatch: boolean; bills: RowBill[]; event
 export async function rowPage(db: AppDb, day: string, minRelevance: number, entries: readonly DayEntry[]): Promise<RowEntry[]> {
   const ids = entries.flatMap((e) => e.memberIds)
   if (ids.length === 0) return []
-  const loaded = await loadRowBills(db, ids)
+  const leads = await groupLeads(db, entries.map(groupKeyOf))
+  const loaded = await loadRowBills(db, [...ids, ...[...leads.values()].map((l) => l.leadId)])
   const newMatchGroups = await loadUntriagedNewMatchGroups(db, [...loaded.values()].map((l) => l.facts.groupKey))
   const events = await db.all(sql`
     SELECT m.id, m.type, m.bill_id, m.metadata, m.created_at
@@ -275,12 +351,18 @@ export async function rowPage(db: AppDb, day: string, minRelevance: number, entr
     byBill.set(e.bill_id, [...(byBill.get(e.bill_id) ?? []), { id: e.id, type: e.type, billId: e.bill_id, metadata: JSON.parse(e.metadata) as unknown, createdAt: e.created_at }])
   }
   return entries.map((entry) => {
-    // The entry's lead is its first bill that still exists: the bill its title names and a priority is set through.
-    const lead = entry.memberIds.map((id) => loaded.get(id)).find((l) => l !== undefined)
+    // The entry is named by its lead: a companion group's lead bill, moved or
+    // not, wearing the group's analysis, then the members that moved, most
+    // relevant first. A bill in no group is its own. The lead is the bill its
+    // title names and a priority is set through (the web reads bills[0]).
+    const group = leads.get(groupKeyOf(entry) ?? '')
+    const leadId = group?.leadId ?? entry.memberIds.find((id) => loaded.has(id))
+    const lead = leadId === undefined ? undefined : loaded.get(leadId)
+    const named = lead && group ? { ...lead.bill, summary: group.summary } : lead?.bill
     return {
       key: entry.key,
       newMatch: lead !== undefined && untriagedNewMatch(lead.facts, newMatchGroups),
-      bills: entry.memberIds.flatMap((id) => loaded.get(id)?.bill ?? []),
+      bills: [...(named ? [named] : []), ...entry.memberIds.filter((id) => id !== leadId).flatMap((id) => loaded.get(id)?.bill ?? [])],
       events: entry.memberIds.flatMap((id) => byBill.get(id) ?? [])
         .sort((a, b) => dbTsToEpoch(b.createdAt) - dbTsToEpoch(a.createdAt) || (a.id < b.id ? 1 : -1)),
     }
@@ -297,7 +379,9 @@ export async function rowPage(db: AppDb, day: string, minRelevance: number, entr
  * Written for any analyzed bill, priority or not: the row is resolved on every
  * read, and one that stands for no bill never shows, so a priority cleared
  * later that day (a bulk edit leaves no event on the bill) still finds the
- * day's row. A bill with no match type is never the row's, so writes none.
+ * day's row. A bill with no match type is the row's only through its companion
+ * group (#945), so it writes the row when a member of its group has a match
+ * type, and none otherwise. Relevance is left to the read, like priority.
  *
  * One insert that does nothing on a conflict, and the only uniqueness it can
  * meet is the day's unique index (migration 0121), so updates processed at the
@@ -309,6 +393,9 @@ export function noteLegislativeEvent(db: AppDb, billId: string, at: string) {
   // Columns in feed_events' order: id, type, bill_id, user_id, metadata, suppressed, created_at.
   return db.insert(feedEvents).select(sql`
     SELECT ${crypto.randomUUID()}, ${NO_PRIORITY_UPDATES}, NULL, 'system', '{}', 0, ${at}
-     WHERE EXISTS (SELECT 1 FROM bills WHERE id = ${billId} AND match_type IS NOT NULL)
+     WHERE EXISTS (
+       SELECT 1 FROM bills b WHERE b.id = ${billId} AND (b.match_type IS NOT NULL
+         OR (b.group_key IS NOT NULL AND EXISTS (SELECT 1 FROM bills g WHERE g.group_key = b.group_key AND g.match_type IS NOT NULL)))
+     )
   `).onConflictDoNothing()
 }
