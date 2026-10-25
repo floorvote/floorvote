@@ -7,7 +7,7 @@ import { providerContext } from '../lib/providerContext'
 import { ingestQueueFor, providerConfigured } from '../lib/providerRouting'
 import { loadStateOwners, ownerOfState, statesOwnedBy } from '../lib/stateProviders'
 import { applyMasterList, firstIngestBudget, logSyncPass } from './sync'
-import { errorMessage, finishPass, sendRecoveries, streakAlerts, throwAll, type Recovery, type SessionFailure } from './passAlerts'
+import { errorMessage, finishPass, sendRecoveries, streakAlerts, throwAll, type Recovery, type SessionFailure, type SyncJob } from './passAlerts'
 import { assignSessionSlugs } from '../lib/sessionSlugs'
 import { carriedBillIds, carriedPeopleIds, withCarriedBillIds, withCarriedPeople } from '../lib/carriedIds'
 import type { Provider, ProviderContext, ProviderPerson, ProviderRecord, StoredSession, SyncSession } from '../providers'
@@ -49,6 +49,10 @@ export function snapshotJobName(provider: Provider): string {
   return `${provider.id}-sync`
 }
 
+function snapshotJob(provider: Provider): SyncJob {
+  return { job: snapshotJobName(provider), providerId: provider.id, name: provider.displayName }
+}
+
 /**
  * `force` (the admin "run now" route) ignores the hour of day: the provider
  * refreshes its sessions and every synced session gets a full pass. Any
@@ -58,20 +62,20 @@ export async function runSnapshotSync(
   provider: Provider, env: Env, db: Db, opts: { force?: boolean } = {},
 ): Promise<SnapshotPassReport[]> {
   const { reports, failures, recoveries } = await syncSessions(provider, env, db, opts)
-  await sendRecoveries(env, snapshotJobName(provider), recoveries)
+  await sendRecoveries(env, db, snapshotJob(provider), recoveries)
   throwAll(`sync-${provider.id}`, failures.map(f => f.error))
   return reports
 }
 
 /**
- * The hourly cron's sync, which throws (and so alerts) for a session on its
- * FAILED_PASSES_BEFORE_ALERT-th failed pass in a row and every one of that many
- * after (passAlerts.ts), and emails once when a session that alerted syncs
+ * The hourly cron's sync, which throws (and so alerts) for a session whose
+ * failed passes have lasted ALERT_INTERVAL_HOURS, and again every that many
+ * hours (passAlerts.ts), and emails once when a session that alerted syncs
  * again. A failure outside a session's pass still throws at once.
  */
 export async function runHourlySnapshotSync(provider: Provider, env: Env, db: Db): Promise<void> {
   const { failures, recoveries } = await syncSessions(provider, env, db, {})
-  await sendRecoveries(env, snapshotJobName(provider), recoveries)
+  await sendRecoveries(env, db, snapshotJob(provider), recoveries)
   throwAll(`sync-${provider.id}`, await streakAlerts(db, `sync-${provider.id}`, failures))
 }
 

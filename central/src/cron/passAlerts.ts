@@ -1,7 +1,7 @@
-import { and, eq, gte, isNull, sql } from 'drizzle-orm'
+import { and, asc, eq, gte, isNull, sql } from 'drizzle-orm'
 import { sessions, sessionSyncLog } from '../db/schema'
 import { escHtml, sendOpsAlert } from '../lib/jobAlert'
-import { nowDb } from '../lib/dbTime'
+import { dbTimeAgo, nowDb, toDb } from '../lib/dbTime'
 import { PRODUCT_NAME } from '../../../shared/brand'
 import type { Env, Db } from '../types'
 
@@ -12,11 +12,18 @@ import type { Env, Db } from '../types'
  */
 
 /**
- * A session alerts on its 4th failed pass in a row, then on every 4th after
- * (the 8th, the 12th...). A provider's server drops a connection or answers 522
- * now and then, and the next pass reads the session fine.
+ * A session alerts once its streak of failed passes has lasted this many hours,
+ * counted from the streak's first failed pass to the current one, and then at
+ * most once every this many hours while it goes on. An hourly session alerts at
+ * about 4, 8, and 12 hours; a daily one on its second failed pass (about a day
+ * in) and each after. A provider's server drops a connection or answers 522 now
+ * and then, and the next pass reads the session fine.
  */
-export const FAILED_PASSES_BEFORE_ALERT = 4
+export const ALERT_INTERVAL_HOURS = 4
+
+const HOUR_MS = 3_600_000
+/** How early a pass may land and still count as on the hour: cron ticks drift by seconds. */
+const SLACK_MS = 5 * 60_000
 
 /** The longest error message a failed pass's log row keeps. */
 const ERROR_LOG_MAX = 500
@@ -28,7 +35,10 @@ type StreakSession = { sessionId: number; state: string; sessionName: string; la
 export type SessionFailure = { session: StreakSession; error: Error; logged: boolean }
 
 /** A session that finished a pass after a streak long enough to have alerted. */
-export type Recovery = { session: StreakSession; failed: number; since: string }
+export type Recovery = { session: StreakSession; failed: number; hours: number; since: string }
+
+/** The hourly job a pass runs under: its id (the alert emails' subject), the provider whose sessions it syncs, and that provider's name. */
+export type SyncJob = { job: string; providerId: string; name: string }
 
 /**
  * An error's message for the log, cut to ERROR_LOG_MAX characters. A failed
@@ -42,39 +52,57 @@ export function errorMessage(err: unknown): string {
   return message.length > ERROR_LOG_MAX ? `${message.slice(0, ERROR_LOG_MAX - 1)}…` : message
 }
 
+const dbMs = (t: string) => Date.parse(`${t.replace(' ', 'T')}Z`)
+
 /**
- * The session's failed passes since its last finished one, which stamps
- * last_synced_at, and when the first of them ran. A pass that logs its counts
- * and then fails leaves an ok row, but no stamp, so it counts as failed here as
- * it does on the States page. Read before a finished pass stamps the session,
- * it is the streak that pass ended.
+ * Replays a streak's failed passes, oldest first, to find the ones that alert:
+ * the first once the streak has lasted ALERT_INTERVAL_HOURS, then each pass at
+ * least that long after the last alert. The log rows are all the state this
+ * needs, since the same rows always replay to the same alerts.
  */
-async function failedStreak(db: Db, session: StreakSession): Promise<{ count: number; since: string | null }> {
-  const [row] = await db.select({ n: sql<number>`COUNT(*)`, since: sql<string | null>`MIN(${sessionSyncLog.syncedAt})` })
-    .from(sessionSyncLog).where(and(
-      eq(sessionSyncLog.sessionId, session.sessionId),
-      eq(sessionSyncLog.status, 'failed'),
-      session.lastSyncedAt ? gte(sessionSyncLog.syncedAt, session.lastSyncedAt) : undefined,
-    )).all()
-  return { count: Number(row?.n ?? 0), since: row?.since ?? null }
+function alertingPasses(times: number[]): boolean[] {
+  let due = times.length ? times[0] + ALERT_INTERVAL_HOURS * HOUR_MS : 0
+  return times.map(t => {
+    if (t + SLACK_MS < due) return false
+    due = t + ALERT_INTERVAL_HOURS * HOUR_MS
+    return true
+  })
 }
+
+/**
+ * When the session's failed passes since its last finished one ran, oldest
+ * first. A pass that logs its counts and then fails leaves an ok row, but no
+ * stamp, so it counts as failed here as it does on the States page. Read before
+ * a finished pass stamps the session, it is the streak that pass ended.
+ */
+async function failedStreak(db: Db, session: StreakSession): Promise<number[]> {
+  const rows = await db.select({ at: sessionSyncLog.syncedAt }).from(sessionSyncLog).where(and(
+    eq(sessionSyncLog.sessionId, session.sessionId),
+    eq(sessionSyncLog.status, 'failed'),
+    session.lastSyncedAt ? gte(sessionSyncLog.syncedAt, session.lastSyncedAt) : undefined,
+  )).orderBy(asc(sessionSyncLog.syncedAt)).all()
+  return rows.map(r => dbMs(r.at))
+}
+
+const hoursOf = (ms: number) => Math.round(ms / HOUR_MS)
 
 /**
  * The alerts a run's failed passes raise. A failed pass that couldn't be logged
  * can't be counted, so it alerts at once; a logged one alerts when its streak
- * reaches a multiple of FAILED_PASSES_BEFORE_ALERT.
+ * is the first to land ALERT_INTERVAL_HOURS after the streak began or after its last alert.
  */
 export async function streakAlerts(db: Db, label: string, failures: SessionFailure[]): Promise<Error[]> {
   const alerts: Error[] = []
   for (const { session, error, logged } of failures) {
     if (!logged) { alerts.push(error); continue }
-    const { count } = await failedStreak(db, session)
-    if (count === 0 || count % FAILED_PASSES_BEFORE_ALERT !== 0) {
-      const next = Math.max(1, Math.ceil(count / FAILED_PASSES_BEFORE_ALERT)) * FAILED_PASSES_BEFORE_ALERT
-      console.warn(`[${label}] ${session.sessionName}: ${count} failed in a row; alerting at ${next}`)
+    const times = await failedStreak(db, session)
+    const first = times[0]
+    const now = times[times.length - 1]
+    if (!alertingPasses(times).at(-1)) {
+      console.warn(`[${label}] ${session.sessionName}: ${times.length} failed in a row; alerting after ${ALERT_INTERVAL_HOURS} hours of failures`)
       continue
     }
-    const alert = new Error(`${session.state} ${session.sessionName}: ${count} passes in a row failed. Latest: ${errorMessage(error)}`, { cause: error })
+    const alert = new Error(`${session.state} ${session.sessionName}: has failed for ${hoursOf(now - first)} hours (${times.length} passes in a row failed). Latest: ${errorMessage(error)}`, { cause: error })
     alert.stack = error.stack
     alerts.push(alert)
   }
@@ -95,8 +123,9 @@ export function throwAll(label: string, errors: Error[]): void {
  */
 export async function recoveryFrom(db: Db, session: StreakSession): Promise<Recovery | null> {
   try {
-    const { count, since } = await failedStreak(db, session)
-    return count >= FAILED_PASSES_BEFORE_ALERT && since ? { session, failed: count, since } : null
+    const times = await failedStreak(db, session)
+    if (!alertingPasses(times).includes(true)) return null
+    return { session, failed: times.length, hours: hoursOf(times[times.length - 1] - times[0]), since: toDb(new Date(times[0])) }
   } catch (err) {
     console.error(`[sync] couldn't read the failed passes ${session.state} ${session.sessionName} just ended:`, err)
     return null
@@ -119,24 +148,52 @@ export async function finishPass(db: Db, session: StreakSession): Promise<Recove
 }
 
 /**
- * One email for every session a run finished after a streak that alerted, so
- * the operators know the failure emails stopped because the source recovered.
- * `job` is the name the hourly cron runs the sync under (index.ts), which the
- * failure emails' subject carries too. Best-effort, as every ops alert is.
+ * The sessions of a job whose latest pass failed and that haven't synced since,
+ * for a recovery email to name. Only failures from the last two days count, so
+ * a session that stopped syncing long ago isn't listed forever. Best-effort.
  */
-export async function sendRecoveries(env: Env, job: string, recoveries: Recovery[]): Promise<void> {
+async function stillFailing(db: Db, providerId: string, recovered: Recovery[]): Promise<{ state: string; sessionName: string }[]> {
+  try {
+    const rows = await db.selectDistinct({ sessionId: sessions.sessionId, state: sessions.state, sessionName: sessions.sessionName })
+      .from(sessionSyncLog)
+      .innerJoin(sessions, eq(sessions.sessionId, sessionSyncLog.sessionId))
+      .where(and(
+        eq(sessions.provider, providerId),
+        eq(sessionSyncLog.status, 'failed'),
+        gte(sessionSyncLog.syncedAt, dbTimeAgo(2 * 24 * HOUR_MS)),
+        sql`${sessionSyncLog.syncedAt} >= COALESCE(${sessions.lastSyncedAt}, '')`,
+      )).orderBy(asc(sessions.state), asc(sessions.sessionName)).all()
+    const done = new Set(recovered.map(r => r.session.sessionId))
+    return rows.filter(r => !done.has(r.sessionId))
+  } catch (err) {
+    console.error(`[sync] couldn't read which sessions are still failing:`, err)
+    return []
+  }
+}
+
+/**
+ * One email for every session a run finished after a streak that alerted, so
+ * the operators know those failure emails stopped because the sessions
+ * recovered. It names the sessions that recovered and, when others in the same
+ * job are still failing, lists those too: the job as a whole isn't "syncing
+ * again" until none are. The subject carries the job's id, as the failure
+ * emails' does. Best-effort, as every ops alert is.
+ */
+export async function sendRecoveries(env: Env, db: Db, { job, providerId, name }: SyncJob, recoveries: Recovery[]): Promise<void> {
   if (recoveries.length === 0) return
-  const lines = recoveries.map(({ session, failed, since }) =>
-    `${session.state} ${session.sessionName}: synced after ${failed} failed passes in a row, failing since ${since.slice(0, 16)} UTC`)
-  const text = `Scheduled job "${job}" is syncing again.\n\n${lines.map(l => `• ${l}`).join('\n')}\n`
+  const failing = await stillFailing(db, providerId, recoveries)
+  const lines = recoveries.map(({ session, failed, hours, since }) =>
+    `${session.state} ${session.sessionName}: synced after ${failed} failed passes over ${hours} hours, failing since ${since.slice(0, 16)} UTC`)
+  const stillLines = failing.map(s => `${s.state} ${s.sessionName}`)
+  const intro = `${name} sync (${job}): ${recoveries.length} ${recoveries.length === 1 ? 'session' : 'sessions'} synced again.`
+  const text = `${intro}\n\n${lines.map(l => `• ${l}`).join('\n')}\n` +
+    (stillLines.length ? `\nStill failing: ${stillLines.length} in the same job\n\n${stillLines.map(l => `• ${l}`).join('\n')}\n` : '')
+  const list = (items: string[]) => `<ul style="margin: 0 0 16px; padding-left: 20px; font-size: 14px; line-height: 1.7; color: #0f172a;">${items.map(l => `<li>${escHtml(l)}</li>`).join('')}</ul>`
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 560px; margin: 0 auto; color: #0f172a;">
-      <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6; color: #334155;">
-        Scheduled job <strong>${escHtml(job)}</strong> is syncing again.
-      </p>
-      <ul style="margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.7; color: #0f172a;">
-        ${lines.map(l => `<li>${escHtml(l)}</li>`).join('')}
-      </ul>
+      <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6; color: #334155;">${escHtml(intro)}</p>
+      ${list(lines)}
+      ${stillLines.length ? `<p style="margin: 0 0 8px; font-size: 15px; line-height: 1.6; color: #334155;"><strong>Still failing</strong> in the same job:</p>${list(stillLines)}` : ''}
     </div>
   `
   await sendOpsAlert(env, { subject: `[${PRODUCT_NAME}] resolved: ${job}`, text, html })

@@ -112,8 +112,8 @@ export const LEGISCAN_SYNC_JOB = 'ls-sync'
 /**
  * The hourly LegiScan sync. A session whose pass fails doesn't stop the others:
  * its failed pass is logged, and the run throws (and so alerts, in one email for
- * every session) only for a session on a multiple of FAILED_PASSES_BEFORE_ALERT
- * failed passes in a row (passAlerts.ts). A session that alerted gets one email
+ * every session) only for a session whose failed passes have lasted
+ * ALERT_INTERVAL_HOURS, and again every that many hours (passAlerts.ts). A session that alerted gets one email
  * when it syncs again. An empty answer, a session with no bills yet, is a pass
  * that finished.
  */
@@ -227,7 +227,7 @@ export async function runSync(env: Env, db: Db): Promise<void> {
   })
 
   await Promise.allSettled(tasks)
-  await sendRecoveries(env, LEGISCAN_SYNC_JOB, recoveries)
+  await sendRecoveries(env, db, { job: LEGISCAN_SYNC_JOB, providerId: provider.id, name: provider.displayName }, recoveries)
   throwAll('sync-ls', await streakAlerts(db, 'sync-ls', failures))
 }
 

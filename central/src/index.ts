@@ -104,8 +104,9 @@ export default {
     // plain slug goes to the owning provider's session, which it reads from
     // state_providers itself.
     ctx.waitUntil(runJob(env, 'session-slugs', () => assignSessionSlugs(db)))
-    // Each sync job alerts for a session on every FAILED_PASSES_BEFORE_ALERT-th
-    // failed pass in a row (cron/passAlerts.ts), not for one dropped connection.
+    // Each sync job alerts for a session once its failed passes have lasted
+    // ALERT_INTERVAL_HOURS, then every that many hours (cron/passAlerts.ts), not
+    // for one dropped connection.
     ctx.waitUntil(runJob(env, LEGISCAN_SYNC_JOB, () => runSync(env, db)))
     // One job per snapshot provider, so one failing never stops another, run
     // one after another: a pass holds a session's whole snapshot in memory

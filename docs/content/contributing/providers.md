@@ -33,7 +33,7 @@ Read the legislature's own API or its published data files. Parsing HTML pages i
 
 ### Fail closed
 
-When the feed is down, answers with an error, or sends a shape the mapping doesn't read, throw. Central then changes nothing from that answer, and the pass fails. The hourly job emails the operators on a session's 4th failed pass in a row and every 4th after, and once more when it syncs again, so a blip that the next pass reads past stays quiet. Never treat a bad answer as an empty one:
+When the feed is down, answers with an error, or sends a shape the mapping doesn't read, throw. Central then changes nothing from that answer, and the pass fails. The hourly job emails the operators once a session's failed passes have lasted four hours, then every four hours while they go on, and once more when it syncs again, so a blip that the next pass reads past stays quiet. Never treat a bad answer as an empty one:
 
 - A missing key is not an empty value. A key the feed renamed would otherwise strip that field from every bill on its next ingest.
 - An empty list means nothing new, never that bills were removed.

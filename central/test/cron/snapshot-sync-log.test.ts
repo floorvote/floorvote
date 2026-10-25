@@ -40,7 +40,7 @@ const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
 
 import { runHourlySnapshotSync, runSnapshotSync } from '../../src/cron/sync-snapshots'
-import { FAILED_PASSES_BEFORE_ALERT } from '../../src/cron/passAlerts'
+import { ALERT_INTERVAL_HOURS } from '../../src/cron/passAlerts'
 import { sendOpsAlert } from '../../src/lib/jobAlert'
 import { PRODUCT_NAME } from '../../../shared/brand'
 import { lims } from '../../src/providers/lims'
@@ -500,9 +500,12 @@ describe('the States page after a snapshot pass', () => {
   })
 })
 
-// The hourly cron alerts on a session only once it has failed several passes
-// in a row: a provider's server drops a connection or answers 522 now and then,
+// The hourly cron alerts on a session only once its failed passes have lasted
+// 4 hours: a provider's server drops a connection or answers 522 now and then,
 // and the next pass reads it fine. Every failed pass is still logged.
+// An hourly session's streak lasts 4 hours at its 5th failed pass.
+const ALERT_PASSES = ALERT_INTERVAL_HOURS + 1
+
 describe('the hourly cron\'s alert', () => {
   let clock = 0
   // An hour on, so each pass and its stamps sort after the last.
@@ -515,8 +518,8 @@ describe('the hourly cron\'s alert', () => {
     return runHourlySnapshotSync(provider, e, db())
   }
 
-  it('waits for four failed passes in a row', () => {
-    expect(FAILED_PASSES_BEFORE_ALERT).toBe(4)
+  it('waits for four hours of failed passes', () => {
+    expect(ALERT_INTERVAL_HOURS).toBe(4)
   })
 
   it('does not throw for a session\'s first failed pass, and still logs it', async () => {
@@ -529,63 +532,69 @@ describe('the hourly cron\'s alert', () => {
   it('does not throw for the pass before the threshold', async () => {
     limsDown()
     const { env: e } = makeEnv()
-    await expect(hourly(lims, e, FAILED_PASSES_BEFORE_ALERT - 1)).resolves.toBeUndefined()
-    expect((await logRows()).map(r => r.status)).toEqual(Array(FAILED_PASSES_BEFORE_ALERT - 1).fill('failed'))
+    await expect(hourly(lims, e, ALERT_PASSES - 1)).resolves.toBeUndefined()
+    expect((await logRows()).map(r => r.status)).toEqual(Array(ALERT_PASSES - 1).fill('failed'))
   })
 
   it('throws on the failed pass that reaches the threshold, naming the count, the session, and the error', async () => {
     limsDown()
     const { env: e } = makeEnv()
-    const err = await hourly(lims, e, FAILED_PASSES_BEFORE_ALERT).then(() => null, (x: Error) => x)
+    const err = await hourly(lims, e, ALERT_PASSES).then(() => null, (x: Error) => x)
     const [session] = await sessionRows()
     expect(err).toBeInstanceOf(Error)
     expect(err!.message).toContain('Network connection lost.')
-    expect(err!.message).toContain(`${FAILED_PASSES_BEFORE_ALERT} passes in a row`)
+    expect(err!.message).toContain(`${ALERT_PASSES} passes in a row`)
     expect(err!.message).toContain(session.sessionName)
   })
 
   it('keeps the original error\'s stack, so the alert shows where it failed', async () => {
     limsDown()
     const { env: e } = makeEnv()
-    const err = await hourly(lims, e, FAILED_PASSES_BEFORE_ALERT).then(() => null, (x: Error) => x)
+    const err = await hourly(lims, e, ALERT_PASSES).then(() => null, (x: Error) => x)
     expect(err!.stack).toContain('Network connection lost.')
     expect((err!.cause as Error).message).toBe('Network connection lost.')
   })
 
-  it('stays quiet on the passes after an alert, and alerts again on the 4th of them', async () => {
+  it('stays quiet for 4 hours after an alert, then alerts again, every 4 hours while it goes on', async () => {
     limsDown()
     const { env: e } = makeEnv()
-    await expect(hourly(lims, e, FAILED_PASSES_BEFORE_ALERT)).rejects.toThrow()
-    for (let i = 1; i < FAILED_PASSES_BEFORE_ALERT; i++) {
+    await expect(hourly(lims, e, ALERT_PASSES)).rejects.toThrow('has failed for 4 hours')
+    for (let i = 1; i < ALERT_INTERVAL_HOURS; i++) {
       nextHour()
       await expect(runHourlySnapshotSync(lims, e, db())).resolves.toBeUndefined()
     }
     nextHour()
-    await expect(runHourlySnapshotSync(lims, e, db())).rejects.toThrow(`${2 * FAILED_PASSES_BEFORE_ALERT} passes in a row`)
+    await expect(runHourlySnapshotSync(lims, e, db())).rejects.toThrow('has failed for 8 hours')
+    for (let i = 1; i < ALERT_INTERVAL_HOURS; i++) {
+      nextHour()
+      await expect(runHourlySnapshotSync(lims, e, db())).resolves.toBeUndefined()
+    }
+    nextHour()
+    await expect(runHourlySnapshotSync(lims, e, db())).rejects.toThrow('has failed for 12 hours')
   })
 
-  it('starts the count again after a pass that finishes', async () => {
+  it('starts the clock again after a pass that finishes', async () => {
     const { env: e } = makeEnv()
     limsDown()
-    await hourly(lims, e, FAILED_PASSES_BEFORE_ALERT - 1)
+    await hourly(lims, e, ALERT_PASSES - 1)
     nextHour()
     limsUp()
     await runHourlySnapshotSync(lims, e, db())
     nextHour()
     limsDown()
-    await expect(hourly(lims, e, FAILED_PASSES_BEFORE_ALERT - 1)).resolves.toBeUndefined()
+    await expect(hourly(lims, e, ALERT_PASSES - 1)).resolves.toBeUndefined()
     nextHour()
-    await expect(runHourlySnapshotSync(lims, e, db())).rejects.toThrow(`${FAILED_PASSES_BEFORE_ALERT} passes in a row`)
+    await expect(runHourlySnapshotSync(lims, e, db())).rejects.toThrow('has failed for 4 hours')
   })
 
   it('counts a pass that logged its counts and then failed as a failure, not a finish', async () => {
     // The ok row applyMasterList logs is not a finished pass: the session isn't stamped synced.
     await env.DB.exec(`CREATE TRIGGER no_etag BEFORE UPDATE OF snapshot_etag ON sessions BEGIN SELECT RAISE(ABORT, 'etag write refused'); END`)
     const { env: e } = makeEnv()
-    await expect(hourly(mga, e, FAILED_PASSES_BEFORE_ALERT - 1)).resolves.toBeUndefined()
+    await expect(hourly(mga, e, ALERT_PASSES - 1)).resolves.toBeUndefined()
     nextHour()
     await expect(runHourlySnapshotSync(mga, e, db())).rejects.toThrow('etag write refused')
-    expect((await logRows()).map(r => r.status)).toEqual(Array(FAILED_PASSES_BEFORE_ALERT).fill(['ok', 'failed']).flat())
+    expect((await logRows()).map(r => r.status)).toEqual(Array(ALERT_PASSES).fill(['ok', 'failed']).flat())
   })
 
   it('counts each session\'s failures on their own', async () => {
@@ -596,7 +605,7 @@ describe('the hourly cron\'s alert', () => {
       if (code === MGA_CODE_2) throw new Error('special session 522')
       return code === MGA_CODE ? mgaFile() : null
     })
-    await hourly(mga, e, FAILED_PASSES_BEFORE_ALERT - 1)
+    await hourly(mga, e, ALERT_PASSES - 1)
     nextHour()
     vi.mocked(mgaClient.getMgaSession).mockRejectedValue(new Error('every file 522'))
     const err = await runHourlySnapshotSync(mga, e, db()).then(() => null, (x: Error) => x)
@@ -605,28 +614,28 @@ describe('the hourly cron\'s alert', () => {
     expect(err).not.toBeInstanceOf(AggregateError)
     const special = (await sessionRows()).find(s => s.sessionTag === MGA_CODE_2)!
     expect(err!.message).toContain(special.sessionName)
-    expect(err!.message).toContain(`${FAILED_PASSES_BEFORE_ALERT} passes in a row`)
+    expect(err!.message).toContain(`${ALERT_PASSES} passes in a row`)
   })
 
   it('stays quiet when several sessions each fail fewer times than the threshold', async () => {
     vi.mocked(mgaClient.mgaSessionExists).mockImplementation(async code => code === MGA_CODE || code === MGA_CODE_2)
     vi.mocked(mgaClient.getMgaSession).mockRejectedValue(new Error('every file 522'))
     const { env: e } = makeEnv()
-    await expect(hourly(mga, e, FAILED_PASSES_BEFORE_ALERT - 1)).resolves.toBeUndefined()
-    expect((await logRows()).filter(r => r.status === 'failed')).toHaveLength(2 * (FAILED_PASSES_BEFORE_ALERT - 1))
+    await expect(hourly(mga, e, ALERT_PASSES - 1)).resolves.toBeUndefined()
+    expect((await logRows()).filter(r => r.status === 'failed')).toHaveLength(2 * (ALERT_PASSES - 1))
   })
 
   it('throws once for several sessions that each reached the threshold', async () => {
     vi.mocked(mgaClient.mgaSessionExists).mockImplementation(async code => code === MGA_CODE || code === MGA_CODE_2)
     vi.mocked(mgaClient.getMgaSession).mockRejectedValue(new Error('every file 522'))
     const { env: e } = makeEnv()
-    await expect(hourly(mga, e, FAILED_PASSES_BEFORE_ALERT)).rejects.toBeInstanceOf(AggregateError)
+    await expect(hourly(mga, e, ALERT_PASSES)).rejects.toBeInstanceOf(AggregateError)
   })
 
   it('counts a thrown value that is not an Error', async () => {
     vi.mocked(limsClient.getBulkData).mockImplementation(async () => { throw 'plain string failure' })
     const { env: e } = makeEnv()
-    await expect(hourly(lims, e, FAILED_PASSES_BEFORE_ALERT - 1)).resolves.toBeUndefined()
+    await expect(hourly(lims, e, ALERT_PASSES - 1)).resolves.toBeUndefined()
     nextHour()
     await expect(runHourlySnapshotSync(lims, e, db())).rejects.toThrow('plain string failure')
   })
@@ -672,7 +681,7 @@ describe('the email once a session that alerted syncs again', () => {
   it('sends one, naming the session and how many passes failed, on the pass that finishes', async () => {
     const { env: e } = makeEnv()
     limsDown()
-    await failFor(lims, e, FAILED_PASSES_BEFORE_ALERT)
+    await failFor(lims, e, ALERT_PASSES)
     limsUp()
     await runHourlySnapshotSync(lims, e, db())
     const [session] = await sessionRows()
@@ -680,13 +689,13 @@ describe('the email once a session that alerted syncs again', () => {
     expect(sent).toHaveLength(1)
     expect(sent[0].subject).toBe(`[${PRODUCT_NAME}] resolved: lims-sync`)
     expect(sent[0].text).toContain(`DC ${session.sessionName}`)
-    expect(sent[0].text).toContain(`${FAILED_PASSES_BEFORE_ALERT} failed passes in a row`)
+    expect(sent[0].text).toContain(`${ALERT_PASSES} failed passes over ${ALERT_INTERVAL_HOURS} hours`)
   })
 
   it('sends none for a session that recovers before it alerted', async () => {
     const { env: e } = makeEnv()
     limsDown()
-    await failFor(lims, e, FAILED_PASSES_BEFORE_ALERT - 1)
+    await failFor(lims, e, ALERT_PASSES - 1)
     limsUp()
     await runHourlySnapshotSync(lims, e, db())
     expect(resolvedEmails()).toHaveLength(0)
@@ -695,7 +704,7 @@ describe('the email once a session that alerted syncs again', () => {
   it('sends it once, not again on the passes after', async () => {
     const { env: e } = makeEnv()
     limsDown()
-    await failFor(lims, e, FAILED_PASSES_BEFORE_ALERT)
+    await failFor(lims, e, ALERT_PASSES)
     limsUp()
     await runHourlySnapshotSync(lims, e, db())
     nextHour()
@@ -707,7 +716,7 @@ describe('the email once a session that alerted syncs again', () => {
     vi.mocked(mgaClient.mgaSessionExists).mockImplementation(async code => code === MGA_CODE || code === MGA_CODE_2)
     vi.mocked(mgaClient.getMgaSession).mockRejectedValue(new Error('every file 522'))
     const { env: e } = makeEnv()
-    await failFor(mga, e, FAILED_PASSES_BEFORE_ALERT)
+    await failFor(mga, e, ALERT_PASSES)
     vi.mocked(mgaClient.getMgaSession).mockImplementation(async code => (code === MGA_CODE || code === MGA_CODE_2 ? mgaFile() : null))
     await runHourlySnapshotSync(mga, e, db())
     const sent = resolvedEmails()
@@ -718,7 +727,7 @@ describe('the email once a session that alerted syncs again', () => {
   it('sends one when "run now" is the pass that finishes', async () => {
     const { env: e } = makeEnv()
     limsDown()
-    await failFor(lims, e, FAILED_PASSES_BEFORE_ALERT)
+    await failFor(lims, e, ALERT_PASSES)
     limsUp()
     await runSnapshotSync(lims, e, db(), { force: true })
     expect(resolvedEmails()).toHaveLength(1)
@@ -732,7 +741,7 @@ describe('the email once a session that alerted syncs again', () => {
       nextHour()
     }
     limsDown()
-    await failFor(lims, e, FAILED_PASSES_BEFORE_ALERT)
+    await failFor(lims, e, ALERT_PASSES)
     // Both passes read the session before either has finished.
     let release!: () => void
     const ready = new Promise<void>(resolve => { release = resolve })
@@ -747,5 +756,41 @@ describe('the email once a session that alerted syncs again', () => {
       runSnapshotSync(lims, e, db(), { force: true }),
     ])
     expect(resolvedEmails()).toHaveLength(1)
+  })
+
+  it('names the sessions still failing in the job, and never says the whole job is syncing again, when only some recover', async () => {
+    vi.mocked(mgaClient.mgaSessionExists).mockImplementation(async code => code === MGA_CODE || code === MGA_CODE_2)
+    vi.mocked(mgaClient.getMgaSession).mockRejectedValue(new Error('every file 522'))
+    const { env: e } = makeEnv()
+    await failFor(mga, e, ALERT_PASSES)
+    // The regular session reads again; the special session still fails.
+    vi.mocked(mgaClient.getMgaSession).mockImplementation(async code => {
+      if (code === MGA_CODE_2) throw new Error('special session 522')
+      return code === MGA_CODE ? mgaFile() : null
+    })
+    await runHourlySnapshotSync(mga, e, db()).catch(() => {})
+    const rows = await sessionRows()
+    const regular = rows.find(s => s.sessionTag === MGA_CODE)!
+    const special = rows.find(s => s.sessionTag === MGA_CODE_2)!
+    const sent = resolvedEmails()
+    expect(sent).toHaveLength(1)
+    const [recovered, failing] = sent[0].text.split(/still failing/i)
+    expect(recovered).toContain(regular.sessionName)
+    expect(recovered).not.toContain(special.sessionName)
+    expect(failing).toContain(special.sessionName)
+    expect(sent[0].text).not.toMatch(/is syncing again/)
+    expect(sent[0].html).toContain(special.sessionName)
+  })
+
+  it('alerts again after a flap, with a recovery email for each streak', async () => {
+    const { env: e } = makeEnv()
+    for (let round = 0; round < 2; round++) {
+      limsDown()
+      await failFor(lims, e, ALERT_PASSES)
+      limsUp()
+      await runHourlySnapshotSync(lims, e, db())
+      nextHour()
+    }
+    expect(resolvedEmails()).toHaveLength(2)
   })
 })
