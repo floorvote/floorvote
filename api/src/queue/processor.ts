@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, lt, ne, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, lt, ne, sql } from 'drizzle-orm'
 import { processBill, type ProcessBillResult } from '../lib/llm'
 import { filterTagsToTaxonomy } from '../lib/taxonomy'
 import { centralFetch } from '../lib/centralFetch'
@@ -431,6 +431,11 @@ async function applyCentralBill(
     // no-priority updates row. The bill's own write joins them in one batch, so a failure leaves the
     // stored row as it was and the redelivery finds the same change, and a delivery after they land
     // finds none, so the event is written once.
+    //
+    // Two copies of the stub processed at once both read the stored version before either batch lands,
+    // and find the same movement. So the event is inserted only while the bill still holds the version
+    // this delivery read, ahead of the bill's write in the batch: D1 runs one batch at a time, so the
+    // second copy's insert finds the first one's version stored and writes nothing.
     const movement = existing && existing.groupKey !== null
       ? stubMovement(existing, { ...stubData, providerUpdatedAt: centralBill.updatedAt })
       : []
@@ -439,16 +444,13 @@ async function applyCentralBill(
       const writtenAt = nowDb()
       const { statement } = await billWrite(db, msg.billId, { ...stubData, updatedAt: writtenAt }, existing.id)
       await db.batch([
-        statement,
-        db.insert(feedEvents).values({
-          id:        crypto.randomUUID(),
-          type:      'bill_updated',
-          billId:    existing.id,
-          userId:    'system',
-          metadata:  JSON.stringify({ changes: movement }),
-          createdAt: writtenAt,
-        }),
+        // Columns in feed_events' order: id, type, bill_id, user_id, metadata, suppressed, created_at.
+        db.insert(feedEvents).select(sql`
+          SELECT ${crypto.randomUUID()}, 'bill_updated', ${existing.id}, 'system', ${JSON.stringify({ changes: movement })}, 0, ${writtenAt}
+           WHERE EXISTS (SELECT 1 FROM bills WHERE id = ${existing.id} AND provider_updated_at IS ${existing.providerUpdatedAt})
+        `),
         noteLegislativeEvent(db, existing.id, writtenAt),
+        statement,
       ])
       stubInternalId = existing.id
     } else {
@@ -909,7 +911,15 @@ async function applyCentralBill(
   // detected changes from central. A pulled companion not analyzed yet moves its group too (#945): without
   // analysis it has no feed of its own, only its group's, so its group must have a tracked bill.
   // F5+B5: switched gate from `!existing.isStub` to `existing.matchType !== null` (canonical field).
-  const writeUpdate = !isNew && !!existing && queueChanges.length > 0 && (existing.aiProcessedAt
+  //
+  // A pulled companion's stub can already have written this movement (#945): central can send a bill's stub
+  // and then, ingesting it on an instance's request, the same action as a change record under a newer
+  // version. So its change records leave out the ones a stub of the bill already showed. Only a bill with no
+  // match type in a group gets a stub's event, so every other bill's changes are written as they come.
+  const updateChanges = existing && existing.matchType === null && existing.groupKey !== null
+    ? await notShownByStub(db, existing.id, queueChanges)
+    : queueChanges
+  const writeUpdate = !isNew && !!existing && updateChanges.length > 0 && (existing.aiProcessedAt
     ? existing.matchType !== null || existing.groupKey !== null
     : existing.matchType === null && existing.groupKey !== null && await inTrackedGroup(db, existing.id))
 
@@ -953,7 +963,7 @@ async function applyCentralBill(
         type:      'bill_updated',
         billId:    billInternalId,
         userId:    'system',
-        metadata:  JSON.stringify({ changes: queueChanges }),
+        metadata:  JSON.stringify({ changes: updateChanges }),
         createdAt: writtenAt,
       }),
       noteLegislativeEvent(db, billInternalId, writtenAt),
@@ -1254,6 +1264,30 @@ async function inTrackedGroup(db: AppDb, billId: string): Promise<boolean> {
   return !!(await db.select({ id: bills.id }).from(bills)
     .where(and(inGroupOf(bills.id, billId), ne(bills.id, billId), isNotNull(bills.matchType))).get())
 }
+
+/** How recent a bill's updates notShownByStub looks through: a stub's event and the ingest that repeats it are one sync pass apart. */
+const STUB_LOOKBACK = 20
+
+/**
+ * These change records less the ones the bill's recent updates already show, as a stub's event shows them:
+ * the same kind of change (a status change or an action) to the same new value, and for an action on the
+ * same date, so an action repeated on another day is still new.
+ */
+async function notShownByStub<C extends { changeType: string; oldValue: string | null; newValue: string | null; detail: string | null }>(
+  db: AppDb, billId: string, changes: readonly C[],
+): Promise<C[]> {
+  if (!changes.some(isStubKind)) return [...changes]
+  const recent = await db.select({ metadata: feedEvents.metadata }).from(feedEvents)
+    .where(and(eq(feedEvents.billId, billId), eq(feedEvents.type, 'bill_updated')))
+    .orderBy(desc(feedEvents.createdAt)).limit(STUB_LOOKBACK).all()
+  const shown = new Set(recent.flatMap((e) => ((JSON.parse(e.metadata) as { changes?: StubChange[] }).changes ?? []).filter(isStubKind).map(changeKey)))
+  return changes.filter((c) => !(isStubKind(c) && shown.has(changeKey(c))))
+}
+const isStubKind = (c: { changeType: string }) => c.changeType === 'status_change' || c.changeType === 'action_added'
+// Not the old value: central reads a status change from its own snapshot, which can differ from the status
+// the instance had stored when the stub's event was written.
+const changeKey = (c: { changeType: string; newValue: string | null; detail: string | null }) =>
+  JSON.stringify([c.changeType, c.newValue, c.detail])
 
 /** A change a stub delivery shows on the feed, in the shape of central's change records. */
 type StubChange = { changeType: 'status_change' | 'action_added'; oldValue: string | null; newValue: string | null; detail: string | null }

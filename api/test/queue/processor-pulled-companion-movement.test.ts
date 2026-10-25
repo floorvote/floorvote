@@ -33,7 +33,7 @@ function centralBillJson(handle: string, number: string, more: { updatedAt?: str
   }
 }
 
-type FeedEventBody = { id: string; type: string; billId: string | null; billGroupKey: string | null; noPriorityCard?: boolean; metadata: Record<string, unknown> }
+type FeedEventBody = { id: string; type: string; billId: string | null; billGroupKey: string | null; noPriorityCard?: boolean; groupLead?: { id: string; billNumber: string }; metadata: Record<string, unknown> }
 
 describe('processCentralNotification: a stub delivery of a pulled companion', () => {
   const db = () => getDb(env.DB)
@@ -175,5 +175,123 @@ describe('processCentralNotification: a stub delivery of a pulled companion', ()
     expect(written.map((e) => e.type)).toEqual(['bill_updated'])
     expect(JSON.parse(written[0].metadata)).toEqual({ changes })
     expect(await rows()).toHaveLength(1)
+  })
+
+  // Two copies of one stub can be processed at once (a redelivery racing the
+  // first, or a refresh-stubs pass overlapping the sync). Both read the stored
+  // version before either batch lands, so both find the same movement; only the
+  // batch whose bill write takes effect first may write it.
+  it('writes the event once when two copies of the same stub are processed at the same time', async () => {
+    serve(PULLED, 'HB 200', { status: 'Engrossed' })
+    await Promise.all([stub(PULLED), stub(PULLED)])
+    expect(await eventsOf('b-pulled')).toHaveLength(1)
+    expect(await rows()).toHaveLength(1)
+    expect(await db().select({ status: bills.status, providerUpdatedAt: bills.providerUpdatedAt }).from(bills).where(eq(bills.id, 'b-pulled')).get())
+      .toEqual({ status: 'Engrossed', providerUpdatedAt: '2026-06-03T00:00:00Z' })
+  })
+
+  it('writes the event once for three copies processed at the same time, and again for the next version', async () => {
+    serve(PULLED, 'HB 200')
+    await Promise.all([stub(PULLED), stub(PULLED), stub(PULLED)])
+    expect(await eventsOf('b-pulled')).toHaveLength(1)
+
+    serve(PULLED, 'HB 200', { updatedAt: '2026-06-04T00:00:00Z', status: 'Engrossed', actions: [VOTE, { date: '2026-06-04', description: 'Passed House', chamber: 'H' }] })
+    await Promise.all([stub(PULLED), stub(PULLED)])
+    expect((await eventsOf('b-pulled')).map((e) => JSON.parse(e.metadata).changes.map((c: { changeType: string }) => c.changeType))).toEqual([
+      ['action_added'], ['status_change', 'action_added'],
+    ])
+  })
+
+  // A pulled lead whose text the instance asked for (fetch-bills) can get, in one
+  // central sync pass, both its stub and a full ingest: the stub lands first and
+  // writes the movement it reads, then central's ingest bumps the bill's version
+  // and sends the same action as a change record. The feed shows that movement once.
+  describe('a stub, then a full delivery of the same movement (a pulled lead central ingests on request)', () => {
+    const changes = [{ changeType: 'action_added', oldValue: null, newValue: VOTE.description, detail: VOTE.date, detectedAt: '2026-06-03T06:00:00Z' }]
+    const full = () => processCentralNotification({ tenantId: 'ri', billId: PULLED, matchType: null, changes } as never, testEnv as never, db())
+
+    it('writes the movement once when the bill is not analyzed yet', async () => {
+      serve(PULLED, 'HB 200')
+      await stub(PULLED)
+      serve(PULLED, 'HB 200', { updatedAt: '2026-06-03T06:00:00Z' })
+      await full()
+      expect((await eventsOf('b-pulled')).filter((e) => e.type === 'bill_updated')).toHaveLength(1)
+      expect(await rows()).toHaveLength(1)
+    })
+
+    it('writes the movement once when the bill is analyzed', async () => {
+      await db().update(bills).set({ aiProcessedAt: '2026-06-01T00:00:00Z' }).where(eq(bills.id, 'b-pulled'))
+      serve(PULLED, 'HB 200')
+      await stub(PULLED)
+      serve(PULLED, 'HB 200', { updatedAt: '2026-06-03T06:00:00Z' })
+      await full()
+      expect((await eventsOf('b-pulled')).filter((e) => e.type === 'bill_updated')).toHaveLength(1)
+    })
+
+    it('still writes a full delivery\'s new movement that the stub didn\'t carry', async () => {
+      serve(PULLED, 'HB 200')
+      await stub(PULLED)
+      serve(PULLED, 'HB 200', { updatedAt: '2026-06-03T06:00:00Z' })
+      const sponsor = { changeType: 'sponsor_added', oldValue: null, newValue: 'Rep. Example', detail: null, detectedAt: '2026-06-03T06:00:00Z' }
+      await processCentralNotification({ tenantId: 'ri', billId: PULLED, matchType: null, changes: [...changes, sponsor] } as never, testEnv as never, db())
+      const updates = (await eventsOf('b-pulled')).filter((e) => e.type === 'bill_updated')
+      expect(updates).toHaveLength(2)
+      expect(updates.map((e) => JSON.parse(e.metadata).changes.map((c: { changeType: string }) => c.changeType)).sort()).toEqual([['action_added'], ['sponsor_added']].sort())
+    })
+
+    it('writes a status change once though central read its old status differently from the stub', async () => {
+      serve(PULLED, 'HB 200', { status: 'Engrossed' })
+      await stub(PULLED)
+      serve(PULLED, 'HB 200', { updatedAt: '2026-06-03T06:00:00Z', status: 'Engrossed' })
+      const status = { changeType: 'status_change', oldValue: 'In Committee', newValue: 'Engrossed', detail: null, detectedAt: '2026-06-03T06:00:00Z' }
+      await processCentralNotification({ tenantId: 'ri', billId: PULLED, matchType: null, changes: [status, ...changes] } as never, testEnv as never, db())
+      expect((await eventsOf('b-pulled')).filter((e) => e.type === 'bill_updated')).toHaveLength(1)
+    })
+
+    it('writes an action again when it recurs on a later date', async () => {
+      serve(PULLED, 'HB 200')
+      await stub(PULLED)
+      serve(PULLED, 'HB 200', { updatedAt: '2026-06-05T06:00:00Z' })
+      const again = { ...changes[0], detail: '2026-06-05' }
+      await processCentralNotification({ tenantId: 'ri', billId: PULLED, matchType: null, changes: [again] } as never, testEnv as never, db())
+      expect((await eventsOf('b-pulled')).filter((e) => e.type === 'bill_updated')).toHaveLength(2)
+    })
+
+    it('leaves a tracked bill\'s change records as central sent them, though an update already showed the action', async () => {
+      await db().insert(feedEvents).values({ id: 'earlier', type: 'bill_updated', billId: 'a-tracked', userId: 'system', metadata: JSON.stringify({ changes: [{ changeType: 'action_added', oldValue: null, newValue: VOTE.description, detail: VOTE.date }] }), createdAt: '2026-06-03 01:00:00' })
+      serve(TRACKED, 'SB 100', { updatedAt: '2026-06-03T06:00:00Z' })
+      await processCentralNotification({ tenantId: 'ri', billId: TRACKED, matchType: 'keyword', changes } as never, testEnv as never, db())
+      expect((await eventsOf('a-tracked')).filter((e) => e.type === 'bill_updated')).toHaveLength(2)
+    })
+
+    it('writes the movement once when the full delivery lands first and a stub of the older version follows', async () => {
+      serve(PULLED, 'HB 200', { updatedAt: '2026-06-03T06:00:00Z' })
+      await full()
+      serve(PULLED, 'HB 200')
+      await stub(PULLED)
+      expect((await eventsOf('b-pulled')).filter((e) => e.type === 'bill_updated')).toHaveLength(1)
+    })
+  })
+
+  // The stub's movement is the group's: under the entry and the lone card named
+  // by the group's lead, here the tracked bill, which is further along.
+  it('shows the stub\'s movement under the group\'s lead, on the lone card and in the row\'s entry', async () => {
+    serve(PULLED, 'HB 200')
+    await stub(PULLED)
+    // Further along than anything the stub's status ranks.
+    const { rank } = (await db().select({ rank: bills.statusRank }).from(bills).where(eq(bills.id, 'b-pulled')).get())!
+    await db().update(bills).set({ statusRank: (rank ?? 0) + 1 }).where(eq(bills.id, 'a-tracked'))
+
+    const [card] = await feed()
+    expect(card).toMatchObject({ billId: 'b-pulled', noPriorityCard: true, groupLead: { id: 'a-tracked', billNumber: 'SB 100' } })
+
+    const other = await seedBill({ billNumber: 'H 7', matchType: 'keyword', relevanceScore: 5, aiProcessedAt: '2026-06-01T00:00:00Z' })
+    await db().insert(feedEvents).values({ id: 'other-update', type: 'bill_updated', billId: other, userId: 'system', metadata: '{"changes":[]}', createdAt: (await rows())[0].createdAt })
+    const row = (await feed()).find((e) => e.type === 'no_priority_updates')!
+    const res = await SELF.fetch(`http://localhost/api/feed/events/${row.id}/bills`, { headers: { Cookie: cookie } })
+    const listed = await res.json() as { entries: Array<{ key: string; bills: Array<{ id: string }>; events: Array<{ billId: string }> }> }
+    const entry = listed.entries.find((e) => e.key === 'group:a-tracked')!
+    expect(entry.bills.map((b) => b.id)).toEqual(['a-tracked', 'b-pulled'])
+    expect(entry.events.map((e) => e.billId)).toEqual(['b-pulled'])
   })
 })
