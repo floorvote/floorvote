@@ -4,6 +4,9 @@ import userEvent from '@testing-library/user-event'
 import { CompactPrioritySelect } from './CompactPrioritySelect'
 import { expectAmber, expectNotAmber, expectPlainEmpty, fontSizeOf } from '../test/amberStyle'
 import { expectClosedLabel, expectNoClosedLabel, closedLabelOf } from '../test/closedLabel'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { cssVarName } from '../styles/colorModes'
 
 const apiFetchMock = vi.fn()
 vi.mock('../lib/api', () => ({ apiFetch: (...args: unknown[]) => apiFetchMock(...args) }))
@@ -614,5 +617,53 @@ describe('CompactPrioritySelect: an accessible name from its caller', () => {
     expect(screen.getByRole('combobox', { name: 'Priority' })).toBeInTheDocument()
     rerender(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} newMatch />)
     expect(screen.getByRole('combobox', { name: 'Priority (new match: set a priority or dismiss)' })).toBeInTheDocument()
+  })
+})
+
+// jsdom cannot evaluate :focus-visible and does not load mobile.css, so these pin what the browser rule needs: no
+// inline outline on the select in any state (an inline style beats the global *:focus-visible ring), and the class
+// and attribute the stylesheet's filtered ring keys on, which steps aside while the select has keyboard focus.
+describe('CompactPrioritySelect: the keyboard focus ring', () => {
+  beforeEach(() => { apiFetchMock.mockReset() })
+  const mobileCss = readFileSync(resolve(__dirname, '../styles/mobile.css'), 'utf8')
+  const selectEl = () => screen.getByRole('combobox') as HTMLSelectElement
+  const expectNoInlineOutline = () => {
+    expect(selectEl().style.outline).toBe('')
+    expect(selectEl().style.outlineOffset).toBe('')
+    expect(selectEl().getAttribute('style')).not.toMatch(/outline/)
+  }
+
+  it.each([
+    ['empty', {}],
+    ['set', { current: 'high' as const }],
+    ['an amber new match', { newMatch: true, onDismiss: vi.fn() }],
+    ['the mini (sidebar) size', { mini: true }],
+    ['an amber new match in the mini size', { newMatch: true, onDismiss: vi.fn(), mini: true }],
+    ['filtered', { current: 'medium' as const, isFiltered: true }],
+  ])('sets no inline outline while %s, on focus or a mouse press', (_state, props) => {
+    render(<CompactPrioritySelect billId="b1" current={null} onChange={vi.fn()} {...props} />)
+    expectNoInlineOutline()
+    fireEvent.mouseDown(selectEl())
+    fireEvent.focus(selectEl())
+    expectNoInlineOutline()
+  })
+
+  it('marks a filtered select for the stylesheet ring, and only a filtered one', () => {
+    const { rerender } = render(<CompactPrioritySelect billId="b1" current="high" onChange={vi.fn()} isFiltered />)
+    expect(selectEl()).toHaveClass('fv-chip-select')
+    expect(selectEl()).toHaveAttribute('data-filtered')
+    rerender(<CompactPrioritySelect billId="b1" current="high" onChange={vi.fn()} />)
+    expect(selectEl()).toHaveClass('fv-chip-select')
+    expect(selectEl()).not.toHaveAttribute('data-filtered')
+  })
+
+  it('draws the filtered ring from the stylesheet only while the select lacks keyboard focus', () => {
+    const blue = cssVarName('accentBlue').replace(/-/g, '\\-')
+    expect(mobileCss).toMatch(new RegExp(`\\.fv-chip-select\\[data-filtered\\]:not\\(:focus-visible\\)\\s*\\{[^}]*outline:\\s*2px solid var\\(${blue}\\)[^}]*outline-offset:\\s*2px`))
+  })
+
+  it('leaves keyboard focus to the global ring, which a mouse click does not draw', () => {
+    expect(mobileCss).toMatch(/\*:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--fv-focus-ring\)/)
+    expect(mobileCss).toMatch(/\*:focus:not\(:focus-visible\)\s*\{\s*outline:\s*none/)
   })
 })

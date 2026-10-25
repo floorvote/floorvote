@@ -33,7 +33,7 @@ vi.stubGlobal('fetch', fetchMock)
 import { govinfo } from '../../src/providers/govinfo'
 import { clearRollCallCaches } from '../../src/providers/govinfo/client'
 import { clearMeetingCaches, DETAILS_PER_PASS, earlierCongressStillNeeded, LIST_PAGE_SIZE, QUARANTINE_AFTER } from '../../src/providers/govinfo/meetings'
-import { runBodyEventSync } from '../../src/cron/body-events'
+import { runBodyEventJob, runBodyEventSync } from '../../src/cron/body-events'
 import { bodyEventMonths } from '../../src/lib/bodyEvents'
 import { toLegacyHandle } from '../../src/lib/billHandle'
 import { providerContext } from '../../src/lib/providerContext'
@@ -1781,5 +1781,185 @@ describe('a bill sync between full reads (#616)', () => {
     const kept = await env.DB.prepare(`SELECT key FROM provider_cache WHERE provider = 'govinfo' AND key LIKE 'snapshot/%'`).all()
     expect(kept.results.length).toBeGreaterThan(0)
     expect(kept.results.length).toBeLessThanOrEqual(2)
+  })
+})
+
+describe('before GovInfo owns US (#913)', () => {
+  // A central that tracks Congress through LegiScan, with an instance covering US, and the Congress.gov key set
+  // so that GovInfo's meeting cache can be warmed before the switch. Nothing is claimed.
+  const LS_SESSION = 2199
+  const HB43 = 3000043
+  const HB131 = 3000131
+  const SB296 = 3000296
+  const isWarm = async () => !!(await env.DB.prepare(`SELECT key FROM provider_cache WHERE provider = 'govinfo' AND key = 'warm/119'`).first())
+  const congressCalls = () => calls.filter(u => u.startsWith('https://api.congress.gov/'))
+
+  /** More meetings than a pass reads, so warming takes two passes: 22 recorded and these. */
+  function overfill(n = 80) {
+    for (let i = 0; i < n; i++) feed.add(String(100000 + i), HEARING, m => { m.date = '2025-03-01T15:00:00Z' })
+  }
+
+  async function seedLegiscanUs(coverage = ['US']) {
+    await db().insert(schema.tenants).values({ tenantId: 'usteam', name: 'usteam', stateCoverage: JSON.stringify(coverage), active: true })
+    await db().insert(schema.keywordRegistry).values({ tenantId: 'usteam', keyword: 'alaska native village' })
+    await db().insert(schema.sessions).values({
+      sessionId: LS_SESSION, state: 'US', stateId: 52, special: 0, sessionTitle: 'x', yearStart: 2025, yearEnd: 2026,
+      sessionName: '119th Congress', sessionTag: '119th Congress', slug: '119th-congress',
+    })
+    const bill = (billId: number, billNumber: string) => ({ billId, billNumber, title: `LegiScan's ${billNumber}`, sessionId: LS_SESSION, state: 'US', stateId: 52, changeHash: 'ls-v1', status: 1 })
+    await db().insert(schema.bills).values([bill(HB43, 'HB43'), bill(HB131, 'HB131'), bill(SB296, 'SB296')])
+    await db().insert(schema.billTenants).values([{ billId: HB43, tenantId: 'usteam', matchType: 'keyword' }])
+    // LegiScan's hearings on HB43: one on the day of the October 23 field hearing, and one no meeting matches.
+    await db().insert(schema.billCalendar).values([
+      { id: 'ls-oct23', billId: HB43, typeId: 1, type: 'Hearing', date: '2026-10-23', time: '10:00', location: '', description: 'Hearing on H.R. 43', eventId: null, identityKey: '1|hearing on h.r. 43', eventHash: 'ls1', missedPulls: 0, cancelledAt: null },
+      { id: 'ls-aug01', billId: HB43, typeId: 1, type: 'Hearing', date: '2026-08-01', time: '10:00', location: '', description: 'An earlier hearing', eventId: null, identityKey: '1|an earlier hearing', eventHash: 'ls2', missedPulls: 0, cancelledAt: null },
+    ])
+  }
+
+  /** Every row of the tables a pass must not write before GovInfo owns US. */
+  async function coreRows() {
+    const out: Record<string, unknown[]> = {}
+    for (const table of ['bills', 'sessions', 'bill_calendar', 'body_events', 'body_event_bills', 'committees', 'provider_ids', 'provider_records', 'state_providers']) {
+      out[table] = (await env.DB.prepare(`SELECT * FROM ${table}`).all()).results
+    }
+    return out
+  }
+
+  /** The hourly cron, as Cloudflare runs it: every job, each through runJob. */
+  async function tick(run: Run = makeRun()) {
+    clearMeetingCaches()
+    const { default: worker } = await import('../../src/index')
+    const pending: Promise<unknown>[] = []
+    const ctx = { waitUntil: (p: Promise<unknown>) => { pending.push(p) }, passThroughOnException() {} } as unknown as ExecutionContext
+    await worker.scheduled!({ cron: '0 * * * *', scheduledTime: Date.now() } as ScheduledController, run.env as any, ctx)
+    await Promise.all(pending)
+  }
+
+  async function dryRun() {
+    const res = await seam.central('POST', '/admin/state-providers/US/cutover', makeRun(), { provider: 'govinfo' })
+    expect(res.status, await res.clone().text()).toBe(200)
+    return (await res.json()) as any
+  }
+
+  beforeEach(async () => {
+    await resetCentral('2026-10-17T13:00:00Z')
+    clearMeetingCaches()
+    mail.sent.length = 0
+    feed = new MeetingFeed()
+    calls = []
+    linkBills()
+  })
+
+  it('warms the meeting cache from the hourly cron, writing warm/119 once every meeting has been read, and nothing else', async () => {
+    overfill()
+    await seedLegiscanUs()
+    const before = await coreRows()
+    await tick()
+    // The first pass read its share of the 102 meetings, and the cache isn't warm yet.
+    expect(feed.detailIds).toHaveLength(DETAILS_PER_PASS)
+    expect(await isWarm()).toBe(false)
+    await tick()
+    expect(new Set(feed.detailIds).size).toBe(feed.meetings.size)
+    expect(await isWarm()).toBe(true)
+    // Only GovInfo's own cache and the call log were written: no body events, calendars, committees, ids, or sessions.
+    expect(await coreRows()).toEqual(before)
+    expect((await getJson('/tenants/usteam/body-events?' + WINDOW)).events).toEqual([])
+    expect((await logged()).length).toBeGreaterThan(0)
+  })
+
+  it('reads no meeting without a key, and neither logs nor reports a warm', async () => {
+    await seedLegiscanUs()
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    expect(await runBodyEventJob(govinfo, keyless.makeRun().env as any, db())).toEqual({ synced: [], warmed: [] })
+    expect(consoleText([log])).not.toMatch(/warmed/)
+    const res = await seam.central('POST', '/admin/providers/govinfo/sync', keyless.makeRun())
+    expect(res.status).toBe(200)
+    expect(await res.json()).not.toHaveProperty('warmed')
+    expect(congressCalls()).toEqual([])
+    expect(await isWarm()).toBe(false)
+  })
+
+  it('shows the operator\'s sync what warming came to: a revoked key\'s 403, then a cache that is ready', async () => {
+    await seedLegiscanUs()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    feed.override.list = () => json({ error: { code: 'API_KEY_INVALID', message: 'An invalid api_key was supplied.' } }, 403)
+    clearMeetingCaches()
+    let res = await seam.central('POST', '/admin/providers/govinfo/sync', makeRun())
+    expect(res.status).toBe(200)
+    const failed = await res.json() as any
+    expect(failed).toMatchObject({ ok: true, bodyEvents: [] })
+    expect(failed.warmed).toEqual([{ state: 'US', ok: false, error: expect.stringMatching(/HTTP 403/) }])
+    expect(JSON.stringify(failed)).not.toContain(CONGRESS_KEY)
+    expect(mail.sent).toEqual([])
+
+    feed.override = {}
+    clearMeetingCaches()
+    res = await seam.central('POST', '/admin/providers/govinfo/sync', makeRun())
+    // The recorded meetings are fewer than a pass reads, so one pass warms the cache.
+    expect(((await res.json()) as any).warmed).toEqual([{ state: 'US', ok: true, warm: true }])
+    expect(await isWarm()).toBe(true)
+  })
+
+  it('reads no meeting when no active instance covers US', async () => {
+    await seedLegiscanUs(['DC'])
+    await syncCalendar()
+    expect(congressCalls()).toEqual([])
+    await db().update(schema.tenants).set({ stateCoverage: '["US"]', active: false })
+    await syncCalendar()
+    expect(congressCalls()).toEqual([])
+    expect(await isWarm()).toBe(false)
+  })
+
+  it('logs a failing Congress.gov API and sends no job-failure alert', async () => {
+    await seedLegiscanUs()
+    feed.override.list = () => json({ error: 'down' }, 500)
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { runJob } = await import('../../src/lib/jobAlert')
+    const run = makeRun()
+    clearMeetingCaches()
+    let job: Awaited<ReturnType<typeof runBodyEventJob>> | undefined
+    await runJob(run.env as any, 'govinfo-body-events', async () => { job = await runBodyEventJob(govinfo, run.env as any, db()) })
+    expect(job?.warmed).toEqual([{ state: 'US', ok: false, error: expect.stringMatching(/HTTP 500/) }])
+    expect(congressCalls().length).toBeGreaterThan(0)
+    expect(mail.sent).toEqual([])
+    expect(consoleText([err])).toMatch(/\[body-events\] govinfo US/)
+    expect(await isWarm()).toBe(false)
+  })
+
+  it('fills the cutover dry run\'s calendar preview once warm', async () => {
+    await seedLegiscanUs()
+    // Cold: the preview can't say anything of a bill's calendar.
+    expect((await dryRun()).calendar).toMatchObject({ bills: 0, kept: [], cancelled: [], added: [] })
+    await syncCalendar()
+    expect(await isWarm()).toBe(true)
+    const { calendar } = await dryRun()
+    expect(calendar.bills).toBe(1)
+    expect(calendar.kept.map((k: any) => [k.identityKey, k.kind, k.date])).toEqual([['1|hearing on h.r. 43', 'hearing', '2026-10-23']])
+    expect(calendar.cancelled.map((c: any) => [c.identityKey, c.date])).toEqual([['1|an earlier hearing', '2026-08-01']])
+    expect(calendar.added.map((a: any) => [a.kind, a.date])).toEqual([['markup', '2026-09-15']])
+  })
+
+  it('carries a moved bill\'s LegiScan hearing over on its first ingest when warmed before the cutover', async () => {
+    await seedLegiscanUs()
+    await syncCalendar()
+    const run = makeRun()
+    const res = await seam.central('POST', '/admin/state-providers/US/cutover?confirm=true', run, { provider: 'govinfo' })
+    expect(res.status, await res.clone().text()).toBe(200)
+    await seam.ingest(HB43)
+    const rows = await db().select().from(schema.billCalendar).where(eq(schema.billCalendar.billId, HB43)).all()
+    // The October 23 hearing keeps the identity instances have, now as the meeting that day, on the first ingest.
+    expect(rows.find(r => r.id === 'ls-oct23')).toMatchObject({ cancelledAt: null, identityKey: '1|hearing on h.r. 43', eventId: UPCOMING })
+    expect((await db().select().from(schema.bills).where(eq(schema.bills.billId, HB43)).get())?.carriedFrom).toBeNull()
+  })
+
+  it('syncs the body calendar as before once GovInfo owns US', async () => {
+    await seedLegiscanUs()
+    await db().delete(schema.billCalendar)
+    await db().delete(schema.billTenants)
+    await db().delete(schema.bills)
+    await db().delete(schema.sessions)
+    await seam.claim('US', 'govinfo')
+    await syncCalendar()
+    expect((await eventOf(UPCOMING))).toMatchObject({ date: '2026-10-23' })
   })
 })

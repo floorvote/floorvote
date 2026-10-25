@@ -3,6 +3,9 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event'
 import { CompactPositionSelect } from './CompactPositionSelect'
 import { expectClosedLabel, expectNoClosedLabel } from '../test/closedLabel'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { cssVarName } from '../styles/colorModes'
 
 const apiFetchMock = vi.fn()
 vi.mock('../lib/api', () => ({ apiFetch: (...args: unknown[]) => apiFetchMock(...args) }))
@@ -154,5 +157,44 @@ describe('CompactPositionSelect', () => {
     fireEvent.click(select())
     expect(parentClick).not.toHaveBeenCalled()
     expect(parentMouseDown).not.toHaveBeenCalled()
+  })
+})
+
+// jsdom cannot evaluate :focus-visible and does not load mobile.css, so these pin what the browser rule needs: no
+// inline outline on the select (an inline style beats the global *:focus-visible ring), and the class and attribute
+// the stylesheet's filtered ring keys on, which steps aside while the select has keyboard focus.
+describe('CompactPositionSelect: the keyboard focus ring', () => {
+  beforeEach(() => { apiFetchMock.mockReset() })
+  const mobileCss = readFileSync(resolve(__dirname, '../styles/mobile.css'), 'utf8')
+  const expectNoInlineOutline = () => {
+    expect(select().style.outline).toBe('')
+    expect(select().style.outlineOffset).toBe('')
+    expect(select().getAttribute('style')).not.toMatch(/outline/)
+  }
+
+  it.each([
+    ['empty', { current: null }],
+    ['set', { current: 'Support' }],
+    ['filtered', { current: 'Support', isFiltered: true }],
+  ])('sets no inline outline while %s, on focus or a mouse press', (_state, props) => {
+    render(<CompactPositionSelect billId="b1" options={OPTIONS} onChange={vi.fn()} {...props} />)
+    expectNoInlineOutline()
+    fireEvent.mouseDown(select())
+    fireEvent.focus(select())
+    expectNoInlineOutline()
+  })
+
+  it('marks a filtered select for the stylesheet ring, and only a filtered one', () => {
+    const { rerender } = render(<CompactPositionSelect billId="b1" current="Support" options={OPTIONS} onChange={vi.fn()} isFiltered />)
+    expect(select()).toHaveClass('fv-chip-select')
+    expect(select()).toHaveAttribute('data-filtered')
+    rerender(<CompactPositionSelect billId="b1" current="Support" options={OPTIONS} onChange={vi.fn()} />)
+    expect(select()).toHaveClass('fv-chip-select')
+    expect(select()).not.toHaveAttribute('data-filtered')
+  })
+
+  it('draws the filtered ring from the stylesheet only while the select lacks keyboard focus', () => {
+    const blue = cssVarName('accentBlue').replace(/-/g, '\\-')
+    expect(mobileCss).toMatch(new RegExp(`\\.fv-chip-select\\[data-filtered\\]:not\\(:focus-visible\\)\\s*\\{[^}]*outline:\\s*2px solid var\\(${blue}\\)[^}]*outline-offset:\\s*2px`))
   })
 })

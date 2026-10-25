@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNotNull, sql, type SQL } from 'drizzle-orm'
-import { associationConfig, bills } from '../db/schema'
+import { associationConfig, bills, feedEvents } from '../db/schema'
 import { groupUntriaged, type BillsTable } from './teamFields'
 import { chunk } from './chunk'
 import type { AppDb } from '../types'
@@ -113,18 +113,29 @@ export function routineNewMatchWhere(minRelevance: number, t: BillsTable = bills
  * changes nothing.
  */
 export async function addToNewMatchesRow(db: AppDb, billId: string): Promise<void> {
-  const qualifies = await db.select({ id: bills.id }).from(bills)
-    .where(and(eq(bills.id, billId), routineNewMatchWhere(await getNewMatchMinRelevance(db))))
-    .get()
-  if (!qualifies) return
+  await newMatchesRowStatement(db, billId, await getNewMatchMinRelevance(db))
+}
 
+/**
+ * addToNewMatchesRow as one statement, for a batch: the bill qualifies when the
+ * statement runs, so in the processor's batch (#906) it is judged on the bill
+ * row written earlier in the same batch. `minRelevance` is read beforehand
+ * (getNewMatchMinRelevance).
+ */
+export function newMatchesRowStatement(db: AppDb, billId: string, minRelevance: number) {
   const named = sql`EXISTS (SELECT 1 FROM json_each(feed_events.metadata, '$.billIds') WHERE value = ${billId})`
-  await db.run(sql`
-    INSERT INTO feed_events (id, type, bill_id, user_id, metadata)
-    VALUES (${crypto.randomUUID()}, 'new_matches', NULL, 'system', json_object('billIds', json_array(${billId})))
-    ON CONFLICT (date(created_at)) WHERE type = 'new_matches' DO UPDATE SET
-      metadata = CASE WHEN ${named} THEN feed_events.metadata
-                      ELSE json_set(feed_events.metadata, '$.billIds[#]', ${billId}) END,
-      created_at = CASE WHEN ${named} THEN feed_events.created_at ELSE datetime('now') END
-  `)
+  // Columns in feed_events' order: id, type, bill_id, user_id, metadata, suppressed, created_at. The SELECT
+  // needs its WHERE for SQLite to read the ON CONFLICT as an upsert, which it has.
+  return db.insert(feedEvents).select(sql`
+    SELECT ${crypto.randomUUID()}, 'new_matches', NULL, 'system', json_object('billIds', json_array(${billId})), 0, datetime('now')
+      FROM bills
+     WHERE ${bills.id} = ${billId} AND ${routineNewMatchWhere(minRelevance)}
+  `).onConflictDoUpdate({
+    target: sql`date(created_at)`,
+    targetWhere: sql`type = 'new_matches'`,
+    set: {
+      metadata: sql`CASE WHEN ${named} THEN feed_events.metadata ELSE json_set(feed_events.metadata, '$.billIds[#]', ${billId}) END`,
+      createdAt: sql`CASE WHEN ${named} THEN feed_events.created_at ELSE datetime('now') END`,
+    },
+  })
 }
