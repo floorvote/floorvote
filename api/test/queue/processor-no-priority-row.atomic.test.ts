@@ -104,14 +104,18 @@ describe('processCentralNotification: an update and its day\'s row are written t
     `CREATE TRIGGER fail_row BEFORE INSERT ON feed_events WHEN NEW.type = 'no_priority_updates' BEGIN SELECT RAISE(ABORT, 'crash'); END`,
   ).run()
 
-  // Neither, never one without the other. (A redelivery of the very same message
-  // is then skipped as a version the instance already stored, as it is for any
-  // failure after the bill's own upsert: that dedupe predates the row.)
-  it('keeps neither an update nor its row when the row can\'t be written', async () => {
+  // Neither, never one without the other. They are in the commit that stamps the
+  // bill's version (#906), so a redelivery of the very same message writes both.
+  it('keeps neither an update nor its row when the row can\'t be written, and writes both on redelivery', async () => {
     await failRowWrites()
     await expect(deliver({ changes })).rejects.toThrow()
     expect(await ofType('bill_updated')).toEqual([])
     expect(await ofType('no_priority_updates')).toEqual([])
+
+    await env.DB.prepare('DROP TRIGGER fail_row').run()
+    await deliver({ changes })
+    expect(await ofType('bill_updated')).toHaveLength(1)
+    expect(await ofType('no_priority_updates')).toHaveLength(1)
   })
 
   it('keeps neither a hearing change nor its row when the row can\'t be written', async () => {

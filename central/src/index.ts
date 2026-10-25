@@ -5,7 +5,7 @@ import * as schema from './db/schema'
 import { runSync } from './cron/sync'
 import { assignSessionSlugs } from './lib/sessionSlugs'
 import { isSnapshotProvider, runHourlySnapshotSync } from './cron/sync-snapshots'
-import { runBodyEventSync } from './cron/body-events'
+import { runBodyEventJob } from './cron/body-events'
 import { PROVIDERS } from './providers'
 import { checkVoteDatasets, VOTE_DATASET_CHECK_HOUR_ET } from './cron/vote-datasets'
 import { getCurrentEtHour } from './lib/sync-schedule'
@@ -118,7 +118,7 @@ export default {
     })())
     // The legislature's own calendar, for providers that publish one, as its own job.
     for (const provider of PROVIDERS.filter(p => p.listBodyEvents)) {
-      ctx.waitUntil(runJob(env, `${provider.id}-body-events`, () => runBodyEventSync(provider, env, db)))
+      ctx.waitUntil(runJob(env, `${provider.id}-body-events`, () => runBodyEventJob(provider, env, db)))
     }
     if (getCurrentEtHour() === VOTE_DATASET_CHECK_HOUR_ET) {
       ctx.waitUntil(runJob(env, 'vote-datasets', () => checkVoteDatasets(env, db)))

@@ -7,7 +7,7 @@ import {
 } from '../providers'
 import { isSnapshotProvider, sessionValues, type SnapshotProvider } from '../cron/sync-snapshots'
 import { carryCalendar, calendarKind, sentIdentity, type CalendarRow } from './billCalendar'
-import { billMatchKey, matchPeople, type PeopleMatch, type PersonFacts, type PersonMatch } from './cutoverMatch'
+import { billMatchKey, bioguideOf, matchPeople, type PeopleMatch, type PersonFacts, type PersonMatch } from './cutoverMatch'
 import { providerContext } from './providerContext'
 import { providerIdsFor } from './providerIds'
 import { providerConfigured } from './providerRouting'
@@ -47,7 +47,9 @@ import type { Db, Env } from '../types'
  *   cancelled once, and the new provider's other entries arrive as new.
  * - **Legislators** are matched by Bioguide id where both providers have
  *   one, and otherwise on name, chamber, and district, and keep their person
- *   ids (`cutover_people`, applied by lib/carriedIds.ts).
+ *   ids (`cutover_people`, applied by lib/carriedIds.ts). A provider that
+ *   mints person ids from Bioguide ids (`personIdsForBioguide`, GovInfo) is
+ *   matched against every old legislator with one, not only the sponsors read.
  * - **The losing provider's sessions** in the state are marked ended, since
  *   nothing syncs them any more.
  * - **Ownership** (`state_providers`) flips in the batch's last statement,
@@ -435,6 +437,24 @@ export async function planCutover(
       newPeople.set(s.people_id, known
         ? { ...known, district: known.district || s.district || null, bioguideId: known.bioguideId || s.bioguide_id || null }
         : { id: s.people_id, name: s.name, firstName: s.first_name, lastName: s.last_name, role: s.role, roleId: s.role_id, district: s.district || null, bioguideId: s.bioguide_id || null })
+    }
+  }
+  // A provider that mints person ids from Bioguide ids (GovInfo) names a member
+  // under one id wherever it names them, so every legislator the losing provider
+  // holds a Bioguide id for is matched, not only the sponsors read above (#912).
+  // An id two old rows share is left out: it matches neither, as before.
+  if (to.personIdsForBioguide) {
+    const holders = new Map<string, OldPerson[]>()
+    for (const p of oldPeople) {
+      const id = bioguideOf(p)
+      if (id) holders.set(id, [...(holders.get(id) ?? []), p])
+    }
+    const single = [...holders].filter(([, list]) => list.length === 1)
+    const personIds = await to.personIdsForBioguide(single.map(([id]) => id), ctx)
+    for (const [bioguideId, [old]] of single) {
+      const id = personIds.get(bioguideId)
+      // The provider gives no names without reading a file, so the report shows the old row's.
+      if (id !== undefined && !newPeople.has(id)) newPeople.set(id, { id, name: old.name, bioguideId })
     }
   }
   const matchedPeople = matchPeople(oldPeople, [...newPeople.values()])

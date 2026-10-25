@@ -120,8 +120,29 @@ export const govinfo: Provider<'CONGRESS_API_KEY'> = {
     return Promise.all(meetings.map(m => meetingBodyEvent(m, code => ids.get(code))))
   },
 
+  /**
+   * Before GovInfo owns `US`: read the Congress's meetings into the cache, as
+   * `listBodyEvents` would, and show them nowhere, so the first read (a day or
+   * two) is done, and `warm/<congress>` written, before the switch (#913).
+   * Mints no committee id and lists no session. A meeting quarantined meanwhile
+   * still emails the operators once. Without a key, asks nothing and says so.
+   */
+  async warmBodyEvents(_state, ctx) {
+    const key = ctx.env.CONGRESS_API_KEY
+    if (!key) return null
+    const { congress } = congressOn(ctx.today)
+    await readMeetings(ctx, key, congress)
+    return { warm: await isWarm(ctx, congress) }
+  },
+
   async toEntry(record) {
     return toGovInfoEntry(record.raw as GovInfoRecord, record.billId, record.hash)
+  },
+
+  /** A member's person id is minted from their Bioguide id (detail.ts, votes.ts), so a cutover can match members no bill it reads names. */
+  async personIdsForBioguide(bioguideIds, ctx) {
+    const wanted = [...new Set(bioguideIds.filter(id => /^[A-Z]\d{6}$/.test(id)))]
+    return wanted.length > 0 ? ctx.ids('person', wanted) : new Map<string, number>()
   },
 
   /**

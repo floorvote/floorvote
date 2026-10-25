@@ -92,16 +92,14 @@ export function decodeSubjectFiltersChecked(
  * leaves the rows it would have replaced. Run as separate statements, an insert
  * that failed after the delete committed left the bill with no rows.
  *
- * What is left: on the full delivery path the retry still takes the early skip
- * (upsertBill already stamped the bill), so after a failed write the rows keep
- * the previous version's subjects, stale rather than missing, until the bill
- * next changes.
+ * The full delivery path puts these statements (`billSubjectStatements`) in
+ * the one batch that also writes the bill and stamps its version (#906), so a
+ * failed write is redone in full by the redelivery.
  */
 const SUBJECTS_INSERT_CHUNK = 30
 
-export async function syncBillSubjects(
-  db: AppDb, billInternalId: string, state: string, subjects: string[],
-): Promise<void> {
+/** The statements that replace a bill's subject rows: the delete, then the chunked inserts. */
+export function billSubjectStatements(db: AppDb, billInternalId: string, state: string, subjects: string[]) {
   const deduped = dedupeSubjectNames(subjects)
   const inserts = []
   for (let i = 0; i < deduped.length; i += SUBJECTS_INSERT_CHUNK) {
@@ -110,7 +108,13 @@ export async function syncBillSubjects(
       chunk.map(name => ({ billId: billInternalId, subjectName: name, state })),
     ))
   }
-  await db.batch([db.delete(billSubjects).where(eq(billSubjects.billId, billInternalId)), ...inserts])
+  return [db.delete(billSubjects).where(eq(billSubjects.billId, billInternalId)), ...inserts] as const
+}
+
+export async function syncBillSubjects(
+  db: AppDb, billInternalId: string, state: string, subjects: string[],
+): Promise<void> {
+  await db.batch(billSubjectStatements(db, billInternalId, state, subjects))
 }
 
 // ── Operator suppression switch ──────────────────────────────────────────
