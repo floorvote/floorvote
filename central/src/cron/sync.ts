@@ -13,7 +13,7 @@ import { assignSessionSlugs } from '../lib/sessionSlugs'
 import { insertLinkWhileOwner, loadStateOwners, ownerOf, ownerOfState } from '../lib/stateProviders'
 import { queueCalendarRechecks } from '../lib/billCalendar'
 import { fetchRequestCutoff, refreshRequestedBills } from '../lib/fetchRequests'
-import { errorMessage, recoveryFrom, sendRecoveries, streakAlerts, throwAll, type Recovery, type SessionFailure } from './passAlerts'
+import { errorMessage, finishPass, sendRecoveries, streakAlerts, throwAll, type Recovery, type SessionFailure } from './passAlerts'
 
 const BATCH = 80
 const FLUSH_BATCH = 500
@@ -207,11 +207,7 @@ export async function runSync(env: Env, db: Db): Promise<void> {
       } else {
         await runRawPass(session, coveringTenants, provider, env, db)
       }
-      // Before the stamp, which ends the streak the recovery is read from.
-      const recovered = await recoveryFrom(db, session)
-      await db.update(sessions)
-        .set({ lastSyncedAt: nowDb() })
-        .where(eq(sessions.sessionId, session.sessionId))
+      const recovered = await finishPass(db, session)
       if (recovered) recoveries.push(recovered)
     } catch (err) {
       console.error(`[sync-ls] failed for session ${session.sessionId}:`, err)

@@ -7,7 +7,7 @@ import { providerContext } from '../lib/providerContext'
 import { ingestQueueFor, providerConfigured } from '../lib/providerRouting'
 import { loadStateOwners, ownerOfState, statesOwnedBy } from '../lib/stateProviders'
 import { applyMasterList, firstIngestBudget, logSyncPass } from './sync'
-import { errorMessage, recoveryFrom, sendRecoveries, streakAlerts, throwAll, type Recovery, type SessionFailure } from './passAlerts'
+import { errorMessage, finishPass, sendRecoveries, streakAlerts, throwAll, type Recovery, type SessionFailure } from './passAlerts'
 import { assignSessionSlugs } from '../lib/sessionSlugs'
 import { carriedBillIds, carriedPeopleIds, withCarriedBillIds, withCarriedPeople } from '../lib/carriedIds'
 import type { Provider, ProviderContext, ProviderPerson, ProviderRecord, StoredSession, SyncSession } from '../providers'
@@ -125,9 +125,7 @@ async function syncSessions(
     try {
       const counts = await runSnapshotPass(provider, session, covering, env, db, ctx, force, firstIngests)
       reports.push({ sessionId: session.sessionId, sessionName: session.sessionName, ...counts })
-      // Before the stamp, which ends the streak the recovery is read from.
-      const recovered = await recoveryFrom(db, session)
-      await db.update(sessions).set({ lastSyncedAt: nowDb() }).where(eq(sessions.sessionId, session.sessionId))
+      const recovered = await finishPass(db, session)
       if (recovered) recoveries.push(recovered)
     } catch (err) {
       console.error(`[sync-${provider.id}] ${session.sessionName} failed:`, err)

@@ -1,6 +1,7 @@
-import { and, eq, gte, sql } from 'drizzle-orm'
-import { sessionSyncLog } from '../db/schema'
+import { and, eq, gte, isNull, sql } from 'drizzle-orm'
+import { sessions, sessionSyncLog } from '../db/schema'
 import { escHtml, sendOpsAlert } from '../lib/jobAlert'
+import { nowDb } from '../lib/dbTime'
 import { PRODUCT_NAME } from '../../../shared/brand'
 import type { Env, Db } from '../types'
 
@@ -100,6 +101,21 @@ export async function recoveryFrom(db: Db, session: StreakSession): Promise<Reco
     console.error(`[sync] couldn't read the failed passes ${session.state} ${session.sessionName} just ended:`, err)
     return null
   }
+}
+
+/**
+ * Stamp a finished pass and return the recovery it alone closed. An hourly
+ * pass and "run now" can read the same streak: only the one that replaces the
+ * old last_synced_at sends its recovery email. A log read that fails still
+ * lets the pass stamp its success, as before.
+ */
+export async function finishPass(db: Db, session: StreakSession): Promise<Recovery | null> {
+  const recovered = await recoveryFrom(db, session)
+  const stamped = await db.update(sessions).set({ lastSyncedAt: nowDb() }).where(and(
+    eq(sessions.sessionId, session.sessionId),
+    recovered ? (session.lastSyncedAt === null ? isNull(sessions.lastSyncedAt) : eq(sessions.lastSyncedAt, session.lastSyncedAt)) : undefined,
+  )).returning({ sessionId: sessions.sessionId })
+  return stamped.length > 0 ? recovered : null
 }
 
 /**

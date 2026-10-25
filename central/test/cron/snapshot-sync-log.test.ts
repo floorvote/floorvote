@@ -723,4 +723,29 @@ describe('the email once a session that alerted syncs again', () => {
     await runSnapshotSync(lims, e, db(), { force: true })
     expect(resolvedEmails()).toHaveLength(1)
   })
+
+  it.each([false, true])('sends one recovery when an hourly pass and "run now" finish together (previous sync: %s)', async previouslySynced => {
+    const { env: e } = makeEnv()
+    if (previouslySynced) {
+      limsUp()
+      await runHourlySnapshotSync(lims, e, db())
+      nextHour()
+    }
+    limsDown()
+    await failFor(lims, e, FAILED_PASSES_BEFORE_ALERT)
+    // Both passes read the session before either has finished.
+    let release!: () => void
+    const ready = new Promise<void>(resolve => { release = resolve })
+    let reads = 0
+    vi.mocked(limsClient.getBulkData).mockImplementation(async () => {
+      if (++reads === 2) release()
+      await ready
+      return []
+    })
+    await Promise.all([
+      runHourlySnapshotSync(lims, e, db()),
+      runSnapshotSync(lims, e, db(), { force: true }),
+    ])
+    expect(resolvedEmails()).toHaveLength(1)
+  })
 })

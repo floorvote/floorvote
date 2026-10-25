@@ -187,4 +187,20 @@ describe('the email once a LegiScan state that alerted syncs again', () => {
     expect(sent[0].text).toContain(`NJ ${NJ.name}`)
     expect(sent[0].text).toContain(`US ${US.name}`)
   })
+
+  it('sends one recovery when two passes finish together', async () => {
+    await seed('full', NJ)
+    down()
+    await passes(FAILED_PASSES_BEFORE_ALERT)
+    let release!: () => void
+    const ready = new Promise<void>(resolve => { release = resolve })
+    let reads = 0
+    vi.mocked(legiscan.getMasterListBySession).mockImplementation(async () => {
+      if (++reads === 2) release()
+      await ready
+      return []
+    })
+    await Promise.all([runSync(syncEnv(), db()), runSync(syncEnv(), db())])
+    expect(resolvedEmails()).toHaveLength(1)
+  })
 })
