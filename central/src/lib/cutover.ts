@@ -203,6 +203,21 @@ async function planContext(provider: Provider, env: Env, db: Db) {
   return { ctx, provisional }
 }
 
+/**
+ * The losing provider's people who sponsored, or voted on, a bill in one of
+ * these sessions: the members a cutover of them moves (#978).
+ */
+async function peopleActiveIn(db: Db, sessionIds: number[]): Promise<Set<number>> {
+  const out = new Set<number>()
+  for (const chunk of idChunks(sessionIds)) {
+    const inSessions = sql`b.session_id IN (SELECT value FROM json_each(${chunk}))`
+    const sponsors = await db.all<{ id: number }>(sql`SELECT DISTINCT s.people_id AS id FROM bill_sponsors s JOIN bills b ON b.bill_id = s.bill_id WHERE s.people_id IS NOT NULL AND ${inSessions}`)
+    const voters = await db.all<{ id: number }>(sql`SELECT DISTINCT v.people_id AS id FROM roll_call_votes v JOIN roll_calls r ON r.roll_call_id = v.roll_call_id JOIN bills b ON b.bill_id = r.bill_id WHERE v.people_id IS NOT NULL AND ${inSessions}`)
+    for (const r of [...sponsors, ...voters]) out.add(r.id)
+  }
+  return out
+}
+
 /** The ids, in chunks small enough for one JSON parameter each. */
 function idChunks(ids: number[]): string[] {
   const out: string[] = []
@@ -441,15 +456,19 @@ export async function planCutover(
   }
   // A provider that mints person ids from Bioguide ids (GovInfo) names a member
   // under one id wherever it names them, so every legislator the losing provider
-  // holds a Bioguide id for is matched, not only the sponsors read above (#912).
-  // An id two old rows share is left out: it matches neither, as before.
+  // holds a Bioguide id for who sponsored or voted on a bill in a session the
+  // cutover moves is matched, not only the sponsors read above (#912). A member
+  // only of earlier sessions, which the new provider never reads, keeps their
+  // row and its profile link (#978). An id two old rows share is left out: it
+  // matches neither, as before.
   if (to.personIdsForBioguide) {
+    const active = await peopleActiveIn(db, [...new Set(moved.map(m => m.old.sessionId))])
     const holders = new Map<string, OldPerson[]>()
     for (const p of oldPeople) {
       const id = bioguideOf(p)
       if (id) holders.set(id, [...(holders.get(id) ?? []), p])
     }
-    const single = [...holders].filter(([, list]) => list.length === 1)
+    const single = [...holders].filter(([, list]) => list.length === 1 && active.has(list[0].id))
     const personIds = await to.personIdsForBioguide(single.map(([id]) => id), ctx)
     for (const [bioguideId, [old]] of single) {
       const id = personIds.get(bioguideId)
