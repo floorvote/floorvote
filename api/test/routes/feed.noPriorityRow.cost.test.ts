@@ -106,6 +106,25 @@ describe('the no-priority updates row: what a GET /feed costs', () => {
     expect(three.statements.length).toBe(one.statements.length)
   })
 
+  // Every companion group's card is named by its lead (#945), resolved for the
+  // whole page at once, so a page of three group cards costs what one does.
+  it('costs the same number of statements for three companion groups\' cards on the page as for one', async () => {
+    const groupDay = async (i: number) => {
+      const a = await seedBill({ billNumber: `HB ${i}`, relevanceScore: 5, priority: 'high' })
+      const b = await seedBill({ billNumber: `SB ${i}`, relevanceScore: 5 })
+      await env.DB.prepare(`UPDATE bills SET group_key = ? WHERE id IN (?, ?)`).bind([a, b].sort()[0], a, b).run()
+      await update(b, `2026-03-0${i} 09:00:00`)
+    }
+    await groupDay(4)
+    const one = await capture(getFeed)
+    expect(one.result.events).toHaveLength(1)
+    await groupDay(3)
+    await groupDay(2)
+    const three = await capture(getFeed)
+    expect(three.result.events).toHaveLength(3)
+    expect(three.statements.length).toBe(one.statements.length)
+  })
+
   describe('the row\'s list (GET /feed/events/:id/bills)', () => {
     const list = async (qs: string) => {
       const res = await SELF.fetch(`http://localhost/api/feed/events/row-2026-03-04/bills${qs}`, { headers: { Cookie: `session=${token}` } })

@@ -446,7 +446,7 @@ async function applyCentralBill(
       await db.batch([
         // Columns in feed_events' order: id, type, bill_id, user_id, metadata, suppressed, created_at.
         db.insert(feedEvents).select(sql`
-          SELECT ${crypto.randomUUID()}, 'bill_updated', ${existing.id}, 'system', ${JSON.stringify({ changes: movement })}, 0, ${writtenAt}
+          SELECT ${crypto.randomUUID()}, 'bill_updated', ${existing.id}, 'system', ${JSON.stringify({ fromStub: true, changes: movement })}, 0, ${writtenAt}
            WHERE EXISTS (SELECT 1 FROM bills WHERE id = ${existing.id} AND provider_updated_at IS ${existing.providerUpdatedAt})
         `),
         noteLegislativeEvent(db, existing.id, writtenAt),
@@ -1265,13 +1265,16 @@ async function inTrackedGroup(db: AppDb, billId: string): Promise<boolean> {
     .where(and(inGroupOf(bills.id, billId), ne(bills.id, billId), isNotNull(bills.matchType))).get())
 }
 
-/** How recent a bill's updates notShownByStub looks through: a stub's event and the ingest that repeats it are one sync pass apart. */
+/** How many of a bill's latest updates notShownByStub reads: a stub's event and the ingest that repeats it are one sync pass apart. */
 const STUB_LOOKBACK = 20
 
 /**
- * These change records less the ones the bill's recent updates already show, as a stub's event shows them:
- * the same kind of change (a status change or an action) to the same new value, and for an action on the
- * same date, so an action repeated on another day is still new.
+ * These change records less the movement a stub of the bill already showed since its last full delivery's
+ * update: the stub-written events (`fromStub`) among its latest updates, newest first, up to the first one a
+ * full delivery wrote. Any other update stops the look, so a status a bill reaches again (once per chamber)
+ * shows again. Within that window, a status change matches any status change the stub showed, since the
+ * stub's status label and central's change label for one status can differ ("Failed" and "Failed/Dead"), and
+ * an action matches the same action on the same date.
  */
 async function notShownByStub<C extends { changeType: string; oldValue: string | null; newValue: string | null; detail: string | null }>(
   db: AppDb, billId: string, changes: readonly C[],
@@ -1279,30 +1282,38 @@ async function notShownByStub<C extends { changeType: string; oldValue: string |
   if (!changes.some(isStubKind)) return [...changes]
   const recent = await db.select({ metadata: feedEvents.metadata }).from(feedEvents)
     .where(and(eq(feedEvents.billId, billId), eq(feedEvents.type, 'bill_updated')))
-    .orderBy(desc(feedEvents.createdAt)).limit(STUB_LOOKBACK).all()
-  const shown = new Set(recent.flatMap((e) => ((JSON.parse(e.metadata) as { changes?: StubChange[] }).changes ?? []).filter(isStubKind).map(changeKey)))
+    // Newest first, and of two in one second, the later written (rowid), so a full delivery's update just after
+    // a stub's ends the look.
+    .orderBy(desc(sql`datetime(${feedEvents.createdAt})`), desc(sql`${feedEvents}.rowid`)).limit(STUB_LOOKBACK).all()
+  const shown = new Set<string>()
+  for (const e of recent) {
+    const meta = JSON.parse(e.metadata) as { fromStub?: boolean; changes?: StubChange[] }
+    if (meta.fromStub !== true) break
+    for (const c of (meta.changes ?? []).filter(isStubKind)) shown.add(changeKey(c))
+  }
   return changes.filter((c) => !(isStubKind(c) && shown.has(changeKey(c))))
 }
 const isStubKind = (c: { changeType: string }) => c.changeType === 'status_change' || c.changeType === 'action_added'
-// Not the old value: central reads a status change from its own snapshot, which can differ from the status
-// the instance had stored when the stub's event was written.
 const changeKey = (c: { changeType: string; newValue: string | null; detail: string | null }) =>
-  JSON.stringify([c.changeType, c.newValue, c.detail])
+  c.changeType === 'status_change' ? c.changeType : JSON.stringify([c.changeType, c.newValue, c.detail])
 
 /** A change a stub delivery shows on the feed, in the shape of central's change records. */
 type StubChange = { changeType: 'status_change' | 'action_added'; oldValue: string | null; newValue: string | null; detail: string | null }
 
 /**
  * What a stub delivery changed that the feed shows: the bill's status and its last action, which are all a
- * stub has to say about movement. Nothing when the stored version is the one delivered: a redelivery, or
- * an operator's resend after a vocabulary change, whose relabeled status is not movement. A status with no
+ * stub has to say about movement. Nothing unless the delivered version is newer than the stored one: a
+ * redelivery, an operator's resend after a vocabulary change (whose relabeled status is not movement), or a
+ * stale stub after a newer full delivery. A status with no
  * stored value before is not a change either, as on central (lib/detect-changes.ts).
  */
 function stubMovement(
   stored: { providerUpdatedAt: string | null; status: string | null; lastAction: string | null; lastActionDate: string | null },
   incoming: { providerUpdatedAt: string | null; status: string; lastAction: string | null; lastActionDate: string | null },
 ): StubChange[] {
-  if (stored.providerUpdatedAt !== null && stored.providerUpdatedAt === incoming.providerUpdatedAt) return []
+  // Central's versions are ISO timestamps, so they order as strings. A stub no newer than the stored version
+  // (a retry landing after a newer full delivery) carries older facts, which are not movement.
+  if (stored.providerUpdatedAt !== null && incoming.providerUpdatedAt !== null && incoming.providerUpdatedAt <= stored.providerUpdatedAt) return []
   const changes: StubChange[] = []
   if (stored.status && incoming.status && stored.status !== incoming.status) {
     changes.push({ changeType: 'status_change', oldValue: stored.status, newValue: incoming.status, detail: null })

@@ -286,10 +286,12 @@ export async function groupLeads(db: AppDb, groupKeys: ReadonlyArray<string | nu
   return out
 }
 
+/** A row entry's companion group key, or null for a bill's own entry. */
+const groupKeyOf = (entry: DayEntry) => (entry.key.startsWith('group:') ? entry.key.slice('group:'.length) : null)
+
 /** The bill an entry is named by: a group's lead, or the entry's own bill. */
 const leadIdOf = (entry: DayEntry, leads: ReadonlyMap<string, { leadId: string }>) =>
-  leads.get(entry.key.replace(/^group:/, ''))?.leadId ?? entry.memberIds[0]
-const groupKeyOf = (entry: DayEntry) => (entry.key.startsWith('group:') ? entry.key.slice('group:'.length) : null)
+  leads.get(groupKeyOf(entry) ?? '')?.leadId ?? entry.memberIds[0]
 
 /**
  * The bill each of these entries is named by, as the row's chips and a lone

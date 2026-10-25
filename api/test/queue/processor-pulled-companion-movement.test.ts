@@ -77,7 +77,8 @@ describe('processCentralNotification: a stub delivery of a pulled companion', ()
     const written = await eventsOf('b-pulled')
     expect(written).toHaveLength(1)
     expect(written[0]).toMatchObject({ type: 'bill_updated', userId: 'system', suppressed: false })
-    expect(JSON.parse(written[0].metadata)).toEqual({ changes: [
+    // Marked as a stub's, so a full delivery repeating it can tell (notShownByStub).
+    expect(JSON.parse(written[0].metadata)).toEqual({ fromStub: true, changes: [
       { changeType: 'status_change', oldValue: 'Introduced', newValue: 'Engrossed', detail: null },
       { changeType: 'action_added', oldValue: null, newValue: VOTE.description, detail: VOTE.date },
     ] })
@@ -264,6 +265,28 @@ describe('processCentralNotification: a stub delivery of a pulled companion', ()
       expect((await eventsOf('a-tracked')).filter((e) => e.type === 'bill_updated')).toHaveLength(2)
     })
 
+    it('writes a status change once though central labels the status differently from the stub', async () => {
+      serve(PULLED, 'HB 200', { status: 'Failed' })
+      await stub(PULLED)
+      serve(PULLED, 'HB 200', { updatedAt: '2026-06-03T06:00:00Z', status: 'Failed' })
+      const status = { changeType: 'status_change', oldValue: 'Introduced', newValue: 'Failed/Dead', detail: null, detectedAt: '2026-06-03T06:00:00Z' }
+      await processCentralNotification({ tenantId: 'ri', billId: PULLED, matchType: null, changes: [status] } as never, testEnv as never, db())
+      expect((await eventsOf('b-pulled')).filter((e) => e.type === 'bill_updated')).toHaveLength(1)
+    })
+
+    it('writes a full delivery\'s change once a later full delivery came between it and the stub', async () => {
+      await db().update(bills).set({ aiProcessedAt: '2026-06-01T00:00:00Z' }).where(eq(bills.id, 'b-pulled'))
+      serve(PULLED, 'HB 200')
+      await stub(PULLED)
+      serve(PULLED, 'HB 200', { updatedAt: '2026-06-04T00:00:00Z' })
+      const sponsor = { changeType: 'sponsor_added', oldValue: null, newValue: 'Rep. Example', detail: null, detectedAt: '2026-06-04T00:00:00Z' }
+      await processCentralNotification({ tenantId: 'ri', billId: PULLED, matchType: null, changes: [sponsor] } as never, testEnv as never, db())
+      // The stub's action, sent again after a full delivery already followed the stub, is new movement to the feed's eyes.
+      serve(PULLED, 'HB 200', { updatedAt: '2026-06-05T00:00:00Z' })
+      await full()
+      expect((await eventsOf('b-pulled')).filter((e) => e.type === 'bill_updated')).toHaveLength(3)
+    })
+
     it('writes the movement once when the full delivery lands first and a stub of the older version follows', async () => {
       serve(PULLED, 'HB 200', { updatedAt: '2026-06-03T06:00:00Z' })
       await full()
@@ -293,5 +316,31 @@ describe('processCentralNotification: a stub delivery of a pulled companion', ()
     const entry = listed.entries.find((e) => e.key === 'group:a-tracked')!
     expect(entry.bills.map((b) => b.id)).toEqual(['a-tracked', 'b-pulled'])
     expect(entry.events.map((e) => e.billId)).toEqual(['b-pulled'])
+  })
+
+  // Only a stub's own events are what a full delivery's changes are checked
+  // against. A bill that gets only full deliveries (a provider that ingests every
+  // bill) can reach the same status twice, once per chamber, and both show.
+  it('writes a status a full delivery reaches again, when no stub came between', async () => {
+    await db().update(bills).set({ aiProcessedAt: '2026-06-01T00:00:00Z' }).where(eq(bills.id, 'b-pulled'))
+    const deliver = (updatedAt: string, oldValue: string) => {
+      serve(PULLED, 'HB 200', { updatedAt, status: 'In committee' })
+      const status = { changeType: 'status_change', oldValue, newValue: 'In committee', detail: null, detectedAt: updatedAt }
+      return processCentralNotification({ tenantId: 'ri', billId: PULLED, matchType: null, changes: [status] } as never, testEnv as never, db())
+    }
+    await deliver('2026-06-03T00:00:00Z', 'Introduced')
+    await deliver('2026-06-10T00:00:00Z', 'Passed the first chamber')
+    expect((await eventsOf('b-pulled')).filter((e) => e.type === 'bill_updated')).toHaveLength(2)
+  })
+
+  // A stub older than the version stored (a retry landing after a newer full
+  // delivery) carries older facts: they are not movement, backward or otherwise.
+  it('writes nothing for a stub older than the version stored, though its action differs', async () => {
+    const PASSED = { date: '2026-06-05', description: 'Passed House', chamber: 'H' }
+    serve(PULLED, 'HB 200', { updatedAt: '2026-06-05T00:00:00Z', actions: [VOTE, PASSED] })
+    await processCentralNotification({ tenantId: 'ri', billId: PULLED, matchType: null, changes: [] } as never, testEnv as never, db())
+    serve(PULLED, 'HB 200', { updatedAt: '2026-06-03T00:00:00Z' })
+    await stub(PULLED)
+    expect(await eventsOf('b-pulled')).toHaveLength(0)
   })
 })

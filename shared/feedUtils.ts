@@ -34,11 +34,12 @@ export type FeedEvent = {
   // raises no "New activity" banner. Optional because producers other than GET
   // /feed build FeedEvent-shaped objects; absent is read as "no".
   noPriorityCard?: boolean
-  // On a companion group's no-priority card, the bill the card is named by: the
-  // group's lead (see **Lead bill** in CONTEXT.md), which need not be the member
-  // that moved, with the analysis the group shows. Its title, summary, and
-  // priority dropdown are the lead's, so a priority set there is the group's,
-  // set through its lead (#945). Absent on every other event.
+  // On a companion group's card, the bill the card is named by: the group's lead
+  // (see **Lead bill** in CONTEXT.md), which need not be the member whose event
+  // it is, with the analysis the group shows. Its title, summary, and priority
+  // dropdown are the lead's, so a priority set from any group card is the
+  // group's, set through its lead (#945). GET /feed sends it on every event of a
+  // bill in a group; absent on other events and from other producers.
   groupLead?: GroupLead
   userId: string
   userName: string
@@ -47,7 +48,7 @@ export type FeedEvent = {
   createdAt: string
 }
 
-/** A no-priority card's lead bill, as GET /feed sends it: the shape of the row's chips. */
+/** A group card's lead bill, as GET /feed sends it: the shape of the row's chips. */
 export type GroupLead = {
   id: string
   billNumber: string
@@ -86,10 +87,11 @@ export type GroupedBillEvents = {
   /** The companion group the card stands for, or null for a bill in no group. Absent is read as null. */
   groupKey?: string | null
   /**
-   * The bills with events in a group's card, the newest event's bill first and
-   * each once. Only a group's card has it: one card, many bills, so each row
-   * names its bill and the header lists them. The fields above describe the
-   * first of them.
+   * The bills of a group's card, each once: its lead first when its events
+   * carry one (groupLead, which need not have events of its own), then the bills
+   * with events, newest event's first. Only a group's card has it: one card,
+   * many bills, so each row names its bill and the header lists them. The
+   * fields above describe the first of them.
    */
   bills?: GroupedBill[]
   date: string         // YYYY-MM-DD
@@ -126,7 +128,7 @@ export function groupEventsByBillAndDay(events: FeedEvent[]): GroupedBillEvents[
       })
     }
     const g = map.get(key)!
-    // A group's no-priority card is named by its lead, listed first in its header.
+    // A group's card is named by its lead, listed first in its header.
     const lead = groupKey !== null ? e.groupLead : undefined
     if (lead && !namedByLead.has(key)) {
       namedByLead.add(key)

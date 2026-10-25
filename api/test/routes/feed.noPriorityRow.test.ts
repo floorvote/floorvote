@@ -1161,7 +1161,7 @@ describe('the no-priority updates row', () => {
         expect(new Map(rows.map((b) => [b.id, b.priority]))).toEqual(new Map([[sb100, 'medium'], [hb200, null]]))
         const events = (await feed()).events.filter((e) => e.billGroupKey === [sb100, hb200].sort()[0])
         expect(events.map((e) => e.type).sort()).toEqual(['bill_updated', 'priority_set'])
-        expect(events.every((e) => e.noPriorityCard === false && e.billPriority === 'medium' && e.groupLead === undefined)).toBe(true)
+        expect(events.every((e) => e.noPriorityCard === false && e.billPriority === 'medium' && e.groupLead?.id === sb100)).toBe(true)
       })
     })
 
@@ -1205,6 +1205,44 @@ describe('the no-priority updates row', () => {
         await seedRow()
         const [card] = cardsOf(await feed())
         expect(card.groupLead).toMatchObject({ id: hb200, summary: 'What the tracked bill does.' })
+      })
+    })
+
+    // Every group card, not only the no-priority one: a prioritized group's, or
+    // one the team engaged with that day, whose newest update may be the
+    // companion's. Its dropdown sets the lead, so a priority never lands on (and
+    // promotes) a companion that doesn't lead.
+    describe('any group card', () => {
+      beforeEach(() => seedGroup({ lead: 'tracked' }))
+
+      it('names a prioritized group\'s card by its lead when the companion moved last', async () => {
+        await db().update(bills).set({ priority: 'high' }).where(eq(bills.id, sb100))
+        await moved(sb100, at('09:00:00'))
+        const update = await moved(hb200, at('10:00:00'))
+        const events = (await feed()).events
+        expect(events[0].id).toBe(update)
+        expect(events.map((e) => e.groupLead?.id)).toEqual([sb100, sb100])
+        expect(events[0].groupLead).toMatchObject({ billNumber: 'SB 100', summary: 'What the tracked bill does.' })
+      })
+
+      it('names a group\'s card by its lead on a day the team engaged with it', async () => {
+        await moved(hb200, at('10:00:00'))
+        await event(hb200, 'comment_added', at('11:00:00'), { preview: 'On the companion.' }, adminId)
+        const events = (await feed()).events
+        expect(events.map((e) => e.type)).toEqual(['comment_added', 'bill_updated'])
+        expect(events.every((e) => e.groupLead?.id === sb100)).toBe(true)
+      })
+
+      it('sets the lead\'s priority from a prioritized group\'s card, never promoting the companion', async () => {
+        const central = stubFetch()
+        await db().update(bills).set({ priority: 'low', externalId: 'legiscan:100' }).where(eq(bills.id, sb100))
+        await db().update(bills).set({ externalId: 'legiscan:200' }).where(eq(bills.id, hb200))
+        await moved(hb200)
+        const [card] = (await feed()).events
+        expect((await patch(`/bills/${card.groupLead!.id}/priority`, { priority: 'high' })).status).toBe(200)
+        const rows = await db().select({ id: bills.id, priority: bills.priority, matchType: bills.matchType }).from(bills).where(inArray(bills.id, [sb100, hb200])).all()
+        expect(new Map(rows.map((b) => [b.id, [b.priority, b.matchType]]))).toEqual(new Map([[sb100, ['high', 'keyword']], [hb200, [null, null]]]))
+        expect(central.mock.calls.map(([url]) => String(url)).filter((url) => url.includes('/promote-bill/'))).toEqual([])
       })
     })
 
