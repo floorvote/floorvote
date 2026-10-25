@@ -143,6 +143,20 @@ describe('queueMissingTexts', () => {
     expect(attempted[140]).toBeNull()
   })
 
+  it('stamps only the texts it picked, not one a concurrent ingest adds while it queues', async () => {
+    await seedBill(19)
+    const sendBatch = vi.fn(async () => {
+      await db().insert(schema.billTexts).values({
+        docId: 199, billId: 19, date: '2026-03-01', type: 'Amended', typeId: 2,
+        mime: 'application/pdf', mimeId: 2, stateLink: 'https://example.test/19-new.pdf',
+      })
+    })
+    await queueMissingTexts({ ...(env as any), INGESTOR_QUEUE: { sendBatch, send: vi.fn() } }, db())
+    const rows = Object.fromEntries((await db().select().from(schema.billTexts).all()).map(r => [r.docId, r.fetchAttemptedAt]))
+    expect(rows[190]).toBe('2026-10-24 12:00:00')
+    expect(rows[199]).toBeNull()
+  })
+
   it('does not queue a swept bill again when its download never finished', async () => {
     // A download that hangs or errors before stamping its attempt must not
     // bring the bill back every hour.

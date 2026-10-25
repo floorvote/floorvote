@@ -56,6 +56,18 @@ export async function queueMissingTexts(env: Env, db: Db): Promise<{ queued: num
     .all()
 
   const billIds = rows.map(r => r.billId)
+  // The texts to stamp, read before queuing: a text an ingest adds while the
+  // messages go out was never picked, so it must stay unattempted for a later run.
+  const picked: number[] = []
+  for (let i = 0; i < billIds.length; i += STAMP_CHUNK) {
+    for (const t of await db.select({ docId: billTexts.docId }).from(billTexts).where(and(
+      inArray(billTexts.billId, billIds.slice(i, i + STAMP_CHUNK)),
+      isNull(billTexts.r2Key),
+      isNull(billTexts.fetchAttemptedAt),
+      isNotNull(billTexts.stateLink),
+    )).all()) picked.push(t.docId)
+  }
+
   for (const { queue, billIds: ids } of await groupByIngestQueue(billIds, env, db)) {
     for (let i = 0; i < ids.length; i += 100) {
       await queue.sendBatch(ids.slice(i, i + 100).map(billId => ({
@@ -64,15 +76,14 @@ export async function queueMissingTexts(env: Env, db: Db): Promise<{ queued: num
     }
   }
   // Stamped as attempted once queued, so a download that hangs or errors before
-  // stamping its own attempt never brings the bill back. Only the rows picked:
-  // a failed text the same message retries keeps its own record.
+  // stamping its own attempt never brings the bill back. Only the texts picked:
+  // a failed text the same message retries keeps its own record, and one the
+  // queued download already reached keeps its stamp.
   const queuedAt = nowDb()
-  for (let i = 0; i < billIds.length; i += STAMP_CHUNK) {
+  for (let i = 0; i < picked.length; i += STAMP_CHUNK) {
     await db.update(billTexts).set({ fetchAttemptedAt: queuedAt }).where(and(
-      inArray(billTexts.billId, billIds.slice(i, i + STAMP_CHUNK)),
-      isNull(billTexts.r2Key),
+      inArray(billTexts.docId, picked.slice(i, i + STAMP_CHUNK)),
       isNull(billTexts.fetchAttemptedAt),
-      isNotNull(billTexts.stateLink),
     ))
   }
   return { queued: billIds.length }
