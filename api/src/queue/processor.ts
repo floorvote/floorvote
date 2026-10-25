@@ -1,4 +1,4 @@
-import { and, eq, inArray, lt, sql } from 'drizzle-orm'
+import { and, eq, inArray, lt, sql, type SQL } from 'drizzle-orm'
 import { processBill, type ProcessBillResult } from '../lib/llm'
 import { filterTagsToTaxonomy } from '../lib/taxonomy'
 import { centralFetch } from '../lib/centralFetch'
@@ -304,7 +304,10 @@ export async function processCentralNotification(
 
   const centralBill = await res.json() as CentralBill
 
-  await applyCentralBill(msg, env, db, centralBill, fetchedAt)
+  // A full delivery that read an older version than the one stored stops here:
+  // the steps below write from that older copy too, and the delivery that
+  // stored the newer version already ran them.
+  if (await applyCentralBill(msg, env, db, centralBill, fetchedAt) === 'stale') return
   // After every path too, so a state opted into or out of title-matched
   // suggestions reaches the bill on any delivery (lib/companionSuggestion.ts).
   await syncTitleKey(db, msg.billId, centralBill)
@@ -316,17 +319,33 @@ export async function processCentralNotification(
   await pullCompanions(env, db, msg)
 }
 
-/** Store what central sent for the bill, and analyze it when it should be. */
+/**
+ * True (1) when the stored provider version is newer than `incoming`. Compared
+ * as times, not strings: central's stamps were ISO (`T`, `Z`) before they were
+ * the space format, and as strings a space sorts before `T` on the same day. A
+ * stamp SQLite can't read, or a missing one, never counts as newer, so the write
+ * goes ahead as it always has.
+ */
+function storedIsNewer(incoming: SQL | string): SQL<number> {
+  return sql<number>`COALESCE(julianday(${bills.providerUpdatedAt}) > julianday(${incoming}), 0)`
+}
+
+/**
+ * Store what central sent for the bill, and analyze it when it should be.
+ * 'stale' when a full delivery read an older version than the one stored, and
+ * wrote nothing.
+ */
 async function applyCentralBill(
   msg: TenantQueueMessage,
   env: Env,
   db: AppDb,
   centralBill: CentralBill,
   fetchedAt: string,
-): Promise<void> {
+): Promise<'stale' | void> {
   const existing = await db.select({
     id: bills.id,
     providerUpdatedAt: bills.providerUpdatedAt,
+    storedIsNewer: storedIsNewer(centralBill.updatedAt),
     lastAiTextHash: bills.lastAiTextHash,
     status: bills.status,
     lastAction: bills.lastAction,
@@ -485,6 +504,17 @@ async function applyCentralBill(
     await syncBillSubjects(db, metadataInternalId, centralBill.state, centralBill.subjects ?? [])
     await syncBillCommittees(db, metadataInternalId, centralBill.state, centralBill.committee, centralBill.referrals)
     return
+  }
+
+  // Never go back a version. Each delivery reads central's copy when it runs, so when two deliveries
+  // of the bill overlap, a slow one (the AI call takes seconds) can finish after the other stored a
+  // newer version. Writing it would put the older fields and stamp back, and its
+  // `changes` would repeat feed events the newer delivery already wrote. No flag overrides this: a
+  // forced pass on an older copy has nothing to add. The newer version is analyzed by its own
+  // delivery. The write below repeats the check, for a version stored after this read.
+  if (existing?.storedIsNewer) {
+    console.log(`[processor] skipping ${msg.billId}: central sent ${centralBill.updatedAt}, older than the stored ${existing.providerUpdatedAt}`)
+    return 'stale'
   }
 
   // Skip entirely if nothing changed (unless forced)
@@ -860,7 +890,13 @@ async function applyCentralBill(
     ...(queueChanges.length > 0 ? { updatedAt: now } : {}),
   }
 
-  const { id: billInternalId, isNew } = await upsertBill(db, msg.billId, upsertData)
+  // Only over a version no newer than this one: a newer delivery may have landed during the AI call.
+  const upserted = await upsertBill(db, msg.billId, upsertData, { unlessNewer: true })
+  if (!upserted) {
+    console.log(`[processor] skipping ${msg.billId}: a version newer than ${centralBill.updatedAt} was stored during this delivery`)
+    return 'stale'
+  }
+  const { id: billInternalId, isNew } = upserted
   await syncBillSubjects(db, billInternalId, centralBill.state, centralBill.subjects ?? [])
   await syncBillCommittees(db, billInternalId, centralBill.state, centralBill.committee, centralBill.referrals)
 
@@ -1100,12 +1136,18 @@ async function syncGroupedBillTexts(db: AppDb, externalId: string, centralBill: 
   await syncBillTexts(db, row.id, texts, fetchedAt, nowDb())
 }
 
-/** Upsert a bill from central. */
+/**
+ * Upsert a bill from central. With `unlessNewer`, a stored row whose provider
+ * version is newer than `data`'s is left as it is, and the result is null.
+ */
+async function upsertBill(db: AppDb, externalId: string, data: Record<string, unknown>): Promise<{ id: string; isNew: boolean }>
+async function upsertBill(db: AppDb, externalId: string, data: Record<string, unknown>, opts: { unlessNewer: true }): Promise<{ id: string; isNew: boolean } | null>
 async function upsertBill(
   db: AppDb,
   externalId: string,
   data: Record<string, unknown>,
-): Promise<{ id: string; isNew: boolean }> {
+  opts: { unlessNewer?: boolean } = {},
+): Promise<{ id: string; isNew: boolean } | null> {
   // Resolve the stored spelling again just before writing: release 2's migration can rename the
   // row after the delivery began, and the write's conflict target is the spelling, so a stale one
   // would insert a second row for the bill (#305).
@@ -1131,8 +1173,11 @@ async function upsertBill(
         sessionSlug: sql`COALESCE(excluded.session_slug, ${bills.sessionSlug})`,
         updatedAt: (updateFields as any).updatedAt ?? sql`updated_at`,
       },
+      ...(opts.unlessNewer ? { setWhere: sql`${storedIsNewer(sql`excluded.provider_updated_at`)} = 0` } : {}),
     })
     .returning({ id: bills.id })
     .get()
+  // A conflict the WHERE declined updates nothing and returns no row.
+  if (!returned) return null
   return { id: returned.id, isNew: returned.id === id }
 }

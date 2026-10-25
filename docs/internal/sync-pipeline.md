@@ -648,6 +648,21 @@ Only `ai_processed_at` is ever set successfully; `ai_skip_reason` is never set i
   - PDF claims (#572) link by page. On a PDF document the detail adds `quote` and `page` (null when the model cited none) to each `unverified` item, and only those. The page makes such a claim a link (`linkableClaims`: a PDF links only `unverified` items with a quote, an HTML document never links them). The quote shows in a tooltip beside the link on hover and keyboard focus, which Escape dismisses, and is the link's accessible description (`aria-describedby`). Clicking opens the pinned PDF, from the analysis's bill, at `#page=N`, with the quote and page in a captioned group above the frame that takes focus. A page that isn't a positive whole number (none, zero, negative, a fraction) opens at page 1 and the caption says why (`lib/pdfPages.ts`). The tenant counts no pages, so a page past the end of the file is left to the viewer, and Chromium's shows the last page; the quote is still shown. The frame is a new element for each request, because a loaded viewer ignores a fragment-only change.
   - The PDF frame has no `sandbox`, because Chromium's built-in viewer renders in no sandboxed frame. A probe with `sandbox=""`, `allow-scripts`, `allow-same-origin`, both together, and every other `allow-*` token left the frame blank while the unsandboxed frame rendered. The frame is kept safe by what goes into it instead: the blob is always typed `application/pdf`, never by the response's `Content-Type` (the same bytes in a `text/html` blob rendered as an HTML document of the app's origin in the probe, and as a PDF-viewer error under `application/pdf`), and bytes that don't carry `%PDF-` in their first 1,024 bytes are never framed (the panel says the file isn't a PDF and offers "Open in new tab"). The page's CSP (`frame-src blob:`, no inline script) still applies to the frame's origin. Recheck this if a browser's viewer starts to render under `sandbox`.
 
+### Never an older version
+
+A full delivery (any message that is not `stubOnly` or `metadataOnly`) never stores a provider version older than the bill's stored `provider_updated_at`. The message carries no version: each delivery reads central's copy when it runs, so a redelivery on its own reads the current one. When two deliveries of the bill overlap (a redelivery beside a new message, or two changes queued close together), the one that read the older copy can finish after the other stored a newer version, usually because its AI call ran between its read and its write. Before this, the older delivery wrote its fields and stamp over the newer ones, and its `changes` repeated feed events, until the next delivery of the newer version put them back.
+
+It is checked twice, both times by `storedIsNewer` in `processor.ts`:
+
+- **Before anything is done**, ahead of the early skip below, on the row the delivery reads first. A stored version newer than central's ends the delivery: no text fetch, no AI, no calendar reconciliation, and none of the steps after `applyCentralBill` (`syncTitleKey`, `syncIdenticalCompanions`, `pullCompanions`), which would write from the older copy too. No message flag bypasses it, `forceAI` included, since the newer version's own delivery stores and analyzes it.
+- **In the bill upsert**, as the `ON CONFLICT DO UPDATE` `WHERE`, for a newer version stored after that first read (during the AI call). A declined upsert returns no row, and the delivery returns before the subject, committee, and text syncs, the feed events, and the calendar, so nothing of the older version lands. The AI call is spent; the analysis it returned is dropped with the rest.
+
+Versions are compared as times with `julianday`, not as strings: central's stamps were ISO (`2026-06-09T08:30:00Z`) before they were the space format (`2026-06-09 16:45:00`), and as strings a space sorts before `T` on the same day. A stamp SQLite can't read, or none, never counts as newer, so that bill is written as before. An equal version is written, so forced passes on the current version work as they did.
+
+The stub and metadata-only paths are unchanged. The metadata path writes no stamp (see `metadataOnly` above). The stub path still writes its stamp unconditionally, but its guard keeps it off analyzed and manual bills, so an older stub can move back only the fields and stamp of a bill nobody tracks, and the next delivery puts them forward again.
+
+**When #906 folds the full path's writes into one `db.batch`:** a batch can't branch on the upsert's result, so a declined upsert would leave the subject, committee, and text rows and the feed events in the same batch to run anyway. Keep the first check before the batch is built, and make every other statement in the batch conditional on the row holding this delivery's version after the upsert (`provider_updated_at` equal to central's `updatedAt`), or have the batch fail as a whole when the stored version is newer. Either way the delivery must still return before the steps after `applyCentralBill`. `api/test/queue/processor-stale-version.test.ts` covers both checks against real D1, and its "while A is being analyzed" case is the one a batch has to keep passing.
+
 ### AI service tiers
 
 Every AI call in the pipeline goes to Gemini via `processBill` ([api/src/lib/llm.ts](../../api/src/lib/llm.ts)) with an explicit `serviceTier`. There is **no second provider** — no Anthropic/Claude path exists anywhere in this codebase, and no call ever falls back to a different or cheaper model. What changes under load is the tier and the timing, never the analysis.
@@ -675,7 +690,7 @@ The shape is deliberate: a human waiting on a page gets priority capacity and, w
 
 ### Two AI gates, easily confused
 
-`forceMetadata` appears in one of them and not the other:
+`forceMetadata` appears in one of them and not the other. Both come after the version check ("Never an older version" above), which nothing bypasses:
 
 | Gate | Condition | Bypassed by |
 |---|---|---|
