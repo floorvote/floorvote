@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:test'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import { eq } from 'drizzle-orm'
 import * as schema from '../../src/db/schema'
@@ -40,6 +40,7 @@ import { limsBillId, limsSessionId, LIMS_DOC_ID_BASE } from '../../src/providers
 import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
 
 const runLimsSync = (e: any, db: any, opts: { force?: boolean } = {}) => runSnapshotSync(limsProvider, e, db, opts)
+afterEach(() => { vi.useRealTimers() })
 const bulk = JSON.parse(bulkRaw) as Record<string, lims.LimsBulkRecord>
 const PERIOD = { councilPeriodId: 26, councilPeriod: '26 (2025-26)', startDate: '2025-01-02T00:00:00', endDate: '2026-12-31T00:00:00' }
 const B0400 = limsBillId('B26-0400')!
@@ -521,6 +522,7 @@ describe('refreshing the details of tracked bills', () => {
 
 describe('cancellations', () => {
   it('keeps the cancellation in history and documents, and alerts tenants that an upcoming hearing was cancelled', async () => {
+    vi.setSystemTime(new Date('2026-10-20T12:00:00Z'))
     const db = drizzle(env.DB, { schema })
     const B0769 = limsBillId('B26-0769')!
     const rec = bulk['B26-0769']   // "Public Hearing on B26-0769", Oct 23 2026
