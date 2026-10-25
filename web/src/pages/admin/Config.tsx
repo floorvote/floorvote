@@ -1471,6 +1471,7 @@ export function Config() {
 
         <div style={actionRowStyleFirst}>
           <div
+            className="export-download-button"
             role="button"
             tabIndex={0}
             aria-disabled={exporting || demoLocked}

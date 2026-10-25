@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -55,5 +55,29 @@ describe('Profile: switch focus ring', () => {
   it('draws the ring on the track only for keyboard focus', () => {
     expect(mobileCss).toMatch(/\.fv-switch-input:focus-visible\s*\+\s*span\s*\{[^}]*outline:\s*2px solid var\(--fv-focus-ring\)/)
     expect(mobileCss).not.toMatch(/\.fv-switch-input:focus\s*\+/)
+  })
+})
+
+// An inline `outline: 'none'` beats the global *:focus-visible ring, and these
+// inputs draw no focus border of their own, so keyboard focus was invisible.
+describe('Profile: text input focus ring', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    auth.user = {
+      id: 'u1', email: 'a@b.c', name: 'A', role: 'member', title: null,
+      canVote: true, emailDigestEnabled: true, emailDigestMatchesEnabled: true, emailWeekAheadEnabled: true, emailRepliesEnabled: true,
+      lastSeenFeed: null, isLastOwner: false,
+    }
+    vi.spyOn(api, 'apiFetch').mockResolvedValue({} as never)
+  })
+
+  it('sets no inline outline on the name, title, or new-email input', async () => {
+    render(<MemoryRouter><Profile /></MemoryRouter>)
+    fireEvent.click(await screen.findByRole('button', { name: 'Change email…' }))
+    for (const label of ['Name', 'Title', 'New email']) {
+      const input = screen.getByLabelText(label) as HTMLInputElement
+      expect(input.tagName, label).toBe('INPUT')
+      expect(input.style.outline, label).toBe('')
+    }
   })
 })

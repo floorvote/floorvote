@@ -46,9 +46,10 @@ let _tmpFiles: string[] = []
  * finishing, the API answers "nothing is importing" and wrangler surfaces it as
  * an error — after having already printed `Processed N queries`. The write
  * landed; only the status check failed, and the tell is a missing `Executed N
- * queries` summary. Retrying is safe regardless, because every statement the
- * seeder emits is INSERT OR REPLACE / INSERT OR IGNORE, so a retry is a no-op
- * re-apply. (This killed an MI seed at 2,880/3,909 bills and an IL seed on its
+ * queries` summary. Retrying is safe regardless: a bill's statements replace
+ * or upsert its rows, delete-then-insert its collections in the same file, and
+ * skip a bill central has ingested, so applying them again ends where the first
+ * application did. (This killed an MI seed at 2,880/3,909 bills and an IL seed on its
  * first batch, both resumable the whole time.)
  */
 /** The fields of a LegiScan dataset's session metadata the seed writes. */
@@ -145,6 +146,26 @@ export function runInChunks(
   }
 }
 
+/**
+ * Whole bills' statements, packed into chunks of at most `max` statements. A
+ * bill's statements replace its child rows (a DELETE, then its INSERTs), so a
+ * bill is never split across two executions: one past `max` runs alone.
+ */
+export function packBills(bills: string[][], max: number): string[][] {
+  const chunks: string[][] = []
+  let chunk: string[] = []
+  for (const bill of bills) {
+    if (bill.length === 0) continue
+    if (chunk.length > 0 && chunk.length + bill.length > max) {
+      chunks.push(chunk)
+      chunk = []
+    }
+    chunk.push(...bill)
+  }
+  if (chunk.length > 0) chunks.push(chunk)
+  return chunks
+}
+
 /** Clean up any leftover temp SQL files (call in process exit handlers). */
 export function cleanupTmpFiles(): void {
   for (const f of _tmpFiles) { try { unlinkSync(f) } catch {} }
@@ -210,13 +231,13 @@ VALUES (${num(p.people_id)}, ${esc(p.person_hash)}, ${num(p.state_id)}, ${esc(p.
   const FLUSH_EVERY = 30
   let billCount = 0
   let errorCount = 0
-  let pending: string[] = []
+  let pending: string[][] = []
   // Clear `pending` only AFTER the SQL succeeds. runInChunks throws on a
   // non-transient wrangler/D1 failure; keeping the buffer on throw means the
   // batch is never silently lost, and the throw propagates to abort the seed.
   const flush = () => {
     if (pending.length === 0) return
-    runInChunks(pending, opts, 50)
+    for (const chunk of packBills(pending, 50)) runSql(chunk, opts)
     pending = []
   }
 
@@ -225,12 +246,12 @@ VALUES (${num(p.people_id)}, ${esc(p.person_hash)}, ${num(p.state_id)}, ${esc(p.
     // bill is skipped and counted, then we move on. flush() is deliberately OUTSIDE
     // it — a wrangler/D1 failure must never be mistaken for a one-bill error and
     // swallowed (that silently dropped whole batches; see the 58-bill TX gap). Let
-    // it throw and abort; seeding is idempotent (INSERT OR REPLACE), so a re-run
-    // recovers cleanly.
+    // it throw and abort; applying a bill's statements again ends where the first
+    // application did (see isTransientD1Error), so a re-run recovers cleanly.
     try {
       const b = JSON.parse(decoder.decode(files[name])).bill
       if (!b) continue
-      pending.push(...buildBillStatements(b, state, sessionId))
+      pending.push(buildBillStatements(b, state, sessionId))
       billCount++
     } catch (err) {
       errorCount++
