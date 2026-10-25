@@ -219,6 +219,22 @@ describe('a full delivery never stores an older provider version', () => {
     expect((await events()).filter(e => e.type === 'bill_updated')).toHaveLength(1)
   })
 
+  it('still writes an equal forced version and chunks its subjects and committees within D1 limits', async () => {
+    centralServes(versionB())
+    await deliver(changed)
+    const processBill = await processBillMock()
+    const before = processBill.mock.calls.length
+    centralServes(centralBill({ ...versionB(),
+      subjects: Array.from({ length: 80 }, (_, i) => `Subject ${i}`),
+      referrals: Array.from({ length: 31 }, (_, i) => ({ committeeId: `c${i}`, name: `Committee ${i}`, chamber: 'H' })),
+    }))
+    await deliver({ ...changed, forceMetadata: true, forceAI: true })
+    expect(processBill.mock.calls.length).toBeGreaterThan(before)
+    expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM bill_subjects').first<{ n: number }>())!.n).toBe(80)
+    expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM bill_committees').first<{ n: number }>())!.n).toBe(31)
+    expect((await row())!.providerUpdatedAt).toBe(B)
+  })
+
   it('lets a stamp it cannot read be overwritten, as before', async () => {
     await getDb(env.DB).insert(bills).values({
       id: 'b-odd', externalId: BILL_ID, billNumber: 'HB 906', title: 'Old title', state: 'RI', status: 'introduced', session: '2026',
