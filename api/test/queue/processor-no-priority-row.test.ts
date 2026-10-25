@@ -108,10 +108,10 @@ describe('processCentralNotification: the no-priority updates row', () => {
     expect(await rows()).toHaveLength(1)
   })
 
-  it('writes no row for an update on a bill with no match type', async () => {
+  it('writes the row for an update on a pulled companion, whose group has a tracked bill (#945)', async () => {
     await deliver('legiscan:3', { changes: actionChange })
     expect(await typesOf('H 3')).toContain('bill_updated')
-    expect(await rows()).toHaveLength(0)
+    expect(await rows()).toHaveLength(1)
   })
 
   it('writes no row for a delivery with no changes', async () => {
@@ -125,9 +125,18 @@ describe('processCentralNotification: the no-priority updates row', () => {
     expect(await rows()).toHaveLength(1)
   })
 
-  it('writes no row for a hearing on a bill with no match type', async () => {
+  it('writes the row for a hearing on a pulled companion (#945)', async () => {
     await deliver('legiscan:3', { calendar: hearingBlock() })
     expect(await typesOf('H 3')).toEqual(['hearing_added'])
+    expect(await rows()).toHaveLength(1)
+  })
+
+  it('writes no row for a hearing on a bill with no match type in no group', async () => {
+    // Its priority puts its hearing on the feed as its own card, never the row's.
+    await seedBill({ id: 'd-4', externalId: 'legiscan:4', billNumber: 'H 4', matchType: null, priority: 'high', aiProcessedAt: '2026-06-01T00:00:00Z', providerUpdatedAt: '2026-06-01T00:00:00Z' })
+    BILLS['legiscan:4'] = 'H 4'
+    await deliver('legiscan:4', { calendar: hearingBlock() })
+    expect(await typesOf('H 4')).toEqual(['hearing_added'])
     expect(await rows()).toHaveLength(0)
   })
 })

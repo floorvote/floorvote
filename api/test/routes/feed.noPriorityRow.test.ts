@@ -512,22 +512,22 @@ describe('the no-priority updates row', () => {
       expect(body.total).toBe(2)
     })
 
-    it('gives a lone companion group\'s card only its qualifying members\' updates, not a member below the minimum relevance or one with no match type', async () => {
+    it('gives a lone companion group\'s card every member\'s updates when one member qualifies, a member below the minimum relevance and one with no match type included (#945)', async () => {
       await db().insert(associationConfig).values({ key: 'new_match_min_relevance', value: '5' })
       const qualifying = await analyzed('HB 1', 6)
       const low = await analyzed('SB 1', 2)
       const unmatched = await analyzed('HB 2', 9, { matchType: null })
       await group(qualifying, low, unmatched)
       const update = await moved(qualifying, at('09:00:00'))
-      await moved(low, at('10:00:00'))
-      await moved(unmatched, at('11:00:00'))
+      const lowUpdate = await moved(low, at('10:00:00'))
+      const unmatchedUpdate = await moved(unmatched, at('11:00:00'))
       const id = await seedRow()
 
       const body = await feed()
       expect(rowOf(body, id)).toBeUndefined()
-      expect(body.events.map((e) => e.id)).toEqual([update])
-      expect(cardsOf(body)).toEqual([update])
-      expect(body.total).toBe(1)
+      expect(body.events.map((e) => e.id)).toEqual([unmatchedUpdate, lowUpdate, update])
+      expect(cardsOf(body)).toEqual([unmatchedUpdate, lowUpdate, update])
+      expect(body.total).toBe(3)
     })
 
     it('leaves a lone bill\'s card beside a prioritized bill\'s card, each its own', async () => {
@@ -711,6 +711,99 @@ describe('the no-priority updates row', () => {
       await seedRow('2026-03-05', '01:00:00')
       const body = await feed()
       expect(cardsOf(body)).toEqual([next, late])
+    })
+  })
+
+  describe('a companion group that qualifies through any member (#945)', () => {
+    // SB 100 is tracked and analyzed; its identical companion HB 200 has no match type and no analysis yet,
+    // and is the only member that moved.
+    const cardsOf = (body: FeedBody) => body.events.filter((e) => e.noPriorityCard === true).map((e) => e.id)
+    const pulledGroup = async (trackedRelevance = 7, more: Parameters<typeof seedBill>[0] = {}) => {
+      const tracked = await analyzed('SB 100', trackedRelevance, more)
+      const pulled = await seedBill({ billNumber: 'HB 200', title: 'Act on HB 200', matchType: null, priority: null })
+      await group(tracked, pulled)
+      return { tracked, pulled, key: `group:${[tracked, pulled].sort()[0]}` }
+    }
+
+    it('counts the group as one entry of the day\'s row, and lists the moved member\'s changes under it', async () => {
+      const { pulled, key } = await pulledGroup()
+      const update = await moved(pulled, at('09:00:00'), 'Committee vote: do pass')
+      await moved(await analyzed('HB 1', 5), at('10:00:00'))
+      const id = await seedRow()
+
+      const body = await feed()
+      expect(metaOf(body, id).count).toBe(2)
+      expect(metaOf(body, id).firstBills.map((b) => b.billNumber)).toEqual(['HB 200', 'HB 1'])
+      expect(cardsOf(body)).toEqual([])
+      expect(body.total).toBe(1)
+
+      const listed = await list(id)
+      expect(listed.entries.map((e) => e.key)).toEqual([key, (await db().select({ id: bills.id }).from(bills).where(eq(bills.billNumber, 'HB 1')).get())!.id])
+      expect(listed.entries[0].bills.map((b) => b.billNumber)).toEqual(['HB 200'])
+      expect(listed.entries[0].events.map((e) => e.id)).toEqual([update])
+    })
+
+    it('shows the group alone on its day as the lone-entry card, not a row', async () => {
+      const { pulled, tracked } = await pulledGroup()
+      const update = await moved(pulled)
+      const id = await seedRow()
+
+      const body = await feed()
+      expect(rowOf(body, id)).toBeUndefined()
+      expect(cardsOf(body)).toEqual([update])
+      expect(body.events[0]).toMatchObject({ billId: pulled, billGroupKey: [tracked, pulled].sort()[0] })
+      expect(body.total).toBe(1)
+    })
+
+    it('leaves out a group no member of which qualifies, as neither row nor card', async () => {
+      await db().insert(associationConfig).values({ key: 'new_match_min_relevance', value: '5' })
+      const { pulled } = await pulledGroup(4)
+      await moved(pulled)
+      await moved(await analyzed('HB 1', 6))
+      await moved(await analyzed('HB 2', 5))
+      const id = await seedRow()
+
+      const body = await feed()
+      expect(metaOf(body, id).count).toBe(2)
+      expect(body.events.map((e) => e.billId)).not.toContain(pulled)
+    })
+
+    it('keeps a group whose tracked member has a priority out of the row, its moved member\'s update on the group\'s card', async () => {
+      const { pulled } = await pulledGroup(7, { priority: 'high' })
+      const update = await moved(pulled)
+      await moved(await analyzed('HB 1', 6))
+      await moved(await analyzed('HB 2', 5))
+      const id = await seedRow()
+
+      const body = await feed()
+      expect(metaOf(body, id).count).toBe(2)
+      expect(body.events.find((e) => e.id === update)).toMatchObject({ billPriority: 'high' })
+      expect(cardsOf(body)).toEqual([])
+    })
+
+    it('keeps a group engaged with that day out of the row, its moved member\'s update on its own card', async () => {
+      const { pulled, tracked } = await pulledGroup()
+      const update = await moved(pulled)
+      await event(tracked, 'comment_added', at('10:00:00'), {}, adminId)
+      await moved(await analyzed('HB 1', 6))
+      await moved(await analyzed('HB 2', 5))
+      const id = await seedRow()
+
+      const body = await feed()
+      expect(metaOf(body, id).count).toBe(2)
+      expect(body.events.map((e) => e.id)).toContain(update)
+      expect(cardsOf(body)).toEqual([])
+    })
+
+    it('ranks the group in the row by its most relevant member with a match type, though that member didn\'t move', async () => {
+      const { pulled, key } = await pulledGroup(9)
+      await moved(pulled)
+      await moved(await analyzed('HB 1', 6))
+      const id = await seedRow()
+
+      const listed = await list(id)
+      expect(listed.entries.map((e) => e.key)[0]).toBe(key)
+      expect(metaOf(await feed(), id).firstBills.map((b) => b.billNumber)).toEqual(['HB 200', 'HB 1'])
     })
   })
 

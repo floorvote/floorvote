@@ -1,4 +1,4 @@
-import { and, eq, inArray, lt, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNotNull, lt, ne, sql } from 'drizzle-orm'
 import { processBill, type ProcessBillResult } from '../lib/llm'
 import { filterTagsToTaxonomy } from '../lib/taxonomy'
 import { centralFetch } from '../lib/centralFetch'
@@ -13,7 +13,7 @@ import { matchesKeywords, billMatchText } from '../lib/keywords'
 import { bills, associationConfig, feedEvents, billTexts, calendarEvents } from '../db/schema'
 import { syncBillSubjects } from '../lib/billSubjects'
 import { syncBillCommittees, type CentralCommittee } from '../lib/billCommittees'
-import { syncIdenticalCompanions } from '../lib/companionGroups'
+import { inGroupOf, syncIdenticalCompanions } from '../lib/companionGroups'
 import { pullCompanions } from '../lib/companionAnalysis'
 import { nowDb } from '../lib/dbTime'
 import { addToNewMatchesRow } from '../lib/newMatch'
@@ -330,6 +330,7 @@ async function applyCentralBill(
     lastAiTextHash: bills.lastAiTextHash,
     status: bills.status,
     lastAction: bills.lastAction,
+    lastActionDate: bills.lastActionDate,
     aiProcessedAt: bills.aiProcessedAt,
     aiSkipReason: bills.aiSkipReason,
     matchType: bills.matchType,
@@ -423,7 +424,35 @@ async function applyCentralBill(
       subjects: centralBill.subjects?.length ? JSON.stringify(centralBill.subjects) : null,
     }
 
-    const { id: stubInternalId } = await upsertBill(db, msg.billId, { ...stubData, updatedAt: nowStub })
+    // A pulled companion's movement is its group's on the feed (#945), but central sends it only stubs,
+    // which carry no change records. So the stub's own status and last action are compared with the
+    // stored ones, and a change is written as the full path writes one: a bill_updated with the day's
+    // no-priority updates row. The bill's own write joins them in one batch, so a failure leaves the
+    // stored row as it was and the redelivery finds the same change, and a delivery after they land
+    // finds none, so the event is written once.
+    const movement = existing && existing.groupKey !== null
+      ? stubMovement(existing, { ...stubData, providerUpdatedAt: centralBill.updatedAt })
+      : []
+    let stubInternalId: string
+    if (existing && movement.length > 0 && await inTrackedGroup(db, existing.id)) {
+      const writtenAt = nowDb()
+      const { query } = await upsertBillQuery(db, msg.billId, { ...stubData, updatedAt: writtenAt })
+      await db.batch([
+        query,
+        db.insert(feedEvents).values({
+          id:        crypto.randomUUID(),
+          type:      'bill_updated',
+          billId:    existing.id,
+          userId:    'system',
+          metadata:  JSON.stringify({ changes: movement }),
+          createdAt: writtenAt,
+        }),
+        noteLegislativeEvent(db, existing.id, writtenAt),
+      ])
+      stubInternalId = existing.id
+    } else {
+      stubInternalId = (await upsertBill(db, msg.billId, { ...stubData, updatedAt: nowStub })).id
+    }
     await syncBillSubjects(db, stubInternalId, centralBill.state, centralBill.subjects ?? [])
     await syncBillCommittees(db, stubInternalId, centralBill.state, centralBill.committee, centralBill.referrals)
     return
@@ -868,9 +897,13 @@ async function applyCentralBill(
 
   // Feed events: only for tracked bills (keyword or manual) and members of a companion group (a companion pulled
   // in through its group has no match type, and its actions belong in the group's card, #381) with AI data and
-  // detected changes from central.
+  // detected changes from central. A pulled companion not analyzed yet moves its group too (#945): without
+  // analysis it has no feed of its own, only its group's, so its group must have a tracked bill.
   // F5+B5: switched gate from `!existing.isStub` to `existing.matchType !== null` (canonical field).
-  if (!isNew && existing?.aiProcessedAt && (existing.matchType !== null || existing.groupKey !== null) && queueChanges.length > 0) {
+  const writesUpdate = !isNew && !!existing && queueChanges.length > 0 && (existing.aiProcessedAt
+    ? existing.matchType !== null || existing.groupKey !== null
+    : existing.matchType === null && existing.groupKey !== null && await inTrackedGroup(db, billInternalId))
+  if (writesUpdate) {
     // With the day's no-priority updates row, which stands for this update while the bill has no
     // priority: in one batch at one time, so the two share a day and land or fail together. The
     // time is read now, not at the message's start (`now`, before the AI call): a digest or a
@@ -1106,6 +1139,13 @@ async function upsertBill(
   externalId: string,
   data: Record<string, unknown>,
 ): Promise<{ id: string; isNew: boolean }> {
+  const { id, query } = await upsertBillQuery(db, externalId, data)
+  const returned = await query.get()
+  return { id: returned.id, isNew: returned.id === id }
+}
+
+/** upsertBill's write, unrun, so it can join a batch, and the id it inserts a new bill under. */
+async function upsertBillQuery(db: AppDb, externalId: string, data: Record<string, unknown>) {
   // Resolve the stored spelling again just before writing: release 2's migration can rename the
   // row after the delivery began, and the write's conflict target is the spelling, so a stale one
   // would insert a second row for the bill (#305).
@@ -1119,7 +1159,7 @@ async function upsertBill(
   // Exclude externalId from the update set (it's the conflict target) and handle matchType separately
   // to preserve matchType='manual' for manually-added bills.
   const { externalId: _ext, matchType: _mt, ...updateFields } = data as any
-  const returned = await db.insert(bills)
+  const query = db.insert(bills)
     .values({ id, ...data as any, createdAt: now, updatedAt: now })
     .onConflictDoUpdate({
       target: bills.externalId,
@@ -1133,6 +1173,38 @@ async function upsertBill(
       },
     })
     .returning({ id: bills.id })
-    .get()
-  return { id: returned.id, isNew: returned.id === id }
+  return { id, query }
+}
+
+/**
+ * Whether the bill is in a companion group with a tracked bill other than itself: a pulled companion's
+ * group (see **Pulled companion** in CONTEXT.md), whose feed shows the bill's movement as the group's.
+ */
+async function inTrackedGroup(db: AppDb, billId: string): Promise<boolean> {
+  return !!(await db.select({ id: bills.id }).from(bills)
+    .where(and(inGroupOf(bills.id, billId), ne(bills.id, billId), isNotNull(bills.matchType))).get())
+}
+
+/** A change a stub delivery shows on the feed, in the shape of central's change records. */
+type StubChange = { changeType: 'status_change' | 'action_added'; oldValue: string | null; newValue: string | null; detail: string | null }
+
+/**
+ * What a stub delivery changed that the feed shows: the bill's status and its last action, which are all a
+ * stub has to say about movement. Nothing when the stored version is the one delivered: a redelivery, or
+ * an operator's resend after a vocabulary change, whose relabeled status is not movement. A status with no
+ * stored value before is not a change either, as on central (lib/detect-changes.ts).
+ */
+function stubMovement(
+  stored: { providerUpdatedAt: string | null; status: string | null; lastAction: string | null; lastActionDate: string | null },
+  incoming: { providerUpdatedAt: string | null; status: string; lastAction: string | null; lastActionDate: string | null },
+): StubChange[] {
+  if (stored.providerUpdatedAt !== null && stored.providerUpdatedAt === incoming.providerUpdatedAt) return []
+  const changes: StubChange[] = []
+  if (stored.status && incoming.status && stored.status !== incoming.status) {
+    changes.push({ changeType: 'status_change', oldValue: stored.status, newValue: incoming.status, detail: null })
+  }
+  if (incoming.lastAction !== null && (incoming.lastAction !== stored.lastAction || incoming.lastActionDate !== stored.lastActionDate)) {
+    changes.push({ changeType: 'action_added', oldValue: null, newValue: incoming.lastAction, detail: incoming.lastActionDate })
+  }
+  return changes
 }
