@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm'
 import { processCentralNotification } from '../../src/queue/processor'
 import { getDb } from '../../src/db/client'
 import { calendarEvents, feedEvents } from '../../src/db/schema'
-import { clearDb, seedBill } from '../helpers'
+import { clearDb, seedBill, stubFetch } from '../helpers'
 
 // A hearing's calendar row and its feed event (with the day's no-priority row)
 // are written in one batch. Apart, a feed write that failed after the row
@@ -50,9 +50,7 @@ describe('processCentralNotification: a hearing\'s calendar row and its feed eve
 
   beforeEach(async () => {
     await clearDb()
-    vi.stubGlobal('fetch', vi.fn().mockImplementation(() =>
-      Promise.resolve(new Response(JSON.stringify(centralBill), { status: 200, headers: { 'Content-Type': 'application/json' } })),
-    ))
+    stubFetch(() => new Response(JSON.stringify(centralBill), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     // Tracked and analyzed, so not new, and the redelivery takes the skip path:
     // the first try stores central's version before it reaches the calendar.
     await seedBill({ externalId: HANDLE, billNumber: 'H 1', matchType: 'keyword', aiProcessedAt: '2026-06-01T00:00:00Z', providerUpdatedAt: '2026-06-01T00:00:00Z', relevanceScore: 6 })
@@ -94,9 +92,7 @@ describe('processCentralNotification: a hearing\'s calendar row and its feed eve
     await deliver(added(committee))
     const cancelled = { events: [], changes: [{ changeType: 'hearing_cancelled' as const, ...committee }] }
     // A newer version, so the cancellation's first try runs the full path.
-    vi.stubGlobal('fetch', vi.fn().mockImplementation(() =>
-      Promise.resolve(new Response(JSON.stringify({ ...centralBill, updatedAt: '2026-06-03T00:00:00Z' }), { status: 200, headers: { 'Content-Type': 'application/json' } })),
-    ))
+    stubFetch(() => new Response(JSON.stringify({ ...centralBill, updatedAt: '2026-06-03T00:00:00Z' }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
 
     await failFeedWrites(`NEW.type = 'hearing_cancelled'`)
     await expect(deliver(cancelled)).rejects.toThrow()
