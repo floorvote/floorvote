@@ -1083,8 +1083,63 @@ async function reconcileCalendar(
   // delivery leaves a demo's calendar alone (#884).
   if (env.DEMO_MODE === 'true') return
 
+  // The hearing news this delivery reports, by uid: only for existing (non-new) bills,
+  // mirroring the bill_updated feed gate. The bill's tracked status is already checked
+  // by the caller. A deadline isn't a hearing: the calendar shows it, and the feed
+  // doesn't announce it as one.
+  //
+  // A new bill's first delivery that fails partway through its calendar keeps the rows
+  // written before the failure, and its redelivery finds the bill existing (on the skip
+  // path, or the full path for a bill with no analysis yet), so it announces the hearings
+  // whose rows hadn't landed, which a clean first delivery would not have. That is
+  // accepted: it takes a D1 error mid-delivery, each event is a real hearing of a bill the
+  // instance tracks, and the bill keeps nothing that says its last delivery was its first.
+  const news = new Map<string, typeof block.changes>()
+  if (!isNew) {
+    for (const ch of block.changes) {
+      if (ch.kind === 'deadline') continue
+      const uid = hearingUid(msg.billId, ch.identityKey, msg.tenantId)
+      news.set(uid, [...(news.get(uid) ?? []), ch])
+    }
+  }
+
+  // Writes a uid's calendar row, and when the write changed the uid's state, the uid's
+  // news with the day's no-priority updates row, all in one batch. Only a change of
+  // state is news, which keeps a redelivered identical message quiet. Written apart, a
+  // feed write that failed after the row landed would lose the news for good: the
+  // redelivery finds the row already current and announces nothing. In one batch the
+  // row lands only with its news, so the redelivery finds the uid still to change and
+  // writes both. The news goes with the uid's first write that changes it.
+  const write = async (uid: string, row: Parameters<typeof db.batch>[0][number], changed: boolean) => {
+    const changes = changed ? news.get(uid) : undefined
+    if (!changes) {
+      await row
+      return
+    }
+    news.delete(uid)
+    for (const ch of changes) {
+      console.log('[calendar-reconcile] feed event', JSON.stringify({
+        billId: msg.billId, tenantId: msg.tenantId, uid, changeType: ch.changeType,
+      }))
+    }
+    // At one time read just now (as for bill_updated, and for the same reason: never the
+    // message's start).
+    const writtenAt = nowDb()
+    await db.batch([
+      row,
+      ...changes.map(ch => db.insert(feedEvents).values({
+        id: crypto.randomUUID(),
+        type: ch.changeType,
+        billId: billInternalId,
+        userId: 'system',
+        metadata: JSON.stringify({ date: ch.date, time: ch.time, location: ch.location, description: ch.description }),
+        createdAt: writtenAt,
+      })),
+      noteLegislativeEvent(db, billInternalId, writtenAt),
+    ])
+  }
+
   const incomingUids = new Set<string>()
-  const changedUids = new Set<string>()
 
   // Upsert current events. The ICS SEQUENCE only ever rises: it bumps when an
   // event's date, time, location, description, or kind changes and when a
@@ -1102,25 +1157,23 @@ async function reconcileCalendar(
     // that sends no cover leaves the stored one alone.
     const cover = 'coveredBy' in e ? { coveredBy: e.coveredBy ?? null } : {}
     if (!existing) {
-      await db.insert(calendarEvents).values({
+      await write(uid, db.insert(calendarEvents).values({
         id: crypto.randomUUID(), uid, billId: billInternalId, source: 'hearing', kind: e.kind ?? null, sequence: 0,
         date: e.date, time: e.time, location: e.location, description: e.description,
         status: 'confirmed', eventHash: e.eventHash, createdAt: now, updatedAt: now, ...cover,
-      })
-      changedUids.add(uid)
+      }), true)
     } else {
       const visibleChanged = (['date', 'time', 'location', 'description'] as const).some(k => (existing[k] ?? '') !== (e[k] ?? ''))
         // A stored kind of null predates kinds, so filling it in is no change.
         || (!!e.kind && !!existing.kind && existing.kind !== e.kind)
       const reconfirmed = existing.status === 'cancelled'
       const bump = visibleChanged || reconfirmed
-      await db.update(calendarEvents).set({
+      await write(uid, db.update(calendarEvents).set({
         billId: billInternalId, status: 'confirmed', ...(e.kind ? { kind: e.kind } : {}), ...cover,
         date: e.date, time: e.time, location: e.location, description: e.description,
         eventHash: e.eventHash, sequence: bump ? existing.sequence + 1 : existing.sequence, updatedAt: now,
-      }).where(eq(calendarEvents.uid, uid))
+      }).where(eq(calendarEvents.uid, uid)), bump)
       if (bump) {
-        changedUids.add(uid)
         console.log('[calendar-reconcile] sequence bump', JSON.stringify({
           billId: msg.billId, tenantId: msg.tenantId, uid, reconfirmed,
           oldHash: existing.eventHash, newHash: e.eventHash ?? null,
@@ -1134,39 +1187,8 @@ async function reconcileCalendar(
     .from(calendarEvents).where(and(eq(calendarEvents.billId, billInternalId), eq(calendarEvents.source, 'hearing'))).all()
   for (const row of existingRows) {
     if (!incomingUids.has(row.uid) && row.status !== 'cancelled') {
-      await db.update(calendarEvents).set({ status: 'cancelled', sequence: row.sequence + 1, updatedAt: now })
-        .where(eq(calendarEvents.uid, row.uid))
-      changedUids.add(row.uid)
-    }
-  }
-
-  // Feed events for the diff — only for existing (non-new) bills, mirroring the
-  // bill_updated feed gate. The bill's tracked status is already checked by the caller.
-  // Only emit a feed event when the uid actually changed state this pass (idempotent
-  // on queue re-delivery: a re-delivered identical message leaves changedUids empty).
-  if (!isNew) {
-    for (const ch of block.changes) {
-      // A deadline isn't a hearing: the calendar shows it, and the feed doesn't announce it as one.
-      if (ch.kind === 'deadline') continue
-      const uid = hearingUid(msg.billId, ch.identityKey, msg.tenantId)
-      if (!changedUids.has(uid)) continue
-      console.log('[calendar-reconcile] feed event', JSON.stringify({
-        billId: msg.billId, tenantId: msg.tenantId, uid, changeType: ch.changeType,
-      }))
-      // With the day's no-priority updates row, in one batch at one time read just now (as for
-      // bill_updated above, and for the same reason: never the message's start).
-      const writtenAt = nowDb()
-      await db.batch([
-        db.insert(feedEvents).values({
-          id: crypto.randomUUID(),
-          type: ch.changeType,
-          billId: billInternalId,
-          userId: 'system',
-          metadata: JSON.stringify({ date: ch.date, time: ch.time, location: ch.location, description: ch.description }),
-          createdAt: writtenAt,
-        }),
-        noteLegislativeEvent(db, billInternalId, writtenAt),
-      ])
+      await write(row.uid, db.update(calendarEvents).set({ status: 'cancelled', sequence: row.sequence + 1, updatedAt: now })
+        .where(eq(calendarEvents.uid, row.uid)), true)
     }
   }
 }

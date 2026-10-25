@@ -268,8 +268,7 @@ function snapshot(db: DatabaseSync, kind: DbKind, forkTables: string[], forkColu
     s.central = {
       dcBills: new Map(rows(db, `SELECT bill_id, bill_number, session_id FROM bills WHERE state = 'DC'`)
         .map(r => [Number(r.bill_id), `${r.bill_number} in session ${r.session_id}`])),
-      calendar: new Map(rows(db, `SELECT c.id, c.bill_id, c.type_id, c.date, c.description, c.event_hash FROM bill_calendar c JOIN bills b ON b.bill_id = c.bill_id WHERE b.state = 'DC'`)
-        .map(r => [String(r.id), JSON.stringify([r.bill_id, r.type_id, r.date, r.description, r.event_hash])])),
+      calendar: dcCalendar(db),
       limsRecords: hasTable(db, 'lims_records') ? rows(db, 'SELECT bill_id FROM lims_records').map(r => Number(r.bill_id)) : [],
       legiscanLimit: setting(db, 'legiscan_monthly_limit'),
       ownership: ownershipRows(db),
@@ -283,6 +282,16 @@ function snapshot(db: DatabaseSync, kind: DbKind, forkTables: string[], forkColu
     }
   }
   return s
+}
+
+/**
+ * Each DC bill calendar row by id. A copy from before 0034 has no identity_key
+ * or cancelled_at, which reads as null: the migrations must leave them null.
+ */
+function dcCalendar(db: DatabaseSync): Map<string, string> {
+  const identity = hasColumn(db, 'bill_calendar', 'identity_key') ? 'c.identity_key, c.cancelled_at' : 'NULL AS identity_key, NULL AS cancelled_at'
+  return new Map(rows(db, `SELECT c.id, c.bill_id, c.type_id, c.date, c.description, c.event_hash, ${identity} FROM bill_calendar c JOIN bills b ON b.bill_id = c.bill_id WHERE b.state = 'DC'`)
+    .map(r => [String(r.id), JSON.stringify([r.bill_id, r.type_id, r.date, r.description, r.event_hash, r.identity_key, r.cancelled_at])]))
 }
 
 function ownershipRows(db: DatabaseSync): string[] {
@@ -412,11 +421,8 @@ function centralChecks(db: DatabaseSync, before: Snapshot, report: RehearsalRepo
   const notLims = [...now.values()].filter(r => Number(r.bill_id) >= LIMS_ID_MIN && Number(r.bill_id) < LIMS_ID_MAX && r.provider !== 'lims').map(r => r.bill_id)
   check(notLims.length === 0, 'Every DC bill in LIMS\'s id ranges is LIMS\'s', `Not marked lims: ${notLims.slice(0, 10).join(', ')}`)
 
-  const calendar = new Map(rows(db, `SELECT c.id, c.bill_id, c.type_id, c.date, c.description, c.event_hash, c.identity_key, c.cancelled_at FROM bill_calendar c JOIN bills b ON b.bill_id = c.bill_id WHERE b.state = 'DC'`).map(r => [String(r.id), r]))
-  const moved = [...b.calendar].filter(([id, was]) => {
-    const r = calendar.get(id)
-    return !r || JSON.stringify([r.bill_id, r.type_id, r.date, r.description, r.event_hash]) !== was || r.identity_key !== null || r.cancelled_at !== null
-  }).map(([id]) => id)
+  const calendar = dcCalendar(db)
+  const moved = [...b.calendar].filter(([id, was]) => calendar.get(id) !== was).map(([id]) => id)
   check(moved.length === 0, `Every DC bill calendar entry keeps its row, so instances keep its UID (${b.calendar.size})`, `Changed: ${moved.slice(0, 10).join(', ')}`)
 
   if (b.limsRecords.length > 0) {
