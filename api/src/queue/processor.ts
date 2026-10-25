@@ -348,6 +348,8 @@ async function applyCentralBill(
     id: bills.id,
     providerUpdatedAt: bills.providerUpdatedAt,
     storedIsNewer: storedIsNewer(centralBill.updatedAt),
+    // For a stub: whether the stored version is this one or newer, compared as times (storedIsNewer).
+    storedNotOlder: sql<number>`COALESCE(julianday(${bills.providerUpdatedAt}) >= julianday(${centralBill.updatedAt}), 0)`,
     lastAiTextHash: bills.lastAiTextHash,
     status: bills.status,
     lastAction: bills.lastAction,
@@ -547,7 +549,7 @@ async function applyCentralBill(
   // below checks again, for a version stored after this read.
   if (existing?.storedIsNewer) {
     console.log(`[processor] skipping ${msg.billId}: central sent ${centralBill.updatedAt}, older than the stored ${existing.providerUpdatedAt}`)
-    await recordStaleDelivery(db, env, msg, existing.id, true, !existing.newMatchAt)
+    await recordStaleDelivery(db, env, msg, existing.id, true, !existing.newMatchAt, storedStatus(centralBill))
     return 'stale'
   }
 
@@ -938,22 +940,11 @@ async function applyCentralBill(
   const isNew = !existing
   const { id: billInternalId, statement: billStatement } = await billWrite(db, msg.billId, upsertData, existing?.id)
 
-  // Feed events: only for tracked bills (keyword or manual) and members of a companion group (a companion pulled
-  // in through its group has no match type, and its actions belong in the group's card, #381) with AI data and
-  // detected changes from central. A pulled companion not analyzed yet moves its group too (#945): without
-  // analysis it has no feed of its own, only its group's, so its group must have a tracked bill.
+  // Feed events: the change records central detected, for the bills and through the gate billUpdateChanges
+  // decides (a #945 pulled companion's included, less a stub's movement). A recordStaleDelivery uses the same.
   // F5+B5: switched gate from `!existing.isStub` to `existing.matchType !== null` (canonical field).
-  //
-  // A pulled companion's stub can already have written this movement (#945): central can send a bill's stub
-  // and then, ingesting it on an instance's request, the same action as a change record under a newer
-  // version. So its change records leave out the ones a stub of the bill already showed. Only a bill with no
-  // match type in a group gets a stub's event, so every other bill's changes are written as they come.
-  const updateChanges = existing && existing.matchType === null && existing.groupKey !== null
-    ? await notShownByStub(db, existing.id, queueChanges)
-    : queueChanges
-  const writeUpdate = !isNew && !!existing && updateChanges.length > 0 && (existing.aiProcessedAt
-    ? existing.matchType !== null || existing.groupKey !== null
-    : existing.matchType === null && existing.groupKey !== null && await inTrackedGroup(db, existing.id))
+  const updateChanges = !isNew && existing ? await billUpdateChanges(db, existing, queueChanges, storedStatus(centralBill)) : []
+  const writeUpdate = updateChanges.length > 0
 
   // New keyword-match feed event: passive, system actor, written once per bill. On an
   // unprioritized bill it shows nowhere on the feed: a routine match is covered by the
@@ -1028,7 +1019,7 @@ async function applyCentralBill(
       .from(bills).where(eq(bills.externalId, await resolveStoredHandle(db, msg.billId))).get()
     if (!stored?.newer) throw err
     console.log(`[processor] skipping ${msg.billId}: a version newer than ${centralBill.updatedAt} was stored during this delivery`)
-    await recordStaleDelivery(db, env, msg, stored.id, !isNew, !existing?.newMatchAt)
+    await recordStaleDelivery(db, env, msg, stored.id, !isNew, !existing?.newMatchAt, storedStatus(centralBill))
     return 'stale'
   }
 
@@ -1074,7 +1065,7 @@ function staleVersionGuard(db: AppDb, billId: string, incoming: string) {
  * the bill had recorded no match when the delivery began.
  */
 async function recordStaleDelivery(
-  db: AppDb, env: Env, msg: TenantQueueMessage, billId: string, existed: boolean, matchUnrecorded: boolean,
+  db: AppDb, env: Env, msg: TenantQueueMessage, billId: string, existed: boolean, matchUnrecorded: boolean, deliveredStatus: string,
 ): Promise<void> {
   const statements: BatchItem<'sqlite'>[] = []
   const declared = !msg.groupAnalysis && matchUnrecorded ? msg.matchProvenance : undefined
@@ -1094,13 +1085,13 @@ async function recordStaleDelivery(
     )
   }
   const row = existed
-    ? await db.select({ aiProcessedAt: bills.aiProcessedAt, matchType: bills.matchType, groupKey: bills.groupKey, priority: bills.priority })
+    ? await db.select({ id: bills.id, aiProcessedAt: bills.aiProcessedAt, matchType: bills.matchType, groupKey: bills.groupKey, priority: bills.priority })
       .from(bills).where(eq(bills.id, billId)).get()
     : undefined
   const writtenAt = nowDb()
-  const changes = msg.changes ?? []
-  // The full path's bill_updated gate.
-  if (row?.aiProcessedAt && (row.matchType !== null || row.groupKey !== null) && changes.length > 0) {
+  // The full path's bill_updated gate, and its check against a stub's movement.
+  const changes = row ? await billUpdateChanges(db, row, msg.changes ?? [], deliveredStatus) : []
+  if (changes.length > 0) {
     statements.push(
       db.insert(feedEvents).values({
         id: crypto.randomUUID(), type: 'bill_updated', billId, userId: 'system',
@@ -1436,6 +1427,32 @@ async function inTrackedGroup(db: AppDb, billId: string): Promise<boolean> {
     .where(and(inGroupOf(bills.id, billId), ne(bills.id, billId), isNotNull(bills.matchType))).get())
 }
 
+/**
+ * The change records of a full delivery of this bill (current or stale) that the feed writes as its
+ * bill_updated, or none. Only for a tracked bill or a member of a companion group (a companion pulled in
+ * through its group has no match type, and its actions belong in the group's card, #381) with an analysis.
+ * A pulled companion not analyzed yet moves its group too (#945): without analysis it has no feed of its
+ * own, only its group's, so its group must have a tracked bill.
+ *
+ * A pulled companion's stub can already have written this movement (#945): central can send a bill's stub
+ * and then, ingesting it on an instance's request, the same movement as change records under a newer version.
+ * So its records leave out what a stub of the bill already showed (notShownByStub). Only a bill with no match
+ * type in a group gets a stub's event, so every other bill's changes are written as they come.
+ * `deliveredStatus` is the status this delivery stores (storedStatus).
+ */
+async function billUpdateChanges<C extends { changeType: string; oldValue: string | null; newValue: string | null; detail: string | null }>(
+  db: AppDb,
+  bill: { id: string; aiProcessedAt: string | null; matchType: string | null; groupKey: string | null },
+  changes: readonly C[],
+  deliveredStatus: string,
+): Promise<C[]> {
+  if (changes.length === 0) return []
+  const pulled = bill.matchType === null && bill.groupKey !== null
+  const writes = bill.aiProcessedAt ? bill.matchType !== null || bill.groupKey !== null : pulled && await inTrackedGroup(db, bill.id)
+  if (!writes) return []
+  return pulled ? notShownByStub(db, bill.id, changes, deliveredStatus) : [...changes]
+}
+
 /** How many of a bill's latest updates notShownByStub reads: a stub's event and the ingest that repeats it are one sync pass apart. */
 const STUB_LOOKBACK = 20
 
@@ -1443,12 +1460,13 @@ const STUB_LOOKBACK = 20
  * These change records less the movement a stub of the bill already showed since its last full delivery's
  * update: the stub-written events (`fromStub`) among its latest updates, newest first, up to the first one a
  * full delivery wrote. Any other update stops the look, so a status a bill reaches again (once per chamber)
- * shows again. Within that window, a status change matches any status change the stub showed, since the
- * stub's status label and central's change label for one status can differ ("Failed" and "Failed/Dead"), and
- * an action matches the same action on the same date.
+ * shows again. Within that window, an action matches the same action on the same date. A status change
+ * matches only when a stub showed the status this delivery brings (`deliveredStatus`, the stored status the
+ * stub's own label came from), so the stub's "Failed" covers central's "Failed/Dead", and a later status
+ * never matches an earlier stub's.
  */
 async function notShownByStub<C extends { changeType: string; oldValue: string | null; newValue: string | null; detail: string | null }>(
-  db: AppDb, billId: string, changes: readonly C[],
+  db: AppDb, billId: string, changes: readonly C[], deliveredStatus: string,
 ): Promise<C[]> {
   if (!changes.some(isStubKind)) return [...changes]
   const recent = await db.select({ metadata: feedEvents.metadata }).from(feedEvents)
@@ -1456,17 +1474,20 @@ async function notShownByStub<C extends { changeType: string; oldValue: string |
     // Newest first, and of two in one second, the later written (rowid), so a full delivery's update just after
     // a stub's ends the look.
     .orderBy(desc(sql`datetime(${feedEvents.createdAt})`), desc(sql`${feedEvents}.rowid`)).limit(STUB_LOOKBACK).all()
-  const shown = new Set<string>()
+  const shownActions = new Set<string>()
+  let statusShown = false
   for (const e of recent) {
     const meta = JSON.parse(e.metadata) as { fromStub?: boolean; changes?: StubChange[] }
     if (meta.fromStub !== true) break
-    for (const c of (meta.changes ?? []).filter(isStubKind)) shown.add(changeKey(c))
+    for (const c of meta.changes ?? []) {
+      if (c.changeType === 'action_added') shownActions.add(actionKey(c))
+      if (c.changeType === 'status_change' && c.newValue === deliveredStatus) statusShown = true
+    }
   }
-  return changes.filter((c) => !(isStubKind(c) && shown.has(changeKey(c))))
+  return changes.filter((c) => !(c.changeType === 'status_change' ? statusShown : c.changeType === 'action_added' && shownActions.has(actionKey(c))))
 }
 const isStubKind = (c: { changeType: string }) => c.changeType === 'status_change' || c.changeType === 'action_added'
-const changeKey = (c: { changeType: string; newValue: string | null; detail: string | null }) =>
-  c.changeType === 'status_change' ? c.changeType : JSON.stringify([c.changeType, c.newValue, c.detail])
+const actionKey = (c: { newValue: string | null; detail: string | null }) => JSON.stringify([c.newValue, c.detail])
 
 /** A change a stub delivery shows on the feed, in the shape of central's change records. */
 type StubChange = { changeType: 'status_change' | 'action_added'; oldValue: string | null; newValue: string | null; detail: string | null }
@@ -1479,12 +1500,14 @@ type StubChange = { changeType: 'status_change' | 'action_added'; oldValue: stri
  * stored value before is not a change either, as on central (lib/detect-changes.ts).
  */
 function stubMovement(
-  stored: { providerUpdatedAt: string | null; status: string | null; lastAction: string | null; lastActionDate: string | null },
+  stored: { providerUpdatedAt: string | null; storedNotOlder: number; status: string | null; lastAction: string | null; lastActionDate: string | null },
   incoming: { providerUpdatedAt: string | null; status: string; lastAction: string | null; lastActionDate: string | null },
 ): StubChange[] {
-  // Central's versions are ISO timestamps, so they order as strings. A stub no newer than the stored version
-  // (a retry landing after a newer full delivery) carries older facts, which are not movement.
-  if (stored.providerUpdatedAt !== null && incoming.providerUpdatedAt !== null && incoming.providerUpdatedAt <= stored.providerUpdatedAt) return []
+  // A stub no newer than the stored version (a retry landing after a newer full delivery) carries older
+  // facts, which are not movement. Compared as times (`storedNotOlder`, read with the bill), since central's
+  // stamps were ISO before they were the space format, and as strings a space sorts before `T` on one day.
+  // The same stamp is never newer, even where SQLite can't read it.
+  if (stored.storedNotOlder || (stored.providerUpdatedAt !== null && stored.providerUpdatedAt === incoming.providerUpdatedAt)) return []
   const changes: StubChange[] = []
   if (stored.status && incoming.status && stored.status !== incoming.status) {
     changes.push({ changeType: 'status_change', oldValue: stored.status, newValue: incoming.status, detail: null })

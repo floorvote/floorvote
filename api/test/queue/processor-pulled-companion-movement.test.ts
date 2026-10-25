@@ -343,4 +343,66 @@ describe('processCentralNotification: a stub delivery of a pulled companion', ()
     await stub(PULLED)
     expect(await eventsOf('b-pulled')).toHaveLength(0)
   })
+
+  // A full delivery's status change is the stub's only when the stub showed the
+  // status this delivery brings (N1): a later status, or one a stub never
+  // showed, is new movement however the stub events above it read.
+  describe('a full delivery\'s status change after a stub\'s', () => {
+    const updates = async () => (await eventsOf('b-pulled')).filter((e) => e.type === 'bill_updated')
+    const statusOf = async () => (await updates()).flatMap((e) => (JSON.parse(e.metadata).changes as Array<{ changeType: string; newValue: string }>)
+      .filter((c) => c.changeType === 'status_change').map((c) => c.newValue))
+    const deliver = (updatedAt: string, status: string, changes: unknown[]) => {
+      serve(PULLED, 'HB 200', { updatedAt, status })
+      return processCentralNotification({ tenantId: 'ri', billId: PULLED, matchType: null, changes } as never, testEnv as never, db())
+    }
+    const statusChange = (oldValue: string, newValue: string, at: string) => ({ changeType: 'status_change', oldValue, newValue, detail: null, detectedAt: at })
+
+    it('writes nothing for the stub\'s own status again, then writes the next status', async () => {
+      serve(PULLED, 'HB 200', { status: 'Engrossed' })
+      await stub(PULLED)
+      await deliver('2026-06-04 00:00:00', 'Engrossed', [statusChange('Introduced', 'Engrossed', '2026-06-04 00:00:00')])
+      expect(await updates()).toHaveLength(1)
+      await deliver('2026-06-05 00:00:00', 'Enrolled', [statusChange('Engrossed', 'Enrolled', '2026-06-05 00:00:00')])
+      expect(await statusOf()).toEqual(['Engrossed', 'Enrolled'])
+    })
+
+    it('writes a status once when its full delivery is processed before its own stub', async () => {
+      serve(PULLED, 'HB 200', { status: 'Engrossed' })
+      await stub(PULLED)
+      await deliver('2026-06-05 00:00:00', 'Enrolled', [statusChange('Engrossed', 'Enrolled', '2026-06-05 00:00:00')])
+      serve(PULLED, 'HB 200', { updatedAt: '2026-06-05 00:00:00', status: 'Enrolled' })
+      await stub(PULLED)
+      expect(await statusOf()).toEqual(['Engrossed', 'Enrolled'])
+    })
+
+    it('writes a status-only change after a stub and a silent first full ingest', async () => {
+      serve(PULLED, 'HB 200', { status: 'Engrossed' })
+      await stub(PULLED)
+      await deliver('2026-06-04 00:00:00', 'Engrossed', [])
+      await deliver('2026-06-05 00:00:00', 'Enrolled', [statusChange('Engrossed', 'Enrolled', '2026-06-05 00:00:00')])
+      expect(await updates()).toHaveLength(2)
+      expect(await statusOf()).toEqual(['Engrossed', 'Enrolled'])
+    })
+  })
+
+  // Central's version stamps moved from ISO (T, Z) to a space format, and as
+  // strings a space sorts before T on the same day: compared as times (K1).
+  it('reads a space-format stub as newer than a stored ISO version from earlier that day', async () => {
+    serve(PULLED, 'HB 200', { updatedAt: '2026-06-01 16:45:00' })
+    await stub(PULLED)
+    expect(await eventsOf('b-pulled')).toHaveLength(1)
+  })
+
+  // A full delivery that read an older version than the one stored (#971) still
+  // records its changes, through the same gate and the same check against a
+  // stub's movement as a current one.
+  it('writes a stale full delivery\'s action once when a newer stub already showed it', async () => {
+    await db().update(bills).set({ aiProcessedAt: '2026-06-01T00:00:00Z' }).where(eq(bills.id, 'b-pulled'))
+    serve(PULLED, 'HB 200', { updatedAt: '2026-06-04 00:00:00' })
+    await stub(PULLED)
+    const action = { changeType: 'action_added', oldValue: null, newValue: VOTE.description, detail: VOTE.date, detectedAt: '2026-06-03 00:00:00' }
+    serve(PULLED, 'HB 200', { updatedAt: '2026-06-03 00:00:00' })
+    await processCentralNotification({ tenantId: 'ri', billId: PULLED, matchType: null, changes: [action] } as never, testEnv as never, db())
+    expect((await eventsOf('b-pulled')).filter((e) => e.type === 'bill_updated')).toHaveLength(1)
+  })
 })
