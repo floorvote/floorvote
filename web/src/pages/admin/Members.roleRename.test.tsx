@@ -2,6 +2,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { Members } from './Members'
 import * as api from '../../lib/api'
 import { REQUIRED_MESSAGE } from '../../components/RequiredField'
@@ -87,6 +89,25 @@ describe('Members role-rename inline edit keyboard access', () => {
 
     const rename = await screen.findByRole('button', { name: /rename role finance committee/i })
     expect(rename).toBeDisabled()
+  })
+
+  // The borderless, transparent input sits inside a pill-shaped chip, so the
+  // global rectangular ring would clash with the chip's shape. The input keeps
+  // `outline: none` and mobile.css rings the chip instead, with the chip's own
+  // pill radius. jsdom can't evaluate :focus-visible, so pin the structure.
+  it('rings the role chip, not the borderless rename input', async () => {
+    const user = userEvent.setup()
+    mockApi()
+    render(<MemoryRouter><Members /></MemoryRouter>)
+    await user.click(await screen.findByRole('button', { name: /rename role finance committee/i }))
+    const input = await screen.findByRole('textbox', { name: 'Role name' })
+    expect(input).toHaveFocus()
+    expect(input.style.outline).toBe('none')
+    const chip = input.parentElement!
+    expect(chip).toHaveClass('role-chip')
+    expect(chip.style.borderRadius).not.toBe('')
+    const mobileCss = readFileSync(resolve(__dirname, '../../styles/mobile.css'), 'utf8')
+    expect(mobileCss).toMatch(/\.role-chip:has\(>\s*input:focus-visible\)\s*\{[^}]*outline:\s*2px solid var\(--fv-focus-ring\)/)
   })
 })
 

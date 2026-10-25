@@ -36,6 +36,19 @@ function fakeDataTransfer() {
 }
 
 describe('TagTaxonomyTable', () => {
+  // An inline `outline: 'none'` beat the global *:focus-visible ring. The
+  // fields fill their cells inside the table's overflow:hidden box, so the ring
+  // is drawn inside them. jsdom can't evaluate :focus-visible, so pin the style.
+  it('leaves every field to the keyboard focus ring, drawn inside the field', () => {
+    render(<Harness initial={[{ name: 'Elections', description: '' }]} />)
+    const fields = [...tagFields(), ...screen.getAllByLabelText(/^Description, row/)]
+    expect(fields).toHaveLength(4)
+    for (const field of fields) {
+      expect(field.style.outline).toBe('')
+      expect(field.style.outlineOffset).toBe('-2px')
+    }
+  })
+
   it('renders a field per row plus one trailing blank', () => {
     render(<Harness initial={[{ name: 'Elections', description: '' }]} />)
     expect(tagFields()).toHaveLength(2)

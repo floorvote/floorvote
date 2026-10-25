@@ -1942,7 +1942,6 @@ export function BillDetail() {
                   padding: '4px 8px',
                   color: color.textPrimary,
                   background: color.white,
-                  outline: 'none',
                 }}
               />
               <button type="submit" style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, ...primaryButtonColors(false), border: 'none', borderRadius: radius.md, padding: '6px 12px', cursor: 'pointer' }}>Save</button>
@@ -2162,7 +2161,7 @@ export function BillDetail() {
                   onKeyDown={e => { if (e.key === 'Escape') setEditingDraftField(null) }}
                   style={{
                     fontSize: fontSize.sm, border: `1px solid ${color.borderStrong}`, borderRadius: radius.md,
-                    padding: '3px 7px', color: color.textPrimary, background: color.white, outline: 'none', minWidth: 220,
+                    padding: '3px 7px', color: color.textPrimary, background: color.white, minWidth: 220,
                   }}
                 />
                 <button type="submit" style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, ...primaryButtonColors(false), border: 'none', borderRadius: radius.md, padding: '4px 10px', cursor: 'pointer' }}>Save</button>
@@ -2249,7 +2248,7 @@ export function BillDetail() {
                     }}
                     style={{
                       fontSize: fontSize.sm, border: `1px solid ${color.borderStrong}`, borderRadius: radius.md,
-                      padding: '3px 7px', color: color.textPrimary, background: color.white, outline: 'none', minWidth: 120,
+                      padding: '3px 7px', color: color.textPrimary, background: color.white, minWidth: 120,
                     }}
                   />
                   <button type="submit" {...draftNumberGate.buttonProps()} style={draftSaveStyle(draftNumberGate.disabled)}>Save</button>
@@ -2482,7 +2481,7 @@ export function BillDetail() {
                         }}
                         style={{
                           fontSize: fontSize.sm, border: `1px solid ${color.borderStrong}`, borderRadius: radius.md,
-                          padding: '3px 7px', color: color.textPrimary, background: color.white, outline: 'none', minWidth: 60,
+                          padding: '3px 7px', color: color.textPrimary, background: color.white, minWidth: 60,
                         }}
                       />
                     )}

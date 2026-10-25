@@ -436,9 +436,11 @@ const headStyle: React.CSSProperties = {
   letterSpacing: '0.05em', textTransform: 'uppercase', color: color.textMuted,
 }
 
+// The fields fill their cells edge to edge inside the table's overflow:hidden
+// box, so the global focus ring is drawn inside the field, not outside it.
 const fieldStyle: React.CSSProperties = {
   width: '100%', border: 'none', background: 'none', font: 'inherit',
-  fontSize: fontSize.sm, padding: '8px 10px', margin: 0, outline: 'none', lineHeight: 1.5,
+  fontSize: fontSize.sm, padding: '8px 10px', margin: 0, outlineOffset: -2, lineHeight: 1.5,
 }
 
 const msgStyle: React.CSSProperties = {
