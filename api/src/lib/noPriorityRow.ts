@@ -4,6 +4,7 @@ import { LEGISLATIVE_EVENT_TYPES, NO_PRIORITY_UPDATES, PASSIVE_EVENT_TYPES } fro
 import { dbTsToEpoch } from '../../../shared/time'
 import { filedSlug } from './sessionSlug'
 import { loadUntriagedNewMatchGroups, untriagedNewMatch, type NewMatchFacts } from './newMatch'
+import { billValueColumns, resolveTeamValues } from './teamFields'
 import type { AppDb } from '../types'
 
 // The no-priority updates row (see **No-priority updates row** in CONTEXT.md):
@@ -263,6 +264,51 @@ export async function rowBills(db: AppDb, ids: readonly string[]): Promise<Map<s
   return new Map([...await loadRowBills(db, ids)].map(([id, { bill }]) => [id, bill]))
 }
 
+/**
+ * Each of these companion groups' lead bill (see **Lead bill** in CONTEXT.md)
+ * and the analysis summary the group shows, which is the lead's, or while the
+ * lead has none, the one teamFields falls back to. One query whatever the
+ * number of groups: every member of every group, through the group_key index,
+ * resolved by the same rule every member's page reads (resolveTeamValues).
+ * None when there are no groups.
+ */
+export async function groupLeads(db: AppDb, groupKeys: ReadonlyArray<string | null>): Promise<Map<string, { leadId: string; summary: string | null }>> {
+  const out = new Map<string, { leadId: string; summary: string | null }>()
+  const keys = [...new Set(groupKeys.filter((k): k is string => k !== null))]
+  if (keys.length === 0) return out
+  const members = await db.select({ ...billValueColumns, groupKey: bills.groupKey }).from(bills)
+    .where(sql`${bills.groupKey} IN (SELECT value FROM json_each(${JSON.stringify(keys)}))`).all()
+  for (const key of keys) {
+    const ofGroup = members.filter((m) => m.groupKey === key)
+    const values = resolveTeamValues({ bills: ofGroup, positions: [], customFields: [] }, new Set(ofGroup.map((m) => m.id)))
+    if (values.leadBillId !== null) out.set(key, { leadId: values.leadBillId, summary: values.analysis?.tenantSummary ?? null })
+  }
+  return out
+}
+
+/** The bill an entry is named by: a group's lead, or the entry's own bill. */
+const leadIdOf = (entry: DayEntry, leads: ReadonlyMap<string, { leadId: string }>) =>
+  leads.get(entry.key.replace(/^group:/, ''))?.leadId ?? entry.memberIds[0]
+const groupKeyOf = (entry: DayEntry) => (entry.key.startsWith('group:') ? entry.key.slice('group:'.length) : null)
+
+/**
+ * The bill each of these entries is named by, as the row's chips and a lone
+ * card show it: a companion group's lead (which need not have moved), with the
+ * group's analysis as its summary, or a bill's own. Two queries whatever the
+ * number of entries (one when none is a group), keyed by entry.
+ */
+export async function entryLeads(db: AppDb, entries: readonly DayEntry[]): Promise<Map<string, RowBill>> {
+  const leads = await groupLeads(db, entries.map(groupKeyOf))
+  const named = await rowBills(db, entries.map((e) => leadIdOf(e, leads)))
+  const out = new Map<string, RowBill>()
+  for (const entry of entries) {
+    const bill = named.get(leadIdOf(entry, leads))
+    const lead = leads.get(groupKeyOf(entry) ?? '')
+    if (bill) out.set(entry.key, lead ? { ...bill, summary: lead.summary } : bill)
+  }
+  return out
+}
+
 /** A bill-less view of one of the row's events, which the web builds a card row from. */
 export type RowEvent = { id: string; type: string; billId: string; metadata: unknown; createdAt: string }
 
@@ -270,15 +316,18 @@ export type RowEvent = { id: string; type: string; billId: string; metadata: unk
  * One entry of a page of the row's list. `newMatch`: the entry reads as an
  * untriaged new match, as the feed's cards decide it (untriagedNewMatch), so an
  * admin's dropdown for it is the amber "New · Set priority" with Dismiss. A
- * group reads as its group does.
+ * group reads as its group does. `bills`: the bill the entry is named by
+ * first (a group's lead, with the group's analysis), then the members that
+ * moved, each once.
  */
 export type RowEntry = { key: string; newMatch: boolean; bills: RowBill[]; events: RowEvent[] }
 
 /**
- * A page of the row's list for UTC day `day`: each entry's moved bills and
- * their events that day, newest first, and whether it is a new match. Three
- * queries whatever the page's size (a fourth when an entry is a companion group,
- * which reads its members once for the whole page).
+ * A page of the row's list for UTC day `day`: each entry's lead and moved
+ * bills and their events that day, newest first, and whether it is a new
+ * match. Three queries whatever the page's size (five when an entry is a
+ * companion group, whose members are read once for the whole page: for its
+ * lead, and for its new-match state).
  * The events are read through the day's range, like every query here: the
  * unary + keeps SQLite from looking each bill up by bill_id instead, which
  * would read each one's whole history, a cost that grows through a session.
@@ -286,7 +335,8 @@ export type RowEntry = { key: string; newMatch: boolean; bills: RowBill[]; event
 export async function rowPage(db: AppDb, day: string, minRelevance: number, entries: readonly DayEntry[]): Promise<RowEntry[]> {
   const ids = entries.flatMap((e) => e.memberIds)
   if (ids.length === 0) return []
-  const loaded = await loadRowBills(db, ids)
+  const leads = await groupLeads(db, entries.map(groupKeyOf))
+  const loaded = await loadRowBills(db, [...ids, ...[...leads.values()].map((l) => l.leadId)])
   const newMatchGroups = await loadUntriagedNewMatchGroups(db, [...loaded.values()].map((l) => l.facts.groupKey))
   const events = await db.all(sql`
     SELECT m.id, m.type, m.bill_id, m.metadata, m.created_at
@@ -299,12 +349,18 @@ export async function rowPage(db: AppDb, day: string, minRelevance: number, entr
     byBill.set(e.bill_id, [...(byBill.get(e.bill_id) ?? []), { id: e.id, type: e.type, billId: e.bill_id, metadata: JSON.parse(e.metadata) as unknown, createdAt: e.created_at }])
   }
   return entries.map((entry) => {
-    // The entry's lead is its first bill that still exists: the bill its title names and a priority is set through.
-    const lead = entry.memberIds.map((id) => loaded.get(id)).find((l) => l !== undefined)
+    // The entry is named by its lead: a companion group's lead bill, moved or
+    // not, wearing the group's analysis, then the members that moved, most
+    // relevant first. A bill in no group is its own. The lead is the bill its
+    // title names and a priority is set through (the web reads bills[0]).
+    const group = leads.get(groupKeyOf(entry) ?? '')
+    const leadId = group?.leadId ?? entry.memberIds.find((id) => loaded.has(id))
+    const lead = leadId === undefined ? undefined : loaded.get(leadId)
+    const named = lead && group ? { ...lead.bill, summary: group.summary } : lead?.bill
     return {
       key: entry.key,
       newMatch: lead !== undefined && untriagedNewMatch(lead.facts, newMatchGroups),
-      bills: entry.memberIds.flatMap((id) => loaded.get(id)?.bill ?? []),
+      bills: [...(named ? [named] : []), ...entry.memberIds.filter((id) => id !== leadId).flatMap((id) => loaded.get(id)?.bill ?? [])],
       events: entry.memberIds.flatMap((id) => byBill.get(id) ?? [])
         .sort((a, b) => dbTsToEpoch(b.createdAt) - dbTsToEpoch(a.createdAt) || (a.id < b.id ? 1 : -1)),
     }

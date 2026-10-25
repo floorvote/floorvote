@@ -70,7 +70,8 @@ export type GroupTeamValues = {
   leadBillId: string | null
 }
 
-const billValueColumns = {
+/** The columns `resolveTeamValues` reads of each member, for a query that selects them. */
+export const billValueColumns = {
   id: bills.id,
   billNumber: bills.billNumber,
   statusRank: bills.statusRank,

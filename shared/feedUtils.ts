@@ -34,11 +34,29 @@ export type FeedEvent = {
   // raises no "New activity" banner. Optional because producers other than GET
   // /feed build FeedEvent-shaped objects; absent is read as "no".
   noPriorityCard?: boolean
+  // On a companion group's no-priority card, the bill the card is named by: the
+  // group's lead (see **Lead bill** in CONTEXT.md), which need not be the member
+  // that moved, with the analysis the group shows. Its title, summary, and
+  // priority dropdown are the lead's, so a priority set there is the group's,
+  // set through its lead (#945). Absent on every other event.
+  groupLead?: GroupLead
   userId: string
   userName: string
   userTitle: string | null
   metadata: Record<string, unknown>
   createdAt: string
+}
+
+/** A no-priority card's lead bill, as GET /feed sends it: the shape of the row's chips. */
+export type GroupLead = {
+  id: string
+  billNumber: string
+  title: string
+  state: string | null
+  sessionSlug: string | null
+  isDraft: boolean
+  groupKey: string | null
+  summary: string | null
 }
 
 /** A bill with events in a group's card, as the card's header and its rows name it. */
@@ -88,6 +106,7 @@ function dayTimeOf(e: FeedEvent): string {
 
 export function groupEventsByBillAndDay(events: FeedEvent[]): GroupedBillEvents[] {
   const map = new Map<string, GroupedBillEvents>()
+  const namedByLead = new Set<string>()
   for (const e of events) {
     const date = dbTsToLocalDay(dayTimeOf(e))
     // A bill-less event has no bill to share a group with, so it is its own group.
@@ -107,6 +126,19 @@ export function groupEventsByBillAndDay(events: FeedEvent[]): GroupedBillEvents[
       })
     }
     const g = map.get(key)!
+    // A group's no-priority card is named by its lead, listed first in its header.
+    const lead = groupKey !== null ? e.groupLead : undefined
+    if (lead && !namedByLead.has(key)) {
+      namedByLead.add(key)
+      Object.assign(g, {
+        billId: lead.id, billNumber: lead.billNumber, billTitle: lead.title, billSessionSlug: lead.sessionSlug,
+        billState: lead.state, billSummary: lead.summary, billIsDraft: lead.isDraft,
+      })
+      g.bills = [
+        { billId: lead.id, billNumber: lead.billNumber, billState: lead.state, billSessionSlug: lead.sessionSlug, billIsDraft: lead.isDraft },
+        ...g.bills!.filter((b) => b.billId !== lead.id),
+      ]
+    }
     g.events.push(e)
     if (g.bills && !g.bills.some(b => b.billId === e.billId)) {
       g.bills.push({

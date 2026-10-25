@@ -15,7 +15,6 @@ import { nowDb } from '../../lib/dbTime'
 import { nextDraftNumber, findNumberCollision } from '../../lib/draftNumber'
 import { resolveCustomFieldValues } from '../../lib/customFieldValues'
 import { inGroupOf } from '../../lib/companionGroups'
-import { isPulledByGroup } from '../../lib/companionAnalysis'
 import { loadGroupTeamValues, recordFieldChanges } from '../../lib/teamFields'
 import { parseStoredItems } from '../../lib/claimSources'
 import { pruneClaimSources } from '../../lib/claimResolution'
@@ -338,13 +337,7 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
       // Promotion means "fetch text and run AI", which a demo must never do —
       // see the demo guard in queue/processor.ts. `promoted` stays false so the
       // response doesn't claim analysis is coming when none is.
-      //
-      // Nor does a pulled companion promote (a bill with no match type whose
-      // companion group holds a tracked bill): it is analyzed through its group
-      // and never tracked (CONTEXT.md), and the priority set above is already
-      // the group's. Since #945 the feed's no-priority row and lone card can name
-      // one as their bill, so a priority set from there lands on it.
-      if (legiscanId !== null && row?.matchType === null && c.env.DEMO_MODE !== 'true' && !await isPulledByGroup(db, id)) {
+      if (legiscanId !== null && row?.matchType === null && c.env.DEMO_MODE !== 'true') {
         promoted = true
         try {
           const res = await centralFetch(c.env, `/tenants/promote-bill/${c.env.TENANT_ID}/${legiscanId}`, { method: 'POST' })

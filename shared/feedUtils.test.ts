@@ -55,3 +55,33 @@ describe('groupEventsByBillAndDay: the new-match flag', () => {
     expect(g.billNewMatch).toBe(true)
   })
 })
+
+// A companion group's no-priority card (#921) is named by the group's lead bill,
+// which GET /feed sends on the card's updates as groupLead (#945): the card's
+// title, summary, and priority dropdown are the lead's, whichever member moved.
+describe('groupEventsByBillAndDay: a no-priority card named by its group\'s lead', () => {
+  const lead = { id: 'sb100', billNumber: 'SB 100', title: 'Act on SB 100', state: 'XX', sessionSlug: '2026', isDraft: false, groupKey: 'g', summary: 'The group\'s analysis.' }
+  const update = (id: string, billId: string, billNumber: string, createdAt: string): FeedEvent => ({
+    ...ev(id, billId, createdAt), billNumber, billTitle: `Act on ${billNumber}`, billSummary: null, billGroupKey: 'g', noPriorityCard: true, groupLead: lead,
+  })
+
+  it('names the card by the lead, its header listing the lead first and then the members that moved', () => {
+    const [g] = groupEventsByBillAndDay([update('a', 'hb200', 'HB 200', '2026-06-06 10:00:00'), update('b', 'hb300', 'HB 300', '2026-06-06 09:00:00')])
+    expect(g).toMatchObject({ billId: 'sb100', billNumber: 'SB 100', billTitle: 'Act on SB 100', billSummary: 'The group\'s analysis.', billState: 'XX', billSessionSlug: '2026', groupKey: 'g' })
+    expect(g.bills!.map((b) => b.billId)).toEqual(['sb100', 'hb200', 'hb300'])
+    expect(g.events.map((e) => e.id)).toEqual(['a', 'b'])
+  })
+
+  it('lists the lead once when it is the member that moved, with the group\'s analysis rather than its own', () => {
+    const [g] = groupEventsByBillAndDay([{ ...update('a', 'sb100', 'SB 100', '2026-06-06 10:00:00'), billSummary: 'Its own, older analysis.' }])
+    expect(g.billId).toBe('sb100')
+    expect(g.billSummary).toBe('The group\'s analysis.')
+    expect(g.bills!.map((b) => b.billId)).toEqual(['sb100'])
+  })
+
+  it('leaves a card with no lead named by its newest update\'s bill, as before', () => {
+    const [g] = groupEventsByBillAndDay([{ ...ev('a', 'hb200', '2026-06-06 10:00:00'), billGroupKey: 'g' }])
+    expect(g.billId).toBe('hb200')
+    expect(g.bills!.map((b) => b.billId)).toEqual(['hb200'])
+  })
+})
