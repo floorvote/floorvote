@@ -1471,6 +1471,7 @@ export function Config() {
 
         <div style={actionRowStyleFirst}>
           <div
+            className="export-download-button"
             role="button"
             tabIndex={0}
             aria-disabled={exporting || demoLocked}
@@ -1495,7 +1496,6 @@ export function Config() {
               <>
                 Download all data as
                 <select
-                  className="export-format-select"
                   value={exportFormat}
                   onClick={e => e.stopPropagation()}
                   onKeyDown={e => e.stopPropagation()}
@@ -1504,7 +1504,7 @@ export function Config() {
                     background: 'transparent', color: color.textOnFill, border: 'none',
                     borderBottom: '1px solid color-mix(in srgb, currentColor 60%, transparent)',
                     fontSize: fontSize.sm, fontWeight: fontWeight.semibold, cursor: 'pointer',
-                    padding: 0, fontFamily: 'inherit',
+                    padding: 0, outline: 'none', fontFamily: 'inherit',
                   }}
                 >
                   <option value="csv">CSV</option>

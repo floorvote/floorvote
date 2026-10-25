@@ -342,18 +342,20 @@ describe('Config — data export control accessibility', () => {
     expect(exportBtn).toHaveAttribute('aria-disabled', 'true')
   })
 
-  // An inline `outline: 'none'` beat the global *:focus-visible ring, so the
-  // format select had no keyboard focus cue. jsdom can't evaluate
-  // :focus-visible, so pin the style, and the class mobile.css uses to ring it
-  // in the button's own text colour: the default navy ring is under 3:1 on the
-  // button's blue fill.
-  it('leaves the format select to the keyboard focus ring, in a colour that shows on the button', async () => {
+  // The transparent, underlined format select sits inside the rounded Download
+  // button, so a ring on the select would be a rectangle over a rounded fill.
+  // The select keeps `outline: none` and mobile.css rings the button instead,
+  // inset and in the button's own text colour (the default navy ring is under
+  // 3:1 on the blue fill, and a light ring outside it would vanish on the page).
+  // jsdom can't evaluate :focus-visible, so pin the class and styles.
+  it('rings the Download button, not the bare format select', async () => {
     render(<Config />)
     const exportBtn = await screen.findByRole('button', { name: /download all data/i })
     const select = within(exportBtn).getByRole('combobox')
-    expect(select.style.outline).toBe('')
-    expect(select).toHaveClass('export-format-select')
-    expect(mobileCss).toMatch(/\.export-format-select\s*\{\s*--fv-focus-ring:\s*var\(--fv-text-on-fill\);\s*\}/)
+    expect(select.style.outline).toBe('none')
+    expect(exportBtn).toHaveClass('export-download-button')
+    expect(exportBtn.style.borderRadius).not.toBe('')
+    expect(mobileCss).toMatch(/\.export-download-button:has\(>\s*select:focus-visible\)\s*\{[^}]*outline:\s*2px solid var\(--fv-text-on-fill\)[^}]*outline-offset:\s*-\d+px/)
     for (const mode of ['light', 'dark'] as const) {
       expect(contrast(resolveColor(color.textOnFill, mode), resolveColor(exportBtn.style.background, mode)), mode)
         .toBeGreaterThanOrEqual(3)
