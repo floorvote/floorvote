@@ -159,6 +159,22 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
   listBodyEvents?(state: string, range: { from: string; to: string }, ctx: ProviderContext<K>): Promise<BodyEvent[]>
 
   /**
+   * Fill what the provider keeps between runs (`ctx.cache`) for a state it
+   * serves but doesn't own yet, so its calendar is ready the moment it does.
+   * Core calls it from the hourly body-event job for each such state an
+   * instance covers, in place of `listBodyEvents`, logs a throw without
+   * alerting, and reports the outcome to an operator's sync
+   * (cron/body-events.ts). Write nothing but the cache and the call log: no
+   * ids, no sessions, and nothing a calendar shows. The provider's own
+   * `ctx.alert` may still email the operators, as it would once the provider
+   * owns the state (GovInfo's, for a quarantined meeting). Return whether the
+   * cache is now ready (`warm`), or null when there was nothing to do (no key
+   * set, say). Only a provider with `listBodyEvents` and a calendar that takes
+   * a long first read (GovInfo's committee meetings) needs one.
+   */
+  warmBodyEvents?(state: string, ctx: ProviderContext<K>): Promise<{ warm: boolean } | null>
+
+  /**
    * The calendar UID instances give one of the provider's body events. Only
    * a provider whose events already have UIDs in someone's calendars sets
    * this: LIMS keeps the UIDs the contributor's fork issued for Council
@@ -217,6 +233,17 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
    * since left still resolves.
    */
   listPeople?(sessions: StoredSession[], ctx: ProviderContext<K>): Promise<ProviderPerson[]>
+
+  /**
+   * The person id the provider gives each of these Bioguide ids wherever it
+   * names that member (as a sponsor or a voter), for a provider that mints its
+   * person ids from Bioguide ids (GovInfo). A cutover's plan uses it to match
+   * every legislator the losing provider holds a Bioguide id for, not only the
+   * sponsors of the measures it reads. It asks nothing of the network: ids
+   * come from `ctx.ids`, which a plan answers without writing. An id the
+   * provider could never name is left out of the answer.
+   */
+  personIdsForBioguide?(bioguideIds: string[], ctx: ProviderContext<K>): Promise<Map<string, number>>
 
   /**
    * Specific measures by number, from any session, for an operator importing

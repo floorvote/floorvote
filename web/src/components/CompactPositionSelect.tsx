@@ -39,6 +39,10 @@ export function CompactPositionSelect({ billId, current, options, onChange, isFi
       <select
         aria-label="Position"
         aria-describedby={empty ? labelId : undefined}
+        // The filtered ring (an outline) comes from mobile.css, keyed on this class and attribute, so it can step aside
+        // for the app's :focus-visible ring. An inline outline would beat that ring and hide keyboard focus.
+        className="fv-chip-select"
+        data-filtered={isFiltered ? '' : undefined}
         value={current ?? CLEAR}
         onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
@@ -65,8 +69,6 @@ export function CompactPositionSelect({ billId, current, options, onChange, isFi
           // The label stands in for the select's own text while empty. The options carry their own colour, since some
           // browsers draw the open menu in the select's.
           ...(empty ? { WebkitTextFillColor: 'transparent' } : {}),
-          outline: isFiltered ? `2px solid ${color.accentBlue}` : 'none',
-          outlineOffset: 2,
         }}
       >
         <option value={CLEAR} style={optionStyle}>Not set</option>
