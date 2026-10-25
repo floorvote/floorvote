@@ -1,7 +1,6 @@
 import { and, asc, eq, gte, isNull, like, notInArray, sql } from 'drizzle-orm'
 import { sessions, sessionSyncLog, settings } from '../db/schema'
 import { escHtml, reportJobFailure, sendOpsAlert } from '../lib/jobAlert'
-import { getSetting, setSetting } from '../lib/settings'
 import { dbTimeAgo, nowDb, toDb } from '../lib/dbTime'
 import { PRODUCT_NAME } from '../../../shared/brand'
 import type { Env, Db } from '../types'
@@ -184,6 +183,25 @@ async function stillFailing(db: Db, providerId: string, recovered: Recovery[]): 
 }
 
 /**
+ * A `resolved: <job>` email: an intro, a list of lines, and, when there are
+ * any, a second list under a heading. Both recovery emails go through it, so
+ * they read alike.
+ */
+async function sendResolved(env: Env, job: string, intro: string, lines: string[], more?: { heading: string; textHeading: string; lines: string[] }): Promise<void> {
+  const bullets = (items: string[]) => items.map(l => `• ${l}`).join('\n')
+  const text = `${intro}\n\n${bullets(lines)}\n` + (more?.lines.length ? `\n${more.textHeading}\n\n${bullets(more.lines)}\n` : '')
+  const list = (items: string[]) => `<ul style="margin: 0 0 16px; padding-left: 20px; font-size: 14px; line-height: 1.7; color: #0f172a;">${items.map(l => `<li>${escHtml(l)}</li>`).join('')}</ul>`
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 560px; margin: 0 auto; color: #0f172a;">
+      <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6; color: #334155;">${escHtml(intro)}</p>
+      ${list(lines)}
+      ${more?.lines.length ? `<p style="margin: 0 0 8px; font-size: 15px; line-height: 1.6; color: #334155;">${more.heading}</p>${list(more.lines)}` : ''}
+    </div>
+  `
+  await sendOpsAlert(env, { subject: `[${PRODUCT_NAME}] resolved: ${job}`, text, html })
+}
+
+/**
  * One email for every session a run finished after a streak that alerted, so
  * the operators know those failure emails stopped because the sessions
  * recovered. It names the sessions that recovered and, when others in the same
@@ -198,34 +216,29 @@ export async function sendRecoveries(env: Env, db: Db, { job, providerId, name }
     `${session.state} ${session.sessionName}: synced after ${failed} failed passes over ${hours} hours, failing since ${since.slice(0, 16)} UTC`)
   const stillLines = failing.map(s => `${s.state} ${s.sessionName}`)
   const intro = `${name} sync (${job}): ${recoveries.length} ${recoveries.length === 1 ? 'session' : 'sessions'} synced again.`
-  const text = `${intro}\n\n${lines.map(l => `• ${l}`).join('\n')}\n` +
-    (stillLines.length ? `\nStill failing: ${stillLines.length} in the same job\n\n${stillLines.map(l => `• ${l}`).join('\n')}\n` : '')
-  const list = (items: string[]) => `<ul style="margin: 0 0 16px; padding-left: 20px; font-size: 14px; line-height: 1.7; color: #0f172a;">${items.map(l => `<li>${escHtml(l)}</li>`).join('')}</ul>`
-  const html = `
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 560px; margin: 0 auto; color: #0f172a;">
-      <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6; color: #334155;">${escHtml(intro)}</p>
-      ${list(lines)}
-      ${stillLines.length ? `<p style="margin: 0 0 8px; font-size: 15px; line-height: 1.6; color: #334155;"><strong>Still failing</strong> in the same job:</p>${list(stillLines)}` : ''}
-    </div>
-  `
-  await sendOpsAlert(env, { subject: `[${PRODUCT_NAME}] resolved: ${job}`, text, html })
+  await sendResolved(env, job, intro, lines, {
+    heading: '<strong>Still failing</strong> in the same job:', textHeading: `Still failing: ${stillLines.length} in the same job`, lines: stillLines,
+  })
 }
 
 /**
  * A state's calendar cache that keeps failing to warm (Provider.warmBodyEvents,
  * cron/body-events.ts), as it stands between runs: when the streak's first
  * and latest failed passes ran, how many have failed, when the next may alert,
- * and whether one has. Kept in `settings`, one row a state, since a warm is no session's
- * pass and session_sync_log can't hold it. A finished warm, or one with nothing
- * to do (no key), removes the row.
+ * and whether one has. Kept in `settings`, one row a state, since a warm is no
+ * session's pass and session_sync_log can't hold it. A finished warm, one with
+ * nothing to do (no key), or a state the job stops warming removes the row.
+ *
+ * Every write is conditional on the row the run read, so two runs at once (the
+ * hourly job and an operator's sync) never both alert, or both send the
+ * recovery, for one pass: the run whose write loses stays quiet.
  */
 type WarmStreak = { since: number; last: number; failed: number; due: number; alerted: boolean }
 
 const WARM_STREAK = 'warm-streak:'
-const warmStreakKey = (providerId: string, state: string) => `${WARM_STREAK}${providerId}:${state}`
+const warmStreakKey = (job: string, state: string) => `${WARM_STREAK}${job}:${state}`
 
-async function readWarmStreak(db: Db, key: string): Promise<WarmStreak | null> {
-  const raw = await getSetting(db, key, '')
+function parseWarmStreak(raw: string | null | undefined): WarmStreak | null {
   if (!raw) return null
   try {
     const s = JSON.parse(raw) as WarmStreak
@@ -239,9 +252,9 @@ async function readWarmStreak(db: Db, key: string): Promise<WarmStreak | null> {
  * A warm pass that threw: count it in the state's streak, and email the
  * operators, as a sync job's alert does (subject `cron failed: <job>`), once
  * the streak has lasted ALERT_INTERVAL_HOURS and then at most every that many
- * hours. The job still finishes its other states. Best-effort: a streak that
- * can't be read or written is logged, and the pass alerts at once, as a failed
- * sync pass that couldn't be logged does.
+ * hours. The job still finishes its other states. A streak that can't be read
+ * or written is logged, and the pass alerts at once, as a failed sync pass
+ * that couldn't be logged does.
  */
 export async function warmFailed(env: Env, db: Db, { job, name }: SyncJob, state: string, error: Error): Promise<void> {
   const now = Date.now()
@@ -249,11 +262,19 @@ export async function warmFailed(env: Env, db: Db, { job, name }: SyncJob, state
   let alerts: boolean
   try {
     const key = warmStreakKey(job, state)
-    const before = await readWarmStreak(db, key)
+    const raw = (await db.select({ value: settings.value }).from(settings).where(eq(settings.key, key)).get())?.value ?? null
+    const before = parseWarmStreak(raw)
     const step = alertStep(before?.due ?? firstDue(now), now)
     alerts = step.alerts
     streak = { since: before?.since ?? now, last: now, failed: (before?.failed ?? 0) + 1, due: step.due, alerted: (before?.alerted ?? false) || alerts }
-    await setSetting(db, key, JSON.stringify(streak))
+    const value = JSON.stringify(streak)
+    const written = raw === null
+      ? await db.insert(settings).values({ key, value, updatedAt: nowDb() }).onConflictDoNothing().returning({ key: settings.key })
+      : await db.update(settings).set({ value, updatedAt: nowDb() }).where(and(eq(settings.key, key), eq(settings.value, raw))).returning({ key: settings.key })
+    if (written.length === 0) {
+      console.warn(`[${job}] ${state}: another run counted this failed warm first`)
+      return
+    }
   } catch (err) {
     console.error(`[${job}] ${state}: couldn't count a failed warm, so it alerts now:`, err)
     await reportJobFailure(env, { job, error })
@@ -268,6 +289,16 @@ export async function warmFailed(env: Env, db: Db, { job, name }: SyncJob, state
   await reportJobFailure(env, { job, error: alert })
 }
 
+/** Remove the job's streak rows that match, and return the streaks they held: only the run that removes a row gets it. */
+async function takeWarmStreaks(db: Db, where: ReturnType<typeof and>): Promise<{ state: string; streak: WarmStreak | null }[]> {
+  const rows = await db.delete(settings).where(where).returning({ key: settings.key, value: settings.value })
+  return rows.map(r => ({ state: r.key.slice(r.key.lastIndexOf(':') + 1), streak: parseWarmStreak(r.value) }))
+}
+
+/** The line a warm's resolved email gives a streak that alerted. */
+const warmLine = (name: string, state: string, s: WarmStreak, what: string) =>
+  `${name} ${state}: ${what} after ${s.failed} failed passes over ${hoursOf(s.last - s.since)} hours, failing since ${toDb(new Date(s.since)).slice(0, 16)} UTC`
+
 /**
  * A warm pass that finished, or had nothing to do (`ok: false`, no key, say):
  * end the state's streak. A finished pass after a streak that alerted emails
@@ -276,20 +307,9 @@ export async function warmFailed(env: Env, db: Db, { job, name }: SyncJob, state
  */
 export async function warmEnded(env: Env, db: Db, { job, name }: SyncJob, state: string, ok: boolean): Promise<void> {
   try {
-    const key = warmStreakKey(job, state)
-    const streak = await readWarmStreak(db, key)
-    await db.delete(settings).where(eq(settings.key, key))
-    if (!ok || !streak?.alerted) return
-    const line = `${name} ${state}: warmed its calendar cache after ${streak.failed} failed passes over ${hoursOf(streak.last - streak.since)} hours, failing since ${toDb(new Date(streak.since)).slice(0, 16)} UTC`
-    const intro = `${name} calendar (${job}): warming the cache works again.`
-    const text = `${intro}\n\n• ${line}\n`
-    const html = `
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 560px; margin: 0 auto; color: #0f172a;">
-      <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6; color: #334155;">${escHtml(intro)}</p>
-      <ul style="margin: 0 0 16px; padding-left: 20px; font-size: 14px; line-height: 1.7; color: #0f172a;"><li>${escHtml(line)}</li></ul>
-    </div>
-  `
-    await sendOpsAlert(env, { subject: `[${PRODUCT_NAME}] resolved: ${job}`, text, html })
+    const [taken] = await takeWarmStreaks(db, eq(settings.key, warmStreakKey(job, state)))
+    if (!ok || !taken?.streak?.alerted) return
+    await sendResolved(env, job, `${name} calendar (${job}): warming the cache works again.`, [warmLine(name, state, taken.streak, 'warmed its calendar cache')])
   } catch (err) {
     console.error(`[${job}] ${state}: couldn't end the warm's failed streak:`, err)
   }
@@ -298,15 +318,21 @@ export async function warmEnded(env: Env, db: Db, { job, name }: SyncJob, state:
 /**
  * Drop the streaks of a job's states it no longer warms (the provider owns the
  * state now, or no instance covers it), so a streak never resumes long after
- * it stopped and alerts on its first failure. Best-effort.
+ * it stopped and alerts on its first failure. A streak that alerted gets one
+ * `resolved: <job>` email saying the state is no longer warmed, so the
+ * operators know why its alerts stopped. Best-effort.
  */
-export async function forgetWarmStreaks(db: Db, job: string, warming: string[]): Promise<void> {
+export async function forgetWarmStreaks(env: Env, db: Db, { job, name }: SyncJob, warming: string[]): Promise<void> {
   try {
     const keep = warming.map(state => warmStreakKey(job, state))
-    await db.delete(settings).where(and(
+    const taken = await takeWarmStreaks(db, and(
       like(settings.key, `${WARM_STREAK}${job}:%`),
       keep.length > 0 ? notInArray(settings.key, keep) : undefined,
     ))
+    const lines = taken.flatMap(({ state, streak }) => streak?.alerted
+      ? [warmLine(name, state, streak, 'no longer warmed (the provider owns the state now, or no active instance covers it), so its alerts stop,')]
+      : [])
+    if (lines.length > 0) await sendResolved(env, job, `${name} calendar (${job}): no longer warming a cache whose warming failed.`, lines)
   } catch (err) {
     console.error(`[${job}] couldn't drop the warm streaks of states it no longer warms:`, err)
   }

@@ -2035,6 +2035,40 @@ describe('before GovInfo owns US (#913)', () => {
       await tickAt(8)
       expect(alerts()).toHaveLength(1)
     })
+
+    it('tells the operators once that the alerts stop when it stops warming a state whose failures alerted', async () => {
+      revoked()
+      for (let h = 0; h <= 4; h++) await tickAt(h)
+      expect(alerts()).toHaveLength(1)
+      // No active instance covers US any more, so nothing warms it.
+      await db().update(schema.tenants).set({ active: false })
+      await tickAt(5)
+      await tickAt(6)
+      expect(recoveries()).toHaveLength(1)
+      expect(recoveries()[0].text).toMatch(/GovInfo Bill Status US: no longer warmed .*after 5 failed passes over 4 hours/)
+      expect(alerts()).toHaveLength(1)
+    })
+
+    it('sends one recovery, not two, when two runs finish the same alerted streak at once', async () => {
+      revoked()
+      for (let h = 0; h <= 4; h++) await tickAt(h)
+      feed.override = {}
+      vi.setSystemTime(START + 5 * HOUR + 30_000)
+      clearMeetingCaches()
+      const run = makeRun()
+      await Promise.all([runBodyEventJob(govinfo, run.env as any, db()), runBodyEventJob(govinfo, run.env as any, db())])
+      expect(recoveries()).toHaveLength(1)
+    })
+
+    it('sends one alert, not two, when two runs fail at the due hour at once', async () => {
+      revoked()
+      for (let h = 0; h < 4; h++) await tickAt(h)
+      vi.setSystemTime(START + 4 * HOUR + 30_000)
+      clearMeetingCaches()
+      const run = makeRun()
+      await Promise.all([runBodyEventJob(govinfo, run.env as any, db()), runBodyEventJob(govinfo, run.env as any, db())])
+      expect(alerts()).toHaveLength(1)
+    })
   })
 
   it('fills the cutover dry run\'s calendar preview once warm', async () => {

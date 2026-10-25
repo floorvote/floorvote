@@ -50,7 +50,7 @@ export async function runBodyEventJob(provider: Provider, env: Env, db: Db): Pro
   const covered = owned.filter(isCovered)
   const warming = unowned.filter(isCovered)
   const job = bodyEventJob(provider)
-  if (provider.warmBodyEvents) await forgetWarmStreaks(db, job.job, warming)
+  if (provider.warmBodyEvents) await forgetWarmStreaks(env, db, job, warming)
   if (covered.length === 0 && warming.length === 0) return none
 
   const ctx = providerContext(provider, env, db)
