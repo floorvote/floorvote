@@ -1,4 +1,4 @@
-import { and, eq, inArray, lt, sql, type SQL } from 'drizzle-orm'
+import { and, eq, inArray, isNull, lt, sql, type SQL } from 'drizzle-orm'
 import { processBill, type ProcessBillResult } from '../lib/llm'
 import { filterTagsToTaxonomy } from '../lib/taxonomy'
 import { centralFetch } from '../lib/centralFetch'
@@ -333,8 +333,9 @@ function storedIsNewer(incoming: SQL | string): SQL<number> {
 
 /**
  * Store what central sent for the bill, and analyze it when it should be.
- * 'stale' when a full delivery read an older version than the one stored, and
- * wrote nothing.
+ * 'stale' when a full delivery read an older version than the one stored: it
+ * stored none of that version, and recorded only its own changes
+ * (recordStaleDelivery).
  */
 async function applyCentralBill(
   msg: TenantQueueMessage,
@@ -509,12 +510,13 @@ async function applyCentralBill(
 
   // Never go back a version. Each delivery reads central's copy when it runs, so when two deliveries
   // of the bill overlap, a slow one (the AI call takes seconds) can finish after the other stored a
-  // newer version. Writing it would put the older fields and stamp back, and its
-  // `changes` would repeat feed events the newer delivery already wrote. No flag overrides this: a
-  // forced pass on an older copy has nothing to add. The newer version is analyzed by its own
-  // delivery. The write below repeats the check, for a version stored after this read.
+  // newer version. Writing it would put the older fields, stamp, and child rows back. No flag
+  // overrides this: a forced pass on an older copy has nothing to add, and the newer version is
+  // analyzed by its own delivery. Its changes are still news (recordStaleDelivery). The commit
+  // below checks again, for a version stored after this read.
   if (existing?.storedIsNewer) {
     console.log(`[processor] skipping ${msg.billId}: central sent ${centralBill.updatedAt}, older than the stored ${existing.providerUpdatedAt}`)
+    await recordStaleDelivery(db, env, msg, existing.id, true)
     return 'stale'
   }
 
@@ -938,7 +940,12 @@ async function applyCentralBill(
   // a digest or a seen mark between the two would otherwise sit after an update dated before it, and miss it.
   const writtenAt = nowDb()
   const statements: BatchItem<'sqlite'>[] = [
-    // First, so the rows below have their bill, and the row checks below read it as written.
+    // The version check again, inside the commit, for a version another delivery stored while this one ran
+    // (the model takes seconds). It fails the whole batch, so nothing of this older copy lands: not the
+    // bill's fields or stamp, nor its child rows or events, which a WHERE on the bill's write alone would
+    // let through. A bill the delivery didn't find needs none: its insert fails if another delivery made it.
+    ...(existing ? [staleVersionGuard(db, existing.id, centralBill.updatedAt)] : []),
+    // Then the bill, so the rows below have it, and the row checks below read it as written.
     billStatement,
     ...billSubjectStatements(db, billInternalId, centralBill.state, centralBill.subjects ?? []),
     ...billCommitteeStatements(db, billInternalId, centralBill.state, centralBill.committee, centralBill.referrals),
@@ -970,12 +977,93 @@ async function applyCentralBill(
       newMatchesRowStatement(db, billInternalId, await getNewMatchMinRelevance(db)),
     )
   }
-  await db.batch(statements as [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]])
+  try {
+    await db.batch(statements as [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]])
+  } catch (err) {
+    // The guard's failure, or the insert's when another delivery created the bill: either way the
+    // batch left nothing. Only a newer stored version makes it stale; any other failure is retried.
+    const stored = await db.select({ id: bills.id, newer: storedIsNewer(centralBill.updatedAt) })
+      .from(bills).where(eq(bills.externalId, await resolveStoredHandle(db, msg.billId))).get()
+    if (!stored?.newer) throw err
+    console.log(`[processor] skipping ${msg.billId}: a version newer than ${centralBill.updatedAt} was stored during this delivery`)
+    await recordStaleDelivery(db, env, msg, stored.id, !isNew)
+    return 'stale'
+  }
 
   // Mirror hearings for tracked bills and group members (priority filtering happens at read time, by the group's priority).
   if (msg.calendar && (derivedMatchType !== null || existing?.priority != null || existing?.groupKey != null)) {
     await reconcileCalendar(db, env, billInternalId, msg, isNew, now)
   }
+}
+
+/**
+ * A statement for the full path's commit batch that fails, failing the batch,
+ * when the bill's stored version is newer than `incoming`. SQLite has no RAISE
+ * outside a trigger, so it asks json() to parse text that isn't JSON. The text
+ * depends on the row, so SQLite can't evaluate it ahead of the CASE.
+ */
+function staleVersionGuard(db: AppDb, billId: string, incoming: string) {
+  return db.select({ guard: sql`json(CASE WHEN ${storedIsNewer(incoming)} THEN 'stale: a newer version is stored' ELSE '0' END)` })
+    .from(bills).where(eq(bills.id, billId))
+}
+
+/**
+ * What a full delivery found stale still records: the message's own changes.
+ * Central sends each sync's changes (its `changes` and calendar `changes` are
+ * what that pull found against the one before), so the newer delivery's
+ * message doesn't carry these, and they would otherwise never reach the Feed.
+ * They are written as the full path would write them, gated on the bill as
+ * stored now, and in one batch, so they land once or not at all. Nothing of
+ * the older copy itself is written: not the bill's fields, its child rows, or
+ * its calendar rows, which the newer delivery reconciled.
+ *
+ * Also the match provenance central declared on this message, when the bill
+ * holds none and hasn't recorded its match: the declaration rides only on the
+ * message that brings the match, so this may be its only copy. Once a match
+ * is recorded its provenance never changes, so a bill whose newer delivery
+ * recorded the match first keeps what that delivery wrote.
+ *
+ * `existed`: the bill was stored when the delivery began. Changes to a bill
+ * new to the delivery are not news, as on the full path.
+ */
+async function recordStaleDelivery(db: AppDb, env: Env, msg: TenantQueueMessage, billId: string, existed: boolean): Promise<void> {
+  const statements: BatchItem<'sqlite'>[] = []
+  if (!msg.groupAnalysis && msg.matchProvenance) {
+    statements.push(db.update(bills).set({ matchProvenance: msg.matchProvenance })
+      .where(and(eq(bills.id, billId), isNull(bills.matchProvenance), isNull(bills.newMatchAt))))
+  }
+  const row = existed
+    ? await db.select({ aiProcessedAt: bills.aiProcessedAt, matchType: bills.matchType, groupKey: bills.groupKey, priority: bills.priority })
+      .from(bills).where(eq(bills.id, billId)).get()
+    : undefined
+  const writtenAt = nowDb()
+  const changes = msg.changes ?? []
+  // The full path's bill_updated gate.
+  if (row?.aiProcessedAt && (row.matchType !== null || row.groupKey !== null) && changes.length > 0) {
+    statements.push(
+      db.insert(feedEvents).values({
+        id: crypto.randomUUID(), type: 'bill_updated', billId, userId: 'system',
+        metadata: JSON.stringify({ changes }), createdAt: writtenAt,
+      }),
+      noteLegislativeEvent(db, billId, writtenAt),
+    )
+  }
+  // reconcileCalendar's feed events, under its gates: a tracked bill or group member, never a demo, never a deadline.
+  if (row && msg.calendar && env.DEMO_MODE !== 'true'
+    && (row.matchType !== null || !!msg.matchType || row.priority != null || row.groupKey != null)) {
+    for (const ch of msg.calendar.changes) {
+      if (ch.kind === 'deadline') continue
+      statements.push(
+        db.insert(feedEvents).values({
+          id: crypto.randomUUID(), type: ch.changeType, billId, userId: 'system',
+          metadata: JSON.stringify({ date: ch.date, time: ch.time, location: ch.location, description: ch.description }),
+          createdAt: writtenAt,
+        }),
+        noteLegislativeEvent(db, billId, writtenAt),
+      )
+    }
+  }
+  if (statements.length > 0) await db.batch(statements as [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]])
 }
 
 async function reconcileCalendar(
