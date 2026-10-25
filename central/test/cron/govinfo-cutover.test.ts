@@ -9,9 +9,7 @@ import * as schema from '../../src/db/schema'
 // second `people` row the first time a GovInfo bill or vote named them. Now
 // GovInfo gives the person id it mints for a Bioguide id
 // (`personIdsForBioguide`), and the plan matches every LegiScan legislator who
-// holds one and sponsored or voted on a bill in a session the cutover moves;
-// a member of an earlier Congress only keeps their LegiScan row (#978).
-// Recorded GovInfo files and roll calls go in, with the network
+// holds one. Recorded GovInfo files and roll calls go in, with the network
 // stubbed at fetch. The LegiScan side is written as an instance's tracking
 // left it, and the people are LegiScan's rows for real members.
 vi.mock('../../src/lib/rateLimitedFetch', () => import('../helpers/unpacedFetch'))
@@ -38,23 +36,17 @@ const db = () => drizzle(env.DB, { schema })
 
 // LegiScan's 119th Congress, as an instance has tracked it.
 const LS_SESSION = 2140
-// LegiScan's 118th Congress, which the cutover leaves as it is.
-const LS_EARLIER = 2040
 const US = 52
 const HB43 = 3100043        // tracked: the plan reads its file, so its sponsor is seen, and it links House roll call 28
 const HB2 = 3100002         // not tracked: the plan never reads it, and its first ingest after the cutover names its sponsor
-const HB9999 = 3109999      // a 119th bill GovInfo doesn't list, so it doesn't move, though its session does
-const HB_EARLIER = 3000009  // a 118th bill, in a session the cutover doesn't move
-const LS_ROLL_CALL = 7700028 // LegiScan's own roll call on HB43
 const BEGICH = 88001        // HB43's sponsor, with no Bioguide id in LegiScan's row, so matched by name as before
-const BURCHETT = 88002      // only votes, on LegiScan's roll call on HB43: sponsors nothing
-const JOHNSON = 88003       // the Speaker: in LegiScan's data, sponsors only the untracked HB2, and votes on nothing
-const GONE = 88004          // a member of an earlier Congress: sponsored and voted on a 118th bill only
+const BURCHETT = 88002      // votes on HB43's roll call, sponsors nothing the plan reads
+const JOHNSON = 88003       // the Speaker: sponsors only the untracked HB2, and doesn't vote on roll call 28
+const GONE = 88004          // a member who left: no bill or vote of GovInfo's names them
 const ROSS_A = 88005        // two LegiScan rows sharing one Bioguide id, which matches neither
 const ROSS_B = 88006
-const STAYED = 88007        // sponsors only HB9999, a bill that doesn't move, in a session that does
 
-const ids = { BURCHETT: 'B001309', JOHNSON: 'J000299', GONE: 'Z000999', ROSS: 'Y000005', STAYED: 'X000777' }
+const ids = { BURCHETT: 'B001309', JOHNSON: 'J000299', GONE: 'Z000999', ROSS: 'Y000005' }
 
 beforeEach(async () => {
   await resetCentral()
@@ -82,20 +74,15 @@ beforeEach(async () => {
   })
   await seam.addTenant('US', ['choice for veterans'])
 
-  await db().insert(schema.sessions).values([{
+  await db().insert(schema.sessions).values({
     sessionId: LS_SESSION, state: 'US', stateId: US, yearStart: 2025, yearEnd: 2026, special: 0,
     sessionTitle: '119th Congress', sessionName: '119th Congress', sessionTag: '119', slug: '119th-congress',
-  }, {
-    sessionId: LS_EARLIER, state: 'US', stateId: US, yearStart: 2023, yearEnd: 2024, special: 0,
-    sessionTitle: '118th Congress', sessionName: '118th Congress', sessionTag: '118', slug: '118th-congress',
-  }])
-  const bill = (billId: number, billNumber: string, title: string, sessionId = LS_SESSION) =>
-    ({ billId, billNumber, title, sessionId, state: 'US', stateId: US, changeHash: 'ls-v1', status: 1 })
+  })
+  const bill = (billId: number, billNumber: string, title: string) =>
+    ({ billId, billNumber, title, sessionId: LS_SESSION, state: 'US', stateId: US, changeHash: 'ls-v1', status: 1 })
   await db().insert(schema.bills).values([
     bill(HB43, 'HB43', 'Alaska Native Settlement Trust Eligibility Act'),
     bill(HB2, 'HB2', 'Secure the Border Act of 2025'),
-    bill(HB9999, 'HB9999', 'A bill GovInfo does not list'),
-    bill(HB_EARLIER, 'HB9', 'An earlier Congress\'s bill', LS_EARLIER),
   ])
   await db().insert(schema.billTenants).values({ billId: HB43, tenantId: 'usteam', matchType: 'keyword' })
   const legislator = (peopleId: number, first: string, last: string, bioguideId: string | null) =>
@@ -107,23 +94,8 @@ beforeEach(async () => {
     legislator(GONE, 'Pat', 'Gone', ids.GONE),
     legislator(ROSS_A, 'Gil', 'Ross', ids.ROSS),
     legislator(ROSS_B, 'Gil', 'Ross', ids.ROSS),
-    legislator(STAYED, 'Lee', 'Stayed', ids.STAYED),
   ])
-  await db().insert(schema.billSponsors).values([
-    { id: 'ls-hb43-1', billId: HB43, peopleId: BEGICH, sponsorTypeId: 1, sponsorOrder: 1 },
-    { id: 'ls-hb2-1', billId: HB2, peopleId: JOHNSON, sponsorTypeId: 1, sponsorOrder: 1 },
-    { id: 'ls-hb9999-1', billId: HB9999, peopleId: STAYED, sponsorTypeId: 1, sponsorOrder: 1 },
-    { id: 'ls-hb9-1', billId: HB_EARLIER, peopleId: GONE, sponsorTypeId: 1, sponsorOrder: 1 },
-  ])
-  // LegiScan's roll calls: Burchett's vote on HB43, and the departed member's on their 118th bill.
-  await db().insert(schema.rollCalls).values([
-    { rollCallId: LS_ROLL_CALL, billId: HB43, date: '2025-03-01', chamber: 'H' },
-    { rollCallId: LS_ROLL_CALL - 1, billId: HB_EARLIER, date: '2024-03-01', chamber: 'H' },
-  ])
-  await db().insert(schema.rollCallVotes).values([
-    { id: 'ls-rc-burchett', rollCallId: LS_ROLL_CALL, peopleId: BURCHETT, voteId: 1, voteText: 'Yea' },
-    { id: 'ls-rc-gone', rollCallId: LS_ROLL_CALL - 1, peopleId: GONE, voteId: 1, voteText: 'Yea' },
-  ])
+  await db().insert(schema.billSponsors).values({ id: 'ls-hb43-1', billId: HB43, peopleId: BEGICH, sponsorTypeId: 1, sponsorOrder: 1 })
 })
 
 afterEach(() => {
@@ -166,40 +138,18 @@ async function cutOverAndIngest() {
   return body
 }
 
-const listedIn = (body: any) => (id: number) => body.people.list.find((m: any) => m.personId === String(id))
-
 describe('a cutover of Congress to GovInfo', () => {
-  it('matches a LegiScan legislator with a Bioguide id who sponsored a bill in a moved session, though the plan reads no bill of theirs', async () => {
+  it('matches every LegiScan legislator with a Bioguide id in the dry run, not only the sponsors it reads', async () => {
     const body = await dryRun()
-    expect(listedIn(body)(JOHNSON)).toMatchObject({ on: ['bioguide'], nameMatch: null, weak: false })
+    const listed = (id: number) => body.people.list.find((m: any) => m.personId === String(id))
+    for (const id of [BURCHETT, JOHNSON, GONE]) {
+      expect(listed(id), `person ${id}`).toMatchObject({ on: ['bioguide'], nameMatch: null, weak: false })
+    }
     // GovInfo names no one without reading a file, so a legislator matched only by the id shows LegiScan's name.
-    expect(listedIn(body)(JOHNSON).as).toBe('Mike Johnson')
-    expect(body.people.unmatched.old.map((p: any) => p.personId)).not.toContain(String(JOHNSON))
-  })
-
-  it('matches a LegiScan legislator with a Bioguide id who only voted in a moved session', async () => {
-    const body = await dryRun()
-    expect(listedIn(body)(BURCHETT)).toMatchObject({ on: ['bioguide'], nameMatch: null, weak: false })
-    expect(body.people.unmatched.old.map((p: any) => p.personId)).not.toContain(String(BURCHETT))
-  })
-
-  it('matches one who sponsored only a bill that doesn\'t move, in a session that does', async () => {
-    const body = await dryRun()
-    expect(listedIn(body)(STAYED)).toMatchObject({ on: ['bioguide'], nameMatch: null, weak: false })
-  })
-
-  it('leaves out a LegiScan legislator with a Bioguide id and no sponsorship or vote in a moved session', async () => {
-    const body = await dryRun()
-    expect(listedIn(body)(GONE)).toBeUndefined()
+    expect(listed(JOHNSON).as).toBe('Mike Johnson')
+    const unmatchedOld = body.people.unmatched.old.map((p: any) => p.personId)
+    for (const id of [BURCHETT, JOHNSON, GONE]) expect(unmatchedOld).not.toContain(String(id))
     expect(body.people.bioguide).toBe(3)
-  })
-
-  it('leaves an earlier Congress\'s member\'s LegiScan row, and so their profile link, as it was after a confirmed cutover', async () => {
-    const before = await env.DB.prepare('SELECT * FROM people WHERE people_id = ?').bind(GONE).first()
-    await cutOverAndIngest()
-    expect(await env.DB.prepare('SELECT * FROM people WHERE people_id = ?').bind(GONE).first()).toEqual(before)
-    expect(await byBioguide(ids.GONE)).toEqual([{ people_id: GONE, provider: 'legiscan' }])
-    expect(await env.DB.prepare('SELECT COUNT(*) AS n FROM cutover_people WHERE people_id = ?').bind(GONE).first('n')).toBe(0)
   })
 
   it('still matches a legislator with no Bioguide id by name, through the sponsors of the bills it reads', async () => {
@@ -238,7 +188,7 @@ describe('a cutover of Congress to GovInfo', () => {
 
     expect(await byBioguide(ids.BURCHETT)).toEqual([{ people_id: BURCHETT, provider: 'govinfo' }])
     expect(await byBioguide(ids.JOHNSON)).toEqual([{ people_id: JOHNSON, provider: 'govinfo' }])
-    expect(await byBioguide(ids.STAYED)).toEqual([{ people_id: STAYED, provider: 'govinfo' }])
+    expect(await byBioguide(ids.GONE)).toEqual([{ people_id: GONE, provider: 'govinfo' }])
     // The legislator with no Bioguide id in LegiScan's row was matched by name, and the ingest stored GovInfo's id on the kept row.
     expect(await byBioguide('B001323')).toEqual([{ people_id: BEGICH, provider: 'govinfo' }])
   })
@@ -247,8 +197,7 @@ describe('a cutover of Congress to GovInfo', () => {
     await cutOverAndIngest()
     const res = await seam.central('POST', '/admin/state-providers/US/undo-cutover?confirm=true')
     expect(res.status, await res.clone().text()).toBe(200)
-    expect(await byBioguide(ids.STAYED)).toEqual([{ people_id: STAYED, provider: 'legiscan' }])
-    expect(await byBioguide(ids.JOHNSON)).toEqual([{ people_id: JOHNSON, provider: 'legiscan' }])
     expect(await byBioguide(ids.GONE)).toEqual([{ people_id: GONE, provider: 'legiscan' }])
+    expect(await byBioguide(ids.JOHNSON)).toEqual([{ people_id: JOHNSON, provider: 'legiscan' }])
   })
 })
