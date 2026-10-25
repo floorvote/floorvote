@@ -88,6 +88,19 @@ describe('Members role-rename inline edit keyboard access', () => {
     const rename = await screen.findByRole('button', { name: /rename role finance committee/i })
     expect(rename).toBeDisabled()
   })
+
+  // An inline `outline: 'none'` beat the global *:focus-visible ring, and the
+  // borderless input in the chip has no other focus cue. jsdom can't evaluate
+  // :focus-visible, so pin that no inline outline is set.
+  it('leaves the rename input to the global keyboard focus ring', async () => {
+    const user = userEvent.setup()
+    mockApi()
+    render(<MemoryRouter><Members /></MemoryRouter>)
+    await user.click(await screen.findByRole('button', { name: /rename role finance committee/i }))
+    const input = await screen.findByRole('textbox', { name: 'Role name' })
+    expect(input).toHaveFocus()
+    expect(input.style.outline).toBe('')
+  })
 })
 
 // Renaming a role refuses a blank name with the shared quiet gate. The rename

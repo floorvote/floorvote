@@ -885,7 +885,7 @@ export function Members() {
                       if (e.key === 'Escape') cancelRoleRename()
                     }}
                     style={{
-                      fontSize: fontSize.sm, border: 'none', background: 'transparent', outline: 'none',
+                      fontSize: fontSize.sm, border: 'none', background: 'transparent',
                       width: Math.max(60, editingRoleName.length * 8),
                       fontFamily: 'inherit', color: 'inherit', fontWeight: 'inherit',
                     }}

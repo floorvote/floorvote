@@ -13,6 +13,10 @@
 
 .sidebar-brand { --fv-focus-ring: var(--fv-text-on-brand); }
 .mobile-topbar { --fv-focus-ring: var(--fv-text-on-brand); }
+/* The export-format select sits on the Download button's linkBlue fill, where
+   the navy ring is 2.2:1 (1.1:1 in dark mode). Ring it in the fill's own text
+   colour instead. */
+.export-format-select { --fv-focus-ring: var(--fv-text-on-fill); }
 
 /* The split pane's resize handle is an 8px strip: draw its ring inside it. */
 .pane-resize-handle:focus-visible { outline-offset: -2px; }

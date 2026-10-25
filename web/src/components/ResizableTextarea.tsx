@@ -16,7 +16,9 @@ export function ResizableTextarea({ initialHeight = 80, minHeight = 40, style, .
         {...rest}
         style={{
           display: 'block', width: '100%', height,
-          border: 'none', outline: 'none',
+          // The wrapper's overflow:hidden would clip the global focus ring
+          // drawn outside the textarea, so draw it inside.
+          border: 'none', outlineOffset: -2,
           padding: 10, resize: 'none',
           overflow: 'auto', boxSizing: 'border-box',
           fontFamily: 'inherit', fontSize: fontSize.sm, background: color.white,
