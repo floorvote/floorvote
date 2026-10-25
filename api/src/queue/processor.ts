@@ -11,18 +11,19 @@ import { recordClaimSourcesCutOff } from '../lib/claimSourceCounts'
 import { hearingUid } from '../lib/hearingUid'
 import { matchesKeywords, billMatchText } from '../lib/keywords'
 import { bills, associationConfig, feedEvents, billTexts, calendarEvents } from '../db/schema'
-import { syncBillSubjects } from '../lib/billSubjects'
-import { syncBillCommittees, type CentralCommittee } from '../lib/billCommittees'
+import { billSubjectStatements, syncBillSubjects } from '../lib/billSubjects'
+import { billCommitteeStatements, syncBillCommittees, type CentralCommittee } from '../lib/billCommittees'
 import { syncIdenticalCompanions } from '../lib/companionGroups'
 import { pullCompanions } from '../lib/companionAnalysis'
 import { nowDb } from '../lib/dbTime'
-import { addToNewMatchesRow } from '../lib/newMatch'
+import { getNewMatchMinRelevance, newMatchesRowStatement } from '../lib/newMatch'
 import { noteLegislativeEvent } from '../lib/noPriorityRow'
 import { LEGACY_STATUS_ORDER, LEGISCAN_CODE_WORDS } from '../../../shared/legacyStatusOrder'
 import { httpUrl } from '../../../shared/httpUrl'
 import { handleForms, legacyHandle } from '../../../shared/billHandle'
 import { resolveStoredHandle } from '../lib/storedHandle'
 import type { AppDb, Env, TenantQueueMessage } from '../types'
+import type { BatchItem } from 'drizzle-orm/batch'
 
 class AiShedError extends Error {
   constructor(
@@ -717,7 +718,8 @@ async function applyCentralBill(
       // A response cut off inside the claim sources was retried without them
       // (lib/llm.ts), which leaves a null list that looks like never asked. Count
       // it so operators can see it (#573). Extra to the analysis, so a failure
-      // to count never fails it.
+      // to count never fails it. A redelivery after a failed commit (#906) runs
+      // the model again and counts again, which is accepted.
       if (aiResult.claimSourcesRetried) {
         try {
           await recordClaimSourcesCutOff(db)
@@ -860,42 +862,32 @@ async function applyCentralBill(
     ...(queueChanges.length > 0 ? { updatedAt: now } : {}),
   }
 
-  const { id: billInternalId, isNew } = await upsertBill(db, msg.billId, upsertData)
-  await syncBillSubjects(db, billInternalId, centralBill.state, centralBill.subjects ?? [])
-  await syncBillCommittees(db, billInternalId, centralBill.state, centralBill.committee, centralBill.referrals)
-
-  await syncBillTexts(db, billInternalId, centralBill.texts, fetchedAt, now)
+  // The bill version is one commit (#906): the bill row, stamped with central's version, its subjects,
+  // committees, and texts, and its feed events go in one batch, which D1 runs as one transaction. The stamp is
+  // what the early skip above reads, so it lands only with everything else: a delivery that fails anywhere
+  // before the commit leaves the bill as it was, and its redelivery decides everything again from the same row,
+  // running the model again if it ran (its result went down with the batch). Apart, a write that failed after
+  // the bill's upsert left the rest of the version missing, and the redelivery was skipped as unchanged.
+  //
+  // Nothing before the batch writes (bar a cut-off count, above), and what runs after it (the calendar here,
+  // and the companion and title-key syncs in processCentralNotification) runs on the skip path too, so a
+  // redelivery after the commit still does it.
+  const isNew = !existing
+  const { id: billInternalId, statement: billStatement } = await billWrite(db, msg.billId, upsertData, existing?.id)
 
   // Feed events: only for tracked bills (keyword or manual) and members of a companion group (a companion pulled
   // in through its group has no match type, and its actions belong in the group's card, #381) with AI data and
   // detected changes from central.
   // F5+B5: switched gate from `!existing.isStub` to `existing.matchType !== null` (canonical field).
-  if (!isNew && existing?.aiProcessedAt && (existing.matchType !== null || existing.groupKey !== null) && queueChanges.length > 0) {
-    // With the day's no-priority updates row, which stands for this update while the bill has no
-    // priority: in one batch at one time, so the two share a day and land or fail together. The
-    // time is read now, not at the message's start (`now`, before the AI call): a digest or a
-    // seen mark between the two would otherwise sit after an update dated before it, and miss it.
-    const writtenAt = nowDb()
-    await db.batch([
-      db.insert(feedEvents).values({
-        id:        crypto.randomUUID(),
-        type:      'bill_updated',
-        billId:    billInternalId,
-        userId:    'system',
-        metadata:  JSON.stringify({ changes: queueChanges }),
-        createdAt: writtenAt,
-      }),
-      noteLegislativeEvent(db, billInternalId, writtenAt),
-    ])
-  }
+  const writeUpdate = !isNew && !!existing?.aiProcessedAt && (existing.matchType !== null || existing.groupKey !== null) && queueChanges.length > 0
 
   // New keyword-match feed event: passive, system actor, written once per bill. On an
   // unprioritized bill it shows nowhere on the feed: a routine match is covered by the
-  // day's new-matches row (below), and a bulk match writes no row, so its event waits
+  // day's new-matches row, and a bulk match writes no row, so its event waits
   // unseen. Once someone prioritizes the bill, its card (and the nav dot) takes the
   // event, since the feed admits passive events on prioritized bills (see feed.ts /
   // PASSIVE_EVENT_TYPES).
-  // The write-once checks (here and at `priorMatchEvent`) read it too.
+  // The write-once checks (here, at `priorMatchEvent`, and in the insert itself) read it too.
   //
   // Write-once is enforced against the feed_events table itself, not against
   // `new_match_at`. That column is a *worklist* flag and things legitimately clear it
@@ -906,24 +898,49 @@ async function applyCentralBill(
   // goes true a second time and a duplicate
   // "New bill matching your keywords" event surfaces, timestamped now, on a bill that
   // by then has a priority — so it lands in the default feed and lights the nav dot.
-  if (isFirstKeywordMatch) {
-    const alreadyMatched = await db.select({ id: feedEvents.id })
-      .from(feedEvents)
-      .where(and(eq(feedEvents.billId, billInternalId), eq(feedEvents.type, 'bill_matched')))
-      .get()
-    if (!alreadyMatched) {
-      await db.insert(feedEvents).values({
-        id:       crypto.randomUUID(),
-        type:     'bill_matched',
-        billId:   billInternalId,
-        userId:   'system',
-        metadata: JSON.stringify(matchProvenance ? { matchProvenance } : {}),
-      })
+  const recordMatch = isFirstKeywordMatch && !(existing && await db.select({ id: feedEvents.id })
+    .from(feedEvents)
+    .where(and(eq(feedEvents.billId, existing.id), eq(feedEvents.type, 'bill_matched')))
+    .get())
+
+  // With the day's no-priority updates row, which stands for this update while the bill has no priority: at one
+  // time, so the two share a day. The time is read now, not at the message's start (`now`, before the AI call):
+  // a digest or a seen mark between the two would otherwise sit after an update dated before it, and miss it.
+  const writtenAt = nowDb()
+  const statements: BatchItem<'sqlite'>[] = [
+    // First, so the rows below have their bill, and the row checks below read it as written.
+    billStatement,
+    ...billSubjectStatements(db, billInternalId, centralBill.state, centralBill.subjects ?? []),
+    ...billCommitteeStatements(db, billInternalId, centralBill.state, centralBill.committee, centralBill.referrals),
+    ...billTextStatements(db, billInternalId, centralBill.texts, fetchedAt, now),
+  ]
+  if (writeUpdate) {
+    statements.push(
+      db.insert(feedEvents).values({
+        id:        crypto.randomUUID(),
+        type:      'bill_updated',
+        billId:    billInternalId,
+        userId:    'system',
+        metadata:  JSON.stringify({ changes: queueChanges }),
+        createdAt: writtenAt,
+      }),
+      noteLegislativeEvent(db, billInternalId, writtenAt),
+    )
+  }
+  if (recordMatch) {
+    statements.push(
+      // Columns in feed_events' order: id, type, bill_id, user_id, metadata, suppressed, created_at. The NOT
+      // EXISTS keeps it once per bill when two deliveries of the bill commit at the same time.
+      db.insert(feedEvents).select(sql`
+        SELECT ${crypto.randomUUID()}, 'bill_matched', ${billInternalId}, 'system', ${JSON.stringify(matchProvenance ? { matchProvenance } : {})}, 0, datetime('now')
+         WHERE NOT EXISTS (SELECT 1 FROM feed_events WHERE bill_id = ${billInternalId} AND type = 'bill_matched')
+      `),
       // The feed's one row for the day's routine new matches. Judged by the same
       // definition as the digest and the triage list, on the match just recorded.
-      await addToNewMatchesRow(db, billInternalId)
-    }
+      newMatchesRowStatement(db, billInternalId, await getNewMatchMinRelevance(db)),
+    )
   }
+  await db.batch(statements as [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]])
 
   // Mirror hearings for tracked bills and group members (priority filtering happens at read time, by the group's priority).
   if (msg.calendar && (derivedMatchType !== null || existing?.priority != null || existing?.groupKey != null)) {
@@ -1053,12 +1070,22 @@ function resolveSessionLabel(sessionId: string | null | undefined): string {
  * lists would only fail to open.
  */
 async function syncBillTexts(db: AppDb, billId: string, texts: CentralBill['texts'], fetchedAt: string, now: string): Promise<void> {
-  for (const t of texts) {
+  await db.batch(billTextStatements(db, billId, texts, fetchedAt, now))
+}
+
+/**
+ * syncBillTexts' statements, for a batch: the delete, then an upsert for each
+ * text. The two touch different documents (the delete only those central no
+ * longer lists), so their order doesn't matter. Each carries the text's links
+ * and hash, never its content, which central keeps in R2.
+ */
+function billTextStatements(db: AppDb, billId: string, texts: CentralBill['texts'], fetchedAt: string, now: string) {
+  const upserts = texts.map(t => {
     const link = t.links[0] ?? null
     const altLink = t.links[1] ?? null
     // '' when central sent none: an older central, or a document it has no hash for.
     const textHash = typeof t.textHash === 'string' ? t.textHash : ''
-    await db.insert(billTexts).values({
+    return db.insert(billTexts).values({
       id: crypto.randomUUID(),
       billId,
       docId: t.docId,
@@ -1075,12 +1102,12 @@ async function syncBillTexts(db: AppDb, billId: string, texts: CentralBill['text
       // An empty hash never replaces a known one: it means central sent none, not that the text changed.
       set: { type: t.note, date: t.date, mime: link?.mediaType ?? 'text/html', textHash: sql`CASE WHEN ${textHash} = '' THEN ${billTexts.textHash} ELSE ${textHash} END`, stateLink: link?.url ?? null, altStateLink: altLink?.url ?? null, updatedAt: now },
     })
-  }
-  await db.delete(billTexts).where(and(
+  })
+  return [db.delete(billTexts).where(and(
     eq(billTexts.billId, billId),
     sql`${billTexts.docId} NOT IN (SELECT value FROM json_each(${JSON.stringify(texts.map(t => t.docId))}))`,
     lt(billTexts.updatedAt, fetchedAt),
-  ))
+  )), ...upserts] as const
 }
 
 /**
@@ -1106,20 +1133,51 @@ async function upsertBill(
   externalId: string,
   data: Record<string, unknown>,
 ): Promise<{ id: string; isNew: boolean }> {
-  // Resolve the stored spelling again just before writing: release 2's migration can rename the
-  // row after the delivery began, and the write's conflict target is the spelling, so a stale one
-  // would insert a second row for the bill (#305).
-  const stored = await resolveStoredHandle(db, externalId)
-  if (stored !== externalId) {
-    externalId = stored
-    data = { ...data, externalId: stored }
-  }
+  data = await storedSpelling(db, externalId, data)
   const id = crypto.randomUUID()
+  const returned = await billUpsert(db, id, data, nowDb()).returning({ id: bills.id }).get()
+  return { id: returned.id, isNew: returned.id === id }
+}
+
+/**
+ * The full path's write of the bill, as a statement for its commit batch (#906), and the id the bill's other
+ * rows in that batch go under. A bill the delivery found (`existingId`) is upserted under its id. One it didn't
+ * find is inserted, never upserted: if another delivery created it meanwhile, the insert fails on the handle and
+ * takes the batch with it, so no row is written under an id no bill has, and the redelivery finds the bill.
+ */
+async function billWrite(
+  db: AppDb,
+  externalId: string,
+  data: Record<string, unknown>,
+  existingId: string | undefined,
+): Promise<{ id: string; statement: BatchItem<'sqlite'> }> {
+  data = await storedSpelling(db, externalId, data)
   const now = nowDb()
+  if (existingId !== undefined) return { id: existingId, statement: billUpsert(db, existingId, data, now) }
+  const id = crypto.randomUUID()
+  return { id, statement: db.insert(bills).values({ id, ...data as any, createdAt: now, updatedAt: now }) }
+}
+
+/**
+ * The bill's data under its handle as stored, resolved again just before writing: release 2's migration can
+ * rename the row after the delivery began, and the write's conflict target is the spelling, so a stale one
+ * would insert a second row for the bill (#305).
+ */
+async function storedSpelling(
+  db: AppDb,
+  externalId: string,
+  data: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const stored = await resolveStoredHandle(db, externalId)
+  return stored === externalId ? data : { ...data, externalId: stored }
+}
+
+/** Insert the bill under `id`, or update the row its handle names. */
+function billUpsert(db: AppDb, id: string, data: Record<string, unknown>, now: string) {
   // Exclude externalId from the update set (it's the conflict target) and handle matchType separately
   // to preserve matchType='manual' for manually-added bills.
   const { externalId: _ext, matchType: _mt, ...updateFields } = data as any
-  const returned = await db.insert(bills)
+  return db.insert(bills)
     .values({ id, ...data as any, createdAt: now, updatedAt: now })
     .onConflictDoUpdate({
       target: bills.externalId,
@@ -1132,7 +1190,4 @@ async function upsertBill(
         updatedAt: (updateFields as any).updatedAt ?? sql`updated_at`,
       },
     })
-    .returning({ id: bills.id })
-    .get()
-  return { id: returned.id, isNew: returned.id === id }
 }
