@@ -144,10 +144,11 @@ Central's daily engagement pull now runs on its own cron, `15 6 * * *`, instead 
 
 ## Sync alerts: every four hours, LegiScan states, and a resolved email
 
-Central's sync failure emails change in three ways.
+Central's sync failure emails change in four ways.
 
 - **Fewer repeats, on a clock.** A session that keeps failing emails once its failed passes have lasted four hours (the time from the first failed pass to the current one), then at most once every four hours while it goes on, not on every pass from the 4th on. A session that passes hourly emails at about 4, 8, and 12 hours of an outage instead of every hour. One that passes daily emails on its 2nd failed pass, about a day in, and on each later one.
 - **LegiScan states alert now.** A LegiScan pass that failed used to be logged only to the Worker's console. It now writes a failed row to the sync log, shows as failed on the States and Sync pages, and alerts by the same rule, with every state on an alerting pass in one `cron failed: ls-sync` email. On LegiScan's default hours, the first alert comes six to ten hours into an outage. A session with no bills, or a light check that finds no changes, never counts as a failure.
 - **A resolved email.** A session that alerted gets one `resolved: <job>` email on the pass that finishes, naming the sessions that recovered, how long they failed, and since when. If other sessions in the same job are still failing, the email lists them under "Still failing" and never says the whole job is syncing again. A failure that clears before it alerted sends nothing.
+- **GovInfo's meeting cache alerts when it can't warm.** While LegiScan still owns `US` and `CONGRESS_API_KEY` is set, a warm of GovInfo's committee-meeting cache that keeps failing (a revoked key, say, or one missing a scope) emails `cron failed: govinfo-body-events` by the same rule, naming the Congress and the latest error, and `resolved: govinfo-body-events` once a warm works again. Without a key, nothing warms and nothing alerts.
 
-**Nothing to configure.** The emails go to `ALERT_EMAILS`, as every job alert does, and there's no migration. The cadence is measured in hours, so it is the same however often a session passes.
+**Nothing to configure.** The emails go to `ALERT_EMAILS`, as every job alert does, and there's no migration. A failing warm's streak is kept in the `settings` table, one `warm-streak:` row a state. The cadence is measured in hours, so it is the same however often a session passes.

@@ -131,7 +131,12 @@ export const govinfo: Provider<'CONGRESS_API_KEY'> = {
     const key = ctx.env.CONGRESS_API_KEY
     if (!key) return null
     const { congress } = congressOn(ctx.today)
-    await readMeetings(ctx, key, congress)
+    try {
+      await readMeetings(ctx, key, congress)
+    } catch (err) {
+      // Named for the Congress, so the operators' alert says which cache isn't warming (#979).
+      throw new Error(`the ${congressName(congress)}'s committee meetings: ${err instanceof Error ? err.message : String(err)}`, { cause: err })
+    }
     return { warm: await isWarm(ctx, congress) }
   },
 

@@ -5,6 +5,7 @@ import { providerContext } from '../lib/providerContext'
 import { providerConfigured } from '../lib/providerRouting'
 import { loadStateOwners, statesOwnedBy } from '../lib/stateProviders'
 import { syncBodyEvents, type BodyEventSyncReport } from '../lib/bodyEvents'
+import { forgetWarmStreaks, warmEnded, warmFailed, type SyncJob } from './passAlerts'
 import type { Provider } from '../providers'
 import type { Env, Db } from '../types'
 
@@ -31,7 +32,10 @@ export interface BodyEventJobReport {
  * A provider with `warmBodyEvents` also warms its cache for each state it
  * serves but doesn't own yet that an instance covers (#913), writing nothing
  * a calendar shows. A failure there is logged and reported in `warmed`, never
- * thrown, so it neither stops the owned states' sync nor alerts.
+ * thrown, so it never stops the owned states' sync. Warming that keeps
+ * failing emails the operators on the sync jobs' cadence, and once more when
+ * it works again (#979, passAlerts.ts). A warm with nothing to do (no key)
+ * never alerts.
  */
 export async function runBodyEventJob(provider: Provider, env: Env, db: Db): Promise<BodyEventJobReport> {
   const none: BodyEventJobReport = { synced: [], warmed: [] }
@@ -45,6 +49,8 @@ export async function runBodyEventJob(provider: Provider, env: Env, db: Db): Pro
   const isCovered = await coveredBy(db)
   const covered = owned.filter(isCovered)
   const warming = unowned.filter(isCovered)
+  const job = bodyEventJob(provider)
+  if (provider.warmBodyEvents) await forgetWarmStreaks(db, job.job, warming)
   if (covered.length === 0 && warming.length === 0) return none
 
   const ctx = providerContext(provider, env, db)
@@ -57,6 +63,7 @@ export async function runBodyEventJob(provider: Provider, env: Env, db: Db): Pro
   for (const state of warming) {
     try {
       const result = await provider.warmBodyEvents!(state, ctx)
+      await warmEnded(env, db, job, state, !!result)
       // Null: nothing to do (no key, say), so nothing to log or report.
       if (!result) continue
       console.log(`[body-events] ${provider.id} ${state}: warmed the cache before owning the state; ${result.warm ? 'it is ready' : 'more to read'}`)
@@ -65,9 +72,19 @@ export async function runBodyEventJob(provider: Provider, env: Env, db: Db): Pro
       const error = err instanceof Error ? err.message : String(err)
       console.error(`[body-events] ${provider.id} ${state}: warming the cache failed, and the next pass tries again: ${error}`)
       out.warmed.push({ state, ok: false, error })
+      await warmFailed(env, db, job, state, err instanceof Error ? err : new Error(error))
     }
   }
   return out
+}
+
+/** The name the hourly cron runs a provider's body-event job under (index.ts), which its alert emails carry. */
+export function bodyEventJobName(provider: Provider): string {
+  return `${provider.id}-body-events`
+}
+
+function bodyEventJob(provider: Provider): SyncJob {
+  return { job: bodyEventJobName(provider), providerId: provider.id, name: provider.displayName }
 }
 
 /** The owned states' reports from `runBodyEventJob`, for a caller that needs only those. */

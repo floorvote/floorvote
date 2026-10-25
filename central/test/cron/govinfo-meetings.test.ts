@@ -1910,7 +1910,7 @@ describe('before GovInfo owns US (#913)', () => {
     expect(await isWarm()).toBe(false)
   })
 
-  it('logs a failing Congress.gov API and sends no job-failure alert', async () => {
+  it('logs a failing Congress.gov API and sends no alert on its first failed pass', async () => {
     await seedLegiscanUs()
     feed.override.list = () => json({ error: 'down' }, 500)
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -1924,6 +1924,117 @@ describe('before GovInfo owns US (#913)', () => {
     expect(mail.sent).toEqual([])
     expect(consoleText([err])).toMatch(/\[body-events\] govinfo US/)
     expect(await isWarm()).toBe(false)
+  })
+
+  describe('a warm that keeps failing (#979)', () => {
+    const HOUR = 3_600_000
+    const START = Date.parse('2026-10-17T13:00:00Z')
+    /** The body-event job's emails: its alerts and its recovery. */
+    const jobMail = () => mail.sent.map(m => ({ subject: String(m.subject), text: String(m.text) })).filter(m => m.subject.includes('govinfo-body-events'))
+    const alerts = () => jobMail().filter(m => m.subject.includes('cron failed'))
+    const recoveries = () => jobMail().filter(m => m.subject.includes('resolved'))
+    const revoked = () => { feed.override.list = () => json({ error: { code: 'API_KEY_INVALID', message: 'An invalid api_key was supplied.' } }, 403) }
+    /** The hourly cron at this many hours after the first, with Congress.gov answering as it is set to. */
+    async function tickAt(hours: number, run: Run = makeRun()) {
+      vi.setSystemTime(START + hours * HOUR + 30_000)
+      await tick(run)
+    }
+    const keylessRun = () => {
+      const run = makeRun()
+      delete (run.env as any).CONGRESS_API_KEY
+      return run
+    }
+
+    beforeEach(async () => {
+      await seedLegiscanUs()
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+    })
+
+    it('sends one operator alert, naming the provider and the Congress, once warming has failed for the alert threshold', async () => {
+      revoked()
+      for (let h = 0; h < 4; h++) await tickAt(h)
+      expect(alerts()).toEqual([])
+      await tickAt(4)
+      expect(alerts()).toHaveLength(1)
+      const [alert] = alerts()
+      expect(alert.text).toContain('GovInfo')
+      expect(alert.text).toContain('119th Congress')
+      expect(alert.text).toMatch(/failed for 4 hours/)
+      expect(alert.text).toMatch(/HTTP 403/)
+      expect(alert.text).not.toContain(CONGRESS_KEY)
+      // The pass after the alert sends nothing new.
+      await tickAt(5)
+      expect(alerts()).toHaveLength(1)
+    })
+
+    it('repeats the alert no more often than the sync alerts\' cadence while warming keeps failing', async () => {
+      revoked()
+      const { ALERT_INTERVAL_HOURS } = await import('../../src/cron/passAlerts')
+      for (let h = 0; h <= 3 * ALERT_INTERVAL_HOURS; h++) {
+        await tickAt(h)
+        // An operator's sync between the hourly passes adds no alert of its own.
+        if (h === ALERT_INTERVAL_HOURS + 1) {
+          vi.setSystemTime(START + h * HOUR + 20 * 60_000)
+          clearMeetingCaches()
+          expect((await seam.central('POST', '/admin/providers/govinfo/sync', makeRun())).status).toBe(200)
+        }
+      }
+      // At 4, 8, and 12 hours.
+      expect(alerts()).toHaveLength(3)
+      expect(alerts().map(a => a.text.match(/failed for (\d+) hours/)?.[1])).toEqual(['4', '8', '12'])
+    })
+
+    it('sends one recovery email when a warm pass succeeds after an alert, and nothing more after', async () => {
+      revoked()
+      for (let h = 0; h <= 4; h++) await tickAt(h)
+      expect(alerts()).toHaveLength(1)
+      feed.override = {}
+      await tickAt(5)
+      expect(recoveries()).toHaveLength(1)
+      expect(recoveries()[0].text).toMatch(/GovInfo Bill Status US: warmed its calendar cache after 5 failed passes over 4 hours/)
+      await tickAt(6)
+      revoked()
+      // A new streak starts over: no alert for its first hours, and no second recovery.
+      for (let h = 7; h <= 9; h++) await tickAt(h)
+      expect(recoveries()).toHaveLength(1)
+      expect(alerts()).toHaveLength(1)
+    })
+
+    it('sends no recovery email for a warm that succeeds before its failures alerted', async () => {
+      revoked()
+      for (let h = 0; h < 3; h++) await tickAt(h)
+      feed.override = {}
+      await tickAt(3)
+      expect(jobMail()).toEqual([])
+    })
+
+    it('never alerts for a provider with no key configured', async () => {
+      for (let h = 0; h <= 12; h++) await tickAt(h, keylessRun())
+      expect(jobMail()).toEqual([])
+      expect(congressCalls()).toEqual([])
+    })
+
+    it('starts the count over once the key is taken away, so failures on either side of that never add up to an alert', async () => {
+      revoked()
+      for (let h = 0; h < 3; h++) await tickAt(h)
+      for (let h = 3; h < 6; h++) await tickAt(h, keylessRun())
+      for (let h = 6; h < 9; h++) await tickAt(h)
+      expect(jobMail()).toEqual([])
+    })
+
+    it('forgets the streak of a state it stops warming, so warming that resumes later doesn\'t alert on its first failure', async () => {
+      revoked()
+      for (let h = 0; h < 3; h++) await tickAt(h)
+      // No active instance covers US for an hour, so nothing warms it.
+      await db().update(schema.tenants).set({ active: false })
+      await tickAt(3)
+      await db().update(schema.tenants).set({ active: true })
+      for (let h = 4; h < 7; h++) await tickAt(h)
+      expect(alerts()).toEqual([])
+      await tickAt(8)
+      expect(alerts()).toHaveLength(1)
+    })
   })
 
   it('fills the cutover dry run\'s calendar preview once warm', async () => {

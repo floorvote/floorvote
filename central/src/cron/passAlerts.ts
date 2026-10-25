@@ -1,6 +1,7 @@
-import { and, asc, eq, gte, isNull, sql } from 'drizzle-orm'
-import { sessions, sessionSyncLog } from '../db/schema'
-import { escHtml, sendOpsAlert } from '../lib/jobAlert'
+import { and, asc, eq, gte, isNull, like, notInArray, sql } from 'drizzle-orm'
+import { sessions, sessionSyncLog, settings } from '../db/schema'
+import { escHtml, reportJobFailure, sendOpsAlert } from '../lib/jobAlert'
+import { getSetting, setSetting } from '../lib/settings'
 import { dbTimeAgo, nowDb, toDb } from '../lib/dbTime'
 import { PRODUCT_NAME } from '../../../shared/brand'
 import type { Env, Db } from '../types'
@@ -9,6 +10,8 @@ import type { Env, Db } from '../types'
  * When the hourly cron alerts on a session that keeps failing, for the LegiScan
  * sync (sync.ts) and every snapshot provider's (sync-snapshots.ts) alike. Every
  * failed pass is logged in session_sync_log, and the States page shows each one.
+ * A provider's calendar cache that keeps failing to warm (body-events.ts)
+ * alerts on the same cadence, from a streak kept in `settings`.
  */
 
 /**
@@ -61,12 +64,21 @@ const dbMs = (t: string) => Date.parse(`${t.replace(' ', 'T')}Z`)
  * needs, since the same rows always replay to the same alerts.
  */
 function alertingPasses(times: number[]): boolean[] {
-  let due = times.length ? times[0] + ALERT_INTERVAL_HOURS * HOUR_MS : 0
+  let due = times.length ? firstDue(times[0]) : 0
   return times.map(t => {
-    if (t + SLACK_MS < due) return false
-    due = t + ALERT_INTERVAL_HOURS * HOUR_MS
-    return true
+    const next = alertStep(due, t)
+    due = next.due
+    return next.alerts
   })
+}
+
+/** When a streak that began at `start` first alerts. */
+const firstDue = (start: number) => start + ALERT_INTERVAL_HOURS * HOUR_MS
+
+/** A failed pass at `t` in a streak whose next alert is `due`: whether it alerts, and when the one after may. */
+function alertStep(due: number, t: number): { alerts: boolean; due: number } {
+  if (t + SLACK_MS < due) return { alerts: false, due }
+  return { alerts: true, due: t + ALERT_INTERVAL_HOURS * HOUR_MS }
 }
 
 /**
@@ -197,4 +209,105 @@ export async function sendRecoveries(env: Env, db: Db, { job, providerId, name }
     </div>
   `
   await sendOpsAlert(env, { subject: `[${PRODUCT_NAME}] resolved: ${job}`, text, html })
+}
+
+/**
+ * A state's calendar cache that keeps failing to warm (Provider.warmBodyEvents,
+ * cron/body-events.ts), as it stands between runs: when the streak's first
+ * and latest failed passes ran, how many have failed, when the next may alert,
+ * and whether one has. Kept in `settings`, one row a state, since a warm is no session's
+ * pass and session_sync_log can't hold it. A finished warm, or one with nothing
+ * to do (no key), removes the row.
+ */
+type WarmStreak = { since: number; last: number; failed: number; due: number; alerted: boolean }
+
+const WARM_STREAK = 'warm-streak:'
+const warmStreakKey = (providerId: string, state: string) => `${WARM_STREAK}${providerId}:${state}`
+
+async function readWarmStreak(db: Db, key: string): Promise<WarmStreak | null> {
+  const raw = await getSetting(db, key, '')
+  if (!raw) return null
+  try {
+    const s = JSON.parse(raw) as WarmStreak
+    return [s.since, s.last, s.failed, s.due].every(Number.isFinite) ? s : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * A warm pass that threw: count it in the state's streak, and email the
+ * operators, as a sync job's alert does (subject `cron failed: <job>`), once
+ * the streak has lasted ALERT_INTERVAL_HOURS and then at most every that many
+ * hours. The job still finishes its other states. Best-effort: a streak that
+ * can't be read or written is logged, and the pass alerts at once, as a failed
+ * sync pass that couldn't be logged does.
+ */
+export async function warmFailed(env: Env, db: Db, { job, name }: SyncJob, state: string, error: Error): Promise<void> {
+  const now = Date.now()
+  let streak: WarmStreak
+  let alerts: boolean
+  try {
+    const key = warmStreakKey(job, state)
+    const before = await readWarmStreak(db, key)
+    const step = alertStep(before?.due ?? firstDue(now), now)
+    alerts = step.alerts
+    streak = { since: before?.since ?? now, last: now, failed: (before?.failed ?? 0) + 1, due: step.due, alerted: (before?.alerted ?? false) || alerts }
+    await setSetting(db, key, JSON.stringify(streak))
+  } catch (err) {
+    console.error(`[${job}] ${state}: couldn't count a failed warm, so it alerts now:`, err)
+    await reportJobFailure(env, { job, error })
+    return
+  }
+  if (!alerts) {
+    console.warn(`[${job}] ${state}: ${streak.failed} warms in a row failed; alerting after ${ALERT_INTERVAL_HOURS} hours of failures`)
+    return
+  }
+  const alert = new Error(`${name} ${state}: warming the calendar cache has failed for ${hoursOf(now - streak.since)} hours (${streak.failed} passes in a row failed). Latest: ${errorMessage(error)}`, { cause: error })
+  alert.stack = error.stack
+  await reportJobFailure(env, { job, error: alert })
+}
+
+/**
+ * A warm pass that finished, or had nothing to do (`ok: false`, no key, say):
+ * end the state's streak. A finished pass after a streak that alerted emails
+ * the operators once (subject `resolved: <job>`), as a sync job's recovery
+ * does. Best-effort.
+ */
+export async function warmEnded(env: Env, db: Db, { job, name }: SyncJob, state: string, ok: boolean): Promise<void> {
+  try {
+    const key = warmStreakKey(job, state)
+    const streak = await readWarmStreak(db, key)
+    await db.delete(settings).where(eq(settings.key, key))
+    if (!ok || !streak?.alerted) return
+    const line = `${name} ${state}: warmed its calendar cache after ${streak.failed} failed passes over ${hoursOf(streak.last - streak.since)} hours, failing since ${toDb(new Date(streak.since)).slice(0, 16)} UTC`
+    const intro = `${name} calendar (${job}): warming the cache works again.`
+    const text = `${intro}\n\n• ${line}\n`
+    const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 560px; margin: 0 auto; color: #0f172a;">
+      <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6; color: #334155;">${escHtml(intro)}</p>
+      <ul style="margin: 0 0 16px; padding-left: 20px; font-size: 14px; line-height: 1.7; color: #0f172a;"><li>${escHtml(line)}</li></ul>
+    </div>
+  `
+    await sendOpsAlert(env, { subject: `[${PRODUCT_NAME}] resolved: ${job}`, text, html })
+  } catch (err) {
+    console.error(`[${job}] ${state}: couldn't end the warm's failed streak:`, err)
+  }
+}
+
+/**
+ * Drop the streaks of a job's states it no longer warms (the provider owns the
+ * state now, or no instance covers it), so a streak never resumes long after
+ * it stopped and alerts on its first failure. Best-effort.
+ */
+export async function forgetWarmStreaks(db: Db, job: string, warming: string[]): Promise<void> {
+  try {
+    const keep = warming.map(state => warmStreakKey(job, state))
+    await db.delete(settings).where(and(
+      like(settings.key, `${WARM_STREAK}${job}:%`),
+      keep.length > 0 ? notInArray(settings.key, keep) : undefined,
+    ))
+  } catch (err) {
+    console.error(`[${job}] couldn't drop the warm streaks of states it no longer warms:`, err)
+  }
 }

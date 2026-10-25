@@ -5,7 +5,7 @@ import * as schema from './db/schema'
 import { LEGISCAN_SYNC_JOB, runSync } from './cron/sync'
 import { assignSessionSlugs } from './lib/sessionSlugs'
 import { isSnapshotProvider, runHourlySnapshotSync, snapshotJobName } from './cron/sync-snapshots'
-import { runBodyEventJob } from './cron/body-events'
+import { bodyEventJobName, runBodyEventJob } from './cron/body-events'
 import { PROVIDERS } from './providers'
 import { checkVoteDatasets, VOTE_DATASET_CHECK_HOUR_ET } from './cron/vote-datasets'
 import { getCurrentEtHour } from './lib/sync-schedule'
@@ -119,7 +119,7 @@ export default {
     })())
     // The legislature's own calendar, for providers that publish one, as its own job.
     for (const provider of PROVIDERS.filter(p => p.listBodyEvents)) {
-      ctx.waitUntil(runJob(env, `${provider.id}-body-events`, () => runBodyEventJob(provider, env, db)))
+      ctx.waitUntil(runJob(env, bodyEventJobName(provider), () => runBodyEventJob(provider, env, db)))
     }
     if (getCurrentEtHour() === VOTE_DATASET_CHECK_HOUR_ET) {
       ctx.waitUntil(runJob(env, 'vote-datasets', () => checkVoteDatasets(env, db)))
