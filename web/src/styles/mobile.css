@@ -25,6 +25,9 @@
    outline: none inline; :has(:focus-visible) keeps this keyboard-only. */
 .role-chip:has(> input:focus-visible) { outline: 2px solid var(--fv-focus-ring); outline-offset: 2px; }
 .resizable-textarea:has(> textarea:focus-visible) { outline: 2px solid var(--fv-focus-ring); outline-offset: 2px; }
+/* The comment editor's ProseMirror surface is not a direct child of its wrapper (EditorContent
+   adds a div between them), so match it by class. */
+.comment-editor-wrapper:has(.tiptap.ProseMirror:focus-visible) { outline: 2px solid var(--fv-focus-ring); outline-offset: 2px; }
 /* The Download button's format select: the button's linkBlue fill makes the
    navy ring 2.2:1 (1.1:1 in dark mode), and a light ring outside the button
    would vanish on the page, so draw the ring inside the button in the fill's own
