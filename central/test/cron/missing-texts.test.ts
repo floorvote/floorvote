@@ -155,6 +155,7 @@ describe('queueMissingTexts', () => {
     const rows = Object.fromEntries((await db().select().from(schema.billTexts).all()).map(r => [r.docId, r.fetchAttemptedAt]))
     expect(rows[190]).toBe('2026-10-24 12:00:00')
     expect(rows[199]).toBeNull()
+    expect((await run()).messages.map(m => m.billId)).toEqual([19])
   })
 
   it('does not queue a swept bill again when its download never finished', async () => {
@@ -175,6 +176,14 @@ describe('queueMissingTexts', () => {
     await seedBill(10, { texts: [{}, {}] })
     await seedBill(11, { texts: [{ r2Key: 'bills/legiscan-11/texts/110.pdf' }, {}] })
     expect((await run()).messages.map(m => m.billId).sort()).toEqual([10, 11])
+  })
+
+  it('stamps more documents than one D1 statement can bind without queueing the bill twice', async () => {
+    await seedBill(20, { texts: Array.from({ length: 120 }, () => ({})) })
+    expect((await run()).messages.map(m => m.billId)).toEqual([20])
+    const texts = await db().select().from(schema.billTexts).all()
+    expect(texts).toHaveLength(120)
+    expect(texts.every(t => t.fetchAttemptedAt !== null)).toBe(true)
   })
 
   it('queues one bill once when several instances track it', async () => {
