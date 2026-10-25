@@ -1,4 +1,5 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, type SQL } from 'drizzle-orm'
+import { conditionalValues } from './conditionalValues'
 import { billCommittees } from '../db/schema'
 import type { AppDb } from '../types'
 
@@ -19,6 +20,17 @@ export async function syncBillCommittees(
   db: AppDb, billInternalId: string, state: string,
   pending: CentralCommittee | null | undefined, referrals: CentralCommittee[] | undefined,
 ): Promise<void> {
+  await db.batch(billCommitteeStatements(db, billInternalId, state, pending, referrals))
+}
+
+/**
+ * The statements that replace a bill's committee rows: the delete, then the chunked inserts. The full delivery path
+ * puts them in the one batch that also writes the bill and stamps its version (#906).
+ */
+export function billCommitteeStatements(
+  db: AppDb, billInternalId: string, state: string,
+  pending: CentralCommittee | null | undefined, referrals: CentralCommittee[] | undefined, condition?: SQL,
+) {
   const rows = new Map<string, typeof billCommittees.$inferInsert>()
   for (const r of referrals ?? []) {
     if (!r.committeeId || !r.name) continue
@@ -29,6 +41,11 @@ export async function syncBillCommittees(
   }
   const values = [...rows.values()]
   const inserts = []
-  for (let i = 0; i < values.length; i += INSERT_CHUNK) inserts.push(db.insert(billCommittees).values(values.slice(i, i + INSERT_CHUNK)))
-  await db.batch([db.delete(billCommittees).where(eq(billCommittees.billId, billInternalId)), ...inserts])
+  for (let i = 0; i < values.length; i += INSERT_CHUNK) {
+    const rows = values.slice(i, i + INSERT_CHUNK)
+    inserts.push(condition
+      ? db.insert(billCommittees).select(conditionalValues(billCommittees, rows, condition))
+      : db.insert(billCommittees).values(rows))
+  }
+  return [db.delete(billCommittees).where(and(eq(billCommittees.billId, billInternalId), condition)), ...inserts] as const
 }

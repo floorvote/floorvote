@@ -81,6 +81,10 @@ export function CompactPrioritySelect({ billId, current, onChange, isFiltered, m
       <select
         aria-label={ariaLabel ?? (amber ? 'Priority (new match: set a priority or dismiss)' : 'Priority')}
         aria-describedby={empty ? labelId : undefined}
+        // The filtered ring (an outline) comes from mobile.css, keyed on this class and attribute, so it can step aside
+        // for the app's :focus-visible ring. An inline outline would beat that ring and hide keyboard focus.
+        className="fv-chip-select"
+        data-filtered={isFiltered ? '' : undefined}
         value={current ?? CLEAR}
         onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
@@ -115,8 +119,6 @@ export function CompactPrioritySelect({ billId, current, onChange, isFiltered, m
           // The label above stands in for the select's own text while no priority is set. text-fill-color, not color,
           // so the menu's options (which inherit color) and the text-color tokens other code reads stay as they are.
           ...(empty ? { WebkitTextFillColor: 'transparent' } : {}),
-          outline: isFiltered ? `2px solid ${color.accentBlue}` : 'none',
-          outlineOffset: 2,
         }}
       >
         {/* The options carry their own text colour: the select's is transparent while empty, and some browsers (Chrome

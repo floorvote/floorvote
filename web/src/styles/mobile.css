@@ -10,6 +10,11 @@
 *:focus:not(:focus-visible) { outline: none; }
 /* Switches hide their input (0x0), so ring the track that follows it instead. */
 .fv-switch-input:focus-visible + span { outline: 2px solid var(--fv-focus-ring); outline-offset: 2px; }
+/* The priority and position chip selects (CompactPrioritySelect, CompactPositionSelect) ring in accent blue while
+   their value matches the Bills list filter. The ring lives here, not inline, so keyboard focus swaps it for the
+   focus ring above (a focused chip never reads as filtered). A mouse click keeps the blue ring: this rule outranks
+   *:focus:not(:focus-visible). */
+.fv-chip-select[data-filtered]:not(:focus-visible) { outline: 2px solid var(--fv-accent-blue); outline-offset: 2px; }
 
 .sidebar-brand { --fv-focus-ring: var(--fv-text-on-brand); }
 .mobile-topbar { --fv-focus-ring: var(--fv-text-on-brand); }

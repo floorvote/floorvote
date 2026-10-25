@@ -305,10 +305,10 @@ export async function rowPage(db: AppDb, day: string, minRelevance: number, entr
  * The row keeps the time of the day's first update, which orders it on the
  * server. GET /feed sends its newest update's time too, which places it for the viewer.
  */
-export function noteLegislativeEvent(db: AppDb, billId: string, at: string) {
+export function noteLegislativeEvent(db: AppDb, billId: string, at: string, condition?: SQL) {
   // Columns in feed_events' order: id, type, bill_id, user_id, metadata, suppressed, created_at.
   return db.insert(feedEvents).select(sql`
     SELECT ${crypto.randomUUID()}, ${NO_PRIORITY_UPDATES}, NULL, 'system', '{}', 0, ${at}
-     WHERE EXISTS (SELECT 1 FROM bills WHERE id = ${billId} AND match_type IS NOT NULL)
+     WHERE EXISTS (SELECT 1 FROM bills WHERE id = ${billId} AND match_type IS NOT NULL) AND ${condition ?? sql`1`}
   `).onConflictDoNothing()
 }

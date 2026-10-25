@@ -151,9 +151,15 @@ describe('a full delivery never stores an older provider version', () => {
       await getDb(env.DB).update(bills)
         .set({ providerUpdatedAt: B, title: 'Election Administration Act, as passed', tenantSummary: 'Summary of B' })
         .where(eq(bills.externalId, BILL_ID))
+      const billId = (await row())!.id
+      await env.DB.prepare('INSERT INTO bill_subjects (bill_id, subject_name, state) VALUES (?, ?, ?)')
+        .bind(billId, 'New subject', 'RI').run()
+      await env.DB.prepare('INSERT INTO bill_committees (bill_id, committee_id, state, name, is_current) VALUES (?, ?, ?, ?, 1)')
+        .bind(billId, 'new-committee', 'RI', 'New committee').run()
       return { summary: 'Summary of A', tags: ['Elections'], relevanceScore: 3 } as never
     })
-    centralServes(versionA())
+    centralServes(centralBill({ ...versionA(), subjects: ['Old subject'],
+      committee: { committeeId: 'old-committee', name: 'Old committee', chamber: 'H' } }))
     await deliver(changed)
     expect(processBill).toHaveBeenCalledTimes(2)
 
@@ -164,6 +170,10 @@ describe('a full delivery never stores an older provider version', () => {
     expect(stored!.lastAiTextHash).toBe('hash-one')
     // A's texts were never synced, so the first version's stay.
     expect(await textDocs()).toEqual(['doc-1'])
+    expect((await env.DB.prepare('SELECT subject_name FROM bill_subjects').all()).results)
+      .toEqual([{ subject_name: 'New subject' }])
+    expect((await env.DB.prepare('SELECT committee_id FROM bill_committees').all()).results)
+      .toEqual([{ committee_id: 'new-committee' }])
     expect(await events()).toEqual(eventsBefore)
   })
 
@@ -204,5 +214,21 @@ describe('a full delivery never stores an older provider version', () => {
     centralServes(versionA())
     await deliver(changed)
     expect((await row())!.providerUpdatedAt).toBe(A)
+  })
+
+  it('still writes an equal forced version and chunks its subjects and committees within D1 limits', async () => {
+    centralServes(versionB())
+    await deliver(changed)
+    const processBill = await processBillMock()
+    const before = processBill.mock.calls.length
+    centralServes(centralBill({ ...versionB(),
+      subjects: Array.from({ length: 80 }, (_, i) => `Subject ${i}`),
+      referrals: Array.from({ length: 31 }, (_, i) => ({ committeeId: `c${i}`, name: `Committee ${i}`, chamber: 'H' })),
+    }))
+    await deliver({ ...changed, forceMetadata: true, forceAI: true })
+    expect(processBill.mock.calls.length).toBeGreaterThan(before)
+    expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM bill_subjects').first<{ n: number }>())!.n).toBe(80)
+    expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM bill_committees').first<{ n: number }>())!.n).toBe(31)
+    expect((await row())!.providerUpdatedAt).toBe(B)
   })
 })
