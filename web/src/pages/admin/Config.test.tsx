@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, act, within, fireEvent, cleanup } from '@testing-library/react'
 import React from 'react'
 import userEvent from '@testing-library/user-event'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 // Mock heavy dependencies before importing Config
 
@@ -70,6 +72,10 @@ import { apiFetch } from '../../lib/api'
 const mockFetch = vi.mocked(apiFetch)
 
 import { Config } from './Config'
+import { color } from '../../styles/tokens'
+import { contrast, resolveColor } from '../../test/colorTokens'
+
+const mobileCss = readFileSync(resolve(__dirname, '../../styles/mobile.css'), 'utf8')
 import { createUnsavedRegistry, UnsavedTextContext } from '../../lib/unsavedText'
 
 function renderInRegistry(ui: React.ReactElement) {
@@ -334,6 +340,26 @@ describe('Config — data export control accessibility', () => {
     render(<Config />)
     const exportBtn = await screen.findByRole('button', { name: /download all data/i })
     expect(exportBtn).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  // The transparent, underlined format select sits inside the rounded Download
+  // button, so a ring on the select would be a rectangle over a rounded fill.
+  // The select keeps `outline: none` and mobile.css rings the button instead,
+  // inset and in the button's own text colour (the default navy ring is under
+  // 3:1 on the blue fill, and a light ring outside it would vanish on the page).
+  // jsdom can't evaluate :focus-visible, so pin the class and styles.
+  it('rings the Download button, not the bare format select', async () => {
+    render(<Config />)
+    const exportBtn = await screen.findByRole('button', { name: /download all data/i })
+    const select = within(exportBtn).getByRole('combobox')
+    expect(select.style.outline).toBe('none')
+    expect(exportBtn).toHaveClass('export-download-button')
+    expect(exportBtn.style.borderRadius).not.toBe('')
+    expect(mobileCss).toMatch(/\.export-download-button:has\(>\s*select:focus-visible\)\s*\{[^}]*outline:\s*2px solid var\(--fv-text-on-fill\)[^}]*outline-offset:\s*-\d+px/)
+    for (const mode of ['light', 'dark'] as const) {
+      expect(contrast(resolveColor(color.textOnFill, mode), resolveColor(exportBtn.style.background, mode)), mode)
+        .toBeGreaterThanOrEqual(3)
+    }
   })
 })
 

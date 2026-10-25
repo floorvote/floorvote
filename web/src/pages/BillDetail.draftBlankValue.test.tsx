@@ -563,3 +563,25 @@ describe('BillDetail draft editors: Save button is not dimmed', () => {
     expectPrimaryButtonLegible(save, { disabled: false })
   })
 })
+
+// An inline `outline: 'none'` beats the global *:focus-visible ring in
+// mobile.css, and these inputs draw no focus border of their own, so a keyboard
+// user tabbing back into one could not see it. jsdom can't evaluate
+// :focus-visible, so pin that no inline outline is set.
+describe('BillDetail draft editors: keyboard focus ring', () => {
+  it.each([
+    ['title', 'Edit title', 'RI'],
+    ['sponsor', 'Edit sponsor', 'RI'],
+    ['bill number', 'Edit bill number', 'RI'],
+    ['state', 'Edit state', null],
+  ])('%s input sets no inline outline', async (_field, label, tenantState) => {
+    const user = userEvent.setup()
+    mockApi({ tenantState })
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: label }))
+    const input = document.activeElement as HTMLInputElement
+    expect(input.tagName).toBe('INPUT')
+    expect(input.style.outline).toBe('')
+    expect(input.style.outlineOffset).toBe('')
+  })
+})

@@ -11,11 +11,14 @@ export function ResizableTextarea({ initialHeight = 80, minHeight = 40, style, .
   const { height, handlePointerDown } = useVerticalResize(initialHeight, minHeight)
 
   return (
-    <div style={{ border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, overflow: 'hidden' }}>
+    <div className="resizable-textarea" style={{ border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, overflow: 'hidden' }}>
       <textarea
         {...rest}
         style={{
           display: 'block', width: '100%', height,
+          // The wrapper draws the focus ring (see .resizable-textarea in
+          // mobile.css): a ring on the borderless textarea would be a clipped
+          // rectangle inside the wrapper's rounded corners.
           border: 'none', outline: 'none',
           padding: 10, resize: 'none',
           overflow: 'auto', boxSizing: 'border-box',
