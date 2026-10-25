@@ -6,8 +6,9 @@ name: Claude
 # start a run. Runs bill to the subscription behind CLAUDE_CODE_OAUTH_TOKEN
 # (from `claude setup-token`, valid for a year).
 #
-# `self-test` runs only on pull requests that change this file. It checks that
-# the token still works and that Claude can read the repo, and posts one line.
+# The action only runs from a copy of this file identical to the one on main,
+# so changes to it can't be tested on their pull request. Test after merging
+# with an `@claude` comment.
 
 on:
   issue_comment:
@@ -18,8 +19,6 @@ on:
     types: [submitted]
   issues:
     types: [opened, labeled]
-  pull_request:
-    paths: [.github/workflows/claude.yml]
 
 jobs:
   claude:
@@ -51,27 +50,3 @@ jobs:
           additional_permissions: |
             actions: read
           claude_args: --max-turns 60
-
-  self-test:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      pull-requests: write
-      issues: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 1
-      - uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
-        with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          prompt: |
-            This is a smoke test of the Claude workflow. Read AGENTS.md, then post
-            exactly one comment on pull request #${{ github.event.pull_request.number }}
-            in ${{ github.repository }} with `gh pr comment`. The comment is one line:
-            "Claude workflow self-test: token works; AGENTS.md has N top-level sections.",
-            with N filled in. Change nothing else.
-          claude_args: --max-turns 8 --allowedTools "Read,Bash(gh pr comment:*)"
