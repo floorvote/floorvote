@@ -301,6 +301,10 @@ const DENIED = new Set([
   'PUT /api/views/:id/subscription',
 ])
 
+// The size of each category, pinned so a silent shift is visible. A fork adds
+// its own routes in the assertions, not here, so upstream bumps merge cleanly.
+const PINNED = { allowlist: 23, denied: 63, registered: 92 }
+
 const registered = () => {
   const keys = app.routes
     .filter(r => r.method !== 'GET' && r.method !== 'ALL' && r.path.startsWith('/api/'))
@@ -339,9 +343,9 @@ describe('demo write categorisation', () => {
   })
 
   it('pins the size of each category so a silent shift is visible', () => {
-    expect(DEMO_WRITE_ALLOWLIST.size).toBe(23)
-    expect(DENIED.size).toBe(63)
-    expect(registered().length).toBe(92)
+    expect(DEMO_WRITE_ALLOWLIST.size).toBe(PINNED.allowlist)
+    expect(DENIED.size).toBe(PINNED.denied)
+    expect(registered().length).toBe(PINNED.registered)
   })
 
   it('refuses every denied route with the read-only message', async () => {

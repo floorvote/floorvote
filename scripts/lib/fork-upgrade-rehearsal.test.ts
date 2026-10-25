@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { DatabaseSync } from 'node:sqlite'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { compareMigrationNames, formatReport, openCopy, passed, readMigrations, rehearse, upstreamNamesAt, type DbKind } from './fork-upgrade-rehearsal'
@@ -13,7 +13,9 @@ const FORK: Record<DbKind, { own: string; upstream: string; fixtures: string; ro
   central: { own: 'central/test/fixtures/fork/migrations-legiscan', upstream: 'central/migrations', fixtures: 'central/test/fixtures/fork', rows: 'central-rows.json' },
   instance: { own: 'api/test/fixtures/fork/migrations', upstream: 'api/migrations', fixtures: 'api/test/fixtures/fork', rows: 'tenant-rows.json' },
 }
-const upstreamMigrations = (kind: DbKind) => readMigrations(join(ROOT, FORK[kind].upstream))
+/** The fork's own file names. A fork's checkout has them in upstream's folders too, and they aren't upstream's. */
+const ownNames = (kind: DbKind) => new Set(readdirSync(join(ROOT, FORK[kind].own)))
+const upstreamMigrations = (kind: DbKind) => readMigrations(join(ROOT, FORK[kind].upstream)).filter(m => !ownNames(kind).has(m.name))
 /** Every migration file the fork's production applied. */
 const forkFiles = (kind: DbKind) => (JSON.parse(readFileSync(join(ROOT, FORK[kind].fixtures, 'migrations.json'), 'utf8')) as { files: string[] }).files
 
@@ -206,6 +208,20 @@ describe('the fork upgrade rehearsal', () => {
     expect(report.notes).toContain('Ownership rows already present: DC → lims.')
   })
 
+  it('passes a second upgrade, whose DC calendar entries already have identity keys, and fails one that changes them', () => {
+    const db = forkCopy('central')
+    rehearse(db, 'central', 'central', upstreamMigrations('central'))
+    // The first upgrade's LIMS re-ingest gives every DC entry its identity key.
+    db.exec(`UPDATE bill_calendar SET identity_key = 'lims:' || id`)
+    const calendarCheck = (r: ReturnType<typeof rehearse>) => r.checks.find(c => c.name.startsWith('Every DC bill calendar entry keeps its row'))
+    const again = rehearse(db, 'central', 'central', upstreamMigrations('central'))
+    expect(again.checks.filter(c => !c.ok)).toEqual([])
+    expect(calendarCheck(again)).toMatchObject({ ok: true, name: 'Every DC bill calendar entry keeps its row, so instances keep its UID (7)' })
+
+    const rekeyed = rehearse(db, 'central', 'central', [...upstreamMigrations('central'), { name: '9999_rekey.sql', sql: `UPDATE bill_calendar SET identity_key = 'other'` }])
+    expect(calendarCheck(rekeyed)).toMatchObject({ ok: false })
+  })
+
   it('names the upstream migration that meets a fork\'s own column, and stops there', () => {
     const db = forkCopy('central')
     // As if a fork migration had added a column upstream adds later.
@@ -227,7 +243,7 @@ describe('the fork upgrade rehearsal', () => {
   })
 
   it('reads upstream\'s migration names from a git ref, and says why when git can\'t', () => {
-    expect(upstreamNamesAt(ROOT, 'HEAD', 'api/migrations').sort()).toEqual(upstreamMigrations('instance').map(m => m.name).sort())
+    expect(upstreamNamesAt(ROOT, 'HEAD', 'api/migrations').filter(n => !ownNames('instance').has(n)).sort()).toEqual(upstreamMigrations('instance').map(m => m.name).sort())
     expect(() => upstreamNamesAt(ROOT, 'no-such-remote/main', 'api/migrations'))
       .toThrow(/^git can't read api\/migrations at no-such-remote\/main: .+/)
   })

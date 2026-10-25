@@ -19,6 +19,17 @@ export async function syncBillCommittees(
   db: AppDb, billInternalId: string, state: string,
   pending: CentralCommittee | null | undefined, referrals: CentralCommittee[] | undefined,
 ): Promise<void> {
+  await db.batch(billCommitteeStatements(db, billInternalId, state, pending, referrals))
+}
+
+/**
+ * The statements that replace a bill's committee rows: the delete, then the chunked inserts. The full delivery path
+ * puts them in the one batch that also writes the bill and stamps its version (#906).
+ */
+export function billCommitteeStatements(
+  db: AppDb, billInternalId: string, state: string,
+  pending: CentralCommittee | null | undefined, referrals: CentralCommittee[] | undefined,
+) {
   const rows = new Map<string, typeof billCommittees.$inferInsert>()
   for (const r of referrals ?? []) {
     if (!r.committeeId || !r.name) continue
@@ -30,5 +41,5 @@ export async function syncBillCommittees(
   const values = [...rows.values()]
   const inserts = []
   for (let i = 0; i < values.length; i += INSERT_CHUNK) inserts.push(db.insert(billCommittees).values(values.slice(i, i + INSERT_CHUNK)))
-  await db.batch([db.delete(billCommittees).where(eq(billCommittees.billId, billInternalId)), ...inserts])
+  return [db.delete(billCommittees).where(eq(billCommittees.billId, billInternalId)), ...inserts] as const
 }
