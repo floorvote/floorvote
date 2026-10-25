@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { DatabaseSync } from 'node:sqlite'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { isTransientD1Error, sessionUpsertSql, sessionSyncOnSql } from './seed-legiscan-db'
+import { isTransientD1Error, packBills, sessionUpsertSql, sessionSyncOnSql } from './seed-legiscan-db'
 
 describe('isTransientD1Error', () => {
   // These are exactly the blips that the original narrow filter (timeout/503 only)
@@ -107,5 +107,30 @@ describe('sessionUpsertSql', () => {
     expect(syncOf(db)).toBe(0)
     db.exec(sessionSyncOnSql(2154))
     expect(syncOf(db)).toBe(1)
+  })
+})
+
+describe('packBills', () => {
+  // A bill's statements replace its child rows (a DELETE, then its INSERTs), so
+  // they must never be split across two executions.
+  const bill = (id: number, n: number) => Array.from({ length: n }, (_, i) => `-- ${id}.${i}`)
+
+  it('packs whole bills up to the limit', () => {
+    expect(packBills([bill(1, 20), bill(2, 20), bill(3, 20)], 50).map(c => c.length)).toEqual([40, 20])
+  })
+
+  it('never splits a bill, even one past the limit, which runs alone', () => {
+    const chunks = packBills([bill(1, 10), bill(2, 70), bill(3, 10)], 50)
+    expect(chunks.map(c => c.length)).toEqual([10, 70, 10])
+    expect(chunks[1].every(s => s.startsWith('-- 2.'))).toBe(true)
+  })
+
+  it('keeps the statements in order', () => {
+    expect(packBills([bill(1, 2), bill(2, 2)], 50).flat()).toEqual(['-- 1.0', '-- 1.1', '-- 2.0', '-- 2.1'])
+  })
+
+  it('returns nothing for no bills, and skips a bill with no statements', () => {
+    expect(packBills([], 50)).toEqual([])
+    expect(packBills([[], bill(1, 1)], 50)).toEqual([['-- 1.0']])
   })
 })

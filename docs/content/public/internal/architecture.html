@@ -348,6 +348,7 @@ flowchart TD
   <thead><tr><th>Endpoint</th><th>Ingestor?</th><th>API cost</th><th>Use case</th></tr></thead>
   <tbody>
     <tr><td>Cron (hourly)</td><td>For matched changes</td><td>10/session/day + getBill per match</td><td>Steady state</td></tr>
+    <tr><td>Cron (hourly), <code>missing-texts</code></td><td>Yes</td><td>0 (+1 per failed state link, once)</td><td>Download texts of tracked bills and requested leads that no attempt ever reached, up to 50 bills an hour.</td></tr>
     <tr><td><code>POST /tenants/reprocess/:tenantId</code></td><td>No</td><td>0</td><td>Refresh tenant rows from central. AI dedups on text hash.</td></tr>
     <tr><td><code>POST /admin/refresh-stubs/:tenantId</code></td><td>No</td><td>0</td><td>Same, scoped to <code>match_type=null</code> rows.</td></tr>
     <tr><td><code>POST /admin/fetch-missing-texts/:tenantId</code></td><td>Yes</td><td>0 when the bill's detail is current (+1 per failed state link), else 1/bill missing text</td><td>Heal text gaps.</td></tr>
