@@ -1086,7 +1086,7 @@ async function recordStaleDelivery(
 }
 
 /** A hearing event's metadata, as both the calendar reconcile and a stale delivery write it. */
-function hearingEventMetadata(ch: NonNullable<TenantQueueMessage['calendar']>['changes'][number]): string {
+function hearingEventMetadata(ch: { date: string | null, time: string | null, location: string | null, description: string | null }): string {
   return JSON.stringify({ date: ch.date, time: ch.time, location: ch.location, description: ch.description })
 }
 
@@ -1135,14 +1135,16 @@ async function reconcileCalendar(
   // row lands only with its news, so the redelivery finds the uid still to change and
   // writes both. The news goes with the uid's first write that changes it.
   //
-  // `since` is when the uid's row was last written. A change already announced at or after
-  // it was announced without its row: by a delivery found stale (recordStaleDelivery), whose
-  // block a redelivery brings again. It isn't announced twice.
-  const write = async (uid: string, row: Parameters<typeof db.batch>[0][number], changed: boolean, since?: string | null) => {
+  // `prior` is the uid's row before this write. A change that describes something other than
+  // the row, and was already announced at or after the row was last written, was announced
+  // without its row: by a delivery found stale (recordStaleDelivery), whose block a
+  // redelivery brings again. It isn't announced twice. A `hearing_changed` that reads like the
+  // row (a change of kind alone) is announced as before.
+  const write = async (uid: string, row: Parameters<typeof db.batch>[0][number], changed: boolean, prior?: PriorRow) => {
     let changes = changed ? news.get(uid) : undefined
     if (changes) {
       news.delete(uid)
-      if (since) changes = await unannounced(changes, since)
+      if (prior?.updatedAt) changes = await unannounced(changes, prior)
     }
     if (!changes?.length) {
       await row
@@ -1170,12 +1172,19 @@ async function reconcileCalendar(
     ])
   }
 
-  const unannounced = async (changes: typeof block.changes, since: string) => {
+  type PriorRow = { updatedAt: string | null, date: string | null, time: string | null, location: string | null, description: string | null }
+  const unannounced = async (changes: typeof block.changes, prior: PriorRow) => {
     const left: typeof block.changes = []
+    const priorMetadata = hearingEventMetadata(prior)
     for (const ch of changes) {
+      // A change of kind alone reads exactly like the row's last change.
+      if (ch.changeType === 'hearing_changed' && hearingEventMetadata(ch) === priorMetadata) {
+        left.push(ch)
+        continue
+      }
       const announced = await db.select({ id: feedEvents.id }).from(feedEvents).where(and(
         eq(feedEvents.billId, billInternalId), eq(feedEvents.type, ch.changeType),
-        eq(feedEvents.metadata, hearingEventMetadata(ch)), sql`${feedEvents.createdAt} >= ${since}`,
+        eq(feedEvents.metadata, hearingEventMetadata(ch)), sql`${feedEvents.createdAt} >= ${prior.updatedAt}`,
       )).get()
       if (!announced) left.push(ch)
     }
@@ -1215,7 +1224,7 @@ async function reconcileCalendar(
         billId: billInternalId, status: 'confirmed', ...(e.kind ? { kind: e.kind } : {}), ...cover,
         date: e.date, time: e.time, location: e.location, description: e.description,
         eventHash: e.eventHash, sequence: bump ? existing.sequence + 1 : existing.sequence, updatedAt: now,
-      }).where(eq(calendarEvents.uid, uid)), bump, existing.updatedAt)
+      }).where(eq(calendarEvents.uid, uid)), bump, existing)
       if (bump) {
         console.log('[calendar-reconcile] sequence bump', JSON.stringify({
           billId: msg.billId, tenantId: msg.tenantId, uid, reconfirmed,
@@ -1226,12 +1235,13 @@ async function reconcileCalendar(
   }
 
   // Cancel rows for this bill (hearing source only) no longer present (bump sequence so iCal SEQUENCE advances).
-  const existingRows = await db.select({ uid: calendarEvents.uid, sequence: calendarEvents.sequence, status: calendarEvents.status, updatedAt: calendarEvents.updatedAt })
+  const existingRows = await db.select({ uid: calendarEvents.uid, sequence: calendarEvents.sequence, status: calendarEvents.status, updatedAt: calendarEvents.updatedAt,
+    date: calendarEvents.date, time: calendarEvents.time, location: calendarEvents.location, description: calendarEvents.description })
     .from(calendarEvents).where(and(eq(calendarEvents.billId, billInternalId), eq(calendarEvents.source, 'hearing'))).all()
   for (const row of existingRows) {
     if (!incomingUids.has(row.uid) && row.status !== 'cancelled') {
       await write(row.uid, db.update(calendarEvents).set({ status: 'cancelled', sequence: row.sequence + 1, updatedAt: now })
-        .where(eq(calendarEvents.uid, row.uid)), true, row.updatedAt)
+        .where(eq(calendarEvents.uid, row.uid)), true, row)
     }
   }
 }

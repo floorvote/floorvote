@@ -404,6 +404,32 @@ describe('an older delivery that finishes last', () => {
     expect(stored.matchProvenance).toBe('routine')
   })
 
+  it('leaves a match recorded before A began as it was, though A declares it routine', async () => {
+    // The match is recorded with no provenance (bulk) before A starts.
+    await getDb(env.DB).delete(associationConfig)
+    centralServes(centralBill())
+    await deliver({ tenantId: 'test-org', billId: BILL_ID, matchType: 'keyword' })
+    expect((await row())!.newMatchAt).not.toBeNull()
+    expect((await row())!.matchProvenance).toBeNull()
+
+    // A, declaring routine, is found stale: B is delivered while A's analysis runs.
+    const processBill = await processBillMock()
+    processBill.mockImplementationOnce(async () => {
+      centralServes(fullB())
+      await deliver({ ...changedToB, matchType: 'keyword' })
+      return { summary: 'Summary of A', tags: [], relevanceScore: 3 } as never
+    })
+    centralServes(fullA())
+    await deliver({ ...changedToA, matchType: 'keyword', matchProvenance: 'routine' })
+
+    expect((await row())!.providerUpdatedAt).toBe(B)
+    expect((await row())!.matchProvenance).toBeNull()
+    const matched = await ofType('bill_matched')
+    expect(matched).toHaveLength(1)
+    expect(JSON.parse(matched[0].metadata!)).toEqual({})
+    expect(await ofType('new_matches')).toEqual([])
+  })
+
   it('leaves a provenance the bill already holds', async () => {
     const noText = { texts: [], textHash: null, textR2Key: null }
     await getDb(env.DB).delete(associationConfig)
@@ -434,5 +460,26 @@ describe('an older delivery that finishes last', () => {
     expect(await textDocs()).toEqual([])
     // A bill new to this delivery has no update to record.
     expect(await events()).toEqual([])
+  })
+})
+
+describe('hearing announcements', () => {
+  const hearing = (location: string, kind: 'hearing' | 'markup') =>
+    ({ identityKey: 'h-judiciary', kind, date: '2026-06-05', time: '10:00:00', location, description: 'House Judiciary', eventHash: `e-${location}-${kind}` })
+  const calendarOnly = (changeType: 'hearing_added' | 'hearing_changed', location: string, kind: 'hearing' | 'markup'): TenantQueueMessage => ({
+    tenantId: 'test-org', billId: BILL_ID, matchType: 'keyword',
+    calendar: { events: [hearing(location, kind)], changes: [{ changeType, ...hearing(location, kind) }] },
+  })
+
+  it('announces a change of kind right after a visible change, on a delivery that is not stale', async () => {
+    centralServes(centralBill())
+    await deliver({ tenantId: 'test-org', billId: BILL_ID, matchType: 'keyword' })
+    await deliver(calendarOnly('hearing_added', 'Room 1', 'hearing'))
+    await deliver(calendarOnly('hearing_changed', 'Room 2', 'hearing'))
+    // Only the kind changes: the announcement reads like the one before, and is still news.
+    await deliver(calendarOnly('hearing_changed', 'Room 2', 'markup'))
+
+    expect(await ofType('hearing_added')).toHaveLength(1)
+    expect(await ofType('hearing_changed')).toHaveLength(2)
   })
 })
