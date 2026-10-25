@@ -320,16 +320,54 @@ describe('an older delivery that finishes last', () => {
   })
 
   it('adds nothing when A\'s message is delivered again after it was found stale', async () => {
-    await overlap({ ...messageA, calendar: undefined }, { ...messageB, calendar: undefined })
+    await overlap()
     const before = await events()
     expect(await updates()).toEqual([changedToB.changes, changedToA.changes])
+    expect(await ofType('hearing_added')).toHaveLength(1)
 
-    // The redelivery reads central again, which by now serves B.
+    // The redelivery reads central again, which by now serves B, and carries A's calendar block again.
     centralServes(fullB())
-    await deliver({ ...messageA, calendar: undefined })
+    await deliver(messageA)
 
+    // A's hearing was announced when A was found stale, so the redelivery announces nothing more.
     expect(await events()).toEqual(before)
     expect((await row())!.providerUpdatedAt).toBe(B)
+  })
+
+  it('records A\'s routine match when B, which declares none, records the match first', async () => {
+    // A bill the instance follows no keywords for: delivered, never matched or analyzed.
+    await getDb(env.DB).delete(associationConfig)
+    centralServes(centralBill())
+    await deliver({ tenantId: 'test-org', billId: BILL_ID })
+    expect((await row())!.matchType).toBeNull()
+
+    // A brings the match and declares it routine. B, the next sync, carries the match type only,
+    // and records the match while A's analysis runs.
+    const processBill = await processBillMock()
+    processBill.mockImplementationOnce(async () => {
+      centralServes(fullB())
+      await deliver({ ...changedToB, matchType: 'keyword' })
+      return { summary: 'Summary of A', tags: [], relevanceScore: 3 } as never
+    })
+    centralServes(fullA())
+    await deliver({ ...changedToA, matchType: 'keyword', matchProvenance: 'routine' })
+
+    const stored = (await row())!
+    expect(stored.providerUpdatedAt).toBe(B)
+    expect(stored.newMatchAt).not.toBeNull()
+    expect(stored.matchProvenance).toBe('routine')
+    const matched = await ofType('bill_matched')
+    expect(matched).toHaveLength(1)
+    expect(JSON.parse(matched[0].metadata!)).toEqual({ matchProvenance: 'routine' })
+    const newMatches = await ofType('new_matches')
+    expect(newMatches).toHaveLength(1)
+    expect(JSON.parse(newMatches[0].metadata!)).toEqual({ billIds: [stored.id] })
+
+    // A redelivery adds nothing: central serves B now, and the match is already routine.
+    centralServes(fullB())
+    await deliver({ ...changedToA, matchType: 'keyword', matchProvenance: 'routine' })
+    expect(await ofType('bill_matched')).toHaveLength(1)
+    expect(await ofType('new_matches')).toHaveLength(1)
   })
 
   it('records no update for a bill the Feed does not follow', async () => {

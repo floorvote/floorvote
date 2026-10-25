@@ -516,7 +516,7 @@ async function applyCentralBill(
   // below checks again, for a version stored after this read.
   if (existing?.storedIsNewer) {
     console.log(`[processor] skipping ${msg.billId}: central sent ${centralBill.updatedAt}, older than the stored ${existing.providerUpdatedAt}`)
-    await recordStaleDelivery(db, env, msg, existing.id, true)
+    await recordStaleDelivery(db, env, msg, existing.id, true, !existing.newMatchAt)
     return 'stale'
   }
 
@@ -986,7 +986,7 @@ async function applyCentralBill(
       .from(bills).where(eq(bills.externalId, await resolveStoredHandle(db, msg.billId))).get()
     if (!stored?.newer) throw err
     console.log(`[processor] skipping ${msg.billId}: a version newer than ${centralBill.updatedAt} was stored during this delivery`)
-    await recordStaleDelivery(db, env, msg, stored.id, !isNew)
+    await recordStaleDelivery(db, env, msg, stored.id, !isNew, !existing?.newMatchAt)
     return 'stale'
   }
 
@@ -1017,20 +1017,39 @@ function staleVersionGuard(db: AppDb, billId: string, incoming: string) {
  * the older copy itself is written: not the bill's fields, its child rows, or
  * its calendar rows, which the newer delivery reconciled.
  *
- * Also the match provenance central declared on this message, when the bill
- * holds none and hasn't recorded its match: the declaration rides only on the
- * message that brings the match, so this may be its only copy. Once a match
- * is recorded its provenance never changes, so a bill whose newer delivery
- * recorded the match first keeps what that delivery wrote.
+ * Also the match provenance central declared on this message, when the match
+ * was unrecorded as this delivery began and the bill holds no provenance. The
+ * declaration rides only on the message that brings the match, so this is its
+ * only copy: a newer delivery that recorded the match meanwhile carried none,
+ * and recorded it as bulk. The declaration is the match's own, so it is
+ * recorded as the full path would have: on the bill, on its `bill_matched`
+ * event, and, for a routine match, on the day's new-matches row. A match
+ * recorded before this delivery began, or a provenance the bill already holds,
+ * is left alone: a later message never relabels a match.
  *
  * `existed`: the bill was stored when the delivery began. Changes to a bill
- * new to the delivery are not news, as on the full path.
+ * new to the delivery are not news, as on the full path. `matchUnrecorded`:
+ * the bill had recorded no match when the delivery began.
  */
-async function recordStaleDelivery(db: AppDb, env: Env, msg: TenantQueueMessage, billId: string, existed: boolean): Promise<void> {
+async function recordStaleDelivery(
+  db: AppDb, env: Env, msg: TenantQueueMessage, billId: string, existed: boolean, matchUnrecorded: boolean,
+): Promise<void> {
   const statements: BatchItem<'sqlite'>[] = []
-  if (!msg.groupAnalysis && msg.matchProvenance) {
-    statements.push(db.update(bills).set({ matchProvenance: msg.matchProvenance })
-      .where(and(eq(bills.id, billId), isNull(bills.matchProvenance), isNull(bills.newMatchAt))))
+  const declared = !msg.groupAnalysis && matchUnrecorded ? msg.matchProvenance : undefined
+  if (declared) {
+    statements.push(
+      db.update(bills).set({ matchProvenance: declared })
+        .where(and(eq(bills.id, billId), isNull(bills.matchProvenance))),
+      // Only when the bill now holds this declaration (it held none), and the event names no provenance.
+      db.update(feedEvents).set({ metadata: sql`json_object('matchProvenance', ${declared})` })
+        .where(and(
+          eq(feedEvents.billId, billId), eq(feedEvents.type, 'bill_matched'),
+          sql`json_extract(${feedEvents.metadata}, '$.matchProvenance') IS NULL`,
+          sql`EXISTS (SELECT 1 FROM bills WHERE id = ${billId} AND match_provenance = ${declared})`,
+        )),
+      // Judged on the bill as just updated; a recorded routine match joins the day's row once.
+      newMatchesRowStatement(db, billId, await getNewMatchMinRelevance(db)),
+    )
   }
   const row = existed
     ? await db.select({ aiProcessedAt: bills.aiProcessedAt, matchType: bills.matchType, groupKey: bills.groupKey, priority: bills.priority })
@@ -1056,7 +1075,7 @@ async function recordStaleDelivery(db: AppDb, env: Env, msg: TenantQueueMessage,
       statements.push(
         db.insert(feedEvents).values({
           id: crypto.randomUUID(), type: ch.changeType, billId, userId: 'system',
-          metadata: JSON.stringify({ date: ch.date, time: ch.time, location: ch.location, description: ch.description }),
+          metadata: hearingEventMetadata(ch),
           createdAt: writtenAt,
         }),
         noteLegislativeEvent(db, billId, writtenAt),
@@ -1064,6 +1083,11 @@ async function recordStaleDelivery(db: AppDb, env: Env, msg: TenantQueueMessage,
     }
   }
   if (statements.length > 0) await db.batch(statements as [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]])
+}
+
+/** A hearing event's metadata, as both the calendar reconcile and a stale delivery write it. */
+function hearingEventMetadata(ch: NonNullable<TenantQueueMessage['calendar']>['changes'][number]): string {
+  return JSON.stringify({ date: ch.date, time: ch.time, location: ch.location, description: ch.description })
 }
 
 async function reconcileCalendar(
@@ -1110,13 +1134,20 @@ async function reconcileCalendar(
   // redelivery finds the row already current and announces nothing. In one batch the
   // row lands only with its news, so the redelivery finds the uid still to change and
   // writes both. The news goes with the uid's first write that changes it.
-  const write = async (uid: string, row: Parameters<typeof db.batch>[0][number], changed: boolean) => {
-    const changes = changed ? news.get(uid) : undefined
-    if (!changes) {
+  //
+  // `since` is when the uid's row was last written. A change already announced at or after
+  // it was announced without its row: by a delivery found stale (recordStaleDelivery), whose
+  // block a redelivery brings again. It isn't announced twice.
+  const write = async (uid: string, row: Parameters<typeof db.batch>[0][number], changed: boolean, since?: string | null) => {
+    let changes = changed ? news.get(uid) : undefined
+    if (changes) {
+      news.delete(uid)
+      if (since) changes = await unannounced(changes, since)
+    }
+    if (!changes?.length) {
       await row
       return
     }
-    news.delete(uid)
     for (const ch of changes) {
       console.log('[calendar-reconcile] feed event', JSON.stringify({
         billId: msg.billId, tenantId: msg.tenantId, uid, changeType: ch.changeType,
@@ -1132,11 +1163,23 @@ async function reconcileCalendar(
         type: ch.changeType,
         billId: billInternalId,
         userId: 'system',
-        metadata: JSON.stringify({ date: ch.date, time: ch.time, location: ch.location, description: ch.description }),
+        metadata: hearingEventMetadata(ch),
         createdAt: writtenAt,
       })),
       noteLegislativeEvent(db, billInternalId, writtenAt),
     ])
+  }
+
+  const unannounced = async (changes: typeof block.changes, since: string) => {
+    const left: typeof block.changes = []
+    for (const ch of changes) {
+      const announced = await db.select({ id: feedEvents.id }).from(feedEvents).where(and(
+        eq(feedEvents.billId, billInternalId), eq(feedEvents.type, ch.changeType),
+        eq(feedEvents.metadata, hearingEventMetadata(ch)), sql`${feedEvents.createdAt} >= ${since}`,
+      )).get()
+      if (!announced) left.push(ch)
+    }
+    return left
   }
 
   const incomingUids = new Set<string>()
@@ -1150,7 +1193,7 @@ async function reconcileCalendar(
     incomingUids.add(uid)
     const existing = await db.select({ id: calendarEvents.id, sequence: calendarEvents.sequence, eventHash: calendarEvents.eventHash, status: calendarEvents.status,
       date: calendarEvents.date, time: calendarEvents.time, location: calendarEvents.location,
-      description: calendarEvents.description, kind: calendarEvents.kind })
+      description: calendarEvents.description, kind: calendarEvents.kind, updatedAt: calendarEvents.updatedAt })
       .from(calendarEvents).where(eq(calendarEvents.uid, uid)).get()
 
     // The body event shown in the entry's place (lib/bodyEvents.ts). A central
@@ -1172,7 +1215,7 @@ async function reconcileCalendar(
         billId: billInternalId, status: 'confirmed', ...(e.kind ? { kind: e.kind } : {}), ...cover,
         date: e.date, time: e.time, location: e.location, description: e.description,
         eventHash: e.eventHash, sequence: bump ? existing.sequence + 1 : existing.sequence, updatedAt: now,
-      }).where(eq(calendarEvents.uid, uid)), bump)
+      }).where(eq(calendarEvents.uid, uid)), bump, existing.updatedAt)
       if (bump) {
         console.log('[calendar-reconcile] sequence bump', JSON.stringify({
           billId: msg.billId, tenantId: msg.tenantId, uid, reconfirmed,
@@ -1183,12 +1226,12 @@ async function reconcileCalendar(
   }
 
   // Cancel rows for this bill (hearing source only) no longer present (bump sequence so iCal SEQUENCE advances).
-  const existingRows = await db.select({ uid: calendarEvents.uid, sequence: calendarEvents.sequence, status: calendarEvents.status })
+  const existingRows = await db.select({ uid: calendarEvents.uid, sequence: calendarEvents.sequence, status: calendarEvents.status, updatedAt: calendarEvents.updatedAt })
     .from(calendarEvents).where(and(eq(calendarEvents.billId, billInternalId), eq(calendarEvents.source, 'hearing'))).all()
   for (const row of existingRows) {
     if (!incomingUids.has(row.uid) && row.status !== 'cancelled') {
       await write(row.uid, db.update(calendarEvents).set({ status: 'cancelled', sequence: row.sequence + 1, updatedAt: now })
-        .where(eq(calendarEvents.uid, row.uid)), true)
+        .where(eq(calendarEvents.uid, row.uid)), true, row.updatedAt)
     }
   }
 }
