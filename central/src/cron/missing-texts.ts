@@ -30,6 +30,14 @@ const STAMP_CHUNK = 90
  * attempted, so it picks each one once; a download that fails records its
  * error, and retrying it is POST /admin/refetch-bill-text's job.
  */
+// A text no download attempt has reached. Kept in step with the partial index
+// idx_bill_texts_unattempted (migration 0050), which the sweep's query uses.
+const unattempted = and(
+  isNull(billTexts.r2Key),
+  isNull(billTexts.fetchAttemptedAt),
+  isNotNull(billTexts.stateLink),
+)
+
 export async function queueMissingTexts(env: Env, db: Db): Promise<{ queued: number }> {
   const rows = await db.selectDistinct({ billId: billTexts.billId })
     .from(billTexts)
@@ -41,9 +49,7 @@ export async function queueMissingTexts(env: Env, db: Db): Promise<{ queued: num
       or(isNotNull(billTenants.matchType), gt(billTenants.fetchRequestedAt, fetchRequestCutoff())),
     ))
     .where(and(
-      isNull(billTexts.r2Key),
-      isNull(billTexts.fetchAttemptedAt),
-      isNotNull(billTexts.stateLink),
+      unattempted,
       or(
         lt(bills.textsFetchedAt, dbTimeAgo(INGEST_SETTLE_MS)),
         // A bulk seed stamps the detail but not the texts. A first full ingest
@@ -62,9 +68,7 @@ export async function queueMissingTexts(env: Env, db: Db): Promise<{ queued: num
   for (let i = 0; i < billIds.length; i += STAMP_CHUNK) {
     for (const t of await db.select({ docId: billTexts.docId }).from(billTexts).where(and(
       inArray(billTexts.billId, billIds.slice(i, i + STAMP_CHUNK)),
-      isNull(billTexts.r2Key),
-      isNull(billTexts.fetchAttemptedAt),
-      isNotNull(billTexts.stateLink),
+      unattempted,
     )).all()) picked.push(t.docId)
   }
 

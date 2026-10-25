@@ -46,9 +46,10 @@ let _tmpFiles: string[] = []
  * finishing, the API answers "nothing is importing" and wrangler surfaces it as
  * an error — after having already printed `Processed N queries`. The write
  * landed; only the status check failed, and the tell is a missing `Executed N
- * queries` summary. Retrying is safe regardless, because every statement the
- * seeder emits is INSERT OR REPLACE / INSERT OR IGNORE, so a retry is a no-op
- * re-apply. (This killed an MI seed at 2,880/3,909 bills and an IL seed on its
+ * queries` summary. Retrying is safe regardless: a bill's statements replace
+ * or upsert its rows, delete-then-insert its collections in the same file, and
+ * skip a bill central has ingested, so applying them again ends where the first
+ * application did. (This killed an MI seed at 2,880/3,909 bills and an IL seed on its
  * first batch, both resumable the whole time.)
  */
 /** The fields of a LegiScan dataset's session metadata the seed writes. */
@@ -245,8 +246,8 @@ VALUES (${num(p.people_id)}, ${esc(p.person_hash)}, ${num(p.state_id)}, ${esc(p.
     // bill is skipped and counted, then we move on. flush() is deliberately OUTSIDE
     // it — a wrangler/D1 failure must never be mistaken for a one-bill error and
     // swallowed (that silently dropped whole batches; see the 58-bill TX gap). Let
-    // it throw and abort; seeding is idempotent (INSERT OR REPLACE), so a re-run
-    // recovers cleanly.
+    // it throw and abort; applying a bill's statements again ends where the first
+    // application did (see isTransientD1Error), so a re-run recovers cleanly.
     try {
       const b = JSON.parse(decoder.decode(files[name])).bill
       if (!b) continue

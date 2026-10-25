@@ -3,6 +3,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { buildBillStatements, esc, num } from './build-bill-statements'
+import { detectChanges } from '../../central/src/lib/detect-changes'
 
 // Fixture mirrors the shape returned by LegiScan's getBill / bulk JSON.
 // Every child collection has at least one entry so the "writes everything"
@@ -382,5 +383,139 @@ describe('a re-seeded bill', () => {
     seed(db)
     expect((db.prepare('SELECT COUNT(*) n FROM bill_history WHERE bill_id = 999').get() as any).n).toBe(1)
     expect((db.prepare('SELECT COUNT(*) n FROM bill_sponsors WHERE bill_id = 999').get() as any).n).toBe(1)
+  })
+})
+
+describe('a seed run again over bills central has ingested', () => {
+  // LegiScan dumps are snapshots, so central's own ingest of an active bill is
+  // usually newer than the dump. A seed run again must leave that bill to the
+  // ingest: rewriting it from the dump would roll its history, sponsors, and
+  // change hash back, and the next ingest would announce every change since the
+  // dump a second time, in feeds and digest emails.
+  const migrated = () => {
+    const db = new DatabaseSync(':memory:')
+    const dir = join(__dirname, '../../central/migrations')
+    for (const file of readdirSync(dir).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(join(dir, file), 'utf8'))
+    return db
+  }
+  const seed = (db: DatabaseSync, bill: any = completeBill) => { for (const s of buildBillStatements(bill, 'WI', 2154)) db.exec(s) }
+  const provider = { vocabulary: { statuses: {} } } as any
+
+  // The bill as LegiScan's getBill returns it a month after the dump.
+  const newer = {
+    ...completeBill,
+    change_hash: 'later1',
+    status: 2,
+    history: [
+      ...completeBill.history,
+      { date: '2026-03-02', action: 'Passed committee', chamber: 'A', chamber_id: 26, importance: 1 },
+      { date: '2026-03-09', action: 'Read a third time and passed', chamber: 'A', chamber_id: 26, importance: 1 },
+    ],
+    sponsors: [...completeBill.sponsors, { people_id: 5003, sponsor_type_id: 2, sponsor_order: 3 }],
+    texts: [...completeBill.texts, { doc_id: 1001, date: '2026-03-02', type: 'Amended', type_id: 2, mime: 'text/html', mime_id: 1, url: 'u2', state_link: 'sl2', text_size: 2048, text_hash: 'th3' }],
+  }
+  const measure = (b: any) => ({
+    ...b,
+    sponsors: b.sponsors.map((s: any) => ({ ...s, name: `Member ${s.people_id}`, party: 'I' })),
+  })
+
+  // What central's ingest reads before it writes (central/src/queue/processor.ts),
+  // and the changes it would send instances.
+  const changesOnIngest = (db: DatabaseSync, b: any) => {
+    const row = db.prepare('SELECT status, title, description FROM bills WHERE bill_id = ?').get(b.bill_id) as any
+    const all = (sql: string) => db.prepare(sql).all(b.bill_id) as any[]
+    const sponsorKeys = new Set(all('SELECT people_id FROM bill_sponsors WHERE bill_id = ?').map(s => `p${s.people_id}`))
+    return detectChanges({
+      status: row.status, title: row.title ?? '', description: row.description,
+      latestHistoryCount: all('SELECT id FROM bill_history WHERE bill_id = ?').length,
+      textDocIds: new Set(all('SELECT doc_id FROM bill_texts WHERE bill_id = ?').map(t => t.doc_id)),
+      supplementIds: new Set(all('SELECT supplement_id FROM bill_supplements WHERE bill_id = ?').map(s => s.supplement_id)),
+      amendmentIds: new Set(all('SELECT amendment_id FROM bill_amendments WHERE bill_id = ?').map(a => a.amendment_id)),
+      voteIds: new Set(all('SELECT roll_call_id FROM roll_calls WHERE bill_id = ?').map(v => v.roll_call_id)),
+      sponsorKeys, sponsorDetailByKey: new Map(),
+    }, measure(b), provider)
+  }
+
+  // What central's ingest writes: the bill's row, stamped as fetched, and its
+  // collections under its own ids.
+  const ingest = (db: DatabaseSync, b: any) => {
+    db.prepare(`UPDATE bills SET change_hash = ?, detail_hash = ?, status = ?, texts_fetched_at = '2026-03-10 00:00:00' WHERE bill_id = ?`)
+      .run(b.change_hash, b.change_hash, b.status, b.bill_id)
+    db.prepare('DELETE FROM bill_history WHERE bill_id = ?').run(b.bill_id)
+    b.history.forEach((h: any, i: number) => db.prepare(`INSERT INTO bill_history (id, bill_id, date, action, chamber, chamber_id, importance, seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(`ingest-h-${i}`, b.bill_id, h.date, h.action, h.chamber, h.chamber_id, h.importance, i))
+    db.prepare('DELETE FROM bill_sponsors WHERE bill_id = ?').run(b.bill_id)
+    b.sponsors.forEach((s: any, i: number) => db.prepare(`INSERT INTO bill_sponsors (id, bill_id, people_id, sponsor_type_id, sponsor_order, committee_sponsor) VALUES (?, ?, ?, ?, ?, 0)`)
+      .run(`ingest-s-${i}`, b.bill_id, s.people_id, s.sponsor_type_id, s.sponsor_order))
+    for (const t of b.texts) {
+      db.prepare(`INSERT INTO bill_texts (doc_id, bill_id, date, type, state_link, text_hash, r2_key) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(doc_id) DO UPDATE SET text_hash = excluded.text_hash, r2_key = excluded.r2_key`)
+        .run(t.doc_id, b.bill_id, t.date, t.type, t.state_link, t.text_hash, `bills/legiscan-${b.bill_id}/texts/${t.doc_id}.html`)
+    }
+  }
+
+  it('announces nothing again on the next ingest', () => {
+    const db = migrated()
+    seed(db)
+    ingest(db, newer)
+    seed(db)
+    expect(changesOnIngest(db, newer).map(c => c.changeType)).toEqual([])
+  })
+
+  it("keeps the ingest's history, sponsors, change hash, and fetch stamp", () => {
+    const db = migrated()
+    seed(db)
+    ingest(db, newer)
+    seed(db)
+    expect(db.prepare('SELECT change_hash, detail_hash, status, texts_fetched_at FROM bills WHERE bill_id = 12345').get())
+      .toEqual({ change_hash: 'later1', detail_hash: 'later1', status: 2, texts_fetched_at: '2026-03-10 00:00:00' })
+    expect(db.prepare('SELECT id FROM bill_history WHERE bill_id = 12345 ORDER BY seq').all().map((r: any) => r.id))
+      .toEqual(['ingest-h-0', 'ingest-h-1', 'ingest-h-2', 'ingest-h-3'])
+    expect(db.prepare('SELECT people_id FROM bill_sponsors WHERE bill_id = 12345 ORDER BY sponsor_order').all().map((r: any) => r.people_id))
+      .toEqual([5001, 5002, 5003])
+  })
+
+  it("keeps the ingest's text hashes and stored copies", () => {
+    const db = migrated()
+    seed(db)
+    ingest(db, { ...newer, texts: [{ ...completeBill.texts[0], text_hash: 'th-new' }] })
+    seed(db)
+    expect(db.prepare('SELECT text_hash, r2_key FROM bill_texts WHERE doc_id = 1000').get())
+      .toEqual({ text_hash: 'th-new', r2_key: 'bills/legiscan-12345/texts/1000.html' })
+  })
+
+  it('still writes a bill only a seed has written, in full', () => {
+    const db = migrated()
+    seed(db)
+    seed(db, newer)
+    expect(db.prepare('SELECT change_hash, status, texts_fetched_at FROM bills WHERE bill_id = 12345').get())
+      .toEqual({ change_hash: 'later1', status: 2, texts_fetched_at: null })
+    expect((db.prepare('SELECT COUNT(*) n FROM bill_history WHERE bill_id = 12345').get() as any).n).toBe(newer.history.length)
+    expect((db.prepare('SELECT COUNT(*) n FROM bill_sponsors WHERE bill_id = 12345').get() as any).n).toBe(newer.sponsors.length)
+    expect((db.prepare('SELECT COUNT(*) n FROM bill_texts WHERE bill_id = 12345').get() as any).n).toBe(newer.texts.length)
+  })
+
+  it('writes a bill the sync listed but never ingested', () => {
+    const db = migrated()
+    // A masterlist pass writes a bare row: no detail, no fetch stamp.
+    db.exec(`INSERT INTO bills (bill_id, change_hash, session_id, state, state_id, bill_number, title, status) VALUES (12345, 'abc123', 2154, 'WI', 50, 'AB35', 'Sample bill title', 1)`)
+    seed(db)
+    expect((db.prepare('SELECT COUNT(*) n FROM bill_history WHERE bill_id = 12345').get() as any).n).toBe(completeBill.history.length)
+    expect(db.prepare('SELECT detail_hash FROM bills WHERE bill_id = 12345').get()).toEqual({ detail_hash: 'abc123' })
+  })
+
+  it('a first-time seed still announces nothing the ingest then finds unchanged', () => {
+    const db = migrated()
+    seed(db)
+    expect(changesOnIngest(db, completeBill)).toEqual([])
+  })
+
+  it("leaves another, ingested bill alone while seeding this one", () => {
+    const db = migrated()
+    seed(db, { ...completeBill, bill_id: 777, texts: [] })
+    ingest(db, { ...newer, bill_id: 777, texts: [] })
+    seed(db)
+    expect((db.prepare('SELECT COUNT(*) n FROM bill_history WHERE bill_id = 777').get() as any).n).toBe(newer.history.length)
+    expect((db.prepare('SELECT COUNT(*) n FROM bill_history WHERE bill_id = 12345').get() as any).n).toBe(completeBill.history.length)
   })
 })
