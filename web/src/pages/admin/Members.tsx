@@ -870,7 +870,7 @@ export function Members() {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
           {orgRoles.map(role => (
             <Fragment key={role.id}>
-              <span style={ROLE_CHIP}>
+              <span className="role-chip" style={ROLE_CHIP}>
                 {editingRoleId === role.id ? (
                   <input
                     // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing: focus follows the user's own click/Enter into rename mode, out of scope for this task's focus-management redesign

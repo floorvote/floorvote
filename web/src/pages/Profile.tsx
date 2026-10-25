@@ -524,7 +524,6 @@ export function Profile() {
                 padding: '6px 10px',
                 border: `1px solid ${color.borderStrong}`,
                 borderRadius: radius.md,
-                outline: 'none',
                 color: color.textPrimary,
                 boxSizing: 'border-box',
               }}
@@ -570,7 +569,7 @@ export function Profile() {
                     style={{
                       flex: '1 1 160px', minWidth: 0, fontSize: fontSize.base, padding: '6px 10px',
                       border: `1px solid ${emailChange.error ? color.textErrorRed : color.borderStrong}`,
-                      borderRadius: radius.md, outline: 'none', color: color.textPrimary, boxSizing: 'border-box',
+                      borderRadius: radius.md, color: color.textPrimary, boxSizing: 'border-box',
                     }}
                   />
                   <button
@@ -631,7 +630,6 @@ export function Profile() {
               padding: '8px 12px',
               border: `1px solid ${color.borderStrong}`,
               borderRadius: radius.md,
-              outline: 'none',
               color: color.textPrimary,
               boxSizing: 'border-box',
             }}
