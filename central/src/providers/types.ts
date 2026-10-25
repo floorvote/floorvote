@@ -162,10 +162,12 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
    * Fill what the provider keeps between runs (`ctx.cache`) for a state it
    * serves but doesn't own yet, so its calendar is ready the moment it does.
    * Core calls it from the hourly body-event job for each such state an
-   * instance covers, in place of `listBodyEvents`, logs a throw without
-   * alerting, and reports the outcome to an operator's sync
-   * (cron/body-events.ts). Write nothing but the cache and the call log: no
-   * ids, no sessions, and nothing a calendar shows. The provider's own
+   * instance covers, in place of `listBodyEvents`, logs a throw, alerts once
+   * throws have gone on for hours (as a failing sync session does), and
+   * reports the outcome to an operator's sync (cron/body-events.ts). A throw's
+   * message goes in the alert, so name what failed to warm in it. Write
+   * nothing but the cache and the call log: no ids, no sessions, and nothing
+   * a calendar shows. The provider's own
    * `ctx.alert` may still email the operators, as it would once the provider
    * owns the state (GovInfo's, for a quarantined meeting). Return whether the
    * cache is now ready (`warm`), or null when there was nothing to do (no key
