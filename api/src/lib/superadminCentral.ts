@@ -20,9 +20,11 @@ import type { Env } from '../types'
 
 const ALLOWLIST_TTL_MS = 5 * 60 * 1000
 
-// How long a check waits on a fetch another request started before answering
-// without it. Bounds what a slow or hung central costs: past this, the answer is
-// what it was before checks waited at all.
+// How long after another request starts a fetch that checks keep waiting on it.
+// Bounds what a slow or hung central costs: past this, the answer is what it was
+// before checks waited at all. Counted from the fetch's start, not each check's,
+// so a fetch that never settles delays later checks only within this window and
+// not on every check until the TTL runs out.
 const IN_FLIGHT_WAIT_MS = 2000
 
 let cachedHashes: Set<string> | null = null
@@ -68,13 +70,13 @@ export async function superadminEmailStatus(env: Env, email: string): Promise<'y
     })
     inFlight = attempt
     await attempt
-  } else if (!cachedHashes && inFlight) {
+  } else if (!cachedHashes && inFlight && now - lastAttemptAt < IN_FLIGHT_WAIT_MS) {
     // A cold isolate takes a page load's requests concurrently, and only the
     // first fetches. Answering the rest from the still-empty cache said
     // `unknown` to a superadmin, which put the Terms gate in front of them and
     // then recorded nothing when they accepted it as an exempt user. So wait for
     // that fetch — but only so long. A stale cache is answered from at once.
-    await waitAtMost(inFlight, IN_FLIGHT_WAIT_MS)
+    await waitAtMost(inFlight, IN_FLIGHT_WAIT_MS - (now - lastAttemptAt))
   }
   if (!cachedHashes) return 'unknown'
   return cachedHashes.has(await sha256Hex(email.toLowerCase().trim())) ? 'yes' : 'no'

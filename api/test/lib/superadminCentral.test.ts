@@ -71,6 +71,30 @@ describe('isSuperadminEmailViaCentral — cached allowlist (D3)', () => {
     }
   })
 
+  it('does not keep waiting on a hung fetch once its cap has passed', async () => {
+    // A fetch that never settles must not cost every later check the full cap
+    // for the rest of the TTL window: the cap runs from when the fetch started.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      vi.spyOn(centralFetchMod, 'centralFetch').mockImplementation(() => new Promise<Response>(() => {}))
+
+      void superadminEmailStatus(env, 'admin@x.com') // starts the fetch, which never settles
+      await vi.advanceTimersByTimeAsync(1500)
+      let early: string | undefined
+      const waiter = superadminEmailStatus(env, 'admin@x.com').then((a) => { early = a })
+      await vi.advanceTimersByTimeAsync(499)
+      expect(early).toBeUndefined()
+      await vi.advanceTimersByTimeAsync(1)
+      await waiter
+      expect(early).toBe('unknown')
+
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(await superadminEmailStatus(env, 'admin@x.com')).toBe('unknown') // at once
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('treats an empty allowlist as nobody is a superadmin', async () => {
     vi.spyOn(centralFetchMod, 'centralFetch').mockResolvedValue(
       new Response(JSON.stringify({ hashes: [] }), { status: 200 }),
