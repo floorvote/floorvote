@@ -71,25 +71,57 @@ describe('isSuperadminEmailViaCentral — cached allowlist (D3)', () => {
     }
   })
 
-  it('does not keep waiting on a hung fetch once its cap has passed', async () => {
-    // A fetch that never settles must not cost every later check the full cap
-    // for the rest of the TTL window: the cap runs from when the fetch started.
+  it('waits on a hung fetch only for what remains of its cap', async () => {
+    // The cap runs from when the fetch started, not from when each check arrives.
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
     try {
       vi.spyOn(centralFetchMod, 'centralFetch').mockImplementation(() => new Promise<Response>(() => {}))
 
       void superadminEmailStatus(env, 'admin@x.com') // starts the fetch, which never settles
       await vi.advanceTimersByTimeAsync(1500)
-      let early: string | undefined
-      const waiter = superadminEmailStatus(env, 'admin@x.com').then((a) => { early = a })
+      let answer: string | undefined
+      void superadminEmailStatus(env, 'admin@x.com').then((a) => { answer = a })
       await vi.advanceTimersByTimeAsync(499)
-      expect(early).toBeUndefined()
+      expect(answer).toBeUndefined()
       await vi.advanceTimersByTimeAsync(1)
-      await waiter
-      expect(early).toBe('unknown')
+      expect(answer).toBe('unknown')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 
+  it('does not wait on a hung fetch once its cap has passed', async () => {
+    // A fetch that never settles must not cost every later check the full cap
+    // for the rest of the TTL window.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      vi.spyOn(centralFetchMod, 'centralFetch').mockImplementation(() => new Promise<Response>(() => {}))
+
+      void superadminEmailStatus(env, 'admin@x.com') // starts the fetch, which never settles
       await vi.advanceTimersByTimeAsync(10_000)
-      expect(await superadminEmailStatus(env, 'admin@x.com')).toBe('unknown') // at once
+      const answer = superadminEmailStatus(env, 'admin@x.com')
+      expect(vi.getTimerCount()).toBe(0) // no wait was scheduled
+      expect(await answer).toBe('unknown')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('answers from a stale cache at once while a refresh hangs', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const hash = await sha256Hex('admin@x.com')
+      const spy = vi.spyOn(centralFetchMod, 'centralFetch')
+        .mockResolvedValue(new Response(JSON.stringify({ hashes: [hash] }), { status: 200 }))
+      expect(await superadminEmailStatus(env, 'admin@x.com')).toBe('yes') // warms the cache
+
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1) // past the TTL
+      spy.mockImplementation(() => new Promise<Response>(() => {}))
+      void superadminEmailStatus(env, 'admin@x.com') // starts a refresh, which never settles
+      const answer = superadminEmailStatus(env, 'admin@x.com')
+      expect(vi.getTimerCount()).toBe(0) // no wait was scheduled
+      expect(await answer).toBe('yes')
+      expect(spy).toHaveBeenCalledTimes(2)
     } finally {
       vi.useRealTimers()
     }
