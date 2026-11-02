@@ -374,18 +374,62 @@ describe('motion', () => {
     expect(animations[1].cancel).toHaveBeenCalledTimes(1)
   })
 
-  it('cancelling its own animation on finish does not disturb a fold that has started since', () => {
+  // Open, finish, then fold (animation 1), open again (same height as open: no motion, animation 1
+  // is cancelled by us), fold again (animation 2). Animation 1's events can now arrive late.
+  function supersededFold() {
     installAnimate(); overflow()
     render(<TextFold />)
+    const box = content().parentElement as HTMLElement
+    const clip = box.parentElement as HTMLElement
+    const clamp = () => box.style.webkitLineClamp || box.style.getPropertyValue('-webkit-line-clamp')
     fireEvent.click(toggle())
-    animations[0].onfinish?.()
+    finish(0)
     fireEvent.click(toggle())
-    animations[1].onfinish?.()
-    // The cancel event the release caused arrives late; the guard ignores it.
     fireEvent.click(toggle())
-    animations[1].oncancel?.()
-    expect(toggle()).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.click(toggle())
     expect(animations).toHaveLength(3)
+    expect(clamp()).toBe('')
+    expect(clip.style.overflow).toBe('hidden')
+    return { clip, clamp }
+  }
+
+  it('a late cancel event from a superseded animation leaves the running fold held, clipped and released only by its own finish', () => {
+    const { clip, clamp } = supersededFold()
+    animations[1].oncancel?.()
+    expect(clamp()).toBe('')
+    expect(clip.style.overflow).toBe('hidden')
+    expect(animations[2].cancel).not.toHaveBeenCalled()
+    animations[2].onfinish?.()
+    expect(clamp()).toBe('2')
+    expect(clip.style.overflow).toBe('')
+    expect(animations[2].cancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('a late finish event from a superseded animation does not settle or cancel the running fold', () => {
+    const { clip, clamp } = supersededFold()
+    animations[1].onfinish?.()
+    expect(clamp()).toBe('')
+    expect(clip.style.overflow).toBe('hidden')
+    expect(animations[2].cancel).not.toHaveBeenCalled()
+    // The real one still settles it afterwards.
+    animations[2].onfinish?.()
+    expect(clamp()).toBe('2')
+    expect(animations[2].cancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('commits the folded content before it releases the fill', () => {
+    installAnimate(); overflow()
+    render(<TextFold />)
+    const box = content().parentElement as HTMLElement
+    const clamp = () => box.style.webkitLineClamp || box.style.getPropertyValue('-webkit-line-clamp')
+    fireEvent.click(toggle())
+    finish(0)
+    let seen: string | null = null
+    fireEvent.click(toggle())
+    animations[1].cancel.mockImplementation(() => { seen = clamp() })
+    animations[1].onfinish?.()
+    // Releasing the fill earlier would paint the open content at its natural height.
+    expect(seen).toBe('2')
   })
 
   it('an animation cancelled from outside while folding drops the held open content', () => {
