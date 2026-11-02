@@ -68,6 +68,23 @@ describe('renderSummaryHtml: inline', () => {
     expect(strip).toBe('<p>Uses a_b_c and 5 * 3.</p>')
   })
 
+  it('renders bold inside emphasis without closing the em on the bold marker', () => {
+    const strip = renderSummaryHtml('*x **y** z*').replace(/ style="[^"]*"/g, '')
+    expect(strip).toBe('<p><em>x <strong>y</strong> z</em></p>')
+  })
+
+  it('trims the last block margin by position, never by matching text', () => {
+    const html = renderSummaryHtml('Lead.\n\nmargin:0 0 6px')
+    expect(html).toContain('>margin:0 0 6px</p>')
+    expect(html.match(/<p style="([^"]*)">/g)).toEqual(['<p style="margin:0 0 6px 0;">', '<p style="margin:0;">'])
+  })
+
+  it('trims the last list margin by position too', () => {
+    const html = renderSummaryHtml('- margin:0 0 6px')
+    expect(html).toContain('>margin:0 0 6px</li>')
+    expect(html).toMatch(/^<ul style="margin:0 0 0 18px;padding:0;">/)
+  })
+
   it('leaves an unclosed marker as literal text', () => {
     const strip = renderSummaryHtml('Half **open text').replace(/ style="[^"]*"/g, '')
     expect(strip).toBe('<p>Half **open text</p>')
@@ -89,7 +106,7 @@ describe('renderSummaryHtml: escaping', () => {
     expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
     expect(html).toContain('&lt;a href=&quot;https://evil.test&quot;&gt;click&lt;/a&gt;')
     expect(html).toContain('&amp; &quot;quote&quot;')
-    expect(html).toContain('&#39;single&#39;')
+    expect(html).toContain("'single'")
   })
 
   it('escapes inside list items and bold', () => {

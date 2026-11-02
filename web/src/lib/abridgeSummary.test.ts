@@ -128,6 +128,36 @@ describe('abridgeSummary: where it cuts', () => {
     expect(itemLines(abridgeSummary(raw).md)[0]).toMatch(/word\*\*…$/)
   })
 
+  it('closes a single-marker emphasis the cut falls inside', () => {
+    for (const m of ['*', '_']) {
+      const item = itemLines(abridgeSummary(`${filler(54)}\n- ${m}${filler(40)}${m} tail`).md)[0]
+      expect(item.split(m).length - 1).toBe(2)
+      expect(item.endsWith(`${m}…`)).toBe(true)
+    }
+  })
+
+  it('leaves a lone asterisk that is not emphasis alone', () => {
+    const { md } = abridgeSummary(`${filler(54)}\n- 5 * 3 ${filler(40)}`)
+    expect(itemLines(md)[0].split('*').length - 1).toBe(1)
+  })
+
+  it('trims final punctuation before the ellipsis on a whole crossing item that more items follow', () => {
+    const raw = `${filler(60)}\n- ${filler(18)}.\n- ${filler(18)}`
+    expect(itemLines(abridgeSummary(raw).md)).toEqual([`- ${filler(18)}…`])
+  })
+
+  it('trims a final period before the ellipsis on a cut', () => {
+    const { md } = abridgeSummary(Array(100).fill('word.').join(' '))
+    expect(md.endsWith('word…')).toBe(true)
+  })
+
+  it('caps a block of markers that count as no text, so it cannot bypass the budget', () => {
+    const { md, cut } = abridgeSummary('**** '.repeat(3000))
+    expect(cut).toBe(true)
+    expect(md.length).toBeLessThanOrEqual(3 * 320 + 10)
+    expect(md.endsWith('…')).toBe(true)
+  })
+
   it('counts several paragraphs against one budget, cutting the one that crosses it', () => {
     const { md, cut } = abridgeSummary(`${filler(30)}\n\n${filler(30)}\n\n${filler(30)}`)
     expect(cut).toBe(true)

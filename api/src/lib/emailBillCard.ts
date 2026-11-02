@@ -5,10 +5,8 @@ import { COMMENT_STYLE } from '../../../shared/commentStyle'
 import { emailIconSrc } from '../../../shared/emailIcons'
 import { dbTsToEpoch } from '../../../shared/time'
 import { renderEmailSummary } from './emailSummary'
+import { escHtml } from './escHtml'
 
-function escHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-}
 
 // Links inherit surrounding color + no underline, so the card looks identical
 // to a static card but is clickable (matches the Feed / digest).

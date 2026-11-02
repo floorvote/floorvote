@@ -1,5 +1,6 @@
 import { abridgeSummary, parseSummaryBlocks } from '../../../shared/markdown'
 import { color, fontSize, fontWeight } from '../../../shared/tokens'
+import { escHtml } from './escHtml'
 
 /**
  * The summary an email bill card shows: AI output, abridged and rendered as a
@@ -10,9 +11,7 @@ import { color, fontSize, fontWeight } from '../../../shared/tokens'
  * has neither, and shared/markdown.ts takes no dependencies.)
  */
 
-const esc = (s: string) => s
-  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+const esc = escHtml
 
 // Inline styles, because Gmail and Outlook drop <style>. Top-level blocks keep a
 // 6px gap (trimmed from the last one); a nested list sits flush in its item.
@@ -20,12 +19,13 @@ const P_STYLE = 'margin:0 0 6px 0;'
 const TOP_LIST_STYLE = 'margin:0 0 6px 18px;padding:0;'
 const NESTED_LIST_STYLE = 'margin:0 0 0 18px;padding:0;'
 const LI_STYLE = 'margin:2px 0;'
-const TOP_GAP = 'margin:0 0 6px'
+const LAST_P_STYLE = 'margin:0;'
+const LAST_TOP_LIST_STYLE = 'margin:0 0 0 18px;padding:0;'
 
 // **bold**, __bold__, *em*, _em_. A marker opens only before a non-space and
 // closes only after one, and an underscore never opens inside a word
 // (snake_case stays text), so a stray marker is left as literal text.
-const INLINE = /\*\*(?=\S)(.+?)(?<=\S)\*\*|__(?=\S)(.+?)(?<=\S)__|\*(?=[^\s*])(.+?)(?<=[^\s*])\*|(?<![A-Za-z0-9_])_(?=[^\s_])(.+?)(?<=[^\s_])_(?![A-Za-z0-9_])/g
+const INLINE = /\*\*(?=\S)(.+?)(?<=\S)\*\*|__(?=\S)(.+?)(?<=\S)__|\*(?!\*)(?=\S)(.+?)(?<=[^\s*])\*(?!\*)|(?<![A-Za-z0-9_])_(?=[^\s_])(.+?)(?<=[^\s_])_(?![A-Za-z0-9_])/g
 
 function renderInline(text: string): string {
   let out = ''
@@ -47,14 +47,20 @@ function renderInline(text: string): string {
  */
 export function renderSummaryHtml(md: string): string {
   let html = ''
+  let lastTopStart = 0   // where the last top-level block's opening tag begins
   const open: boolean[] = []   // for each open list, whether it is ordered
   const tag = (ordered: boolean) => (ordered ? 'ol' : 'ul')
   const closeLists = (keep: number) => {
     while (open.length > keep) html += `</li></${tag(open.pop()!)}>`
   }
+  const openList = (ordered: boolean, depth: number) => {
+    if (depth === 0) lastTopStart = html.length
+    html += `<${tag(ordered)} style="${depth ? NESTED_LIST_STYLE : TOP_LIST_STYLE}">`
+  }
   for (const { text, item } of parseSummaryBlocks(md)) {
     if (!item) {
       closeLists(0)
+      lastTopStart = html.length
       html += `<p style="${P_STYLE}">${renderInline(text)}</p>`
       continue
     }
@@ -67,18 +73,20 @@ export function renderSummaryHtml(md: string): string {
       if (open[depth] !== ordered) {
         html += `</${tag(open[depth])}>`
         open[depth] = ordered
-        html += `<${tag(ordered)} style="${depth ? NESTED_LIST_STYLE : TOP_LIST_STYLE}">`
+        openList(ordered, depth)
       }
     } else {
       open.push(ordered)
-      html += `<${tag(ordered)} style="${depth ? NESTED_LIST_STYLE : TOP_LIST_STYLE}">`
+      openList(ordered, depth)
     }
     html += `<li style="${LI_STYLE}">${renderInline(text)}`
   }
   closeLists(0)
-  // The card's own padding closes the summary: no gap under the last block.
-  const at = html.lastIndexOf(TOP_GAP)
-  return at < 0 ? html : html.slice(0, at) + 'margin:0 0 0' + html.slice(at + TOP_GAP.length)
+  // The card's own padding closes the summary: no gap under the last block. The
+  // block's opening tag starts at lastTopStart, so its style is the first match in the tail.
+  const tail = html.slice(lastTopStart)
+  const [from, to] = tail.startsWith('<p ') ? [P_STYLE, LAST_P_STYLE] : [TOP_LIST_STYLE, LAST_TOP_LIST_STYLE]
+  return html.slice(0, lastTopStart) + tail.replace(from, to)
 }
 
 /**
