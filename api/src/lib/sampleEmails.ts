@@ -14,6 +14,28 @@ import { renderReplyEmail, muteBillPageUrl } from './replies'
 import { renderInviteBounceEmail, type BouncedAddress } from './inviteBounceEmail'
 import { renderEmailChangeConfirmEmail, renderEmailChangeNoticeEmail, renderEmailChangeReportedEmail } from './emailChangeEmail'
 
+// Summaries as the AI writes them: a lead sentence and a bold-label list. The first is long
+// enough that the email card abridges it ("…" and a link to the full summary); the second and
+// third fit whole. Invented text.
+const SAMPLE_SUMMARY_LONG = [
+  'Requires photo identification to vote in person and by mail, with free IDs issued by the state.',
+  '- **Accepted IDs**: Lists the driver licenses, passports, student cards, and tribal IDs a voter may show at the polls or attach to a mail ballot application.',
+  '- **Free state ID**: Directs the motor vehicle office to issue a free voter ID to anyone who signs a sworn statement that they cannot afford one.',
+  '- **Provisional ballots**: Lets a voter without ID cast a provisional ballot, counted once they present ID to the local board within six days.',
+  '- **Poll worker training**: Requires annual training for poll workers on checking IDs and offering provisional ballots.',
+  '- **Reporting**: Has each local board report to the state how many voters were asked for ID and how many cast provisional ballots.',
+].join('\n')
+const SAMPLE_SUMMARY_SHORT = [
+  'Authorizes secure 24-hour drop boxes in every municipality.',
+  '- **Placement**: Puts at least one box at each town hall.',
+  '- **Custody**: Sets chain-of-custody rules for collecting ballots.',
+].join('\n')
+const SAMPLE_SUMMARY_FITS = [
+  'Requires photo identification to vote in person and by mail.',
+  '- **Accepted IDs**: Lists the IDs a voter may show.',
+  '- **Free state ID**: Issues a free voter ID on request.',
+].join('\n')
+
 export const SAMPLE_ASSOC_NAME = 'Rhode Island Association of Local Election Officials'
 
 export const SAMPLE_WEEK_AHEAD_DAYS: WeekAheadDay[] = [
@@ -45,14 +67,14 @@ export const SAMPLE_WEEK_AHEAD_DAYS: WeekAheadDay[] = [
 
 const j = (o: unknown) => JSON.stringify(o)
 export const SAMPLE_DIGEST_EVENTS: DigestEvent[] = [
-  { type: 'priority_set', metadata: j({ priority: 'high' }), createdAt: '2026-06-09 14:02:00', billId: 'b1', billNumber: 'HB 1234', billTitle: 'Voter ID Act', billState: 'RI', billSession: '2026', priority: 'high', summary: 'Requires photo identification to vote in person and by mail, with free IDs issued by the state.', userName: 'Dana Reed' },
+  { type: 'priority_set', metadata: j({ priority: 'high' }), createdAt: '2026-06-09 14:02:00', billId: 'b1', billNumber: 'HB 1234', billTitle: 'Voter ID Act', billState: 'RI', billSession: '2026', priority: 'high', summary: SAMPLE_SUMMARY_LONG, userName: 'Dana Reed' },
   { type: 'bill_updated', metadata: j({ changes: [{ changeType: 'action_added', newValue: 'Passed House committee' }] }), createdAt: '2026-06-10 09:30:00', billId: 'b1', billNumber: 'HB 1234', billTitle: 'Voter ID Act', billState: 'RI', billSession: '2026', priority: 'high', summary: null, userName: null },
   { type: 'comment_added', metadata: j({ preview: 'We should testify against this at the hearing.' }), createdAt: '2026-06-10 16:45:00', billId: 'b1', billNumber: 'HB 1234', billTitle: 'Voter ID Act', billState: 'RI', billSession: '2026', priority: 'high', summary: null, userName: 'Sam Ortiz' },
   // Long comment, stored cut at COMMENT_PREVIEW_MAX with no trailing marker —
   // the legacy shape written before the ellipsis fix. Kept in the sample so the
   // digest QA email and the snapshot both cover a truncated comment row.
   { type: 'comment_added', metadata: j({ preview: 'Free IDs sound simple, but our office would need a second workstation and staff coverage to issue them during peak weeks' }), createdAt: '2026-06-10 17:20:00', billId: 'b1', billNumber: 'HB 1234', billTitle: 'Voter ID Act', billState: 'RI', billSession: '2026', priority: 'high', summary: null, userName: 'Marguerite Okonkwo' },
-  { type: 'position_set', metadata: j({ position: 'Oppose' }), createdAt: '2026-06-10 11:15:00', billId: 'b2', billNumber: 'S 0456', billTitle: 'Mail Ballot Drop Boxes', billState: 'RI', billSession: '2026', priority: 'medium', summary: 'Authorizes secure 24-hour drop boxes in every municipality and sets chain-of-custody rules.', userName: 'Dana Reed' },
+  { type: 'position_set', metadata: j({ position: 'Oppose' }), createdAt: '2026-06-10 11:15:00', billId: 'b2', billNumber: 'S 0456', billTitle: 'Mail Ballot Drop Boxes', billState: 'RI', billSession: '2026', priority: 'medium', summary: SAMPLE_SUMMARY_SHORT, userName: 'Dana Reed' },
   // A companion group: identical bills in both chambers are one card, each event labeled by its bill.
   { type: 'bill_updated', metadata: j({ changes: [{ changeType: 'action_added', newValue: 'Passed House committee' }] }), createdAt: '2026-06-10 10:05:00', billId: 'b8', billNumber: 'HB 1240', billTitle: 'Early Voting Site Requirements', billState: 'RI', billSession: '2026', priority: 'high', summary: 'Sets minimum hours and staffing for early voting sites in every county.', userName: null, billGroupKey: 'b8' },
   { type: 'bill_updated', metadata: j({ changes: [{ changeType: 'action_added', newValue: 'Reported from committee' }] }), createdAt: '2026-06-10 13:40:00', billId: 'b9', billNumber: 'S 0733', billTitle: 'Early Voting Site Requirements', billState: 'RI', billSession: '2026', priority: 'high', summary: null, userName: null, billGroupKey: 'b8' },
@@ -164,7 +186,7 @@ export function renderSampleEmail(type: SampleEmailType, appUrl: string): { subj
           appUrl,
           instanceName: SAMPLE_ASSOC_NAME,
           author: { name: 'Sam Ortiz', title: 'Town Clerk, Cranston' },
-          bill: { id: 'b1', billNumber: 'HB 1234', title: 'Voter ID Act', state: 'RI', session: '2026 Regular Session', priority: 'high', tenantSummary: 'Requires photo identification to vote in person and by mail, with free IDs issued by the state.' },
+          bill: { id: 'b1', billNumber: 'HB 1234', title: 'Voter ID Act', state: 'RI', session: '2026 Regular Session', priority: 'high', tenantSummary: SAMPLE_SUMMARY_FITS },
           comment: { id: 'sample-comment', createdAt: '2026-06-10 16:45:00', html: '<p>I read the amended text. Section two still lets a clerk waive the ID check, so I don\'t think we need to oppose it after all.</p>' },
           // A sample is not signed for anyone, so its mute link opens the page and goes no further.
           muteUrl: muteBillPageUrl(appUrl, 'sample'),

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { EventItem } from './EventItem'
@@ -53,6 +53,32 @@ function renderItem(event: CalendarEvent, isAdmin: boolean, props?: Partial<Para
   )
   return { onEdit, onDelete, onRestore, onEditSave, onEditCancel }
 }
+
+// The details fold's toggle hugs the text (1px); what follows leaves at least twice that.
+describe('EventItem details fold: the gap after it', () => {
+  const dims = { scrollHeight: 90, clientHeight: 36 }
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(() => dims.scrollHeight)
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(() => dims.clientHeight)
+  })
+  afterEach(() => vi.restoreAllMocks())
+  const withDetails: CalendarEvent = { ...hearing, details: 'Long details that run on and on.' }
+  const foldWrapper = () => document.querySelector('[data-fold-state]')!.parentElement as HTMLElement
+
+  it('has the committee line, 3px below, right after the toggle', () => {
+    renderItem({ ...withDetails, committee: 'Committee on Finance' }, false)
+    const btn = screen.getByRole('button', { name: 'Show more' })
+    expect(btn.style.marginTop).toBe('1px')
+    expect(foldWrapper().contains(btn)).toBe(true)
+    expect((foldWrapper().nextElementSibling as HTMLElement).style.marginTop).toBe('3px')
+  })
+
+  it('has the card\'s 8px bottom padding after the toggle when no committee follows', () => {
+    renderItem(withDetails, false)
+    expect(foldWrapper().nextElementSibling).toBeNull()
+    expect((foldWrapper().parentElement!.parentElement as HTMLElement).style.padding).toBe('8px 10px')
+  })
+})
 
 describe('EventItem', () => {
   it('renders the event name with bill chips below (no All day label)', () => {

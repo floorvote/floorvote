@@ -256,7 +256,9 @@ export const BillRow = memo(function BillRow({
         isActive={interactive ? filter.status.includes(bill.status) : undefined}
       />
 
-  const summaryGap = bill.tags.length > 0 ? 10 : 5
+  // The chips shown under the summary: the priority is its own chip, so it isn't one of these.
+  const visibleTags = bill.tags.filter(tag => tag.toLowerCase() !== bill.priority?.toLowerCase())
+  const summaryGap = visibleTags.length > 0 ? 10 : 5
 
   return (
     <div
@@ -408,9 +410,9 @@ export const BillRow = memo(function BillRow({
             {bill.abstract}
           </Fold>
         ) : null}
-        {bill.tags.length > 0 && (
+        {visibleTags.length > 0 && (
           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-            {bill.tags.filter(tag => tag.toLowerCase() !== bill.priority?.toLowerCase()).map((tag) => (
+            {visibleTags.map((tag) => (
               <button
                 key={tag}
                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); onTagClick(tag) }}

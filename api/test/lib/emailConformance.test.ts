@@ -34,7 +34,8 @@ describe('email conformance — every sample type shares the shell contract', ()
 
       it('uses the blue CTA button (navy reserved for chips) with no arrow glyph in buttons', () => {
         expect(html).toContain(`background:${color.accentBlue}`) // #3b82f6, not navy
-        expect(html).not.toContain('→</a>')
+        // The abridged summary's "Full summary on FloorVote →" is a text link, not a button.
+        expect(html.replaceAll('Full summary on FloorVote →</a>', '')).not.toContain('→</a>')
       })
 
       // The web app's colors are CSS variables that follow the color mode; email

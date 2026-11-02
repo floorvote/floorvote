@@ -25,14 +25,14 @@ import { EASE } from './CollapsibleSection'
  *  collapsible section's header, so this is longer than CollapsibleSection's 160ms. */
 export const FOLD_MS = 240
 
-/** The look of every fold link: 12px blue, no chrome. Exported so a control that opens
- *  something other than an in-place fold (the month grid's "+N more" popover) can wear
- *  the same text style. */
 /** How far the toggle sits below the text it folds. Tight, so the toggle reads as part of
  *  the text: the gap after the whole fold (toggle included) should be at least twice this,
  *  so spacing alone groups the toggle with its text and not with whatever follows. */
 export const FOLD_TOGGLE_GAP = 1
 
+/** The look of every fold link: 12px blue, no chrome. Exported so a control that opens
+ *  something other than an in-place fold (the month grid's "+N more" popover) can wear
+ *  the same text style. */
 export const FOLD_LINK_STYLE: CSSProperties = {
   display: 'inline-flex', alignItems: 'center', gap: 4,
   padding: 0, border: 'none', background: 'none', cursor: 'pointer',

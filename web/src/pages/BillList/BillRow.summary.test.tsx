@@ -186,6 +186,16 @@ describe('BillRow: the gap after the fold', () => {
     expect(wrapper(container).style.marginBottom).toBe('10px')
   })
 
+  it('stays 5px when the only tag is the priority, which the chip row leaves out', () => {
+    const { container } = renderRow({ tenantSummary: LIST, tags: ['High'], priority: 'high' })
+    expect(wrapper(container).style.marginBottom).toBe('5px')
+  })
+
+  it('is 10px when a tag besides the priority follows', () => {
+    const { container } = renderRow({ tenantSummary: LIST, tags: ['High', 'Alpha'], priority: 'high' })
+    expect(wrapper(container).style.marginBottom).toBe('10px')
+  })
+
   it('stays 5px when no tags follow, so the row does not gain empty space above its padding', () => {
     expect(wrapper(renderRow({ tenantSummary: LIST, tags: [] }).container).style.marginBottom).toBe('5px')
     expect(wrapper(renderRow({ tenantSummary: null, abstract: ABSTRACT, tags: [] }).container).style.marginBottom).toBe('5px')
