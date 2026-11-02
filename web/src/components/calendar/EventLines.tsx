@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+import type { CSSProperties } from 'react'
 import { color, fontSize } from '../../styles/tokens'
 import type { CalendarEvent } from '../../lib/calendarGrid'
 import { BillBadge } from '../BillBadge'
@@ -8,6 +8,7 @@ import {
   type EventBodyModel, eventBodyModel, formatEventUrl,
 } from '../../../../shared/eventLineModel'
 import { EventSourceIcon } from './EventSourceIcon'
+import { Fold } from '../Fold'
 
 export { EVENT_TITLE_STYLE, EVENT_META_STYLE, type EventBodyModel, eventBodyModel }
 
@@ -33,7 +34,6 @@ export function EventLines({ event, compact = false, linkChips = false, suppress
   /** A past event's title wears the secondary text color (cancelled titles keep their own). */
   pastTitle?: boolean
 }) {
-  const [showAll, setShowAll] = useState(false)
   const { time, text, location, cancelled } = eventBodyModel(event, compact)
   // In the compact month cell with no bills, all content (title + location +
   // description) merges into one -webkit-line-clamp:3 block so the clamp
@@ -48,27 +48,7 @@ export function EventLines({ event, compact = false, linkChips = false, suppress
     : null
   const isCompactNoBills = compact && event.bills.length === 0
   const lineFont = compact ? fontSize.xs : fontSize.sm
-  // The toggle shows only where the clamp hides something: the details box is taller than it
-  // is visible. Measured, not guessed from the text, and again when the box resizes. Once
-  // expanded nothing overflows, so "Show less" stays while the details are open.
-  const detailsRef = useRef<HTMLDivElement>(null)
-  const [overflows, setOverflows] = useState(false)
-  const measuring = clampDetails && !!event.details && !showAll
-  useLayoutEffect(() => {
-    const el = detailsRef.current
-    if (!measuring || !el) return
-    const measure = () => setOverflows(el.scrollHeight > el.clientHeight)
-    measure()
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
-    observer?.observe(el)
-    window.addEventListener('resize', measure)
-    return () => { observer?.disconnect(); window.removeEventListener('resize', measure) }
-  }, [measuring, event.details])
-  const showToggle = clampDetails && !!event.details && (showAll || overflows)
-  const detailStyle: CSSProperties = {
-    ...EVENT_META_STYLE, marginTop: 4, whiteSpace: 'pre-line', lineHeight: 1.5,
-    ...(clampDetails && !showAll ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } as CSSProperties : {}),
-  }
+  const detailStyle: CSSProperties = { ...EVENT_META_STYLE, whiteSpace: 'pre-line', lineHeight: 1.5 }
   const cancelStyle: CSSProperties = cancelled
     ? { color: color.textMuted, textDecoration: 'line-through' }
     : pastTitle ? { color: color.textSecondary } : {}
@@ -179,20 +159,10 @@ export function EventLines({ event, compact = false, linkChips = false, suppress
         </div>
       )}
       {event.bills.length > 0 && billChips(true)}
-      {event.details && (
-        <>
-          <div ref={detailsRef} style={detailStyle}>{event.details}</div>
-          {showToggle && (
-            <button
-              type="button"
-              onClick={() => setShowAll(v => !v)}
-              style={{ marginTop: 2, padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontSize: fontSize.xs, color: color.linkBlue }}
-            >
-              {showAll ? 'Show less' : 'Show more'}
-            </button>
-          )}
-        </>
-      )}
+      {event.details && (clampDetails
+        // Two lines, then the shared "Show more" toggle on its own line when the text is cut off.
+        ? <Fold collapsed={{ lines: 2 }} style={detailStyle} wrapperStyle={{ marginTop: 4 }}>{event.details}</Fold>
+        : <div style={{ ...detailStyle, marginTop: 4 }}>{event.details}</div>)}
     </>
   )
 }

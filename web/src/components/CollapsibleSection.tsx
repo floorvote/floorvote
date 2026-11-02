@@ -13,7 +13,9 @@ export const OPEN_PAINT_ROOM = 16
 // How long after opening the room is made if no transitionend arrives (a
 // section opened while it wasn't rendered, say).
 const SETTLE_FALLBACK_MS = DUR + 60
-const EASE = 'cubic-bezier(.4, 0, .2, 1)'
+// Shared with the in-place folds (Fold.tsx), so every open-and-close motion in the app
+// follows one curve.
+export const EASE = 'cubic-bezier(.4, 0, .2, 1)'
 
 export interface CollapsibleSectionProps {
   /** Anchor id for deep links (e.g. "section-actions"). */

@@ -45,7 +45,7 @@ import { primaryButtonColors } from '../styles/primaryButton'
 import { TAG_CHIP, TAG_CHIP_HOVERED } from '../lib/tagChipStyle'
 import { CARD } from '../lib/cardStyle'
 import { COUNT_BADGE, displayName, ROLE_CHIP, TOOLTIP_STYLE, sortRoles } from '../lib/chipStyles'
-import { SECTION_LABEL, CHROME_TEXT, FONT_SANS, FORM_LABEL } from '../lib/textStyles'
+import { SECTION_LABEL, CHROME_TEXT, FORM_LABEL } from '../lib/textStyles'
 import { HoverTooltip } from '../components/HoverTooltip'
 import { SubjectsTrigger, SubjectsPanel } from '../components/SubjectsDisclosure'
 import { ChangeHistoryTooltip, type ChangeRecord } from '../components/ChangeHistoryTooltip'
@@ -73,6 +73,7 @@ import { isEditableTarget } from '../lib/isEditableTarget'
 import { BillPicker, type BillOption } from '../components/BillPicker'
 import { editableFieldBox } from '../lib/editableFieldStyle'
 import { CollapsibleSection } from '../components/CollapsibleSection'
+import { Fold, FoldToggle, useFold } from '../components/Fold'
 import { ProviderExtrasList, ExtraMetaItem, ExtraDetailList, ExtraFlagItem, placeExtras } from '../components/ProviderExtras'
 import type { BillExtras } from '../../../shared/providerExtras'
 import { RELATIONSHIP_KINDS, RELATIONSHIP_KIND_LABELS, isRelationshipKind, type RelationshipKind } from '../../../shared/relationshipKinds'
@@ -117,10 +118,11 @@ export function countClippedSponsors(itemRights: number[], boundaryRight: number
 }
 
 // The bill-detail sponsors row. Collapsed, it clamps sponsors + co-sponsors to a
-// single line and offers a "+N more" toggle *only when that line actually
-// overflows* (measured, not gated on a co-sponsor count — so primary-heavy bills
-// get one too). Expanded, the whole run wraps in place as one continuous inline
-// flow: each name stays whole, and a label never dangles or splits at its hyphen.
+// single line and offers the shared "+N more" count-fold toggle, on its own line
+// below, *only when that line actually overflows* (measured, not gated on a
+// co-sponsor count — so primary-heavy bills get one too). Expanded, the whole run
+// wraps in place as one continuous inline flow: each name stays whole, and a label
+// never dangles or splits at its hyphen.
 function SponsorsRow({ sponsor, sponsorUrl, sponsorParty, coSponsors, flashed }: {
   sponsor: string | null
   sponsorUrl: string | null
@@ -128,7 +130,7 @@ function SponsorsRow({ sponsor, sponsorUrl, sponsorParty, coSponsors, flashed }:
   coSponsors: CoSponsor[]
   flashed: boolean
 }) {
-  const [showAll, setShowAll] = useState(false)
+  const fold = useFold()
   const [hiddenCount, setHiddenCount] = useState(0)
   const flowRef = useRef<HTMLSpanElement>(null)
 
@@ -140,7 +142,7 @@ function SponsorsRow({ sponsor, sponsorUrl, sponsorParty, coSponsors, flashed }:
   // clipped, re-measuring as the column resizes. jsdom has neither layout nor a
   // ResizeObserver, so the guarded initial measure simply yields 0 there.
   useLayoutEffect(() => {
-    if (showAll) return
+    if (fold.expanded) return
     const flow = flowRef.current
     if (!flow) return
     const measure = () => {
@@ -153,7 +155,7 @@ function SponsorsRow({ sponsor, sponsorUrl, sponsorParty, coSponsors, flashed }:
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null
     ro?.observe(flow)
     return () => ro?.disconnect()
-  }, [showAll, sponsor, coSponsors])
+  }, [fold.expanded, sponsor, coSponsors])
 
   const labelStyle = { color: color.textMuted, whiteSpace: 'nowrap' as const }
 
@@ -162,219 +164,67 @@ function SponsorsRow({ sponsor, sponsorUrl, sponsorParty, coSponsors, flashed }:
       id="section-sponsors"
       style={{
         fontSize: fontSize.sm, color: color.textSecondary,
-        display: showAll ? 'block' : 'flex', alignItems: 'baseline',
         minWidth: 0, marginBottom: 0,
         boxShadow: flashed ? `0 0 0 3px ${color.borderAmber}` : 'none',
         transition: 'box-shadow 0.6s ease', borderRadius: radius.sm,
       }}
     >
-      <span
-        ref={flowRef}
-        style={showAll
-          ? { display: 'inline', whiteSpace: 'normal' }
-          : { display: 'block', flex: '1 1 auto', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-      >
-        {/* Primary group. The inter-group gap rides on its right edge so the
-            "Co-sponsors:" label sits flush left whenever it wraps to a new line. */}
-        <span style={regularCoSponsors.length > 0 ? { marginRight: 16 } : undefined}>
-          <span style={labelStyle}>{label}&nbsp;</span>
-          {sponsor && (
-            <span data-sponsor-item>
-              <SponsorLink name={sponsor} url={sponsorUrl} party={sponsorParty} />
-            </span>
-          )}
-          {primaryCoSponsors.map((s, i) => (
-            <span key={`p-${i}`}>, <span data-sponsor-item><SponsorLink name={s.name} url={s.url} party={s.party ?? null} /></span></span>
-          ))}
-        </span>
-        {regularCoSponsors.length > 0 && (
-          <>
-            {' '}
-            <span style={labelStyle}>Co-sponsors:&nbsp;</span>
-            {regularCoSponsors.map((s, i) => (
-              <span key={`r-${i}`}>{i > 0 ? ', ' : ''}<span data-sponsor-item><SponsorLink name={s.name} url={s.url} party={s.party ?? null} /></span></span>
-            ))}
-          </>
-        )}
-      </span>
-      {(showAll || hiddenCount > 0) && (
-        <button
-          onClick={() => setShowAll(v => !v)}
-          style={{ marginLeft: 6, fontSize: fontSize.sm, color: color.linkBlue, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0 }}
+      {/* The clip box the fold animation resizes, from one line to the wrapped run. */}
+      <div {...fold.clipProps}>
+        <span
+          ref={flowRef}
+          data-sponsor-flow
+          style={fold.expanded
+            ? { display: 'inline', whiteSpace: 'normal' }
+            : { display: 'block', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
         >
-          {showAll ? 'show less' : `+${hiddenCount} more`}
-        </button>
+          {/* Primary group. The inter-group gap rides on its right edge so the
+              "Co-sponsors:" label sits flush left whenever it wraps to a new line. */}
+          <span style={regularCoSponsors.length > 0 ? { marginRight: 16 } : undefined}>
+            <span style={labelStyle}>{label}&nbsp;</span>
+            {sponsor && (
+              <span data-sponsor-item>
+                <SponsorLink name={sponsor} url={sponsorUrl} party={sponsorParty} />
+              </span>
+            )}
+            {primaryCoSponsors.map((s, i) => (
+              <span key={`p-${i}`}>, <span data-sponsor-item><SponsorLink name={s.name} url={s.url} party={s.party ?? null} /></span></span>
+            ))}
+          </span>
+          {regularCoSponsors.length > 0 && (
+            <>
+              {' '}
+              <span style={labelStyle}>Co-sponsors:&nbsp;</span>
+              {regularCoSponsors.map((s, i) => (
+                <span key={`r-${i}`}>{i > 0 ? ', ' : ''}<span data-sponsor-item><SponsorLink name={s.name} url={s.url} party={s.party ?? null} /></span></span>
+              ))}
+            </>
+          )}
+        </span>
+      </div>
+      {(fold.open || hiddenCount > 0) && (
+        <FoldToggle open={fold.open} count={hiddenCount} onToggle={fold.toggle} controls={fold.clipProps.id} />
       )}
     </div>
   )
 }
 
-// Largest n in [0, len] for which `fits(n)` holds, assuming fits() is monotonic
-// (true for every n below the threshold, false above it) — which holds here
-// because adding characters can only ever make text taller, never shorter.
-//
-// Pure, and takes the predicate rather than doing its own measuring, so the
-// binary search is unit-testable without a layout engine. Returns 0 when even
-// the empty prefix does not fit, which callers treat as "don't truncate".
-export function largestFittingPrefix(len: number, fits: (n: number) => boolean): number {
-  if (fits(len)) return len
-  let lo = 0
-  let hi = len
-  while (lo < hi) {
-    const mid = Math.ceil((lo + hi) / 2)
-    if (fits(mid)) lo = mid
-    else hi = mid - 1
-  }
-  return lo
-}
-
-// Number of lines the collapsed abstract shows, and the line-height it is laid
-// out at. The line-height must be explicit: the measurement below turns it into
-// a pixel budget, and a computed `normal` gives no number to multiply.
-const ABSTRACT_MAX_LINES = 2
-const ABSTRACT_LINE_HEIGHT = 1.45
-
-// The bill's italic abstract. Collapsed it shows two lines, with the toggle
-// sitting at the end of the last line and wrapping only when there is no room —
-// the same inline behaviour as the sponsors row above it.
-//
-// That placement is why this measures a text length rather than using
-// `-webkit-line-clamp`. A clamp cuts the box after N lines, and any inline
-// content after the cut — the button — is cut with it. Reserving room for the
-// button inside the clamped lines is not expressible in CSS, so the prefix that
-// leaves room for it is found by measurement instead: binary-search the longest
-// slice of text for which text + ellipsis + button still fits the line budget.
-//
-// The hidden measurer is a sibling with the same width and typography. React
-// never renders children into it, so mutating its textContent here does not
-// fight the reconciler; the visible copy is always rendered from state.
+// The bill's italic abstract: two lines, then the shared "Show more" toggle on its own
+// line when the text is cut off. The fold clamps the real text, so nothing is measured
+// or cut to a prefix here.
 function AbstractText({ text }: { text: string }) {
-  const [showAll, setShowAll] = useState(false)
-  // null = not yet measured, or the whole abstract fits and needs no toggle.
-  const [visibleLen, setVisibleLen] = useState<number | null>(null)
-  const measureRef = useRef<HTMLSpanElement>(null)
-  const measureTextRef = useRef<HTMLSpanElement>(null)
-  const measureToggleRef = useRef<HTMLSpanElement>(null)
-  const wrapRef = useRef<HTMLDivElement>(null)
-  const lastWidthRef = useRef(-1)
-
-  useLayoutEffect(() => {
-    if (showAll) return
-    const el = measureRef.current
-    const textEl = measureTextRef.current
-    const toggleEl = measureToggleRef.current
-    const wrap = wrapRef.current
-    if (!el || !textEl || !toggleEl || !wrap) return
-
-    const measure = () => {
-      const lineHeightPx = parseFloat(getComputedStyle(el).fontSize) * ABSTRACT_LINE_HEIGHT
-      const budget = lineHeightPx * ABSTRACT_MAX_LINES
-      // jsdom reports 0 for every box, so the full text trivially "fits" and no
-      // toggle renders — same no-layout behaviour the sponsors row relies on.
-      if (!(budget > 0)) { setVisibleLen(null); return }
-
-      const setAndMeasure = (s: string) => { textEl.textContent = s; return el.scrollHeight }
-
-      // Does the whole abstract fit on its own? Measured with the stand-in
-      // hidden, because in that case no toggle renders and its width must not
-      // count against the budget.
-      toggleEl.style.display = 'none'
-      const fitsWhole = setAndMeasure(text) <= budget + 1
-      toggleEl.style.display = ''
-      if (fitsWhole) { setVisibleLen(null); return }
-
-      const fits = (n: number) => setAndMeasure(`${text.slice(0, n).trimEnd()}… `) <= budget + 1
-      const n = largestFittingPrefix(text.length, fits)
-      setVisibleLen(n > 0 && n < text.length ? n : null)
-    }
-
-    lastWidthRef.current = -1
-    measure()
-
-    if (typeof ResizeObserver === 'undefined') return
-    // Observe the WRAPPER, never the measurer: measuring mutates the measurer's
-    // text and so its height, which would retrigger the observer that triggered
-    // the measurement — a feedback loop. The wrapper's width is also the only
-    // input that can change the answer, so the width guard keeps a height-only
-    // change (the visible copy growing when the toggle appears) from re-running
-    // the search for no reason.
-    const ro = new ResizeObserver(() => {
-      const w = Math.round(wrap.getBoundingClientRect().width)
-      if (w === lastWidthRef.current) return
-      lastWidthRef.current = w
-      measure()
-    })
-    ro.observe(wrap)
-    return () => ro.disconnect()
-  }, [showAll, text])
-
-  const truncated = !showAll && visibleLen !== null
-  const shown = truncated ? `${text.slice(0, visibleLen!).trimEnd()}… ` : text
-  const showToggle = truncated || showAll
-
-  const typography = {
-    fontSize: fontSize.sm, fontStyle: 'italic' as const,
-    fontFamily: "'Source Serif 4', serif", lineHeight: ABSTRACT_LINE_HEIGHT,
-  }
-
-  // ONE style object for the real toggle and the measurer's stand-in, so the
-  // space reserved for the toggle is the space it actually occupies. The first
-  // attempt reserved a plain string instead, which was wrong twice over: a
-  // <button> does not inherit font-family, so the real one rendered in the UA
-  // default sans while the reserved text rendered in Source Serif italic; and
-  // the real one is an atomic inline-block that must wrap whole, while the
-  // reserved text could break at its space. Both made the reservation too
-  // small, so the toggle landed on a third line — the bug this was meant to fix.
-  //
-  // FONT_SANS rather than inherit: the toggle is interface, not prose, so it
-  // opts out of the abstract's serif italic. Setting it here is safe precisely
-  // because both the button and the stand-in read this one object — the
-  // measurement follows the font automatically instead of having to be kept in
-  // agreement with it by hand.
-  const toggleStyle = {
-    fontSize: fontSize.sm, fontFamily: FONT_SANS, color: color.linkBlue,
-    background: 'none', border: 'none', padding: 0,
-    whiteSpace: 'nowrap' as const, fontStyle: 'normal' as const,
-    // A <button> is inline-block by default and a <span> is inline; pinning it
-    // makes the stand-in lay out the same way rather than nearly the same way.
-    display: 'inline-block' as const,
-  }
-
   return (
-    <div ref={wrapRef} style={{ position: 'relative', margin: '0 0 10px' }}>
-      {/* Visible copy. One inline flow, so the toggle rides the end of the last
-          line and wraps with it rather than claiming a line of its own. */}
-      <p style={{ ...typography, color: color.textMuted, margin: 0 }}>
-        {shown}
-        {showToggle && (
-          <button
-            onClick={() => setShowAll(v => !v)}
-            style={{ ...toggleStyle, cursor: 'pointer', marginLeft: showAll ? 4 : 0 }}
-          >
-            {showAll ? 'show less' : 'show more'}
-          </button>
-        )}
-      </p>
-      {/* Hidden measurer — same width and typography as the copy above, and
-          carrying a stand-in for the toggle so its width is part of the budget.
-          Only the text span's textContent is mutated during measurement, and
-          React renders no children into it, so this does not fight the
-          reconciler. */}
-      <span
-        ref={measureRef}
-        aria-hidden="true"
-        style={{
-          ...typography, position: 'absolute', top: 0, left: 0, right: 0,
-          visibility: 'hidden', pointerEvents: 'none', display: 'block',
-        }}
-      >
-        <span ref={measureTextRef} />
-        {/* Always the longer of the two labels: the collapsed state is the only
-            one measured, but reserving the wider label keeps the reservation
-            valid if the labels are ever changed independently. */}
-        <span ref={measureToggleRef} style={toggleStyle}>show more</span>
-      </span>
-    </div>
+    <Fold
+      as="p"
+      collapsed={{ lines: 2 }}
+      style={{
+        fontSize: fontSize.sm, fontStyle: 'italic', fontFamily: "'Source Serif 4', serif",
+        lineHeight: 1.45, color: color.textMuted, margin: 0,
+      }}
+      wrapperStyle={{ margin: '0 0 10px' }}
+    >
+      {text}
+    </Fold>
   )
 }
 
