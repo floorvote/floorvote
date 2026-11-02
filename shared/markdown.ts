@@ -201,12 +201,29 @@ function blocksToMarkdown(blocks: SummaryBlock[]): string {
 export const EMAIL_SUMMARY_BUDGET = 320
 /** The block that crosses the budget keeps at least this much, so a list never ends on a stub. */
 const EMAIL_SUMMARY_MIN_KEEP = 100
+/** A single block longer than this many budgets of raw markdown is cut whatever it counts as. */
+const EMAIL_SUMMARY_RAW_CAP_FACTOR = 3
 
 const plainLength = (md: string) => stripMarkdown(md).length
 
+/** Drop what trails a cut: spaces and sentence punctuation, so the ellipsis follows the last word. */
+const trimTail = (text: string) => text.replace(/[\s.,;:]+$/, '')
+
+/** Close a bold or emphasis a cut left open, so the cut text still parses as balanced. */
+function closeOpenMarkers(text: string): string {
+  let out = text
+  for (const marker of ['**', '__']) {
+    if (out.split(marker).length % 2 === 0) out += marker
+  }
+  const bare = out.replace(/\*\*|__/g, '')
+  if (/(?:^|[\s(])\*(?=[^\s*])[^*]*$/.test(bare)) out += '*'
+  if (/(?:^|[\s(])_(?=[^\s_])[^_]*$/.test(bare)) out += '_'
+  return out
+}
+
 /**
  * Cut markdown text to about `room` plain characters at a word, never mid-word:
- * trailing punctuation dropped, and a bold the cut left open closed.
+ * trailing punctuation dropped, and any bold or emphasis the cut left open closed.
  */
 function cutAtWord(md: string, room: number): string {
   let out = ''
@@ -215,11 +232,7 @@ function cutAtWord(md: string, room: number): string {
     if (out && plainLength(next) > room) break
     out = next
   }
-  out = out.replace(/[\s,;:]+$/, '')
-  for (const marker of ['**', '__']) {
-    if (out.split(marker).length % 2 === 0) out += marker
-  }
-  return out
+  return closeOpenMarkers(trimTail(out))
 }
 
 export type AbridgedSummary = { md: string; cut: boolean }
@@ -242,7 +255,9 @@ export function abridgeSummary(raw: string | null | undefined, budget = EMAIL_SU
   let used = 0
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i]
-    const length = plainLength(block.text)
+    // A block of markers counts as no text, so cap it by its raw length too.
+    const overlong = block.text.length > EMAIL_SUMMARY_RAW_CAP_FACTOR * budget
+    const length = overlong ? Infinity : plainLength(block.text)
     if (used + length <= budget) {
       kept.push(block)
       used += length
@@ -250,8 +265,10 @@ export function abridgeSummary(raw: string | null | undefined, budget = EMAIL_SU
     }
     const room = Math.max(budget - used, EMAIL_SUMMARY_MIN_KEEP)
     const shortened = length > room
-    const text = shortened ? cutAtWord(block.text, room) : block.text
+    const source = overlong ? block.text.slice(0, EMAIL_SUMMARY_RAW_CAP_FACTOR * budget).replace(/\s+\S*$/, '') : block.text
     const cut = shortened || i < blocks.length - 1
+    // Whole but followed by more: the ellipsis still goes after the last word, not the period.
+    const text = shortened ? cutAtWord(source, room) : cut ? trimTail(block.text) : block.text
     kept.push({ ...block, text: cut ? `${text}…` : text })
     return { md: blocksToMarkdown(kept), cut }
   }
