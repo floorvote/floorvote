@@ -147,3 +147,113 @@ export function normalizeListIndent(text: string): string {
     return '  '.repeat(depths.length - 1) + m[2] + m[4]
   }).join('\n')
 }
+
+/**
+ * One block of a normalized summary: a paragraph (`item` null) or one list item.
+ * `depth` is the nesting level (two spaces per level) and `marker` is `-` for a
+ * bullet or the item's own `1.` for a numbered one.
+ */
+export type SummaryBlock = { text: string; item: { depth: number; marker: string } | null }
+
+/** The markdown a summary parses from once the web renderer's normalizers have run. */
+export function normalizeSummary(raw: string): string {
+  const input = isHtml(raw) ? htmlToMarkdown(raw) : raw
+  return separateBlocks(normalizeListIndent(normalizeInlineBullets(input)))
+}
+
+/**
+ * Split normalized markdown into blocks in document order: each paragraph (its
+ * lines joined with a space) and each list item, nested ones included. Pure
+ * line work: it never produces HTML, so nothing here can carry a tag through.
+ */
+export function parseSummaryBlocks(md: string): SummaryBlock[] {
+  const blocks: SummaryBlock[] = []
+  let para: string[] = []
+  const flush = () => {
+    if (para.length) blocks.push({ text: para.join(' '), item: null })
+    para = []
+  }
+  for (const line of md.split('\n')) {
+    const m = /^( *)([-*+]|\d+\.)\s+(.*)$/.exec(line)
+    if (m) {
+      flush()
+      blocks.push({ text: m[3].trim(), item: { depth: Math.floor(m[1].length / 2), marker: /\d/.test(m[2]) ? m[2] : '-' } })
+    } else if (!line.trim()) {
+      flush()
+    } else {
+      para.push(line.trim().replace(/^#{1,6}\s+/, ''))
+    }
+  }
+  flush()
+  return blocks.filter(b => b.text)
+}
+
+function blocksToMarkdown(blocks: SummaryBlock[]): string {
+  return blocks.map((b, i) => {
+    const line = b.item ? `${'  '.repeat(b.item.depth)}${b.item.marker} ${b.text}` : b.text
+    if (i === 0) return line
+    // Items of one list sit on consecutive lines; anything else gets a blank line.
+    return (blocks[i - 1].item && b.item ? '\n' : '\n\n') + line
+  }).join('')
+}
+
+/** What an email card shows of a summary, in plain characters. */
+export const EMAIL_SUMMARY_BUDGET = 320
+/** The block that crosses the budget keeps at least this much, so a list never ends on a stub. */
+const EMAIL_SUMMARY_MIN_KEEP = 100
+
+const plainLength = (md: string) => stripMarkdown(md).length
+
+/**
+ * Cut markdown text to about `room` plain characters at a word, never mid-word:
+ * trailing punctuation dropped, and a bold the cut left open closed.
+ */
+function cutAtWord(md: string, room: number): string {
+  let out = ''
+  for (const word of md.split(/\s+/)) {
+    const next = out ? `${out} ${word}` : word
+    if (out && plainLength(next) > room) break
+    out = next
+  }
+  out = out.replace(/[\s,;:]+$/, '')
+  for (const marker of ['**', '__']) {
+    if (out.split(marker).length % 2 === 0) out += marker
+  }
+  return out
+}
+
+export type AbridgedSummary = { md: string; cut: boolean }
+
+/**
+ * The short form of a summary for an email card. Normalizes it as the web
+ * renderer does, then keeps blocks in order (the lead paragraph, then list items
+ * with their nesting) while the plain-text total stays within the budget.
+ *
+ * The block that crosses the budget keeps whatever fits, but at least about 100
+ * characters, cut at a word and ending in "…". If it fits within that minimum
+ * and nothing follows it, the whole summary is kept and `cut` is false.
+ *
+ * Returns normalized markdown (blank line between blocks, two-space nesting) and
+ * whether anything was left out.
+ */
+export function abridgeSummary(raw: string | null | undefined, budget = EMAIL_SUMMARY_BUDGET): AbridgedSummary {
+  const blocks = parseSummaryBlocks(normalizeSummary(raw ?? ''))
+  const kept: SummaryBlock[] = []
+  let used = 0
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i]
+    const length = plainLength(block.text)
+    if (used + length <= budget) {
+      kept.push(block)
+      used += length
+      continue
+    }
+    const room = Math.max(budget - used, EMAIL_SUMMARY_MIN_KEEP)
+    const shortened = length > room
+    const text = shortened ? cutAtWord(block.text, room) : block.text
+    const cut = shortened || i < blocks.length - 1
+    kept.push({ ...block, text: cut ? `${text}…` : text })
+    return { md: blocksToMarkdown(kept), cut }
+  }
+  return { md: blocksToMarkdown(kept), cut: false }
+}

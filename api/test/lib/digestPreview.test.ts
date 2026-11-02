@@ -255,9 +255,9 @@ describe('renderDigestEmail: new matches as full cards', () => {
     const html = render({ newMatches: [match(1, { summary: 'Lets counties start mail ballot processing a week early.' })] })
     expect(html).toContain('Lets counties start mail ballot processing a week early.')
   })
-  it('strips markdown from the summary like an updated bill card does', () => {
+  it('renders the summary markdown like an updated bill card does, with no literal markers', () => {
     const html = render({ newMatches: [match(1, { summary: '**Early processing** of mail ballots.' })] })
-    expect(html).toContain('Early processing of mail ballots.')
+    expect(html).toMatch(/<strong style="[^"]*">Early processing<\/strong> of mail ballots\./)
     expect(html).not.toContain('**')
   })
   it('escapes the summary and the title', () => {
