@@ -183,6 +183,11 @@ describe('the toggle look: text fold vs count fold', () => {
     expect(FOLD_LINK_STYLE.fontSize).toBe(fontSize.sm)
   })
 
+  it('hugs the text it folds: 1px above, so the gap after the fold groups it with the text', () => {
+    render(<FoldToggle open={false} onToggle={() => {}} />)
+    expect(toggle().style.marginTop).toBe('1px')
+  })
+
   it('sits on its own line under the content, not inside the clamped box', () => {
     overflow()
     render(<TextFold />)

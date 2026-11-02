@@ -172,6 +172,26 @@ describe('BillRow: the rendered summary preview', () => {
   })
 })
 
+describe('BillRow: the gap after the fold', () => {
+  const ABSTRACT = 'Relates to permit renewal timelines for licensed operators.'
+  const wrapper = (c: HTMLElement) => c.querySelector('[data-fold-state]')!.parentElement as HTMLElement
+
+  it('is 10px before the tag chips, at least twice the 1px the toggle sits under the text', () => {
+    const { container } = renderRow({ tenantSummary: LIST, tags: ['Alpha'] })
+    expect(wrapper(container).style.marginBottom).toBe('10px')
+  })
+
+  it('is 10px before the tag chips after an abstract fold too', () => {
+    const { container } = renderRow({ tenantSummary: null, abstract: ABSTRACT, tags: ['Alpha'] })
+    expect(wrapper(container).style.marginBottom).toBe('10px')
+  })
+
+  it('stays 5px when no tags follow, so the row does not gain empty space above its padding', () => {
+    expect(wrapper(renderRow({ tenantSummary: LIST, tags: [] }).container).style.marginBottom).toBe('5px')
+    expect(wrapper(renderRow({ tenantSummary: null, abstract: ABSTRACT, tags: [] }).container).style.marginBottom).toBe('5px')
+  })
+})
+
 describe('BillRow: the abstract fallback preview', () => {
   const ABSTRACT = 'Relates to permit renewal timelines for licensed operators.'
 

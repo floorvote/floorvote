@@ -89,6 +89,15 @@ describe('GroupedBillCard: the rendered summary preview', () => {
     expect(b.style.fontSize).toBe('12px')
   })
 
+  it('leaves the header\'s 10px bottom padding after the toggle, and a 4px gap above the summary', () => {
+    overflow()
+    const { container } = renderCard(LIST)
+    const wrapper = container.querySelector('[data-fold-state]')!.parentElement as HTMLElement
+    expect(wrapper.style.marginTop).toBe('4px')
+    expect((wrapper.parentElement as HTMLElement).style.padding).toBe('4px 14px 10px')
+    expect(wrapper.contains(screen.getByRole('button', { name: 'Show more' }))).toBe(true)
+  })
+
   it('shows "Show more" when cut off; clicking unfolds in place without opening the bill', () => {
     overflow()
     const { container } = renderCard(LIST)

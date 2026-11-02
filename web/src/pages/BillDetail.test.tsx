@@ -660,6 +660,16 @@ describe('BillDetail abstract fold', () => {
     expect(screen.getByText(ABSTRACT).style.getPropertyValue('-webkit-line-clamp') || screen.getByText(ABSTRACT).style.webkitLineClamp).toBe('2')
   })
 
+  it('leaves 10px after the abstract fold, toggle included', async () => {
+    stubOverflow(true)
+    makeMockApiFetch({ abstract: ABSTRACT })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    const p = await screen.findByText(ABSTRACT)
+    const wrapper = p.parentElement!.parentElement as HTMLElement
+    expect(wrapper.style.marginBottom).toBe('10px')
+    expect(wrapper.contains(screen.getByRole('button', { name: 'Show more' }))).toBe(true)
+  })
+
   it('keeps the whole abstract in the DOM, never cut to a prefix with an ellipsis', async () => {
     stubOverflow(true)
     makeMockApiFetch({ abstract: ABSTRACT })
@@ -728,6 +738,16 @@ describe('BillDetail sponsor line fold', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Show less' }))
     expect(screen.getByRole('button', { name: '+2 more' })).toBeInTheDocument()
     expect(flow.style.whiteSpace).toBe('nowrap')
+  })
+
+  it('leaves a gap after the toggle, at least twice the 1px it sits under the line', async () => {
+    stubSponsorGeometry()
+    makeMockApiFetch({ sponsor: 'Prime Sponsor', coSponsors })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await screen.findByText('Prime Sponsor')
+    const btn = screen.getByRole('button', { name: '+2 more' })
+    expect(btn.style.marginTop).toBe('1px')
+    expect(btn.style.marginBottom).toBe('6px')
   })
 
   it('puts the toggle on its own line, below the sponsor line', async () => {

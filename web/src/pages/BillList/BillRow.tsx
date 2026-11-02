@@ -256,6 +256,8 @@ export const BillRow = memo(function BillRow({
         isActive={interactive ? filter.status.includes(bill.status) : undefined}
       />
 
+  const summaryGap = bill.tags.length > 0 ? 10 : 5
+
   return (
     <div
       onClick={(e) => {
@@ -385,6 +387,7 @@ export const BillRow = memo(function BillRow({
           {bill.isDraft && <TitleDraftMarker className="bill-title-draft-marker" />}
           {billDisplayTitle(bill) || bill.abstract}
         </div>
+        {/* The toggle hugs the text (1px), so the gap before the tag chips is twice the usual 5px: spacing alone groups it with the summary. With no tags, nothing follows. */}
         {/* The summary renders as markdown, folded to 4 lines; with none, a distinct abstract folds the same way as plain text. */}
         {bill.tenantSummary?.trim() ? (
           <SummaryFold
@@ -394,13 +397,13 @@ export const BillRow = memo(function BillRow({
             fontFamily={SUMMARY_FONT}
             fontSize={fontSize.sm}
             color={color.textSecondary}
-            wrapperStyle={{ marginBottom: 5 }}
+            wrapperStyle={{ marginBottom: summaryGap }}
           />
         ) : (bill.title && bill.abstract && bill.abstract.trim().toLowerCase() !== bill.title.trim().toLowerCase()) ? (
           <Fold
             collapsed={{ lines: 4 }}
             style={{ fontSize: fontSize.sm, color: color.textSecondary, lineHeight: SUMMARY_LINE_HEIGHT, fontFamily: SUMMARY_FONT }}
-            wrapperStyle={{ marginBottom: 5 }}
+            wrapperStyle={{ marginBottom: summaryGap }}
           >
             {bill.abstract}
           </Fold>

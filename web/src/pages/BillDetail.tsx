@@ -203,7 +203,7 @@ function SponsorsRow({ sponsor, sponsorUrl, sponsorParty, coSponsors, flashed }:
         </span>
       </div>
       {(fold.open || hiddenCount > 0) && (
-        <FoldToggle open={fold.open} count={hiddenCount} onToggle={fold.toggle} controls={fold.clipProps.id} />
+        <FoldToggle open={fold.open} count={hiddenCount} onToggle={fold.toggle} controls={fold.clipProps.id} style={{ marginBottom: 6 }} />
       )}
     </div>
   )
