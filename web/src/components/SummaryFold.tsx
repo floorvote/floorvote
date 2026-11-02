@@ -2,15 +2,22 @@ import type { CSSProperties } from 'react'
 import { Fold } from './Fold'
 import { MarkdownSummary } from './MarkdownSummary'
 
-// The last block's bottom edge is where the preview should end. A trailing margin on it
-// (the last list item's 2px, a loose item's paragraph) would count toward scrollHeight, so a
-// summary that fits exactly would grow a toggle and a fade. Zeroed only along the chain that
-// ends the content; spacing between items is untouched.
-const TRAILING_MARGINS = `
-  .summary-fold .markdown-summary > :last-child { margin-bottom: 0; }
-  .summary-fold .markdown-summary > :last-child li:last-child { margin-bottom: 0; }
-  .summary-fold .markdown-summary > :last-child li:last-child > :last-child { margin-bottom: 0; }
-`
+// The last block's bottom edge is where the preview should end. A trailing margin inside it
+// (the last list item's 2px, a loose item's paragraph, a blockquote's last paragraph) would
+// count toward scrollHeight, so a summary that fits exactly would grow a toggle and a fade.
+// `.markdown-summary > *` already zeroes the blocks themselves, so these walk only the chain
+// that ends the content, with child combinators: the last item of a list that is the last
+// block, then the last item of a list that ends that item, and so on (four deep is far past
+// any summary). Spacing between items, and lists that are not last, are untouched.
+const ROOT = '.summary-fold .markdown-summary > '
+const trailing: string[] = [`${ROOT}blockquote:last-child > :last-child`]
+let chain = ROOT
+for (let depth = 0; depth < 4; depth++) {
+  chain += ':is(ul, ol):last-child > li:last-child'
+  trailing.push(chain, `${chain} > p:last-child`)
+  chain += ' > '
+}
+const TRAILING_MARGINS = `${trailing.join(',\n')} { margin-bottom: 0; }`
 
 /**
  * A bill summary as a folded preview: rendered by the same markdown renderer the bill page
@@ -41,8 +48,8 @@ export function SummaryFold({ markdown, lines, lineHeight, fontSize, fontFamily,
       >
         <MarkdownSummary fontSize="inherit" lineHeight="inherit" fontFamily="inherit" color="inherit">{markdown}</MarkdownSummary>
       </Fold>
-      {/* After the renderer's own sheet, so it wins on order as well as on specificity. */}
-      <style>{TRAILING_MARGINS}</style>
+      {/* One sheet for every fold on the page (React hoists and dedupes it by href); the selectors beat the renderer's on specificity, so order doesn't matter. */}
+      <style href="summary-fold" precedence="default">{TRAILING_MARGINS}</style>
     </>
   )
 }

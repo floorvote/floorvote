@@ -200,6 +200,13 @@ describe('BillRow: the abstract fallback preview', () => {
     expect(screen.queryByRole('button', { name: /show (more|less)/i })).toBeNull()
   })
 
+  it('falls through to a distinct abstract when the summary is only whitespace', () => {
+    const { container } = renderRow({ tenantSummary: '   ', abstract: ABSTRACT })
+    const box = container.querySelector('[data-fold-state]')!.firstElementChild as HTMLElement
+    expect(box.textContent).toBe(ABSTRACT)
+    expect(box.style.webkitLineClamp || box.style.getPropertyValue('-webkit-line-clamp')).toBe('4')
+  })
+
   it('prefers the summary over the abstract', () => {
     const { container } = renderRow({ tenantSummary: LIST, abstract: ABSTRACT })
     expect(container.querySelector('.markdown-summary')!.textContent).not.toContain(ABSTRACT)

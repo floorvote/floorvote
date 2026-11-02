@@ -97,24 +97,64 @@ describe('SummaryFold: the fold', () => {
     expect(preview(container)).not.toHaveAttribute('data-fold-fade')
   })
 
-  it('does not count a trailing margin on the last block, or the last list item, as overflow', () => {
-    // A summary that exactly fits must not grow a toggle and a fade because the last
-    // <li> carries the list's 2px item margin.
+  // jsdom resolves a computed style by sheet order, not specificity, so these ask the
+  // sheet which elements its trailing-margin rules reach instead.
+  const sheetSelectors = () => {
+    const css = [...document.querySelectorAll('style')].map(s => s.textContent ?? '').filter(t => t.includes('summary-fold')).join('\n')
+    return [...css.matchAll(/([^{}]+)\{[^}]*margin-bottom:\s*0/g)].flatMap(m => m[1].split(/,(?![^(]*\))/).map(x => x.trim()))
+  }
+  const zeroed = (el: Element) => sheetSelectors().some(sel => el.matches(sel))
+
+  it('zeroes the trailing margin of the last list item, and keeps the spacing between items', () => {
     const { container } = view(LIST)
-    const lastLi = container.querySelectorAll('li')[1]
-    expect(getComputedStyle(lastLi).marginBottom).toBe('0px')
-    expect(getComputedStyle(container.querySelector('ul')!).marginBottom).toBe('0px')
-    // Items between others keep their spacing.
-    expect(getComputedStyle(container.querySelectorAll('li')[0]).marginBottom).toBe('2px')
+    const [first, last] = Array.from(container.querySelectorAll('li'))
+    expect(zeroed(last)).toBe(true)
+    expect(zeroed(first)).toBe(false)
   })
 
-  it('zeroes the trailing margin of nested last items and of a last paragraph', () => {
+  it('reaches the last item of a nested list at the end, and not the nested items that are not last', () => {
+    const { container } = view('- Outer\n  - Inner one\n  - Inner two\n- Tail')
+    const lis = Array.from(container.querySelectorAll('li'))
+    const byText = (t: string) => lis.find(li => li.firstChild?.textContent?.trim() === t)!
+    expect(zeroed(byText('Tail'))).toBe(true)
+    expect(zeroed(byText('Outer'))).toBe(false)
+    expect(zeroed(byText('Inner one'))).toBe(false)
+    expect(zeroed(byText('Inner two'))).toBe(false)
+  })
+
+  it('reaches a nested list that ends the content', () => {
     const { container } = view('- Outer\n  - Inner one\n  - Inner two')
-    const lis = container.querySelectorAll('li')
-    expect(getComputedStyle(lis[lis.length - 1]).marginBottom).toBe('0px')
-    expect(getComputedStyle(container.querySelector('li')!).marginBottom).toBe('0px')
-    const prose = view('Only a lead sentence.').container
-    expect(getComputedStyle(prose.querySelector('p')!).marginBottom).toBe('0px')
+    const lis = Array.from(container.querySelectorAll('li'))
+    expect(zeroed(lis[lis.length - 1])).toBe(true)
+    expect(zeroed(lis[0])).toBe(true)
+  })
+
+  it('leaves a list that is not the last block alone, and a paragraph after a list needs no rule', () => {
+    const { container } = view('Lead.\n\n- One\n- Two\n\nClosing sentence.')
+    for (const li of Array.from(container.querySelectorAll('li'))) expect(zeroed(li)).toBe(false)
+    expect(getComputedStyle(container.querySelector('.markdown-summary > p:last-child')!).marginBottom).toBe('0px')
+  })
+
+  it('reaches the paragraph inside the last item of a loose list', () => {
+    const { container } = view('- One\n\n- Two\n\n- Three')
+    const ps = Array.from(container.querySelectorAll('li > p'))
+    expect(ps).toHaveLength(3)
+    expect(zeroed(ps[2])).toBe(true)
+    expect(zeroed(ps[0])).toBe(false)
+  })
+
+  it('reaches the last paragraph of a blockquote that ends the content', () => {
+    const { container } = view('Lead.\n\n> First quoted.\n>\n> Last quoted.')
+    const ps = Array.from(container.querySelectorAll('blockquote > p'))
+    expect(ps).toHaveLength(2)
+    expect(zeroed(ps[1])).toBe(true)
+    expect(zeroed(ps[0])).toBe(false)
+  })
+
+  it('shares one sheet across any number of folds', () => {
+    render(<><SummaryFold markdown={LIST} lines={4} lineHeight={1.4} /><SummaryFold markdown={LIST} lines={4} lineHeight={1.4} /><SummaryFold markdown={LIST} lines={4} lineHeight={1.4} /></>)
+    const sheets = [...document.querySelectorAll('style')].filter(s => (s.textContent ?? '').includes('summary-fold'))
+    expect(sheets).toHaveLength(1)
   })
 
   it('puts spacing on the wrapper and none on the clipped preview or the clip box', () => {
