@@ -257,7 +257,7 @@ describe('motion', () => {
     fireEvent.click(toggle())
     expect(Element.prototype.animate).toHaveBeenCalledTimes(1)
     expect(animations[0].keyframes).toEqual([{ height: '40px' }, { height: '120px' }])
-    expect(animations[0].options).toEqual({ duration: 240, easing: EASE })
+    expect(animations[0].options).toEqual({ duration: 240, easing: EASE, fill: 'forwards' })
     expect(EASE).toBe('cubic-bezier(.4, 0, .2, 1)')
   })
 
@@ -353,6 +353,39 @@ describe('motion', () => {
     expect(toggle()).toHaveAccessibleName('Show less')
     const box = content().parentElement as HTMLElement
     expect(box.style.webkitLineClamp || box.style.getPropertyValue('-webkit-line-clamp')).toBe('')
+  })
+
+  it('on finishing a fold, drops the held content in the same task and releases the forwards fill', () => {
+    installAnimate(); overflow()
+    render(<TextFold />)
+    const box = content().parentElement as HTMLElement
+    const clamp = () => box.style.webkitLineClamp || box.style.getPropertyValue('-webkit-line-clamp')
+    fireEvent.click(toggle())
+    finish(0)
+    fireEvent.click(toggle())
+    expect(clamp()).toBe('') // held open while it shrinks
+    expect((animations[1].options as { fill?: string }).fill).toBe('forwards')
+    // No act() and no await: the browser's finish event runs this and paints next. If the
+    // folded form isn't committed by the time it returns, one frame shows the open content
+    // at its natural height (the flash below the fold).
+    animations[1].onfinish?.()
+    expect(clamp()).toBe('2')
+    expect((box.parentElement as HTMLElement).style.overflow).toBe('')
+    expect(animations[1].cancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('cancelling its own animation on finish does not disturb a fold that has started since', () => {
+    installAnimate(); overflow()
+    render(<TextFold />)
+    fireEvent.click(toggle())
+    animations[0].onfinish?.()
+    fireEvent.click(toggle())
+    animations[1].onfinish?.()
+    // The cancel event the release caused arrives late; the guard ignores it.
+    fireEvent.click(toggle())
+    animations[1].oncancel?.()
+    expect(toggle()).toHaveAttribute('aria-expanded', 'true')
+    expect(animations).toHaveLength(3)
   })
 
   it('an animation cancelled from outside while folding drops the held open content', () => {

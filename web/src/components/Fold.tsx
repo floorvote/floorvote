@@ -85,20 +85,31 @@ export function useFold(): FoldState {
     if (!next) flushSync(() => setHolding(true))
     // The box clips only while it moves, so focus rings aren't cut off at rest.
     clip.style.overflow = 'hidden'
-    const animation = clip.animate([{ height: `${from}px` }, { height: `${to}px` }], { duration: FOLD_MS, easing: EASE })
+    const animation = clip.animate([{ height: `${from}px` }, { height: `${to}px` }], { duration: FOLD_MS, easing: EASE, fill: 'forwards' })
     running.current = animation
-    // Ending the motion, by finishing or by being cancelled from outside (a hidden tab,
-    // devtools), always lets go of the held open content; otherwise a cancel would leave
-    // a folded fold stuck showing everything. Our own cancels (stop) are told apart by the
-    // guard: by the time their event arrives, `running` is null or a newer animation.
-    const end = () => {
+    // Without a fill, the box would drop to its natural height at the finish, and while
+    // folding that is still the full open content (`holding`) until React commits: one
+    // painted frame of everything below the fold jumping. So the animation holds its end
+    // height (fill forwards), the folded form is committed synchronously, and only then is
+    // the fill released (cancel), by which time natural height is the end height.
+    const settle = () => {
+      running.current = null
+      flushSync(() => setHolding(false))
+      clip.style.overflow = ''
+      animation.cancel()
+    }
+    // A cancel from outside (a hidden tab, devtools) also lets go of the held open content;
+    // otherwise it would leave a folded fold stuck showing everything. Our own cancels are
+    // told apart by the guard: by the time their event arrives, `running` is null or a newer
+    // animation.
+    const cancelled = () => {
       if (running.current !== animation) return
       running.current = null
       clip.style.overflow = ''
       setHolding(false)
     }
-    animation.onfinish = end
-    animation.oncancel = end
+    animation.onfinish = () => { if (running.current === animation) settle() }
+    animation.oncancel = cancelled
   }, [open, reduce])
 
   return {
