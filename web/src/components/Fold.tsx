@@ -87,12 +87,18 @@ export function useFold(): FoldState {
     clip.style.overflow = 'hidden'
     const animation = clip.animate([{ height: `${from}px` }, { height: `${to}px` }], { duration: FOLD_MS, easing: EASE })
     running.current = animation
-    animation.onfinish = () => {
+    // Ending the motion, by finishing or by being cancelled from outside (a hidden tab,
+    // devtools), always lets go of the held open content; otherwise a cancel would leave
+    // a folded fold stuck showing everything. Our own cancels (stop) are told apart by the
+    // guard: by the time their event arrives, `running` is null or a newer animation.
+    const end = () => {
       if (running.current !== animation) return
       running.current = null
       clip.style.overflow = ''
       setHolding(false)
     }
+    animation.onfinish = end
+    animation.oncancel = end
   }, [open, reduce])
 
   return {
@@ -132,6 +138,8 @@ export function FoldToggle({ open, onToggle, count, controls, style }: {
     <button
       type="button"
       onClick={click}
+      // A card that opens its bill on a middle click would otherwise open it from the toggle too.
+      onAuxClick={(e) => e.stopPropagation()}
       aria-expanded={open}
       aria-controls={controls}
       style={{ ...FOLD_LINK_STYLE, marginTop: 4, ...style }}
@@ -166,12 +174,16 @@ const FADE_MASK = 'linear-gradient(to bottom, black calc(100% - 1.4em), transpar
  * only while the folded content is actually cut off, or while the fold is open. jsdom has
  * no layout, so tests stub scrollHeight and clientHeight to say whether it overflows.
  */
-export function Fold({ collapsed, as: Tag = 'div', style, wrapperStyle, toggleStyle, children }: {
+export function Fold({ collapsed, as: Tag = 'div', style, className, wrapperStyle, toggleStyle, children }: {
   collapsed: FoldCollapse
   /** The element holding the content (and its clamp). */
   as?: 'div' | 'p'
   /** Typography and the like for the content element. */
   style?: CSSProperties
+  /** On the outer wrapper, for a stylesheet that reaches the rendered content. */
+  className?: string
+  /** Spacing around the whole fold belongs here: a margin on the content or the clip box
+   *  would stop collapsing while the clip box clips (overflow:hidden), and the height would jump. */
   wrapperStyle?: CSSProperties
   toggleStyle?: CSSProperties
   children: ReactNode
@@ -206,7 +218,7 @@ export function Fold({ collapsed, as: Tag = 'div', style, wrapperStyle, toggleSt
   const showToggle = fold.open || overflows
 
   return (
-    <div style={wrapperStyle}>
+    <div className={className} style={wrapperStyle}>
       <div {...fold.clipProps}>
         <Tag
           ref={contentRef as RefObject<never>}
