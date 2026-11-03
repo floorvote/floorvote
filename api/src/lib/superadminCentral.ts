@@ -20,13 +20,22 @@ import type { Env } from '../types'
 
 const ALLOWLIST_TTL_MS = 5 * 60 * 1000
 
+// How long after another request starts a fetch that checks keep waiting on it.
+// Bounds what a slow or hung central costs: past this, the answer is what it was
+// before checks waited at all. Counted from the fetch's start, not each check's,
+// so a fetch that never settles delays later checks only within this window and
+// not on every check until the TTL runs out.
+const IN_FLIGHT_WAIT_MS = 2000
+
 let cachedHashes: Set<string> | null = null
 let lastAttemptAt = 0
+let inFlight: Promise<void> | null = null
 
 /** Test-only: clear the in-isolate allowlist cache. */
 export function _resetSuperadminAllowlistCache(): void {
   cachedHashes = null
   lastAttemptAt = 0
+  inFlight = null
 }
 
 async function sha256Hex(s: string): Promise<string> {
@@ -56,16 +65,41 @@ export async function superadminEmailStatus(env: Env, email: string): Promise<'y
   // refetch storm (the very amplification this cache exists to prevent).
   if (now - lastAttemptAt > ALLOWLIST_TTL_MS) {
     lastAttemptAt = now
-    try {
-      const res = await centralFetch(env, '/admin/superadmin/emails')
-      if (res.ok) {
-        const data = await res.json<{ hashes: string[] }>()
-        cachedHashes = new Set(data.hashes ?? [])
-      }
-    } catch {
-      // Keep any stale cache; if none, the answer is unknown.
-    }
+    const attempt: Promise<void> = refreshAllowlist(env).finally(() => {
+      if (inFlight === attempt) inFlight = null
+    })
+    inFlight = attempt
+    await attempt
+  } else if (!cachedHashes && inFlight && now - lastAttemptAt < IN_FLIGHT_WAIT_MS) {
+    // A cold isolate takes a page load's requests concurrently, and only the
+    // first fetches. Answering the rest from the still-empty cache said
+    // `unknown` to a superadmin, which put the Terms gate in front of them and
+    // then recorded nothing when they accepted it as an exempt user. So wait for
+    // that fetch — but only so long. A stale cache is answered from at once.
+    await waitAtMost(inFlight, IN_FLIGHT_WAIT_MS - (now - lastAttemptAt))
   }
   if (!cachedHashes) return 'unknown'
   return cachedHashes.has(await sha256Hex(email.toLowerCase().trim())) ? 'yes' : 'no'
+}
+
+async function refreshAllowlist(env: Env): Promise<void> {
+  try {
+    const res = await centralFetch(env, '/admin/superadmin/emails')
+    if (res.ok) {
+      const data = await res.json<{ hashes: string[] }>()
+      cachedHashes = new Set(data.hashes ?? [])
+    }
+  } catch {
+    // Keep any stale cache; if none, the answer is unknown.
+  }
+}
+
+async function waitAtMost(work: Promise<void>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<void>((resolve) => { timer = setTimeout(resolve, ms) })
+  try {
+    await Promise.race([work, timeout])
+  } finally {
+    clearTimeout(timer)
+  }
 }
