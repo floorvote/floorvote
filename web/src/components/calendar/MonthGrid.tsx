@@ -5,6 +5,7 @@ import { buildMonthMatrix, bucketEventsByDate, isPastDate, todayIso, type Calend
 import { EventLines } from './EventLines'
 import { CommitteeTag, COMMITTEE_LINE_H, hasCommitteeTag } from './CommitteeTag'
 import { useIsBreakpoint } from '../../hooks/use-is-breakpoint'
+import { FOLD_LINK_STYLE } from '../Fold'
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const DOW_SHORT = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
@@ -126,11 +127,10 @@ export function MonthGrid({ events, initialYear, initialMonth, onSelect, onSelec
                     const cellEl = (e.currentTarget.closest('[data-daycell]') as HTMLElement) ?? e.currentTarget
                     onSelectDay?.(cell.iso, dayEvents, cellEl, alignRight)
                   }}
-                  style={{
-                    flexShrink: 0, marginTop: 2, alignSelf: 'flex-start', background: 'none', border: 'none',
-                    cursor: 'pointer', font: 'inherit', fontSize: fontSize.xs, fontWeight: fontWeight.semibold,
-                    color: color.textSlate, padding: '1px 2px',
-                  }}
+                  // Opens the day popover rather than unfolding in place, so it wears the
+                  // shared fold link's text style but none of its fold behavior. A one-line
+                  // box keeps the row inside ROW_H, which was sized for a 10px label.
+                  style={{ ...FOLD_LINK_STYLE, lineHeight: 1, flexShrink: 0, marginTop: 2, alignSelf: 'flex-start' }}
                 >
                   +{hidden} more
                 </button>

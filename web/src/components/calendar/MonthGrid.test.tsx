@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { color } from '../../styles/tokens'
+import { color, fontSize } from '../../styles/tokens'
+import { FOLD_LINK_STYLE } from '../Fold'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { MonthGrid } from './MonthGrid'
@@ -128,6 +129,20 @@ describe('MonthGrid', () => {
     expect(dateIso).toBe('2026-06-15') // a Monday → left origin
     expect(dayEvents).toHaveLength(4)
     expect(alignRight).toBe(false)
+  })
+
+  it('"+N more" wears the shared fold-link text style but still opens the popover, not an in-place fold', () => {
+    const many: CalendarEvent[] = Array.from({ length: 4 }, (_, i) => ({
+      id: String(i), uid: String(i), source: 'custom', billId: null, bills: [],
+      date: '2026-06-15', time: null, location: null, description: `Event ${i}`, details: null, url: null, status: 'confirmed',
+    }))
+    render(<MemoryRouter><MonthGrid events={many} initialYear={2026} initialMonth={5} onSelect={vi.fn()} onSelectDay={vi.fn()} /></MemoryRouter>)
+    const btn = screen.getByRole('button', { name: '+2 more' })
+    expect(btn.style.color).toBe(color.linkBlue)
+    expect(btn.style.fontSize).toBe(`${fontSize.sm}px`)
+    expect(btn.style.fontWeight).toBe(String(FOLD_LINK_STYLE.fontWeight))
+    expect(btn.querySelector('[data-fold-chevron]')).toBeNull()
+    expect(btn).not.toHaveAttribute('aria-expanded')
   })
 
   it('passes alignRight=true for "+N more" on a Saturday cell', () => {

@@ -55,6 +55,42 @@ beforeEach(() => {
 afterEach(() => { scrollSpy.mockRestore(); clientSpy.mockRestore() })
 
 describe('the agenda card details toggle shows only when the clamp hides something', () => {
+  it('uses the shared fold toggle: a text fold with a chevron, aria-expanded, and the unified labels', () => {
+    dims.scrollHeight = 60; dims.clientHeight = 36
+    render(<MemoryRouter><EventLines event={base} clampDetails /></MemoryRouter>)
+    const btn = screen.getByRole('button', { name: 'Show more' })
+    expect(btn).toHaveAttribute('aria-expanded', 'false')
+    expect(btn.querySelector('[data-fold-chevron]')).not.toBeNull()
+    expect(btn.style.fontSize).toBe('12px')
+    fireEvent.click(btn)
+    expect(screen.getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('keeps the toggle on its own line, outside the clamped details box', () => {
+    dims.scrollHeight = 60; dims.clientHeight = 36
+    render(<MemoryRouter><EventLines event={base} clampDetails /></MemoryRouter>)
+    const details = screen.getByText(/Statute: W.S. 22-5-209/)
+    expect(details.contains(screen.getByRole('button', { name: 'Show more' }))).toBe(false)
+  })
+
+  it('clamps the details to two lines while folded and unclamps when open', () => {
+    dims.scrollHeight = 60; dims.clientHeight = 36
+    render(<MemoryRouter><EventLines event={base} clampDetails /></MemoryRouter>)
+    const details = screen.getByText(/Statute: W.S. 22-5-209/)
+    const clamp = () => details.style.getPropertyValue('-webkit-line-clamp') || details.style.webkitLineClamp
+    expect(clamp()).toBe('2')
+    fireEvent.click(screen.getByRole('button', { name: 'Show more' }))
+    expect(clamp()).toBe('')
+  })
+
+  it('an unclamped card (no clampDetails) shows the whole details and no toggle', () => {
+    dims.scrollHeight = 60; dims.clientHeight = 36
+    render(<MemoryRouter><EventLines event={base} /></MemoryRouter>)
+    const details = screen.getByText(/Statute: W.S. 22-5-209/)
+    expect(details.style.getPropertyValue('-webkit-line-clamp') || details.style.webkitLineClamp).toBe('')
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+
   it('toggles on click when the details overflow the clamp', () => {
     dims.scrollHeight = 60; dims.clientHeight = 36
     render(<MemoryRouter><EventLines event={base} clampDetails /></MemoryRouter>)

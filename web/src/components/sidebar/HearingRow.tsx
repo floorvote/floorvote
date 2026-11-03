@@ -1,6 +1,4 @@
 import { Link, useNavigate } from 'react-router-dom'
-import React, { useState } from 'react'
-import { BILL_BADGE_MINI } from '../../lib/chipStyles'
 import { billUrl } from '../../lib/sessionSlug'
 import { color, fontSize, fontWeight } from '../../styles/tokens'
 import { billDisplayTitle } from '../../../../shared/billTitle'
@@ -8,20 +6,12 @@ import { formatHearingTimeShort } from '../../lib/hearingTime'
 import { eventDateLabel } from '../../lib/calendarDate'
 import { BillBadge } from '../BillBadge'
 import { DateLabel } from '../ui/DateLabel'
+import { FoldToggle, useFold } from '../Fold'
 import { EVENT_TITLE_STYLE, EVENT_META_STYLE } from '../calendar/EventLines'
 import type { HearingGroup } from './types'
 
 // How many bill chips to show before collapsing the rest behind "+N more".
 const HEARING_CHIP_CAP = 6
-
-const HEARING_MORE_CHIP: React.CSSProperties = {
-  ...BILL_BADGE_MINI,
-  background: color.surfaceMuted,
-  color: color.textSlate500,
-  border: 'none',
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-}
 
 // One hearing in the sidebar widget: a slim date · time header line, the
 // hearing name, its location, and the bill chips (capped, expandable).
@@ -32,7 +22,7 @@ export function HearingRow({
   isFirst: boolean
   onClose: () => void
 }) {
-  const [expanded, setExpanded] = useState(false)
+  const fold = useFold()
   const navigate = useNavigate()
 
   // Clicking the hearing (everything but the bill chips) opens the calendar
@@ -49,8 +39,11 @@ export function HearingRow({
   const name = hearing.description?.trim() || hearing.type?.trim() ||
     (hearing.bills.length === 1 ? billDisplayTitle(hearing.bills[0]) : 'Hearing')
 
-  const shownBills = expanded ? hearing.bills : hearing.bills.slice(0, HEARING_CHIP_CAP)
-  const hiddenCount = hearing.bills.length - shownBills.length
+  // Folded, the chips stop at the cap and the toggle counts the rest. The count is of the
+  // bills past the cap, whatever is showing, so the label doesn't change while the fold
+  // animates shut.
+  const shownBills = fold.expanded ? hearing.bills : hearing.bills.slice(0, HEARING_CHIP_CAP)
+  const hiddenCount = Math.max(0, hearing.bills.length - HEARING_CHIP_CAP)
 
   return (
     <div style={{ padding: '8px 10px', borderTop: isFirst ? 'none' : `1px solid ${color.surfaceMuted}` }}>
@@ -112,44 +105,38 @@ export function HearingRow({
         </div>
       )}
 
-      {/* Bill chips (full width; capped with +N more) — own click targets */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-        {shownBills.map(b => {
-          const to = `${billUrl({ id: b.id, state: b.state, sessionSlug: b.sessionSlug, billNumber: b.billNumber })}#section-hearings`
-          return (
-          <Link
-            key={b.id}
-            to={to}
-            onClick={() => onClose()}
-            style={{ textDecoration: 'none', cursor: 'pointer' }}
-          >
-            <BillBadge
-              billNumber={b.billNumber}
-              state={b.state}
-              mini
-              isDraft={b.isDraft}
-              /* No visible DraftChip here: this is a wrapped chip row capped at
-                 six chips in a ~300px sidebar column, and a ~50px chip beside
-                 every draft badge would push the row to wrap at a fraction of
-                 the bills it holds today. The text signal is the badge's own
-                 screen-reader label instead. */
-              draftSrLabel
-              priority={b.priority ?? undefined}
-              hoverBill={{ title: b.title, isDraft: b.isDraft, summary: b.summary, priority: b.priority }}
-            />
-          </Link>
-        )})}
-        {hiddenCount > 0 && (
-          <button onClick={() => setExpanded(true)} style={HEARING_MORE_CHIP}>
-            +{hiddenCount} more
-          </button>
-        )}
-        {expanded && hearing.bills.length > HEARING_CHIP_CAP && (
-          <button onClick={() => setExpanded(false)} style={HEARING_MORE_CHIP}>
-            Show less
-          </button>
-        )}
+      {/* Bill chips (full width; capped with +N more) — own click targets. The clip box
+          wraps the chip row so the shared fold animation can resize it. */}
+      <div {...fold.clipProps}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+          {shownBills.map(b => {
+            const to = `${billUrl({ id: b.id, state: b.state, sessionSlug: b.sessionSlug, billNumber: b.billNumber })}#section-hearings`
+            return (
+            <Link
+              key={b.id}
+              to={to}
+              onClick={() => onClose()}
+              style={{ textDecoration: 'none', cursor: 'pointer' }}
+            >
+              <BillBadge
+                billNumber={b.billNumber}
+                state={b.state}
+                mini
+                isDraft={b.isDraft}
+                /* No visible DraftChip here: this is a wrapped chip row capped at
+                   six chips in a ~300px sidebar column, and a ~50px chip beside
+                   every draft badge would push the row to wrap at a fraction of
+                   the bills it holds today. The text signal is the badge's own
+                   screen-reader label instead. */
+                draftSrLabel
+                priority={b.priority ?? undefined}
+                hoverBill={{ title: b.title, isDraft: b.isDraft, summary: b.summary, priority: b.priority }}
+              />
+            </Link>
+          )})}
+        </div>
       </div>
+      {hiddenCount > 0 && <FoldToggle open={fold.open} count={hiddenCount} onToggle={fold.toggle} controls={fold.clipProps.id} />}
     </div>
   )
 }

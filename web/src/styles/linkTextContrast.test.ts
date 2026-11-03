@@ -39,14 +39,16 @@ function textTokens(file: string, marker: RegExp): TextUse[] {
 const FILES = [
   'components/calendar/EventPopover.tsx',
   'components/calendar/EventLines.tsx',
+  'components/Fold.tsx',
   'pages/admin/Members.tsx',
 ]
 
 // The text-on-surface uses #642 lists: the bill links in the popover, the
-// agenda link chips and "show more" button, and the Members header actions.
+// agenda link chips and the shared "Show more" fold link, and the Members header actions.
 const USES: TextUse[] = [
   ...textTokens('components/calendar/EventPopover.tsx', /<Link to=\{billUrl/),
-  ...textTokens('components/calendar/EventLines.tsx', /textDecoration: 'underline', overflowWrap|cursor: 'pointer', fontSize: fontSize\.xs, color:/),
+  ...textTokens('components/calendar/EventLines.tsx', /textDecoration: 'underline', overflowWrap/),
+  ...textTokens('components/Fold.tsx', /color: color\.linkBlue, whiteSpace/),
   ...textTokens('pages/admin/Members.tsx', /color: color\.accentBlue|copyableEmails\.length === 0 \? color\.textMuted/),
 ]
 
@@ -56,6 +58,7 @@ describe('accentBlue text contrast (#642)', () => {
       expect.arrayContaining([
         expect.stringMatching(/EventPopover\.tsx:\d+/),
         expect.stringMatching(/EventLines\.tsx:\d+/),
+        expect.stringMatching(/Fold\.tsx:\d+/),
         expect.stringMatching(/Members\.tsx:\d+/),
       ]),
     )

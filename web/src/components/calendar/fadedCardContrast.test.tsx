@@ -86,7 +86,7 @@ describe('faded agenda cards keep readable text', () => {
       const ev = richEvent({ date: '2000-01-01', details: 'x'.repeat(200) })
       for (const mode of MODES) {
         const rows = textContrasts(renderCard(ev, true), mode)
-        const more = rows.find(r => r.el.textContent === 'Show more')
+        const more = rows.find(r => r.el.tagName === 'BUTTON' && r.el.textContent?.startsWith('Show more'))
         expect(more).toBeDefined()
         expect(more!.ratio).toBeGreaterThanOrEqual(4.5)
       }
