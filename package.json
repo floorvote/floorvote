@@ -23,7 +23,7 @@
     "web"
   ],
   "devDependencies": {
-    "@material-symbols/svg-400": "^0.48.1",
+    "@material-symbols/svg-400": "^0.48.2",
     "@resvg/resvg-js": "^2.6.2",
     "concurrently": "^10.0.6",
     "fflate": "^0.8.3",
@@ -33,7 +33,7 @@
     "vite": "^8.3.5",
     "vitepress": "^1.6.4",
     "vitepress-plugin-mermaid": "^2.0.17",
-    "wrangler": "^4.152.0"
+    "wrangler": "^4.156.0"
   },
   "overrides": {
     "undici": "^7.30.0",
