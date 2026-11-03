@@ -680,9 +680,13 @@ describe('largestFittingPrefix', () => {
 })
 
 // A fake Element.animate, so a test can see whether the fold started a height animation.
+const animations: Array<{ cancel: () => void; onfinish: (() => void) | null; oncancel: (() => void) | null }> = []
 function installAnimate() {
+  animations.length = 0
   Element.prototype.animate = vi.fn(function () {
-    return { cancel: vi.fn(), onfinish: null, oncancel: null }
+    const a = { cancel: vi.fn(), onfinish: null, oncancel: null }
+    animations.push(a)
+    return a
   }) as unknown as typeof Element.prototype.animate
 }
 function animateCalls() {
@@ -852,6 +856,49 @@ describe('BillDetail abstract fold', () => {
     act(() => { layout.cpl = 20; notify() })
     expect(paragraph().textContent!.length).toBeLessThan(wide.length)
     expect(screen.getByRole('button', { name: 'Show more' })).toBeInTheDocument()
+  })
+
+  it('leaves the hidden measurer empty after measuring, so it cannot hold the page open', async () => {
+    stubLayout()
+    await renderBill(ABSTRACT)
+    const textSpan = document.querySelector('[data-abstract-measurer] [data-abstract-measure-text]') as HTMLElement
+    expect(textSpan).not.toBeNull()
+    expect(textSpan.textContent).toBe('')
+  })
+
+  it('re-measures once web fonts have loaded', async () => {
+    let loaded: () => void = () => {}
+    const ready = new Promise<void>(resolve => { loaded = resolve })
+    Object.defineProperty(document, 'fonts', { configurable: true, value: { ready } })
+    try {
+      stubLayout()
+      layout.cpl = 200
+      await renderBill(ABSTRACT)
+      expect(screen.queryByRole('button', { name: /^Show (more|less)$/ })).toBeNull()
+      // The fallback font fit the text; the real one is wider.
+      layout.cpl = 30
+      await act(async () => { loaded(); await ready })
+      expect(screen.getByRole('button', { name: 'Show more' })).toBeInTheDocument()
+    } finally {
+      // @ts-expect-error remove the stub; jsdom has no document.fonts
+      delete document.fonts
+    }
+  })
+
+  it('folding keeps the open text until the motion ends, then shows the prefix with "Show more"', async () => {
+    installAnimate(); reduceMotion(false); stubLayout()
+    await renderBill(ABSTRACT)
+    await userEvent.click(screen.getByRole('button', { name: 'Show more' }))
+    act(() => { animations[0].onfinish?.() })
+    expect(paragraph().textContent).toBe(`${ABSTRACT}Show less▼`)
+    await userEvent.click(screen.getByRole('button', { name: 'Show less' }))
+    expect(animations).toHaveLength(2)
+    // Mid-motion: still the whole abstract, the toggle still at its end.
+    expect(paragraph().textContent!.startsWith(ABSTRACT)).toBe(true)
+    expect(paragraph().lastElementChild).toBe(screen.getByRole('button', { name: /^Show (more|less)$/ }))
+    act(() => { animations[1].onfinish?.() })
+    expect(paragraph().textContent).toBe(`${ABSTRACT.slice(0, expectedPrefix()).trimEnd()}… Show more▼`)
+    expect(screen.getByRole('button', { name: 'Show more' })).toHaveAttribute('aria-expanded', 'false')
   })
 
   it('animates the height between folded and open when motion is allowed', async () => {

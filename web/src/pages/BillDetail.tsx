@@ -302,11 +302,21 @@ function AbstractText({ text }: { text: string }) {
       const n = largestFittingPrefix(text.length, fits)
       setVisibleLen(n > 0 && n < text.length ? n : null)
     }
+    // Wrapped, so every exit of measure() leaves the hidden box empty: it is absolutely
+    // positioned, and a leftover probe string would keep it tall and stretch the page.
+    const measureAndClear = () => {
+      try { measure() } finally { textEl.textContent = '' }
+    }
 
     lastWidthRef.current = -1
-    measure()
+    measureAndClear()
 
-    if (typeof ResizeObserver === 'undefined') return
+    // A prefix measured against the fallback font can be a word off once the web font
+    // arrives, so measure again then. Absent in older browsers and jsdom.
+    let cancelled = false
+    void document.fonts?.ready?.then(() => { if (!cancelled) { lastWidthRef.current = -1; measureAndClear() } })
+
+    if (typeof ResizeObserver === 'undefined') return () => { cancelled = true }
     // Observe the WRAPPER, never the measurer: measuring mutates the measurer's
     // text and so its height, which would retrigger the observer that triggered
     // the measurement — a feedback loop. The wrapper's width is also the only
@@ -317,10 +327,10 @@ function AbstractText({ text }: { text: string }) {
       const w = Math.round(wrap.getBoundingClientRect().width)
       if (w === lastWidthRef.current) return
       lastWidthRef.current = w
-      measure()
+      measureAndClear()
     })
     ro.observe(wrap)
-    return () => ro.disconnect()
+    return () => { cancelled = true; ro.disconnect() }
   }, [fold.expanded, text])
 
   const truncated = !fold.expanded && visibleLen !== null
@@ -380,7 +390,7 @@ function AbstractText({ text }: { text: string }) {
           visibility: 'hidden', pointerEvents: 'none', display: 'block',
         }}
       >
-        <span ref={measureTextRef} />
+        <span ref={measureTextRef} data-abstract-measure-text />
         <span ref={measureToggleRef} data-abstract-measure-toggle>
           <FoldToggle open={false} onToggle={() => {}} style={{ ...toggleStyle, marginLeft: 0 }} />
         </span>
