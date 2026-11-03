@@ -70,6 +70,16 @@ describe('HearingRow bill chips fold', () => {
     expect(btn.querySelector('[data-fold-chevron]')).toBeNull()
   })
 
+  it('hugs the chips with its toggle (1px) and leaves the row\'s 8px bottom padding after it', () => {
+    renderRow(withBills(9))
+    const btn = screen.getByRole('button', { name: '+3 more' })
+    expect(btn.style.marginTop).toBe('1px')
+    // The row is the toggle's and the chips' common ancestor, and its padding is the gap after.
+    const row = chipLinks()[0].closest('div[style*="padding"]') as HTMLElement
+    expect(row.contains(btn)).toBe(true)
+    expect(row.style.padding).toBe('8px 10px')
+  })
+
   it('opens every chip on click and relabels the toggle "Show less"; a second click folds back', () => {
     renderRow(withBills(9))
     fireEvent.click(screen.getByRole('button', { name: '+3 more' }))

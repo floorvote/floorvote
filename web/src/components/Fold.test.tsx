@@ -11,7 +11,7 @@ import { color, fontSize } from '../styles/tokens'
 //   currently renders (folded or open), unless a test pins a live in-flight height.
 const dims = { scrollHeight: 0, clientHeight: 0, folded: 40, open: 120, live: null as number | null }
 
-interface FakeAnimation { keyframes: unknown; options: unknown; cancel: ReturnType<typeof vi.fn>; onfinish: (() => void) | null }
+interface FakeAnimation { keyframes: unknown; options: unknown; cancel: ReturnType<typeof vi.fn>; onfinish: (() => void) | null; oncancel: (() => void) | null }
 let animations: FakeAnimation[]
 let spies: Array<{ mockRestore: () => void }>
 
@@ -40,7 +40,7 @@ afterEach(() => {
 
 function installAnimate() {
   Element.prototype.animate = vi.fn(function (keyframes: unknown, options: unknown) {
-    const a: FakeAnimation = { keyframes, options, cancel: vi.fn(), onfinish: null }
+    const a: FakeAnimation = { keyframes, options, cancel: vi.fn(), onfinish: null, oncancel: null }
     animations.push(a)
     return a
   }) as unknown as typeof Element.prototype.animate
@@ -58,6 +58,7 @@ const overflow = () => { dims.scrollHeight = 90; dims.clientHeight = 36 }
 const content = () => screen.getByTestId('body')
 const toggle = () => screen.getByRole('button')
 const finish = (i: number) => act(() => { animations[i].onfinish?.() })
+const cancelled = (i: number) => act(() => { animations[i].oncancel?.() })
 
 function TextFold({ lines = 2 }: { lines?: number }) {
   return <Fold collapsed={{ lines }}><span data-testid="body">Some long text that runs on.</span></Fold>
@@ -182,6 +183,11 @@ describe('the toggle look: text fold vs count fold', () => {
     expect(FOLD_LINK_STYLE.fontSize).toBe(fontSize.sm)
   })
 
+  it('hugs the text it folds: 1px above, so the gap after the fold groups it with the text', () => {
+    render(<FoldToggle open={false} onToggle={() => {}} />)
+    expect(toggle().style.marginTop).toBe('1px')
+  })
+
   it('sits on its own line under the content, not inside the clamped box', () => {
     overflow()
     render(<TextFold />)
@@ -256,7 +262,7 @@ describe('motion', () => {
     fireEvent.click(toggle())
     expect(Element.prototype.animate).toHaveBeenCalledTimes(1)
     expect(animations[0].keyframes).toEqual([{ height: '40px' }, { height: '120px' }])
-    expect(animations[0].options).toEqual({ duration: 240, easing: EASE })
+    expect(animations[0].options).toEqual({ duration: 240, easing: EASE, fill: 'forwards' })
     expect(EASE).toBe('cubic-bezier(.4, 0, .2, 1)')
   })
 
@@ -354,6 +360,116 @@ describe('motion', () => {
     expect(box.style.webkitLineClamp || box.style.getPropertyValue('-webkit-line-clamp')).toBe('')
   })
 
+  it('on finishing a fold, drops the held content in the same task and releases the forwards fill', () => {
+    installAnimate(); overflow()
+    render(<TextFold />)
+    const box = content().parentElement as HTMLElement
+    const clamp = () => box.style.webkitLineClamp || box.style.getPropertyValue('-webkit-line-clamp')
+    fireEvent.click(toggle())
+    finish(0)
+    fireEvent.click(toggle())
+    expect(clamp()).toBe('') // held open while it shrinks
+    expect((animations[1].options as { fill?: string }).fill).toBe('forwards')
+    // No act() and no await: the browser's finish event runs this and paints next. If the
+    // folded form isn't committed by the time it returns, one frame shows the open content
+    // at its natural height (the flash below the fold).
+    animations[1].onfinish?.()
+    expect(clamp()).toBe('2')
+    expect((box.parentElement as HTMLElement).style.overflow).toBe('')
+    expect(animations[1].cancel).toHaveBeenCalledTimes(1)
+  })
+
+  // Open, finish, then fold (animation 1), open again (same height as open: no motion, animation 1
+  // is cancelled by us), fold again (animation 2). Animation 1's events can now arrive late.
+  function supersededFold() {
+    installAnimate(); overflow()
+    render(<TextFold />)
+    const box = content().parentElement as HTMLElement
+    const clip = box.parentElement as HTMLElement
+    const clamp = () => box.style.webkitLineClamp || box.style.getPropertyValue('-webkit-line-clamp')
+    fireEvent.click(toggle())
+    finish(0)
+    fireEvent.click(toggle())
+    fireEvent.click(toggle())
+    fireEvent.click(toggle())
+    expect(animations).toHaveLength(3)
+    expect(clamp()).toBe('')
+    expect(clip.style.overflow).toBe('hidden')
+    return { clip, clamp }
+  }
+
+  it('a late cancel event from a superseded animation leaves the running fold held, clipped and released only by its own finish', () => {
+    const { clip, clamp } = supersededFold()
+    animations[1].oncancel?.()
+    expect(clamp()).toBe('')
+    expect(clip.style.overflow).toBe('hidden')
+    expect(animations[2].cancel).not.toHaveBeenCalled()
+    animations[2].onfinish?.()
+    expect(clamp()).toBe('2')
+    expect(clip.style.overflow).toBe('')
+    expect(animations[2].cancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('a late finish event from a superseded animation does not settle or cancel the running fold', () => {
+    const { clip, clamp } = supersededFold()
+    animations[1].onfinish?.()
+    expect(clamp()).toBe('')
+    expect(clip.style.overflow).toBe('hidden')
+    expect(animations[2].cancel).not.toHaveBeenCalled()
+    // The real one still settles it afterwards.
+    animations[2].onfinish?.()
+    expect(clamp()).toBe('2')
+    expect(animations[2].cancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('commits the folded content before it releases the fill', () => {
+    installAnimate(); overflow()
+    render(<TextFold />)
+    const box = content().parentElement as HTMLElement
+    const clamp = () => box.style.webkitLineClamp || box.style.getPropertyValue('-webkit-line-clamp')
+    fireEvent.click(toggle())
+    finish(0)
+    let seen: string | null = null
+    fireEvent.click(toggle())
+    animations[1].cancel.mockImplementation(() => { seen = clamp() })
+    animations[1].onfinish?.()
+    // Releasing the fill earlier would paint the open content at its natural height.
+    expect(seen).toBe('2')
+  })
+
+  it('an animation cancelled from outside while folding drops the held open content', () => {
+    installAnimate(); overflow()
+    render(<TextFold />)
+    const box = content().parentElement as HTMLElement
+    const clamp = () => box.style.webkitLineClamp || box.style.getPropertyValue('-webkit-line-clamp')
+    fireEvent.click(toggle())
+    finish(0)
+    fireEvent.click(toggle())
+    expect(clamp()).toBe('') // held open while it shrinks
+    // Something else cancels it (the page hid, an extension, devtools): onfinish never fires.
+    cancelled(1)
+    expect(clamp()).toBe('2')
+    expect(toggle()).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('a cancel from a superseded animation does not drop the hold of the one that replaced it', () => {
+    installAnimate(); overflow()
+    render(<TextFold />)
+    const box = content().parentElement as HTMLElement
+    const clamp = () => box.style.webkitLineClamp || box.style.getPropertyValue('-webkit-line-clamp')
+    fireEvent.click(toggle())
+    finish(0)
+    fireEvent.click(toggle()) // folding: animation 1
+    fireEvent.click(toggle()) // opens again (already at open height: no motion), animation 1 is cancelled
+    fireEvent.click(toggle()) // folding again: animation 2
+    expect(animations).toHaveLength(3)
+    // The browser reports animation 1's cancel late, after animation 2 took over.
+    cancelled(1)
+    expect(clamp()).toBe('')
+    finish(2)
+    expect(clamp()).toBe('2')
+  })
+
   it('cancels a running animation when it unmounts', () => {
     installAnimate(); overflow()
     const { unmount } = render(<TextFold />)
@@ -395,6 +511,13 @@ describe('keyboard and clicks', () => {
     expect(notPrevented).toBe(false)
     expect(parentClick).not.toHaveBeenCalled()
     expect(toggle()).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('a middle click on the toggle does not reach a parent that opens a link on auxclick', () => {
+    const onAux = vi.fn()
+    render(<div onAuxClick={onAux}><FoldToggle open={false} onToggle={() => {}} /></div>)
+    fireEvent(toggle(), new MouseEvent('auxclick', { bubbles: true, button: 1 }))
+    expect(onAux).not.toHaveBeenCalled()
   })
 
   it('a count-fold toggle also stops the click and calls onToggle once', () => {

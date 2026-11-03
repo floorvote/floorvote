@@ -167,7 +167,7 @@ describe('renderDigestEmail', () => {
     expect(html).toContain(model.rows[0].text)
   })
 
-  it('renders the sample digest unchanged (extraction regression guard)', () => {
+  it('matches the sample digest snapshot, covering a cut list, a cut prose summary, and whole short ones', () => {
     // Fixed period so the date-range header is deterministic (otherwise it
     // falls back to Date.now() and the snapshot drifts daily).
     const html = renderDigestEmail({ events: SAMPLE_DIGEST_EVENTS, assocName: SAMPLE_ASSOC_NAME, appUrl: 'https://x.test', newMatches: SAMPLE_NEW_MATCHES, periodStart: '2026-06-22T00:00:00Z', periodEnd: '2026-06-23T00:00:00Z' })

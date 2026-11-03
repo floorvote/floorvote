@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { EventItem } from './EventItem'
@@ -53,6 +53,39 @@ function renderItem(event: CalendarEvent, isAdmin: boolean, props?: Partial<Para
   )
   return { onEdit, onDelete, onRestore, onEditSave, onEditCancel }
 }
+
+// The details fold's toggle hugs the text (1px); what follows leaves at least twice that.
+describe('EventItem details fold: the gap after it', () => {
+  const dims = { scrollHeight: 90, clientHeight: 36 }
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(() => dims.scrollHeight)
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(() => dims.clientHeight)
+  })
+  afterEach(() => vi.restoreAllMocks())
+  const DETAILS = 'Long details that run on and on.'
+  const withDetails: CalendarEvent = { ...hearing, details: DETAILS }
+  const card = () => document.getElementById(`agenda-event-${hearing.id}`) as HTMLElement
+  // The block under the details: the committee line, found by its text.
+  const committeeLine = () => screen.getByText('Committee on Finance').closest('div') as HTMLElement
+
+  it('has the committee line, 3px below, after the toggle', () => {
+    renderItem({ ...withDetails, committee: 'Committee on Finance' }, false)
+    const btn = screen.getByRole('button', { name: 'Show more' })
+    expect(btn.style.marginTop).toBe('1px')
+    // The toggle belongs to the details, and the committee line comes after both in the card.
+    expect(screen.getByText(DETAILS).closest('[data-fold-state]')!.parentElement!.contains(btn)).toBe(true)
+    expect(btn.compareDocumentPosition(committeeLine()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(committeeLine().style.marginTop).toBe('3px')
+  })
+
+  it('has the card\'s 8px bottom padding after the toggle when no committee follows', () => {
+    renderItem(withDetails, false)
+    expect(screen.queryByText('Committee on Finance')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Show more' }).style.marginTop).toBe('1px')
+    expect(card().style.padding).toBe('8px 10px')
+    expect(card().contains(screen.getByRole('button', { name: 'Show more' }))).toBe(true)
+  })
+})
 
 describe('EventItem', () => {
   it('renders the event name with bill chips below (no All day label)', () => {

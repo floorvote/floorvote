@@ -1,7 +1,8 @@
 import { memo, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { decodeStatus } from '../../lib/legislativeStatus'
-import { stripMarkdown } from '../../components/MarkdownSummary'
+import { Fold } from '../../components/Fold'
+import { SummaryFold } from '../../components/SummaryFold'
 import { billUrl } from '../../lib/sessionSlug'
 import { BillBadge } from '../../components/BillBadge'
 import { DraftChip, TitleDraftMarker } from '../../components/DraftChip'
@@ -35,6 +36,10 @@ const GROUP_SHOWN = 2
 // two columns of one grid, a status on its bill's row (see groupRows.ts).
 const PAIRS: CSSProperties = { display: 'inline-grid', gridTemplateColumns: 'auto auto', columnGap: 6, rowGap: GROUP_ROW_GAP, alignItems: 'center' }
 const MATCHED: CSSProperties = { ...chipOutline(true, false, false), display: 'inline-flex', borderRadius: radius.sm }
+
+// The summary preview under a row's title.
+const SUMMARY_LINE_HEIGHT = 1.4
+const SUMMARY_FONT = "'Source Serif 4', serif"
 
 export const memberPath = (m: GroupMember) => billUrl({ id: m.id, state: m.state, sessionSlug: m.sessionSlug, billNumber: m.billNumber })
 
@@ -251,6 +256,10 @@ export const BillRow = memo(function BillRow({
         isActive={interactive ? filter.status.includes(bill.status) : undefined}
       />
 
+  // The chips shown under the summary: the priority is its own chip, so it isn't one of these.
+  const visibleTags = bill.tags.filter(tag => tag.toLowerCase() !== bill.priority?.toLowerCase())
+  const summaryGap = visibleTags.length > 0 ? 10 : 5
+
   return (
     <div
       onClick={(e) => {
@@ -380,18 +389,30 @@ export const BillRow = memo(function BillRow({
           {bill.isDraft && <TitleDraftMarker className="bill-title-draft-marker" />}
           {billDisplayTitle(bill) || bill.abstract}
         </div>
-        {(bill.tenantSummary || (bill.title && bill.abstract && bill.abstract.trim().toLowerCase() !== bill.title.trim().toLowerCase())) && (
-          <div style={{
-            fontSize: fontSize.sm, color: color.textSecondary, marginBottom: 5, lineHeight: 1.4,
-            display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-            fontFamily: "'Source Serif 4', serif",
-          }}>
-            {bill.tenantSummary ? stripMarkdown(bill.tenantSummary) : bill.abstract}
-          </div>
-        )}
-        {bill.tags.length > 0 && (
+        {/* The toggle hugs the text (1px), so the gap before the tag chips is twice the usual 5px: spacing alone groups it with the summary. With no chip after it (no tags, or only the priority, which the chip row leaves out), nothing follows and the gap stays 5px. */}
+        {/* The summary renders as markdown, folded to 4 lines; with none, a distinct abstract folds the same way as plain text. */}
+        {bill.tenantSummary?.trim() ? (
+          <SummaryFold
+            markdown={bill.tenantSummary}
+            lines={4}
+            lineHeight={SUMMARY_LINE_HEIGHT}
+            fontFamily={SUMMARY_FONT}
+            fontSize={fontSize.sm}
+            color={color.textSecondary}
+            wrapperStyle={{ marginBottom: summaryGap }}
+          />
+        ) : (bill.title && bill.abstract && bill.abstract.trim().toLowerCase() !== bill.title.trim().toLowerCase()) ? (
+          <Fold
+            collapsed={{ lines: 4 }}
+            style={{ fontSize: fontSize.sm, color: color.textSecondary, lineHeight: SUMMARY_LINE_HEIGHT, fontFamily: SUMMARY_FONT }}
+            wrapperStyle={{ marginBottom: summaryGap }}
+          >
+            {bill.abstract}
+          </Fold>
+        ) : null}
+        {visibleTags.length > 0 && (
           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-            {bill.tags.filter(tag => tag.toLowerCase() !== bill.priority?.toLowerCase()).map((tag) => (
+            {visibleTags.map((tag) => (
               <button
                 key={tag}
                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); onTagClick(tag) }}
