@@ -73,7 +73,7 @@ import { isEditableTarget } from '../lib/isEditableTarget'
 import { BillPicker, type BillOption } from '../components/BillPicker'
 import { editableFieldBox } from '../lib/editableFieldStyle'
 import { CollapsibleSection } from '../components/CollapsibleSection'
-import { Fold, FoldToggle, useFold } from '../components/Fold'
+import { FoldToggle, useFold } from '../components/Fold'
 import { ProviderExtrasList, ExtraMetaItem, ExtraDetailList, ExtraFlagItem, placeExtras } from '../components/ProviderExtras'
 import type { BillExtras } from '../../../shared/providerExtras'
 import { RELATIONSHIP_KINDS, RELATIONSHIP_KIND_LABELS, isRelationshipKind, type RelationshipKind } from '../../../shared/relationshipKinds'
@@ -118,11 +118,11 @@ export function countClippedSponsors(itemRights: number[], boundaryRight: number
 }
 
 // The bill-detail sponsors row. Collapsed, it clamps sponsors + co-sponsors to a
-// single line and offers the shared "+N more" count-fold toggle, on its own line
-// below, *only when that line actually overflows* (measured, not gated on a
+// single line and offers the shared "+N more" count-fold toggle, beside the names in
+// the same row, *only when that line actually overflows* (measured, not gated on a
 // co-sponsor count — so primary-heavy bills get one too). Expanded, the whole run
-// wraps in place as one continuous inline flow: each name stays whole, and a label
-// never dangles or splits at its hyphen.
+// wraps in place as one continuous inline flow with "Show less" after it: each name
+// stays whole, and a label never dangles or splits at its hyphen.
 function SponsorsRow({ sponsor, sponsorUrl, sponsorParty, coSponsors, flashed }: {
   sponsor: string | null
   sponsorUrl: string | null
@@ -169,62 +169,223 @@ function SponsorsRow({ sponsor, sponsorUrl, sponsorParty, coSponsors, flashed }:
         transition: 'box-shadow 0.6s ease', borderRadius: radius.sm,
       }}
     >
-      {/* The clip box the fold animation resizes, from one line to the wrapped run. */}
+      {/* The clip box the fold animation resizes, from one line to the wrapped run. The
+          toggle is inside it, so it rides the same motion as the names. */}
       <div {...fold.clipProps}>
-        <span
-          ref={flowRef}
-          data-sponsor-flow
-          style={fold.expanded
-            ? { display: 'inline', whiteSpace: 'normal' }
-            : { display: 'block', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-        >
-          {/* Primary group. The inter-group gap rides on its right edge so the
-              "Co-sponsors:" label sits flush left whenever it wraps to a new line. */}
-          <span style={regularCoSponsors.length > 0 ? { marginRight: 16 } : undefined}>
-            <span style={labelStyle}>{label}&nbsp;</span>
-            {sponsor && (
-              <span data-sponsor-item>
-                <SponsorLink name={sponsor} url={sponsorUrl} party={sponsorParty} />
-              </span>
-            )}
-            {primaryCoSponsors.map((s, i) => (
-              <span key={`p-${i}`}>, <span data-sponsor-item><SponsorLink name={s.name} url={s.url} party={s.party ?? null} /></span></span>
-            ))}
-          </span>
-          {regularCoSponsors.length > 0 && (
-            <>
-              {' '}
-              <span style={labelStyle}>Co-sponsors:&nbsp;</span>
-              {regularCoSponsors.map((s, i) => (
-                <span key={`r-${i}`}>{i > 0 ? ', ' : ''}<span data-sponsor-item><SponsorLink name={s.name} url={s.url} party={s.party ?? null} /></span></span>
+        <div style={fold.expanded ? { display: 'block' } : { display: 'flex', alignItems: 'baseline', minWidth: 0 }}>
+          <span
+            ref={flowRef}
+            data-sponsor-flow
+            style={fold.expanded
+              ? { display: 'inline', whiteSpace: 'normal' }
+              : { display: 'block', flex: '1 1 auto', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+          >
+            {/* Primary group. The inter-group gap rides on its right edge so the
+                "Co-sponsors:" label sits flush left whenever it wraps to a new line. */}
+            <span style={regularCoSponsors.length > 0 ? { marginRight: 16 } : undefined}>
+              <span style={labelStyle}>{label}&nbsp;</span>
+              {sponsor && (
+                <span data-sponsor-item>
+                  <SponsorLink name={sponsor} url={sponsorUrl} party={sponsorParty} />
+                </span>
+              )}
+              {primaryCoSponsors.map((s, i) => (
+                <span key={`p-${i}`}>, <span data-sponsor-item><SponsorLink name={s.name} url={s.url} party={s.party ?? null} /></span></span>
               ))}
-            </>
+            </span>
+            {regularCoSponsors.length > 0 && (
+              <>
+                {' '}
+                <span style={labelStyle}>Co-sponsors:&nbsp;</span>
+                {regularCoSponsors.map((s, i) => (
+                  <span key={`r-${i}`}>{i > 0 ? ', ' : ''}<span data-sponsor-item><SponsorLink name={s.name} url={s.url} party={s.party ?? null} /></span></span>
+                ))}
+              </>
+            )}
+          </span>
+          {(fold.open || hiddenCount > 0) && (
+            <FoldToggle
+              open={fold.open}
+              count={hiddenCount}
+              onToggle={fold.toggle}
+              controls={fold.clipProps.id}
+              // Beside the names, not under them: no gap above, a little off the last name.
+              style={{ marginTop: 0, marginLeft: 6, flexShrink: 0 }}
+            />
           )}
-        </span>
+        </div>
       </div>
-      {(fold.open || hiddenCount > 0) && (
-        <FoldToggle open={fold.open} count={hiddenCount} onToggle={fold.toggle} controls={fold.clipProps.id} style={{ marginBottom: 6 }} />
-      )}
     </div>
   )
 }
 
-// The bill's italic abstract: two lines, then the shared "Show more" toggle on its own
-// line when the text is cut off. The fold clamps the real text, so nothing is measured
-// or cut to a prefix here.
+// Largest n in [0, len] for which `fits(n)` holds, assuming fits() is monotonic
+// (true for every n below the threshold, false above it) — which holds here
+// because adding characters can only ever make text taller, never shorter.
+//
+// Pure, and takes the predicate rather than doing its own measuring, so the
+// binary search is unit-testable without a layout engine. Returns 0 when even
+// the empty prefix does not fit, which callers treat as "don't truncate".
+export function largestFittingPrefix(len: number, fits: (n: number) => boolean): number {
+  if (fits(len)) return len
+  let lo = 0
+  let hi = len
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2)
+    if (fits(mid)) lo = mid
+    else hi = mid - 1
+  }
+  return lo
+}
+
+// Number of lines the collapsed abstract shows, and the line-height it is laid
+// out at. The line-height must be explicit: the measurement below turns it into
+// a pixel budget, and a computed `normal` gives no number to multiply.
+const ABSTRACT_MAX_LINES = 2
+const ABSTRACT_LINE_HEIGHT = 1.45
+
+// The bill's italic abstract. Collapsed it shows two lines, with the shared fold
+// toggle sitting at the end of the last line and wrapping only when there is no
+// room — the same inline behaviour as the sponsors row above it.
+//
+// That placement is why this measures a text length rather than using
+// `-webkit-line-clamp`. A clamp cuts the box after N lines, and any inline
+// content after the cut — the toggle — is cut with it. Reserving room for the
+// toggle inside the clamped lines is not expressible in CSS, so the prefix that
+// leaves room for it is found by measurement instead: binary-search the longest
+// slice of text for which text + ellipsis + toggle still fits the line budget.
+//
+// Open state and the height animation come from useFold, around a clip box that
+// holds the paragraph: it animates between the folded and open heights, and while
+// folding the open text stays until the motion ends, as in every other fold.
+//
+// The hidden measurer is a sibling of the clip box with the same width and
+// typography. React never renders children into the text span, so mutating its
+// textContent here does not fight the reconciler; the visible copy is always
+// rendered from state.
 function AbstractText({ text }: { text: string }) {
+  const fold = useFold()
+  // null = not yet measured, or the whole abstract fits and needs no toggle.
+  const [visibleLen, setVisibleLen] = useState<number | null>(null)
+  const measureRef = useRef<HTMLSpanElement>(null)
+  const measureTextRef = useRef<HTMLSpanElement>(null)
+  const measureToggleRef = useRef<HTMLSpanElement>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const lastWidthRef = useRef(-1)
+
+  useLayoutEffect(() => {
+    if (fold.expanded) return
+    const el = measureRef.current
+    const textEl = measureTextRef.current
+    const toggleEl = measureToggleRef.current
+    const wrap = wrapRef.current
+    if (!el || !textEl || !toggleEl || !wrap) return
+
+    const measure = () => {
+      const lineHeightPx = parseFloat(getComputedStyle(el).fontSize) * ABSTRACT_LINE_HEIGHT
+      const budget = lineHeightPx * ABSTRACT_MAX_LINES
+      // jsdom reports 0 for every box, so the full text trivially "fits" and no
+      // toggle renders — same no-layout behaviour the sponsors row relies on.
+      if (!(budget > 0)) { setVisibleLen(null); return }
+
+      const setAndMeasure = (s: string) => { textEl.textContent = s; return el.scrollHeight }
+
+      // Does the whole abstract fit on its own? Measured with the stand-in
+      // hidden, because in that case no toggle renders and its width must not
+      // count against the budget.
+      toggleEl.style.display = 'none'
+      const fitsWhole = setAndMeasure(text) <= budget + 1
+      toggleEl.style.display = ''
+      if (fitsWhole) { setVisibleLen(null); return }
+
+      const fits = (n: number) => setAndMeasure(`${text.slice(0, n).trimEnd()}… `) <= budget + 1
+      const n = largestFittingPrefix(text.length, fits)
+      setVisibleLen(n > 0 && n < text.length ? n : null)
+    }
+
+    lastWidthRef.current = -1
+    measure()
+
+    if (typeof ResizeObserver === 'undefined') return
+    // Observe the WRAPPER, never the measurer: measuring mutates the measurer's
+    // text and so its height, which would retrigger the observer that triggered
+    // the measurement — a feedback loop. The wrapper's width is also the only
+    // input that can change the answer, so the width guard keeps a height-only
+    // change (the visible copy growing when the toggle appears) from re-running
+    // the search for no reason.
+    const ro = new ResizeObserver(() => {
+      const w = Math.round(wrap.getBoundingClientRect().width)
+      if (w === lastWidthRef.current) return
+      lastWidthRef.current = w
+      measure()
+    })
+    ro.observe(wrap)
+    return () => ro.disconnect()
+  }, [fold.expanded, text])
+
+  const truncated = !fold.expanded && visibleLen !== null
+  const shown = truncated ? `${text.slice(0, visibleLen!).trimEnd()}… ` : text
+  const showToggle = truncated || fold.expanded
+
+  const typography = {
+    fontSize: fontSize.sm, fontStyle: 'italic' as const,
+    fontFamily: "'Source Serif 4', serif", lineHeight: ABSTRACT_LINE_HEIGHT,
+  }
+
+  // ONE element for the real toggle and the measurer's stand-in, so the space
+  // reserved for the toggle is the space it actually occupies. An earlier attempt
+  // reserved a plain string instead, which was wrong twice over: a <button> does
+  // not inherit font-family, so the real one rendered in the UA default sans while
+  // the reserved text rendered in Source Serif italic; and the real one is an
+  // atomic inline box that must wrap whole, while the reserved text could break at
+  // its space. Both made the reservation too small, so the toggle landed on a third
+  // line — the bug this was meant to fix. Rendering FoldToggle itself in both
+  // places (chevron included) keeps the measurement following the control
+  // automatically instead of having to be kept in agreement with it by hand.
+  //
+  // marginTop 0: the shared toggle sits a pixel under a block of text, but here it
+  // is part of the last line.
+  const toggleStyle = { marginTop: 0 }
+
   return (
-    <Fold
-      as="p"
-      collapsed={{ lines: 2 }}
-      style={{
-        fontSize: fontSize.sm, fontStyle: 'italic', fontFamily: "'Source Serif 4', serif",
-        lineHeight: 1.45, color: color.textMuted, margin: 0,
-      }}
-      wrapperStyle={{ margin: '0 0 10px' }}
-    >
-      {text}
-    </Fold>
+    <div data-abstract-wrap ref={wrapRef} style={{ position: 'relative', margin: '0 0 10px' }}>
+      {/* The clip box the fold animation resizes. Visible copy: one inline flow, so
+          the toggle rides the end of the last line and wraps with it rather than
+          claiming a line of its own. */}
+      <div {...fold.clipProps}>
+        <p style={{ ...typography, color: color.textMuted, margin: 0 }}>
+          {shown}
+          {showToggle && (
+            <FoldToggle
+              open={fold.open}
+              onToggle={fold.toggle}
+              controls={fold.clipProps.id}
+              style={{ ...toggleStyle, marginLeft: fold.expanded ? 4 : 0 }}
+            />
+          )}
+        </p>
+      </div>
+      {/* Hidden measurer — same width and typography as the copy above, and
+          carrying the toggle itself so its width is part of the budget. Only the
+          text span's textContent is mutated during measurement, and React renders
+          no children into it, so this does not fight the reconciler. inert keeps
+          the stand-in button out of the tab order and the accessibility tree. */}
+      <span
+        ref={measureRef}
+        data-abstract-measurer
+        aria-hidden="true"
+        inert
+        style={{
+          ...typography, position: 'absolute', top: 0, left: 0, right: 0,
+          visibility: 'hidden', pointerEvents: 'none', display: 'block',
+        }}
+      >
+        <span ref={measureTextRef} />
+        <span ref={measureToggleRef} data-abstract-measure-toggle>
+          <FoldToggle open={false} onToggle={() => {}} style={{ ...toggleStyle, marginLeft: 0 }} />
+        </span>
+      </span>
+    </div>
   )
 }
 

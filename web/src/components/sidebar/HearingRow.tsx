@@ -106,9 +106,9 @@ export function HearingRow({
       )}
 
       {/* Bill chips (full width; capped with +N more) — own click targets. The clip box
-          wraps the chip row so the shared fold animation can resize it. */}
+          wraps the chip row, toggle included, so the shared fold animation can resize it. */}
       <div {...fold.clipProps}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 3 }}>
           {shownBills.map(b => {
             const to = `${billUrl({ id: b.id, state: b.state, sessionSlug: b.sessionSlug, billNumber: b.billNumber })}#section-hearings`
             return (
@@ -134,9 +134,13 @@ export function HearingRow({
               />
             </Link>
           )})}
+          {/* The last item of the row, so it rides the end of the last line of chips and
+              wraps only when there is no room; centered with the mini badges. */}
+          {hiddenCount > 0 && (
+            <FoldToggle open={fold.open} count={hiddenCount} onToggle={fold.toggle} controls={fold.clipProps.id} style={{ marginTop: 0 }} />
+          )}
         </div>
       </div>
-      {hiddenCount > 0 && <FoldToggle open={fold.open} count={hiddenCount} onToggle={fold.toggle} controls={fold.clipProps.id} />}
     </div>
   )
 }
