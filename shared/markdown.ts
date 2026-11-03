@@ -53,6 +53,8 @@ export function htmlToMarkdown(html: string): string {
 // dash-style inline bullets ("Intro: - Item one - Item two"). The dash may be
 // glued directly to the preceding punctuation with no space ("...2026.- Prohibiting"),
 // which is how Gemini sometimes emits lists — the space before the dash is optional.
+// The item may open with a bold label ("... 2026. - **Fees**: Lowers"), the house
+// list style, so the capital can sit behind ** or __.
 export function normalizeInlineBullets(text: string): string {
   // • bullets: split any line (or the whole string) on the • separator
   const normalized = text.split('\n').flatMap(line => {
@@ -63,8 +65,8 @@ export function normalizeInlineBullets(text: string): string {
     return [line]
   }).join('\n')
 
-  // Dash-style inline bullets: "Intro: - Word" or "Intro:- Word" → "Intro:\n- Word"
-  return normalized.replace(/([.!?:])[ \t]*-[ \t]+([A-Z])/g, '$1\n- $2')
+  // Dash-style inline bullets: "Intro: - Word" or "Intro:- **Word**" → "Intro:\n- Word"
+  return normalized.replace(/([.!?:])[ \t]*-[ \t]+((?:\*\*|__)?[A-Z])/g, '$1\n- $2')
 }
 
 /** Strip markdown syntax for compact plain-text previews (bill list cards, sidebar, Feed). */

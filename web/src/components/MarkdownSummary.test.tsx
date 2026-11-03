@@ -33,6 +33,15 @@ describe('MarkdownSummary', () => {
     expect(container.textContent).not.toContain('- Daily Reporting')
   })
 
+  it('renders a list written on one line whose items open with bold labels', () => {
+    const oneLine = 'Shifts petition signature gathering to an electronic system in stages. - **Devices**: Requires each collection device to scan an ID card. - **Effective date**: Takes effect on July 1, 2027.'
+    const { container } = render(<MarkdownSummary>{oneLine}</MarkdownSummary>)
+    expect(container.querySelectorAll('p')).toHaveLength(1)
+    expect(container.querySelector('p')?.textContent).toBe('Shifts petition signature gathering to an electronic system in stages.')
+    expect([...container.querySelectorAll('li strong')].map(s => s.textContent)).toEqual(['Devices', 'Effective date'])
+    expect(container.textContent).not.toContain(' - ')
+  })
+
   it('keeps the bold label inside a list item', () => {
     const { container } = render(<MarkdownSummary>{LEAD_LIST_TRAILER}</MarkdownSummary>)
     const strongs = [...container.querySelectorAll('li strong')].map(s => s.textContent)
