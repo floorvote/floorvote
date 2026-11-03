@@ -14,9 +14,9 @@ import { renderReplyEmail, muteBillPageUrl } from './replies'
 import { renderInviteBounceEmail, type BouncedAddress } from './inviteBounceEmail'
 import { renderEmailChangeConfirmEmail, renderEmailChangeNoticeEmail, renderEmailChangeReportedEmail } from './emailChangeEmail'
 
-// Summaries as the AI writes them: a lead sentence and a bold-label list. The first is long
-// enough that the email card abridges it ("…" and a link to the full summary); the second and
-// third fit whole. Invented text.
+// Summaries as the AI writes them, one of each case the email card handles. A long list and
+// a long prose summary are abridged ("…" and a link to the full summary); the short list and
+// the one-sentence prose fit whole. Invented text.
 const SAMPLE_SUMMARY_LONG = [
   'Requires photo identification to vote in person and by mail, with free IDs issued by the state.',
   '- **Accepted IDs**: Lists the driver licenses, passports, student cards, and tribal IDs a voter may show at the polls or attach to a mail ballot application.',
@@ -25,6 +25,8 @@ const SAMPLE_SUMMARY_LONG = [
   '- **Poll worker training**: Requires annual training for poll workers on checking IDs and offering provisional ballots.',
   '- **Reporting**: Has each local board report to the state how many voters were asked for ID and how many cast provisional ballots.',
 ].join('\n')
+// A prose-only summary, long enough to be cut at a word.
+const SAMPLE_SUMMARY_PROSE = 'Lets cities and towns adopt ranked-choice voting for local races by a vote of the governing body or a ballot question, with the state paying for voter education and for new tabulation software. The bill sets a schedule for pilot elections, requires clear ballot instructions in every language the municipality already provides, and directs local election administrators, and every ballot printer under contract, to test the tabulation software in public before each election.'
 const SAMPLE_SUMMARY_SHORT = [
   'Authorizes secure 24-hour drop boxes in every municipality.',
   '- **Placement**: Puts at least one box at each town hall.',
@@ -84,7 +86,7 @@ export const SAMPLE_DIGEST_EVENTS: DigestEvent[] = [
 // on the real 1-10 scale. The last one has no summary yet, so its card has no preview.
 export const SAMPLE_NEW_MATCHES: NewMatchDigestItem[] = [
   { billId: 'b5', billNumber: 'HB 1602', billTitle: 'Automatic voter registration at the DMV', billState: 'RI', billSession: '2026', relevanceScore: 9, summary: 'Registers eligible residents to vote automatically when they get or renew a license, unless they opt out.' },
-  { billId: 'b6', billNumber: 'S 0712', billTitle: 'Ranked-choice voting for municipal elections', billState: 'RI', billSession: '2026', relevanceScore: 7, summary: 'Lets cities and towns adopt ranked-choice voting for local races, with state-funded voter education.' },
+  { billId: 'b6', billNumber: 'S 0712', billTitle: 'Ranked-choice voting for municipal elections', billState: 'RI', billSession: '2026', relevanceScore: 7, summary: SAMPLE_SUMMARY_PROSE },
   { billId: 'b7', billNumber: 'HB 1455', billTitle: 'Poll worker compensation increase', billState: 'RI', billSession: '2026', relevanceScore: 5 },
 ]
 
@@ -174,7 +176,7 @@ export function renderSampleEmail(type: SampleEmailType, appUrl: string): { subj
           appUrl,
           instanceName: SAMPLE_ASSOC_NAME,
           author: { name: 'Sam Ortiz', title: 'Town Clerk, Cranston' },
-          bill: { id: 'b1', billNumber: 'HB 1234', title: 'Voter ID Act', state: 'RI', session: '2026 Regular Session', priority: 'high', tenantSummary: 'Requires photo identification to vote in person and by mail, with free IDs issued by the state.' },
+          bill: { id: 'b1', billNumber: 'HB 1234', title: 'Voter ID Act', state: 'RI', session: '2026 Regular Session', priority: 'high', tenantSummary: SAMPLE_SUMMARY_LONG },
           comment: { id: 'sample-comment', createdAt: '2026-06-10 16:45:00', html: '<p>Hey <span data-type="mention" data-id="user:u2" data-label="@Dana Reed">@Dana Reed</span> — we should testify against this at Thursday\'s hearing. Can you pull the talking points?</p>' },
           via: 'user',
         }),
