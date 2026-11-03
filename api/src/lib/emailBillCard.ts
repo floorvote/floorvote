@@ -4,10 +4,9 @@ import { CARD_STYLE, type BillCardModel } from '../../../shared/billCardModel'
 import { COMMENT_STYLE } from '../../../shared/commentStyle'
 import { emailIconSrc } from '../../../shared/emailIcons'
 import { dbTsToEpoch } from '../../../shared/time'
+import { renderEmailSummary } from './emailSummary'
+import { escHtml } from './escHtml'
 
-function escHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-}
 
 // Links inherit surrounding color + no underline, so the card looks identical
 // to a static card but is clickable (matches the Feed / digest).
@@ -43,9 +42,11 @@ export function renderBillCardOpen({ model, billHref, chip, otherBadges = [] }: 
     ? `<span style="display:inline-block;background:${chipSpec.bg};color:${chipSpec.text};${chipBorder}font-size:${fontSize.sm}px;font-weight:${fontWeight.semibold};padding:3px 10px;border-radius:${radius.sm}px;white-space:nowrap;">${escHtml(chipSpec.label)}</span>`
     : ''
   const priorityChip = chipSpec && 'href' in chipSpec && chipSpec.href ? link(chipSpec.href, chipSpan) : chipSpan
-  const titlePadBottom = model.summary ? 4 : 10
-  const summaryRow = model.summary
-    ? `<tr style="background:${CARD_STYLE.headerBg};"><td colspan="3" style="padding:0 14px 10px 14px;font-size:${CARD_STYLE.summarySize}px;color:${CARD_STYLE.summaryColor};font-family:${CARD_STYLE.summaryFontFamily};line-height:1.45;">${link(billHref, escHtml(model.summary))}</td></tr>`
+  // The summary is abridged and rendered as a list (see emailSummary.ts); nothing to show means no row.
+  const summaryHtml = renderEmailSummary(model.summary, billHref)
+  const titlePadBottom = summaryHtml ? 4 : 10
+  const summaryRow = summaryHtml
+    ? `<tr style="background:${CARD_STYLE.headerBg};"><td colspan="3" style="padding:0 14px 10px 14px;font-size:${CARD_STYLE.summarySize}px;color:${CARD_STYLE.summaryColor};font-family:${CARD_STYLE.summaryFontFamily};line-height:1.45;">${summaryHtml}</td></tr>`
     : ''
   return `
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${color.white};margin-bottom:8px;border-radius:${radius.lg}px;overflow:hidden;border:1px solid ${CARD_STYLE.border};box-shadow:${CARD_STYLE.shadow};">

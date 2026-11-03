@@ -2,7 +2,6 @@ import { color, fontSize, fontWeight } from './tokens'
 import { PRIORITY_COLORS, POSITION_FEED_ICON } from './billChipColors'
 import { COMMENT_PREVIEW_MAX, formatBillUpdateDetail, stripHtml, type ChangeRecord, type FeedEvent, type GroupedBill, type GroupedBillEvents } from './feedUtils'
 import { formatHearingTime } from './hearingTime'
-import { stripMarkdown } from './markdown'
 import { billDisplayTitle } from './billTitle'
 
 const SUMMARY_BG = color.surfaceSubtle
@@ -68,7 +67,14 @@ export type BillCardRow = {
 }
 export type BillCardModel = {
   billNumber: string; state: string | null; sessionSlug: string | null
-  title: string; summary: string | null; priority: 'high' | 'medium' | 'low' | null
+  title: string
+  /**
+   * The bill's summary as the raw markdown (or HTML) the model wrote, null when it has none. A surface that
+   * shows it flat runs it through stripMarkdown itself (the Feed card); email abridges and renders it
+   * (renderBillCardOpen).
+   */
+  summary: string | null
+  priority: 'high' | 'medium' | 'low' | null
   rows: BillCardRow[]
   /** A companion group's card: the bills with events in it, for the header. Absent in a bill's own card. */
   bills?: GroupedBill[]
@@ -184,7 +190,7 @@ export function buildBillCardModel(group: GroupedBillEvents): BillCardModel {
   }
   return {
     billNumber: group.billNumber, state: group.billState, sessionSlug: group.billSessionSlug,
-    title: billDisplayTitle({ title: group.billTitle, isDraft: group.billIsDraft }), summary: group.billSummary != null ? stripMarkdown(group.billSummary) : null,
+    title: billDisplayTitle({ title: group.billTitle, isDraft: group.billIsDraft }), summary: group.billSummary ?? null,
     priority: group.billPriority as 'high' | 'medium' | 'low' | null, rows,
     ...(inGroup && group.bills ? { bills: group.bills } : {}),
   }

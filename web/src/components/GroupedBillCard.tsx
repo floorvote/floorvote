@@ -15,6 +15,7 @@ import { PrioritySquare } from './PrioritySquare'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 import { buildBillCardModel, billCardRowText, CARD_STYLE, type BillCardRow } from '../lib/billCardModel'
 import { isModifiedClick } from '../lib/modifierClick'
+import { stripMarkdown } from '../lib/markdown'
 
 function MaterialIcon({ name, color, size = 14, fill = 0 }: {
   name: string; color: string; size?: number; fill?: 0 | 1
@@ -54,6 +55,8 @@ export function GroupedBillCard({ group, seenAt = null, currentUserId = null, is
   const navigate = useNavigate()
   const { billId, billNumber, billState, billSessionSlug, billIsDraft } = group
   const model = buildBillCardModel(group)
+  // The model carries the summary raw (email abridges and renders it); the Feed shows it flat.
+  const summaryText = model.summary ? stripMarkdown(model.summary) : null
   const [hovered, setHovered] = useState(false)
   const [hoveredHeader, setHoveredHeader] = useState(false)
   const [hoveredRow, setHoveredRow] = useState<string | null>(null)
@@ -180,7 +183,7 @@ export function GroupedBillCard({ group, seenAt = null, currentUserId = null, is
           }}>
             {model.title}
           </div>
-          {model.summary && (
+          {summaryText && (
             <div style={{
               fontFamily: CARD_STYLE.summaryFontFamily,
               fontSize: fontSize.sm, color: color.textSecondary,
@@ -190,7 +193,7 @@ export function GroupedBillCard({ group, seenAt = null, currentUserId = null, is
               WebkitBoxOrient: 'vertical' as const,
               overflow: 'hidden',
             }}>
-              {model.summary}
+              {summaryText}
             </div>
           )}
         </div>
