@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`renderDigestEmail > renders the sample digest unchanged (extraction regression guard) 1`] = `
+exports[`renderDigestEmail > matches the sample digest snapshot, covering a cut list, a cut prose summary, and whole short ones 1`] = `
 "<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>

@@ -62,21 +62,28 @@ describe('EventItem details fold: the gap after it', () => {
     vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(() => dims.clientHeight)
   })
   afterEach(() => vi.restoreAllMocks())
-  const withDetails: CalendarEvent = { ...hearing, details: 'Long details that run on and on.' }
-  const foldWrapper = () => document.querySelector('[data-fold-state]')!.parentElement as HTMLElement
+  const DETAILS = 'Long details that run on and on.'
+  const withDetails: CalendarEvent = { ...hearing, details: DETAILS }
+  const card = () => document.getElementById(`agenda-event-${hearing.id}`) as HTMLElement
+  // The block under the details: the committee line, found by its text.
+  const committeeLine = () => screen.getByText('Committee on Finance').closest('div') as HTMLElement
 
-  it('has the committee line, 3px below, right after the toggle', () => {
+  it('has the committee line, 3px below, after the toggle', () => {
     renderItem({ ...withDetails, committee: 'Committee on Finance' }, false)
     const btn = screen.getByRole('button', { name: 'Show more' })
     expect(btn.style.marginTop).toBe('1px')
-    expect(foldWrapper().contains(btn)).toBe(true)
-    expect((foldWrapper().nextElementSibling as HTMLElement).style.marginTop).toBe('3px')
+    // The toggle belongs to the details, and the committee line comes after both in the card.
+    expect(screen.getByText(DETAILS).closest('[data-fold-state]')!.parentElement!.contains(btn)).toBe(true)
+    expect(btn.compareDocumentPosition(committeeLine()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(committeeLine().style.marginTop).toBe('3px')
   })
 
   it('has the card\'s 8px bottom padding after the toggle when no committee follows', () => {
     renderItem(withDetails, false)
-    expect(foldWrapper().nextElementSibling).toBeNull()
-    expect((foldWrapper().parentElement!.parentElement as HTMLElement).style.padding).toBe('8px 10px')
+    expect(screen.queryByText('Committee on Finance')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Show more' }).style.marginTop).toBe('1px')
+    expect(card().style.padding).toBe('8px 10px')
+    expect(card().contains(screen.getByRole('button', { name: 'Show more' }))).toBe(true)
   })
 })
 

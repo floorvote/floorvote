@@ -27,14 +27,26 @@ describe('sample digest: every summary case', () => {
     expect(html).toMatch(/ranked-choice voting[^<]{200,}…<\/p>/)
   })
 
-  it('shows a short list whole, with no ellipsis after it', () => {
-    expect(html).toContain('Puts at least one box at each town hall.')
-    expect(html).toContain('Sets chain-of-custody rules for collecting ballots.')
+  it('shows a short list whole: both items, no ellipsis in its block, no link after it', () => {
+    const start = html.indexOf('Authorizes secure 24-hour drop boxes')
+    const block = html.slice(start, html.indexOf('</ul>', start))
+    expect(block).toContain('Puts at least one box at each town hall.')
+    expect(block).toContain('Sets chain-of-custody rules for collecting ballots.')
+    expect(block).not.toContain('…')
+    expect(html.slice(html.indexOf('</ul>', start), html.indexOf('</ul>', start) + 400)).not.toContain(LINK)
   })
 
-  it('shows short prose whole', () => {
-    expect(html).toContain('Sets minimum hours and staffing for early voting sites in every county.')
-    expect(html).toContain('Registers eligible residents to vote automatically when they get or renew a license, unless they opt out.')
+  it('shows short prose whole: no ellipsis and no link in its card', () => {
+    for (const sentence of [
+      'Sets minimum hours and staffing for early voting sites in every county.',
+      'Registers eligible residents to vote automatically when they get or renew a license, unless they opt out.',
+    ]) {
+      const at = html.indexOf(sentence)
+      expect(at).toBeGreaterThan(-1)
+      const after = html.slice(at, at + sentence.length + 300)
+      expect(after.slice(sentence.length, sentence.length + 12)).not.toContain('…')
+      expect(after).not.toContain(LINK)
+    }
   })
 })
 
@@ -44,7 +56,10 @@ describe('sample mention: a long list summary that is cut', () => {
   it('shows the lead and some items, an ellipsis, and the link, once', () => {
     expect(html).toContain('Requires photo identification to vote in person and by mail')
     expect(html).toContain('<li')
-    expect(html).toContain('…')
+    // The ellipsis is in the summary block itself, between the lead and the link that follows it.
+    const block = html.slice(html.indexOf('Requires photo identification'), html.indexOf(LINK))
+    expect(block).toContain('<li')
+    expect(block).toContain('…')
     expect(count(html, LINK)).toBe(1)
     expect(html).not.toContain('Reporting')
   })
@@ -57,5 +72,6 @@ describe('sample reply: a short list that fits', () => {
     expect(html).toContain('<li')
     expect(html).toContain('Issues a free voter ID on request.')
     expect(html).not.toContain(LINK)
+    expect(html).not.toContain('…')
   })
 })

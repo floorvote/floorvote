@@ -122,13 +122,13 @@ one that matches what the test is about:
 - **Gray (`surfaceSubtle`) backdrop, 560px column, 32px outer padding.**
 - Masthead: `FloorVote` wordmark → **instance name** (required) → bold signal sentence → optional small date.
 - `bodyHtml`: cards on the gray (each card carries its own white border + shadow).
-- Optional `ctaHtml` (use `emailButton`) → blue, no arrow glyph.
+- Optional `ctaHtml` (use `emailButton`) → blue, no arrow glyph in the button.
 - Footer: `border-top` + centered links (use `emailFooterLink`).
 
 **Rules that prevent drift:**
 - `instanceName` is **required** — every email shows the association name. (Type error if omitted.)
 - Date ranges go through **`formatDateRange`** — never inline a range string (that's how spacing drifted).
-- CTAs go through **`emailButton`** (blue `accentBlue`; navy is reserved for bill chips). No `→`.
+- CTAs go through **`emailButton`** (blue `accentBlue`; navy is reserved for bill chips). No `→` in a CTA button. The one deliberate exception is the abridged summary's "Full summary on FloorVote →" text link, which is a link, not a button (the conformance test skips exactly that link).
 - Footer links go through **`emailFooterLink`**.
 - User-supplied text is escaped before it reaches `signalHtml`/`bodyHtml` (the shell auto-escapes `instanceName`/`dateLabel`).
 

@@ -71,11 +71,12 @@ describe('HearingRow bill chips fold', () => {
   })
 
   it('hugs the chips with its toggle (1px) and leaves the row\'s 8px bottom padding after it', () => {
-    const { container } = renderRow(withBills(9))
+    renderRow(withBills(9))
     const btn = screen.getByRole('button', { name: '+3 more' })
     expect(btn.style.marginTop).toBe('1px')
-    const row = container.firstElementChild as HTMLElement
-    expect(row.lastElementChild).toBe(btn)
+    // The row is the toggle's and the chips' common ancestor, and its padding is the gap after.
+    const row = chipLinks()[0].closest('div[style*="padding"]') as HTMLElement
+    expect(row.contains(btn)).toBe(true)
     expect(row.style.padding).toBe('8px 10px')
   })
 

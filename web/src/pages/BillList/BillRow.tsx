@@ -389,7 +389,7 @@ export const BillRow = memo(function BillRow({
           {bill.isDraft && <TitleDraftMarker className="bill-title-draft-marker" />}
           {billDisplayTitle(bill) || bill.abstract}
         </div>
-        {/* The toggle hugs the text (1px), so the gap before the tag chips is twice the usual 5px: spacing alone groups it with the summary. With no tags, nothing follows. */}
+        {/* The toggle hugs the text (1px), so the gap before the tag chips is twice the usual 5px: spacing alone groups it with the summary. With no chip after it (no tags, or only the priority, which the chip row leaves out), nothing follows and the gap stays 5px. */}
         {/* The summary renders as markdown, folded to 4 lines; with none, a distinct abstract folds the same way as plain text. */}
         {bill.tenantSummary?.trim() ? (
           <SummaryFold
