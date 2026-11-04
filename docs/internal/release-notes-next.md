@@ -152,3 +152,7 @@ Central's sync failure emails change in four ways.
 - **GovInfo's meeting cache alerts when it can't warm.** While LegiScan still owns `US` and `CONGRESS_API_KEY` is set, a warm of GovInfo's committee-meeting cache that keeps failing (a revoked key, say, or one missing a scope) emails `cron failed: govinfo-body-events` by the same rule, naming the Congress and the latest error, and `resolved: govinfo-body-events` once a warm works again. Without a key, nothing warms and nothing alerts.
 
 **Nothing to configure.** The emails go to `ALERT_EMAILS`, as every job alert does, and there's no migration. A failing warm's streak is kept in the `settings` table, one `warm-streak:` row a state. The cadence is measured in hours, so it is the same however often a session passes.
+
+## The hourly text sweep no longer stalls central's other jobs
+
+The hourly `missing-texts` sweep looked for undownloaded texts by walking every one of them, most on bulk-seeded bills no instance reads, which took several seconds on a large central. D1 runs one query at a time, so the hourly sync and calendar jobs queued behind it failed with `cron failed:` emails for nearly every job at once, and instances' calendar requests to central got errors at the top of the hour. The sweep now starts from the bills instances read and finds the same bills in milliseconds. Nothing to configure, and no migration.
