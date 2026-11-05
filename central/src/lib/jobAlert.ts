@@ -2,6 +2,7 @@ import type { Env } from '../types'
 import { centralSender } from './sender'
 import { PRODUCT_NAME } from '../../../shared/brand'
 import { validEmailList } from '../../../shared/operator'
+import { errorText } from '../../../shared/errorText'
 
 // Structural subset of the env that jobAlert needs, so callers and tests can
 // pass a minimal env rather than a full `Env`.
@@ -16,7 +17,7 @@ export async function runJob(env: AlertEnv, name: string, fn: () => Promise<unkn
   try {
     await fn()
   } catch (error) {
-    console.error(`[job:${name}] failed`, error)
+    console.error(`[job:${name}] failed`, errorText(error), error)
     await reportJobFailure(env, { job: name, error })
   }
 }
@@ -57,7 +58,7 @@ async function sendTo(env: AlertEnv, recipients: string[], msg: { subject: strin
     const r = await centralSender(env).send({ purpose: 'operator', to: recipients, subject: msg.subject, html: msg.html, text: msg.text })
     if (!r.ok) console.error(`[ops-alert] "${msg.subject}" not sent: ${r.error}`)
   } catch (e) {
-    console.error('[ops-alert] alert email itself failed', e)
+    console.error('[ops-alert] alert email itself failed', errorText(e), e)
   }
 }
 
@@ -74,7 +75,7 @@ export async function reportJobFailure(env: AlertEnv, opts: { job: string; error
     return
   }
 
-  const message = error instanceof Error ? error.message : String(error)
+  const message = errorText(error)
   const stack = error instanceof Error ? error.stack : undefined
   const subject = `[${PRODUCT_NAME}] cron failed: ${job}`
 

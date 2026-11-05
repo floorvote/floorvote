@@ -6,6 +6,7 @@ import { upsertCommitteeRows } from './committees'
 import { toLegacyHandle } from './billHandle'
 import type { BodyEvent, CalendarKind, Provider } from '../providers'
 import type { Db } from '../types'
+import { errorText } from '../../../shared/errorText'
 
 /**
  * Body events (#297): a legislature's own calendar of hearings, roundtables,
@@ -227,7 +228,7 @@ export async function syncBodyEvents(
       pulls.push({ ...range, events })
     } catch (err) {
       failed++
-      console.error(`[body-events] ${provider.id} ${state} ${range.from.slice(0, 7)} failed, left as it was:`, err)
+      console.error(`[body-events] ${provider.id} ${state} ${range.from.slice(0, 7)} failed, left as it was:`, errorText(err), err)
     }
   }
   const report = { state, months: pulls.length, failed, events: pulls.reduce((n, p) => n + p.events.length, 0), written: 0 }

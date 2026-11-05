@@ -3,6 +3,7 @@ import type { SendResult } from '../../../shared/emailSender'
 import { buildSignInMessage, resolveAssocName, resolveOrgNounFromDb, senderFor } from './email'
 import { recordAuthEvent } from './authEvents'
 import { logSendFailure } from './emailErrors'
+import { errorText } from '../../../shared/errorText'
 
 type SignInEnv = Pick<Env, 'RESEND_API_KEY' | 'APP_URL' | 'EMAIL_PROVIDER' | 'EMAIL' | 'DEMO_MODE' | 'ASSOCIATION_NAME' | 'EMAIL_FROM' | 'EMAIL_REPLY_TO'>
 
@@ -51,6 +52,6 @@ export async function sendSignInLinkLogged(env: SignInEnv, db: AppDb, input: Sig
   try {
     logSendFailure(await sendSignInLink(env, db, input))
   } catch (err) {
-    console.error('[sign-in-link] send threw', err)
+    console.error('[sign-in-link] send threw', errorText(err), err)
   }
 }

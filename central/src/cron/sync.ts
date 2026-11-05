@@ -14,6 +14,7 @@ import { insertLinkWhileOwner, loadStateOwners, ownerOf, ownerOfState } from '..
 import { queueCalendarRechecks } from '../lib/billCalendar'
 import { fetchRequestCutoff, refreshRequestedBills } from '../lib/fetchRequests'
 import { errorMessage, finishPass, sendRecoveries, streakAlerts, throwAll, type Recovery, type SessionFailure } from './passAlerts'
+import { errorText } from '../../../shared/errorText'
 
 const BATCH = 80
 const FLUSH_BATCH = 500
@@ -143,7 +144,7 @@ export async function runSync(env: Env, db: Db): Promise<void> {
       try {
         await refreshSessions(state, provider, env, db)
       } catch (err) {
-        console.error(`[sync-ls] failed to refresh sessions for ${state}:`, err)
+        console.error(`[sync-ls] failed to refresh sessions for ${state}:`, errorText(err), err)
       }
     }
   }
@@ -210,7 +211,7 @@ export async function runSync(env: Env, db: Db): Promise<void> {
       const recovered = await finishPass(db, session)
       if (recovered) recoveries.push(recovered)
     } catch (err) {
-      console.error(`[sync-ls] failed for session ${session.sessionId}:`, err)
+      console.error(`[sync-ls] failed for session ${session.sessionId}:`, errorText(err), err)
       const logged = await logSyncPass(db, {
         syncedAt: nowDb(),
         state: session.state,
@@ -286,7 +287,7 @@ export async function logSyncPass(
     return true
   } catch (err) {
     if (!opts.tolerate) throw err
-    console.error(`[sync] couldn't log the pass of ${opts.label}:`, err)
+    console.error(`[sync] couldn't log the pass of ${opts.label}:`, errorText(err), err)
     return false
   }
 }

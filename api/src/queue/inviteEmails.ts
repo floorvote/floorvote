@@ -4,6 +4,7 @@ import { describeSendFailure } from '../lib/emailErrors'
 import { recordAuthEvent } from '../lib/authEvents'
 import { magicLinks } from '../db/schema'
 import type { AppDb, Env, InviteEmailMessage } from '../types'
+import { errorText } from '../../../shared/errorText'
 
 const INVITE_DURATION_MS = 7 * 24 * 60 * 60 * 1000
 // Delay before retrying a failed invite send. Keeps a transient provider
@@ -46,7 +47,7 @@ export async function processInviteEmails(
       if (r.permanent) message.ack()
       else message.retry({ delaySeconds: INVITE_RETRY_DELAY_SECONDS })
     } catch (err) {
-      console.error('[invite-email] send failed for', email, err)
+      console.error('[invite-email] send failed for', email, errorText(err), err)
       message.retry({ delaySeconds: INVITE_RETRY_DELAY_SECONDS })
     }
   }

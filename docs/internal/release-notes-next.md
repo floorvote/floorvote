@@ -155,4 +155,8 @@ Central's sync failure emails change in four ways.
 
 ## The hourly text sweep no longer stalls central's other jobs
 
-The hourly `missing-texts` sweep looked for undownloaded texts by walking every one of them, most on bulk-seeded bills no instance reads, which took several seconds on a large central. D1 runs one query at a time, so the hourly sync and calendar jobs queued behind it failed with `cron failed:` emails for nearly every job at once, and instances' calendar requests to central got errors at the top of the hour. The sweep now starts from the bills instances read and finds the same bills in milliseconds. Nothing to configure, and no migration.
+The hourly `missing-texts` sweep looked for undownloaded texts by walking every one of them, most on bulk-seeded bills no instance reads, which took several seconds on a large central. D1 runs one query at a time, so the hourly sync and calendar jobs queued behind it, with no room to spare. When D1 ran slower than usual, they failed with `cron failed:` emails for nearly every job at once, and instances' calendar requests to central got errors at the top of the hour. The sweep now starts from the bills instances read and finds the same bills in milliseconds. Nothing to configure, and no migration.
+
+## Error logs and job alerts say why
+
+Workers Logs drops the message of an error passed to `console.error` and keeps only its stack, so a failure reached the dashboard as `[job:ls-sync] failed     at D1PreparedQuery…` with no reason. Every log of a caught error, in central and in instances, now also prints the error's message and each message down its cause chain. A `cron failed:` email does the same, so a database error shows D1's own message rather than only the query that hit it. Nothing to configure.

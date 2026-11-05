@@ -7,6 +7,7 @@ import { centralFetch } from './centralFetch'
 import { groupHasPriority } from './teamFields'
 import type { AppDb, Env } from '../types'
 import type { CentralBodyEvent } from './bodyEvents'
+import { errorText } from '../../../shared/errorText'
 
 /**
  * Event rules (#298, shared/eventRules.ts): which body events the instance
@@ -150,7 +151,7 @@ export async function centralOptions(env: Env): Promise<Record<string, StateOpti
     const states = body.states as Record<string, Partial<StateOptions>>
     return Object.fromEntries(Object.entries(states).map(([state, o]) => [state, { committees: o.committees ?? [], kinds: o.kinds ?? [] }]))
   } catch (err) {
-    console.error('[event-rules] central options unavailable', err)
+    console.error('[event-rules] central options unavailable', errorText(err), err)
     return null
   }
 }

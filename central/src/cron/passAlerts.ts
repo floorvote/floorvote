@@ -4,6 +4,7 @@ import { escHtml, reportJobFailure, sendOpsAlert } from '../lib/jobAlert'
 import { dbTimeAgo, nowDb, toDb } from '../lib/dbTime'
 import { PRODUCT_NAME } from '../../../shared/brand'
 import type { Env, Db } from '../types'
+import { errorText } from '../../../shared/errorText'
 
 /**
  * When the hourly cron alerts on a session that keeps failing, for the LegiScan
@@ -138,7 +139,7 @@ export async function recoveryFrom(db: Db, session: StreakSession): Promise<Reco
     if (!alertingPasses(times).includes(true)) return null
     return { session, failed: times.length, hours: hoursOf(times[times.length - 1] - times[0]), since: toDb(new Date(times[0])) }
   } catch (err) {
-    console.error(`[sync] couldn't read the failed passes ${session.state} ${session.sessionName} just ended:`, err)
+    console.error(`[sync] couldn't read the failed passes ${session.state} ${session.sessionName} just ended:`, errorText(err), err)
     return null
   }
 }
@@ -177,7 +178,7 @@ async function stillFailing(db: Db, providerId: string, recovered: Recovery[]): 
     const done = new Set(recovered.map(r => r.session.sessionId))
     return rows.filter(r => !done.has(r.sessionId))
   } catch (err) {
-    console.error(`[sync] couldn't read which sessions are still failing:`, err)
+    console.error(`[sync] couldn't read which sessions are still failing:`, errorText(err), err)
     return []
   }
 }
@@ -276,7 +277,7 @@ export async function warmFailed(env: Env, db: Db, { job, name }: SyncJob, state
       return
     }
   } catch (err) {
-    console.error(`[${job}] ${state}: couldn't count a failed warm, so it alerts now:`, err)
+    console.error(`[${job}] ${state}: couldn't count a failed warm, so it alerts now:`, errorText(err), err)
     await reportJobFailure(env, { job, error })
     return
   }
@@ -311,7 +312,7 @@ export async function warmEnded(env: Env, db: Db, { job, name }: SyncJob, state:
     if (!ok || !taken?.streak?.alerted) return
     await sendResolved(env, job, `${name} calendar (${job}): warming the cache works again.`, [warmLine(name, state, taken.streak, 'warmed its calendar cache')])
   } catch (err) {
-    console.error(`[${job}] ${state}: couldn't end the warm's failed streak:`, err)
+    console.error(`[${job}] ${state}: couldn't end the warm's failed streak:`, errorText(err), err)
   }
 }
 
@@ -334,6 +335,6 @@ export async function forgetWarmStreaks(env: Env, db: Db, { job, name }: SyncJob
       : [])
     if (lines.length > 0) await sendResolved(env, job, `${name} calendar (${job}): no longer warming a cache whose warming failed.`, lines)
   } catch (err) {
-    console.error(`[${job}] couldn't drop the warm streaks of states it no longer warms:`, err)
+    console.error(`[${job}] couldn't drop the warm streaks of states it no longer warms:`, errorText(err), err)
   }
 }

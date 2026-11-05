@@ -8,7 +8,7 @@ import {
 } from './map'
 import { entriesByBill, holdingCommittees, isWarm, keptMeetings, meetingBodyEvent, readMeetings } from './meetings'
 import { vocabulary } from './vocabulary'
-import { sha256Hex, type MeasureCalendarEntry, type Provider, type ProviderContext, type ProviderRecord, type ProviderSnapshot, type SyncSession } from '../sdk'
+import { errorText, sha256Hex, type MeasureCalendarEntry, type Provider, type ProviderContext, type ProviderRecord, type ProviderSnapshot, type SyncSession } from '../sdk'
 
 /**
  * Congress from GovInfo's Bill Status bulk data (client.ts, map.ts): one zip of
@@ -326,7 +326,7 @@ async function alertVanished(congress: number, answered: GovInfoType[], missing:
       await ctx.cache.put({ [keyOf(type)]: new Date().toISOString() }) // ts-write-ok: a marker value in provider_cache, never read as a time
     }
   } catch (err) {
-    console.error(`[sync-govinfo] Congress ${congress}: the vanished-type check failed, and the pass carries on:`, err)
+    console.error(`[sync-govinfo] Congress ${congress}: the vanished-type check failed, and the pass carries on:`, errorText(err), err)
   }
 }
 

@@ -10,6 +10,7 @@ import { activeUser } from './accountDeletion'
 import { digestCardKey, type DigestEvent, type NewMatchDigestItem, type ViewDigestSection } from './digestEmail'
 import { userDisplayNameSql } from './displayName'
 import type { AppDb } from '../types'
+import { errorText } from '../../../shared/errorText'
 
 /** The feed events the digest reports: what happened on a bill. Shared with the priority section. */
 export const DIGEST_CATEGORIES = ['bill_updated', 'hearing_added', 'hearing_changed', 'hearing_cancelled', 'position_set', 'comment_added', 'priority_set']
@@ -121,7 +122,7 @@ export async function buildViewSections(
     const key = isPerUserListRequest(bf) ? `${view.id}:${userId}` : view.id
     if (!news.has(key)) {
       news.set(key, loadViewNews(db, bf, userId, opts.since, opts.now).catch(err => {
-        console.error(`digest: skipped saved view ${view.id}`, err)
+        console.error(`digest: skipped saved view ${view.id}`, errorText(err), err)
         return null
       }))
     }

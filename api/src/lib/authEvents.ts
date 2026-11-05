@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/sqlite-core'
 import type { AppDb } from '../types'
 import { authEvents, users } from '../db/schema'
+import { errorText } from '../../../shared/errorText'
 
 export type AuthEventType =
   | 'link_requested' | 'link_requested_unknown' | 'email_sent' | 'email_send_failed' | 'email_bounced'
@@ -58,7 +59,7 @@ export async function recordAuthEvent(db: AppDb, e: AuthEventInput): Promise<boo
     })
     return true
   } catch (err) {
-    console.error('[auth_event] insert failed', err)
+    console.error('[auth_event] insert failed', errorText(err), err)
     return false
   }
 }

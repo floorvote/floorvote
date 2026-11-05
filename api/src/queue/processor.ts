@@ -24,6 +24,7 @@ import { handleForms, legacyHandle } from '../../../shared/billHandle'
 import { resolveStoredHandle } from '../lib/storedHandle'
 import type { AppDb, Env, TenantQueueMessage } from '../types'
 import type { BatchItem } from 'drizzle-orm/batch'
+import { errorText } from '../../../shared/errorText'
 
 class AiShedError extends Error {
   constructor(
@@ -200,7 +201,7 @@ export async function processQueue(
           message.retry()
         }
       } else {
-        console.error('Queue processing failed for message', message.body, err)
+        console.error('Queue processing failed for message', message.body, errorText(err), err)
         message.retry()
       }
     }
@@ -764,7 +765,7 @@ async function applyCentralBill(
           console.warn(`[processor] AI permanently skipped for ${centralBill.number}: ${aiSkipReason}`)
         } else {
           aiError = String(err).slice(0, 300)
-          console.error(`AI processing failed for ${centralBill.number}:`, err)
+          console.error(`AI processing failed for ${centralBill.number}:`, errorText(err), err)
         }
       }
     }
@@ -789,7 +790,7 @@ async function applyCentralBill(
         try {
           await recordClaimSourcesCutOff(db)
         } catch (err) {
-          console.error(`[processor] could not count the claim sources cut-off for ${centralBill.number}:`, err)
+          console.error(`[processor] could not count the claim sources cut-off for ${centralBill.number}:`, errorText(err), err)
         }
       }
 
@@ -808,7 +809,7 @@ async function applyCentralBill(
         } catch (err) {
           // Extra to the analysis, so it never fails it: the summary, tags, and
           // score are the contract.
-          console.error(`[processor] could not resolve claim sources for ${centralBill.number}:`, err)
+          console.error(`[processor] could not resolve claim sources for ${centralBill.number}:`, errorText(err), err)
           resolvedClaimSources = []
         }
       }

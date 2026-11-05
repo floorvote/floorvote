@@ -3,6 +3,7 @@ import type { AppDb } from '../types'
 import type { Attempt, ProviderName } from '../../../shared/emailProviders'
 import { emailSendStats } from '../db/schema'
 import { toDbTs } from './dbTime'
+import { errorText } from '../../../shared/errorText'
 
 /** 'YYYY-MM-DD HH:00:00' (UTC) — the email_send_stats bucket for an instant. */
 export function hourKey(d: Date): string {
@@ -52,6 +53,6 @@ export async function recordSendStats(db: AppDb, provider: ProviderName, t: Send
       },
     })
   } catch (err) {
-    console.error('[email-stats] write failed', err)
+    console.error('[email-stats] write failed', errorText(err), err)
   }
 }

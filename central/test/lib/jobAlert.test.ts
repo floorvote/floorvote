@@ -268,3 +268,30 @@ describe('central ops alerts: a malformed ALERT_EMAILS entry', () => {
   })
 })
 
+
+describe('central job failures keep the reason', () => {
+  // Drizzle's wrapper, with D1's error as the cause: the reason lives one level down.
+  const d1Failure = () => new Error('Failed query: select 1', { cause: new Error('D1_ERROR: D1 DB is overloaded.') })
+
+  it("logs the error's whole cause chain as text, not only the Error object", async () => {
+    stubResend('ok')
+    await runJob(resendOnly(), 'ls-sync', async () => { throw d1Failure() })
+    const line = errorSpy.mock.calls.find(c => String(c[0]).startsWith('[job:ls-sync] failed'))
+    expect(line).toBeDefined()
+    expect(line!.filter(a => typeof a === 'string').join(' ')).toContain('Failed query: select 1 | caused by: D1_ERROR: D1 DB is overloaded.')
+  })
+
+  it("puts the cause's message in the alert email, text and HTML", async () => {
+    const resend = stubResend('ok')
+    await reportJobFailure(resendOnly(), { job: 'ls-sync', error: d1Failure() })
+    const msg = resend.calls[0].body
+    expect(msg.text).toContain('Error: Failed query: select 1 | caused by: D1_ERROR: D1 DB is overloaded.')
+    expect(msg.html).toContain('D1_ERROR: D1 DB is overloaded.')
+  })
+
+  it('still sends a readable email for a thrown non-Error', async () => {
+    const resend = stubResend('ok')
+    await reportJobFailure(resendOnly(), { job: 'ls-sync', error: 'plain string' })
+    expect(resend.calls[0].body.text).toContain('Error: plain string')
+  })
+})

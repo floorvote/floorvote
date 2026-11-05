@@ -7,6 +7,7 @@ import { senderFor, resolveAssocName } from './email'
 import type { AccountMessage } from '../../../shared/emailSender'
 import { normalizeMemberAddress } from './memberAddress'
 import { renderEmailChangeReportedEmail } from './emailChangeEmail'
+import { errorText } from '../../../shared/errorText'
 
 // "This wasn't me", from the old address of an email change (#415).
 //
@@ -212,7 +213,7 @@ async function alertAdmins(env: Env, db: AppDb, row: ReportRow, cancelledTo: str
     if (failed > 0) console.error(`[email-change] ${failed} of ${messages.length} report alerts did not go out`)
     return sent > 0
   } catch (e) {
-    console.error('[email-change] the report alert failed', e)
+    console.error('[email-change] the report alert failed', errorText(e), e)
     return false
   }
 }

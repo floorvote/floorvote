@@ -7,6 +7,7 @@ import { renderEmailShell, emailButton, emailFooterLink } from './emailShell'
 import { senderFor, resolveAssocName } from './email'
 import type { RecordedBounce } from './inviteBounces'
 import { normalizeMemberAddress } from './memberAddress'
+import { errorText } from '../../../shared/errorText'
 
 /** One bounced address as the email lists it. */
 export type BouncedAddress = { email: string; reason: string }
@@ -139,7 +140,7 @@ export async function notifyInviteBounces(env: Env, db: AppDb, bounces: Recorded
     recipients = await routeBounces(db, bounces)
     instanceName = (await resolveAssocName(env, db)) ?? ''
   } catch (err) {
-    console.error('[invite-bounces] could not prepare the bounce notification', err)
+    console.error('[invite-bounces] could not prepare the bounce notification', errorText(err), err)
     return
   }
   for (const r of recipients) {
@@ -149,7 +150,7 @@ export async function notifyInviteBounces(env: Env, db: AppDb, bounces: Recorded
       const res = await senderFor(env).send({ purpose: 'operator', to: [r.email], subject, html, text })
       if (!res.ok) console.error(`[invite-bounces] bounce notification to member ${r.id} failed (${res.provider ?? 'no provider'}): ${res.error}`)
     } catch (err) {
-      console.error(`[invite-bounces] bounce notification to member ${r.id} failed`, err)
+      console.error(`[invite-bounces] bounce notification to member ${r.id} failed`, errorText(err), err)
     }
   }
 }

@@ -11,6 +11,7 @@ import { senderFor, resolveAssocName } from './email'
 import type { SendResult } from '../../../shared/emailSender'
 import { renderEmailChangeConfirmEmail, renderEmailChangeNoticeEmail } from './emailChangeEmail'
 import { issueNotMeToken, notMeUrl } from './emailChangeReport'
+import { errorText } from '../../../shared/errorText'
 
 // Changing a member's sign-in email. The address is the member's identity, so
 // a change takes effect only when someone confirms it from the NEW address,
@@ -179,7 +180,7 @@ async function noticeToOldAddress(
       console.error(`[email-change] the ${stage} notice to the old address did not go out`)
     }
   } catch (e) {
-    console.error(`[email-change] the ${stage} notice to the old address failed`, e)
+    console.error(`[email-change] the ${stage} notice to the old address failed`, errorText(e), e)
   }
 }
 

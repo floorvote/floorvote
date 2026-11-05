@@ -1,3 +1,4 @@
+import { errorText } from '../../../shared/errorText'
 /**
  * Drain the tenants' shared dead-letter queue.
  *
@@ -57,7 +58,7 @@ export function processDeadLetterQueue(batch: MessageBatch<unknown>): void {
         + ` after ${message.attempts} attempt(s)`,
       )
     } catch (err) {
-      console.error('[dead-letter] could not describe a message:', err)
+      console.error('[dead-letter] could not describe a message:', errorText(err), err)
     }
     message.ack()
   }

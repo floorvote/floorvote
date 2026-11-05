@@ -36,6 +36,7 @@ import { mayChangeEmail, refuseSuperadmin, requestEmailChange } from '../lib/ema
 import { centralEmail, type DeliveryStatus, type SuppressionStatus } from '../lib/centralEmail'
 import { AI_SETTING_KEYS, changedAiSettings, readAiSettingRecordFields, recordStatements } from '../lib/aiSettingAudit'
 import { readClaimLinksSetting, writeClaimLinksSetting } from '../lib/claimLinksSetting'
+import { errorText } from '../../../shared/errorText'
 
 export const adminApiRouter = new Hono<AppEnv>()
 
@@ -224,7 +225,7 @@ adminApiRouter.post('/members/bulk-invite', async (c) => {
         await c.env.BILL_QUEUE.sendBatch(messages.slice(i, i + QUEUE_SEND_CHUNK))
       }
     } catch (err) {
-      console.error('[bulk-invite] enqueue failed; users created, invites recoverable via resend', err)
+      console.error('[bulk-invite] enqueue failed; users created, invites recoverable via resend', errorText(err), err)
     }
   }
 
@@ -718,7 +719,7 @@ adminApiRouter.get('/members/:id/auth-events', async (c) => {
   let suppression: SuppressionStatus = { suppressed: null }
   try {
     if (member?.email && central.emailSuppression) suppression = await central.emailSuppression(member.email)
-  } catch (e) { console.error('[auth-events] suppression lookup failed', e) }
+  } catch (e) { console.error('[auth-events] suppression lookup failed', errorText(e), e) }
   const sentMsgIds = events.filter(e => e.event === 'email_sent' && e.messageId).map(e => e.messageId as string)
   let delivery: Record<string, DeliveryStatus> = {}
   try {
@@ -726,7 +727,7 @@ adminApiRouter.get('/members/:id/auth-events', async (c) => {
       const since = new Date(Date.now() - 31 * 86400_000).toISOString()
       delivery = await central.emailDeliveryStatus(sentMsgIds, since)
     }
-  } catch (e) { console.error('[auth-events] delivery lookup failed', e) }
+  } catch (e) { console.error('[auth-events] delivery lookup failed', errorText(e), e) }
   return c.json({ events, suppression, delivery })
 })
 
@@ -909,7 +910,7 @@ adminApiRouter.put('/config', async (c) => {
     try {
       await registerWithCentral(c.env, db)
     } catch (err) {
-      console.error('[admin/config] registerWithCentral failed:', err)
+      console.error('[admin/config] registerWithCentral failed:', errorText(err), err)
       // Don't fail the PUT — tenant config was saved. Central sync can be retried.
     }
   }
@@ -980,7 +981,7 @@ adminApiRouter.post('/keyword-resync', async (c) => {
     }
   } catch (err) {
     centralStatus = 'failed'
-    console.error('[keyword-resync] central sync-keywords call failed:', err)
+    console.error('[keyword-resync] central sync-keywords call failed:', errorText(err), err)
   }
 
   // ── Cleanup pass: demote or protect stale keyword matches ──
@@ -1040,7 +1041,7 @@ adminApiRouter.post('/keyword-resync', async (c) => {
       })
       if (!mtRes.ok) console.warn(`[keyword-resync] central update-bill-match-types returned ${mtRes.status}`)
     } catch (err) {
-      console.error('[keyword-resync] central update-bill-match-types failed:', err)
+      console.error('[keyword-resync] central update-bill-match-types failed:', errorText(err), err)
     }
   }
 

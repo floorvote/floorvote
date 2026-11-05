@@ -3,6 +3,7 @@ import type { AppDb, Env } from '../types'
 import { authEvents } from '../db/schema'
 import { centralEmail } from './centralEmail'
 import { ADDRESS_LOOKUP_CHUNK, normalizeMemberAddress } from './memberAddress'
+import { errorText } from '../../../shared/errorText'
 
 // The delivery outcomes that decide whether an address's recorded history
 // counts as bounced. The latest one wins: a later delivery clears a bounce.
@@ -54,7 +55,7 @@ async function suppressionMany(env: Pick<Env, 'CENTRAL'>, emails: string[]): Pro
     }
     return { suppressed }
   } catch (e) {
-    console.error('[bounced-addresses] batch suppression lookup failed', e)
+    console.error('[bounced-addresses] batch suppression lookup failed', errorText(e), e)
     return undefined
   }
 }
@@ -104,7 +105,7 @@ export async function isPreviouslyBounced(
   try {
     return (await central.emailSuppression(email))?.suppressed === true
   } catch (e) {
-    console.error('[bounced-addresses] single suppression lookup failed', e)
+    console.error('[bounced-addresses] single suppression lookup failed', errorText(e), e)
     return false
   }
 }

@@ -20,6 +20,7 @@ import { hasConfiguredProvider } from '../../../shared/emailProviders'
 import { nowDb } from '../lib/dbTime'
 import { checkRateLimit } from '../../../shared/rateLimit'
 import { verifyTurnstile } from '../../../shared/turnstile'
+import { errorText } from '../../../shared/errorText'
 
 export const dashAuthRoutes = new Hono<DashEnv>()
 
@@ -129,7 +130,7 @@ dashAuthRoutes.post('/login', async (c) => {
   // after the link is stored.
   c.executionCtx.waitUntil(
     issueMagicLink(c.env, email).catch((err) =>
-      console.error('Admin /login: background sign-in work failed', err),
+      console.error('Admin /login: background sign-in work failed', errorText(err), err),
     ),
   )
   return c.json({ data: { ok: true }, meta: { generatedAt: new Date().toISOString() } })

@@ -3,6 +3,7 @@ import { bills } from '../db/schema'
 import { centralFetch } from './centralFetch'
 import type { AppDb, Env } from '../types'
 import { HANDLE_PREFIXES, parseHandle } from '../../../shared/billHandle'
+import { errorText } from '../../../shared/errorText'
 
 // Central's bill ids for the priority-set bills that have a handle.
 export async function collectPriorityLegiscanIds(db: AppDb): Promise<number[]> {
@@ -32,6 +33,6 @@ export async function backfillCalendar(env: Env, legiscanIds: number[]): Promise
     })
     if (!res.ok) console.error(`[calendarBackfill] central reprocess ${res.status}`)
   } catch (err) {
-    console.error('[calendarBackfill] failed:', err)
+    console.error('[calendarBackfill] failed:', errorText(err), err)
   }
 }

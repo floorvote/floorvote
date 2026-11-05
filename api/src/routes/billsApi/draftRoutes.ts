@@ -19,6 +19,7 @@ import { loadGroupTeamValues, recordFieldChanges } from '../../lib/teamFields'
 import { parseStoredItems } from '../../lib/claimSources'
 import { pruneClaimSources } from '../../lib/claimResolution'
 import { deleteDrafts } from '../../lib/draftDelete'
+import { errorText } from '../../../../shared/errorText'
 
 // Latch a bill as triaged. Idempotent: the isNull guard means only the first
 // triage (dismiss or priority-set) records the actor/timestamp, so re-triaging
@@ -343,7 +344,7 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
           const res = await centralFetch(c.env, `/tenants/promote-bill/${c.env.TENANT_ID}/${legiscanId}`, { method: 'POST' })
           if (!res.ok) console.error(`[priority] promote failed: ${res.status} ${await res.text().catch(() => '')}`)
         } catch (err) {
-          console.error('[priority] promote error:', err)
+          console.error('[priority] promote error:', errorText(err), err)
         }
       }
     }
@@ -391,7 +392,7 @@ export async function defaultDraftYear(
     }
     console.error(`[draft-defaults] central returned ${res.status}`)
   } catch (err) {
-    console.error('[draft-defaults] central unreachable:', err)
+    console.error('[draft-defaults] central unreachable:', errorText(err), err)
   }
   const row = await db
     .select({ yearEnd: max(bills.yearEnd) })
