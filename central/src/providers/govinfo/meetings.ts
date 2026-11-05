@@ -43,8 +43,9 @@ export const LIST_PAGE_SIZE = 250
 
 /**
  * The most meetings one pass reads: 60 requests, a little over six minutes at
- * the pace. With the list's own pages, a pass is under 8 minutes, inside a
- * cron's time. The next pass reads the rest.
+ * the pace. With the list's own pages, and at most one more for each page that
+ * ends within an update time (see readList), a pass is under 9 minutes, inside
+ * a cron's time. The next pass reads the rest.
  */
 export const DETAILS_PER_PASS = 60
 
@@ -297,8 +298,12 @@ export function meetingType(type: string): { typeId: number; kind: CalendarKind 
 
 // ---- Requests
 
-function listUrl(congress: number, offset: number, since?: string): string {
-  return `${CONGRESS_API}/committee-meeting/${congress}?format=json&limit=${LIST_PAGE_SIZE}&offset=${offset}${since ? `&fromDateTime=${since}` : ''}`
+/** Which meetings a read of the list asks for: those updated since a time, and with `until`, no later than another. */
+interface Span { since: string; until?: string }
+
+function listUrl(congress: number, offset: number, span?: Span): string {
+  return `${CONGRESS_API}/committee-meeting/${congress}?format=json&limit=${LIST_PAGE_SIZE}&offset=${offset}` +
+    `${span ? `&fromDateTime=${span.since}` : ''}${span?.until ? `&toDateTime=${span.until}` : ''}`
 }
 
 function detailUrl(congress: number, listed: ListedMeeting): string {
@@ -327,37 +332,61 @@ type Context = Pick<ProviderContext, 'cache' | 'logCall' | 'today' | 'alert'>
 /** How far before a read began the second look at the list reaches, so a meeting changed as the read began is in it. */
 const SINCE_MARGIN_MS = 10 * 60 * 1000
 
-/** The pages of the list, or, with `since`, of the meetings changed since then: each meeting once, and the count the last page gave. */
-async function readPages(ctx: Context, key: string, congress: number, since?: string): Promise<{ meetings: Map<string, ListedMeeting>; count: number }> {
+/**
+ * The pages of the list, or of the meetings updated within `span`: each meeting
+ * once, the count the last page gave, and each update time a page ended within,
+ * the last meeting of one page and the first of the next sharing it.
+ */
+async function readPages(ctx: Context, key: string, congress: number, span?: Span): Promise<{ meetings: Map<string, ListedMeeting>; count: number; split: Set<string> }> {
   const meetings = new Map<string, ListedMeeting>()
+  const split = new Set<string>()
   let count = 0
+  let last: string | undefined
   for (let page = 0, offset = 0; ; page++, offset += LIST_PAGE_SIZE) {
     if (page >= MAX_PAGES) throw new Error(`Congress.gov meeting list: more than ${MAX_PAGES} pages`)
-    const text = await get(listUrl(congress, offset, since), key,
-      () => ctx.logCall('govinfo:CongressMeetingList', { congress, offset, ...(since ? { since } : {}) }), `Congress.gov meeting list (offset ${offset})`)
+    const text = await get(listUrl(congress, offset, span), key,
+      () => ctx.logCall('govinfo:CongressMeetingList', { congress, offset, ...span }), `Congress.gov meeting list (offset ${offset})`)
     const parsed = parseMeetingList(text, congress)
     count = parsed.count
+    // A span of one update time is read in one page, or its pages could split it too.
+    if (span?.until && count > LIST_PAGE_SIZE) throw new Error(`Congress.gov meeting list: ${count} meetings share the update time ${span.until}, more than a page holds`)
     // A meeting changed while the list is read moves up it, and may be on two pages: the later read is the newer.
     for (const e of parsed.entries) meetings.set(e.eventId, e)
+    if (last !== undefined && parsed.entries[0]?.updateDate === last) split.add(last)
+    last = parsed.entries.at(-1)?.updateDate
     if (offset + LIST_PAGE_SIZE >= count) break
     if (parsed.entries.length === 0) throw new Error(`Congress.gov meeting list: it ends at ${meetings.size} of ${count} meetings`)
   }
-  return { meetings, count }
+  return { meetings, count, split }
 }
 
 /**
  * Every meeting the list names for a Congress. The list is paged newest update
- * first, and takes a pass of a minute or more to read, so a meeting changed
+ * first, but orders the meetings that share an update time (a batch the API
+ * updated at once) differently on each request, so where a page ends within
+ * such a batch, the page and the next can each list some of it, some twice and
+ * others never. So each update time a page ended within is read again on its
+ * own, in one page, which lists every meeting of it.
+ *
+ * And the list takes a pass of a minute or more to read, so a meeting changed
  * meanwhile moves to the front, after pages already read, and a page read later
- * misses it. So a second look follows the pages: the meetings changed since a
- * little before the read began, merged over them, the newer answer winning. Short
- * of the count the last page gave even then, the list isn't whole, and it throws.
+ * misses it. So a last look follows: the meetings changed since a little before
+ * the read began, merged over the rest, the newer answer winning. Short of the
+ * count the last page gave even then, the list isn't whole, and it throws.
  */
 async function readList(ctx: Context, key: string, congress: number): Promise<ListedMeeting[]> {
   const began = Date.now()
-  const { meetings, count } = await readPages(ctx, key, congress)
+  const { meetings, count, split } = await readPages(ctx, key, congress)
+  /** Each update time `times` names, read on its own and merged over what was read before it, as the newer answer. */
+  const readSplit = async (times: Set<string>) => {
+    for (const time of times) for (const [id, e] of (await readPages(ctx, key, congress, { since: time, until: time })).meetings) meetings.set(id, e)
+  }
+  await readSplit(split)
   const since = new Date(began - SINCE_MARGIN_MS).toISOString().slice(0, 19) + 'Z'
-  for (const [id, e] of (await readPages(ctx, key, congress, since)).meetings) meetings.set(id, e)
+  const recent = await readPages(ctx, key, congress, { since })
+  for (const [id, e] of recent.meetings) meetings.set(id, e)
+  // The last look is one page unless much changed during the read; if more, its pages can split a batch as well.
+  await readSplit(recent.split)
   if (meetings.size < count) throw new Error(`Congress.gov meeting list: it names ${meetings.size} meetings, short of its count of ${count}; it changed while it was read`)
   return [...meetings.values()]
 }
