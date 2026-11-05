@@ -27,6 +27,7 @@ import { loadStateOwners, ownerOf } from '../lib/stateProviders'
 import { storedVoteCounts, writeMemberVotes, type RollCallMemberVotes } from '../lib/rollCallVotes'
 import { loadTrackedStates } from './sync'
 import type { VoteDatasetMessage, Db, Env } from '../types'
+import { errorText } from '../../../shared/errorText'
 
 /**
  * ET hour of the daily check. No sync pass runs at 3 ET by default, so the
@@ -141,7 +142,7 @@ export async function checkVoteDatasets(env: Env, db: Db): Promise<void> {
           .where(eq(sessions.sessionId, s.sessionId))
       }
     } catch (err) {
-      console.error(`[vote-datasets] dataset check failed for ${state}:`, err)
+      console.error(`[vote-datasets] dataset check failed for ${state}:`, errorText(err), err)
     }
   }
 }

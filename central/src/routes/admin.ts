@@ -25,6 +25,7 @@ import { deliverBatchToTenant } from '../lib/tenantDelivery'
 import { queuesRestEnabled } from '../lib/queuesRest'
 import { guardCallerTenantParam } from '../lib/callerTenant'
 import { parseHandle, toHandle } from '../lib/billHandle'
+import { errorText } from '../../../shared/errorText'
 
 // Per-tenant cooldown for sync-keywords. Module-scoped Map is intentional —
 // Worker instances are isolated, so this is effectively a per-instance cooldown.
@@ -133,7 +134,7 @@ adminRoutes.post('/state-providers/:state/cutover', async (c) => {
     try {
       sync = { passes: await runSnapshotSync(plan.to, c.env, db, { force: true }) }
     } catch (err) {
-      console.error(`[cutover] ${plan.to.id}'s first sync of ${state} failed; the hourly sync will retry:`, err)
+      console.error(`[cutover] ${plan.to.id}'s first sync of ${state} failed; the hourly sync will retry:`, errorText(err), err)
       sync = { error: err instanceof Error ? err.message : String(err) }
     }
     const report = cutoverReport(plan)
@@ -147,7 +148,7 @@ adminRoutes.post('/state-providers/:state/cutover', async (c) => {
   } catch (err) {
     if (err instanceof CutoverError) return c.json({ error: err.message }, err.status)
     // A provider's feed failing closed, or the batch failing: nothing was written.
-    console.error(`[cutover] ${state} stopped:`, err)
+    console.error(`[cutover] ${state} stopped:`, errorText(err), err)
     return c.json({ error: `the cutover stopped, and nothing changed: ${err instanceof Error ? err.message : String(err)}` }, 502)
   }
 })
@@ -175,7 +176,7 @@ adminRoutes.post('/state-providers/:state/undo-cutover', async (c) => {
     return c.json({ ok: true, ...undoReport(plan), ...(sync ? { sync } : {}) })
   } catch (err) {
     if (err instanceof CutoverError) return c.json({ error: err.message }, err.status)
-    console.error(`[cutover] undo of ${state} stopped:`, err)
+    console.error(`[cutover] undo of ${state} stopped:`, errorText(err), err)
     return c.json({ error: `the undo stopped, and nothing changed: ${err instanceof Error ? err.message : String(err)}` }, 502)
   }
 })
@@ -712,7 +713,7 @@ adminRoutes.post('/backfill-stub-actions/:tenantId', async (c) => {
     try {
       list = await provider.listMeasures(session, ctx)
     } catch (err) {
-      console.error('[backfill-stub-actions] master list fetch failed for session', sessionId, err)
+      console.error('[backfill-stub-actions] master list fetch failed for session', sessionId, errorText(err), err)
       return c.json({ ok: false, error: 'masterlist_fetch_failed', sessionId }, 500)
     }
     if (list.length === 0) continue
@@ -802,7 +803,7 @@ adminRoutes.post('/backfill-stub-actions/:tenantId', async (c) => {
     await deliverBatchToTenant(c.env, tenantId, tenant.queueId ?? null, notifyBodies)
     notified = notifyBodies.length
   } catch (err) {
-    console.error('[backfill-stub-actions] delivery failed after', notified, 'sent:', err)
+    console.error('[backfill-stub-actions] delivery failed after', notified, 'sent:', errorText(err), err)
     return c.json(
       { ok: false, error: 'queue_backpressure', sessionId: sessionIds[0] ?? null, refreshed, sent: notified },
       429,

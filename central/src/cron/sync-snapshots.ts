@@ -12,6 +12,7 @@ import { assignSessionSlugs } from '../lib/sessionSlugs'
 import { carriedBillIds, carriedPeopleIds, withCarriedBillIds, withCarriedPeople } from '../lib/carriedIds'
 import type { Provider, ProviderContext, ProviderPerson, ProviderRecord, StoredSession, SyncSession } from '../providers'
 import type { Env, Db } from '../types'
+import { errorText } from '../../../shared/errorText'
 
 /**
  * The sync for every snapshot provider (Provider.snapshot), run on central's
@@ -132,7 +133,7 @@ async function syncSessions(
       const recovered = await finishPass(db, session)
       if (recovered) recoveries.push(recovered)
     } catch (err) {
-      console.error(`[sync-${provider.id}] ${session.sessionName} failed:`, err)
+      console.error(`[sync-${provider.id}] ${session.sessionName} failed:`, errorText(err), err)
       const logged = await logOutcome(db, session, { status: 'failed', error: errorMessage(err) })
       failures.push({ session, error: err instanceof Error ? err : new Error(String(err)), logged })
     }

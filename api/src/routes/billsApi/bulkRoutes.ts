@@ -19,6 +19,7 @@ import { inGroupOf, inGroupsOf } from '../../lib/companionGroups'
 import { loadTeamValuesOf, recordFieldChanges, type FieldChange } from '../../lib/teamFields'
 import { chunk } from '../../lib/chunk'
 import { DRAFT_DELETE_CHUNK, deleteDrafts, previewDraftDelete, type DraftSkipReason } from '../../lib/draftDelete'
+import { errorText } from '../../../../shared/errorText'
 
 // Cloudflare D1 rejects queries with >100 bound parameters. Chunk bulk operations
 // below 100 to leave headroom for the extra SET/predicate params some queries add
@@ -176,7 +177,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
             })
             if (!res.ok) console.error(`[bulk] promote-bills failed: ${res.status} ${await res.text().catch(() => '')}`)
           } catch (err) {
-            console.error('[bulk] promote-bills error:', err)
+            console.error('[bulk] promote-bills error:', errorText(err), err)
           }
         }
       }

@@ -7,6 +7,7 @@ import { HEAL_MAX_ATTEMPTS, HEAL_MIN_AGE_MS } from './healStalledAi'
 import { pickLead, readNewestTexts } from './groupLead'
 import { isHandle, parseHandle } from '../../../shared/billHandle'
 import type { AppDb, Env, TenantQueueMessage } from '../types'
+import { errorText } from '../../../shared/errorText'
 
 /**
  * Companion analyses a group can have queued or running at once, one model call each.
@@ -151,7 +152,7 @@ async function renewLeadRequest(env: Env, db: AppDb, billId: string, externalId:
     if (!res.ok) console.error(`[companion-analysis] central renew-fetch-requests returned ${res.status} for ${externalId}`)
   } catch (err) {
     // The request stays live until central's window ends, and the next week's delivery renews it.
-    console.error('[companion-analysis] central renew-fetch-requests failed:', err)
+    console.error('[companion-analysis] central renew-fetch-requests failed:', errorText(err), err)
   }
 }
 
@@ -184,7 +185,7 @@ async function queueAnalysis(
     await env.BILL_QUEUE.send({ tenantId: env.TENANT_ID, billId: externalId, groupAnalysis: true } satisfies TenantQueueMessage)
   } catch (err) {
     // The attempt is stamped, so the hourly AI heal picks the bill up.
-    console.error(`[companion-analysis] could not queue the analysis of ${externalId}:`, err)
+    console.error(`[companion-analysis] could not queue the analysis of ${externalId}:`, errorText(err), err)
   }
   return true
 }
@@ -199,7 +200,7 @@ async function requestFetch(env: Env, centralBillIds: number[]): Promise<void> {
     if (!res.ok) console.warn(`[companion-analysis] central fetch-bills returned ${res.status}`)
   } catch (err) {
     // The next delivery in the group asks again.
-    console.error('[companion-analysis] central fetch-bills failed:', err)
+    console.error('[companion-analysis] central fetch-bills failed:', errorText(err), err)
   }
 }
 

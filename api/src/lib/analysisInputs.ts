@@ -12,6 +12,7 @@ import {
 } from '../../../shared/aiDefaults'
 import { legacyHandle } from '../../../shared/billHandle'
 import type { AppDb, Env } from '../types'
+import { errorText } from '../../../shared/errorText'
 
 // What one bill analysis is given, shared by the queue consumer and by
 // scripts/verify-instance.sh's AI check (lib/verifyAi.ts) so the check exercises
@@ -82,7 +83,7 @@ export async function loadBillTextForAi(
       console.error(`[processor] central text returned ${textRes.status} for ${bill.number}`)
     }
   } catch (err) {
-    console.error(`[processor] failed to fetch text for ${bill.number}:`, err)
+    console.error(`[processor] failed to fetch text for ${bill.number}:`, errorText(err), err)
   }
   // No hash without the document it belongs to.
   if (textDocId === null) textHash = null

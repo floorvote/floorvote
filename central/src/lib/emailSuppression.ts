@@ -1,3 +1,4 @@
+import { errorText } from '../../../shared/errorText'
 export interface SuppressionStatus { suppressed: boolean | null; reason?: string; createdAt?: string }
 
 type SuppressionEnv = { CF_EMAIL_TOKEN?: string; CF_ACCOUNT_ID?: string }
@@ -38,7 +39,7 @@ async function fetchSuppressionList(env: SuppressionEnv): Promise<{ entries: Sup
     const complete = (typeof total === 'number' ? total : 0) <= entries.length
     if (!complete) console.warn('[suppression] list exceeds one page; absences are unknown')
     return { entries, complete }
-  } catch (e) { console.error('[suppression] error', e); return null }
+  } catch (e) { console.error('[suppression] error', errorText(e), e); return null }
 }
 
 const normalize = (email: string) => email.toLowerCase().trim()

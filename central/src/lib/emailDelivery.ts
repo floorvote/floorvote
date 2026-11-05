@@ -1,3 +1,4 @@
+import { errorText } from '../../../shared/errorText'
 export interface DeliveryStatus { status: string; isSpam: boolean; errorCause?: string; datetime?: string }
 
 // CF's Analytics GraphQL schema types zoneTag as the lowercase custom scalar `string`
@@ -34,5 +35,5 @@ export async function getEmailDeliveryStatus(
       }
     }
     return out
-  } catch (e) { console.error('[email-delivery] error', e); return {} }
+  } catch (e) { console.error('[email-delivery] error', errorText(e), e); return {} }
 }

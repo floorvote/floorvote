@@ -20,6 +20,7 @@ import { refreshStaleStub } from '../lib/stubRefresh'
 import { httpUrl } from '../../../shared/httpUrl'
 import { parseBio, profileUrlOf } from '../lib/people'
 import type { Env } from '../types'
+import { errorText } from '../../../shared/errorText'
 
 export const billsRoutes = new Hono<{ Bindings: Env }>()
 
@@ -179,7 +180,7 @@ billsRoutes.get('/:id', async (c) => {
   // Other reads, such as an instance storing a delivery, never refresh.
   if (c.req.query('view') !== undefined) {
     c.executionCtx.waitUntil(refreshStaleStub(db, c.env.INGESTOR_QUEUE, bill)
-      .catch(err => console.error(`[stub-refresh] failed for bill ${bill.billId}`, err)))
+      .catch(err => console.error(`[stub-refresh] failed for bill ${bill.billId}`, errorText(err), err)))
   }
   // The provider that wrote the bill, for its vocabulary.
   const provider = findProvider(bill.provider) ?? getProvider(DEFAULT_PROVIDER_ID)

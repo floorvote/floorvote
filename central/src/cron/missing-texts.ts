@@ -39,16 +39,21 @@ const unattempted = and(
 )
 
 export async function queueMissingTexts(env: Env, db: Db): Promise<{ queued: number }> {
+  // CROSS JOIN makes SQLite keep this join order. Left to itself, the planner
+  // walks every unattempted text (most belong to bulk-seeded bills no instance
+  // reads) and checks each one's bill: 447,138 rows and 4.7 s on 2026-11-04,
+  // while D1 held every other hourly job's query behind it. Starting from the
+  // few thousand links instances read, each text is one index lookup.
   const rows = await db.selectDistinct({ billId: billTexts.billId })
-    .from(billTexts)
-    .innerJoin(bills, eq(bills.billId, billTexts.billId))
-    .innerJoin(billTenants, and(
-      eq(billTenants.billId, billTexts.billId),
+    .from(billTenants)
+    .crossJoin(billTexts)
+    .crossJoin(bills)
+    .where(and(
+      eq(billTexts.billId, billTenants.billId),
+      eq(bills.billId, billTexts.billId),
       // Tracked, or read without tracking while the instance's request is in
       // effect: a companion group's lead, whose text the tracked bill's page shows.
       or(isNotNull(billTenants.matchType), gt(billTenants.fetchRequestedAt, fetchRequestCutoff())),
-    ))
-    .where(and(
       unattempted,
       or(
         lt(bills.textsFetchedAt, dbTimeAgo(INGEST_SETTLE_MS)),

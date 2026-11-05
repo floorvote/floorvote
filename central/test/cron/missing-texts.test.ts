@@ -3,6 +3,7 @@ import { env } from 'cloudflare:test'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
 import { clearDb } from '../helpers/migrations'
+import { planOf, spyOnD1 } from '../helpers/queryPlan'
 import { queueMissingTexts, MISSING_TEXTS_PER_RUN } from '../../src/cron/missing-texts'
 
 // An ingest writes a bill's detail and text rows before it downloads the texts.
@@ -170,6 +171,37 @@ describe('queueMissingTexts', () => {
   it('reads the unattempted texts through a partial index', async () => {
     const plan = await env.DB.prepare(`EXPLAIN QUERY PLAN SELECT bill_id FROM bill_texts WHERE r2_key IS NULL AND fetch_attempted_at IS NULL AND state_link IS NOT NULL`).all()
     expect(JSON.stringify(plan.results)).toContain('idx_bill_texts_unattempted')
+  })
+
+  it('starts from the bills instances read, not from every unattempted text', async () => {
+    // In production most unattempted texts belong to bulk-seeded bills no
+    // instance reads (103,164 of 132,182 on 2026-11-04). Walking all of them
+    // read 447,138 rows in 4.7 s every hour, and D1 runs one query at a time,
+    // so the other hourly jobs queued behind it and failed. Production's links
+    // also outnumber those texts (160,601), almost all untracked, which is what
+    // makes the planner start from the texts unless the query says otherwise.
+    await db().insert(schema.tenants).values({ tenantId: 'other', name: 'other', active: true, stateCoverage: '["WI"]' })
+    await env.DB.batch([
+      ...['test-tenant', 'other'].flatMap(tenant => Array.from({ length: 300 }, (_, i) => env.DB.prepare(
+        `INSERT INTO bill_tenants (bill_id, tenant_id, match_type) VALUES (?, ?, NULL)`).bind(5000 + i, tenant))),
+      ...Array.from({ length: 300 }, (_, i) => env.DB.prepare(
+        `INSERT INTO bills (bill_id, session_id, state, state_id, bill_number, title, change_hash, detail_hash, status, texts_fetched_at)
+         VALUES (?, 1, 'WI', 0, ?, 'seeded', 'h', 'h', 1, ?)`).bind(5000 + i, `SB${i}`, HOURS_AGO(5))),
+      ...Array.from({ length: 300 }, (_, i) => env.DB.prepare(
+        `INSERT INTO bill_texts (doc_id, bill_id, date, type, type_id, mime, mime_id, state_link)
+         VALUES (?, ?, '2026-02-06', 'Introduced', 1, 'application/pdf', 2, ?)`).bind(50000 + i, 5000 + i, `https://example.test/s${i}.pdf`)),
+    ])
+    await seedBill(1012)
+    await env.DB.prepare('ANALYZE').run()
+
+    const { db: spied, captured } = spyOnD1()
+    const sendBatch = vi.fn().mockResolvedValue(undefined)
+    await queueMissingTexts({ ...(env as any), INGESTOR_QUEUE: { sendBatch, send: vi.fn() } }, drizzle(spied, { schema }))
+    const sweep = captured.find(c => /select distinct/i.test(c.sql) && c.sql.includes('bill_texts'))!
+    const plan = await planOf(sweep)
+    expect(plan).toMatch(/^SCAN bill_tenants\b/)
+    expect(plan).toContain('SEARCH bill_texts USING INDEX idx_bill_texts_unattempted (bill_id=?)')
+    expect(plan).not.toMatch(/SCAN bill_texts\b/)
   })
 
   it('queues a bill once when it has several texts missing, or one missing beside one stored', async () => {

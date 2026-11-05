@@ -5,6 +5,7 @@ import { centralFetch } from '../lib/centralFetch'
 import { readConfigString } from '../lib/configValue'
 import { isAiConfigDefault } from '../../../shared/aiDefaults'
 import type { AppDb, Env } from '../types'
+import { errorText } from '../../../shared/errorText'
 
 export async function registerWithCentral(env: Env, db: AppDb): Promise<boolean> {
   await ensureAssociationName(env, db)
@@ -40,7 +41,7 @@ export async function registerWithCentral(env: Env, db: AppDb): Promise<boolean>
     }
     return true
   } catch (err) {
-    console.error('Central registration error:', err)
+    console.error('Central registration error:', errorText(err), err)
     return false
   }
 }

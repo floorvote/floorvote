@@ -1,3 +1,4 @@
+import { errorText } from '../../../shared/errorText'
 /**
  * Provider-agnostic client-side rate limiting + 429 retry for outbound API calls.
  *
@@ -140,7 +141,7 @@ export async function rateLimitedFetch(
       try {
         onRequest()
       } catch (err) {
-        console.error('[rateLimitedFetch] onRequest callback threw:', err)
+        console.error('[rateLimitedFetch] onRequest callback threw:', errorText(err), err)
       }
     }
 

@@ -6,6 +6,7 @@ import { describeSendFailure } from '../lib/emailErrors'
 import { validEmailList } from '../../../shared/operator'
 import { getDb } from '../db/client'
 import type { AppEnv } from '../types'
+import { errorText } from '../../../shared/errorText'
 
 const feedbackRouter = new Hono<AppEnv>()
 
@@ -39,7 +40,7 @@ feedbackRouter.post('/', async (c) => {
     const r = await senderFor(c.env).send({ purpose: 'operator', to: recipients, subject, html })
     if (!r.ok) throw new Error(describeSendFailure(r))
   } catch (err) {
-    console.error('feedback send failed:', err)
+    console.error('feedback send failed:', errorText(err), err)
     return c.json({ error: 'Failed to send feedback' }, 500)
   }
 

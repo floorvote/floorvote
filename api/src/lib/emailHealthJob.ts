@@ -7,6 +7,7 @@ import { decideEmailHealth, windowStartHour, OK_STATE, type HealthDecision, type
 import { toDbTs } from './dbTime'
 import { validEmailList } from '../../../shared/operator'
 import { PRODUCT_NAME } from '../../../shared/brand'
+import { errorText } from '../../../shared/errorText'
 
 /**
  * Hourly: decide whether the primary email provider is failing, and tell
@@ -82,7 +83,7 @@ async function sendHealthAlert(env: Env, a: AlertInput): Promise<boolean> {
     if (!r.ok) console.error(`[email-health] alert send failed (${r.provider ?? 'no provider'}): ${r.error}`)
     return r.ok
   } catch (err) {
-    console.error('[email-health] alert send threw', err)
+    console.error('[email-health] alert send threw', errorText(err), err)
     return false
   }
 }

@@ -1,5 +1,6 @@
 import type { Context } from 'hono'
 import { HTTPException } from 'hono/http-exception'
+import { errorText } from '../../../shared/errorText'
 
 /**
  * Hono `onError` handler. Pass HTTPExceptions through with their intended
@@ -8,6 +9,6 @@ import { HTTPException } from 'hono/http-exception'
  */
 export function errorHandler(err: Error, c: Context): Response | Promise<Response> {
   if (err instanceof HTTPException) return err.getResponse()
-  console.error('[unhandled]', err)
+  console.error('[unhandled]', errorText(err), err)
   return c.json({ error: 'internal_error' }, 500)
 }

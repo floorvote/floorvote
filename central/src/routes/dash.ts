@@ -12,6 +12,7 @@ import { fetchAiUsage } from '../lib/aiGatewayAnalytics'
 import { legiscanCallsOnly, legiscanCallsThisMonth, monthStartDb } from '../lib/legiscanBudget'
 import { resolveTenantRpc } from '../lib/tenantRpc'
 import { loadStateRows } from '../lib/stateRows'
+import { errorText } from '../../../shared/errorText'
 
 // Every dashboard query of api_call_log uses legiscanCallsOnly
 // (lib/legiscanBudget.ts), so the dashboard shows only LegiScan calls and other
@@ -408,7 +409,7 @@ dashRoutes.get('/budget/ai', async (c) => {
     return c.json({ data: { available: true, ...usage }, meta: { generatedAt: new Date().toISOString() } })
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e)
-    console.warn('[budget/ai] unavailable:', reason)
+    console.warn('[budget/ai] unavailable:', errorText(reason), reason)
     return c.json({ data: { available: false, reason }, meta: { generatedAt: new Date().toISOString() } })
   }
 })

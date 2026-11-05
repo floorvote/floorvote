@@ -2,6 +2,7 @@ import type { Env } from '../types'
 import { senderFor } from './email'
 import { PRODUCT_NAME } from '../../../shared/brand'
 import { validEmailList } from '../../../shared/operator'
+import { errorText } from '../../../shared/errorText'
 
 /**
  * Scheduled jobs run via `ctx.waitUntil(promise)`. If that promise rejects, the
@@ -15,7 +16,7 @@ export async function runJob(env: Env, name: string, fn: () => Promise<unknown>)
   try {
     await fn()
   } catch (error) {
-    console.error(`[job:${name}] failed`, error)
+    console.error(`[job:${name}] failed`, errorText(error), error)
     await reportJobFailure(env, { job: name, error })
   }
 }
@@ -40,7 +41,7 @@ export async function reportJobFailure(env: Env, opts: { job: string; error: unk
     return
   }
 
-  const message = error instanceof Error ? error.message : String(error)
+  const message = errorText(error)
   const stack = error instanceof Error ? error.stack : undefined
   const subject = `[${PRODUCT_NAME}] cron failed: ${job}`
 
@@ -68,6 +69,6 @@ export async function reportJobFailure(env: Env, opts: { job: string; error: unk
     const r = await senderFor(env).send({ purpose: 'operator', to: recipients, subject, html, text })
     if (!r.ok) console.error(`[job:${job}] alert email itself failed (${r.provider ?? 'no provider'}): ${r.error}`)
   } catch (e) {
-    console.error(`[job:${job}] alert email itself failed`, e)
+    console.error(`[job:${job}] alert email itself failed`, errorText(e), e)
   }
 }

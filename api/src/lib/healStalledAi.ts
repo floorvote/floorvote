@@ -2,6 +2,7 @@ import { and, eq, isNull, isNotNull, lt, sql } from 'drizzle-orm'
 import { bills } from '../db/schema'
 import { isPulledByGroup } from './companionAnalysis'
 import type { AppDb, Env } from '../types'
+import { errorText } from '../../../shared/errorText'
 
 /** Attempts after which a bill is left for a human rather than re-queued. */
 export const HEAL_MAX_ATTEMPTS = 5
@@ -177,7 +178,7 @@ export async function healStalledAiBills(
       //
       // Returning the partial counts is the point: the next hourly run resumes
       // from the same head of the queue, and the operator sees how far it got.
-      console.error(`[heal-ai] queue send failed for ${row.externalId}, ending run early:`, err)
+      console.error(`[heal-ai] queue send failed for ${row.externalId}, ending run early:`, errorText(err), err)
       break
     }
     queued++

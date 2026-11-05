@@ -28,6 +28,7 @@ import { toHandle } from '../lib/billHandle'
 import { replaceBillExtras } from '../lib/billExtras'
 import { upsertCommittees } from '../lib/committees'
 import { httpUrl } from '../../../shared/httpUrl'
+import { errorText } from '../../../shared/errorText'
 
 /**
  * How many ingests of a bill a cutover moved may come with no calendar at
@@ -57,7 +58,7 @@ export async function processIngestorQueue(
         }
         message.ack()
       } catch (err) {
-        console.error('[processor-ls] vote dataset load failed for session', body.sessionId, err)
+        console.error('[processor-ls] vote dataset load failed for session', body.sessionId, errorText(err), err)
         // Each attempt re-downloads the archive, so give the provider time first.
         message.retry({ delaySeconds: VOTE_DATASET_RETRY_SECONDS })
       }
@@ -67,7 +68,7 @@ export async function processIngestorQueue(
       await processBill(body, env, db)
       message.ack()
     } catch (err) {
-      console.error('[processor-ls] failed for billId', body.billId, err)
+      console.error('[processor-ls] failed for billId', body.billId, errorText(err), err)
       message.retry()
     }
   }

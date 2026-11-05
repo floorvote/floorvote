@@ -25,6 +25,7 @@ import { guardCallerTenantParam, guardCallerTenantBody, CALLER_TENANT_HEADER } f
 import { HANDLE_FORM_HEADER, readsNeutralHandles, toHandle, toTenantHandle } from '../lib/billHandle'
 import { sendsNeutralHandles } from '../lib/tenantHandles'
 import { refreshRequestedBills } from '../lib/fetchRequests'
+import { errorText } from '../../../shared/errorText'
 
 const REPROCESS_LIMIT = 1000
 // Rows per bill_tenants upsert in promote-bills: 3 bound parameters each, under D1's limit of 100.
@@ -194,7 +195,7 @@ tenantsRoutes.post('/register', guardCallerTenantBody(), async (c) => {
           .where(eq(schema.tenants.tenantId, body.tenantId))
       }
     } catch (err) {
-      console.error(`[register] failed to provision queue for "${body.tenantId}":`, err)
+      console.error(`[register] failed to provision queue for "${body.tenantId}":`, errorText(err), err)
     }
   }
 
@@ -376,7 +377,7 @@ tenantsRoutes.post('/seed-session/:tenantId', async (c) => {
       }
     }
   } catch (err: any) {
-    console.error('Error queuing to ingestor:', err)
+    console.error('Error queuing to ingestor:', errorText(err), err)
     return c.json({ ok: false, error: String(err), offset, nextOffset, processed: sessionBills.length }, 429)
   }
 
@@ -395,7 +396,7 @@ tenantsRoutes.post('/seed-session/:tenantId', async (c) => {
       console.error(`[seed-session] no delivery path for tenant ${tenantId} — ${nonKeywordBodies.length} stub bills dropped`)
     }
   } catch (err: any) {
-    console.error('Error queuing to tenant queue:', err)
+    console.error('Error queuing to tenant queue:', errorText(err), err)
     return c.json({ ok: false, error: String(err), offset, nextOffset, processed: sessionBills.length }, 429)
   }
 
@@ -451,7 +452,7 @@ tenantsRoutes.post('/redownload-texts/:tenantId', async (c) => {
         )
         queued += Math.min(100, billIds.length - i)
       } catch (err) {
-        console.error(`[redownload-texts] sendBatch failed after ${queued} bills:`, err)
+        console.error(`[redownload-texts] sendBatch failed after ${queued} bills:`, errorText(err), err)
         return c.json({ ok: false, queued, total: matching.length, error: String(err) }, 500)
       }
     }

@@ -2,6 +2,7 @@ import type { AppDb } from '../types'
 import type { HealthRecorder, Attempt, ProviderName } from '../../../shared/emailSender'
 import { recordSendStats, tally } from './emailStats'
 import { recordResendReading, recordResendThrottled } from './resendUsage'
+import { errorText } from '../../../shared/errorText'
 
 /**
  * The API's email-health recorder, handed to the shared sender for purposes
@@ -30,7 +31,7 @@ export function emailHealthRecorder(db: AppDb): HealthRecorder {
         if (latest) await recordResendReading(db, latest)
         if (usage.some(u => u.throttled)) await recordResendThrottled(db)
       } catch (err) {
-        console.error('[resend-record]', err)
+        console.error('[resend-record]', errorText(err), err)
       }
     },
   }

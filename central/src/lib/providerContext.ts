@@ -7,6 +7,7 @@ import { escHtml, sendOpsAlert } from './jobAlert'
 import { PRODUCT_NAME } from '../../../shared/brand'
 import type { Provider, ProviderContext } from '../providers'
 import type { Env, Db } from '../types'
+import { errorText } from '../../../shared/errorText'
 
 /**
  * What core hands a provider: a frozen copy of only the env keys it declared,
@@ -26,7 +27,7 @@ export function providerContext(
     logCall(callType, params) {
       db.insert(apiCallLog)
         .values({ loggedAt: nowDb(), callType, params: JSON.stringify({ ...params, ...logParams }) })
-        .catch(err => console.error('[rate-limit] failed to log API call:', err))
+        .catch(err => console.error('[rate-limit] failed to log API call:', errorText(err), err))
     },
     today: nowDb().slice(0, 10),
     ids: (kind, nativeKeys) => providerIdsFor(db, provider.id, kind, nativeKeys),

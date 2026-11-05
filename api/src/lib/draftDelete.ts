@@ -5,6 +5,7 @@ import {
 } from '../db/schema'
 import { removeFilesOfDeletedComments } from './attachments'
 import type { AppDb } from '../types'
+import { errorText } from '../../../shared/errorText'
 
 /**
  * How a draft bill's deletion is decided and carried out, shared by
@@ -191,13 +192,13 @@ export async function deleteCleared(
     deletedComments = (results[DELETED_COMMENTS] as unknown as Array<{ id: string }>).map(r => r.id)
   } catch (err) {
     if (!opts.reportFailure) throw err
-    console.error('draft delete failed', err)
+    console.error('draft delete failed', errorText(err), err)
     return { deleted: [], skipped: candidates.map(id => ({ id, reason: 'error' as const })) }
   }
 
   // The drafts are gone, so a failure here must not fail the request: the hourly purge takes the files left.
   await removeFilesOfDeletedComments(opts.attachments, db, deletedComments).catch((err: unknown) => {
-    console.error('draft delete: removing comment files failed', err)
+    console.error('draft delete: removing comment files failed', errorText(err), err)
   })
 
   const gone = new Set(deleted)
@@ -208,7 +209,7 @@ export async function deleteCleared(
     // one's deleted drafts are already gone. We then cannot say why the batch kept the rest, so they
     // are reported as `error`: kept whole, and worth retrying.
     const fresh = await draftDeleteVerdicts(db, left, opts).catch((err: unknown) => {
-      console.error('draft delete re-check failed', err)
+      console.error('draft delete re-check failed', errorText(err), err)
       return null
     })
     for (const id of left) {

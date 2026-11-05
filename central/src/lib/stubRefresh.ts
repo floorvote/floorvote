@@ -6,6 +6,7 @@ import { dbTimeAgo, toDb } from './dbTime'
 import { legiscanCallsOnly, monthStartDb } from './legiscanBudget'
 import { apiCallLog } from '../db/schema'
 import type { BillMessage, Db } from '../types'
+import { errorText } from '../../../shared/errorText'
 
 /**
  * Refreshing a stub bill's detail when its page is viewed and the detail is
@@ -124,7 +125,7 @@ export async function refreshStaleStub(db: Db, queue: Queue, bill: StubRefreshRo
   try {
     await queue.send(message)
   } catch (err) {
-    console.error(`[stub-refresh] could not queue bill ${bill.billId}; releasing its claim`, err)
+    console.error(`[stub-refresh] could not queue bill ${bill.billId}; releasing its claim`, errorText(err), err)
     await db.update(bills)
       .set({ detailRequestedHash: null, detailRequestedAt: null })
       .where(sql`${bills.billId} = ${bill.billId} AND ${bills.detailRequestedAt} = ${at} AND ${bills.detailRequestedHash} = ${claimed[0].changeHash}`)

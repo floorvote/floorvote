@@ -5,6 +5,7 @@ import { pendingInviteWhere } from './pendingInvite'
 import { recordAuthEvent } from './authEvents'
 import { toDbTs } from './dbTime'
 import { centralEmail, type DeliveryStatus } from './centralEmail'
+import { errorText } from '../../../shared/errorText'
 
 /** Lifetime of an invite link; older sends to a pending invite aren't checked. */
 export const BOUNCE_CHECK_WINDOW_DAYS = 7
@@ -101,7 +102,7 @@ export async function runInviteBounceCheck(env: Pick<Env, 'CENTRAL'>, db: AppDb,
   try {
     delivery = await central.emailDeliveryStatus([...byMessage.keys()], lookupSince.toISOString())
   } catch (err) {
-    console.error('[invite-bounces] delivery lookup failed; retrying next run', err)
+    console.error('[invite-bounces] delivery lookup failed; retrying next run', errorText(err), err)
     return []
   }
   if (!delivery || typeof delivery !== 'object') return []

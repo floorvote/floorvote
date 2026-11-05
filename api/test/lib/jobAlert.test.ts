@@ -162,3 +162,22 @@ describe('reportJobFailure: a malformed ALERT_EMAILS entry', () => {
   })
 })
 
+
+describe('job failures keep the reason', () => {
+  const d1Failure = () => new Error('Failed query: select 1', { cause: new Error('D1_ERROR: D1 DB is overloaded.') })
+
+  it("logs the error's whole cause chain as text, not only the Error object", async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await runJob(env(), 'heal-ai', async () => { throw d1Failure() })
+    const line = spy.mock.calls.find(c => String(c[0]).startsWith('[job:heal-ai] failed'))
+    expect(line).toBeDefined()
+    expect(line!.filter(a => typeof a === 'string').join(' ')).toContain('Failed query: select 1 | caused by: D1_ERROR: D1 DB is overloaded.')
+  })
+
+  it("puts the cause's message in the alert email, text and HTML", async () => {
+    await reportJobFailure(env(), { job: 'heal-ai', error: d1Failure() })
+    const msg = mail.send.mock.calls[0][0]
+    expect(msg.text).toContain('Error: Failed query: select 1 | caused by: D1_ERROR: D1 DB is overloaded.')
+    expect(msg.html).toContain('D1_ERROR: D1 DB is overloaded.')
+  })
+})

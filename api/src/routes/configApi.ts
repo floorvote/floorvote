@@ -13,6 +13,7 @@ import { resolveOrgNoun } from '../../../shared/orgNoun'
 import { PRODUCT_NAME } from '../../../shared/brand'
 import { parseEmailList } from '../../../shared/operator'
 import type { AppEnv } from '../types'
+import { errorText } from '../../../shared/errorText'
 
 export const configRouter = new Hono<AppEnv>()
 
@@ -126,7 +127,7 @@ configRouter.get('/', async (c) => {
         console.error(`[config] central sessions returned ${res.status}: ${await res.text().catch(() => '(no body)')}`)
       }
     } catch (err) {
-      console.error('[config] central sessions fetch failed:', err)
+      console.error('[config] central sessions fetch failed:', errorText(err), err)
     }
   }
 
@@ -244,7 +245,7 @@ configRouter.get('/sessions', async (c) => {
     }
     return c.json(await res.json())
   } catch (err) {
-    console.error('[config/sessions] central fetch failed:', err)
+    console.error('[config/sessions] central fetch failed:', errorText(err), err)
     return c.json({ sessions: [] })
   }
 })

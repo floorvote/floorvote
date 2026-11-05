@@ -4,6 +4,7 @@ import { centralFetch } from './centralFetch'
 import { nowDb } from './dbTime'
 import { legacyHandle } from '../../../shared/billHandle'
 import type { AppDb, Env, TenantQueueMessage } from '../types'
+import { errorText } from '../../../shared/errorText'
 
 /**
  * Delivery check for scripts/verify-instance.sh.
@@ -34,7 +35,7 @@ export async function recordDeliveryProbe(msg: TenantQueueMessage, env: Env, db:
     readStatus = res.status
     await res.body?.cancel()
   } catch (err) {
-    console.warn(`[probe] could not read ${msg.billId} from central:`, err)
+    console.warn(`[probe] could not read ${msg.billId} from central:`, errorText(err), err)
   }
   const record: DeliveryProbeRecord = { nonce: msg.probe ?? '', billId: msg.billId, receivedAt: nowDb(), readStatus }
   await db.insert(associationConfig)

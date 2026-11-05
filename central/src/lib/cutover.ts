@@ -16,6 +16,7 @@ import { assignSessionSlugs } from './sessionSlugs'
 import { toHandle } from './billHandle'
 import { nowDb } from './dbTime'
 import type { Db, Env } from '../types'
+import { errorText } from '../../../shared/errorText'
 
 /**
  * Cutovers (#296): moving a state that instances already track from its
@@ -631,7 +632,7 @@ export async function applyCutover(env: Env, db: Db, plan: CutoverPlan): Promise
   try {
     await assignSessionSlugs(db)
   } catch (err) {
-    console.error('[cutover] assigning session slugs failed; the next cron tick will:', err)
+    console.error('[cutover] assigning session slugs failed; the next cron tick will:', errorText(err), err)
   }
   return { id }
 }

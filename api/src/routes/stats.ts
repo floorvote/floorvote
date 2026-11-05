@@ -15,6 +15,7 @@ import { myGroupVote } from '../lib/companionGroups'
 import { billsAs } from './billsApi/query'
 import { getNewMatchMinRelevance, newMatchWhere } from '../lib/newMatch'
 import { pendingInviteWhere } from '../lib/pendingInvite'
+import { errorText } from '../../../shared/errorText'
 
 const statsRouter = new Hono<AppEnv>()
 
@@ -242,7 +243,7 @@ async function fetchUpcomingHearings(
       }
       centralResults = await res.json()
     } catch (err) {
-      console.error('[hearings] central call failed', err)
+      console.error('[hearings] central call failed', errorText(err), err)
       return { hearings: [], lookaheadDays }
     }
   }
