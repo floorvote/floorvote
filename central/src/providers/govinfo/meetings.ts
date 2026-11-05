@@ -348,6 +348,8 @@ async function readPages(ctx: Context, key: string, congress: number, span?: Spa
       () => ctx.logCall('govinfo:CongressMeetingList', { congress, offset, ...span }), `Congress.gov meeting list (offset ${offset})`)
     const parsed = parseMeetingList(text, congress)
     count = parsed.count
+    // A span of one update time is read in one page, or its pages could split it too.
+    if (span?.until && count > LIST_PAGE_SIZE) throw new Error(`Congress.gov meeting list: ${count} meetings share the update time ${span.until}, more than a page holds`)
     // A meeting changed while the list is read moves up it, and may be on two pages: the later read is the newer.
     for (const e of parsed.entries) meetings.set(e.eventId, e)
     if (last !== undefined && parsed.entries[0]?.updateDate === last) split.add(last)
@@ -375,14 +377,16 @@ async function readPages(ctx: Context, key: string, congress: number, span?: Spa
 async function readList(ctx: Context, key: string, congress: number): Promise<ListedMeeting[]> {
   const began = Date.now()
   const { meetings, count, split } = await readPages(ctx, key, congress)
-  for (const time of split) {
-    const batch = await readPages(ctx, key, congress, { since: time, until: time })
-    if (batch.count > LIST_PAGE_SIZE) throw new Error(`Congress.gov meeting list: ${batch.count} meetings share the update time ${time}, more than a page holds`)
-    // Read after the pages, it is the newer answer.
-    for (const [id, e] of batch.meetings) meetings.set(id, e)
+  /** Each update time `times` names, read on its own and merged over what was read before it, as the newer answer. */
+  const readSplit = async (times: Set<string>) => {
+    for (const time of times) for (const [id, e] of (await readPages(ctx, key, congress, { since: time, until: time })).meetings) meetings.set(id, e)
   }
+  await readSplit(split)
   const since = new Date(began - SINCE_MARGIN_MS).toISOString().slice(0, 19) + 'Z'
-  for (const [id, e] of (await readPages(ctx, key, congress, { since })).meetings) meetings.set(id, e)
+  const recent = await readPages(ctx, key, congress, { since })
+  for (const [id, e] of recent.meetings) meetings.set(id, e)
+  // The last look is one page unless much changed during the read; if more, its pages can split a batch as well.
+  await readSplit(recent.split)
   if (meetings.size < count) throw new Error(`Congress.gov meeting list: it names ${meetings.size} meetings, short of its count of ${count}; it changed while it was read`)
   return [...meetings.values()]
 }

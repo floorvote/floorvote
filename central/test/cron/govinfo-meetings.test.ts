@@ -1292,17 +1292,19 @@ describe('meetings that share an update time', () => {
     const reports = await syncCalendar()
     expect(reports[0]).toMatchObject({ failed: 0 })
     expect((await events()).events).toHaveLength(IN_WINDOW)
-    // It asked for that second alone, and once.
-    expect(feed.spanRequests).toHaveLength(1)
-    const p = new URL(feed.spanRequests[0].url).searchParams
-    expect(p.get('fromDateTime')).toBe(time)
-    expect(p.get('toDateTime')).toBe(time)
+    // It asked for that second alone. (Here the last look is two pages too, since every meeting here changed in the
+    // last ten minutes, and it splits the same batch, so the second is asked for again.)
+    expect(feed.spanRequests.length).toBeGreaterThan(0)
+    for (const r of feed.spanRequests) {
+      const p = new URL(r.url).searchParams
+      expect([p.get('fromDateTime'), p.get('toDateTime')]).toEqual([time, time])
+    }
   })
 
   it('reads the second of a group that only just reaches over the end of a page', async () => {
-    tiedAcrossAPage(2, 1)
+    const time = tiedAcrossAPage(2, 1)
     await syncCalendar()
-    expect(feed.spanRequests).toHaveLength(1)
+    expect(feed.spanRequests.map(r => new URL(r.url).searchParams.get('toDateTime'))).toContain(time)
     expect((await events()).events).toHaveLength(IN_WINDOW)
   })
 
@@ -1343,6 +1345,27 @@ describe('meetings that share an update time', () => {
     expect((await eventOf(HEARING)).agenda[0].topic).toBe('Retitled while the list was read')
   })
 
+  it('reads a batch a page of the last look ends within, when more changed during the read than a page holds', async () => {
+    for (let i = 0; i < 300; i++) feed.add(String(100000 + i), HEARING, m => { m.date = '2025-03-01T15:00:00Z' })
+    let changed = false
+    feed.override.list = offset => {
+      // Once the full list's first page is read, 300 meetings change in one batch at the last of its pages.
+      if (offset === LIST_PAGE_SIZE && !changed) {
+        changed = true
+        const order = feed.sorted()
+        for (const m of order.slice(0, 300)) m.updateDate = '2026-10-17T12:59:00Z'
+        for (const m of order.slice(0, LIST_PAGE_SIZE - 10)) m.updateDate = '2026-10-17T12:59:30Z'
+        feed.unstableTies = true
+      }
+      return null
+    }
+    const reports = await syncCalendar()
+    expect(changed).toBe(true)
+    expect(reports[0]).toMatchObject({ failed: 0 })
+    expect(feed.spanRequests.map(r => new URL(r.url).searchParams.get('toDateTime'))).toContain('2026-10-17T12:59:00Z')
+    expect((await events()).events).toHaveLength(IN_WINDOW)
+  })
+
   it('still fails the pass, leaving the calendar empty, when more meetings share one update time than a page holds', async () => {
     for (let i = 0; i < 300; i++) feed.add(String(100000 + i), HEARING, m => { m.date = '2025-03-01T15:00:00Z' })
     const order = feed.sorted()
@@ -1353,6 +1376,8 @@ describe('meetings that share an update time', () => {
     await syncCalendar()
     expect((await events()).events).toEqual([])
     expect(consoleText([errors, warns])).toContain('more than a page holds')
+    // It gives up on the second's first page, rather than paging through it.
+    expect(feed.spanRequests).toHaveLength(1)
   })
 })
 
