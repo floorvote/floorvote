@@ -1268,6 +1268,94 @@ describe('what the list does while it is read', () => {
   })
 })
 
+describe('meetings that share an update time', () => {
+  /**
+   * More meetings than a page holds, with `size` of them sharing one update
+   * time across the end of the first page, and the list ordering that group
+   * differently on each page, as the real list does. Returns the shared time.
+   */
+  function tiedAcrossAPage(size = 20, before = 10): string {
+    for (let i = 0; i < 300; i++) feed.add(String(100000 + i), HEARING, m => { m.date = '2025-03-01T15:00:00Z' })
+    const order = feed.sorted()
+    const first = LIST_PAGE_SIZE - before
+    const time = order[first].updateDate
+    for (const m of order.slice(first, first + size)) m.updateDate = time
+    feed.unstableTies = true
+    return time
+  }
+
+  it('reads every meeting of an update time a page ends within, though each page orders them differently', async () => {
+    const time = tiedAcrossAPage()
+    // Paged alone, the group's order changes between the first page and the second: some are listed twice, others never.
+    const paged = new Set([...feed.sorted().slice(0, LIST_PAGE_SIZE), ...feed.sorted(true).slice(LIST_PAGE_SIZE)].map(m => m.eventId))
+    expect(paged.size).toBeLessThan(feed.meetings.size)
+    const reports = await syncCalendar()
+    expect(reports[0]).toMatchObject({ failed: 0 })
+    expect((await events()).events).toHaveLength(IN_WINDOW)
+    // It asked for that second alone, and once.
+    expect(feed.spanRequests).toHaveLength(1)
+    const p = new URL(feed.spanRequests[0].url).searchParams
+    expect(p.get('fromDateTime')).toBe(time)
+    expect(p.get('toDateTime')).toBe(time)
+  })
+
+  it('reads the second of a group that only just reaches over the end of a page', async () => {
+    tiedAcrossAPage(2, 1)
+    await syncCalendar()
+    expect(feed.spanRequests).toHaveLength(1)
+    expect((await events()).events).toHaveLength(IN_WINDOW)
+  })
+
+  it('asks for no second alone when a group ends with a page, or no page ends within one', async () => {
+    // The group is the last ten of the first page: the second page starts after it.
+    tiedAcrossAPage(10, 10)
+    await syncCalendar()
+    expect(feed.spanRequests).toHaveLength(0)
+    expect((await events()).events).toHaveLength(IN_WINDOW)
+  })
+
+  it('asks for no second alone when the list is one page', async () => {
+    feed.unstableTies = true
+    await syncCalendar()
+    expect(feed.spanRequests).toHaveLength(0)
+  })
+
+  it('logs the request for a second alone as govinfo:CongressMeetingList, naming the second', async () => {
+    const time = tiedAcrossAPage()
+    await syncCalendar()
+    const rows = (await logged()).filter(r => r.callType === 'govinfo:CongressMeetingList')
+    expect(rows).toHaveLength(feed.listRequests.length + feed.recentRequests.length + feed.spanRequests.length)
+    expect(rows.map(r => JSON.parse(r.params))).toContainEqual({ congress: 119, offset: 0, since: time, until: time })
+  })
+
+  it('still finds a meeting changed while the list is read when it was in a group a page ended within', async () => {
+    tiedAcrossAPage()
+    let changed = false
+    feed.override.list = offset => {
+      if (offset === LIST_PAGE_SIZE && !changed) {
+        changed = true
+        feed.edit(HEARING, m => { m.title = 'Retitled while the list was read' })
+      }
+      return null
+    }
+    await syncCalendar()
+    expect(changed).toBe(true)
+    expect((await eventOf(HEARING)).agenda[0].topic).toBe('Retitled while the list was read')
+  })
+
+  it('still fails the pass, leaving the calendar empty, when more meetings share one update time than a page holds', async () => {
+    for (let i = 0; i < 300; i++) feed.add(String(100000 + i), HEARING, m => { m.date = '2025-03-01T15:00:00Z' })
+    const order = feed.sorted()
+    for (const m of order.slice(0, LIST_PAGE_SIZE + 5)) m.updateDate = order[0].updateDate
+    feed.unstableTies = true
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const warns = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await syncCalendar()
+    expect((await events()).events).toEqual([])
+    expect(consoleText([errors, warns])).toContain('more than a page holds')
+  })
+})
+
 describe('while the meetings are still being read for the first time', () => {
   const isWarm = async () => !!(await env.DB.prepare(`SELECT key FROM provider_cache WHERE provider = 'govinfo' AND key = 'warm/119'`).first())
   /** More new meetings than a pass reads, all with higher event ids than the recorded ones, so they are read first. */

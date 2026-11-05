@@ -160,3 +160,7 @@ The hourly `missing-texts` sweep looked for undownloaded texts by walking every 
 ## Error logs and job alerts say why
 
 Workers Logs drops the message of an error passed to `console.error` and keeps only its stack, so a failure reached the dashboard as `[job:ls-sync] failed     at D1PreparedQuery…` with no reason. Every log of a caught error, in central and in instances, now also prints the error's message and each message down its cause chain. A `cron failed:` email does the same, so a database error shows D1's own message rather than only the query that hit it. Nothing to configure.
+
+## Congress committee meetings no longer fail on a batch update
+
+Congress.gov's committee-meeting list orders meetings that share an update time differently on every request, so where a page of the list ended inside such a batch, some meetings came back twice and others never. The meeting read then fell short of the list's own count and failed every pass, and a central syncing Congress from GovInfo sent `cron failed: govinfo-body-events` every four hours. Central now reads each such update time again on its own and merges it in. A pass makes one more Congress.gov request for each page that ends inside a batch, usually a handful. Nothing to configure.

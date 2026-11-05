@@ -56,6 +56,13 @@ export class MeetingFeed {
   /** Replace the answer to the list or to one meeting's detail. Return null to answer as usual. */
   /** Added to the count the list gives, to make it disagree with what it lists. */
   countOffset = 0
+  /**
+   * Whether meetings that share an update time come in a different order on
+   * each page, as the real API's do: it orders by update time alone, so where a
+   * page ends inside such a group, one page and the next may each list some of
+   * the group twice and miss others.
+   */
+  unstableTies = false
   override: { list?: (offset: number) => Response | null; detail?: (eventId: string) => Response | null } = {}
   private clock = Date.parse('2026-10-17T13:00:00Z')
 
@@ -93,7 +100,9 @@ export class MeetingFeed {
   /** The pages of the whole list. */
   get listRequests(): Requested[] { return this.requests.filter(r => /\/committee-meeting\/\d+\?/.test(r.url) && !r.url.includes('fromDateTime')) }
   /** The list of the meetings changed since a time, which a read makes to catch what changed while it paged. */
-  get recentRequests(): Requested[] { return this.requests.filter(r => /\/committee-meeting\/\d+\?/.test(r.url) && r.url.includes('fromDateTime')) }
+  get recentRequests(): Requested[] { return this.requests.filter(r => /\/committee-meeting\/\d+\?/.test(r.url) && r.url.includes('fromDateTime') && !r.url.includes('toDateTime')) }
+  /** The list of the meetings updated within a span, which a read makes for an update time a page ended within. */
+  get spanRequests(): Requested[] { return this.requests.filter(r => /\/committee-meeting\/\d+\?/.test(r.url) && r.url.includes('toDateTime')) }
   get detailRequests(): Requested[] { return this.requests.filter(r => /\/committee-meeting\/\d+\/[a-z]+\/\d+\?/.test(r.url)) }
 
   /** The event ids whose detail was asked for, in order. */
@@ -104,8 +113,9 @@ export class MeetingFeed {
     return `${CONGRESS_API}/committee-meeting/${m.congress}/${chamberPath(m.chamber)}/${m.eventId}?format=json`
   }
 
-  private sorted(): any[] {
-    return [...this.meetings.values()].sort((a, b) => b.updateDate.localeCompare(a.updateDate) || Number(b.eventId) - Number(a.eventId))
+  /** The meetings in the list's order, newest update first. `flip` reverses the order within each update time. */
+  sorted(flip = false): any[] {
+    return [...this.meetings.values()].sort((a, b) => b.updateDate.localeCompare(a.updateDate) || (flip ? -1 : 1) * (Number(b.eventId) - Number(a.eventId)))
   }
 
   /** What the stubbed network answers: this API's, or null for any other address. */
@@ -134,7 +144,9 @@ export class MeetingFeed {
       const forced = this.override.list?.(offset)
       if (forced) return forced
       const from = u.searchParams.get('fromDateTime')
-      const all = this.sorted().filter(m => String(m.congress) === list[1] && (!from || m.updateDate >= from))
+      const to = u.searchParams.get('toDateTime')
+      const flip = this.unstableTies && Math.floor(offset / limit) % 2 === 1
+      const all = this.sorted(flip).filter(m => String(m.congress) === list[1] && (!from || m.updateDate >= from) && (!to || m.updateDate <= to))
       const page = all.slice(offset, offset + limit)
       const next = offset + limit < all.length
         ? `${CONGRESS_API}/committee-meeting/${list[1]}?offset=${offset + limit}&limit=${limit}&format=json`
