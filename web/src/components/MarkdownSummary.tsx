@@ -211,10 +211,16 @@ export function MarkdownSummary({ children, fontSize, color: textColor = color.t
         .markdown-summary table { border-collapse: collapse; }
         .markdown-summary th, .markdown-summary td { border: 1px solid ${color.borderDefault}; padding: 2px 6px; text-align: left; }
       `}</style>
+      {/* The vertical padding fills the strip between a wrapped claim's lines
+          (Source Serif 4 is 19px tall on the summary's 21px line), so the
+          pointer stays on the claim from line to line and the wash is one
+          block. 0.1em overlaps the lines by under a pixel, which leaves no
+          sliver and doesn't reach the line above's descenders. It doesn't
+          move the text: vertical padding on an inline box doesn't change the line. */}
       {hasClaimLinks && (
         <style>{`
           .markdown-summary a.claim-link {
-            color: inherit; cursor: pointer; border-radius: ${radius.xs}px;
+            color: inherit; cursor: pointer; border-radius: ${radius.xs}px; padding-block: 0.1em;
             text-decoration: underline; text-decoration-color: ${color.claimUnderlineRest};
             text-decoration-thickness: 1px; text-underline-offset: 3px;
             transition: text-decoration-color 120ms, background-color 120ms;
