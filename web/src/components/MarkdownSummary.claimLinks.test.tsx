@@ -113,6 +113,16 @@ describe('MarkdownSummary claim links', () => {
       expect(rest).toMatch(/border-radius:\s*\d+px/)
     })
 
+    // A claim that wraps had a strip between its lines (Source Serif 4 is 19px
+    // tall on a 21px line) where the pointer was over the paragraph, so the
+    // wash and the quote preview flashed off and on. Vertical padding fills the
+    // strip without moving the text; the wash fills it too, as one block.
+    it('fills the space between its wrapped lines, so hover holds from line to line', () => {
+      const rest = styled().get('.markdown-summary a.claim-link') ?? ''
+      expect(rest).toContain('padding-block: 0.1em')
+      expect(rest).not.toContain('background-clip')
+    })
+
     it('no longer uses the light gray underline', () => {
       expect(styled().get('.markdown-summary a.claim-link')).not.toContain('--fv-border-strong')
     })
