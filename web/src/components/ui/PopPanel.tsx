@@ -68,6 +68,11 @@ export function PopPanel(
   onCloseRef.current = onClose
   const closingRef = useRef(false)
   const doneRef = useRef(false)
+  const exitTimerRef = useRef<number | undefined>(undefined)
+
+  // A panel removed mid-exit doesn't call onClose later: its parent has
+  // already let it go, and a late setState there can outlive a test's window.
+  useEffect(() => () => window.clearTimeout(exitTimerRef.current), [])
 
   useFocusTrap({ active: true, containerRef: panelRef, initialFocus: 'first' })
 
@@ -94,11 +99,11 @@ export function PopPanel(
       el.style.width = `${expandFrom.width}px`; el.style.height = `${expandFrom.height}px`
       el.style.padding = expandPadding.from
       el.style.boxShadow = 'none'
-      window.setTimeout(finish, EXIT_MS)
+      exitTimerRef.current = window.setTimeout(finish, EXIT_MS)
       return
     }
     setVisible(false)
-    window.setTimeout(finish, EXIT_MS)
+    exitTimerRef.current = window.setTimeout(finish, EXIT_MS)
   }, [finish, expand, expandFrom, expandPadding, reduce])
 
   useImperativeHandle(ref, () => ({ close: beginClose }), [beginClose])

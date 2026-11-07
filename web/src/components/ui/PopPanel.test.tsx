@@ -42,6 +42,42 @@ describe('PopPanel', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
+  // A panel removed while it animates out (its page goes away, or a test
+  // ends) must not call onClose later: its parent is gone, and in a test the
+  // late call can land after the environment is torn down ("window is not
+  // defined" from React's setState).
+  it('does not fire onClose when it unmounts while animating out', () => {
+    const onClose = vi.fn()
+    const { unmount } = render(<Harness onClose={onClose} />)
+    act(() => { vi.advanceTimersByTime(20) })
+    fireEvent.click(screen.getByText('trigger'))
+    unmount()
+    act(() => { vi.advanceTimersByTime(300) })
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('does not fire onClose when an expand panel unmounts while shrinking back', () => {
+    const onClose = vi.fn()
+    const ref = createRef<PopPanelHandle>()
+    const { unmount } = render(
+      <PopPanel
+        ref={ref}
+        onClose={onClose}
+        positionStyle={basePos}
+        transformOrigin="top left"
+        expandFrom={{ left: 50, top: 60, width: 130, height: 46 } as DOMRect}
+        computeTarget={h => ({ left: 50, top: 60, width: 320, height: h })}
+      >
+        <div>body</div>
+      </PopPanel>,
+    )
+    act(() => { vi.advanceTimersByTime(20) })
+    act(() => { ref.current?.close() })
+    unmount()
+    act(() => { vi.advanceTimersByTime(300) })
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
   it('Escape closes', () => {
     const onClose = vi.fn()
     render(<Harness onClose={onClose} />)
