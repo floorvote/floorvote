@@ -1,4 +1,5 @@
 import { and, eq, ne, isNull, isNotNull, gte, lt, exists, or, sql } from 'drizzle-orm'
+import type { JobSkipped } from './jobAlert'
 import { alias } from 'drizzle-orm/sqlite-core'
 import { calendarEvents, calendarEventBills, bills, users, sessions, associationConfig } from '../db/schema'
 import { renderWeekAheadEmail, capBodyEvents, fitToBudget, type WeekAheadEvent, type WeekAheadDay } from './weekAheadEmail'
@@ -33,17 +34,18 @@ async function stampLastWeekAhead(db: AppDb, now: string): Promise<void> {
     .onConflictDoUpdate({ target: associationConfig.key, set: { value: now } })
 }
 
-export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
+/** Returns `{ skipped }` when it did no work, and why: the module is off, or it isn't the email's day. Either way the run can't mark a failed run's alert resolved, and 'off' ends that alert's conversation (lib/jobAlert.ts). */
+export async function runWeekAhead(env: Env, db: AppDb): Promise<JobSkipped | undefined> {
   // Module gate
   const modulesRow = await db.select().from(associationConfig).where(eq(associationConfig.key, 'modules')).get()
   const modules = modulesRow?.value
     ? (() => { try { return JSON.parse(modulesRow.value) } catch { return undefined } })()
     : undefined
-  if (!isModuleEnabled(modules, 'week-ahead')) return
+  if (!isModuleEnabled(modules, 'week-ahead')) return { skipped: 'off' }
 
   // Weekday gate — only send on configured day (default Monday = 1)
   const weeklyDay = getModuleSetting<string>(modules, 'week-ahead', 'weeklyDay', '1')
-  if (String(new Date().getUTCDay()) !== String(weeklyDay)) return
+  if (String(new Date().getUTCDay()) !== String(weeklyDay)) return { skipped: 'not-today' }
 
   const todayIso = isoDate(0)
   const endIso = isoDate(7)  // exclusive
@@ -125,7 +127,7 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
   const lastIso = isoDate(6)
   const fieldEvents = await loadDateFieldEvents(db, { from: todayIso, to: lastIso })
 
-  if (rows.length === 0 && fieldEvents.length === 0) return  // no events this week — skip without stamping
+  if (rows.length === 0 && fieldEvents.length === 0) return  // no events this week: send nothing and don't stamp, though the run did its work
 
   // Group rows by event, then events by date. Bill entries for the same real
   // meeting on several bills are one event carrying every bill, as the

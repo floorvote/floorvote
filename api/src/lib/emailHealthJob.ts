@@ -8,6 +8,8 @@ import { toDbTs } from './dbTime'
 import { validEmailList } from '../../../shared/operator'
 import { PRODUCT_NAME } from '../../../shared/brand'
 import { errorText } from '../../../shared/errorText'
+import { alertThreadHeaders } from '../../../shared/alertThread'
+import { dbTsToEpoch } from '../../../shared/time'
 
 /**
  * Hourly: decide whether the primary email provider is failing, and tell
@@ -73,13 +75,22 @@ async function sendHealthAlert(env: Env, a: AlertInput): Promise<boolean> {
     console.error(`[email-health] no independent alert path: ${a.primary} is the only configured provider, so this alert may fail with it`)
   }
   const { subject, text, html } = renderHealthAlert(env, a)
+  const headers = await outageThreadHeaders(env, a)
   try {
     // The outage-alert purpose decides the rest: the healthy provider first,
     // then the failing one (a stale RESEND_API_KEY or an EMAIL_FROM not verified
     // on Resend must not swallow the alert), and never counted (operator mail
     // keeps arriving during a verified-only outage, so counting it as a primary
     // success could fake a recovery), so no db.
-    const r = await senderFor(env).send({ purpose: 'outage-alert', to: recipients, subject, html, text })
+    const sender = senderFor(env)
+    const send = (h?: Record<string, string>) => sender.send({ purpose: 'outage-alert', to: recipients, subject, html, text, ...(h && { headers: h }) })
+    let r = await send(headers)
+    // No provider is known to refuse the conversation headers, but if one did,
+    // the alert must still arrive, so it goes once more without them.
+    if (!r.ok && headers && !r.permanent) {
+      console.error(`[email-health] alert not sent with its conversation headers (${r.error}), so it goes once more without them`)
+      r = await send()
+    }
     if (!r.ok) console.error(`[email-health] alert send failed (${r.provider ?? 'no provider'}): ${r.error}`)
     return r.ok
   } catch (err) {
@@ -88,22 +99,50 @@ async function sendHealthAlert(env: Env, a: AlertInput): Promise<boolean> {
   }
 }
 
+/**
+ * Headers that make one outage's alerts (its trip, any reminders, and its
+ * recovery) a single conversation, named by this instance and when the outage
+ * started, so the next outage starts a new one (shared/alertThread.ts). None
+ * when either can't be read, so the alert goes out on its own rather than
+ * share another instance's or another outage's conversation. Never throws.
+ */
+async function outageThreadHeaders(env: Pick<Env, 'APP_URL'>, a: AlertInput): Promise<Record<string, string> | undefined> {
+  const startedAt = a.failingSince ? dbTsToEpoch(a.failingSince) : NaN
+  const domain = (() => { try { return new URL(env.APP_URL).hostname } catch { return '' } })()
+  if (!Number.isFinite(startedAt) || !domain) return undefined
+  try {
+    return await alertThreadHeaders({ key: `email-health.${a.primary}`, startedAt, domain, topic: healthSubject(hostOf(env), 'trip', a.primary) })
+  } catch (err) {
+    console.error("[email-health] couldn't build the alert's conversation headers, so it goes out on its own:", errorText(err), err)
+    return undefined
+  }
+}
+
+/** The instance's host, as the alerts name it. */
+function hostOf(env: Pick<Env, 'APP_URL'>): string {
+  try { return new URL(env.APP_URL).host } catch { return env.APP_URL }
+}
+
+function healthSubject(host: string, decision: Exclude<HealthDecision, 'none'>, primary: ProviderName): string {
+  return {
+    trip: `[${PRODUCT_NAME}] Email sending is failing on ${host} (${primary})`,
+    remind: `[${PRODUCT_NAME}] Email sending is still failing on ${host} (${primary})`,
+    recover: `[${PRODUCT_NAME}] Email sending recovered on ${host} (${primary})`,
+  }[decision]
+}
+
 function escHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 export function renderHealthAlert(env: Pick<Env, 'APP_URL'>, a: AlertInput): { subject: string; text: string; html: string } {
-  const host = (() => { try { return new URL(env.APP_URL).host } catch { return env.APP_URL } })()
+  const host = hostOf(env)
   const sent = a.rows.reduce((n, r) => n + r.sent, 0)
   const failed = a.rows.reduce((n, r) => n + r.failed, 0)
   const suppressed = a.rows.reduce((n, r) => n + r.suppressed, 0)
   const lastError = [...a.rows].sort((x, y) => (x.hour < y.hour ? 1 : -1)).find(r => r.lastError)?.lastError ?? null
 
-  const subject = {
-    trip: `[${PRODUCT_NAME}] Email sending is failing on ${host} (${a.primary})`,
-    remind: `[${PRODUCT_NAME}] Email sending is still failing on ${host} (${a.primary})`,
-    recover: `[${PRODUCT_NAME}] Email sending recovered on ${host} (${a.primary})`,
-  }[a.decision]
+  const subject = healthSubject(host, a.decision, a.primary)
 
   const lead = {
     trip: `${a.primary} started failing to send email for ${host}.`,

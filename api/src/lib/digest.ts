@@ -23,7 +23,8 @@ async function stampLastDigest(db: AppDb, now: string): Promise<void> {
     .onConflictDoUpdate({ target: associationConfig.key, set: { value: now } })
 }
 
-export type DigestResult = { ok: true; recipients: number; sent: number; failed: number }
+/** A digest run's counts. `skipped` marks a run that did no work, and why: the module is off, or it isn't the weekly digest's day. Either way it can't mark a failed run's alert resolved, and 'off' ends that alert's conversation (lib/jobAlert.ts). */
+export type DigestResult = { ok: true; recipients: number; sent: number; failed: number; skipped?: 'off' | 'not-today' }
 
 export async function runDigest(
   env: Env, db: AppDb, opts: { ignoreSchedule?: boolean } = {},
@@ -32,14 +33,14 @@ export async function runDigest(
   // when DEMO_MODE is set. The digest still shows as enabled
   // (read-only) in the demo UI.
   const modules = await readModules(db)
-  if (!isModuleEnabled(modules, 'email-digest')) return { ok: true, recipients: 0, sent: 0, failed: 0 }
+  if (!isModuleEnabled(modules, 'email-digest')) return { ok: true, recipients: 0, sent: 0, failed: 0, skipped: 'off' }
 
   // Weekly cadence: only send on the chosen UTC weekday. Skip WITHOUT stamping
   // last_digest_at so the window accumulates the full week.
   const frequency = getModuleSetting<string>(modules, 'email-digest', 'frequency', 'daily')
   if (frequency === 'weekly' && !opts.ignoreSchedule) {
     const weeklyDay = getModuleSetting(modules, 'email-digest', 'weeklyDay', '1')
-    if (String(new Date().getUTCDay()) !== String(weeklyDay)) return { ok: true, recipients: 0, sent: 0, failed: 0 }
+    if (String(new Date().getUTCDay()) !== String(weeklyDay)) return { ok: true, recipients: 0, sent: 0, failed: 0, skipped: 'not-today' }
   }
 
   const lastRow = await db.select().from(associationConfig).where(eq(associationConfig.key, 'last_digest_at')).get()

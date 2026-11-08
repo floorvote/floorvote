@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { eq } from 'drizzle-orm'
 import { env } from 'cloudflare:test'
 import { clearDb, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
 import { getDb } from '../../src/db/client'
@@ -95,5 +96,26 @@ describe('the week-ahead email, for a bill\'s own calendar entries', () => {
     const html = await emailed()
     expect(html).toContain('Committee hearing (body)')
     expect(html).not.toContain('Hearing on HB 800')
+  })
+})
+
+// A run that isn't the email's weekday, or with the module off, says it
+// skipped, so it can't mark a failed run's alert resolved (lib/jobAlert.ts).
+describe('whether a run did its work', () => {
+  const setModules = (value: unknown) =>
+    getDb(env.DB).update(associationConfig).set({ value: JSON.stringify(value) }).where(eq(associationConfig.key, 'modules'))
+
+  it('says it skipped on a day that is not its weekday', async () => {
+    await setModules({ 'week-ahead': { enabled: true, settings: { weeklyDay: String((new Date().getUTCDay() + 1) % 7) } } })
+    expect(await runWeekAhead(env as any, getDb(env.DB))).toEqual({ skipped: 'not-today' })
+  })
+
+  it('says it skipped with the module off', async () => {
+    await setModules({ 'week-ahead': { enabled: false } })
+    expect(await runWeekAhead(env as any, getDb(env.DB))).toEqual({ skipped: 'off' })
+  })
+
+  it('says nothing about skipping on its day', async () => {
+    expect(await runWeekAhead(env as any, getDb(env.DB))).toBeUndefined()
   })
 })

@@ -123,6 +123,15 @@ export const emailAlertState = sqliteTable('email_alert_state', {
   recoveredAt: text('recovered_at'),
 })
 
+// One row per job: the email conversation its failure alerts share, from when
+// it started and its latest alert (lib/alertThread.ts). A missing row means no
+// conversation is open.
+export const jobAlertThreads = sqliteTable('job_alert_threads', {
+  job: text('job').primaryKey(),
+  startedAt: text('started_at').notNull(),
+  lastAlertedAt: text('last_alerted_at').notNull(),
+})
+
 export const bills = sqliteTable('bills', {
   id: text('id').primaryKey(),
   externalId: text('external_id'),

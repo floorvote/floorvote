@@ -174,8 +174,11 @@ describe('runEmailHealth', () => {
 
     resend.calls.length = 0; cf.sent.length = 0
     expect(await runEmailHealth(e, db, new Date(NOW.getTime() + 60 * 60 * 1000))).toBe('remind')
-    expect(resend.calls).toHaveLength(1)
-    expect(cf.sent).toHaveLength(1)
+    // Each provider is tried with the outage's conversation headers, then once more without them.
+    expect(resend.calls).toHaveLength(2)
+    expect(cf.sent).toHaveLength(2)
+    expect(cf.sent[0].headers?.References).toMatch(/^<alert\.email-health\.cloudflare\./)
+    expect(cf.sent[1].headers).toBeUndefined()
     const sent = cf.sent[0]
     expect(sent.subject).toContain('is failing')
     expect(sent.subject).not.toContain('still failing')
@@ -239,6 +242,91 @@ describe('runEmailHealth', () => {
     const body = resend.calls[0].body
     expect(body.subject).toContain('still failing')
     expect(body.text).toContain('since 2026-09-22 10:00:00 UTC')
+  })
+})
+
+// An outage's alerts (the trip, any reminders, and the recovery) are one
+// conversation, keyed by the instance and the time the outage started, so the
+// next outage starts a new one.
+describe('the email outage alerts\' conversation', () => {
+  let resend: ReturnType<typeof stubResend>
+  beforeEach(async () => {
+    await clearDb()
+    resend = stubResend()
+  })
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
+
+  /** A failing state as of `failingSince`, with no alert sent yet, so the next run alerts. */
+  async function failingSince(failingSince: string) {
+    const db = getDb(env.DB)
+    await db.delete(emailAlertState)
+    await db.insert(emailAlertState).values({ provider: 'cloudflare', status: 'failing', failingSince, lastAlertedAt: null })
+  }
+  const roots = () => resend.calls.map(c => c.body.headers?.References)
+
+  it('puts the trip, the reminder, and the recovery in one conversation, named by the trip subject', async () => {
+    const db = getDb(env.DB)
+    await recordSendStats(db, 'cloudflare', { sent: 0, failed: 3, suppressed: 0, lastError: ERR }, LAST_HOUR)
+    const { e } = jobEnv()
+    expect(await runEmailHealth(e, db, NOW)).toBe('trip')
+    expect(await runEmailHealth(e, db, new Date('2026-09-24T22:00:00Z'))).toBe('remind')
+    await recordSendStats(db, 'cloudflare', { sent: 4, failed: 0, suppressed: 0, lastError: null }, new Date('2026-09-24T22:30:00Z'))
+    expect(await runEmailHealth(e, db, new Date('2026-09-24T23:00:00Z'))).toBe('recover')
+    const [trip, remind, recover] = resend.calls.map(c => c.body)
+    expect(trip.headers.References).toMatch(/^<alert\.email-health\.cloudflare\.[a-z0-9]+@ut\.example\.test>$/)
+    expect(trip.headers['Thread-Topic']).toBe(trip.subject)
+    expect(remind.headers).toEqual(trip.headers)
+    expect(recover.headers).toEqual(trip.headers)
+  })
+
+  it('starts a new conversation for the next outage', async () => {
+    const db = getDb(env.DB)
+    const { e } = jobEnv()
+    await failingSince('2026-09-20 10:00:00')
+    await runEmailHealth(e, db, NOW)
+    await failingSince('2026-09-22 10:00:00')
+    await runEmailHealth(e, db, NOW)
+    const [first, next] = roots()
+    expect(first).toMatch(/^<alert\.email-health\.cloudflare\./)
+    expect(next).not.toBe(first)
+  })
+
+  it('keeps two instances\' outages apart, even when they start at the same moment', async () => {
+    const db = getDb(env.DB)
+    for (const APP_URL of ['https://ut.example.test', 'https://tx.example.test']) {
+      await failingSince('2026-09-22 10:00:00')
+      await runEmailHealth(jobEnv({ APP_URL }).e, db, NOW)
+    }
+    const [ut, tx] = roots()
+    expect(ut).toContain('@ut.example.test>')
+    expect(tx).toContain('@tx.example.test>')
+  })
+
+  it('sends the alert once more, without its conversation headers, when a provider refuses it with them', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    await failingSince('2026-09-22 10:00:00')
+    const { e, cf } = jobEnv({ RESEND_API_KEY: undefined }, m => (m.headers ? 'down' : 'ok'))
+    expect(await runEmailHealth(e, getDb(env.DB), NOW)).toBe('remind')
+    expect(cf.sent).toHaveLength(2)
+    expect(cf.delivered).toHaveLength(1)
+    expect(cf.delivered[0].headers).toBeUndefined()
+    const [state] = await getDb(env.DB).select().from(emailAlertState).all()
+    expect(state.lastAlertedAt).toBe('2026-09-23 21:00:00')
+  })
+
+  it("still sends the alert, on its own, when the outage's start can't be read", async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    await failingSince('2026-13-45 99:99:99')
+    await runEmailHealth(jobEnv().e, getDb(env.DB), NOW)
+    expect(resend.calls).toHaveLength(1)
+    expect(resend.calls[0].body.headers).toBeUndefined()
+  })
+
+  it("sends the alert on its own when the instance's address can't be read, so no two instances share a conversation", async () => {
+    await failingSince('2026-09-22 10:00:00')
+    await runEmailHealth(jobEnv({ APP_URL: 'not a url' }).e, getDb(env.DB), NOW)
+    expect(resend.calls).toHaveLength(1)
+    expect(resend.calls[0].body.headers).toBeUndefined()
   })
 })
 
