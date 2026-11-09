@@ -48,7 +48,7 @@ This is the canonical project layout — the README intentionally does not dupli
 | Email | Cloudflare Email Service or Resend, through one purpose-level sender (`shared/emailSender.ts`). With both configured, `EMAIL_PROVIDER` picks the first one tried and the other is the fallback for sign-in, account, notification, and operator email. Digests and week-ahead mail never fall back |
 | AI | Google Gemini 2.5 Flash via Cloudflare AI Gateway. `api/src/lib/llm.ts` holds the default; override per env with the `GEMINI_MODEL` and `GEMINI_THINKING_BUDGET` vars |
 | Legislative data | LegiScan by default, plus opt-in providers for DC (LIMS), Maryland (MGA), Virginia (LIS), and Congress (GovInfo) |
-| Testing | Vitest + @cloudflare/vitest-pool-workers; Vitest + jsdom |
+| Testing | Vitest + @cloudflare/vitest-plugin; Vitest + jsdom |
 
 ---
 
@@ -228,7 +228,7 @@ Route loaders must use `apiFetchForLoader` (not raw `apiFetch`) — a raw 401 by
 7. Use `apiFetchForLoader` in route loaders, not raw `apiFetch`.
 8. Every color works in both light and dark mode: use a token, never a literal. No full-page spinners on navigation.
 9. Never run `wrangler deploy` directly — use `npm run deploy:tenant`.
-10. Don't mock D1 in tests — use real @cloudflare/vitest-pool-workers bindings.
+10. Don't mock D1 in tests — use real @cloudflare/vitest-plugin bindings.
 11. Don't leave `web/dist` around during local dev — it breaks the Vite `/api` proxy.
 12. Stub `fetch` per test with `stubFetch` (`api/test/helpers.ts`). An unstubbed request fails the test and names its URL (`api/test/setup.ts`).
 13. Send requests that start background work (`ctx.waitUntil`, such as email) through `appFetch`, not `SELF.fetch`. The work then finishes, and a failure in it fails the test.

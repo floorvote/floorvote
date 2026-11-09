@@ -31,7 +31,7 @@
 //      and never raises it as an unhandled rejection. Tests that start such work
 //      drain it with `appFetch` in test/helpers.ts, which rethrows the failure.
 //
-// This hook is the idiomatic one for @cloudflare/vitest-pool-workers 0.16: the
+// This hook is the idiomatic one for @cloudflare/vitest-plugin: the
 // pool no longer ships `fetchMock`, and miniflare's `outboundService` runs in
 // the Node process, where it can neither name the failing test nor be overridden
 // by a per-test stub.

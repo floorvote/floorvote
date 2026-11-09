@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitest/config'
 import { relative } from 'node:path'
 import { BaseSequencer, type TestSpecification } from 'vitest/node'
-import { cloudflarePool, cloudflareTest } from '@cloudflare/vitest-pool-workers'
+import { cloudflarePool, cloudflareTest } from '@cloudflare/vitest-plugin'
 
 // CI runs this suite in three shards (`--shard=n/3`, .github/workflows/ci.yml),
 // and the run takes as long as the slowest one. Vitest's own split hashes each
