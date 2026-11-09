@@ -1,8 +1,8 @@
 import { env } from 'cloudflare:test'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
-import { sessions, sessionSyncLog } from '../../src/db/schema'
+import { sessions, sessionSyncLog, settings } from '../../src/db/schema'
 
 // A failing session alerts once its streak of failed passes has lasted four
 // hours, then at most once every four hours while it goes on, read from the
@@ -13,8 +13,9 @@ vi.mock('../../src/lib/jobAlert', async () => {
   return { ...actual, sendOpsAlert: vi.fn().mockResolvedValue(undefined) }
 })
 
-import { streakAlerts, recoveryFrom, sendRecoveries, type SessionFailure } from '../../src/cron/passAlerts'
-import { sendOpsAlert } from '../../src/lib/jobAlert'
+import { streakAlerts, recoveryFrom, sendRecoveries, warmEnded, forgetWarmStreaks, type SessionFailure } from '../../src/cron/passAlerts'
+import { sendOpsAlert, jobThreadHeaders } from '../../src/lib/jobAlert'
+import { joinAlertThread } from '../../src/lib/alertThread'
 import { clearDb } from '../helpers/migrations'
 import { toDb } from '../../src/lib/dbTime'
 
@@ -58,6 +59,7 @@ beforeEach(async () => {
   await clearDb()
   vi.clearAllMocks()
 })
+afterEach(() => vi.restoreAllMocks())
 
 describe('when a failing session alerts', () => {
   it('alerts an hourly session at about 4, 8, and 12 hours into the streak', async () => {
@@ -225,5 +227,144 @@ describe('the email when sessions recover', () => {
   it('sends nothing for no recoveries', async () => {
     await sendRecoveries(env as any, db(), JOB, [])
     expect(sent()).toHaveLength(0)
+  })
+})
+
+describe("the resolved email's conversation", () => {
+  // A resolved email joins the conversation its job's failure alerts opened.
+  // When nothing in the job is still failing it also ends that conversation,
+  // so the job's next failure starts a new one. Whether anything is still
+  // failing is read after the email has gone out, so a failed read can never
+  // stop the email: it only leaves the conversation open.
+  const sent = () => vi.mocked(sendOpsAlert).mock.calls.map(c => c[1])
+  const rec = { session: { ...NJ, lastSyncedAt: null }, failed: 5, hours: 4, since: at(0) }
+  const later = () => Date.now() + 60_000
+  /** When the conversation an alert sent now (or at `now`) joins started. */
+  const startOf = async (job: string, now?: number) => (await joinAlertThread(db(), job, now)).startedAt
+  const overloaded = () => new Error('D1_ERROR: D1 DB is overloaded.')
+  /** Real D1, except that one kind of read fails as an overloaded D1 does. */
+  const failingRead = (method: 'select' | 'selectDistinct', fields: string) => {
+    const real = db()
+    return new Proxy(real, {
+      get(target, prop) {
+        if (prop !== method) return Reflect.get(target, prop)
+        return (sel?: Record<string, unknown>) => {
+          if (sel && Object.keys(sel).join() === fields) throw overloaded()
+          return Reflect.apply(target[method], target, [sel])
+        }
+      },
+    }) as typeof real
+  }
+  /** Real D1, except that every delete fails as an overloaded D1 does. */
+  const failingDelete = () => {
+    const real = db()
+    return new Proxy(real, {
+      get: (target, prop) => (prop === 'delete' ? () => { throw overloaded() } : Reflect.get(target, prop)),
+    }) as typeof real
+  }
+
+  it("joins the conversation the job's failure alerts opened", async () => {
+    await seedSession(NJ)
+    const started = await startOf('ls-sync')
+    await sendRecoveries(env as any, db(), JOB, [rec])
+    expect(sent()[0].headers).toEqual(await jobThreadHeaders(env as any, 'ls-sync', started))
+  })
+
+  it('ends the conversation when nothing in the job is still failing, so the next alert starts a new one', async () => {
+    await seedSession(NJ)
+    const started = await startOf('ls-sync')
+    await sendRecoveries(env as any, db(), JOB, [rec])
+    expect(await startOf('ls-sync', later())).not.toBe(started)
+  })
+
+  it('keeps the conversation open while another session in the job is still failing', async () => {
+    await seedSession(NJ)
+    await seedSession(US)
+    await logRow(US, 0, 'failed')
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(T0 + 2 * H)
+    try {
+      const started = await startOf('ls-sync')
+      await sendRecoveries(env as any, db(), JOB, [rec])
+      expect(sent()[0].text).toMatch(/still failing/i)
+      expect(await startOf('ls-sync', later())).toBe(started)
+    } finally { vi.useRealTimers() }
+  })
+
+  it("keeps the conversation open when it can't read which sessions are still failing", async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    await seedSession(NJ)
+    const started = await startOf('ls-sync')
+    await sendRecoveries(env as any, failingRead('selectDistinct', 'sessionId,state,sessionName'), JOB, [rec])
+    expect(sent()).toHaveLength(1)
+    expect(await startOf('ls-sync', later())).toBe(started)
+  })
+
+  it("still sends the resolved email, and lets the run go on, when the conversation can't be ended", async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    await seedSession(NJ)
+    const started = await startOf('ls-sync')
+    await expect(sendRecoveries(env as any, failingDelete(), JOB, [rec])).resolves.toBeUndefined()
+    expect(sent()).toHaveLength(1)
+    expect(sent()[0].headers).toEqual(await jobThreadHeaders(env as any, 'ls-sync', started))
+  })
+
+  it('starts a conversation of its own when no alert opened one', async () => {
+    await seedSession(NJ)
+    await sendRecoveries(env as any, db(), JOB, [rec])
+    expect(sent()[0].headers['References']).toMatch(/^<alert\.ls-sync\./)
+  })
+
+  describe('for a calendar job', () => {
+    const WARM = { job: 'govinfo-body-events', providerId: 'govinfo', name: 'GovInfo Bill Status' }
+    const streak = (state: string) => ({
+      key: `warm-streak:${WARM.job}:${state}`,
+      value: JSON.stringify({ since: T0, last: T0 + 5 * H, failed: 6, due: T0 + 9 * H, alerted: true }),
+    })
+
+    it('joins the open conversation and ends it when the last failing state warms', async () => {
+      await db().insert(settings).values(streak('US'))
+      const started = await startOf(WARM.job)
+      await warmEnded(env as any, db(), WARM, 'US', true)
+      expect(sent()[0].subject).toContain(`resolved: ${WARM.job}`)
+      expect(sent()[0].headers).toEqual(await jobThreadHeaders(env as any, WARM.job, started))
+      expect(await startOf(WARM.job, later())).not.toBe(started)
+    })
+
+    it('keeps the conversation open while another state still fails to warm', async () => {
+      await db().insert(settings).values([streak('US'), streak('VA')])
+      const started = await startOf(WARM.job)
+      await warmEnded(env as any, db(), WARM, 'US', true)
+      expect(sent()).toHaveLength(1)
+      expect(await startOf(WARM.job, later())).toBe(started)
+    })
+
+    it("still sends the resolved email, and keeps the conversation open, when it can't read whether another state still fails", async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      await db().insert(settings).values(streak('US'))
+      const started = await startOf(WARM.job)
+      await warmEnded(env as any, failingRead('select', 'key'), WARM, 'US', true)
+      expect(sent()).toHaveLength(1)
+      expect(sent()[0].subject).toContain(`resolved: ${WARM.job}`)
+      // It joined the conversation, so only the still-failing read failed.
+      expect(sent()[0].headers).toEqual(await jobThreadHeaders(env as any, WARM.job, started))
+      expect(await startOf(WARM.job, later())).toBe(started)
+    })
+
+    it('ends the conversation when the job stops warming its only failing state', async () => {
+      await db().insert(settings).values(streak('US'))
+      const started = await startOf(WARM.job)
+      await forgetWarmStreaks(env as any, db(), WARM, [])
+      expect(sent()[0].headers).toEqual(await jobThreadHeaders(env as any, WARM.job, started))
+      expect(await startOf(WARM.job, later())).not.toBe(started)
+    })
+
+    it("still sends the email when the job stops warming a failing state, even if it can't read the rest", async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      await db().insert(settings).values(streak('US'))
+      await forgetWarmStreaks(env as any, failingRead('select', 'key'), WARM, [])
+      expect(sent()).toHaveLength(1)
+      expect(sent()[0].subject).toContain(`resolved: ${WARM.job}`)
+    })
   })
 })

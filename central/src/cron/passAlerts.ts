@@ -1,6 +1,7 @@
 import { and, asc, eq, gte, isNull, like, notInArray, sql } from 'drizzle-orm'
 import { sessions, sessionSyncLog, settings } from '../db/schema'
-import { escHtml, reportJobFailure, sendOpsAlert } from '../lib/jobAlert'
+import { escHtml, joinJobThread, reportJobFailure, sendOpsAlert } from '../lib/jobAlert'
+import { closeAlertThread } from '../lib/alertThread'
 import { dbTimeAgo, nowDb, toDb } from '../lib/dbTime'
 import { PRODUCT_NAME } from '../../../shared/brand'
 import type { Env, Db } from '../types'
@@ -162,9 +163,11 @@ export async function finishPass(db: Db, session: StreakSession): Promise<Recove
 /**
  * The sessions of a job whose latest pass failed and that haven't synced since,
  * for a recovery email to name. Only failures from the last two days count, so
- * a session that stopped syncing long ago isn't listed forever. Best-effort.
+ * a session that stopped syncing long ago isn't listed forever. Best-effort:
+ * null when they can't be read, so the email lists none and the job's
+ * conversation stays open.
  */
-async function stillFailing(db: Db, providerId: string, recovered: Recovery[]): Promise<{ state: string; sessionName: string }[]> {
+async function stillFailing(db: Db, providerId: string, recovered: Recovery[]): Promise<{ state: string; sessionName: string }[] | null> {
   try {
     const rows = await db.selectDistinct({ sessionId: sessions.sessionId, state: sessions.state, sessionName: sessions.sessionName })
       .from(sessionSyncLog)
@@ -179,16 +182,20 @@ async function stillFailing(db: Db, providerId: string, recovered: Recovery[]): 
     return rows.filter(r => !done.has(r.sessionId))
   } catch (err) {
     console.error(`[sync] couldn't read which sessions are still failing:`, errorText(err), err)
-    return []
+    return null
   }
 }
 
 /**
  * A `resolved: <job>` email: an intro, a list of lines, and, when there are
  * any, a second list under a heading. Both recovery emails go through it, so
- * they read alike.
+ * they read alike. It joins the conversation the job's failure alerts started
+ * (lib/alertThread.ts). Once it has gone out, it ends that conversation if
+ * `allClear` finds nothing in the job still failing, so the job's next failure
+ * starts a new one. That check runs last, so a read that fails can't stop the
+ * email: it only leaves the conversation open.
  */
-async function sendResolved(env: Env, job: string, intro: string, lines: string[], more?: { heading: string; textHeading: string; lines: string[] }): Promise<void> {
+async function sendResolved(env: Env, db: Db, { job, allClear }: { job: string; allClear: () => Promise<boolean> }, intro: string, lines: string[], more?: { heading: string; textHeading: string; lines: string[] }): Promise<void> {
   const bullets = (items: string[]) => items.map(l => `• ${l}`).join('\n')
   const text = `${intro}\n\n${bullets(lines)}\n` + (more?.lines.length ? `\n${more.textHeading}\n\n${bullets(more.lines)}\n` : '')
   const list = (items: string[]) => `<ul style="margin: 0 0 16px; padding-left: 20px; font-size: 14px; line-height: 1.7; color: #0f172a;">${items.map(l => `<li>${escHtml(l)}</li>`).join('')}</ul>`
@@ -199,7 +206,14 @@ async function sendResolved(env: Env, job: string, intro: string, lines: string[
       ${more?.lines.length ? `<p style="margin: 0 0 8px; font-size: 15px; line-height: 1.6; color: #334155;">${more.heading}</p>${list(more.lines)}` : ''}
     </div>
   `
-  await sendOpsAlert(env, { subject: `[${PRODUCT_NAME}] resolved: ${job}`, text, html })
+  const thread = await joinJobThread(env, db, job)
+  await sendOpsAlert(env, { subject: `[${PRODUCT_NAME}] resolved: ${job}`, text, html, headers: thread?.headers })
+  if (!thread) return
+  try {
+    if (await allClear()) await closeAlertThread(db, job, thread.thread)
+  } catch (err) {
+    console.error(`[${job}] couldn't tell whether the job's alert conversation is over, so it stays open:`, errorText(err), err)
+  }
 }
 
 /**
@@ -215,9 +229,9 @@ export async function sendRecoveries(env: Env, db: Db, { job, providerId, name }
   const failing = await stillFailing(db, providerId, recoveries)
   const lines = recoveries.map(({ session, failed, hours, since }) =>
     `${session.state} ${session.sessionName}: synced after ${failed} failed passes over ${hours} hours, failing since ${since.slice(0, 16)} UTC`)
-  const stillLines = failing.map(s => `${s.state} ${s.sessionName}`)
+  const stillLines = (failing ?? []).map(s => `${s.state} ${s.sessionName}`)
   const intro = `${name} sync (${job}): ${recoveries.length} ${recoveries.length === 1 ? 'session' : 'sessions'} synced again.`
-  await sendResolved(env, job, intro, lines, {
+  await sendResolved(env, db, { job, allClear: async () => failing !== null && failing.length === 0 }, intro, lines, {
     heading: '<strong>Still failing</strong> in the same job:', textHeading: `Still failing: ${stillLines.length} in the same job`, lines: stillLines,
   })
 }
@@ -296,6 +310,11 @@ async function takeWarmStreaks(db: Db, where: ReturnType<typeof and>): Promise<{
   return rows.map(r => ({ state: r.key.slice(r.key.lastIndexOf(':') + 1), streak: parseWarmStreak(r.value) }))
 }
 
+/** Whether any state the job warms still has a streak of failed warms. */
+async function warmStillFailing(db: Db, job: string): Promise<boolean> {
+  return !!(await db.select({ key: settings.key }).from(settings).where(like(settings.key, `${WARM_STREAK}${job}:%`)).limit(1).get())
+}
+
 /** The line a warm's resolved email gives a streak that alerted. */
 const warmLine = (name: string, state: string, s: WarmStreak, what: string) =>
   `${name} ${state}: ${what} after ${s.failed} failed passes over ${hoursOf(s.last - s.since)} hours, failing since ${toDb(new Date(s.since)).slice(0, 16)} UTC`
@@ -310,7 +329,8 @@ export async function warmEnded(env: Env, db: Db, { job, name }: SyncJob, state:
   try {
     const [taken] = await takeWarmStreaks(db, eq(settings.key, warmStreakKey(job, state)))
     if (!ok || !taken?.streak?.alerted) return
-    await sendResolved(env, job, `${name} calendar (${job}): warming the cache works again.`, [warmLine(name, state, taken.streak, 'warmed its calendar cache')])
+    await sendResolved(env, db, { job, allClear: async () => !(await warmStillFailing(db, job)) },
+      `${name} calendar (${job}): warming the cache works again.`, [warmLine(name, state, taken.streak, 'warmed its calendar cache')])
   } catch (err) {
     console.error(`[${job}] ${state}: couldn't end the warm's failed streak:`, errorText(err), err)
   }
@@ -333,7 +353,10 @@ export async function forgetWarmStreaks(env: Env, db: Db, { job, name }: SyncJob
     const lines = taken.flatMap(({ state, streak }) => streak?.alerted
       ? [warmLine(name, state, streak, 'no longer warmed (the provider owns the state now, or no active instance covers it), so its alerts stop,')]
       : [])
-    if (lines.length > 0) await sendResolved(env, job, `${name} calendar (${job}): no longer warming a cache whose warming failed.`, lines)
+    if (lines.length > 0) {
+      await sendResolved(env, db, { job, allClear: async () => !(await warmStillFailing(db, job)) },
+        `${name} calendar (${job}): no longer warming a cache whose warming failed.`, lines)
+    }
   } catch (err) {
     console.error(`[${job}] couldn't drop the warm streaks of states it no longer warms:`, errorText(err), err)
   }

@@ -52,7 +52,8 @@ describe('the outage alert', () => {
     const db = await trip()
     await runEmailHealth(jobEnv(), db, NOW)
     expect(mail.send).toHaveBeenCalledOnce()
-    expect(Object.keys(mail.send.mock.calls[0][0]).sort()).toEqual(['html', 'purpose', 'subject', 'text', 'to'])
+    // The headers are content too: they put the alert in its outage's conversation.
+    expect(Object.keys(mail.send.mock.calls[0][0]).sort()).toEqual(['headers', 'html', 'purpose', 'subject', 'text', 'to'])
   })
 
   it('is sent the same way when there is no other provider', async () => {

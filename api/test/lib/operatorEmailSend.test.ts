@@ -79,17 +79,21 @@ describe('job alerts', () => {
     expect(cf.sent).toHaveLength(1)
   })
 
+  // A failed send goes once more without its conversation headers, in case a
+  // provider refused them, so each provider is tried twice.
   it('does not throw when every provider is down, and says so in the log', async () => {
     const cf = fakeBinding('down')
     stubResend('down', unauthorized)
     await expect(fail(bothProviders(cf.binding))).resolves.toBeUndefined()
-    expect(cf.sent).toHaveLength(1)
+    expect(cf.sent).toHaveLength(2)
   })
 
-  it('makes one attempt and does not throw with only one provider configured and down', async () => {
+  it('tries once with its conversation headers and once without, and does not throw, with only one provider configured and down', async () => {
     const cf = fakeBinding('down')
     await expect(fail(bothProviders(cf.binding, { RESEND_API_KEY: undefined }))).resolves.toBeUndefined()
-    expect(cf.sent).toHaveLength(1)
+    expect(cf.sent).toHaveLength(2)
+    expect(cf.sent[0].headers?.References).toMatch(/^<alert\.digest\./)
+    expect(cf.sent[1].headers).toBeUndefined()
   })
 })
 

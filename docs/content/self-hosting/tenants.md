@@ -319,7 +319,7 @@ npx wrangler secret put TURNSTILE_SECRET_KEY --env [slug]
 >
 > **Which emails fall back.** Sign-in, account, notification, and operator email falls back. That covers login and invite links, the email-change emails, mention and reply emails, and mail to operators and admins (feedback, invite-bounce notices, job alerts, and sample emails). Digests and week-ahead mail never do, so an outage on the first provider can't push a whole recipient list onto the second and use up its quota. An address that can't receive mail (it bounced or reported spam) is never retried through the other provider either.
 >
-> The hourly email-health check alerts `ALERT_EMAILS` through the healthy provider first, then the failing one. With only one provider configured, there is no fallback, and the alert goes through the same provider that is failing. `EMAIL_FROM` must be verified on both providers for fallback to work.
+> The hourly email-health check alerts `ALERT_EMAILS` through the healthy provider first, then the failing one. An outage's alerts, from the first to the recovery, arrive as one email conversation in Outlook and Apple Mail. A scheduled job that fails (the digest or the week-ahead email) emails `ALERT_EMAILS` too, as `cron failed: <job> on <host>`, and `resolved: <job> on <host>` once it next runs and does its work, also in one conversation. With only one provider configured, there is no fallback, and the alert goes through the same provider that is failing. `EMAIL_FROM` must be verified on both providers for fallback to work.
 
 ## Step 7: Bind the tenant on central
 

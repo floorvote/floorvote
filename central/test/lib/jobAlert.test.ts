@@ -1,5 +1,16 @@
+import { env } from 'cloudflare:test'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { runJob, reportJobFailure, sendOpsAlert } from '../../src/lib/jobAlert'
+import { PRODUCT_NAME } from '../../../shared/brand'
+import { clearDb } from '../helpers/migrations'
+
+// The real conversation code runs against real D1; a test that needs it to
+// fail makes this one call reject, as D1 does when it's overloaded.
+vi.mock('../../src/lib/alertThread', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/lib/alertThread')>()
+  return { ...actual, joinAlertThread: vi.fn(actual.joinAlertThread) }
+})
+import { joinAlertThread } from '../../src/lib/alertThread'
 import { fakeBinding, stubResend, bothBindingFirst, bothResendFirst, RESEND_KEY } from '../../../shared/emailTestKit'
 
 // jobAlert goes through the shared sender with the operator purpose. These
@@ -293,5 +304,70 @@ describe('central job failures keep the reason', () => {
     const resend = stubResend('ok')
     await reportJobFailure(resendOnly(), { job: 'ls-sync', error: 'plain string' })
     expect(resend.calls[0].body.text).toContain('Error: plain string')
+  })
+})
+
+describe('central job failures: one conversation per outage', () => {
+  // With central's database, each failure email carries its job's conversation
+  // headers (central/test/lib/alertThread.test.ts covers when one starts).
+  const withDb = (over: Record<string, unknown> = {}) => resendOnly({ DB: env.DB, EMAIL_FROM: 'alerts@example.com', ...over })
+  beforeEach(async () => { await clearDb() })
+
+  it("carries the job's conversation headers, named by the failure subject", async () => {
+    const resend = stubResend('ok')
+    await reportJobFailure(withDb(), { job: 'ls-sync', error: new Error('x') })
+    const h = resend.calls[0].body.headers
+    expect(h['References']).toMatch(/^<alert\.ls-sync\.[a-z0-9]+@example\.com>$/)
+    expect(h['In-Reply-To']).toBe(h['References'])
+    expect(h['Thread-Topic']).toBe(`[${PRODUCT_NAME}] cron failed: ls-sync`)
+    expect(h['Thread-Index']).toMatch(/^[A-Za-z0-9+/]{30}==$/)
+  })
+
+  it("puts a job's repeated failures in one conversation", async () => {
+    const resend = stubResend('ok')
+    await reportJobFailure(withDb(), { job: 'ls-sync', error: new Error('x') })
+    await runJob(withDb(), 'ls-sync', async () => { throw new Error('y') })
+    expect(resend.calls).toHaveLength(2)
+    expect(resend.calls[0].body.headers?.References).toMatch(/^<alert\.ls-sync\./)
+    expect(resend.calls[1].body.headers).toEqual(resend.calls[0].body.headers)
+  })
+
+  it('gives each job its own conversation', async () => {
+    const resend = stubResend('ok')
+    await reportJobFailure(withDb(), { job: 'ls-sync', error: new Error('x') })
+    await reportJobFailure(withDb(), { job: 'mga-sync', error: new Error('x') })
+    expect(resend.calls[1].body.headers['References']).not.toBe(resend.calls[0].body.headers['References'])
+  })
+
+  it('still sends, with no conversation headers, when it has no database', async () => {
+    const resend = stubResend('ok')
+    await reportJobFailure(resendOnly(), { job: 'ls-sync', error: new Error('x') })
+    expect(resend.calls).toHaveLength(1)
+    expect(resend.calls[0].body.headers).toBeUndefined()
+  })
+
+  it("still sends, with no conversation headers, when the conversation can't be recorded", async () => {
+    const resend = stubResend('ok')
+    vi.mocked(joinAlertThread).mockRejectedValueOnce(new Error('D1_ERROR: D1 DB is overloaded.'))
+    await reportJobFailure(withDb(), { job: 'ls-sync', error: new Error('x') })
+    expect(resend.calls).toHaveLength(1)
+    expect(resend.calls[0].body.headers).toBeUndefined()
+  })
+
+  it('sends the alert once more, without its conversation headers, when a provider refuses it with them', async () => {
+    const cf = fakeBinding(m => (m.headers ? 'down' : 'ok'))
+    const cfOnly = { ALERT_EMAILS: 'a@e.com', EMAIL_PROVIDER: 'cloudflare', EMAIL: cf.binding, DB: env.DB, EMAIL_FROM: 'alerts@example.com' } as any
+    await reportJobFailure(cfOnly, { job: 'ls-sync', error: new Error('x') })
+    expect(cf.sent).toHaveLength(2)
+    expect(cf.delivered).toHaveLength(1)
+    expect(cf.delivered[0].headers).toBeUndefined()
+  })
+
+  it("takes the root's domain from EMAIL_FROM only when it's a plain host name", async () => {
+    const resend = stubResend('ok')
+    await reportJobFailure(withDb({ EMAIL_FROM: 'alerts@example.org ' }), { job: 'ls-sync', error: new Error('x') })
+    await reportJobFailure(withDb({ EMAIL_FROM: 'alerts@exämple.org' }), { job: 'mga-sync', error: new Error('x') })
+    expect(resend.calls[0].body.headers['References']).toMatch(/@example\.org>$/)
+    expect(resend.calls[1].body.headers['References']).toMatch(/@example\.com>$/)
   })
 })

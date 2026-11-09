@@ -2114,6 +2114,29 @@ describe('before GovInfo owns US (#913)', () => {
       expect(alerts()).toHaveLength(1)
     })
 
+    it('puts an outage\'s alerts and its recovery in one conversation, and the next outage in a new one', async () => {
+      /** The conversation root each of the job's emails with this subject points at. */
+      const roots = (subject: string) => mail.sent
+        .filter(m => String(m.subject).includes(`${subject}: govinfo-body-events`))
+        .map(m => (m as { headers?: Record<string, string> }).headers?.References)
+      revoked()
+      for (let h = 0; h <= 8; h++) await tickAt(h)
+      feed.override = {}
+      await tickAt(9)
+      revoked()
+      for (let h = 10; h <= 14; h++) await tickAt(h)
+      const failed = roots('cron failed')
+      const resolved = roots('resolved')
+      // Alerts at 4 and 8 hours, the recovery at 9, and the next streak's first alert at 14.
+      expect(failed).toHaveLength(3)
+      expect(resolved).toHaveLength(1)
+      expect(failed[0]).toMatch(/^<alert\.govinfo-body-events\.[a-z0-9]+@/)
+      expect(failed[1]).toBe(failed[0])
+      expect(resolved[0]).toBe(failed[0])
+      expect(failed[2]).toMatch(/^<alert\.govinfo-body-events\./)
+      expect(failed[2]).not.toBe(failed[0])
+    })
+
     it('sends no recovery email for a warm that succeeds before its failures alerted', async () => {
       revoked()
       for (let h = 0; h < 3; h++) await tickAt(h)

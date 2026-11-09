@@ -31,7 +31,7 @@ describe('runDigest', () => {
     await addEvent(db, billId, 'bill_updated', JSON.stringify({ changes: [{ changeType: 'status_change', oldValue: 'Introduced', newValue: 'Engrossed', detail: null }] }))
     const result = await runDigest(env as any, db)
     expect(f).not.toHaveBeenCalled()
-    expect(result).toEqual({ ok: true, recipients: 0, sent: 0, failed: 0 })
+    expect(result).toEqual({ ok: true, recipients: 0, sent: 0, failed: 0, skipped: 'off' })
   })
 
   it('sends a batch when enabled + priority bill has activity + active opted-in recipient', async () => {
@@ -151,7 +151,7 @@ describe('runDigest', () => {
     const f = vi.fn(); vi.stubGlobal('fetch', f)
     const result = await runDigest(env as any, db)
     expect(f).not.toHaveBeenCalled()
-    expect(result).toEqual({ ok: true, recipients: 0, sent: 0, failed: 0 })
+    expect(result).toEqual({ ok: true, recipients: 0, sent: 0, failed: 0, skipped: 'not-today' })
     const stamp = await db.select().from(associationConfig).where(eq(associationConfig.key, 'last_digest_at')).get()
     expect(stamp).toBeUndefined()           // never stamped → window preserved
   })

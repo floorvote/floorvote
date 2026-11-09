@@ -34,6 +34,12 @@ api/src/lib/signInLink.ts     sendSignInLink(): reads the org name, builds the s
 api/src/lib/feedbackEmail.ts  renderFeedbackEmail(): the feedback email the route sends as operator mail
 api/src/lib/sampleEmails.ts   renderSampleEmail() registry + sendSampleEmail()  ← single source for QA + previews + tests
 shared/emailSender.ts         createSender(): send a message by purpose (see "Sending" below)
+shared/alertThread.ts         alertThreadHeaders(): the In-Reply-To, References, Thread-Index, and Thread-Topic that make
+                              a run of alerts one conversation (central's job alerts with their resolved email, kept
+                              open per job in central/src/lib/alertThread.ts, and an outage's email-health alerts)
+api/src/lib/alertThread.ts    an instance's open conversation per job (job_alert_threads). runJob (lib/jobAlert.ts) joins
+                              it on a failure, and ends it with a resolved email after a run that did its work, or
+                              quietly after a run that found the job switched off
 shared/emailProviders.ts      the Resend and Cloudflare send_email adapters
 api/src/lib/emailHealthRecorder.ts
                               the API's health recorder: email_send_stats and Resend usage
