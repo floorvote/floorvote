@@ -499,7 +499,7 @@ export function ViewSwitcher({
                     const on = v.subscribed === true
                     const when = `your ${digestControl.cadence} digest`
                     return (
-                      <HoverTooltip text={`Monitor bills in this view via your ${digestControl.cadence} email digest`}>
+                      <HoverTooltip text={`${on ? 'Stop monitoring' : 'Monitor'} bills in this view via your ${digestControl.cadence} email digest`}>
                         <button
                           onClick={() => clickEnvelope(v)}
                           aria-label={`${on ? `Remove "${v.name}" from` : `Include "${v.name}" in`} ${when}`}
