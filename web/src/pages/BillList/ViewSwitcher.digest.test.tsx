@@ -6,7 +6,7 @@ import * as api from '../../lib/api'
 
 // #449: each saved view row ends with an envelope that includes the view in the
 // member's email digest. Outlined when off, filled when on, in a column after the
-// count. Its hover says what it does and how many bills the view holds now.
+// count. Its hover says what a click does: monitor the view, or stop monitoring it.
 
 const demoState = vi.hoisted(() => ({ demoMode: false, settled: true }))
 vi.mock('../../context/DemoContext', () => ({
@@ -92,28 +92,60 @@ describe('ViewSwitcher: include a view in the digest', () => {
     expect(widths[0]).toBe(widths[1])
   })
 
-  it('says on hover that the envelope monitors the view through the digest, whether or not it is included', async () => {
+  it('says on hover what a click does: monitor a view not included, stop monitoring one that is', async () => {
     renderSwitcher({})
     await waitFor(() => expect(screen.getByText('42')).toBeInTheDocument())
     await userEvent.hover(envelope('Clerk bills'))
     expect(await screen.findByText('Monitor bills in this view via your daily email digest')).toBeInTheDocument()
+    expect(screen.queryByText(/^Stop monitoring/)).not.toBeInTheDocument()
     await userEvent.unhover(envelope('Clerk bills'))
     await userEvent.hover(envelope('Auditor bills'))
-    expect(await screen.findByText('Monitor bills in this view via your daily email digest')).toBeInTheDocument()
+    expect(await screen.findByText('Stop monitoring bills in this view via your daily email digest')).toBeInTheDocument()
+    expect(screen.queryByText(/^Monitor bills/)).not.toBeInTheDocument()
   })
 
-  it('follows the instance cadence in the envelope hover and the name', async () => {
+  it('changes the hover as soon as the view is included or removed, while the pointer is still on the envelope', async () => {
+    const { rerender, onToggle, onTurnOn } = renderSwitcher({})
+    const props = (views: SavedView[]) => (
+      <ViewSwitcher
+        views={views} currentSearch="" isAdmin={false}
+        onApply={vi.fn()} onRename={vi.fn()} onDelete={vi.fn()} onReorder={vi.fn()} onOverwrite={vi.fn()}
+        digest={{ cadence: 'daily', memberOn: true, onToggle, onTurnOn }}
+      />
+    )
+    await userEvent.hover(envelope('Clerk bills'))
+    expect(await screen.findByText('Monitor bills in this view via your daily email digest')).toBeInTheDocument()
+    await userEvent.click(envelope('Clerk bills'))
+    expect(onToggle).toHaveBeenCalledWith('v1', true)
+    rerender(props(VIEWS.map(v => v.id === 'v1' ? { ...v, subscribed: true } : v)))
+    expect(await screen.findByText('Stop monitoring bills in this view via your daily email digest')).toBeInTheDocument()
+    expect(screen.queryByText(/^Monitor bills/)).not.toBeInTheDocument()
+    await userEvent.click(envelope('Clerk bills'))
+    expect(onToggle).toHaveBeenCalledWith('v1', false)
+    rerender(props(VIEWS))
+    expect(await screen.findByText('Monitor bills in this view via your daily email digest')).toBeInTheDocument()
+    expect(screen.queryByText(/^Stop monitoring/)).not.toBeInTheDocument()
+  })
+
+  it('follows the instance cadence in the envelope hover and the name, on and off', async () => {
     renderSwitcher({ cadence: 'weekly' })
     await waitFor(() => expect(screen.getByText('42')).toBeInTheDocument())
     expect(envelope('Clerk bills')).toHaveAccessibleName('Include "Clerk bills" in your weekly digest')
     await userEvent.hover(envelope('Clerk bills'))
     expect(await screen.findByText('Monitor bills in this view via your weekly email digest')).toBeInTheDocument()
+    await userEvent.unhover(envelope('Clerk bills'))
+    expect(envelope('Auditor bills')).toHaveAccessibleName('Remove "Auditor bills" from your weekly digest')
+    await userEvent.hover(envelope('Auditor bills'))
+    expect(await screen.findByText('Stop monitoring bills in this view via your weekly email digest')).toBeInTheDocument()
   })
 
-  it('ends the envelope hover with no period, like the app\'s other tooltips', async () => {
+  it('ends the envelope hover with no period, like the app\'s other tooltips, on and off', async () => {
     renderSwitcher({})
     await userEvent.hover(envelope('Clerk bills'))
     expect((await screen.findByText(/^Monitor bills in this view/)).textContent).not.toMatch(/[.]$/)
+    await userEvent.unhover(envelope('Clerk bills'))
+    await userEvent.hover(envelope('Auditor bills'))
+    expect((await screen.findByText(/^Stop monitoring bills in this view/)).textContent).not.toMatch(/[.]$/)
   })
 
   it('no longer puts the bill count on the envelope hover', async () => {
