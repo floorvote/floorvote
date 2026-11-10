@@ -1,5 +1,5 @@
 import { defineConfig } from 'vitest/config'
-import { cloudflarePool, cloudflareTest } from '@cloudflare/vitest-pool-workers'
+import { cloudflarePool, cloudflareTest } from '@cloudflare/vitest-plugin'
 
 export default defineConfig({
   plugins: [

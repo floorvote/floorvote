@@ -55,7 +55,7 @@ Each of these is explained in full on the docs site: **[What can FloorVote do?](
 | Email | Cloudflare Email Service, with Resend available as a fallback |
 | AI | Google Gemini 2.5 Flash via Cloudflare AI Gateway. *Chosen for its affordability, accuracy, and ability to handle long PDFs, which is how many bills arrive. The default lives in [`api/src/lib/llm.ts`](api/src/lib/llm.ts), and the `GEMINI_MODEL` and `GEMINI_THINKING_BUDGET` vars override it per environment.* |
 | Legislative data | LegiScan |
-| Testing | Vitest with `@cloudflare/vitest-pool-workers`; Vitest + jsdom for the frontend |
+| Testing | Vitest with `@cloudflare/vitest-plugin`; Vitest + jsdom for the frontend |
 
 ---
 

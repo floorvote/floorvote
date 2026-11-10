@@ -3,7 +3,7 @@
  * No such harness exists for lib functions in this codebase — the existing
  * lib tests (calendarIcsBody.test.ts, calendarImport.test.ts) are all pure
  * unit tests. The route tests in api/src/routes/ use
- * @cloudflare/vitest-pool-workers with a real D1 binding, but that pattern
+ * @cloudflare/vitest-plugin with a real D1 binding, but that pattern
  * hasn't been extended to lib functions yet.
  *
  * TODO: once a lib-level D1 test harness is established, cover:
