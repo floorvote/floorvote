@@ -23,14 +23,14 @@
     "web"
   ],
   "devDependencies": {
-    "@material-symbols/svg-400": "^0.48.2",
+    "@material-symbols/svg-400": "^0.48.3",
     "@resvg/resvg-js": "^2.6.2",
-    "concurrently": "^10.0.6",
+    "concurrently": "^10.0.7",
     "fflate": "^0.8.3",
     "mermaid": "^11.17.2",
-    "playwright": "^1.64.1",
+    "playwright": "^1.65.0",
     "tsx": "^4.23.15",
-    "vite": "^8.3.5",
+    "vite": "^8.3.6",
     "vitepress": "^1.6.4",
     "vitepress-plugin-mermaid": "^2.0.17",
     "wrangler": "^4.156.0"
