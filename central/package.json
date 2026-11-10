@@ -24,7 +24,7 @@
   "dependencies": {
     "drizzle-orm": "^0.45.4",
     "fflate": "^0.8.3",
-    "hono": "^4.13.14"
+    "hono": "^4.13.17"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.6.0",
