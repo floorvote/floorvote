@@ -4,7 +4,7 @@ import { sql } from 'drizzle-orm'
 import { getDb } from '../../db/client'
 import { bills, billCommittees, billSubjects } from '../../db/schema'
 import type { AppEnv } from '../../types'
-import { billsAs, isCheapFilter, loadMyBillsInGroups, canOptimize } from './query'
+import { billsAs, isCheapFilter, loadMyBillsInGroups, loadSearchIds, canOptimize } from './query'
 import { buildBillsFilter, buildFilterParts, countFacets, emptyFacets, facetsResponse, makeFacetContext, FACET_FILTERS, type FacetSelection } from './filterTable'
 import { billStatesForWildcard } from '../../lib/billStates'
 import { getNewMatchMinRelevance } from '../../lib/newMatch'
@@ -146,17 +146,19 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       const isAdmin = currentUser.role === 'admin' || currentUser.role === 'owner'
       // Threshold is only needed for the admin count or when the worklist filter is active.
       // The member's bills are read once for the request: the my bills scope (when it is on) and the count beside the
-      // facets both use them, alongside the threshold's read.
-      const [newMatchMinRelevance, mine] = await Promise.all([
+      // facets both use them, alongside the threshold's read. So are the bills the search matches (`loadSearchIds`):
+      // every count then tests them by key, where each carrying the search's LIKEs read every bill.
+      const [newMatchMinRelevance, mine, searchIds] = await Promise.all([
         (isAdmin || bf.newMatches) ? getNewMatchMinRelevance(db) : Promise.resolve(0),
         loadMyBillsInGroups(db, currentUser.id),
+        bf.search ? loadSearchIds(db, bf.search) : Promise.resolve(undefined),
       ])
 
       // The facets' filters are the list's own, built once in query.ts, so the two can't drift: each is a
       // condition on one bill, and a companion group meets it when a bill of it does (facetCounts.ts).
       // Bill facts join by the group operator, and the scopes (search, my bills, unvoted, new matches,
       // drafts) always narrow. A dimension's facet leaves its own fact out.
-      const parts = await buildFilterParts(db, bf, { userId: currentUser.id, newMatchMinRelevance, myBillIds: mine })
+      const parts = await buildFilterParts(db, bf, { userId: currentUser.id, newMatchMinRelevance, myBillIds: mine, searchIds })
 
       // hasDrafts: does this TENANT have any draft at all, completely unfiltered
       // — no dimensional filters, no myBills/unvoted/newMatches scope. This is
