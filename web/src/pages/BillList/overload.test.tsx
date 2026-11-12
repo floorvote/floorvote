@@ -214,16 +214,16 @@ describe('the list when the database is overloaded', () => {
     await act(async () => { await router.navigate('/bills?priority=high') })
     expect(await screen.findByText('The list could not load. Retrying…')).toBeInTheDocument()
 
-    await act(async () => { net.held.forEach(resolve => resolve(json({ bills: [BILL], pagination: { page: 1, pageSize: 100, total: 1, totalPages: 1 } }))) })
+    await act(async () => { net.held.forEach(resolve => resolve(json({ bills: [{ ...BILL, id: 'b9', billNumber: 'HB 9', title: 'Stale bill' }], pagination: { page: 1, pageSize: 100, total: 1, totalPages: 1 } }))) })
     net.holdUnfiltered = false
     await advance(1_000)
-    expect(screen.queryByText('Default bill')).toBeNull()
+    expect(screen.queryByText('Stale bill')).toBeNull()
     expect(screen.getByText('The list could not load. Retrying…')).toBeInTheDocument()
 
     net.filteredOverloaded = false
     await advance(11_000)
     expect((await screen.findAllByText('Filtered bill')).length).toBeGreaterThan(0)
-    expect(screen.queryByText('Default bill')).toBeNull()
+    expect(screen.queryByText('Stale bill')).toBeNull()
     expect(screen.queryByText('The list could not load. Retrying…')).toBeNull()
   })
 

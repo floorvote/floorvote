@@ -325,6 +325,8 @@ export function BillList() {
     }
     try {
       const data = await apiFetch<{ bills: Bill[]; pagination: { page: number; pageSize: number; total: number; totalPages: number } }>(`/bills?${paramsStr}`)
+      // A newer request has started: this answer is for filters no longer showing, so it neither shows nor cancels the newer one's retry.
+      if (seq !== listSeqRef.current) return
       if (nextPage === 1 && !append) {
         billsListCache = { params: paramsStr, page: { bills: data.bills, total: data.pagination.total, totalPages: data.pagination.totalPages } }
       }
