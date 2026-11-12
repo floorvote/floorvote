@@ -45,7 +45,7 @@ describe('GET /bills query plans', () => {
     return planned
   }
   function pageOf(plans: Planned[]): Planned {
-    const page = plans.find(p => /ORDER BY/.test(p.sql) && /LIMIT/.test(p.sql))
+    const page = plans.find(p => /SELECT gk FROM/.test(p.sql) || (/ORDER BY/.test(p.sql) && /LIMIT/.test(p.sql)))
     expect(page, 'the list prepared no group page statement').toBeDefined()
     return page!
   }
@@ -119,10 +119,40 @@ describe('GET /bills query plans', () => {
     expect(page.plan, page.plan).not.toMatch(NO_TABLE_SCAN)
   })
 
-  it('sorts groups in one pass over the table and a single sorter', async () => {
-    // An unoptimizable sort reads every group once. The natural bill number is computed once per group, then sorted.
-    const page = pageOf(await listPlans('sort=bill&dir=asc&pageSize=20'))
-    expect((page.plan.match(/SCAN c\b(?! USING)/g) ?? []).length, page.plan).toBe(1)
+  it('sorts a filtered bill-number page in one pass over the table and a single sorter', async () => {
+    // A filtered bill-number sort reads every group the filter keeps once. The natural bill number is computed once per group, then sorted.
+    const page = pageOf(await listPlans('status=Passed&sort=bill&dir=asc&pageSize=20'))
+    expect((page.plan.match(/SCAN c\b(?! USING)/g) ?? []).length, page.plan).toBeLessThanOrEqual(1)
+    expect(page.plan, page.plan).toContain('MATERIALIZE k')
+  })
+
+  // The bill-number sort orders by the group's state first, so its page lies in the first states: a bill with no
+  // companions is in the first n groups only when its state is no later than the n-th such bill's. The route reads
+  // that state from the state index, then only the groups in states up to it (#1021).
+  const BILLS_READ_WHOLE = /(SCAN|SEARCH) (bills|c|g|m|b|s)\b(?! USING)/
+  for (const [dir, range] of [['asc', 'state<?'], ['desc', 'state>?']] as const) {
+    it(`reads a bill-number page (${dir}) from the first states' groups, never the whole table`, async () => {
+      const page = pageOf(await listPlans(`sort=bill&dir=${dir}&pageSize=20`))
+      expect(page.plan, page.plan).toContain(`SEARCH c USING INDEX idx_bills_state (${range})`)
+      expect(page.plan, page.plan).not.toMatch(BILLS_READ_WHOLE)
+      // The grouped bills are read from the group key index, the group's state from its covering entries.
+      expect(page.plan, page.plan).toContain('COVERING INDEX idx_bills_group_key')
+    })
+
+    it(`finds the cut state (${dir}) from the state index in a read of the first bills, with no sort`, async () => {
+      const stmts = await statementsFor(`sort=bill&dir=${dir}&pageSize=20`)
+      const probe = stmts.find(s => /ORDER BY s\.state/.test(s.sql))
+      expect(probe, 'the list prepared no read of the cut state').toBeDefined()
+      const probePlan = await plan(probe!)
+      expect(probePlan, probePlan).toContain('USING INDEX idx_bills_state')
+      expect(probePlan, probePlan).not.toContain('TEMP B-TREE')
+      expect(probePlan, probePlan).not.toMatch(BILLS_READ_WHOLE)
+    })
+  }
+
+  it('reads the whole table for a bill-number sort when the page reaches past the bills with no companions', async () => {
+    // 22,500 bills have no companions; a page past them can't be cut by state, and reads every group as before.
+    const page = pageOf(await listPlans('sort=bill&dir=asc&pageSize=200&page=120'))
     expect(page.plan, page.plan).toContain('MATERIALIZE k')
   })
 
