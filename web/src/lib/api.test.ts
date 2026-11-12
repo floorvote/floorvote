@@ -45,4 +45,26 @@ describe('apiFetch error handling', () => {
     window.removeEventListener(TERMS_NOT_ACCEPTED_EVENT, heard)
     expect(heard).not.toHaveBeenCalled()
   })
+
+  // D1's overload clears by itself within a ten-second window; the API says when to come back.
+  it('carries Retry-After, as milliseconds, on a 503', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: false, status: 503, headers: new Headers({ 'Retry-After': '10' }),
+      json: async () => ({ error: 'database_overloaded' }),
+    } as Response)))
+    const err = await apiFetch('/bills').catch(e => e) as ApiError
+    expect(err.status).toBe(503)
+    expect(err.retryAfterMs).toBe(10_000)
+  })
+
+  it('leaves retryAfterMs undefined when there is no Retry-After, or it is not a number of seconds', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: false, status: 503, headers: new Headers(), json: async () => ({ error: 'x' }),
+    } as Response)))
+    expect(((await apiFetch('/bills').catch(e => e)) as ApiError).retryAfterMs).toBeUndefined()
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: false, status: 503, headers: new Headers({ 'Retry-After': 'Wed, 21 Oct 2026 07:28:00 GMT' }), json: async () => ({ error: 'x' }),
+    } as Response)))
+    expect(((await apiFetch('/bills').catch(e => e)) as ApiError).retryAfterMs).toBeUndefined()
+  })
 })

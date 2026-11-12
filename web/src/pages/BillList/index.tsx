@@ -91,6 +91,9 @@ export function peekCustomFieldDefs(): CustomFieldDef[] {
   return cachedCustomFieldDefs ?? []
 }
 
+const LIST_RETRYING = 'The list could not load. Retrying…'
+const LIST_COULD_NOT_LOAD = 'The list could not load. Reload the page to try again.'
+
 // Loader-only cache warmer (billListLoader is the sole caller — nothing renders
 // through it), so the fetch goes through apiFetchForLoader: a 10s per-attempt
 // deadline instead of inheriting the server's own 30s, which is what a stalled
@@ -295,7 +298,16 @@ export function BillList() {
     resetDeps: [f.filter, sortCol, sortDir],
   })
 
-  const fetchBills = useCallback(async (nextPage: number, append: boolean) => {
+  // D1 answers an overloaded database with a 503 and the seconds to wait. The list says so and asks again once after
+  // that; a second failure is reported as any other.
+  const overloadRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (overloadRetryRef.current) clearTimeout(overloadRetryRef.current) }, [])
+  // The newest list request. An earlier one that fails late must not arm a retry over what a later one has shown.
+  const listSeqRef = useRef(0)
+
+  const fetchBills = useCallback(async (nextPage: number, append: boolean, isRetry = false): Promise<void> => {
+    if (overloadRetryRef.current) { clearTimeout(overloadRetryRef.current); overloadRetryRef.current = null }
+    const seq = ++listSeqRef.current
     const paramsStr = billsApiParams({ filter: f.filter, sortCol, sortDir }, nextPage, PAGE_SIZE)
     const hitCache = nextPage === 1 && !append && !hasFetchedOnce.current && billsListCache?.params === paramsStr
     if (hitCache) {
@@ -313,6 +325,8 @@ export function BillList() {
     }
     try {
       const data = await apiFetch<{ bills: Bill[]; pagination: { page: number; pageSize: number; total: number; totalPages: number } }>(`/bills?${paramsStr}`)
+      // A newer request has started: this answer is for filters no longer showing, so it neither shows nor cancels the newer one's retry.
+      if (seq !== listSeqRef.current) return
       if (nextPage === 1 && !append) {
         billsListCache = { params: paramsStr, page: { bills: data.bills, total: data.pagination.total, totalPages: data.pagination.totalPages } }
       }
@@ -322,11 +336,26 @@ export function BillList() {
         setAllBills(data.bills)
       }
       hasFetchedOnce.current = true
+      setError(null)
+      if (overloadRetryRef.current) { clearTimeout(overloadRetryRef.current); overloadRetryRef.current = null }
       setTotal(data.pagination.total)
       setHasMore(nextPage < data.pagination.totalPages)
       setPage(nextPage)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to load bills.')
+      if (err instanceof ApiError && err.status === 503 && err.retryAfterMs != null) {
+        if (seq !== listSeqRef.current) return
+        if (!isRetry) {
+          setError(LIST_RETRYING)
+          overloadRetryRef.current = setTimeout(() => {
+            overloadRetryRef.current = null
+            if (seq === listSeqRef.current) void fetchBills(nextPage, append, true)
+          }, err.retryAfterMs)
+        } else {
+          setError(LIST_COULD_NOT_LOAD)
+        }
+      } else {
+        setError(err instanceof ApiError ? err.message : 'Failed to load bills.')
+      }
     } finally {
       setLoading(false)
       setRefreshing(false)

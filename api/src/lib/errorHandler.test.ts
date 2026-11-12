@@ -18,6 +18,12 @@ function appWithHandler() {
   app.get('/wrapped', () => {
     throw new Error('Failed query: select 1', { cause: new Error('D1 DB is overloaded. Too many resources consumed within a 10 second window.') })
   })
+  app.get('/overloaded', () => {
+    throw new Error('D1_ERROR: D1 DB is overloaded. Too many resources consumed within a 10 second window.: SQLITE_ERROR')
+  })
+  app.get('/overloaded-wrapped', () => {
+    throw new Error('Failed query: select 1', { cause: new Error('D1 DB is overloaded. Too many resources consumed within a 10 second window.') })
+  })
   app.get('/teapot', () => { throw new HTTPException(418, { message: 'no coffee' }) })
   return app
 }
@@ -71,5 +77,35 @@ describe('errorHandler', () => {
     const spy = captureConsoleError()
     await appWithHandler().request('/teapot')
     expect(spy).not.toHaveBeenCalled()
+  })
+
+  // D1 answers a database that spent its CPU budget for the ten-second window (error 7429) with this message. It
+  // clears by itself, so the answer is a 503 a client may retry after the interval, not a broken 500.
+  it('answers D1\'s overload with a 503, Retry-After: 10, and a body naming it', async () => {
+    captureConsoleError()
+    const res = await appWithHandler().request('/overloaded')
+    expect(res.status).toBe(503)
+    expect(res.headers.get('Retry-After')).toBe('10')
+    expect(await res.json()).toMatchObject({ error: 'database_overloaded' })
+  })
+
+  it('finds the overload down the cause chain, where Drizzle hangs it', async () => {
+    captureConsoleError()
+    const res = await appWithHandler().request('/overloaded-wrapped')
+    expect(res.status).toBe(503)
+    expect(res.headers.get('Retry-After')).toBe('10')
+  })
+
+  it('still logs an overload as a statement', async () => {
+    const spy = captureConsoleError()
+    await appWithHandler().request('/overloaded-wrapped')
+    expect(spy.mock.calls[0][1]).toContain('D1 DB is overloaded')
+  })
+
+  it('keeps a 500 for other database errors, with no Retry-After', async () => {
+    captureConsoleError()
+    const res = await appWithHandler().request('/stall')
+    expect(res.status).toBe(500)
+    expect(res.headers.get('Retry-After')).toBeNull()
   })
 })
