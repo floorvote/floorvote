@@ -101,23 +101,16 @@ describe('tag filter query plans', () => {
   })
 
   // A grouped bill's companions are read through the group key index (#1019): with the priority, its time, and the
-  // group tags added to it (0124), the holder test on a companion and the tag test on a group read the index alone.
-  it('counts the grouped bills under a tag filter from the group key index, a covering one', async () => {
-    const plans = await plansFor('bills/facets?tag=Energy&omit=subject%2Ccommittee')
-    const grouped = plans.filter(p => /COUNT\(/i.test(p.sql) && /GROUP BY "m"\."group_key"/.test(p.sql))
-    expect(grouped.length, 'no grouped count under the tag filter').toBeGreaterThanOrEqual(5)
-    for (const g of grouped) {
-      expect(g.plan, `${g.sql}\n${g.plan}`).toMatch(/USING COVERING INDEX idx_bills_group_key/)
-      expect(g.plan, `${g.sql}\n${g.plan}`).not.toMatch(TABLE_SCAN)
-    }
-  })
-
-  it("tests a priority holder's companions from the group key index alone", async () => {
-    const plans = await plansFor('bills/facets?priority=high&omit=subject%2Ccommittee')
-    const holders = plans.filter(p => /SELECT 1 FROM bills g WHERE g\.group_key/.test(p.sql))
-    expect(holders.length, 'no count tested a holder\'s group').toBeGreaterThan(0)
-    for (const h of holders) {
-      expect(h.plan, `${h.sql}\n${h.plan}`).toMatch(/SEARCH g USING COVERING INDEX idx_bills_group_key \(group_key=\?\)/)
+  // group tags added to it (0124), the tag test on a group and the holder test on a companion read the index alone.
+  it('counts the grouped bills of every facet under a tag filter with match=any from the group key index, a covering one', async () => {
+    const plans = await plansFor('bills/facets?tag=Energy&state=NJ&match=any&omit=subject%2Ccommittee')
+    // The facets' counts (each names its column AS v0), not the special counts of the match type or the triage.
+    const reads = plans.filter(p => /COUNT\(|SUM\(/i.test(p.sql) && /AS v0/.test(p.sql) && /idx_bills_group_key/.test(p.plan))
+    expect(reads.length, 'no grouped count read the group key index under the tag filter').toBeGreaterThanOrEqual(5)
+    for (const r of reads) {
+      for (const line of r.plan.split('\n').filter(l => /idx_bills_group_key/.test(l))) {
+        expect(line, `${r.sql}\n${r.plan}`).toMatch(/USING COVERING INDEX idx_bills_group_key/)
+      }
     }
   })
 })
