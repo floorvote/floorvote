@@ -172,8 +172,15 @@ const statusGroups: Facet<Record<string, { stage: string | null; rank: number }>
   },
 }
 
-/** The rows the committee facet reads (#471): each bill's committees, or only its current one under the current scope. */
+/**
+ * The rows the committee facet reads (#471): each bill's committees, or only its current one under the current scope.
+ * Read from the bills when a condition tests them, so it starts the read and each bill's rows are reached by key
+ * (`countBy` on the join order); otherwise from the rows, each bill reached by key, or alone (a row's bill is deleted
+ * with it, ON DELETE CASCADE).
+ */
+const committeeRowsOfBills = sql`bills m CROSS JOIN bill_committees bc ON bc.bill_id = m.id`
 const committeeRows = sql`bill_committees bc JOIN bills m ON m.id = bc.bill_id`
+const committeeRowsAlone = sql`bill_committees bc`
 const currentOnly = (fc: FacetContext) => fc.committeeScope === 'current' ? sql`bc.is_current = 1` : undefined
 
 /**
@@ -194,8 +201,10 @@ const committeeInfo: Facet<Record<string, { name: string; state: string; chamber
     const picked = fc.committeesPicked.length > 0 ? sql`bc.committee_id IN (SELECT value FROM json_each(${JSON.stringify(fc.committeesPicked)}))` : undefined
     // With no condition on the counts every committee is named, the picked ones among them.
     const named = counted && picked ? or(counted, picked)! : counted
+    // A filter on the bills starts the read, unless a picked committee's rows are named whatever the filter (OR).
+    const from = where && !picked ? committeeRowsOfBills : committeeRows
     const rows = await fc.db.all(sql`SELECT bc.committee_id AS id, MAX(bc.name) AS name, MAX(bc.state) AS state, MAX(bc.chamber) AS chamber
-      FROM ${committeeRows}${named ? sql` WHERE ${named}` : sql``} GROUP BY bc.committee_id`) as Array<{ id: string; name: string; state: string; chamber: string | null }>
+      FROM ${from}${named ? sql` WHERE ${named}` : sql``} GROUP BY bc.committee_id`) as Array<{ id: string; name: string; state: string; chamber: string | null }>
     return Object.fromEntries(rows.map(r => [r.id, { name: r.name, state: r.state, chamber: r.chamber || null }]))
   },
 }
@@ -314,7 +323,7 @@ export const FILTER_TABLE: FilterTable = {
       count: async (fc, own) => {
         // A subject row's bill is deleted with it (ON DELETE CASCADE), so an unnarrowed count reads the rows alone.
         const rows = await countBy(fc.db, fc.counting(own), {
-          values: [sql`bs.state`, sql`bs.subject_name`], from: sql`bill_subjects bs JOIN bills m ON m.id = bs.bill_id`, alone: sql`bill_subjects bs`,
+          values: [sql`bs.state`, sql`bs.subject_name`], from: sql`bills m CROSS JOIN bill_subjects bs ON bs.bill_id = m.id`, alone: sql`bill_subjects bs`,
         })
         return fc.shift(Object.fromEntries(
           rows
@@ -332,7 +341,7 @@ export const FILTER_TABLE: FilterTable = {
       kind: 'values',
       empty: () => ({}),
       count: async (fc, own) => fc.shift(countsOf(await countBy(fc.db, fc.counting(own), {
-        values: [sql`bc.committee_id`], from: committeeRows, where: currentOnly(fc),
+        values: [sql`bc.committee_id`], from: committeeRowsOfBills, where: currentOnly(fc), alone: committeeRowsAlone,
       }))),
     },
     alsoFacets: [committeeInfo],
