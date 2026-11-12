@@ -174,6 +174,21 @@ describe('GET /bills?sort=bill', () => {
       expect((await list('sort=bill&dir=desc&pageSize=3&page=2')).bills.map(b => b.id)).toEqual(['w1', 'q2'])
     })
 
+    it('lists a key bill whose own group key is empty once, though others name it', async () => {
+      await clearDb()
+      const userId = await seedUser({ role: 'admin' })
+      cookie = `session=${await seedSession(userId)}`
+      // A broken group written directly: k2 names k1 as its key, but k1 has none. k1 is its own row.
+      await seedBill({ id: 'k1', billNumber: 'HB 1', state: 'AZ', matchType: null })
+      await seedBill({ id: 'k2', billNumber: 'HB 2', state: 'AZ', matchType: null })
+      await db().update(bills).set({ groupKey: 'k1' }).where(eq(bills.id, 'k2'))
+      await seedBill({ id: 'k3', billNumber: 'HB 3', state: 'AZ', matchType: null })
+      await seedBill({ id: 'k4', billNumber: 'HB 4', state: 'AZ', matchType: null })
+      const ids = [...(await list('sort=bill&dir=asc&pageSize=2')).bills, ...(await list('sort=bill&dir=asc&pageSize=2&page=2')).bills].map(b => b.id)
+      expect(ids.filter(id => id === 'k1')).toHaveLength(1)
+      expect(new Set(ids).size).toBe(ids.length)
+    })
+
     it("orders a group at its lead's newest-text number, not its key bill's", async () => {
       await clearDb()
       const userId = await seedUser({ role: 'admin' })

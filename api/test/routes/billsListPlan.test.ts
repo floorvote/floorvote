@@ -150,6 +150,18 @@ describe('GET /bills query plans', () => {
     })
   }
 
+  it('reads no cut state for a filtered, a searched, or a deep bill-number page', async () => {
+    for (const qs of [
+      'status=Passed&sort=bill&dir=asc&pageSize=20',
+      'search=Title&sort=bill&dir=asc&pageSize=20',
+      'sort=bill&dir=asc&pageSize=20&page=51',
+      'sort=bill&dir=desc&pageSize=200&page=6',
+    ]) {
+      const probes = (await statementsFor(qs)).filter(s => /ORDER BY s\.state/.test(s.sql))
+      expect(probes.length, qs).toBe(0)
+    }
+  })
+
   it('reads the whole table for a bill-number sort when the page reaches past the bills with no companions', async () => {
     // 22,500 bills have no companions; a page past them can't be cut by state, and reads every group as before.
     const page = pageOf(await listPlans('sort=bill&dir=asc&pageSize=200&page=120'))

@@ -318,7 +318,7 @@ export async function pageOfGroups(db: AppDb, o: PageOptions): Promise<string[]>
     // group key index carries, so the groups are found from its covering entries and each key bill read by its key.
     const op = sql.raw(cut.op)
     inner = sql`SELECT ${select} FROM bills c WHERE ${c.groupKey} IS NULL AND ${c.state} ${op} ${cut.state}
-      UNION ALL SELECT ${select} FROM bills c WHERE ${c.id} IN (SELECT m.group_key FROM bills m WHERE m.group_key IS NOT NULL GROUP BY m.group_key HAVING MIN(m.state) ${op} ${cut.state})`
+      UNION ALL SELECT ${select} FROM bills c WHERE ${c.groupKey} = ${c.id} AND ${c.id} IN (SELECT m.group_key FROM bills m WHERE m.group_key IS NOT NULL GROUP BY m.group_key HAVING MIN(m.state) ${op} ${cut.state})`
   } else if (o.tracked) {
     // The tracked bills, read through their index (see `trackedStanding`).
     inner = sql`SELECT ${select} FROM bills c WHERE ${trackedStanding(o.filter?.(m), o.twice ? o.filter?.(c) : undefined)}`
