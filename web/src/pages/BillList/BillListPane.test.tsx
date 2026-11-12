@@ -460,7 +460,7 @@ describe('BillListPane: filter and sort summary', () => {
     expect(tip).toHaveTextContent(/high/i)
   })
 
-  it('names a picked committee in the active filters from the facets, and asks the facets only when one is picked', async () => {
+  it('names a picked committee in the active filters from the facets, asking only for the committee part and only when one is picked', async () => {
     hoisted.respond = (path) => {
       if (path.startsWith('/bills/facets')) return { committee: { c1: 3 }, committeeInfo: { c1: { name: 'Judiciary', state: 'RI', chamber: 'S' } } }
       return path.startsWith('/bills?') ? page([PLAIN, GROUP3], { total: 2 }) : {}
@@ -472,7 +472,7 @@ describe('BillListPane: filter and sort summary', () => {
     hoisted.calls = []
     sessionStorage.setItem('lastBillsUrl', '/bills?committee=c1')
     const pane = await paneReady()
-    await waitFor(() => expect(hoisted.calls.filter(c => c.startsWith('/bills/facets'))).toEqual(['/bills/facets?committee=c1']))
+    await waitFor(() => expect(hoisted.calls.filter(c => c.startsWith('/bills/facets'))).toEqual(['/bills/facets?committee=c1&only=committee']))
     hover(within(pane).getByRole('button', { name: /1 filter · Sorted by/ }))
     expect(await screen.findByRole('tooltip')).toHaveTextContent('Referred to Judiciary (Senate)')
   })

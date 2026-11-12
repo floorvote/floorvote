@@ -2,7 +2,7 @@ import { eq, and, or, inArray, sql, SQL } from 'drizzle-orm'
 import { customFieldDefinitions } from '../../db/schema'
 import type { AppDb } from '../../types'
 import {
-  billsAs, buildCustomFieldFilters, buildSearchCondition, filterSuppressedSubjects, hasGroupTags, loadMyBillsInGroups,
+  billsAs, buildCustomFieldFilters, buildSearchCondition, filterSuppressedSubjects, hasGroupTags, inIds, loadMyBillsInGroups,
   committeeMembership, multiFilter, myBillsCondition, positionCondition, priorityCondition, statusFilterValues, subjectMembership, tagCondition,
   unvotedCondition, type BillFilterContext, type BillsCondition, type BillsFilter,
 } from './query'
@@ -172,8 +172,15 @@ const statusGroups: Facet<Record<string, { stage: string | null; rank: number }>
   },
 }
 
-/** The rows the committee facet reads (#471): each bill's committees, or only its current one under the current scope. */
+/**
+ * The rows the committee facet reads (#471): each bill's committees, or only its current one under the current scope.
+ * Read from the bills when a condition tests them, so it starts the read and each bill's rows are reached by key
+ * (`countBy` on the join order); otherwise from the rows, each bill reached by key, or alone (a row's bill is deleted
+ * with it, ON DELETE CASCADE).
+ */
+const committeeRowsOfBills = sql`bills m CROSS JOIN bill_committees bc ON bc.bill_id = m.id`
 const committeeRows = sql`bill_committees bc JOIN bills m ON m.id = bc.bill_id`
+const committeeRowsAlone = sql`bill_committees bc`
 const currentOnly = (fc: FacetContext) => fc.committeeScope === 'current' ? sql`bc.is_current = 1` : undefined
 
 /**
@@ -194,8 +201,10 @@ const committeeInfo: Facet<Record<string, { name: string; state: string; chamber
     const picked = fc.committeesPicked.length > 0 ? sql`bc.committee_id IN (SELECT value FROM json_each(${JSON.stringify(fc.committeesPicked)}))` : undefined
     // With no condition on the counts every committee is named, the picked ones among them.
     const named = counted && picked ? or(counted, picked)! : counted
+    // A filter on the bills starts the read, unless a picked committee's rows are named whatever the filter (OR).
+    const from = where && !picked ? committeeRowsOfBills : committeeRows
     const rows = await fc.db.all(sql`SELECT bc.committee_id AS id, MAX(bc.name) AS name, MAX(bc.state) AS state, MAX(bc.chamber) AS chamber
-      FROM ${committeeRows}${named ? sql` WHERE ${named}` : sql``} GROUP BY bc.committee_id`) as Array<{ id: string; name: string; state: string; chamber: string | null }>
+      FROM ${from}${named ? sql` WHERE ${named}` : sql``} GROUP BY bc.committee_id`) as Array<{ id: string; name: string; state: string; chamber: string | null }>
     return Object.fromEntries(rows.map(r => [r.id, { name: r.name, state: r.state, chamber: r.chamber || null }]))
   },
 }
@@ -263,7 +272,13 @@ export const FILTER_TABLE: FilterTable = {
   },
   search: {
     kind: 'scope',
-    condition: search => search && buildSearchCondition(search) ? t => buildSearchCondition(search, t)! : undefined,
+    // The facets read the matching ids once (`loadSearchIds`) and test them by key; the list carries the LIKEs,
+    // which its bill-number boost needs too. A read that matched nothing binds an empty list, which no bill is in,
+    // so the counts are the LIKEs' by construction: zero, and a picked committee still named (`committeeInfo`).
+    condition: (search, ctx) => {
+      if (!search || !buildSearchCondition(search)) return undefined
+      return ctx.searchIds ? inIds(ctx.searchIds) : t => buildSearchCondition(search, t)!
+    },
     facet: null,
   },
   minRelevance: {
@@ -312,7 +327,10 @@ export const FILTER_TABLE: FilterTable = {
       kind: 'values',
       empty: () => ({}),
       count: async (fc, own) => {
-        const rows = await countBy(fc.db, fc.counting(own), { values: [sql`bs.state`, sql`bs.subject_name`], from: sql`bill_subjects bs JOIN bills m ON m.id = bs.bill_id` })
+        // A subject row's bill is deleted with it (ON DELETE CASCADE), so an unnarrowed count reads the rows alone.
+        const rows = await countBy(fc.db, fc.counting(own), {
+          values: [sql`bs.state`, sql`bs.subject_name`], from: sql`bills m CROSS JOIN bill_subjects bs ON bs.bill_id = m.id`, alone: sql`bill_subjects bs`,
+        })
         return fc.shift(Object.fromEntries(
           rows
             .filter(r => !isSubjectsSuppressedForState(fc.suppressedSubjectStates, String(r.values[0])))
@@ -329,7 +347,7 @@ export const FILTER_TABLE: FilterTable = {
       kind: 'values',
       empty: () => ({}),
       count: async (fc, own) => fc.shift(countsOf(await countBy(fc.db, fc.counting(own), {
-        values: [sql`bc.committee_id`], from: committeeRows, where: currentOnly(fc),
+        values: [sql`bc.committee_id`], from: committeeRowsOfBills, where: currentOnly(fc), alone: committeeRowsAlone,
       }))),
     },
     alsoFacets: [committeeInfo],
@@ -668,19 +686,27 @@ export function makeFacetContext(req: FacetRequest): FacetContext {
   }
 }
 
-/** The filters that have a facet count, each with the name that is its own-filter exclusion. */
+/** The filters that have a facet count, each with the name that is its own-filter exclusion and the filter it is of. */
 const FACETS = NAMES.flatMap(name => {
   const entry = FILTER_TABLE[name]
   // The fact a facet leaves out is the filter's own, or the one it joins: the status and the stage leave out the same one.
   const own = factKeyOf(name)
   return [...(entry.facet ? [entry.facet] : []), ...(entry.alsoFacets ?? [])].map(facet => (
-    { name: own, key: facet.kind === 'count' || facet.kind === 'derived' ? facet.response : name, facet }
+    { filter: name as string, name: own, key: facet.kind === 'count' || facet.kind === 'derived' ? facet.response : name, facet }
   ))
 })
 
-/** Every facet's count, in parallel, by the key each has in the facets response. */
-export async function countFacets(fc: FacetContext): Promise<Record<string, unknown>> {
-  return Object.fromEntries(await Promise.all(FACETS.map(async ({ name, key, facet }) => [key, await facet.count(fc, name)] as const)))
+/** The filters a facets request may name in `omit` or `only`: those with a facet. */
+export const FACET_FILTERS: ReadonlySet<string> = new Set(FACETS.map(f => f.filter))
+
+/** Which filters' facets a request counts, by filter name. */
+export type FacetSelection = (filter: string) => boolean
+const everyFacet: FacetSelection = () => true
+
+/** Every selected facet's count, in parallel, by the key each has in the facets response. */
+export async function countFacets(fc: FacetContext, selected: FacetSelection = everyFacet): Promise<Record<string, unknown>> {
+  return Object.fromEntries(await Promise.all(FACETS.filter(f => selected(f.filter))
+    .map(async ({ name, key, facet }) => [key, await facet.count(fc, name)] as const)))
 }
 
 /** What the facets response holds besides the counts of the filters: the tenant's own values, which no filter narrows. */
@@ -691,11 +717,13 @@ export type TenantFacets = {
   billStates?: string[]
   /** Whether the tenant has any draft at all, unfiltered. */
   hasDrafts: boolean
+  /** Whether the tenant has any committee at all, unfiltered: the Committee control shows on it before its counts load. */
+  hasCommittees: boolean
 }
 
 export const facetsResponse = (counts: Record<string, unknown>, tenant: TenantFacets) =>
-  ({ ...counts, subjectStates: tenant.subjectStates, billStates: tenant.billStates, hasDrafts: tenant.hasDrafts })
+  ({ ...counts, subjectStates: tenant.subjectStates, billStates: tenant.billStates, hasDrafts: tenant.hasDrafts, hasCommittees: tenant.hasCommittees })
 
-/** The response for a list with nothing in it: the real response's every key, every count at zero. Built from the same table. */
-export const emptyFacets = (tenant: TenantFacets) =>
-  facetsResponse(Object.fromEntries(FACETS.map(({ key, facet }) => [key, facet.empty()])), tenant)
+/** The response for a list with nothing in it: the real response's every selected key, every count at zero. Built from the same table. */
+export const emptyFacets = (tenant: TenantFacets, selected: FacetSelection = everyFacet) =>
+  facetsResponse(Object.fromEntries(FACETS.filter(f => selected(f.filter)).map(({ key, facet }) => [key, facet.empty()])), tenant)

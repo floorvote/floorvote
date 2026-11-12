@@ -58,16 +58,16 @@ describe('the facets response built for a list with nothing in it', () => {
 
   it('has every key the real response has, and no other', async () => {
     const real = await realFacets()
-    const tenant = { subjectStates: real.subjectStates as string[], billStates: real.billStates as string[] | undefined, hasDrafts: real.hasDrafts as boolean }
+    const tenant = { subjectStates: real.subjectStates as string[], billStates: real.billStates as string[] | undefined, hasDrafts: real.hasDrafts as boolean, hasCommittees: real.hasCommittees as boolean }
     expect(Object.keys(JSON.parse(JSON.stringify(emptyFacets(tenant)))).sort()).toEqual(Object.keys(real).sort())
   })
 
   it('counts nothing, and keeps the tenant-wide values it is given', () => {
-    const empty = JSON.parse(JSON.stringify(emptyFacets({ subjectStates: ['NJ'], billStates: ['NJ', 'TX'], hasDrafts: true })))
+    const empty = JSON.parse(JSON.stringify(emptyFacets({ subjectStates: ['NJ'], billStates: ['NJ', 'TX'], hasDrafts: true, hasCommittees: false })))
     expect(empty).toEqual({
       status: {}, stage: {}, statusGroups: {}, priority: { none: 0, __any__: 0 }, year: {}, sessionName: {}, state: {},
       position: { none: 0, __any__: 0 }, tag: { __any__: 0 }, subject: {}, committee: {}, committeeInfo: {}, subjectStates: ['NJ'], billStates: ['NJ', 'TX'],
-      field: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0, hasDrafts: true,
+      field: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0, hasDrafts: true, hasCommittees: false,
     })
   })
 })

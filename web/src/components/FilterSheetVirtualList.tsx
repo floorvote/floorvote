@@ -38,7 +38,7 @@ const LIST_HEIGHT = 340
  * that module for why virtualized rows need a hand-rolled push-out at all.
  */
 export function FilterSheetVirtualList({
-  groups, selected, onToggle, searchPlaceholder, ariaLabel, limitSubjects = false,
+  groups, selected, onToggle, searchPlaceholder, ariaLabel, limitSubjects = false, loading = false, emptyText, failedText,
 }: {
   groups: FilterSheetVirtualGroup[]
   selected: string[]
@@ -48,6 +48,12 @@ export function FilterSheetVirtualList({
   // Subjects only: at the subject cap the unchecked options are disabled (the
   // API answers 400 past it), and a hint says why. Tags have no such limit.
   limitSubjects?: boolean
+  /** The options are still loading (Subjects load on demand): a Loading row stands in for the list. */
+  loading?: boolean
+  /** What the list says when it has no options at all and nothing is searched for. */
+  emptyText?: string
+  /** What the list says instead when the request for its options failed, so there are none to offer. */
+  failedText?: string
 }) {
   const capReached = limitSubjects && isSubjectCapReached(selected.length)
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -83,9 +89,13 @@ export function FilterSheetVirtualList({
           </div>
         )}
       </div>
-      {rows.length === 0 ? (
+      {loading ? (
         <div style={{ padding: '16px 0', fontSize: fontSize.sm, color: color.textMuted }}>
-          No matches for &ldquo;{search.trim()}&rdquo;.
+          Loading…
+        </div>
+      ) : rows.length === 0 ? (
+        <div style={{ padding: '16px 0', fontSize: fontSize.sm, color: color.textMuted }}>
+          {failedText ?? (!search.trim() && emptyText ? emptyText : <>No matches for &ldquo;{search.trim()}&rdquo;.</>)}
         </div>
       ) : (
         <div

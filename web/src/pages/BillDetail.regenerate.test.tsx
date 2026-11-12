@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { needsFreshFacets } from '../lib/facetsFreshness'
 import { render, screen, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
@@ -511,6 +512,21 @@ describe('Regenerate on a never-analyzed stub', () => {
     const { posts } = setup(stub, [stub])
     await regenerate(user)
     await waitFor(() => expect(posts()).toEqual(['/api/admin/promote-bill/42']))
+  })
+
+  // Promoting makes the bill tracked, which changes the bills page's counts, and the server keeps a member's counts
+  // for a minute; the page's next facets request asks afresh (lib/facetsFreshness.ts).
+  it("marks the promote as the member's own edit, so the bills page's counts show it", async () => {
+    sessionStorage.clear()
+    const stub = {
+      matchType: null, aiProcessedAt: null, tenantSummary: null, tags: ['tax'], relevanceScore: null,
+      analysisAiProcessedAt: null, analysisTextStatus: null,
+    }
+    const { posts } = setup(stub, [stub])
+    expect(needsFreshFacets('/bills/facets')).toBe(false)
+    await regenerate(user)
+    await waitFor(() => expect(posts()).toEqual(['/api/admin/promote-bill/42']))
+    await waitFor(() => expect(needsFreshFacets('/bills/facets')).toBe(true))
   })
 
   it("promotes the stub from the page of a group whose analysis is its own and unanalyzed", async () => {

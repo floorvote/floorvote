@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { FilterDropdown, ActiveChip, SubjectFilterDropdown, type SubjectGroup } from './FilterPanel'
@@ -464,10 +464,88 @@ describe('SubjectFilterDropdown — resize handle keyboard accessibility', () =>
 })
 
 describe('SubjectFilterDropdown', () => {
-  it('hides the subject section entirely when no state publishes subjects', () => {
+  // The page decides whether to offer Subject (from the instance's subjectStates, since the counts load on demand), so
+  // the control draws its trigger with no subjects loaded, and says so when opened.
+  it('draws its trigger with no subjects loaded, and says there are none when opened', () => {
     renderPanel({ subjectGroups: [] })
-    expect(screen.queryByText(/subjects/i)).not.toBeInTheDocument()
-    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Subject' }))
+    const menu = screen.getByRole('group', { name: 'Subject' })
+    expect(within(menu).getByText('No subjects.')).toBeInTheDocument()
+    expect(within(menu).queryAllByRole('checkbox')).toEqual([])
+  })
+
+  it('shows a Loading row, and no options, while its counts load', () => {
+    renderPanel({ loading: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Subject' }))
+    const menu = screen.getByRole('group', { name: 'Subject' })
+    expect(within(menu).getByText('Loading…')).toBeInTheDocument()
+    expect(within(menu).queryByText('Counties')).toBeNull()
+    expect(within(menu).queryAllByRole('checkbox')).toEqual([])
+  })
+
+  // A request for the counts can fail (the database's budget spent, D1 7429). Saying "No subjects." then would claim
+  // the instance has none, when the counts just did not arrive.
+  it('says the counts could not load, and offers no options, when their request failed', () => {
+    renderPanel({ subjectGroups: [], loadFailed: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Subject' }))
+    const menu = screen.getByRole('group', { name: 'Subject' })
+    expect(within(menu).getByText('Couldn’t load subjects.')).toBeInTheDocument()
+    expect(within(menu).queryByText('No subjects.')).toBeNull()
+    expect(within(menu).queryAllByRole('checkbox')).toEqual([])
+  })
+
+  it('shows Loading, not the failure, when the counts are asked for again while it is open', () => {
+    const props = { subjectGroups: [], selectedSubjects: [], onSubjectChange: () => {} }
+    const { rerender } = render(<SubjectFilterDropdown {...props} loadFailed />)
+    fireEvent.click(screen.getByRole('button', { name: 'Subject' }))
+    expect(screen.getByText('Couldn’t load subjects.')).toBeInTheDocument()
+    rerender(<SubjectFilterDropdown {...props} loading />)
+    expect(screen.getByText('Loading…')).toBeInTheDocument()
+    expect(screen.queryByText('Couldn’t load subjects.')).toBeNull()
+  })
+
+  it('shows Loading, not "No subjects.", when a load after a failure starts in a menu that had counts land while open', () => {
+    const groups = [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }]
+    const props = { selectedSubjects: [], onSubjectChange: () => {} }
+    const { rerender } = render(<SubjectFilterDropdown {...props} subjectGroups={groups} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Subject' }))
+    expect(screen.getByText('Counties')).toBeInTheDocument()
+    rerender(<SubjectFilterDropdown {...props} subjectGroups={groups} loading />) // a pick in it changed the filter
+    expect(screen.getByText('Counties')).toBeInTheDocument()
+    rerender(<SubjectFilterDropdown {...props} subjectGroups={[]} loadFailed />) // and that request failed
+    expect(screen.getByText('Couldn’t load subjects.')).toBeInTheDocument()
+    rerender(<SubjectFilterDropdown {...props} subjectGroups={[]} loading />) // the page asks again
+    expect(screen.getByText('Loading…')).toBeInTheDocument()
+    expect(screen.queryByText('No subjects.')).toBeNull()
+  })
+
+  it('keeps the list it showed while open when a new load starts, and shows Loading again after a reopen', () => {
+    const { rerender } = renderPanel()
+    fireEvent.click(screen.getByRole('button', { name: 'Subject' }))
+    expect(screen.getByText('Counties')).toBeInTheDocument()
+    const props = { subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }], selectedSubjects: [], onSubjectChange: () => {} }
+    rerender(<SubjectFilterDropdown {...props} loading />)
+    expect(screen.getByText('Counties')).toBeInTheDocument()
+    expect(screen.queryByText('Loading…')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Subject' })) // close
+    fireEvent.click(screen.getByRole('button', { name: 'Subject' })) // reopen
+    expect(screen.getByText('Loading…')).toBeInTheDocument()
+    expect(screen.queryByText('Counties')).toBeNull()
+  })
+
+  it('says someone is about to use it on hover, on focus, and on open', () => {
+    const onIntent = vi.fn()
+    renderPanel({ onIntent })
+    const button = screen.getByRole('button', { name: 'Subject' })
+    // Each says so on its own (opening also moves focus into the menu, which may say it again; the page asks once).
+    fireEvent.pointerEnter(button, { pointerType: 'mouse' })
+    expect(onIntent).toHaveBeenCalled()
+    onIntent.mockClear()
+    fireEvent.focus(button)
+    expect(onIntent).toHaveBeenCalled()
+    onIntent.mockClear()
+    fireEvent.click(button)
+    expect(onIntent).toHaveBeenCalled()
   })
 
   it('renders a flat list with no state heading when only one state is present', () => {

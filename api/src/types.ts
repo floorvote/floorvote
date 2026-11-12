@@ -50,6 +50,7 @@ export type Env = {
   DEMO_MODE?: string
   DEMO_SEED?: string  // demoSeeds registry key; defaults to lake-michigan
   LIST_CACHE_TTL?: string  // GET /bills page-query cache TTL (seconds); default 0 (off), set per-tenant to enable
+  FACETS_CACHE_TTL?: string  // GET /bills/facets per-member cache TTL (seconds); default 60, 0 turns it off (lib/facetsCache.ts)
   EMAIL_PROVIDER?: string
   EMAIL?: import('./lib/email').CloudflareEmailBinding
   // Workers Rate Limiting binding for the unauthenticated magic-link POST

@@ -14,6 +14,10 @@ function appWithHandler() {
     err.name = 'Error'
     throw err
   })
+  // Shaped like Drizzle's wrapper of a D1 error: the wrapper names the SQL, and D1's reason hangs off `.cause`.
+  app.get('/wrapped', () => {
+    throw new Error('Failed query: select 1', { cause: new Error('D1 DB is overloaded. Too many resources consumed within a 10 second window.') })
+  })
   app.get('/teapot', () => { throw new HTTPException(418, { message: 'no coffee' }) })
   return app
 }
@@ -51,6 +55,16 @@ describe('errorHandler', () => {
     expect(args[1]).toBe('Error: D1_ERROR: Network connection lost.')
     // ...and the stack still travels with it, so the frames are not lost.
     expect(String(args[2])).toContain('D1_ERROR: Network connection lost.')
+  })
+
+  // A failed query logged only "Failed query: <sql>" on every request a D1 overload took down, so the reason
+  // (the database's 10-second budget spent) had to be found by reproducing it.
+  it('logs the reason down the cause chain, not only the wrapper', async () => {
+    const spy = captureConsoleError()
+    await appWithHandler().request('/wrapped')
+    expect(spy.mock.calls[0][1]).toBe(
+      'Error: Failed query: select 1 | caused by: D1 DB is overloaded. Too many resources consumed within a 10 second window.',
+    )
   })
 
   it('does not log an HTTPException as unhandled', async () => {

@@ -1,0 +1,28 @@
+-- A partial index of the prioritized bills, for the sidebar on every page.
+--
+-- GET /stats/sidebar counts the prioritized bills, counts those the member has
+-- not voted on, lists them, and, with the upcoming hearings widget on, reads
+-- their ids for central, each WHERE priority IS NOT NULL. An instance
+-- prioritizes a few dozen bills. idx_bills_priority (0060) holds every bill,
+-- NULLs included, because the priority facet counts the unprioritized ones, so
+-- its statistics say a priority is shared by about a quarter of all bills. The
+-- planner then reads the whole table for any of these statements that needs
+-- more than the priority itself. On an instance of about 100,000 bills the
+-- unvoted count took about 225 ms and the list about 380 ms, a full read of the
+-- bills each, on every page load. With other costly reads, a few page loads
+-- spent D1's per-database budget, and every query in that window failed (7429
+-- "D1 DB is overloaded").
+--
+-- This index holds only the prioritized bills, keyed on (priority, id), so the
+-- counts are answered from it alone and the list reads the table for those
+-- bills only. A bill with no priority is never written to it. The planner
+-- chooses it with no statistics of its own, so no ANALYZE re-reads the bills.
+--
+-- COUPLING: SQLite uses a partial index only when the query's WHERE clause
+-- implies the index's, so these statements must keep priority IS NOT NULL, or
+-- any comparison on priority (such as priority = ?, which no NULL satisfies),
+-- in their own SQL.
+--
+-- idx_bills_priority stays, for the priority facet's whole-population count.
+-- api/test/routes/statsSidebarPlan.test.ts pins the plans of the real request.
+CREATE INDEX idx_bills_prioritized ON bills (priority, id) WHERE priority IS NOT NULL;

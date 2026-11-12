@@ -86,6 +86,8 @@ export default defineConfig({
           GEMINI_API_KEY: 'test-gemini-key',
           APP_URL: 'http://localhost:5173',
           TENANT_ID: 'bpc-test',
+          // The facets cache (lib/facetsCache.ts) is off here so a test that asks twice is counted twice; its own tests turn it on.
+          FACETS_CACHE_TTL: '0',
           CENTRAL_API_URL: 'https://central.test',
           SUPERADMIN_JWT_PUBLIC_KEY: '{"key_ops":["verify"],"ext":true,"kty":"EC","x":"jMeKJ1Tf0sgE37Rzg02ARwUKvJ2hF6Zy2gI3mluSjpg","y":"vJ0-S0RvpYh3Z87ti61CrBjprBhpmiA4WujS6_Yb_lQ","crv":"P-256"}',
           CF_AIG_TOKEN: 'test-aig-token',

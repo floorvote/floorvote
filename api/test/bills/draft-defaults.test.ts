@@ -68,7 +68,7 @@ describe('GET /api/bills/draft-defaults', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2025-06-01T00:00:00Z'))
     mockSession(2025, 2026, false)
-    const res = await SELF.fetch('https://x/api/bills/draft-defaults', {
+    const res = await SELF.fetch('https://x/api/bills/draft-defaults?state=TX', {
       headers: { Cookie: `session=${adminToken}` },
     })
     expect(res.status).toBe(200)
@@ -80,7 +80,7 @@ describe('GET /api/bills/draft-defaults', () => {
 
   it('advances past a sine die session', async () => {
     mockSession(2025, 2026, true)
-    const res = await SELF.fetch('https://x/api/bills/draft-defaults', {
+    const res = await SELF.fetch('https://x/api/bills/draft-defaults?state=TX', {
       headers: { Cookie: `session=${adminToken}` },
     })
     expect(await res.json()).toMatchObject({ year: 2027 })
@@ -90,7 +90,7 @@ describe('GET /api/bills/draft-defaults', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2020-01-01T00:00:00Z'))
     mockSession(2025, 2026, false)
-    const res = await SELF.fetch('https://x/api/bills/draft-defaults', {
+    const res = await SELF.fetch('https://x/api/bills/draft-defaults?state=TX', {
       headers: { Cookie: `session=${adminToken}` },
     })
     expect(await res.json()).toMatchObject({ year: 2025 })
@@ -104,7 +104,7 @@ describe('GET /api/bills/draft-defaults', () => {
     vi.setSystemTime(new Date('2030-01-01T00:00:00Z'))
     adminToken = await seedSession(adminId)
     mockSession(2025, 2026, false)
-    const res = await SELF.fetch('https://x/api/bills/draft-defaults', {
+    const res = await SELF.fetch('https://x/api/bills/draft-defaults?state=TX', {
       headers: { Cookie: `session=${adminToken}` },
     })
     expect(await res.json()).toMatchObject({ year: 2026 })
@@ -197,6 +197,21 @@ describe('GET /api/bills/draft-defaults', () => {
       headers: { Cookie: `session=${adminToken}` },
     })
     expect(await res.json()).toMatchObject({ billNumber: 'D8' })
+  })
+
+  // A multi-state tenant's bills page reads draft-defaults with no state on every load, for tenantState alone. Central
+  // has no session for no state, and its tenant surface refuses /tenants/current-session/ with a 403, so asking cost a
+  // call and an error log on every page load and answered nothing. The year falls back to the tenant's own bills.
+  it('does not ask central when no state is known, and falls back to the newest filed year', async () => {
+    mockSession(2025, 2026, false)
+    const db = getDb(env.DB)
+    await db.insert(bills).values({ id: 'f', billNumber: 'HB 1', title: 'Filed', state: '', isDraft: false, yearStart: 2023, yearEnd: 2024 })
+    const res = await SELF.fetch('https://x/api/bills/draft-defaults', {
+      headers: { Cookie: `session=${adminToken}` },
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ year: 2024, tenantState: null })
+    expect(vi.mocked(centralFetch)).not.toHaveBeenCalled()
   })
 
   it('asks central for the session of the state the admin picked', async () => {

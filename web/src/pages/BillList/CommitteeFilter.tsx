@@ -3,6 +3,7 @@ import type { CSSProperties, KeyboardEvent } from 'react'
 import { color, radius, fontSize, fontWeight, shadow } from '../../styles/tokens'
 import { filterDimensionLabel } from '../../lib/filterDimensions'
 import { useMenuAlign } from '../../hooks/useMenuAlign'
+import { useLoadingOnOpen } from '../../hooks/useLoadingOnOpen'
 import type { CommitteeGroup } from '../../lib/committeeGroups'
 import { CountBadge } from './FilterPanel'
 import { StickyGroupHeader } from '../../components/ui/StickyGroupHeader'
@@ -61,8 +62,11 @@ const MENU_WIDTH = 400
  * It is built like the Subject menu (`SubjectFilterDropdown`): a search box on top, then the list, virtualized, with
  * the state heading of the committees on screen pinned at the top (the shared `useStickyGroupedVirtualList`). The
  * scope switch sits between the two on the headings' gray.
+ *
+ * Its counts load on demand: `onIntent` says someone is about to use it (a hover, a focus, or opening it), and while
+ * `loading` the list is a Loading row (see useLoadingOnOpen).
  */
-export function CommitteeFilterDropdown({ groups, selected, onChange, scope, onScopeChange, showStates }: {
+export function CommitteeFilterDropdown({ groups, selected, onChange, scope, onScopeChange, showStates, loading = false, loadFailed = false, onIntent }: {
   groups: CommitteeGroup[]
   selected: string[]
   onChange: (next: string[]) => void
@@ -70,8 +74,15 @@ export function CommitteeFilterDropdown({ groups, selected, onChange, scope, onS
   onScopeChange: (scope: CommitteeScope) => void
   /** Head each state's committees with its name: true on a multi-state instance. */
   showStates: boolean
+  /** The counts for the current filter have yet to land. */
+  loading?: boolean
+  /** The request for the counts failed, so there are none to offer: the list says so, not that there are no committees. */
+  loadFailed?: boolean
+  /** Someone is about to use the control, so its counts should load. */
+  onIntent?: () => void
 }) {
   const [open, setOpen] = useState(false)
+  const showLoading = useLoadingOnOpen(open, loading, loadFailed)
   const ref = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -156,7 +167,7 @@ export function CommitteeFilterDropdown({ groups, selected, onChange, scope, onS
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
     // The arrow keys visit the two scope radios, then each committee the search leaves, whether its row is rendered or not.
     const radios = Array.from(menuRef.current?.querySelectorAll<HTMLInputElement>('input[type="radio"]') ?? [])
-    const values = rows.flatMap(r => r.type === 'option' ? [r.value] : [])
+    const values = showLoading ? [] : rows.flatMap(r => r.type === 'option' ? [r.value] : [])
     const total = radios.length + values.length
     if (total === 0) return
     e.preventDefault()
@@ -178,10 +189,10 @@ export function CommitteeFilterDropdown({ groups, selected, onChange, scope, onS
   return (
     // The arrow keys and Escape are handled here, around the trigger and the menu, since the menu is a group.
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
-    <div ref={ref} style={{ position: 'relative' }} onKeyDown={e => { if (open) handleMenuKeyDown(e) }}>
+    <div ref={ref} style={{ position: 'relative' }} onKeyDown={e => { if (open) handleMenuKeyDown(e) }} onPointerEnter={onIntent} onFocus={onIntent}>
       <button
         ref={triggerRef}
-        onClick={() => setOpen(o => !o)}
+        onClick={() => { onIntent?.(); setOpen(o => !o) }}
         style={{
           fontSize: fontSize.sm, padding: '6px 10px', borderRadius: radius.md, cursor: 'pointer',
           display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap',
@@ -223,9 +234,13 @@ export function CommitteeFilterDropdown({ groups, selected, onChange, scope, onS
             />
           </div>
           <CommitteeScopeSwitch scope={scope} onScopeChange={onScopeChange} name="committee-scope-desktop" style={{ borderBottom: `1px solid ${color.borderDefault}` }} />
-          {rows.length === 0 ? (
+          {showLoading ? (
             <div style={{ padding: '16px 12px', fontSize: fontSize.sm, color: color.textMuted }}>
-              {search.trim() ? <>No committees match &ldquo;{search.trim()}&rdquo;.</> : 'No committees.'}
+              Loading…
+            </div>
+          ) : rows.length === 0 ? (
+            <div style={{ padding: '16px 12px', fontSize: fontSize.sm, color: color.textMuted }}>
+              {loadFailed ? 'Couldn’t load committees.' : search.trim() ? <>No committees match &ldquo;{search.trim()}&rdquo;.</> : 'No committees.'}
             </div>
           ) : (
             <div

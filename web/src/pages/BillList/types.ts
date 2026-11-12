@@ -98,11 +98,18 @@ export type FacetCounts = {
   state:    Record<string, number>
   position: Record<string, number>
   tag:      Record<string, number>
-  subject:  Record<string, number>
-  /** By central's committee id (#471). Absent from an API older than the Committee filter. */
+  /**
+   * The Subject and Committee counts are the costly part of a reply and are used only inside those two filter
+   * controls, so the Bills page asks without them on load (`omit=subject,committee`) and for them alone
+   * (`only=subject,committee`, `only=committee`) when they are needed. Absent from a reply that left them out.
+   */
+  subject?: Record<string, number>
+  /** By central's committee id (#471). Absent from an API older than the Committee filter, or a reply that left it out. */
   committee?: Record<string, number>
   /** Each committee counted, by id: its name, state, and chamber. */
   committeeInfo?: CommitteeInfo
+  /** Whether the instance has any committee rows at all, whatever filters are active. Absent = not known yet. */
+  hasCommittees?: boolean
   /**
    * Every state that has subjects (suppressed ones excluded), whatever filters
    * are active, unlike `subject`. Absent = not known yet.

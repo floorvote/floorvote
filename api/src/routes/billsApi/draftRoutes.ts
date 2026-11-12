@@ -383,16 +383,20 @@ export async function defaultDraftYear(
   state: string,
 ): Promise<number> {
   const thisYear = new Date().getUTCFullYear()
-  try {
-    const res = await centralFetch(c.env, `/tenants/current-session/${state}`)
-    if (res.ok) {
-      const s = await res.json<{ yearStart: number; yearEnd: number; sineDie: boolean }>()
-      if (s.sineDie) return s.yearEnd + 1
-      return Math.min(Math.max(thisYear, s.yearStart), s.yearEnd)
+  // No state, no session to ask about: a multi-state tenant's bills page reads the defaults with none on every load,
+  // and central's tenant surface refuses /tenants/current-session/ with a 403.
+  if (state) {
+    try {
+      const res = await centralFetch(c.env, `/tenants/current-session/${state}`)
+      if (res.ok) {
+        const s = await res.json<{ yearStart: number; yearEnd: number; sineDie: boolean }>()
+        if (s.sineDie) return s.yearEnd + 1
+        return Math.min(Math.max(thisYear, s.yearStart), s.yearEnd)
+      }
+      console.error(`[draft-defaults] central returned ${res.status}`)
+    } catch (err) {
+      console.error('[draft-defaults] central unreachable:', errorText(err), err)
     }
-    console.error(`[draft-defaults] central returned ${res.status}`)
-  } catch (err) {
-    console.error('[draft-defaults] central unreachable:', errorText(err), err)
   }
   const row = await db
     .select({ yearEnd: max(bills.yearEnd) })

@@ -103,17 +103,31 @@ const valuesOf = (row: Record<string, unknown>, n: number) => Array.from({ lengt
  * groups. The grouped bills are read through the group key index, in its order
  * (the group key first), so a group's bills are met together and no group is
  * counted by a set of its own. With no values, one row counts all groups.
- * `where`, when given, is a further condition on `m`, of the facet rather than
- * of the filter (the tag facets count only bills with group tags).
+ * `where`, when given, is a further condition of the facet rather than of the
+ * filter, on `m` (the tag facets count only bills with group tags) or on the
+ * rows (the committee facet's current scope).
+ *
+ * A `from` that joins the bill to rows of its own is written from the bill
+ * (`bills m CROSS JOIN … bs ON …`, which fixes the join order), so whatever
+ * tests the bill starts the count and each bill's rows are reached by key.
+ * Left to choose under a tag filter or a search, the planner read every row
+ * and looked its bill up by key: on an instance of 100,000 bills and 170,000
+ * subject rows, 1.4 s and 340,000 rows read, where starting from the few
+ * bills the tag names cost 77 ms and 40,000. `alone`, when given, is those
+ * rows without the bill: rows that always have one (ON DELETE CASCADE), which
+ * the whole count reads instead when nothing tests the bill, since reaching
+ * each row's bill by key costs a lookup a row. A `where` given with `alone`
+ * must test the rows only, never `m`.
  */
-export async function countBy(db: AppDb, c: Counting, source: { values: SQL[]; from: SQL; where?: SQL }): Promise<CountRow[]> {
+export async function countBy(db: AppDb, c: Counting, source: { values: SQL[]; from: SQL; where?: SQL; alone?: SQL }): Promise<CountRow[]> {
   const { values, from } = source
   const filter = c.where(m)
   const w = filter && source.where ? and(source.where, filter) : (source.where ?? filter)
   const fresh = c.fresh?.test(m)
   const cte = withCtes([c.fresh?.cte])
+  const wholeFrom = !filter && !fresh && source.alone ? source.alone : from
   const [whole, grouped] = await Promise.all([
-    db.all(sql`${cte}SELECT ${sql.join([...valueColumns(values), sql`${countOf(fresh)} AS n`], sql`, `)} FROM ${from}${w ? sql` WHERE ${w}` : sql``}${groupBy(values)}`) as Promise<Record<string, unknown>[]>,
+    db.all(sql`${cte}SELECT ${sql.join([...valueColumns(values), sql`${countOf(fresh)} AS n`], sql`, `)} FROM ${wholeFrom}${w ? sql` WHERE ${w}` : sql``}${groupBy(values)}`) as Promise<Record<string, unknown>[]>,
     db.all(sql`${cte}SELECT ${sql.join([...valueNames(values), sql`COALESCE(SUM(n), 0) AS bills`, sql`${fresh ? sql`COALESCE(SUM(CASE WHEN n > 0 THEN 1 ELSE 0 END), 0)` : sql`COUNT(*)`} AS groups`], sql`, `)}
       FROM (SELECT ${sql.join([...valueColumns(values), sql`${countOf(fresh)} AS n`], sql`, `)} FROM ${from} WHERE ${m.groupKey} IS NOT NULL${w ? sql` AND ${w}` : sql``}
         GROUP BY ${sql.join([sql`${m.groupKey}`, ...values], sql`, `)})${groupBy(valueNames(values))}`) as Promise<Record<string, unknown>[]>,

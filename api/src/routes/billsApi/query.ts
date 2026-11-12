@@ -36,9 +36,16 @@ export type BillsFilter = (t: BillsTable) => SQL | undefined
 // json_each also matches array elements exactly, avoiding accidental substring
 // hits. Shared by the list filter (buildBillsFilter) and the facets WHERE so the
 // two can't drift. Caller must pass a non-empty array.
+//
+// The test is marked unlikely(), which changes nothing it answers: it tells the planner the term keeps few
+// bills, so a count grouped by an indexed column (status, state, …) starts from the bills with group tags
+// (idx_bills_group_tags, with hasGroupTags) instead of reading every bill through the grouped column's own
+// index to skip the sort. On an instance where a tenth of the bills carried tags, that read 107,000 rows a
+// count, six counts a facets request, and the request alone spent most of D1's ten-second budget (#1016).
+// groupTagsPlan.test.ts pins the plan.
 export function tagMembership(tagValues: readonly string[], t: BillsTable = bills): SQL {
   // One JSON parameter, however many tags are picked.
-  return sql`EXISTS (SELECT 1 FROM json_each(${t.groupTags}) je WHERE je.value IN (SELECT value FROM json_each(${JSON.stringify(tagValues)})))`
+  return sql`unlikely(EXISTS (SELECT 1 FROM json_each(${t.groupTags}) je WHERE je.value IN (SELECT value FROM json_each(${JSON.stringify(tagValues)}))))`
 }
 
 /**
@@ -50,11 +57,6 @@ export function hasGroupTags(t: BillsTable = bills): SQL {
   return sql`${t.groupTags} <> '[]'`
 }
 
-/**
- * Bills carrying any of these (state, subject) pairs. An EXISTS against the join
- * table rather than a JSON scan of bills.subjects: idx_bill_subjects_name covers
- * (state, subject_name), so this is an index seek per value.
- */
 /**
  * Drop any (state, name) filter value naming an operator-suppressed state (or
  * every state, via "*"). A `subject` query param cannot re-surface a state the
@@ -75,26 +77,36 @@ export function filterSuppressedSubjects(
   return values.filter(v => !isSubjectsSuppressedForState(suppressed, v.state))
 }
 
+/**
+ * Bills carrying any of these (state, subject) pairs, from the join table rather
+ * than a JSON scan of bills.subjects. Written as the bill's id IN the pairs'
+ * bill ids, so the query starts from the pairs' rows (idx_bill_subjects_name, an
+ * index seek per pair) and reaches each bill by key. As an EXISTS on each bill
+ * the planner walked every bill and probed its subjects: about 1 s and 300,000
+ * rows read a statement on an instance of 100,000 bills, and a facets request
+ * runs some 40, so one pick spent the database's budget (D1 7429).
+ */
 export function subjectMembership(values: readonly SubjectValue[], t: BillsTable = bills): SQL {
   const pairs = sql.join(
     values.map(v => sql`(${v.state}, ${v.name})`),
     sql`, `,
   )
-  return sql`EXISTS (
-    SELECT 1 FROM bill_subjects bs
-    WHERE bs.bill_id = ${t.id} AND (bs.state, bs.subject_name) IN (${pairs})
+  return sql`${t.id} IN (
+    SELECT bs.bill_id FROM bill_subjects bs
+    WHERE (bs.state, bs.subject_name) IN (${pairs})
   )`
 }
 
 /**
  * The committee filter (#471) as a condition on one bill: some committee picked is one the bill was referred to, or
  * under the current scope the one it is pending in. The ids are bound as one JSON list, so any number of them binds
- * one value.
+ * one value. Written as the bill's id IN the picked committees' bill ids, like subjectMembership, so the query starts
+ * from their rows (idx_bill_committees_committee) rather than walking every bill.
  */
 export function committeeMembership(ids: readonly string[], scope: 'current' | 'any', t: BillsTable = bills): SQL {
-  return sql`EXISTS (
-    SELECT 1 FROM bill_committees bc
-    WHERE bc.bill_id = ${t.id} AND bc.committee_id IN (SELECT value FROM json_each(${JSON.stringify(ids)}))${scope === 'current' ? sql` AND bc.is_current = 1` : sql``}
+  return sql`${t.id} IN (
+    SELECT bc.bill_id FROM bill_committees bc
+    WHERE bc.committee_id IN (SELECT value FROM json_each(${JSON.stringify(ids)}))${scope === 'current' ? sql` AND bc.is_current = 1` : sql``}
   )`
 }
 
@@ -240,6 +252,11 @@ export type BillFilterContext = {
   newMatchMinRelevance: number
   /** The member's bills (`loadMyBillsInGroups`) when the caller has read them already, so a request reads them once. */
   myBillIds?: readonly string[]
+  /**
+   * The bills the search matches (`loadSearchIds`) when the caller has read them already, for a request that runs
+   * many statements under the search (the facets): each then tests the ids by key instead of carrying the LIKEs.
+   */
+  searchIds?: readonly string[]
 }
 
 /** A condition on one reference to `bills`: the table itself, or an alias of it. */
@@ -408,9 +425,36 @@ export async function loadMyBillsInGroups(db: ReturnType<typeof getDb>, userId: 
   return rows.map(r => r.id)
 }
 
-/** A bill the member's own: one of `mine` (`loadMyBillsInGroups`), as one JSON parameter, so a member with many bills stays under D1's parameter limit. */
-export const myBillsCondition = (mine: readonly string[]): BillsCondition =>
-  t => sql`${t.id} IN (SELECT value FROM json_each(${JSON.stringify(mine)}))`
+/** A bill one of `ids`, as one JSON parameter, so a list of any length binds one value (D1 allows 100) and each bill is reached by key. */
+export const inIds = (ids: readonly string[]): BillsCondition =>
+  t => sql`${t.id} IN (SELECT value FROM json_each(${JSON.stringify(ids)}))`
+
+/** A bill the member's own: one of `mine` (`loadMyBillsInGroups`). */
+export const myBillsCondition = inIds
+
+/**
+ * The most bills a search may match for the facets to count from their ids (`loadSearchIds`). Past it the facets
+ * carry the search's LIKEs instead, as the list does. Measured on an instance of 100,000 bills: a count from ids costs
+ * about 13 ms a thousand ids, a count with the LIKEs about 400 ms whatever matches, so the cap keeps the ids form
+ * well ahead, and the bound list (about 40 bytes an id) under 200 KB where a statement may bind it three times (the
+ * OR-freshness test holds the filter twice; D1 allows 2 MB a value). A test sets it to 0 to force the LIKE form.
+ */
+export const searchForm = { idsMax: 5_000 }
+
+/**
+ * The ids of the bills a search matches, read once for a request that runs many statements under it (the facets).
+ * A search has no index to start from: each statement carrying its LIKEs reads every bill, about 0.4 s on a large
+ * instance, and a facets request ran some fifteen, so one search spent the database's budget (D1 7429). Read once,
+ * the ids go to each count as one JSON parameter (`inIds`), which starts from the primary key. Undefined when the
+ * search has no usable term (nothing narrows) or matches more than `searchForm.idsMax` bills (the LIKEs are kept).
+ * A read that matches nothing is an empty list, which no bill is in.
+ */
+export async function loadSearchIds(db: ReturnType<typeof getDb>, search: string): Promise<string[] | undefined> {
+  const condition = buildSearchCondition(search)
+  if (!condition || searchForm.idsMax <= 0) return undefined
+  const rows = await db.select({ id: bills.id }).from(bills).where(condition).limit(searchForm.idsMax + 1).all()
+  return rows.length > searchForm.idsMax ? undefined : rows.map(r => r.id)
+}
 
 /** A bill the member has not voted on: not one of `voted`, every bill of a group the member voted on any bill of (`loadVotedInGroups`). */
 export const unvotedCondition = (voted: readonly string[]): BillsCondition =>

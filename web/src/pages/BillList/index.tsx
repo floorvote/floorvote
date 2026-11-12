@@ -24,6 +24,7 @@ import { FilterDropdown, SortHeader, sortDescription, SubjectFilterDropdown } fr
 import { COMMITTEE_FILTER_HINT, CommitteeFilterDropdown } from './CommitteeFilter'
 import { PAGE_SIZE, OUTER_GRID, CHIP_GRID, CHIP_GRID_MULTISTATE, CHIP_GAP, ROW_PADDING_LEFT, ROW_PADDING_RIGHT } from './constants'
 import type { Bill, CustomFieldDef, FacetCounts, NormalizedSession } from './types'
+import type { CommitteeInfo } from '../../lib/committeeGroups'
 import { useBillSort } from '../../hooks/useBillSort'
 import { useBillFilters } from '../../hooks/useBillFilters'
 import { useBulkActions } from '../../hooks/useBulkActions'
@@ -163,6 +164,23 @@ export function updateKnownStates(counts: FacetCounts) {
   Object.keys(counts.tag).forEach(t => knownTagsCache.add(t))
 }
 
+/**
+ * The parts of the facets the page asks for on demand. The Subject and Committee counts are the costly part of a
+ * facets reply (on a large instance most of its time and nearly all of its rows) and are used only inside those two
+ * filter controls, so the page-load request leaves them out and the page asks for them only when someone is about to
+ * use one of those controls (see requestLazyFacets in BillList).
+ */
+type LazyFacetPart = 'subject' | 'committee'
+const LAZY_FACET_PARTS: readonly LazyFacetPart[] = ['subject', 'committee']
+
+/** The filter and parts a settled on-demand request was for, and whether it failed (which leaves those parts empty). */
+type LazyFacetsSettled = { key: string; parts: readonly LazyFacetPart[]; failed: boolean }
+
+/** A facets request: the filter's own params, then what to leave out or ask for alone. */
+function facetsPath(filterParams: string, extra: string): string {
+  return `/bills/facets?${filterParams ? `${filterParams}&` : ''}${extra}`
+}
+
 export function BillList() {
   usePageTitle('Bills')
   const location = useLocation()
@@ -181,6 +199,21 @@ export function BillList() {
   // on the filters as they stand when clicked, so its count is only shown while
   // this matches them (see filterNewMatchCount below).
   const [facetCountsKey, setFacetCountsKey] = useState<string | null>(null)
+
+  // The Subject and Committee counts, asked for on demand (LazyFacetPart). They are kept apart from the page-load
+  // counts, so a page-load reply (which leaves them out) never wipes them. `lazyFacetsSettled` says which filter they
+  // are for: a control shows them as its options only when that is the current filter, and Loading until it is.
+  const [lazyFacets, setLazyFacets] = useState<{ subject: Record<string, number>; committee: Record<string, number> }>({ subject: {}, committee: {} })
+  const [lazyFacetsSettled, setLazyFacetsSettled] = useState<LazyFacetsSettled | null>(null)
+  const lazyFacetsSettledRef = useRef<LazyFacetsSettled | null>(null)
+  // Every committee name a reply has carried. A committee's name is the same under any filter, so the chips keep
+  // naming a picked committee whatever filter the counts were last asked for.
+  const [committeeNames, setCommitteeNames] = useState<CommitteeInfo>({})
+  // The page counts, with the on-demand parts merged in, for the controls and chips built from them.
+  const mergedFacetCounts = useMemo<FacetCounts>(
+    () => ({ ...facetCounts, subject: lazyFacets.subject, committee: lazyFacets.committee, committeeInfo: committeeNames }),
+    [facetCounts, lazyFacets, committeeNames],
+  )
 
   const [positionVocabulary, setPositionVocabulary] = useState<string[]>(['Support', 'Oppose', 'Amend', 'Monitor', 'No Position'])
   const [tagTaxonomy, setTagTaxonomy] = useState<string[]>([])
@@ -207,7 +240,7 @@ export function BillList() {
 
   // --- filters + URL sync + derived lists (hook) ---
   const f = useBillFilters({
-    searchParams, setSearchParams, location, facetCounts, customFieldDefs, positionVocabulary, tagTaxonomy,
+    searchParams, setSearchParams, location, facetCounts: mergedFacetCounts, customFieldDefs, positionVocabulary, tagTaxonomy,
     sortCol, sortDir, setSortCol, setSortDir,
   })
   const searchWarn = searchWarnings(f.search)
@@ -302,6 +335,7 @@ export function BillList() {
 
   const facetSeqRef = useRef(0)
   const filtersKey = serializeBillFilter(f.filter)
+  // The server keeps a member's counts for a minute; after the member's own edit apiFetch asks afresh (lib/facetsFreshness.ts).
   const fetchFacets = useCallback(async () => {
     const params = billsFacetParams(f.filter)
     // Only the newest request may write the counts. The dismiss button acts on
@@ -309,7 +343,7 @@ export function BillList() {
     // (a search cleared before its reply returned) must not overwrite them.
     const seq = ++facetSeqRef.current
     try {
-      const data = await apiFetch<FacetCounts>(`/bills/facets?${params}`)
+      const data = await apiFetch<FacetCounts>(facetsPath(params, `omit=${LAZY_FACET_PARTS.join(',')}`))
       if (seq !== facetSeqRef.current) return
       cachedFacetCounts = data
       updateKnownStates(data)
@@ -319,6 +353,98 @@ export function BillList() {
       // non-fatal — leave previous counts in place
     }
   }, [f.filter, filtersKey])
+
+  // The on-demand Subject and Committee counts (LazyFacetPart), asked for under the same filter as the page-load
+  // counts, so they mean what they always have. One request at a time per filter: a request already out for this
+  // filter that covers the parts asked for is left to land. Only the newest request may write the counts, so a slow
+  // reply for an earlier filter never overwrites a newer one.
+  const lazyFacetsWantedRef = useRef(false)
+  const lazySeqRef = useRef(0)
+  const lazyInFlightRef = useRef<{ key: string; parts: readonly LazyFacetPart[] } | null>(null)
+  // `force` is for a change to the bills themselves: it asks even while a request for this filter is out, since that one
+  // may be answered with counts from before the change, and lazySeqRef lets the newer reply win.
+  const fetchLazyFacets = useCallback(async (parts: readonly LazyFacetPart[], force = false) => {
+    const key = filtersKey
+    const inFlight = lazyInFlightRef.current
+    if (!force && inFlight && inFlight.key === key && parts.every(p => inFlight.parts.includes(p))) return
+    const seq = ++lazySeqRef.current
+    lazyInFlightRef.current = { key, parts }
+    const settle = (settled: LazyFacetsSettled | null) => {
+      lazyFacetsSettledRef.current = settled
+      setLazyFacetsSettled(settled)
+    }
+    // A failure is forgotten once the page asks again: the controls show Loading, not the failure, while this is out.
+    if (lazyFacetsSettledRef.current?.failed) settle(null)
+    try {
+      const data = await apiFetch<FacetCounts>(facetsPath(billsFacetParams(f.filter), `only=${parts.join(',')}`))
+      if (seq !== lazySeqRef.current) return
+      setLazyFacets(prev => ({
+        subject: parts.includes('subject') ? (data.subject ?? {}) : prev.subject,
+        committee: parts.includes('committee') ? (data.committee ?? {}) : prev.committee,
+      }))
+      if (data.committeeInfo) setCommitteeNames(prev => ({ ...prev, ...data.committeeInfo }))
+      settle({ key, parts, failed: false })
+    } catch {
+      if (seq !== lazySeqRef.current) return
+      // The control says the counts could not load (never another filter's counts, and never that there are none),
+      // and the next time someone is about to use it the page asks again. Nothing else on the page depends on them.
+      setLazyFacets(prev => ({
+        subject: parts.includes('subject') ? {} : prev.subject,
+        committee: parts.includes('committee') ? {} : prev.committee,
+      }))
+      settle({ key, parts, failed: true })
+    } finally {
+      if (seq === lazySeqRef.current) lazyInFlightRef.current = null
+    }
+  }, [f.filter, filtersKey])
+
+  // Someone is about to use the Subject or Committee control (a hover, a focus, opening it, or opening the phone
+  // filter sheet): ask for both parts' counts under the current filter, unless they have landed for it. From then on
+  // they are wanted for the page's lifetime, so each filter change asks for them again (refreshLazyFacets).
+  const lazyFacetsLandedForFilter = useCallback(() => {
+    const settled = lazyFacetsSettledRef.current
+    return !!settled && settled.key === filtersKey && !settled.failed && LAZY_FACET_PARTS.every(p => settled.parts.includes(p))
+  }, [filtersKey])
+  const requestLazyFacets = useCallback(() => {
+    lazyFacetsWantedRef.current = true
+    if (!lazyFacetsLandedForFilter()) void fetchLazyFacets(LAZY_FACET_PARTS)
+  }, [lazyFacetsLandedForFilter, fetchLazyFacets])
+
+  // Beside each page-load facets request: the on-demand counts again once they are wanted, or, before that, just the
+  // committee part while a picked committee has no name yet, so its chip can name it. A sort change reruns the
+  // page-load request but leaves the filter, so counts that landed for it are kept; `force` is for a change to the
+  // bills themselves (drafts deleted, an edit to every bill the filter matches), which can change them.
+  const refreshLazyFacets = useCallback((force = false) => {
+    if (lazyFacetsWantedRef.current) {
+      if (force || !lazyFacetsLandedForFilter()) void fetchLazyFacets(LAZY_FACET_PARTS, force)
+    } else if (f.committee.some(id => !committeeNames[id])) {
+      void fetchLazyFacets(['committee'])
+    }
+  }, [fetchLazyFacets, lazyFacetsLandedForFilter, f.committee, committeeNames])
+  // Read through refs by the effects below: the fetch effect must run on a filter or sort change only, and the sheet's
+  // on its opening only (not on each keystroke of a search, which the fetch effect debounces).
+  const refreshLazyFacetsRef = useRef(refreshLazyFacets)
+  const requestLazyFacetsRef = useRef(requestLazyFacets)
+  useEffect(() => {
+    refreshLazyFacetsRef.current = refreshLazyFacets
+    requestLazyFacetsRef.current = requestLazyFacets
+  }, [refreshLazyFacets, requestLazyFacets])
+
+  // Opening the phone filter sheet is about to use its Subject and Committee rows.
+  useEffect(() => {
+    if (f.filterSheetOpen) requestLazyFacetsRef.current()
+  }, [f.filterSheetOpen])
+
+  const lazyFacetsSettledFor = (part: LazyFacetPart) =>
+    lazyFacetsSettled !== null && lazyFacetsSettled.key === filtersKey && lazyFacetsSettled.parts.includes(part)
+  const subjectCountsLoading = !lazyFacetsSettledFor('subject')
+  const committeeCountsLoading = !lazyFacetsSettledFor('committee')
+  const subjectCountsFailed = lazyFacetsSettledFor('subject') && lazyFacetsSettled!.failed
+  const committeeCountsFailed = lazyFacetsSettledFor('committee') && lazyFacetsSettled!.failed
+  // The two controls are offered from what the instance has, not from the counts, which load on demand: Subject where
+  // some state has subjects, Committee where the instance has any committee, and either while one is picked.
+  const subjectOffered = (facetCounts.subjectStates?.length ?? 0) > 0 || f.subject.length > 0 || f.subjectGroups.length > 0
+  const committeeOffered = !!facetCounts.hasCommittees || f.committee.length > 0 || f.committeeGroups.length > 0
 
   // Infinite scroll — fire next page fetch when the sentinel enters the viewport
   useEffect(() => {
@@ -473,11 +599,13 @@ export function BillList() {
       searchDebounceRef.current = setTimeout(() => {
         fetchBills(1, false)
         fetchFacets()
+        refreshLazyFacetsRef.current()
       }, 300)
       return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current) }
     }
     fetchBills(1, false)
     fetchFacets()
+    refreshLazyFacetsRef.current()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchBills, fetchFacets])
 
@@ -581,8 +709,9 @@ export function BillList() {
     handleDeselect(ids)
     billsListCache = null
     void fetchFacets()
+    refreshLazyFacets(true)
     refreshSidebar()
-  }, [handleDeselect, fetchFacets, refreshSidebar])
+  }, [handleDeselect, fetchFacets, refreshLazyFacets, refreshSidebar])
 
   const handleBulkApplied = useCallback((
     updatedIds: string[] | 'filter',
@@ -600,6 +729,7 @@ export function BillList() {
       billsListCache = null
       void fetchBills(1, false)
       void fetchFacets()
+      refreshLazyFacets(true)
       refreshSidebar()
       return
     }
@@ -645,7 +775,7 @@ export function BillList() {
       return next
     }))
     refreshSidebar()
-  }, [fetchBills, fetchFacets, refreshSidebar])
+  }, [fetchBills, fetchFacets, refreshLazyFacets, refreshSidebar])
 
   const filterCounts = facetCounts
 
@@ -1050,7 +1180,7 @@ export function BillList() {
               />
             </HoverTooltip>
           )}
-          {f.subjectGroups.length > 0 && (
+          {subjectOffered && (
             <HoverTooltip
               maxWidth={280}
               text={subjectFilterTooltip(config?.states ?? [], facetCounts.subjectStates, facetCounts.billStates)}
@@ -1059,10 +1189,13 @@ export function BillList() {
                 subjectGroups={f.subjectGroups}
                 selectedSubjects={f.subject}
                 onSubjectChange={f.handleSubjectsChange}
+                loading={subjectCountsLoading}
+                loadFailed={subjectCountsFailed}
+                onIntent={requestLazyFacets}
               />
             </HoverTooltip>
           )}
-          {(f.committeeGroups.length > 0 || f.committee.length > 0) && (
+          {committeeOffered && (
             <HoverTooltip maxWidth={280} text={COMMITTEE_FILTER_HINT}>
               <CommitteeFilterDropdown
                 groups={f.committeeGroups}
@@ -1071,6 +1204,9 @@ export function BillList() {
                 scope={f.committeeScope}
                 onScopeChange={f.setCommitteeScope}
                 showStates={f.isMultiState}
+                loading={committeeCountsLoading}
+                loadFailed={committeeCountsFailed}
+                onIntent={requestLazyFacets}
               />
             </HoverTooltip>
           )}
@@ -1308,6 +1444,12 @@ export function BillList() {
         committeeGroups={f.committeeGroups}
         onCommitteeChange={f.setCommittee}
         onCommitteeScopeChange={f.setCommitteeScope}
+        subjectOffered={subjectOffered}
+        committeeOffered={committeeOffered}
+        subjectLoading={subjectCountsLoading}
+        committeeLoading={committeeCountsLoading}
+        subjectLoadFailed={subjectCountsFailed}
+        committeeLoadFailed={committeeCountsFailed}
         yearOptions={f.yearFacetKeys.map(y => ({ value: y, label: y }))}
         totalYearCount={f.yearFacetKeys.length}
         stateOptions={f.uniqueStates.map(s => ({ value: s, label: s }))}

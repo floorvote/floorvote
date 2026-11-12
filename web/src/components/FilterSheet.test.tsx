@@ -982,3 +982,69 @@ describe('FilterSheet — Committee options', () => {
     expect(onCommitteeScopeChange).toHaveBeenCalledWith('current')
   })
 })
+
+// The Subject and Committee counts load on demand, so the page tells the sheet whether to offer each (from the
+// instance's subjectStates and hasCommittees) and whether their counts are still loading.
+describe('FilterSheet — Subject and Committee before their counts load', () => {
+  it('offers Subject when the page says so, with no subjects loaded', () => {
+    renderSheet({ subjectGroups: [], subjectOffered: true })
+    expect(screen.getByRole('button', { name: /^subject/i })).toBeInTheDocument()
+  })
+
+  it('leaves Subject out when the page says the instance has none', () => {
+    renderSheet({ subjectOffered: false, subjectGroups: [] })
+    expect(screen.queryByRole('button', { name: /^subject/i })).toBeNull()
+  })
+
+  it('shows a Loading row in the Subject list while its counts load, and no options', () => {
+    renderSheet({ subjectOffered: true, subjectLoading: true })
+    fireEvent.click(screen.getByRole('button', { name: /^subject/i }))
+    const list = screen.getByRole('group', { name: 'Subject' })
+    expect(within(list).getByText('Loading…')).toBeInTheDocument()
+    expect(within(list).queryByText('Counties')).toBeNull()
+    expect(within(list).queryAllByRole('checkbox')).toEqual([])
+  })
+
+  it('says there are no subjects when they loaded empty', () => {
+    renderSheet({ subjectOffered: true, subjectGroups: [] })
+    fireEvent.click(screen.getByRole('button', { name: /^subject/i }))
+    expect(within(screen.getByRole('group', { name: 'Subject' })).getByText('No subjects.')).toBeInTheDocument()
+  })
+
+  // A request for the counts can fail (the database's budget spent, D1 7429): the list says so, never that the
+  // instance has none.
+  it('says the subjects could not load when their request failed', () => {
+    renderSheet({ subjectOffered: true, subjectGroups: [], subjectLoadFailed: true })
+    fireEvent.click(screen.getByRole('button', { name: /^subject/i }))
+    const list = screen.getByRole('group', { name: 'Subject' })
+    expect(within(list).getByText('Couldn’t load subjects.')).toBeInTheDocument()
+    expect(within(list).queryByText('No subjects.')).toBeNull()
+    expect(within(list).queryAllByRole('checkbox')).toEqual([])
+  })
+
+  it('says the committees could not load when their request failed, under the scope switch', () => {
+    renderSheet({ committeeOffered: true, committeeGroups: [], committeeLoadFailed: true })
+    fireEvent.click(screen.getByRole('button', { name: /^committee/i }))
+    expect(screen.getByText('Couldn’t load committees.')).toBeInTheDocument()
+    expect(screen.queryByText('Loading…')).toBeNull()
+    expect(screen.getByRole('radio', { name: 'Current committee' })).toBeInTheDocument()
+  })
+
+  it('offers Committee when the page says so, with no committees loaded', () => {
+    renderSheet({ committeeGroups: [], committeeOffered: true })
+    expect(screen.getByRole('button', { name: /^committee/i })).toBeInTheDocument()
+  })
+
+  it('leaves Committee out when the page says the instance has none', () => {
+    renderSheet({ committeeGroups: [], committeeOffered: false })
+    expect(screen.queryByRole('button', { name: /^committee/i })).toBeNull()
+  })
+
+  it('shows a Loading row in the Committee list while its counts load, under the scope switch', () => {
+    renderSheet({ committeeOffered: true, committeeLoading: true, committeeGroups: committeeGroups({ 101: 3 }, { 101: { name: 'Judiciary', state: 'UT', chamber: 'S' } }) })
+    fireEvent.click(screen.getByRole('button', { name: /^committee/i }))
+    expect(screen.getByText('Loading…')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'Current committee' })).toBeInTheDocument()
+    expect(screen.queryByText('Judiciary (Senate)')).toBeNull()
+  })
+})

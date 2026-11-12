@@ -383,3 +383,71 @@ describe('the Committee menu keyboard', () => {
     expect(focused()).toBe(screen.getByRole('button', { name: /^Committee/ }))
   })
 })
+
+// The Committee counts load on demand (only when someone is about to use the control), so the menu has a loading state.
+describe('the Committee menu while its counts load', () => {
+  it('shows a Loading row, and no committees, while loading', () => {
+    const { menu } = renderMenu({ loading: true })
+    expect(within(menu).getByText('Loading…')).toBeInTheDocument()
+    expect(within(menu).queryAllByRole('checkbox')).toEqual([])
+    expect(within(menu).queryByText('Judiciary (Senate)')).toBeNull()
+  })
+
+  // A request for the counts can fail (the database's budget spent, D1 7429). Saying "No committees." then would claim
+  // the instance has none, when the counts just did not arrive.
+  it('says the counts could not load, and offers no committees, when their request failed', () => {
+    const { menu } = renderMenu({ groups: [], loadFailed: true })
+    expect(within(menu).getByText('Couldn’t load committees.')).toBeInTheDocument()
+    expect(within(menu).queryByText('No committees.')).toBeNull()
+    expect(within(menu).queryAllByRole('checkbox')).toEqual([])
+  })
+
+  it('shows Loading, not the failure, when the counts are asked for again while it is open', () => {
+    const props = { groups: [], selected: [], onChange: vi.fn(), scope: 'any' as const, onScopeChange: vi.fn(), showStates: true }
+    const { rerender } = render(<CommitteeFilterDropdown {...props} loadFailed />)
+    fireEvent.click(screen.getByRole('button', { name: /^Committee/ }))
+    expect(screen.getByText('Couldn’t load committees.')).toBeInTheDocument()
+    rerender(<CommitteeFilterDropdown {...props} loading />)
+    expect(screen.getByText('Loading…')).toBeInTheDocument()
+    expect(screen.queryByText('Couldn’t load committees.')).toBeNull()
+  })
+
+  it('shows Loading, not "No committees.", when a load after a failure starts in a menu that had counts land while open', () => {
+    const props = { selected: [], onChange: vi.fn(), scope: 'any' as const, onScopeChange: vi.fn(), showStates: true }
+    const { rerender } = render(<CommitteeFilterDropdown {...props} groups={GROUPS} />)
+    fireEvent.click(screen.getByRole('button', { name: /^Committee/ }))
+    expect(screen.getByText('Judiciary (Senate)')).toBeInTheDocument()
+    rerender(<CommitteeFilterDropdown {...props} groups={GROUPS} loading />) // a pick in it changed the filter
+    expect(screen.getByText('Judiciary (Senate)')).toBeInTheDocument()
+    rerender(<CommitteeFilterDropdown {...props} groups={[]} loadFailed />) // and that request failed
+    expect(screen.getByText('Couldn’t load committees.')).toBeInTheDocument()
+    rerender(<CommitteeFilterDropdown {...props} groups={[]} loading />) // the page asks again
+    expect(screen.getByText('Loading…')).toBeInTheDocument()
+    expect(screen.queryByText('No committees.')).toBeNull()
+  })
+
+  it('keeps the list it showed while open when a new load starts', () => {
+    const props = { groups: GROUPS, selected: [], onChange: vi.fn(), scope: 'any' as const, onScopeChange: vi.fn(), showStates: true }
+    const { rerender } = render(<CommitteeFilterDropdown {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: /^Committee/ }))
+    expect(screen.getByText('Judiciary (Senate)')).toBeInTheDocument()
+    rerender(<CommitteeFilterDropdown {...props} loading />)
+    expect(screen.getByText('Judiciary (Senate)')).toBeInTheDocument()
+    expect(screen.queryByText('Loading…')).toBeNull()
+  })
+
+  it('says someone is about to use it on hover, on focus, and on open', () => {
+    const onIntent = vi.fn()
+    render(<CommitteeFilterDropdown groups={GROUPS} selected={[]} onChange={vi.fn()} scope="any" onScopeChange={vi.fn()} showStates onIntent={onIntent} />)
+    const button = screen.getByRole('button', { name: /^Committee/ })
+    // Each says so on its own (opening also moves focus into the menu, which may say it again; the page asks once).
+    fireEvent.pointerEnter(button, { pointerType: 'mouse' })
+    expect(onIntent).toHaveBeenCalled()
+    onIntent.mockClear()
+    fireEvent.focus(button)
+    expect(onIntent).toHaveBeenCalled()
+    onIntent.mockClear()
+    fireEvent.click(button)
+    expect(onIntent).toHaveBeenCalled()
+  })
+})
