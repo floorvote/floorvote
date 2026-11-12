@@ -18,7 +18,8 @@ import { billsAs, type BillsFilter } from './query'
  *   counted as before groups, then corrected for the grouped bills: the
  *   whole-population count less the grouped bills plus their distinct groups,
  *   which the group key index (0102) answers without reading the table
- *   (`countBy`). Tags count this way too: every bill stores its group's
+ *   (`countBy`). The five bill columns are counted that way from one cube a
+ *   request rather than a statement each (`countCube`). Tags count this way too: every bill stores its group's
  *   current tags as its group tags (migration 0103), so all bills of a group
  *   have the same ones.
  * - A team field (priority, position, custom fields): the group has one
@@ -156,4 +157,93 @@ export async function countHolders(db: AppDb, c: Counting, source: { values: SQL
     : sql``
   const rows = await db.all(sql`${withCtes([c.fresh?.cte])}${select} WHERE ${holds}${qualifies}${groupBy(values)}`) as Record<string, unknown>[]
   return rows.map(r => ({ values: valuesOf(r, values.length), n: Number(r.n) }))
+}
+
+/**
+ * The cube: the five bill-column facets (status, stage, state, session, year) and the status groups, counted from two
+ * statements a request instead of two a facet. One reads the bills meeting the filter through the facets index (0124)
+ * grouped by the five columns, the other the grouped bills through the group key index grouped by the group key and
+ * the five, and every count is a sum over their rows (`cubeCounts`). On the largest instance the first has about 130
+ * rows and the second about 9,000.
+ *
+ * The facts on the five columns (`facts`, each a condition on `m` that reads only those columns) are not in the WHERE:
+ * each row says whether its five values meet each one, so a facet can leave its own fact out of the sum where its
+ * statement of its own left it out of the WHERE. Under match=any no fact is passed and nothing is applied, and the rows
+ * carry the fresh bills instead (`Counting.fresh`), each tested once in the scan.
+ */
+export const CUBE_COLUMNS: SQL[] = [sql`${m.status}`, sql`${m.statusStage}`, sql`${m.state}`, sql`${m.session}`, sql`${m.yearStart}`]
+
+/** One row of a cube: the five values, the bills, the fresh bills (under match=any), the highest status rank, whether the values meet each fact, and the group of a grouped row. */
+export type CubeRow = { values: unknown[]; bills: number; fresh: number; rank: number; meets: boolean[]; group?: string }
+
+/** The two statements' rows, with the keys of the facts each row says it meets, in the order of `CubeRow.meets`. */
+export type Cube = { facts: string[]; fresh: boolean; whole: CubeRow[]; grouped: CubeRow[] }
+
+/** Counts the cube under `c`, `c.where` holding every condition but the facts on the five columns, which are `facts`. */
+export async function countCube(db: AppDb, c: Counting, facts: Array<{ key: string; condition: SQL }>): Promise<Cube> {
+  const w = c.where(m)
+  const fresh = c.fresh?.test(m)
+  const cte = withCtes([c.fresh?.cte])
+  const columns = [
+    ...valueColumns(CUBE_COLUMNS),
+    sql`COUNT(*) AS n`,
+    ...(fresh ? [sql`${countOf(fresh)} AS f`] : []),
+    ...facts.map((f, i) => sql`COALESCE((${f.condition}), 0) AS ${sql.raw(`c${i}`)}`),
+  ]
+  const [whole, grouped] = await Promise.all([
+    db.all(sql`${cte}SELECT ${sql.join([...columns, sql`MAX(${m.statusRank}) AS rank`], sql`, `)} FROM bills m${w ? sql` WHERE ${w}` : sql``} GROUP BY ${sql.join(CUBE_COLUMNS, sql`, `)}`) as Promise<Record<string, unknown>[]>,
+    db.all(sql`${cte}SELECT ${sql.join([sql`${m.groupKey} AS gk`, ...columns], sql`, `)} FROM bills m WHERE ${m.groupKey} IS NOT NULL${w ? sql` AND ${w}` : sql``} GROUP BY ${sql.join([sql`${m.groupKey}`, ...CUBE_COLUMNS], sql`, `)}`) as Promise<Record<string, unknown>[]>,
+  ])
+  const row = (r: Record<string, unknown>): CubeRow => ({
+    values: valuesOf(r, CUBE_COLUMNS.length),
+    bills: Number(r.n),
+    fresh: fresh ? Number(r.f) : Number(r.n),
+    rank: Number(r.rank ?? 0),
+    meets: facts.map((_, i) => Number(r[`c${i}`]) !== 0),
+    group: r.gk === undefined ? undefined : String(r.gk),
+  })
+  return { facts: facts.map(f => f.key), fresh: fresh !== undefined, whole: whole.map(row), grouped: grouped.map(row) }
+}
+
+/** The whole cube's rows whose values meet every fact but `omit` (a facet's own, which it leaves out). */
+export const cubeRows = (cube: Cube, omit?: string) => cube.whole.filter(r => r.meets.every((ok, i) => ok || cube.facts[i] === omit))
+
+/**
+ * Each value of the cube's column `column` (one row with no values, when it is undefined) counted as `countBy` counts
+ * it, from the rows whose values meet every fact but `omit`: the bills (under match=any the fresh ones), less the
+ * grouped bills, plus their groups, each group once however many of its rows have the value.
+ */
+export function cubeCounts(cube: Cube, column: number | undefined, omit?: string): CountRow[] {
+  const valueOf = (r: CubeRow) => (column === undefined ? undefined : r.values[column])
+  const kept = (r: CubeRow) => r.meets.every((ok, i) => ok || cube.facts[i] === omit)
+  const counts = new Map<unknown, number>()
+  if (column === undefined) counts.set(undefined, 0)
+  for (const r of cube.whole) if (kept(r)) counts.set(valueOf(r), (counts.get(valueOf(r)) ?? 0) + r.fresh)
+  // Each value's grouped bills, by group: a group counts once under a value, if some of its bills there count.
+  const groups = new Map<unknown, Map<string, number>>()
+  for (const r of cube.grouped) {
+    if (!kept(r)) continue
+    const byGroup = groups.get(valueOf(r)) ?? new Map<string, number>()
+    byGroup.set(r.group!, (byGroup.get(r.group!) ?? 0) + r.fresh)
+    groups.set(valueOf(r), byGroup)
+  }
+  for (const [value, byGroup] of groups) {
+    let n = counts.get(value) ?? 0
+    for (const bills of byGroup.values()) n += (bills > 0 || !cube.fresh ? 1 : 0) - bills
+    counts.set(value, n)
+  }
+  return [...counts].map(([value, n]) => ({ values: column === undefined ? [] : [value], n }))
+}
+
+/**
+ * The groups of the current result, from a cube counted under match=any (over the scopes alone, with the fresh bills):
+ * a bill in no group is in it when it is not fresh, and a group when none of its bills is fresh, since a group's bills
+ * are all fresh or none are. It is the list's total, `countGroups` of the current filter.
+ */
+export function currentOfCube(cube: Cube): number {
+  const sum = (rows: CubeRow[], of: (r: CubeRow) => number) => rows.reduce((a, r) => a + of(r), 0)
+  const alone = (sum(cube.whole, r => r.bills) - sum(cube.grouped, r => r.bills)) - (sum(cube.whole, r => r.fresh) - sum(cube.grouped, r => r.fresh))
+  const freshByGroup = new Map<string, number>()
+  for (const r of cube.grouped) freshByGroup.set(r.group!, (freshByGroup.get(r.group!) ?? 0) + r.fresh)
+  return alone + [...freshByGroup.values()].filter(f => f === 0).length
 }

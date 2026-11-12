@@ -204,7 +204,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
 
       // Every filter's count, from the table (filterTable.ts): each leaves its own filter out, and the rest narrow it.
       const counts = await countFacets(makeFacetContext({
-        db, parts, userId: currentUser.id, isAdmin, hasDrafts, newMatchMinRelevance, mine, suppressedSubjectStates,
+        db, parts, userId: currentUser.id, isAdmin, hasDrafts, newMatchMinRelevance, mine, suppressedSubjectStates, selected,
       }), selected)
       return c.json(facetsResponse(counts, tenant))
     })

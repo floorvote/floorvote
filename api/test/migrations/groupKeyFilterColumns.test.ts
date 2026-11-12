@@ -29,7 +29,10 @@ describe('migration 0102: the group key index carries the filter columns', () =>
 
   it('carries the status, stage, state, session, year, relevance, and id columns', async () => {
     const { results } = await env.DB.prepare("SELECT name FROM pragma_index_info('idx_bills_group_key') ORDER BY seqno").all<{ name: string }>()
-    expect(results.map(r => r.name)).toEqual(['group_key', 'status', 'status_stage', 'state', 'session', 'year_start', 'relevance_score', 'id'])
+    // 0124 widens it (the priority columns and group tags, before the id): these stay, in this order, as its leading columns.
+    const names = results.map(r => r.name)
+    expect(names.slice(0, 7)).toEqual(['group_key', 'status', 'status_stage', 'state', 'session', 'year_start', 'relevance_score'])
+    expect(names.at(-1)).toBe('id')
   })
 
   it('indexes the bills already grouped when it runs', async () => {
