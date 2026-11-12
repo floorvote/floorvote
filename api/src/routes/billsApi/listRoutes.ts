@@ -15,6 +15,7 @@ import { countGroups, loadGroupRows, pageOfGroups, trackedBills, type PageOption
 import { loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../../lib/billSubjects'
 import { parseBillFilter } from '../../../../shared/billFilter'
 import { subjectCapError } from './filterRequest'
+import { cachedFacets, facetsCacheKey, facetsCacheTtl, wantsFresh } from '../../lib/facetsCache'
 
 export function registerListRoutes(router: Hono<AppEnv>) {
   // GET /bills — the list, one row per companion group, with optional filters and server-side pagination
@@ -129,78 +130,82 @@ export function registerListRoutes(router: Hono<AppEnv>) {
   // counts are computed without that dimension's own filter, so options remain visible when active).
   // Every count counts companion groups once (facetCounts.ts).
   router.get('/facets', async (c) => {
-    const db = getDb(c.env.DB)
-    const currentUser = c.get('user')
+    // A member's response is kept for a minute (lib/facetsCache.ts); the page asks afresh after its own edits.
+    const key = facetsCacheKey(c.env, c.get('user').id, new URL(c.req.url).searchParams)
+    return cachedFacets(facetsCacheTtl(c.env), key, wantsFresh(c.req.raw), async () => {
+      const db = getDb(c.env.DB)
+      const currentUser = c.get('user')
 
-    const searchParams = new URL(c.req.url).searchParams
-    const selection = facetSelection(searchParams)
-    if ('error' in selection) return c.json({ error: selection.error }, 400)
-    const selected = selection.selected
-    const bf = parseBillFilter(searchParams)
-    const capError = subjectCapError(bf)
-    if (capError) return c.json(capError, 400)
-    const isAdmin = currentUser.role === 'admin' || currentUser.role === 'owner'
-    // Threshold is only needed for the admin count or when the worklist filter is active.
-    // The member's bills are read once for the request: the my bills scope (when it is on) and the count beside the
-    // facets both use them, alongside the threshold's read.
-    const [newMatchMinRelevance, mine] = await Promise.all([
-      (isAdmin || bf.newMatches) ? getNewMatchMinRelevance(db) : Promise.resolve(0),
-      loadMyBillsInGroups(db, currentUser.id),
-    ])
+      const searchParams = new URL(c.req.url).searchParams
+      const selection = facetSelection(searchParams)
+      if ('error' in selection) return c.json({ error: selection.error }, 400)
+      const selected = selection.selected
+      const bf = parseBillFilter(searchParams)
+      const capError = subjectCapError(bf)
+      if (capError) return c.json(capError, 400)
+      const isAdmin = currentUser.role === 'admin' || currentUser.role === 'owner'
+      // Threshold is only needed for the admin count or when the worklist filter is active.
+      // The member's bills are read once for the request: the my bills scope (when it is on) and the count beside the
+      // facets both use them, alongside the threshold's read.
+      const [newMatchMinRelevance, mine] = await Promise.all([
+        (isAdmin || bf.newMatches) ? getNewMatchMinRelevance(db) : Promise.resolve(0),
+        loadMyBillsInGroups(db, currentUser.id),
+      ])
 
-    // The facets' filters are the list's own, built once in query.ts, so the two can't drift: each is a
-    // condition on one bill, and a companion group meets it when a bill of it does (facetCounts.ts).
-    // Bill facts join by the group operator, and the scopes (search, my bills, unvoted, new matches,
-    // drafts) always narrow. A dimension's facet leaves its own fact out.
-    const parts = await buildFilterParts(db, bf, { userId: currentUser.id, newMatchMinRelevance, myBillIds: mine })
+      // The facets' filters are the list's own, built once in query.ts, so the two can't drift: each is a
+      // condition on one bill, and a companion group meets it when a bill of it does (facetCounts.ts).
+      // Bill facts join by the group operator, and the scopes (search, my bills, unvoted, new matches,
+      // drafts) always narrow. A dimension's facet leaves its own fact out.
+      const parts = await buildFilterParts(db, bf, { userId: currentUser.id, newMatchMinRelevance, myBillIds: mine })
 
-    // hasDrafts: does this TENANT have any draft at all, completely unfiltered
-    // — no dimensional filters, no myBills/unvoted/newMatches scope. This is
-    // the chip-visibility signal (draftCount below stays filtered, for the
-    // badge). Computed up front so the myBills early-return below — which
-    // otherwise skips straight to an empty facets object — still reports it
-    // correctly instead of hard-coding false. The 1 is written in the SQL, not bound: SQLite serves
-    // the probe from the partial index of drafts (0107) only when it sees is_draft = 1 in the
-    // statement, and without it the planner scans the table (#551). billsFacetsPlan.test.ts pins
-    // the plan.
-    const [hasDraftRow] = await db.select({ id: bills.id })
-      .from(bills)
-      .where(sql`${bills.isDraft} = 1`)
-      .limit(1)
-      .all()
-    const hasDrafts = hasDraftRow !== undefined
+      // hasDrafts: does this TENANT have any draft at all, completely unfiltered
+      // — no dimensional filters, no myBills/unvoted/newMatches scope. This is
+      // the chip-visibility signal (draftCount below stays filtered, for the
+      // badge). Computed up front so the myBills early-return below — which
+      // otherwise skips straight to an empty facets object — still reports it
+      // correctly instead of hard-coding false. The 1 is written in the SQL, not bound: SQLite serves
+      // the probe from the partial index of drafts (0107) only when it sees is_draft = 1 in the
+      // statement, and without it the planner scans the table (#551). billsFacetsPlan.test.ts pins
+      // the plan.
+      const [hasDraftRow] = await db.select({ id: bills.id })
+        .from(bills)
+        .where(sql`${bills.isDraft} = 1`)
+        .limit(1)
+        .all()
+      const hasDrafts = hasDraftRow !== undefined
 
-    // Loaded unconditionally (not just when a `subject` param is present): the
-    // subjects facet's own counts must omit suppressed states even with no
-    // active subject filter, and a suppressed value in the filter must not
-    // narrow the other dimensions' counts either (see filterSuppressedSubjects).
-    const suppressedSubjectStates = await loadSuppressedSubjectStates(db)
+      // Loaded unconditionally (not just when a `subject` param is present): the
+      // subjects facet's own counts must omit suppressed states even with no
+      // active subject filter, and a suppressed value in the filter must not
+      // narrow the other dimensions' counts either (see filterSuppressedSubjects).
+      const suppressedSubjectStates = await loadSuppressedSubjectStates(db)
 
-    // Which states have subjects at all, with no filter applied (a state-leading
-    // index makes this a cheap skip-scan). The `subjects` facet below is scoped
-    // by the other active filters, so it can't tell the web app "this state has
-    // none" from "a filter hid it". Suppressed states count as having none.
-    // Counted per bill, not per companion group: a state is in the list when
-    // any bill there has subjects, whichever bill stands for its group's row.
-    const subjectStates = (await db.selectDistinct({ state: billSubjects.state }).from(billSubjects).all())
-      .map(r => r.state)
-      .filter(st => !isSubjectsSuppressedForState(suppressedSubjectStates, st))
-      .sort()
-    // Every state the instance has bills in, for `*` coverage; absent on an
-    // explicit list, and cached per tenant (lib/billStates.ts). Per bill too.
-    const billStates = await billStatesForWildcard(db, c.env.TENANT_ID, c.env.STATE)
+      // Which states have subjects at all, with no filter applied (a state-leading
+      // index makes this a cheap skip-scan). The `subjects` facet below is scoped
+      // by the other active filters, so it can't tell the web app "this state has
+      // none" from "a filter hid it". Suppressed states count as having none.
+      // Counted per bill, not per companion group: a state is in the list when
+      // any bill there has subjects, whichever bill stands for its group's row.
+      const subjectStates = (await db.selectDistinct({ state: billSubjects.state }).from(billSubjects).all())
+        .map(r => r.state)
+        .filter(st => !isSubjectsSuppressedForState(suppressedSubjectStates, st))
+        .sort()
+      // Every state the instance has bills in, for `*` coverage; absent on an
+      // explicit list, and cached per tenant (lib/billStates.ts). Per bill too.
+      const billStates = await billStatesForWildcard(db, c.env.TENANT_ID, c.env.STATE)
 
-    // Whether the tenant has any committee: the Committee control shows on it while its counts are left for later (omit).
-    const [anyCommittee] = await db.select({ one: sql<number>`1` }).from(billCommittees).limit(1).all()
-    const tenant = { subjectStates, billStates, hasDrafts, hasCommittees: anyCommittee !== undefined }
-    // "My bills" for a member with none matches nothing. The response is the real one's, built from the same table with every count at zero.
-    if (parts.noMatch) return c.json(emptyFacets(tenant, selected))
+      // Whether the tenant has any committee: the Committee control shows on it while its counts are left for later (omit).
+      const [anyCommittee] = await db.select({ one: sql<number>`1` }).from(billCommittees).limit(1).all()
+      const tenant = { subjectStates, billStates, hasDrafts, hasCommittees: anyCommittee !== undefined }
+      // "My bills" for a member with none matches nothing. The response is the real one's, built from the same table with every count at zero.
+      if (parts.noMatch) return c.json(emptyFacets(tenant, selected))
 
-    // Every filter's count, from the table (filterTable.ts): each leaves its own filter out, and the rest narrow it.
-    const counts = await countFacets(makeFacetContext({
-      db, parts, userId: currentUser.id, isAdmin, hasDrafts, newMatchMinRelevance, mine, suppressedSubjectStates,
-    }), selected)
-    return c.json(facetsResponse(counts, tenant))
+      // Every filter's count, from the table (filterTable.ts): each leaves its own filter out, and the rest narrow it.
+      const counts = await countFacets(makeFacetContext({
+        db, parts, userId: currentUser.id, isAdmin, hasDrafts, newMatchMinRelevance, mine, suppressedSubjectStates,
+      }), selected)
+      return c.json(facetsResponse(counts, tenant))
+    })
   })
 }
 
