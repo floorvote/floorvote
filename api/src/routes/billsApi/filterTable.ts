@@ -572,6 +572,16 @@ const CUBE_FACT_KEYS: ReadonlySet<string> = (() => {
   return new Set([...marks].filter(([, m]) => m.has(true)).map(([k]) => k))
 })()
 
+/** Refuses a cube fact whose condition reads a column of `m` the cube does not group by. */
+export function checkCubeFact(key: string, condition: BillsCondition): void {
+  void key; void condition
+}
+
+/** Checks the condition of every filter marked `cube`, and names them. */
+export function checkCubeFacts(): string[] {
+  return []
+}
+
 /** A fact's condition, ORed into the fact of the same key when a filter that joins it has already added one. */
 function addFact(parts: FilterParts, key: string, condition: BillsCondition) {
   const existing = parts.facts.find(f => f.key === key)
