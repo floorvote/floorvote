@@ -177,6 +177,9 @@ const LAZY_FACET_PARTS: readonly LazyFacetPart[] = ['subject', 'committee']
 type LazyFacetsSettled = { key: string; parts: readonly LazyFacetPart[]; failed: boolean }
 
 /** A facets request: the filter's own params, then what to leave out or ask for alone. */
+/** A facets request that asks the server to count afresh, not to answer from the member's kept counts. */
+const FRESH: RequestInit = { headers: { 'Cache-Control': 'no-cache' } }
+
 function facetsPath(filterParams: string, extra: string): string {
   return `/bills/facets?${filterParams ? `${filterParams}&` : ''}${extra}`
 }
@@ -335,14 +338,16 @@ export function BillList() {
 
   const facetSeqRef = useRef(0)
   const filtersKey = serializeBillFilter(f.filter)
-  const fetchFacets = useCallback(async () => {
+  // `fresh` asks the server to count afresh rather than answer from the minute it keeps a member's counts
+  // (api/src/lib/facetsCache.ts): the page sends it after its own edits, so they show at once.
+  const fetchFacets = useCallback(async (fresh = false) => {
     const params = billsFacetParams(f.filter)
     // Only the newest request may write the counts. The dismiss button acts on
     // the filters as they stand now, so a slower reply to an earlier request
     // (a search cleared before its reply returned) must not overwrite them.
     const seq = ++facetSeqRef.current
     try {
-      const data = await apiFetch<FacetCounts>(facetsPath(params, `omit=${LAZY_FACET_PARTS.join(',')}`))
+      const data = await apiFetch<FacetCounts>(facetsPath(params, `omit=${LAZY_FACET_PARTS.join(',')}`), fresh ? FRESH : undefined)
       if (seq !== facetSeqRef.current) return
       cachedFacetCounts = data
       updateKnownStates(data)
@@ -360,7 +365,7 @@ export function BillList() {
   const lazyFacetsWantedRef = useRef(false)
   const lazySeqRef = useRef(0)
   const lazyInFlightRef = useRef<{ key: string; parts: readonly LazyFacetPart[] } | null>(null)
-  const fetchLazyFacets = useCallback(async (parts: readonly LazyFacetPart[]) => {
+  const fetchLazyFacets = useCallback(async (parts: readonly LazyFacetPart[], fresh = false) => {
     const key = filtersKey
     const inFlight = lazyInFlightRef.current
     if (inFlight && inFlight.key === key && parts.every(p => inFlight.parts.includes(p))) return
@@ -371,7 +376,7 @@ export function BillList() {
       setLazyFacetsSettled(settled)
     }
     try {
-      const data = await apiFetch<FacetCounts>(facetsPath(billsFacetParams(f.filter), `only=${parts.join(',')}`))
+      const data = await apiFetch<FacetCounts>(facetsPath(billsFacetParams(f.filter), `only=${parts.join(',')}`), fresh ? FRESH : undefined)
       if (seq !== lazySeqRef.current) return
       setLazyFacets(prev => ({
         subject: parts.includes('subject') ? (data.subject ?? {}) : prev.subject,
@@ -411,7 +416,7 @@ export function BillList() {
   // bills themselves (drafts deleted, an edit to every bill the filter matches), which can change them.
   const refreshLazyFacets = useCallback((force = false) => {
     if (lazyFacetsWantedRef.current) {
-      if (force || !lazyFacetsLandedForFilter()) void fetchLazyFacets(LAZY_FACET_PARTS)
+      if (force || !lazyFacetsLandedForFilter()) void fetchLazyFacets(LAZY_FACET_PARTS, force)
     } else if (f.committee.some(id => !committeeNames[id])) {
       void fetchLazyFacets(['committee'])
     }
@@ -675,7 +680,7 @@ export function BillList() {
   // "Set priority", and refresh facets and the sidebar so both "new" counts drop.
   const handleTriageDismiss = useCallback((billId: string) => {
     setAllBills(prev => prev.map(b => b.id === billId ? { ...b, triagedAt: new Date().toISOString() } : b))
-    fetchFacets()
+    fetchFacets(true)
     refreshSidebar()
   }, [fetchFacets, refreshSidebar])
 
@@ -701,7 +706,7 @@ export function BillList() {
     setTotal(prev => Math.max(0, prev - ids.length))
     handleDeselect(ids)
     billsListCache = null
-    void fetchFacets()
+    void fetchFacets(true)
     refreshLazyFacets(true)
     refreshSidebar()
   }, [handleDeselect, fetchFacets, refreshLazyFacets, refreshSidebar])
@@ -721,7 +726,7 @@ export function BillList() {
     if (updatedIds === 'filter') {
       billsListCache = null
       void fetchBills(1, false)
-      void fetchFacets()
+      void fetchFacets(true)
       refreshLazyFacets(true)
       refreshSidebar()
       return
