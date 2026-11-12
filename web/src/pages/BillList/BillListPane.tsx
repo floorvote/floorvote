@@ -1,5 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Link, useLocation, useMatch } from 'react-router-dom'
+import { overloadDelayMs, useOverloadRetry } from './overloadRetry'
 import { apiFetch } from '../../lib/api'
 import { decodeStatus } from '../../lib/legislativeStatus'
 import { billUrl } from '../../lib/sessionSlug'
@@ -249,7 +250,9 @@ export function BillListPane() {
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(false)
+  // 'retrying' while the one retry after a database overload is pending; 'failed' once the list could not be loaded.
+  const [error, setError] = useState<null | 'retrying' | 'failed'>(null)
+  const overloadRetry = useOverloadRetry()
   const scrollRef = useRef<HTMLUListElement>(null)
   const pane = useBillListPaneWidth()
   const columns = visiblePaneColumns(pane.width)
@@ -273,19 +276,35 @@ export function BillListPane() {
       setHasMore(cached.page.totalPages > 1)
       setLoading(false)
     }
-    apiFetch<BillsPage>(`/bills?${params}`)
-      .then(data => {
-        if (cancelled) return
-        setBills(data.bills)
-        setTotal(data.pagination.total)
-        setHasMore(data.pagination.totalPages > 1)
-        setPage(1)
-        setError(false)
-      })
-      .catch(() => { if (!cancelled && !cached) setError(true) })
-      .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
-  }, [search])
+    // A database overload (503 with Retry-After) is asked again once after that interval, as the Bills page does; a
+    // cached first page stays showing meanwhile. A request that is no longer the newest neither shows nor arms a retry.
+    const load = (isRetry: boolean) => {
+      const seq = overloadRetry.start()
+      apiFetch<BillsPage>(`/bills?${params}`)
+        .then(data => {
+          if (cancelled || !overloadRetry.isCurrent(seq)) return
+          setBills(data.bills)
+          setTotal(data.pagination.total)
+          setHasMore(data.pagination.totalPages > 1)
+          setPage(1)
+          setError(null)
+          setLoading(false)
+        })
+        .catch(err => {
+          if (cancelled || !overloadRetry.isCurrent(seq)) return
+          const retryAfterMs = overloadDelayMs(err)
+          if (retryAfterMs != null && !isRetry) {
+            if (!cached) { setError('retrying'); setLoading(false) }
+            overloadRetry.schedule(seq, retryAfterMs, () => load(true))
+            return
+          }
+          if (!cached) setError('failed')
+          setLoading(false)
+        })
+    }
+    load(false)
+    return () => { cancelled = true; overloadRetry.clear() }
+  }, [search, overloadRetry])
 
   const [loadingMore, setLoadingMore] = useState(false)
   // A failed page stops the chain: the sentinel would otherwise still be in
@@ -402,7 +421,7 @@ export function BillListPane() {
       {loading ? (
         <p style={{ ...CHROME_TEXT, padding: '12px 15px', margin: 0 }}>Loading bills…</p>
       ) : error ? (
-        <p style={{ ...CHROME_TEXT, padding: '12px 15px', margin: 0 }}>Couldn’t load bills.</p>
+        <p style={{ ...CHROME_TEXT, padding: '12px 15px', margin: 0 }}>{error === 'retrying' ? 'The list could not load. Retrying…' : 'Couldn’t load bills.'}</p>
       ) : bills.length === 0 ? (
         <p style={{ ...CHROME_TEXT, padding: '12px 15px', margin: 0 }}>No bills match this list’s filters.</p>
       ) : (
