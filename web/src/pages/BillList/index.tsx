@@ -91,6 +91,9 @@ export function peekCustomFieldDefs(): CustomFieldDef[] {
   return cachedCustomFieldDefs ?? []
 }
 
+const LIST_RETRYING = 'The list could not load. Retrying…'
+const LIST_COULD_NOT_LOAD = 'The list could not load. Reload the page to try again.'
+
 // Loader-only cache warmer (billListLoader is the sole caller — nothing renders
 // through it), so the fetch goes through apiFetchForLoader: a 10s per-attempt
 // deadline instead of inheriting the server's own 30s, which is what a stalled
@@ -295,7 +298,13 @@ export function BillList() {
     resetDeps: [f.filter, sortCol, sortDir],
   })
 
-  const fetchBills = useCallback(async (nextPage: number, append: boolean) => {
+  // D1 answers an overloaded database with a 503 and the seconds to wait. The list says so and asks again once after
+  // that; a second failure is reported as any other.
+  const overloadRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (overloadRetryRef.current) clearTimeout(overloadRetryRef.current) }, [])
+
+  const fetchBills = useCallback(async (nextPage: number, append: boolean, isRetry = false): Promise<void> => {
+    if (overloadRetryRef.current) { clearTimeout(overloadRetryRef.current); overloadRetryRef.current = null }
     const paramsStr = billsApiParams({ filter: f.filter, sortCol, sortDir }, nextPage, PAGE_SIZE)
     const hitCache = nextPage === 1 && !append && !hasFetchedOnce.current && billsListCache?.params === paramsStr
     if (hitCache) {
@@ -322,11 +331,21 @@ export function BillList() {
         setAllBills(data.bills)
       }
       hasFetchedOnce.current = true
+      setError(null)
       setTotal(data.pagination.total)
       setHasMore(nextPage < data.pagination.totalPages)
       setPage(nextPage)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to load bills.')
+      if (err instanceof ApiError && err.status === 503 && err.retryAfterMs != null) {
+        if (!isRetry) {
+          setError(LIST_RETRYING)
+          overloadRetryRef.current = setTimeout(() => { overloadRetryRef.current = null; void fetchBills(nextPage, append, true) }, err.retryAfterMs)
+        } else {
+          setError(LIST_COULD_NOT_LOAD)
+        }
+      } else {
+        setError(err instanceof ApiError ? err.message : 'Failed to load bills.')
+      }
     } finally {
       setLoading(false)
       setRefreshing(false)

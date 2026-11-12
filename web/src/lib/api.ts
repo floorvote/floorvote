@@ -11,10 +11,19 @@ export class ApiError extends Error {
     public code?: string,
     /** The whole error body, for the few callers that read more than `error`. */
     public body?: Record<string, unknown>,
+    /** How long the server asked the client to wait before asking again (Retry-After, in seconds), as milliseconds. */
+    public retryAfterMs?: number,
   ) {
     super(message)
     this.name = 'ApiError'
   }
+}
+
+/** The response's Retry-After as milliseconds, when it is a number of seconds (the form the API sends); otherwise undefined. */
+function retryAfterMsOf(res: Response): number | undefined {
+  const raw = res.headers?.get('Retry-After')
+  if (raw == null || !/^\d+$/.test(raw.trim())) return undefined
+  return parseInt(raw, 10) * 1000
 }
 
 export async function apiFetch<T>(
@@ -44,7 +53,7 @@ export async function apiFetch<T>(
     if (body.code === 'terms_not_accepted') {
       window.dispatchEvent(new CustomEvent(TERMS_NOT_ACCEPTED_EVENT))
     }
-    throw new ApiError(res.status, body.error ?? res.statusText, body.code, body)
+    throw new ApiError(res.status, body.error ?? res.statusText, body.code, body, retryAfterMsOf(res))
   }
 
   if (res.status === 204) return undefined as T
