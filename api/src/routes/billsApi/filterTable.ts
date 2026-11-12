@@ -1,4 +1,5 @@
 import { eq, and, or, inArray, sql, SQL } from 'drizzle-orm'
+import { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core'
 import { customFieldDefinitions } from '../../db/schema'
 import type { AppDb } from '../../types'
 import {
@@ -572,15 +573,34 @@ const CUBE_FACT_KEYS: ReadonlySet<string> = (() => {
   return new Set([...marks].filter(([, m]) => m.has(true)).map(([k]) => k))
 })()
 
-/** Refuses a cube fact whose condition reads a column of `m` the cube does not group by. */
+/** The columns of `m` the cube groups by (`CUBE_COLUMNS`), as the SQL names them. */
+const CUBE_COLUMN_NAMES: ReadonlySet<string> = new Set(['status', 'status_stage', 'state', 'session', 'year_start'])
+
+/**
+ * Refuses a cube fact whose condition reads a column of `m` the cube does not group by. The cube selects each fact as a
+ * bare column beside `MAX(status_rank)`, which SQLite reads from the row with the highest rank: that is the group's own
+ * value only for a condition on the grouped columns. Bound values and literals are fine.
+ */
 export function checkCubeFact(key: string, condition: BillsCondition): void {
-  void key; void condition
+  const text = new SQLiteSyncDialect().sqlToQuery(condition(billsAs('m'))).sql
+  const others = [...new Set([...text.matchAll(/"m"\."(\w+)"/g)].map(r => r[1]).filter(c => !CUBE_COLUMN_NAMES.has(c)))]
+  if (others.length > 0) throw new Error(`cube fact ${key} reads m.${others.join(', m.')}, which the cube does not group by`)
 }
 
-/** Checks the condition of every filter marked `cube`, and names them. */
+/** Checks the condition of every filter marked `cube`, built for a sample value, and names them. Run when the module loads. */
 export function checkCubeFacts(): string[] {
-  return []
+  const checked: string[] = []
+  for (const name of NAMES) {
+    const entry = FILTER_TABLE[name] as Entry<unknown>
+    if (entry.kind !== 'fact' || !entry.cube) continue
+    const built = entry.condition(['1'], {} as ConditionContext)
+    if (!built || built instanceof Promise) throw new Error(`cube fact ${name} must build its condition at once from its values`)
+    checkCubeFact(factKeyOf(name), built)
+    checked.push(name)
+  }
+  return checked
 }
+checkCubeFacts()
 
 /** A fact's condition, ORed into the fact of the same key when a filter that joins it has already added one. */
 function addFact(parts: FilterParts, key: string, condition: BillsCondition) {
