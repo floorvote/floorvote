@@ -6,7 +6,7 @@ import {
   committeeMembership, multiFilter, myBillsCondition, positionCondition, priorityCondition, statusFilterValues, subjectMembership, tagCondition,
   unvotedCondition, type BillFilterContext, type BillsCondition, type BillsFilter,
 } from './query'
-import { countBy, countHolders, freshOf, type Counting, type CountRow } from './facetCounts'
+import { countBy, countCube, countHolders, cubeCounts, cubeRows, currentOfCube, freshOf, type Counting, type CountRow, type Cube } from './facetCounts'
 import { countGroups } from './groupList'
 import { FILTER_ANY, FILTER_NONE, type BillFilter } from '../../../../shared/billFilter'
 import { stagePosition, type StatusStage } from '../../../../shared/statusStages'
@@ -47,14 +47,16 @@ type Built = BillsCondition | undefined
  * How an entry's condition joins the others:
  * - `fact`: a fact about the bill, which the group operator joins. A fact that names `joins` is not a fact of
  *   its own: its condition is ORed into the named filter's, so the two are one fact (the stage joins the status,
- *   #677) with one key, which every facet leaves out whole
+ *   #677) with one key, which every facet leaves out whole. A fact marked `cube` reads only the five columns the
+ *   cube groups by (`CUBE_COLUMNS`), so the cube applies it to its rows rather than in its WHERE (`countCube`);
+ *   every filter of one key is marked alike
  * - `custom-field`: one fact for each custom field with a value, keyed by the field's id
  * - `scope`: viewer-relative or search, which always narrows
  * - `operator`: no condition of its own: it says how the facts join
  * - `modifier`: no condition of its own: it says how another filter reads (the committee scope), and sets that part
  */
 type Condition<V> =
-  | { kind: 'fact'; joins?: keyof BillFilter; condition: (value: V, ctx: ConditionContext) => Built | Promise<Built> }
+  | { kind: 'fact'; joins?: keyof BillFilter; cube?: true; condition: (value: V, ctx: ConditionContext) => Built | Promise<Built> }
   | { kind: 'custom-field'; condition: (value: V, ctx: ConditionContext) => Promise<Record<string, BillsCondition>> }
   | { kind: 'scope'; condition: (value: V, ctx: ConditionContext) => Built | typeof NO_MATCH | Promise<Built | typeof NO_MATCH> }
   | { kind: 'operator'; condition: (value: V) => 'all' | 'any' }
@@ -94,6 +96,8 @@ export type FacetContext = {
   counting: (...omit: string[]) => Counting
   /** The count of all groups a facet's filter meets (priority and position name the groups with no value by it). */
   groupsMeeting: (own: string) => Promise<number>
+  /** The cube the five bill-column facets and the status groups are summed from, counted once a request (`countCube`). */
+  cube: () => Promise<Cube>
   /** A map of counts as the facet shows it: under OR, each value's resulting total instead of its own. */
   shift: (counts: Counts) => Promise<Counts>
 }
@@ -113,6 +117,8 @@ export type FacetContext = {
 type Facet<R> = {
   empty: () => R
   count: (fc: FacetContext, own: string) => Promise<R>
+  /** It is summed from the cube, so a request that counts it counts the cube, and takes its totals from it too. */
+  cube?: true
 } & ({ kind: 'values' | 'custom-fields' } | { kind: 'count' | 'derived'; response: string })
 
 // ── The table ───────────────────────────────────────────────────────────
@@ -134,11 +140,15 @@ const countsOf = (rows: CountRow[], keep: (value: unknown) => boolean = Boolean)
   Object.fromEntries(rows.filter(r => keep(r.values[0])).map(r => [String(r.values[0]), r.n]))
 const sum = (rows: CountRow[]) => rows.reduce((a, r) => a + r.n, 0)
 
-/** A facet of the groups with each value of a column of the bill, counted by the bills' own values (status, stage, year, session, state). */
-const billColumn = (column: SQL, keep?: (value: unknown) => boolean): Facet<Counts> => ({
+/**
+ * A facet of the groups with each value of a column of the bill, counted by the bills' own values (status, stage, year,
+ * session, state): the cube's column of that index (`CUBE_COLUMNS`), summed over the rows that meet every fact but its own.
+ */
+const billColumn = (column: number, keep?: (value: unknown) => boolean): Facet<Counts> => ({
   kind: 'values',
+  cube: true,
   empty: () => ({}),
-  count: async (fc, own) => fc.shift(countsOf(await countBy(fc.db, fc.counting(own), { values: [column], from: sql`bills m` }), keep)),
+  count: async (fc, own) => fc.shift(countsOf(cubeCounts(await fc.cube(), column, own), keep)),
 })
 
 /**
@@ -149,18 +159,23 @@ const billColumn = (column: SQL, keep?: (value: unknown) => boolean): Facet<Coun
  * stage only when none of the label's bills has one. Its rank is the highest among the label's bills.
  *
  * It tallies bills where the counts beside it tally groups, since which stage holds most of a label's bills is a
- * question about bills, and it is no count of what a pick would total. It reads each bill's rank, which no index
- * carries, so it runs as one statement of its own, never as a column of the status count that the group key
- * index answers alone.
+ * question about bills, and it is no count of what a pick would total. It is read from the whole cube, whose rows
+ * carry their bills and their highest rank (the facets index holds the rank), so it costs no statement of its own.
  */
 const statusGroups: Facet<Record<string, { stage: string | null; rank: number }>> & { kind: 'derived' } = {
   kind: 'derived',
   response: 'statusGroups',
+  cube: true,
   empty: () => ({}),
   count: async (fc, own) => {
-    const where = fc.counting(own).where(m)
-    const rows = await fc.db.all(sql`SELECT ${m.status} AS label, ${m.statusStage} AS stage, MAX(${m.statusRank}) AS rank, SUM(1) AS bills
-      FROM bills m${where ? sql` WHERE ${where}` : sql``} GROUP BY ${m.status}, ${m.statusStage}`) as Array<{ label: string; stage: string | null; rank: number; bills: number }>
+    const byStage = new Map<string, { label: string; stage: string | null; rank: number; bills: number }>()
+    for (const r of cubeRows(await fc.cube(), own)) {
+      const [label, stage] = [r.values[0] as string, (r.values[1] ?? null) as string | null]
+      const key = JSON.stringify([label, stage])
+      const seen = byStage.get(key)
+      byStage.set(key, { label, stage, rank: Math.max(seen?.rank ?? r.rank, r.rank), bills: (seen?.bills ?? 0) + r.bills })
+    }
+    const rows = [...byStage.values()]
     const byLabel = new Map<string, typeof rows>()
     for (const r of rows) if (r.label) byLabel.set(r.label, [...(byLabel.get(r.label) ?? []), r])
     return Object.fromEntries([...byLabel].map(([label, group]) => {
@@ -217,11 +232,12 @@ const currentCount = (response: string, count: (fc: FacetContext) => Promise<num
 export const FILTER_TABLE: FilterTable = {
   status: {
     kind: 'fact',
+    cube: true,
     condition: values => {
       const statuses = statusFilterValues(values)
       return statuses.length > 0 ? t => multiFilter(t.status, statuses)! : undefined
     },
-    facet: billColumn(sql`${m.status}`),
+    facet: billColumn(0),
     alsoFacets: [statusGroups],
   },
   // The stage is a way of choosing statuses (a heading selects the whole stage), so its condition is part of the
@@ -229,8 +245,9 @@ export const FILTER_TABLE: FilterTable = {
   stage: {
     kind: 'fact',
     joins: 'status',
+    cube: true,
     condition: values => values.length > 0 ? t => multiFilter(t.statusStage, values)! : undefined,
-    facet: billColumn(sql`${m.statusStage}`),
+    facet: billColumn(1),
   },
   // Priority is sparse (bills can have none): "Any" = has a priority, "none" = no priority.
   priority: {
@@ -255,20 +272,23 @@ export const FILTER_TABLE: FilterTable = {
   },
   sessionName: {
     kind: 'fact',
+    cube: true,
     condition: values => values.length > 0 ? t => multiFilter(t.session, values)! : undefined,
-    facet: billColumn(sql`${m.session}`),
+    facet: billColumn(3),
   },
   year: {
     kind: 'fact',
+    cube: true,
     condition: values => values.length > 0
       ? t => values.length === 1 ? eq(t.yearStart, Number(values[0])) : inArray(t.yearStart, values.map(Number))
       : undefined,
-    facet: billColumn(sql`${m.yearStart}`, v => v !== null && v !== undefined),
+    facet: billColumn(4, v => v !== null && v !== undefined),
   },
   state: {
     kind: 'fact',
+    cube: true,
     condition: values => values.length > 0 ? t => multiFilter(t.state, values)! : undefined,
-    facet: billColumn(sql`${m.state}`),
+    facet: billColumn(2),
   },
   search: {
     kind: 'scope',
@@ -535,6 +555,23 @@ export const factKeyOf = (name: keyof BillFilter): string => {
   return entry.kind === 'fact' && entry.joins ? entry.joins : name
 }
 
+/**
+ * The keys of the facts the cube applies to its rows (`Condition`'s `cube`). A key some filters mark and others do not
+ * would put part of one fact in the WHERE and part in the rows, so it is refused when the module loads.
+ */
+const CUBE_FACT_KEYS: ReadonlySet<string> = (() => {
+  const marks = new Map<string, Set<boolean>>()
+  for (const name of NAMES) {
+    const entry = FILTER_TABLE[name] as Entry<unknown>
+    if (entry.kind !== 'fact') continue
+    const key = factKeyOf(name)
+    marks.set(key, (marks.get(key) ?? new Set()).add(entry.cube === true))
+  }
+  const mixed = [...marks].filter(([, m]) => m.size > 1).map(([k]) => k)
+  if (mixed.length > 0) throw new Error(`filters of one fact must all be cube facts or none: ${mixed.join(', ')}`)
+  return new Set([...marks].filter(([, m]) => m.has(true)).map(([k]) => k))
+})()
+
 /** A fact's condition, ORed into the fact of the same key when a filter that joins it has already added one. */
 function addFact(parts: FilterParts, key: string, condition: BillsCondition) {
   const existing = parts.facts.find(f => f.key === key)
@@ -622,6 +659,8 @@ export async function buildBillsFilter(db: AppDb, f: BillFilter, ctx: BillFilter
 /** What a facets request needs to build its counts. */
 export type FacetRequest = Pick<FacetContext, 'db' | 'userId' | 'isAdmin' | 'hasDrafts' | 'newMatchMinRelevance' | 'mine' | 'suppressedSubjectStates'> & {
   parts: FilterParts
+  /** The facets the request counts (`countFacets`): when one is summed from the cube, the totals are summed from it too. */
+  selected?: FacetSelection
 }
 
 /**
@@ -646,6 +685,11 @@ export type FacetRequest = Pick<FacetContext, 'db' | 'userId' | 'isAdmin' | 'has
  * in it. It is a conditional count rather than a WHERE term on purpose: filtering the rows by NOT current would
  * drop a value whose bills are ALL already showing out of the GROUP BY entirely, so it would vanish from the
  * dropdown instead of reading "picking this changes nothing".
+ *
+ * The five bill-column facets and the status groups are sums over one cube (`countCube`), counted under the facts the
+ * cube does not apply to its rows (every one under match=all but the facts on its columns; none under match=any). When
+ * a request counts them, the current total of the shift and the groups a facet's filter meets with nothing left out
+ * are sums over it too, rather than counts of their own.
  */
 export function makeFacetContext(req: FacetRequest): FacetContext {
   const { db, parts } = req
@@ -661,23 +705,37 @@ export function makeFacetContext(req: FacetRequest): FacetContext {
   const scopesOnly = composeFilter(parts, { facts: false })
   const counting = (...omit: string[]): Counting => ({ where: any ? scopesOnly : composeFilter(parts, { omit: new Set(omit) }), fresh })
 
+  // The cube, counted once when a facet asks for it. Under AND its WHERE leaves out the facts on its columns, which
+  // its rows say whether they meet; under OR it counts over the scopes, as every facet does, with the fresh bills.
+  const usesCube = FACETS.some(f => f.facet.cube === true && (req.selected ?? everyFacet)(f.filter))
+  let cubeOnce: Promise<Cube> | undefined
+  const cube = () => cubeOnce ??= countCube(db, {
+    where: any ? scopesOnly : composeFilter(parts, { omit: CUBE_FACT_KEYS }),
+    fresh,
+  }, any ? [] : parts.facts.filter(f => CUBE_FACT_KEYS.has(f.key)).map(f => ({ key: f.key, condition: f.condition(m) })))
+
   // The list's total is only queried at all when shiftFacets is active: under AND mode (or with no bill-fact
   // filter active) the shift is the identity and the value would be thrown away.
-  const currentTotal = shiftFacets ? countGroups(db, currentOnM) : Promise.resolve(0)
+  const currentTotal = !shiftFacets ? Promise.resolve(0) : usesCube ? cube().then(currentOfCube) : countGroups(db, currentOnM)
   currentTotal.catch(() => undefined)
 
   // Under AND the dimension's own fact is left out, so a dimension that is not filtered shares one count with the others.
+  // That shared one, the groups meeting every fact (under OR, the fresh ones over the scopes), is the cube's whole sum.
   const totals = new Map<string, Promise<number>>()
   const groupsMeeting = (own: string) => {
     const key = !any && parts.facts.some(f => f.key === own) ? own : ''
-    if (!totals.has(key)) totals.set(key, countBy(db, counting(own), { values: [], from: sql`bills m` }).then(rows => rows[0].n))
+    if (!totals.has(key)) {
+      totals.set(key, key === '' && usesCube
+        ? cube().then(c => cubeCounts(c, undefined)[0].n)
+        : countBy(db, counting(own), { values: [], from: sql`bills m` }).then(rows => rows[0].n))
+    }
     return totals.get(key)!
   }
 
   return {
     db, userId: req.userId, isAdmin: req.isAdmin, match: parts.match, committeeScope: parts.committeeScope, committeesPicked: parts.committeesPicked, hasDrafts: req.hasDrafts, newMatchMinRelevance: req.newMatchMinRelevance,
     mine: req.mine, suppressedSubjectStates: req.suppressedSubjectStates,
-    factKeys: parts.facts.map(f => f.key), currentOnM, counting, groupsMeeting,
+    factKeys: parts.facts.map(f => f.key), currentOnM, counting, groupsMeeting, cube,
     shift: async counts => {
       if (!shiftFacets) return counts
       const total = await currentTotal

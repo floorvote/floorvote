@@ -95,9 +95,10 @@ describe('tag filter query plans', () => {
   // request alone spent most of D1's ten-second budget.
   it("counts every facet under a tag filter from the bills with group tags, not from the grouped column's index", async () => {
     const plans = await plansFor('bills/facets?tag=Energy&omit=subject%2Ccommittee')
-    const counts = plans.filter(p => /COUNT\(|SUM\(/i.test(p.sql) && readsGroupTags(p) && /GROUP BY "m"\."(status|status_stage|state|session|year_start)"/.test(p.sql))
-    expect(counts.length, 'no facet counted under the tag filter').toBeGreaterThanOrEqual(5)
-    for (const c of counts) expect(c.plan, `${c.sql}\n${c.plan}`).toMatch(/SCAN m USING (COVERING )?INDEX idx_bills_group_tags/)
+    // The five bill-column facets are two statements, the whole cube and the grouped one (#1022).
+    const counts = plans.filter(p => /COUNT\(|SUM\(/i.test(p.sql) && readsGroupTags(p) && /GROUP BY ("m"\."group_key", )?"m"\."status", "m"\."status_stage"/.test(p.sql))
+    expect(counts.length, 'no facet counted under the tag filter').toBe(2)
+    for (const c of counts) expect(c.plan, `${c.sql}\n${c.plan}`).toMatch(/(SCAN|SEARCH) m USING (COVERING )?INDEX idx_bills_group_tags/)
   })
 
   // A grouped bill's companions are read through the group key index (#1019): with the priority, its time, and the
