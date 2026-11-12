@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useState, useRef } from 'react'
 import { useParams, Link, useNavigate, useNavigation, useLocation, useLoaderData, redirect, type LoaderFunctionArgs } from 'react-router-dom'
 import { apiFetch, ApiError } from '../lib/api'
+import { noteOwnWrite } from '../lib/facetsFreshness'
 import { fetchDraftDeletePreview, GAINED_ENGAGEMENT, hasEngagement, singleDraftDeleteConfirm } from '../lib/draftDeleteConfirm'
 import { apiFetchForLoader } from '../lib/loaderFetch'
 import { groupByHand } from '../lib/groupByHand'
@@ -1378,6 +1379,8 @@ export function BillDetail() {
         const data = await res.json().catch(() => ({ error: res.statusText }))
         throw new Error(data.error ?? `Promote failed (${res.status})`)
       }
+      // A raw fetch, so apiFetch did not note it: promoting changes the bills page's counts.
+      noteOwnWrite()
       startAnalyzingPoll()
     } catch (e) {
       setPromoteError(e instanceof Error ? e.message : String(e))
