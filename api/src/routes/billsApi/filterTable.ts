@@ -2,7 +2,7 @@ import { eq, and, or, inArray, sql, SQL } from 'drizzle-orm'
 import { customFieldDefinitions } from '../../db/schema'
 import type { AppDb } from '../../types'
 import {
-  billsAs, buildCustomFieldFilters, buildSearchCondition, filterSuppressedSubjects, hasGroupTags, loadMyBillsInGroups,
+  billsAs, buildCustomFieldFilters, buildSearchCondition, filterSuppressedSubjects, hasGroupTags, inIds, loadMyBillsInGroups,
   committeeMembership, multiFilter, myBillsCondition, positionCondition, priorityCondition, statusFilterValues, subjectMembership, tagCondition,
   unvotedCondition, type BillFilterContext, type BillsCondition, type BillsFilter,
 } from './query'
@@ -272,7 +272,13 @@ export const FILTER_TABLE: FilterTable = {
   },
   search: {
     kind: 'scope',
-    condition: search => search && buildSearchCondition(search) ? t => buildSearchCondition(search, t)! : undefined,
+    // The facets read the matching ids once (`loadSearchIds`) and test them by key; the list carries the LIKEs,
+    // which its bill-number boost needs too. A read that matched nothing binds an empty list, which no bill is in,
+    // so the counts are the LIKEs' by construction: zero, and a picked committee still named (`committeeInfo`).
+    condition: (search, ctx) => {
+      if (!search || !buildSearchCondition(search)) return undefined
+      return ctx.searchIds ? inIds(ctx.searchIds) : t => buildSearchCondition(search, t)!
+    },
     facet: null,
   },
   minRelevance: {

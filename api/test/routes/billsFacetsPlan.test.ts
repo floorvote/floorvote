@@ -323,6 +323,25 @@ describe('GET /bills/facets query plans', () => {
     }
   })
 
+  it('reads the bills a search matches once, and counts every facet from their ids by key', async () => {
+    // A search has no index to start from: each of its LIKEs reads every bill, about 0.4 s a statement on an instance
+    // of 100,000 bills, and a facets request ran some fifteen of them, so one search spent the database's budget and
+    // every query failed (D1 7429). The facets now read the matching ids once (LIKE, one scan) and give every count
+    // the ids as one JSON parameter, so each starts from the primary key (about 13 ms a thousand ids).
+    const stmts = await statementsFor('search=Title%2012')
+    const likes = stmts.filter(s => /\blike\b/i.test(s.sql))
+    expect(likes.map(s => s.sql), 'one read of the matching ids, and no count with a LIKE').toHaveLength(1)
+    expect(likes[0].sql).toMatch(/^select "id" from "bills"/i)
+    const counts = await facetPlans('search=Title%2012')
+    expect(counts.length).toBeGreaterThan(10)
+    for (const p of counts) {
+      const msg = `${p.sql}\n${p.plan}`
+      expect(p.sql, msg).toMatch(/json_each/)
+      // The grouped bills are still read in group key order (countBy); every other read of the bills is by key.
+      expect(p.plan, msg).not.toMatch(/SCAN (bills|m|me|g|fb)\b(?! USING COVERING INDEX idx_bills_group_key)/)
+    }
+  })
+
   it('counts the groups of each subject from the group key index, its rows reached by key', async () => {
     for (const qs of ['', 'status=Passed', 'subject=NJ:Subject%201']) {
       const { grouped } = await subjectPlans(qs)
