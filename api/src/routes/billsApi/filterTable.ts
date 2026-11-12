@@ -273,11 +273,11 @@ export const FILTER_TABLE: FilterTable = {
   search: {
     kind: 'scope',
     // The facets read the matching ids once (`loadSearchIds`) and test them by key; the list carries the LIKEs,
-    // which its bill-number boost needs too. A read that matched nothing matches nothing whatever else is set.
+    // which its bill-number boost needs too. A read that matched nothing binds an empty list, which no bill is in,
+    // so the counts are the LIKEs' by construction: zero, and a picked committee still named (`committeeInfo`).
     condition: (search, ctx) => {
       if (!search || !buildSearchCondition(search)) return undefined
-      if (ctx.searchIds) return ctx.searchIds.length === 0 ? NO_MATCH : inIds(ctx.searchIds)
-      return t => buildSearchCondition(search, t)!
+      return ctx.searchIds ? inIds(ctx.searchIds) : t => buildSearchCondition(search, t)!
     },
     facet: null,
   },

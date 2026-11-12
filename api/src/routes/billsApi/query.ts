@@ -429,9 +429,10 @@ export const myBillsCondition = inIds
  * The most bills a search may match for the facets to count from their ids (`loadSearchIds`). Past it the facets
  * carry the search's LIKEs instead, as the list does. Measured on an instance of 100,000 bills: a count from ids costs
  * about 13 ms a thousand ids, a count with the LIKEs about 400 ms whatever matches, so the cap keeps the ids form
- * ahead with the bound list under half a megabyte. A test sets it to force the LIKE form.
+ * well ahead, and the bound list (about 40 bytes an id) under 200 KB where a statement may bind it three times (the
+ * OR-freshness test holds the filter twice; D1 allows 2 MB a value). A test sets it to 0 to force the LIKE form.
  */
-export const searchForm = { idsMax: 10_000 }
+export const searchForm = { idsMax: 5_000 }
 
 /**
  * The ids of the bills a search matches, read once for a request that runs many statements under it (the facets).
@@ -439,10 +440,11 @@ export const searchForm = { idsMax: 10_000 }
  * instance, and a facets request ran some fifteen, so one search spent the database's budget (D1 7429). Read once,
  * the ids go to each count as one JSON parameter (`inIds`), which starts from the primary key. Undefined when the
  * search has no usable term (nothing narrows) or matches more than `searchForm.idsMax` bills (the LIKEs are kept).
+ * A read that matches nothing is an empty list, which no bill is in.
  */
 export async function loadSearchIds(db: ReturnType<typeof getDb>, search: string): Promise<string[] | undefined> {
   const condition = buildSearchCondition(search)
-  if (!condition) return undefined
+  if (!condition || searchForm.idsMax <= 0) return undefined
   const rows = await db.select({ id: bills.id }).from(bills).where(condition).limit(searchForm.idsMax + 1).all()
   return rows.length > searchForm.idsMax ? undefined : rows.map(r => r.id)
 }
