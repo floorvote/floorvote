@@ -333,6 +333,12 @@ describe('GET /bills/facets query plans', () => {
       const committee = await committeePlans(qs)
       for (const p of [whole, grouped, committee.whole, committee.grouped, committee.info]) {
         const msg = `"${qs}"\n${p.sql}\n${p.plan}`
+        // A tag is a group's own, so the subject correction is read from the shared subjects, a seek for each group the tag names (#1030).
+        if (/group_subjects/.test(p.sql)) {
+          expect(p.plan, msg).toMatch(/SEARCH gs USING PRIMARY KEY \(group_key=\?\)/)
+          expect(p.plan, msg).not.toMatch(/SCAN (m|bills|gs)\b/)
+          continue
+        }
         expect(p.plan, msg).toMatch(/SEARCH b[sc] USING (COVERING )?INDEX (sqlite_autoindex_bill_(subjects|committees)_1|idx_bill_subjects_bill) \(bill_id=\?\)/)
         expect(p.plan, msg).not.toMatch(/SCAN b[sc]\b/)
       }

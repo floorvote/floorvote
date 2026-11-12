@@ -113,7 +113,8 @@ describe('the subject facet: the groups that share a subject (#1030)', () => {
       await seedBill({ id: 'a2', billNumber: 'A2', state: 'NJ', status: 'Passed', statusStage: 'passed' })
       await group('a1', 'a2')
       await subjects([['a1', 'NJ', 'S'], ['a2', 'NJ', 'S']])
-      for (const qs of ['only=subject', 'priority=none&only=subject', 'status=Passed&only=subject']) {
+      // A filter on a bill's own columns can split a group, and keeps the statement over the bills' rows (billsFacetsPlan.test.ts).
+      for (const qs of ['only=subject', 'priority=none&only=subject', 'position=none&only=subject']) {
         const seen = await statementsOf(qs)
         expect(seen.filter(s => GROUPED_ROWS.test(s)), qs).toEqual([])
         expect(seen.filter(s => /group_subjects/.test(s)).length, qs).toBeGreaterThan(0)
