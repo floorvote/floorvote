@@ -40,6 +40,8 @@ const net = vi.hoisted(() => ({
   /** Requests for the list with no filter wait here until a test answers them. */
   held: [] as Array<(r: Response) => void>,
   holdUnfiltered: false,
+  /** While true, the list for a filter (priority) answers a 503 overload. */
+  filteredOverloaded: false,
 }))
 
 const overloaded = () => new Response(JSON.stringify({ error: 'database_overloaded' }), {
@@ -61,6 +63,7 @@ async function fakeFetch(input: RequestInfo | URL): Promise<Response> {
   }
   if (path.startsWith('/bills?')) {
     if (net.holdUnfiltered && !path.includes('priority=')) return new Promise<Response>(resolve => { net.held.push(resolve) })
+    if (path.includes('priority=') && net.filteredOverloaded) return overloaded()
     if (path.includes('priority=')) {
       return json({ bills: [{ ...BILL, id: 'b2', billNumber: 'HB 2', title: 'Filtered bill' }], pagination: { page: 1, pageSize: 100, total: 1, totalPages: 1 } })
     }
@@ -94,6 +97,7 @@ beforeEach(() => {
   net.menuOverloaded = false
   net.held = []
   net.holdUnfiltered = false
+  net.filteredOverloaded = false
   vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver)
   vi.stubGlobal('fetch', vi.fn(fakeFetch))
   vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -197,6 +201,30 @@ describe('the list when the database is overloaded', () => {
     const loaderRetries = (console.warn as unknown as { mock: { calls: unknown[][] } }).mock.calls
       .filter(([msg]) => String(msg).startsWith('[retryFetch] /bills?page=1&pageSize=100 ')).length
     expect(listCalls().length - before).toBeLessThanOrEqual(loaderRetries)
+  })
+
+  // The mirror case: B (the filter now showing) is overloaded and has armed its retry when A's older request answers 200.
+  // A's page is not what the member asked for; it neither shows nor cancels B's retry.
+  it('does not let an earlier request\'s late 200 show its list or cancel the retry of the newer request', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    net.holdUnfiltered = true
+    const router = renderPage()
+    await waitFor(() => expect(net.held.length).toBeGreaterThan(1))
+    net.filteredOverloaded = true
+    await act(async () => { await router.navigate('/bills?priority=high') })
+    expect(await screen.findByText('The list could not load. Retrying…')).toBeInTheDocument()
+
+    await act(async () => { net.held.forEach(resolve => resolve(json({ bills: [BILL], pagination: { page: 1, pageSize: 100, total: 1, totalPages: 1 } }))) })
+    net.holdUnfiltered = false
+    await advance(1_000)
+    expect(screen.queryByText('Default bill')).toBeNull()
+    expect(screen.getByText('The list could not load. Retrying…')).toBeInTheDocument()
+
+    net.filteredOverloaded = false
+    await advance(11_000)
+    expect((await screen.findAllByText('Filtered bill')).length).toBeGreaterThan(0)
+    expect(screen.queryByText('Default bill')).toBeNull()
+    expect(screen.queryByText('The list could not load. Retrying…')).toBeNull()
   })
 
   it('leaves a 500 as the plain failure: no retry message, no retry', async () => {
