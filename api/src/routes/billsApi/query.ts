@@ -51,11 +51,6 @@ export function hasGroupTags(t: BillsTable = bills): SQL {
 }
 
 /**
- * Bills carrying any of these (state, subject) pairs. An EXISTS against the join
- * table rather than a JSON scan of bills.subjects: idx_bill_subjects_name covers
- * (state, subject_name), so this is an index seek per value.
- */
-/**
  * Drop any (state, name) filter value naming an operator-suppressed state (or
  * every state, via "*"). A `subject` query param cannot re-surface a state the
  * operator turned off — rather than making such a value match zero bills
@@ -75,26 +70,36 @@ export function filterSuppressedSubjects(
   return values.filter(v => !isSubjectsSuppressedForState(suppressed, v.state))
 }
 
+/**
+ * Bills carrying any of these (state, subject) pairs, from the join table rather
+ * than a JSON scan of bills.subjects. Written as the bill's id IN the pairs'
+ * bill ids, so the query starts from the pairs' rows (idx_bill_subjects_name, an
+ * index seek per pair) and reaches each bill by key. As an EXISTS on each bill
+ * the planner walked every bill and probed its subjects: about 1 s and 300,000
+ * rows read a statement on an instance of 100,000 bills, and a facets request
+ * runs some 40, so one pick spent the database's budget (D1 7429).
+ */
 export function subjectMembership(values: readonly SubjectValue[], t: BillsTable = bills): SQL {
   const pairs = sql.join(
     values.map(v => sql`(${v.state}, ${v.name})`),
     sql`, `,
   )
-  return sql`EXISTS (
-    SELECT 1 FROM bill_subjects bs
-    WHERE bs.bill_id = ${t.id} AND (bs.state, bs.subject_name) IN (${pairs})
+  return sql`${t.id} IN (
+    SELECT bs.bill_id FROM bill_subjects bs
+    WHERE (bs.state, bs.subject_name) IN (${pairs})
   )`
 }
 
 /**
  * The committee filter (#471) as a condition on one bill: some committee picked is one the bill was referred to, or
  * under the current scope the one it is pending in. The ids are bound as one JSON list, so any number of them binds
- * one value.
+ * one value. Written as the bill's id IN the picked committees' bill ids, like subjectMembership, so the query starts
+ * from their rows (idx_bill_committees_committee) rather than walking every bill.
  */
 export function committeeMembership(ids: readonly string[], scope: 'current' | 'any', t: BillsTable = bills): SQL {
-  return sql`EXISTS (
-    SELECT 1 FROM bill_committees bc
-    WHERE bc.bill_id = ${t.id} AND bc.committee_id IN (SELECT value FROM json_each(${JSON.stringify(ids)}))${scope === 'current' ? sql` AND bc.is_current = 1` : sql``}
+  return sql`${t.id} IN (
+    SELECT bc.bill_id FROM bill_committees bc
+    WHERE bc.committee_id IN (SELECT value FROM json_each(${JSON.stringify(ids)}))${scope === 'current' ? sql` AND bc.is_current = 1` : sql``}
   )`
 }
 

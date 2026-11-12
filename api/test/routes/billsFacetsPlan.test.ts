@@ -313,6 +313,28 @@ describe('GET /bills/facets query plans', () => {
     }
   })
 
+  it('starts every count under a picked subject or committee from that pick\'s rows, never walking the bills', async () => {
+    // Written as a test on each bill (EXISTS), a picked subject walked every bill and probed its subjects: about 1 s
+    // and 300,000 rows read a statement on an instance of 100,000 bills, some 40 statements a facets request, so one
+    // pick spent the database's budget and every query failed (D1 7429). Started from the pick's rows by the subject or
+    // committee index, each bill reached by key, it read a few hundred rows in a few milliseconds.
+    const cases: [string, RegExp, RegExp][] = [
+      ['subject=NJ:Subject%201', /subject_name\) IN/, /SEARCH bs USING (COVERING )?INDEX idx_bill_subjects_name \(state=\? AND subject_name=\?\)/],
+      ['subject=NJ:Subject%201&subject=TX:Subject%202', /subject_name\) IN/, /SEARCH bs USING (COVERING )?INDEX idx_bill_subjects_name \(state=\? AND subject_name=\?\)/],
+      ['committee=c1', /committee_id IN \(SELECT value FROM json_each/, /SEARCH bc USING (COVERING )?INDEX idx_bill_committees_committee \(committee_id=\?\)/],
+      ['committee=c1&committeeScope=current', /committee_id IN \(SELECT value FROM json_each/, /SEARCH bc USING (COVERING )?INDEX idx_bill_committees_committee \(committee_id=\?\)/],
+    ]
+    for (const [qs, filterSql, pickIndex] of cases) {
+      const filtered = (await facetPlans(qs)).filter(p => filterSql.test(p.sql))
+      expect(filtered.length, qs).toBeGreaterThan(0)
+      for (const p of filtered) {
+        const msg = `"${qs}"\n${p.sql}\n${p.plan}`
+        expect(p.plan, msg).toMatch(pickIndex)
+        expect(p.plan, msg).not.toMatch(/SCAN (m|me|bills)\b/)
+      }
+    }
+  })
+
   it('probes the same way when the filters narrow the facets, since hasDrafts ignores them', async () => {
     const probe = await draftsProbe('status=Passed&priority=high&drafts=1')
     expect(probe.plan, `${probe.sql}\n${probe.plan}`).toMatch(/idx_bills_drafts/)
