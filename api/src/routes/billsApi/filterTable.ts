@@ -671,19 +671,27 @@ export function makeFacetContext(req: FacetRequest): FacetContext {
   }
 }
 
-/** The filters that have a facet count, each with the name that is its own-filter exclusion. */
+/** The filters that have a facet count, each with the name that is its own-filter exclusion and the filter it is of. */
 const FACETS = NAMES.flatMap(name => {
   const entry = FILTER_TABLE[name]
   // The fact a facet leaves out is the filter's own, or the one it joins: the status and the stage leave out the same one.
   const own = factKeyOf(name)
   return [...(entry.facet ? [entry.facet] : []), ...(entry.alsoFacets ?? [])].map(facet => (
-    { name: own, key: facet.kind === 'count' || facet.kind === 'derived' ? facet.response : name, facet }
+    { filter: name as string, name: own, key: facet.kind === 'count' || facet.kind === 'derived' ? facet.response : name, facet }
   ))
 })
 
-/** Every facet's count, in parallel, by the key each has in the facets response. */
-export async function countFacets(fc: FacetContext): Promise<Record<string, unknown>> {
-  return Object.fromEntries(await Promise.all(FACETS.map(async ({ name, key, facet }) => [key, await facet.count(fc, name)] as const)))
+/** The filters a facets request may name in `omit` or `only`: those with a facet. */
+export const FACET_FILTERS: ReadonlySet<string> = new Set(FACETS.map(f => f.filter))
+
+/** Which filters' facets a request counts, by filter name. */
+export type FacetSelection = (filter: string) => boolean
+const everyFacet: FacetSelection = () => true
+
+/** Every selected facet's count, in parallel, by the key each has in the facets response. */
+export async function countFacets(fc: FacetContext, selected: FacetSelection = everyFacet): Promise<Record<string, unknown>> {
+  return Object.fromEntries(await Promise.all(FACETS.filter(f => selected(f.filter))
+    .map(async ({ name, key, facet }) => [key, await facet.count(fc, name)] as const)))
 }
 
 /** What the facets response holds besides the counts of the filters: the tenant's own values, which no filter narrows. */
@@ -694,11 +702,13 @@ export type TenantFacets = {
   billStates?: string[]
   /** Whether the tenant has any draft at all, unfiltered. */
   hasDrafts: boolean
+  /** Whether the tenant has any committee at all, unfiltered: the Committee control shows on it before its counts load. */
+  hasCommittees: boolean
 }
 
 export const facetsResponse = (counts: Record<string, unknown>, tenant: TenantFacets) =>
-  ({ ...counts, subjectStates: tenant.subjectStates, billStates: tenant.billStates, hasDrafts: tenant.hasDrafts })
+  ({ ...counts, subjectStates: tenant.subjectStates, billStates: tenant.billStates, hasDrafts: tenant.hasDrafts, hasCommittees: tenant.hasCommittees })
 
-/** The response for a list with nothing in it: the real response's every key, every count at zero. Built from the same table. */
-export const emptyFacets = (tenant: TenantFacets) =>
-  facetsResponse(Object.fromEntries(FACETS.map(({ key, facet }) => [key, facet.empty()])), tenant)
+/** The response for a list with nothing in it: the real response's every selected key, every count at zero. Built from the same table. */
+export const emptyFacets = (tenant: TenantFacets, selected: FacetSelection = everyFacet) =>
+  facetsResponse(Object.fromEntries(FACETS.filter(f => selected(f.filter)).map(({ key, facet }) => [key, facet.empty()])), tenant)

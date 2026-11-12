@@ -2,10 +2,10 @@ import { Hono } from 'hono'
 import { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core'
 import { sql } from 'drizzle-orm'
 import { getDb } from '../../db/client'
-import { bills, billSubjects } from '../../db/schema'
+import { bills, billCommittees, billSubjects } from '../../db/schema'
 import type { AppEnv } from '../../types'
 import { billsAs, isCheapFilter, loadMyBillsInGroups, canOptimize } from './query'
-import { buildBillsFilter, buildFilterParts, countFacets, emptyFacets, facetsResponse, makeFacetContext } from './filterTable'
+import { buildBillsFilter, buildFilterParts, countFacets, emptyFacets, facetsResponse, makeFacetContext, FACET_FILTERS, type FacetSelection } from './filterTable'
 import { billStatesForWildcard } from '../../lib/billStates'
 import { getNewMatchMinRelevance } from '../../lib/newMatch'
 import { loadTaxonomyTagNameSet } from '../../lib/taxonomy'
@@ -132,7 +132,11 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const db = getDb(c.env.DB)
     const currentUser = c.get('user')
 
-    const bf = parseBillFilter(new URL(c.req.url).searchParams)
+    const searchParams = new URL(c.req.url).searchParams
+    const selection = facetSelection(searchParams)
+    if ('error' in selection) return c.json({ error: selection.error }, 400)
+    const selected = selection.selected
+    const bf = parseBillFilter(searchParams)
     const capError = subjectCapError(bf)
     if (capError) return c.json(capError, 400)
     const isAdmin = currentUser.role === 'admin' || currentUser.role === 'owner'
@@ -186,14 +190,35 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     // explicit list, and cached per tenant (lib/billStates.ts). Per bill too.
     const billStates = await billStatesForWildcard(db, c.env.TENANT_ID, c.env.STATE)
 
-    const tenant = { subjectStates, billStates, hasDrafts }
+    // Whether the tenant has any committee: the Committee control shows on it while its counts are left for later (omit).
+    const [anyCommittee] = await db.select({ one: sql<number>`1` }).from(billCommittees).limit(1).all()
+    const tenant = { subjectStates, billStates, hasDrafts, hasCommittees: anyCommittee !== undefined }
     // "My bills" for a member with none matches nothing. The response is the real one's, built from the same table with every count at zero.
-    if (parts.noMatch) return c.json(emptyFacets(tenant))
+    if (parts.noMatch) return c.json(emptyFacets(tenant, selected))
 
     // Every filter's count, from the table (filterTable.ts): each leaves its own filter out, and the rest narrow it.
     const counts = await countFacets(makeFacetContext({
       db, parts, userId: currentUser.id, isAdmin, hasDrafts, newMatchMinRelevance, mine, suppressedSubjectStates,
-    }))
+    }), selected)
     return c.json(facetsResponse(counts, tenant))
   })
+}
+
+/**
+ * Which filters' facets a facets request counts: every one, all but those named in `omit`, or only those named in
+ * `only` (comma-separated filter names, each a filter with a facet). The costly ones (the subject and committee counts)
+ * are used only by their own controls, so the bills page leaves them out of its load and asks for them when someone is
+ * about to use those controls.
+ */
+export function facetSelection(params: URLSearchParams): { selected: FacetSelection } | { error: string } {
+  const omit = params.get('omit')
+  const only = params.get('only')
+  if (omit !== null && only !== null) return { error: 'omit and only cannot be combined' }
+  const list = omit ?? only
+  if (list === null) return { selected: () => true }
+  const names = list.split(',').map(n => n.trim()).filter(n => n !== '')
+  const unknown = names.filter(n => !FACET_FILTERS.has(n))
+  if (unknown.length > 0) return { error: `unknown facet: ${unknown.join(', ')}` }
+  const named = new Set(names)
+  return { selected: omit !== null ? f => !named.has(f) : f => named.has(f) }
 }
