@@ -77,40 +77,43 @@ describe('GET /bills/facets query plans', () => {
         SELECT id, 'Subject ' || ((substr(id, 5) + 0) % 60), state FROM bills`),
       env.DB.prepare(`INSERT INTO bill_subjects (bill_id, subject_name, state)
         SELECT id, 'Subject ' || ((substr(id, 5) + 30) % 60 + 60), state FROM bills`),
+      // A team's custom field, held by a few bills, so the cube's shapes include one.
+      env.DB.prepare(`INSERT INTO custom_field_definitions (id, name, slug, type, options, multiple) VALUES ('field-binary', 'Tracking', 'tracking', 'binary', NULL, 0)`),
+      env.DB.prepare(`INSERT INTO bill_custom_field_values (bill_id, field_id, value, set_by) SELECT id, 'field-binary', '1', '${userId}' FROM bills WHERE substr(id, 5) % 1200 = 0`),
+      // The member has voted on a few bills, so the my bills and unvoted scopes each name some.
+      env.DB.prepare(`INSERT INTO member_votes (id, user_id, bill_id, position) SELECT 'v' || id, '${userId}', id, 'support' FROM bills WHERE substr(id, 5) % 2000 = 0`),
       env.DB.prepare('ANALYZE'),
       // One draft, as a tenant that has any has a few: the stats still say every bill has the same is_draft.
       env.DB.prepare("UPDATE bills SET is_draft = 1 WHERE id = 'bill00002'"),
     ])
   })
 
+  // The bill-column facets and the status groups are sums over two cubes (#1022, below): the grouped bills' groups come
+  // from the grouped cube, which reads the covering group key index, and the whole counts, the labels' stages and their
+  // ranks from the whole cube, which reads the covering facets index (0124, which holds the rank).
   it('counts the grouped bills of a bill-column facet from the group key index alone', async () => {
-    const status = select(await facetPlans(), /m\.status|"m"\."status"/).filter(p => !STATUS_GROUPS.test(p.sql))
-    expect(status.length, 'the facets prepared no status count').toBeGreaterThanOrEqual(2)
-    // The statement of the grouped bills reads the covering group key index, never the table.
-    const grouped = status.filter(p => /group_key/.test(p.sql) && /IS NOT NULL/.test(p.sql))
-    expect(grouped.length, 'no statement counts the grouped bills of the status facet').toBeGreaterThan(0)
-    for (const g of grouped) {
-      expect(g.plan, `${g.sql}\n${g.plan}`).toMatch(/COVERING INDEX idx_bills_group_key/)
-      expect(g.plan, `${g.sql}\n${g.plan}`).not.toMatch(TABLE_SCAN)
-    }
+    const grouped = select(await facetPlans(), /GROUP BY "m"\."group_key", "m"\."status"/)
+    expect(grouped.length, 'no grouped cube').toBe(1)
+    expect(grouped[0].plan, `${grouped[0].sql}\n${grouped[0].plan}`).toMatch(/SEARCH m USING COVERING INDEX idx_bills_group_key/)
+    expect(grouped[0].plan, `${grouped[0].sql}\n${grouped[0].plan}`).not.toMatch(TABLE_SCAN)
   })
 
   it('reads the status groups from a covering index, so a request never reads every bill row for a rank (#677)', async () => {
     for (const qs of ['', 'state=NJ', 'status=Passed&priority=high']) {
       const groups = select(await facetPlans(qs), STATUS_GROUPS)
+      // The ranks are read with the whole cube's counts, by no statement of their own.
       expect(groups.length, `no statusGroups statement for "${qs}"`).toBe(1)
-      // With nothing to narrow it the whole population is read, from the covering index. A filter may start from its own
-      // index instead, which bounds the read to the bills it meets.
-      if (qs === '') expect(groups[0].plan, `${groups[0].sql}\n${groups[0].plan}`).toMatch(/USING COVERING INDEX idx_bills_status_rank/)
+      expect(groups[0].sql, groups[0].sql).toMatch(/GROUP BY "m"\."status", "m"\."status_stage", "m"\."state", "m"\."session", "m"\."year_start"$/)
+      if (qs === '') expect(groups[0].plan, `${groups[0].sql}\n${groups[0].plan}`).toMatch(/SCAN m USING COVERING INDEX idx_bills_facets/)
       expect(groups[0].plan, `${groups[0].sql}\n${groups[0].plan}`).not.toMatch(TABLE_SCAN)
     }
   })
 
-  it('keeps the whole-population count of a bill-column facet on the index it used before groups', async () => {
-    const plans = await facetPlans()
-    const whole = plans.find(p => /m\.status|"m"\."status"/.test(p.sql) && !/IS NOT NULL/.test(p.sql) && !STATUS_GROUPS.test(p.sql))
-    expect(whole, 'no whole-population status count').toBeDefined()
-    expect(whole!.plan, whole!.plan).toMatch(/SCAN m USING COVERING INDEX idx_bills_status/)
+  it('reads the whole-population counts of the bill-column facets from the facets index in its own order', async () => {
+    const whole = select(await facetPlans(), /GROUP BY "m"\."status", "m"\."status_stage"/).filter(p => !/group_key/.test(p.sql))
+    expect(whole.length, 'no whole cube').toBe(1)
+    expect(whole[0].plan, whole[0].plan).toMatch(/SCAN m USING COVERING INDEX idx_bills_facets/)
+    expect(whole[0].plan, whole[0].plan).not.toMatch(/TEMP B-TREE/)
   })
 
   it('tests whether a bill holds its group\'s priority through the group key index', async () => {
@@ -420,5 +423,114 @@ describe('GET /bills/facets query plans', () => {
   it('probes the same way when the filters narrow the facets, since hasDrafts ignores them', async () => {
     const probe = await draftsProbe('status=Passed&priority=high&drafts=1')
     expect(probe.plan, `${probe.sql}\n${probe.plan}`).toMatch(/idx_bills_drafts/)
+  })
+
+  // The five bill-column facets (status, stage, state, session, year) and the status groups come from two statements a
+  // request (#1022): a whole cube grouped by the five columns over the facets index, and a grouped cube grouped by the
+  // group key and the five over the group key index. The route sums each facet's marginal from them in memory. Before
+  // it, each facet ran two statements of its own and the status groups a third, and under a broad filter every one of
+  // them read the bills it counted from the table.
+  const CUBE_COLUMNS = '"m"."status", "m"."status_stage", "m"."state", "m"."session", "m"."year_start"'
+  const WHOLE_CUBE = new RegExp(`GROUP BY ${CUBE_COLUMNS.replace(/[."]/g, c => (c === '.' ? '\\.' : c))}$`)
+  const GROUPED_CUBE = new RegExp(`GROUP BY "m"\\."group_key", ${CUBE_COLUMNS.replace(/[."]/g, c => (c === '.' ? '\\.' : c))}$`)
+  // Any statement grouped by one of the five columns (alone, in a pair, or in the cube), however it is written.
+  const GROUPED_BY_A_COLUMN = /GROUP BY [^()]*?(\bm\.|"m"\.")(status|status_stage|state|session|year_start)\b/
+  // A read of `m`, the bill the counts test, in a plan.
+  const READS_M = /^(SCAN|SEARCH) m\b/
+  const CUBE_READ = /^(SCAN|SEARCH) m USING COVERING INDEX (idx_bills_facets|idx_bills_group_key)\b/
+  // Every filter alone, the none and any values, the scopes, pairs under both operators, and match=any with three facts,
+  // in two kinds. A broad filter (most bills meet it, or under match=any every bill is read for its freshness) is read
+  // from the two covering indexes alone. A narrow one has an index of its own that names its few bills (a priority or a
+  // position value, a tag, a pick of subjects, committees, or custom field values, the search's or the member's ids, the
+  // tracked bills of new matches), and the planner starts from it and reads only those bills' rows: on a copy of the
+  // largest instance that cost 0.0 to 25 ms locally against 8 to 27 ms through the facets index whole.
+  const BROAD_REQUESTS = [
+    '', 'status=Passed', 'stage=passed', 'state=NJ', 'sessionName=s0', 'year=2025', 'minRelevance=7',
+    'priority=none', 'position=none', 'unvoted=1',
+    'state=NJ&status=Passed', 'year=2025&state=NJ',
+    'state=NJ&status=Passed&match=any', 'year=2025&state=NJ&match=any', 'tag=Energy&status=Passed&match=any', 'priority=high&position=Support&match=any',
+    'priority=none&match=any', 'status=Passed&stage=introduced&match=any',
+    'tag=Energy&status=Passed&state=NJ&match=any', 'tag=Energy&priority=high&position=Support&match=any',
+    'subject=NJ:Subject%201&committee=c1&match=any', 'field.field-binary=1&state=NJ&year=2025&match=any',
+  ]
+  const NARROW_REQUESTS = [
+    'priority=high', 'priority=__any__', 'position=Support', 'tag=Energy', 'tag=__any__', 'subject=NJ:Subject%201', 'committee=c1',
+    'committee=c1&committeeScope=current', 'field.field-binary=1', 'search=Title%2012', 'myBills=1', 'newMatches=1', 'drafts=1',
+    'tag=Energy&status=Passed', 'priority=high&position=Support', 'subject=NJ:Subject%201&state=NJ', 'unvoted=1&tag=Energy',
+  ]
+  const CUBE_REQUESTS = [...BROAD_REQUESTS, ...NARROW_REQUESTS]
+  const pageLoad = (qs: string) => `${qs}${qs ? '&' : ''}omit=subject%2Ccommittee`
+
+  it('counts the five bill-column facets and the status groups from one whole cube and one grouped cube, for every filter shape', async () => {
+    const wrong: string[] = []
+    for (const qs of CUBE_REQUESTS) {
+      const stmts = (await statementsFor(pageLoad(qs))).map(s => s.sql.replace(/\s+/g, ' ').trim())
+      const byColumn = stmts.filter(s => GROUPED_BY_A_COLUMN.test(s))
+      const whole = byColumn.filter(s => WHOLE_CUBE.test(s))
+      const grouped = byColumn.filter(s => GROUPED_CUBE.test(s))
+      const other = byColumn.filter(s => !WHOLE_CUBE.test(s) && !GROUPED_CUBE.test(s))
+      if (whole.length !== 1 || grouped.length !== 1 || other.length !== 0) {
+        wrong.push(`"${qs}": ${whole.length} whole cubes, ${grouped.length} grouped cubes, and ${other.length} other statements grouped by a bill column:\n${other.join('\n')}`)
+      }
+    }
+    expect(wrong, wrong.join('\n\n')).toEqual([])
+  })
+
+  async function cubePlans(qs: string): Promise<Planned[]> {
+    return (await facetPlans(pageLoad(qs))).filter(p => {
+      const flat = p.sql.replace(/\s+/g, ' ').trim()
+      return WHOLE_CUBE.test(flat) || GROUPED_CUBE.test(flat)
+    })
+  }
+
+  it('reads the bills of both cubes under a broad filter from the facets index and the group key index alone', async () => {
+    const wrong: string[] = []
+    for (const qs of BROAD_REQUESTS) {
+      const cubes = await cubePlans(qs)
+      if (cubes.length !== 2) { wrong.push(`"${qs}": ${cubes.length} cube statements`); continue }
+      for (const c of cubes) {
+        const reads = c.plan.split('\n').map(l => l.trim()).filter(l => READS_M.test(l))
+        // The bill `m` is read once, through a covering index of the two, in the cube's own order; anything else (a
+        // table scan, a column's own index and the table row, a temporary sort of every bill) reads what the cube avoids.
+        if (reads.length !== 1 || !CUBE_READ.test(reads[0]) || /TEMP B-TREE FOR GROUP BY/.test(c.plan)) {
+          wrong.push(`"${qs}"\n${c.sql}\n${c.plan}`)
+        }
+      }
+    }
+    expect(wrong, wrong.join('\n\n')).toEqual([])
+  })
+
+  it('starts both cubes under a narrow filter from the index of its own bills, never reading every bill', async () => {
+    const wrong: string[] = []
+    for (const qs of NARROW_REQUESTS) {
+      const cubes = await cubePlans(qs)
+      if (cubes.length !== 2) { wrong.push(`"${qs}": ${cubes.length} cube statements`); continue }
+      for (const c of cubes) {
+        const reads = c.plan.split('\n').map(l => l.trim()).filter(l => READS_M.test(l))
+        // Each read of `m` is bounded: a search by a key, or a covering index, or the partial index of the bills with
+        // group tags. A scan of the table or of a full index of one column, with a row lookup a bill, is not. (The rows
+        // that name the narrow filter's bills, a position's or a custom field's, are a table of their own, read whole.)
+        const bounded = (l: string) => /^SEARCH m USING /.test(l) || CUBE_READ.test(l) || /^SCAN m USING (COVERING )?INDEX idx_bills_group_tags\b/.test(l)
+        if (reads.length === 0 || !reads.every(bounded) || /SCAN (bills|m)\b(?! USING)/.test(c.plan)) wrong.push(`"${qs}"\n${c.sql}\n${c.plan}`)
+      }
+    }
+    expect(wrong, wrong.join('\n\n')).toEqual([])
+  })
+
+  it("takes the request's group totals from the cubes, not from counts of their own", async () => {
+    // Under match=any the shift adds the current result's total, and the "none" of priority and position counts the
+    // groups the facet's filter meets: both are sums over the cubes when the five facets are counted. So a request
+    // under match=any prepares no more counts of the current result than the same filter under match=all, and one with
+    // no team-field fact of its own counts no groups by a statement of its own.
+    const countsOfGroups = (stmts: Stmt[]) => stmts.filter(s => /^SELECT COUNT\(\*\) AS groups/.test(s.sql.trim())).length
+    for (const qs of ['state=NJ&status=Passed', 'priority=high&position=Support', 'tag=Energy&status=Passed&state=NJ']) {
+      const all = countsOfGroups(await statementsFor(pageLoad(qs)))
+      const any = countsOfGroups(await statementsFor(pageLoad(`${qs}&match=any`)))
+      expect(any, `"${qs}" under match=any counts the current result again`).toBe(all)
+    }
+    for (const qs of ['', 'status=Passed', 'year=2025&state=NJ', 'status=Passed&state=NJ&match=any', 'priority=high&position=Support&match=any']) {
+      const own = (await statementsFor(pageLoad(qs))).filter(s => /GROUP BY "m"\."group_key"\)/.test(s.sql) && !/json_each\("m"\."group_tags"\)/.test(s.sql))
+      expect(own.map(s => s.sql), `"${qs}" counts the groups its filter meets by a statement of its own`).toEqual([])
+    }
   })
 })
