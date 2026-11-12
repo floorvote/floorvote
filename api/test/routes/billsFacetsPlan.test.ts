@@ -119,7 +119,8 @@ describe('GET /bills/facets query plans', () => {
     // this pins what doesn't: the three levels are named, and the rest of a bill's group is reached by its key.
     const priority = (await facetPlans()).find(p => /"me"\."priority" IN \('high', 'medium', 'low'\)/.test(p.sql))
     expect(priority, 'no priority facet').toBeDefined()
-    expect(priority!.plan, priority!.plan).toContain('SEARCH g USING INDEX idx_bills_group_key (group_key=?)')
+    // The index carries the companion's priority and its time (0124), so the test reads no table row.
+    expect(priority!.plan, priority!.plan).toContain('SEARCH g USING COVERING INDEX idx_bills_group_key (group_key=?)')
   })
 
   it('starts the position facet from the rows that hold the value, not from the bills', async () => {
@@ -253,10 +254,11 @@ describe('GET /bills/facets query plans', () => {
   it('starts from the bills a bill-column filter narrows to and reaches their committees by key', async () => {
     // With a filter on the bills, reading every committee row would cost more as a tenant gains committees than the
     // filter's bills do: the count and the info start from the bill index, and reach the rows by (bill_id, ...).
-    for (const [qs, index] of [['status=Passed', 'idx_bills_status'], ['state=NJ&committeeScope=current', 'idx_bills_state']]) {
+    // The facets index (0124) leads with the status, so it serves a status filter, covering the bills it reads.
+    for (const [qs, index] of [['status=Passed', 'idx_bills_facets'], ['state=NJ&committeeScope=current', 'idx_bills_state']]) {
       const { whole, info } = await committeePlans(qs)
       for (const p of [whole, info]) {
-        expect(p.plan, `"${qs}"\n${p.sql}\n${p.plan}`).toContain(`SEARCH m USING INDEX ${index} `)
+        expect(p.plan, `"${qs}"\n${p.sql}\n${p.plan}`).toMatch(new RegExp(`SEARCH m USING (COVERING )?INDEX ${index} `))
         expect(p.plan, `"${qs}"\n${p.sql}\n${p.plan}`).toMatch(/SEARCH bc USING (COVERING )?INDEX sqlite_autoindex_bill_committees_1 \(bill_id=\?\)/)
         expect(p.plan, `"${qs}"\n${p.sql}\n${p.plan}`).not.toMatch(/SCAN (bc|m)\b/)
       }
@@ -298,10 +300,10 @@ describe('GET /bills/facets query plans', () => {
   })
 
   it('starts from the bills a bill-column filter narrows to and reaches their subjects by key', async () => {
-    for (const [qs, index] of [['status=Passed', 'idx_bills_status'], ['state=NJ', 'idx_bills_state']]) {
+    for (const [qs, index] of [['status=Passed', 'idx_bills_facets'], ['state=NJ', 'idx_bills_state']]) {
       const { whole } = await subjectPlans(qs)
       const msg = `"${qs}"\n${whole.sql}\n${whole.plan}`
-      expect(whole.plan, msg).toContain(`SEARCH m USING INDEX ${index}`)
+      expect(whole.plan, msg).toMatch(new RegExp(`SEARCH m USING (COVERING )?INDEX ${index}`))
       expect(whole.plan, msg).toMatch(/SEARCH bs USING (COVERING )?INDEX sqlite_autoindex_bill_subjects_1 \(bill_id=\?\)/)
       expect(whole.plan, msg).not.toMatch(/SCAN (bs|m)\b/)
     }
@@ -372,6 +374,47 @@ describe('GET /bills/facets query plans', () => {
         expect(p.plan, msg).not.toMatch(/SCAN (m|me|bills)\b/)
       }
     }
+  })
+
+  // The facets index (0124) holds every column a bill fact reads, so the subject and committee counts start from the
+  // bills that meet a filter and read them from the index alone, whichever column the filter tests (#1019). Before it,
+  // a filter on a column with no index of its own (the priority holder, a position, the unvoted scope) or one the
+  // planner misjudged (a tag with match=any) read every bill row.
+  const FACTS_INDEX_REQUESTS = ['priority=none', 'position=none', 'unvoted=1', 'tag=Energy&status=Passed&state=NJ&match=any']
+
+  it('reads the bills under the subject and committee counts from the facets index alone, then their rows by key', async () => {
+    const wrong: string[] = []
+    for (const qs of FACTS_INDEX_REQUESTS) {
+      const subject = await subjectPlans(qs)
+      const committee = await committeePlans(qs)
+      // The unvoted scope tests the id alone, which the primary key's index holds and is the narrower one to read.
+      const own = qs === 'unvoted=1' ? '(idx_bills_facets|sqlite_autoindex_bills_1)' : 'idx_bills_facets'
+      for (const [name, p] of [['subject', subject.whole], ['committee', committee.whole]] as const) {
+        const ok = new RegExp(`(SCAN|SEARCH) m USING COVERING INDEX ${own}`).test(p.plan)
+          && /SEARCH b[sc] USING (COVERING )?INDEX sqlite_autoindex_bill_(subjects|committees)_1 \(bill_id=\?\)/.test(p.plan)
+          && !TABLE_SCAN.test(p.plan)
+        if (!ok) wrong.push(`${name} under "${qs}"\n${p.sql}\n${p.plan}`)
+      }
+    }
+    expect(wrong, wrong.join('\n\n')).toEqual([])
+  })
+
+  it('counts the priority and position holders, and the whole counts of priority none, without an index of the priority column alone', async () => {
+    for (const qs of ['', 'priority=none', 'position=none', 'state=NJ', 'priority=none&state=NJ', 'priority=none&match=any']) {
+      for (const p of await facetPlans(`${qs}&omit=subject%2Ccommittee`)) {
+        expect(p.plan, `"${qs}"\n${p.sql}\n${p.plan}`).not.toMatch(/SEARCH m USING INDEX idx_bills_priority\b/)
+      }
+    }
+  })
+
+  it('writes the none of a priority as a test no index can serve, so the facets index is read end to end', async () => {
+    // 99% of bills have no priority, so idx_bills_priority (one column) plus a table lookup a row loses to reading
+    // the covering facets index whole. `+priority` keeps the planner off it.
+    const all = await facetPlans('priority=none&omit=subject%2Ccommittee')
+    const bare = all.filter(p => /(?<!\+)"m"\."priority" IS NULL/.test(p.sql))
+    expect(bare.map(p => p.sql), 'a count tests the bare priority IS NULL').toHaveLength(0)
+    const plain = all.filter(p => /\+"m"\."priority" IS NULL/.test(p.sql))
+    expect(plain.length, 'no count carried the non-indexable none test').toBeGreaterThan(0)
   })
 
   it('probes the same way when the filters narrow the facets, since hasDrafts ignores them', async () => {

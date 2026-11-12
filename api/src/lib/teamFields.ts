@@ -296,7 +296,10 @@ export function priorityWorn(bill: { priority: 'high' | 'medium' | 'low' | null;
 
 /** No bill in `of`'s group has a priority. */
 export function groupHasNoPriority(of: BillsTable): SQL {
-  return sql`(${of.priority} IS NULL AND (${of.groupKey} IS NULL OR NOT EXISTS (SELECT 1 FROM bills g WHERE g.group_key = ${of.groupKey} AND g.priority IS NOT NULL)))`
+  // +priority makes the test non-indexable (migration 0124): about 99% of bills share a null priority, so the planner
+  // otherwise starts from idx_bills_priority (one column) and reads the table row of each bill, where reading the
+  // covering idx_bills_facets end to end is cheaper. The plan tests pin it.
+  return sql`(+${of.priority} IS NULL AND (${of.groupKey} IS NULL OR NOT EXISTS (SELECT 1 FROM bills g WHERE g.group_key = ${of.groupKey} AND g.priority IS NOT NULL)))`
 }
 
 // ── Recording changes ───────────────────────────────────────────────────────
