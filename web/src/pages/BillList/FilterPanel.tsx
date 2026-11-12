@@ -414,6 +414,7 @@ export function SubjectFilterDropdown({
   selectedSubjects,
   onSubjectChange,
   loading = false,
+  loadFailed = false,
   onIntent,
 }: {
   subjectGroups: SubjectGroup[]
@@ -421,11 +422,13 @@ export function SubjectFilterDropdown({
   onSubjectChange: (next: string[]) => void
   /** The counts for the current filter have yet to land. */
   loading?: boolean
+  /** The request for the counts failed, so there are none to offer: the list says so, not that there are no subjects. */
+  loadFailed?: boolean
   /** Someone is about to use the control (a hover, a focus, or opening it), so its counts should load. */
   onIntent?: () => void
 }) {
   const [open, setOpen] = useState(false)
-  const showLoading = useLoadingOnOpen(open, loading)
+  const showLoading = useLoadingOnOpen(open, loading, loadFailed)
   const ref = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -656,7 +659,7 @@ export function SubjectFilterDropdown({
               </div>
             ) : rows.length === 0 ? (
               <div style={{ padding: '16px 12px', fontSize: fontSize.sm, color: color.textMuted }}>
-                {search.trim() ? <>No subjects match &ldquo;{search.trim()}&rdquo;.</> : 'No subjects.'}
+                {loadFailed ? 'Couldn’t load subjects.' : search.trim() ? <>No subjects match &ldquo;{search.trim()}&rdquo;.</> : 'No subjects.'}
               </div>
             ) : (
               <div

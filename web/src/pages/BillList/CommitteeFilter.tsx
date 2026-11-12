@@ -66,7 +66,7 @@ const MENU_WIDTH = 400
  * Its counts load on demand: `onIntent` says someone is about to use it (a hover, a focus, or opening it), and while
  * `loading` the list is a Loading row (see useLoadingOnOpen).
  */
-export function CommitteeFilterDropdown({ groups, selected, onChange, scope, onScopeChange, showStates, loading = false, onIntent }: {
+export function CommitteeFilterDropdown({ groups, selected, onChange, scope, onScopeChange, showStates, loading = false, loadFailed = false, onIntent }: {
   groups: CommitteeGroup[]
   selected: string[]
   onChange: (next: string[]) => void
@@ -76,11 +76,13 @@ export function CommitteeFilterDropdown({ groups, selected, onChange, scope, onS
   showStates: boolean
   /** The counts for the current filter have yet to land. */
   loading?: boolean
+  /** The request for the counts failed, so there are none to offer: the list says so, not that there are no committees. */
+  loadFailed?: boolean
   /** Someone is about to use the control, so its counts should load. */
   onIntent?: () => void
 }) {
   const [open, setOpen] = useState(false)
-  const showLoading = useLoadingOnOpen(open, loading)
+  const showLoading = useLoadingOnOpen(open, loading, loadFailed)
   const ref = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -238,7 +240,7 @@ export function CommitteeFilterDropdown({ groups, selected, onChange, scope, onS
             </div>
           ) : rows.length === 0 ? (
             <div style={{ padding: '16px 12px', fontSize: fontSize.sm, color: color.textMuted }}>
-              {search.trim() ? <>No committees match &ldquo;{search.trim()}&rdquo;.</> : 'No committees.'}
+              {loadFailed ? 'Couldn’t load committees.' : search.trim() ? <>No committees match &ldquo;{search.trim()}&rdquo;.</> : 'No committees.'}
             </div>
           ) : (
             <div

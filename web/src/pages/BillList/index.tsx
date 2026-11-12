@@ -369,10 +369,12 @@ export function BillList() {
     if (!force && inFlight && inFlight.key === key && parts.every(p => inFlight.parts.includes(p))) return
     const seq = ++lazySeqRef.current
     lazyInFlightRef.current = { key, parts }
-    const settle = (settled: LazyFacetsSettled) => {
+    const settle = (settled: LazyFacetsSettled | null) => {
       lazyFacetsSettledRef.current = settled
       setLazyFacetsSettled(settled)
     }
+    // A failure is forgotten once the page asks again: the controls show Loading, not the failure, while this is out.
+    if (lazyFacetsSettledRef.current?.failed) settle(null)
     try {
       const data = await apiFetch<FacetCounts>(facetsPath(billsFacetParams(f.filter), `only=${parts.join(',')}`))
       if (seq !== lazySeqRef.current) return
@@ -384,8 +386,8 @@ export function BillList() {
       settle({ key, parts, failed: false })
     } catch {
       if (seq !== lazySeqRef.current) return
-      // The control shows its empty state, never another filter's counts, and the next time someone is about to use
-      // it the page asks again. Nothing else on the page depends on these counts.
+      // The control says the counts could not load (never another filter's counts, and never that there are none),
+      // and the next time someone is about to use it the page asks again. Nothing else on the page depends on them.
       setLazyFacets(prev => ({
         subject: parts.includes('subject') ? {} : prev.subject,
         committee: parts.includes('committee') ? {} : prev.committee,
@@ -437,6 +439,8 @@ export function BillList() {
     lazyFacetsSettled !== null && lazyFacetsSettled.key === filtersKey && lazyFacetsSettled.parts.includes(part)
   const subjectCountsLoading = !lazyFacetsSettledFor('subject')
   const committeeCountsLoading = !lazyFacetsSettledFor('committee')
+  const subjectCountsFailed = lazyFacetsSettledFor('subject') && lazyFacetsSettled!.failed
+  const committeeCountsFailed = lazyFacetsSettledFor('committee') && lazyFacetsSettled!.failed
   // The two controls are offered from what the instance has, not from the counts, which load on demand: Subject where
   // some state has subjects, Committee where the instance has any committee, and either while one is picked.
   const subjectOffered = (facetCounts.subjectStates?.length ?? 0) > 0 || f.subject.length > 0 || f.subjectGroups.length > 0
@@ -1186,6 +1190,7 @@ export function BillList() {
                 selectedSubjects={f.subject}
                 onSubjectChange={f.handleSubjectsChange}
                 loading={subjectCountsLoading}
+                loadFailed={subjectCountsFailed}
                 onIntent={requestLazyFacets}
               />
             </HoverTooltip>
@@ -1200,6 +1205,7 @@ export function BillList() {
                 onScopeChange={f.setCommitteeScope}
                 showStates={f.isMultiState}
                 loading={committeeCountsLoading}
+                loadFailed={committeeCountsFailed}
                 onIntent={requestLazyFacets}
               />
             </HoverTooltip>
@@ -1442,6 +1448,8 @@ export function BillList() {
         committeeOffered={committeeOffered}
         subjectLoading={subjectCountsLoading}
         committeeLoading={committeeCountsLoading}
+        subjectLoadFailed={subjectCountsFailed}
+        committeeLoadFailed={committeeCountsFailed}
         yearOptions={f.yearFacetKeys.map(y => ({ value: y, label: y }))}
         totalYearCount={f.yearFacetKeys.length}
         stateOptions={f.uniqueStates.map(s => ({ value: s, label: s }))}

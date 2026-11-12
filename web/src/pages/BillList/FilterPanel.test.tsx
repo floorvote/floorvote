@@ -483,6 +483,27 @@ describe('SubjectFilterDropdown', () => {
     expect(within(menu).queryAllByRole('checkbox')).toEqual([])
   })
 
+  // A request for the counts can fail (the database's budget spent, D1 7429). Saying "No subjects." then would claim
+  // the instance has none, when the counts just did not arrive.
+  it('says the counts could not load, and offers no options, when their request failed', () => {
+    renderPanel({ subjectGroups: [], loadFailed: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Subject' }))
+    const menu = screen.getByRole('group', { name: 'Subject' })
+    expect(within(menu).getByText('Couldn’t load subjects.')).toBeInTheDocument()
+    expect(within(menu).queryByText('No subjects.')).toBeNull()
+    expect(within(menu).queryAllByRole('checkbox')).toEqual([])
+  })
+
+  it('shows Loading, not the failure, when the counts are asked for again while it is open', () => {
+    const props = { subjectGroups: [], selectedSubjects: [], onSubjectChange: () => {} }
+    const { rerender } = render(<SubjectFilterDropdown {...props} loadFailed />)
+    fireEvent.click(screen.getByRole('button', { name: 'Subject' }))
+    expect(screen.getByText('Couldn’t load subjects.')).toBeInTheDocument()
+    rerender(<SubjectFilterDropdown {...props} loading />)
+    expect(screen.getByText('Loading…')).toBeInTheDocument()
+    expect(screen.queryByText('Couldn’t load subjects.')).toBeNull()
+  })
+
   it('keeps the list it showed while open when a new load starts, and shows Loading again after a reopen', () => {
     const { rerender } = renderPanel()
     fireEvent.click(screen.getByRole('button', { name: 'Subject' }))

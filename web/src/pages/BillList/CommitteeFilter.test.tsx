@@ -393,6 +393,25 @@ describe('the Committee menu while its counts load', () => {
     expect(within(menu).queryByText('Judiciary (Senate)')).toBeNull()
   })
 
+  // A request for the counts can fail (the database's budget spent, D1 7429). Saying "No committees." then would claim
+  // the instance has none, when the counts just did not arrive.
+  it('says the counts could not load, and offers no committees, when their request failed', () => {
+    const { menu } = renderMenu({ groups: [], loadFailed: true })
+    expect(within(menu).getByText('Couldn’t load committees.')).toBeInTheDocument()
+    expect(within(menu).queryByText('No committees.')).toBeNull()
+    expect(within(menu).queryAllByRole('checkbox')).toEqual([])
+  })
+
+  it('shows Loading, not the failure, when the counts are asked for again while it is open', () => {
+    const props = { groups: [], selected: [], onChange: vi.fn(), scope: 'any' as const, onScopeChange: vi.fn(), showStates: true }
+    const { rerender } = render(<CommitteeFilterDropdown {...props} loadFailed />)
+    fireEvent.click(screen.getByRole('button', { name: /^Committee/ }))
+    expect(screen.getByText('Couldn’t load committees.')).toBeInTheDocument()
+    rerender(<CommitteeFilterDropdown {...props} loading />)
+    expect(screen.getByText('Loading…')).toBeInTheDocument()
+    expect(screen.queryByText('Couldn’t load committees.')).toBeNull()
+  })
+
   it('keeps the list it showed while open when a new load starts', () => {
     const props = { groups: GROUPS, selected: [], onChange: vi.fn(), scope: 'any' as const, onScopeChange: vi.fn(), showStates: true }
     const { rerender } = render(<CommitteeFilterDropdown {...props} />)

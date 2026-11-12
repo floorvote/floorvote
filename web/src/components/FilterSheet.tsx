@@ -85,6 +85,9 @@ interface FilterSheetProps {
   /** The Subject or Committee counts for the current filter have yet to land: the list is a Loading row. */
   subjectLoading?: boolean
   committeeLoading?: boolean
+  /** The request for the Subject or Committee counts failed, so there are none to offer: the list says so. */
+  subjectLoadFailed?: boolean
+  committeeLoadFailed?: boolean
   yearOptions: { value: string; label: string }[]
   totalYearCount?: number
   stateOptions: { value: string; label: string }[]
@@ -283,7 +286,7 @@ export function FilterSheet({
   match, onMatchChange,
   statusOptions, stageOptions, statusGroups, priorityOptions, positionOptions, tagOptions, subjectGroups, yearOptions, totalYearCount, stateOptions,
   committee = [], committeeScope = 'any', committeeGroups = [], onCommitteeChange = () => {}, onCommitteeScopeChange = () => {},
-  subjectOffered, committeeOffered, subjectLoading = false, committeeLoading = false,
+  subjectOffered, committeeOffered, subjectLoading = false, committeeLoading = false, subjectLoadFailed = false, committeeLoadFailed = false,
   customFieldDefs, field, onFieldChange,
   onStatusChange, onStageChange, onPriorityChange, onPositionChange, onTagChange, onSubjectChange, onYearChange, onStateChange,
   onMinRelevanceChange, onMyBillsChange, onNewMatchesChange, onUnvotedChange, onDraftsChange,
@@ -323,8 +326,8 @@ export function FilterSheet({
   }
 
   // Drilled into Subject or Committee is that list open, for its Loading row (see useLoadingOnOpen).
-  const showSubjectLoading = useLoadingOnOpen(isOpen && dimension === 'subject', subjectLoading)
-  const showCommitteeLoading = useLoadingOnOpen(isOpen && dimension === 'committee', committeeLoading)
+  const showSubjectLoading = useLoadingOnOpen(isOpen && dimension === 'subject', subjectLoading, subjectLoadFailed)
+  const showCommitteeLoading = useLoadingOnOpen(isOpen && dimension === 'committee', committeeLoading, committeeLoadFailed)
 
   if (!isOpen) return null
 
@@ -842,6 +845,7 @@ export function FilterSheet({
               limitSubjects
               loading={showSubjectLoading}
               emptyText="No subjects."
+              failedText={subjectLoadFailed ? 'Couldn’t load subjects.' : undefined}
             />
           )}
 
@@ -851,6 +855,9 @@ export function FilterSheet({
               <CommitteeScopeSwitch scope={committeeScope} onScopeChange={onCommitteeScopeChange} name="committee-scope-sheet" style={{ borderRadius: radius.md }} />
               {showCommitteeLoading && (
                 <div style={{ padding: '16px 0', fontSize: fontSize.sm, color: color.textMuted }}>Loading…</div>
+              )}
+              {!showCommitteeLoading && committeeLoadFailed && (
+                <div style={{ padding: '16px 0', fontSize: fontSize.sm, color: color.textMuted }}>Couldn’t load committees.</div>
               )}
               {!showCommitteeLoading && committeeGroups.map(group => (
                 <div key={group.state} style={{ marginTop: 8 }}>

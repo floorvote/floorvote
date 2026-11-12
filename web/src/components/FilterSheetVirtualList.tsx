@@ -38,7 +38,7 @@ const LIST_HEIGHT = 340
  * that module for why virtualized rows need a hand-rolled push-out at all.
  */
 export function FilterSheetVirtualList({
-  groups, selected, onToggle, searchPlaceholder, ariaLabel, limitSubjects = false, loading = false, emptyText,
+  groups, selected, onToggle, searchPlaceholder, ariaLabel, limitSubjects = false, loading = false, emptyText, failedText,
 }: {
   groups: FilterSheetVirtualGroup[]
   selected: string[]
@@ -52,6 +52,8 @@ export function FilterSheetVirtualList({
   loading?: boolean
   /** What the list says when it has no options at all and nothing is searched for. */
   emptyText?: string
+  /** What the list says instead when the request for its options failed, so there are none to offer. */
+  failedText?: string
 }) {
   const capReached = limitSubjects && isSubjectCapReached(selected.length)
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -93,7 +95,7 @@ export function FilterSheetVirtualList({
         </div>
       ) : rows.length === 0 ? (
         <div style={{ padding: '16px 0', fontSize: fontSize.sm, color: color.textMuted }}>
-          {!search.trim() && emptyText ? emptyText : <>No matches for &ldquo;{search.trim()}&rdquo;.</>}
+          {failedText ?? (!search.trim() && emptyText ? emptyText : <>No matches for &ldquo;{search.trim()}&rdquo;.</>)}
         </div>
       ) : (
         <div

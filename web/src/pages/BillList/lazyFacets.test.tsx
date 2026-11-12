@@ -367,22 +367,50 @@ describe('while the counts load', () => {
     expect(screen.getByText('Judiciary (Senate)')).toBeInTheDocument()
   })
 
-  it('shows the empty state when the request fails, keeps the page, and asks again on the next open', async () => {
+  // The request can fail (the database's budget spent, D1 7429). The control says so, never "No subjects.", which
+  // would claim the instance has none; the page keeps its bills; and the next open asks again, on Loading.
+  it('says the counts could not load when the request fails, keeps the page, and asks again on the next open', async () => {
     api.fail = isLazyFacetsCall
     await renderBillList()
     fireEvent.click(subjectButton())
     await waitFor(() => expect(lazyCalls()).toHaveLength(1))
     await act(async () => {})
     const menu = screen.getByRole('group', { name: 'Subject' })
-    expect(within(menu).getByText('No subjects.')).toBeInTheDocument()
+    expect(within(menu).getByText('Couldn’t load subjects.')).toBeInTheDocument()
+    expect(within(menu).queryByText('No subjects.')).toBeNull()
     expect(screen.getByText('Default bill')).toBeInTheDocument()
     expect(screen.queryByText(/Failed to load bills/)).toBeNull()
 
     api.fail = null
+    api.hold = isLazyFacetsCall
     fireEvent.click(subjectButton()) // close
     fireEvent.click(subjectButton()) // reopen
+    await waitFor(() => expect(lazyPending()).toHaveLength(1))
+    const reopened = screen.getByRole('group', { name: 'Subject' })
+    expect(within(reopened).getByText('Loading…')).toBeInTheDocument()
+    expect(within(reopened).queryByText('Couldn’t load subjects.')).toBeNull()
+    await settleLazy(0, fullFacets())
+    expect(within(screen.getByRole('group', { name: 'Subject' })).getByText('Roads')).toBeInTheDocument()
+  })
+
+  it('says so in the Committee menu and in the phone sheet too', async () => {
+    api.fail = isLazyFacetsCall
+    await renderBillList()
+    fireEvent.click(committeeButton())
+    await waitFor(() => expect(lazyCalls()).toHaveLength(1))
+    await act(async () => {})
+    const menu = screen.getByRole('group', { name: 'Committee' })
+    expect(within(menu).getByText('Couldn’t load committees.')).toBeInTheDocument()
+    expect(within(menu).queryByText('No committees.')).toBeNull()
+    fireEvent.click(committeeButton()) // close
+
+    openSheet() // asks again, and fails again
     await waitFor(() => expect(lazyCalls()).toHaveLength(2))
-    expect(await within(screen.getByRole('group', { name: 'Subject' })).findByText('Roads')).toBeInTheDocument()
+    await act(async () => {})
+    fireEvent.click(sheetRow(/^Subject/)!)
+    const list = screen.getByRole('group', { name: 'Subject' })
+    expect(within(list).getByText('Couldn’t load subjects.')).toBeInTheDocument()
+    expect(within(list).queryByText('No subjects.')).toBeNull()
   })
 })
 
