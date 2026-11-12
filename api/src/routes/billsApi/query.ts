@@ -266,6 +266,11 @@ export type BillFilterContext = {
    * many statements under the search (the facets): each then tests the ids by key instead of carrying the LIKEs.
    */
   searchIds?: readonly string[]
+  /**
+   * The filter is built for the facets' counts, which read the bills through the covering facets index. A year or a stage is
+   * then written non-indexable (`unindexedIn`); the list, the bulk routes, and the digest views keep the seekable test.
+   */
+  facets?: boolean
 }
 
 /** A condition on one reference to `bills`: the table itself, or an alias of it. */

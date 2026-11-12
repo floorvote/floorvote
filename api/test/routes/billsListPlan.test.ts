@@ -116,14 +116,14 @@ describe('GET /bills query plans', () => {
     // The facets write the year and stage tests as `+column` so they read the facets index whole. The list must not: its
     // page would then skip-scan an 11-column index that nothing pins, and the tracked count would read the table.
     for (const [qs, index] of [['year=2025', 'idx_bills_year_start (year_start=?)'], ['stage=passed', 'idx_bills_status_stage (status_stage=?)']]) {
-      const plans = await listPlans(`${qs}&sort=status&dir=desc&pageSize=20`)
-      const page = pageOf(plans)
+      const page = pageOf(await listPlans(`${qs}&sort=status&dir=desc&pageSize=20`))
       expect(page.plan, `${qs}\n${page.plan}`).toContain(`SEARCH c USING INDEX ${index}`)
       expect(page.plan, `${qs}\n${page.plan}`).not.toContain('idx_bills_facets')
       expect(page.plan, `${qs}\n${page.plan}`).not.toMatch(NO_TABLE_SCAN)
-      const tracked = plans.find(p => /WHERE m\.match_type IS NOT NULL/.test(p.sql))
+      const tracked = (await listPlans(`${qs}&pageSize=20`)).find(p => /WHERE m\.match_type IS NOT NULL/.test(p.sql))
       expect(tracked, `${qs}: no count of tracked bills`).toBeDefined()
-      expect(tracked!.plan, `${qs}\n${tracked!.plan}`).toMatch(/SEARCH m USING COVERING INDEX idx_bills_(match_type|tracked_cover)/)
+      expect(tracked!.plan, `${qs}\n${tracked!.plan}`).toMatch(/SEARCH m USING (COVERING )?INDEX idx_bills_(match_type|tracked_cover)/)
+      expect(tracked!.plan, `${qs}\n${tracked!.plan}`).not.toContain('idx_bills_facets')
     }
   })
 

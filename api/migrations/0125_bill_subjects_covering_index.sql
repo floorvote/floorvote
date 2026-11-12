@@ -2,8 +2,8 @@
 --
 -- The subject facet counts the subject rows of the bills that meet the filters, grouped by (state, subject name).
 -- The rows are reached from the bill by bill_id, and the primary key's index (bill_id, subject_name) lacks the
--- state, so each row cost a table lookup after its index entry. On the largest instance, with 174,000 subject rows
--- for 99,466 bills, a count under a broad filter read some 540,000 rows and took about a second of D1's per-database
+-- state, so each row cost a table lookup after its index entry. On the largest instance, with about 170,000 subject rows
+-- for about 100,000 bills, a count under a broad filter read over 500,000 rows and took about a second of D1's per-database
 -- budget, and the menu request that asks for the subject and committee counts was over the budget by itself.
 --
 -- idx_bill_subjects_bill holds the bill, the state, and the name, so the join from a bill to its subjects reads the
