@@ -533,4 +533,78 @@ describe('GET /bills/facets query plans', () => {
       expect(own.map(s => s.sql), `"${qs}" counts the groups its filter meets by a statement of its own`).toEqual([])
     }
   })
+
+  // The menu request (`only=subject,committee`) under a broad filter (#1023). Every statement of it that counts the
+  // subject and committee rows, and every probe a request prepares to choose how to, reads the bill `m` through a
+  // covering index (or by its key) and the rows by key or a covering index, never through a one-column index and the
+  // table row. On the largest instance (174,000 subject rows for 99,466 bills) the whole subject count alone read
+  // 536,736 rows in 962 ms under `priority=none`, and the request 1.3 to 2.1 s, past the budget.
+  const menu = (qs: string) => `${qs}${qs ? '&' : ''}only=subject%2Ccommittee`
+  const MENU_REQUESTS = [
+    'year=2025', 'status=Introduced', 'stage=introduced', 'priority=none', 'position=none', 'unvoted=1',
+    'tag=Energy&priority=high&position=Support&match=any', 'tag=Energy&status=Passed&state=NJ&match=any',
+  ]
+  async function menuPlans(qs: string): Promise<Planned[]> {
+    const out: Planned[] = []
+    for (const s of await statementsFor(menu(qs))) {
+      const flat = s.sql.replace(/\s+/g, ' ')
+      // The counts of subject and committee rows, the committee names, and the probes that choose how to count.
+      if (/bs\.subject_name AS v1|bc\.committee_id AS (v0|id)\b/.test(flat) || /AS kept\b|AS total\b/.test(flat)) out.push({ sql: flat, plan: await plan(s) })
+    }
+    return out
+  }
+  const goodRead = (line: string): boolean => {
+    const l = line.trim()
+    if (/^(SCAN|SEARCH) m\b/.test(l)) return /USING COVERING INDEX (idx_bills_facets|idx_bills_group_key|sqlite_autoindex_bills_1)\b/.test(l)
+    if (/^(SCAN|SEARCH) bs\b/.test(l)) return /USING COVERING INDEX/.test(l)
+    if (/^(SCAN|SEARCH) bc\b/.test(l)) return /USING COVERING INDEX|INDEX sqlite_autoindex_bill_committees_1 \(bill_id=\?\)/.test(l)
+    return true
+  }
+
+  it('reads the bills under each broad filter through the facets index, and their subject and committee rows by a covering index or key', async () => {
+    const wrong: string[] = []
+    for (const qs of MENU_REQUESTS) {
+      const plans = await menuPlans(qs)
+      if (plans.length === 0) wrong.push(`"${qs}": no statement`)
+      for (const p of plans) {
+        const bad = p.plan.split('\n').filter(l => !goodRead(l))
+        if (bad.length > 0) wrong.push(`"${qs}"\n${p.sql}\n${p.plan}`)
+      }
+    }
+    expect(wrong, wrong.join('\n\n')).toEqual([])
+  })
+
+  it('counts a broad filter\'s subjects as the subject index less the rows of the bills it leaves out', async () => {
+    // Under a filter that most bills meet (80% of this fixture's bills are Introduced) the rows kept are most of the
+    // table, so counting them joins every bill to its rows. The rows of the bills left out are few, so the count is the
+    // subject index end to end, which covers it, less those rows.
+    const whole = (await menuPlans('status=Introduced')).filter(p => /bs\.subject_name AS v1/.test(p.sql) && !/GROUP BY "m"\."group_key"/.test(p.sql))
+    expect(whole.length, whole.map(p => p.sql).join('\n')).toBe(2)
+    expect(whole.some(p => /SCAN bs USING COVERING INDEX idx_bill_subjects_name/.test(p.plan) && !/\bbills\b/.test(p.sql)), 'no whole read of the subject index').toBe(true)
+    // And a filter few bills meet is counted from those bills, as before.
+    const narrow = (await menuPlans('status=Passed')).filter(p => /bs\.subject_name AS v1/.test(p.sql) && !/GROUP BY "m"\."group_key"/.test(p.sql))
+    expect(narrow.length, narrow.map(p => p.sql).join('\n')).toBe(1)
+    expect(narrow[0].plan).toMatch(/SEARCH m USING COVERING INDEX idx_bills_facets/)
+  })
+
+  it('evaluates the current result once for the subject and committee counts under match=any, not once a statement', async () => {
+    // Each count tested every bill for freshness against the filter, about 0.4 s a statement on the largest instance
+    // and four statements a request. The current result is read once, as its keys, and each count is given them.
+    const stmts = (await statementsFor(menu('tag=Energy&priority=high&position=Support&match=any'))).map(s => s.sql)
+    const evaluating = stmts.filter(sql => /json_each\("(m|cm)"\."group_tags"\)/.test(sql))
+    expect(evaluating.length, evaluating.map(s => s.replace(/\s+/g, ' ').slice(0, 120)).join('\n')).toBeLessThanOrEqual(1)
+  })
+
+  // The page load under a year (#1023): its tag, drafts, and unvoted counts read the year column's index and then the
+  // table, for 72% of bills, where the facets index read whole is cheaper.
+  it('reads the bills under a year from the facets index, for every count of the page load', async () => {
+    const wrong: string[] = []
+    for (const qs of ['year=2025', 'year=2025&state=NJ', 'year=2025&match=any']) {
+      for (const p of await facetPlans(pageLoad(qs))) {
+        const bad = p.plan.split('\n').filter(l => /^(SCAN|SEARCH) (m|bills) USING INDEX idx_bills_year_start\b/.test(l.trim()))
+        if (bad.length > 0) wrong.push(`"${qs}"\n${p.sql}\n${p.plan}`)
+      }
+    }
+    expect(wrong, wrong.join('\n\n')).toEqual([])
+  })
 })
