@@ -107,9 +107,9 @@ describe('migration 0126: the subjects a group shares', () => {
     })
 
     it('keeps a pair per state, since the state is part of a subject', async () => {
-      await env.DB.batch([bill('a1', 'g1'), bill('a2', 'g1'), subject('a1', 'NJ', 'S'), subject('a2', 'TX', 'S')])
+      await env.DB.batch([bill('a1', 'g1'), bill('a2', 'g1'), bill('a3', 'g1'), subject('a1', 'NJ', 'S'), subject('a2', 'TX', 'S')])
       expect(await table()).toEqual([])
-      await env.DB.batch([subject('a1', 'TX', 'S')])
+      await env.DB.batch([subject('a3', 'TX', 'S')])
       expect(await table()).toEqual([{ group_key: 'g1', state: 'TX', subject_name: 'S', n: 2 }])
     })
 

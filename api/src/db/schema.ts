@@ -333,6 +333,20 @@ export const billSubjects = sqliteTable('bill_subjects', {
   index('idx_bill_subjects_name').on(t.state, t.subjectName),
 ])
 
+/**
+ * The subjects two or more bills of a companion group hold, with how many do (migration 0126, #1030). Only shared pairs
+ * have a row, so a tenant whose groups share nothing has none. Kept by triggers on bill_subjects and bills, never written
+ * by code: the subject facet reads it to count a group once under a subject.
+ */
+export const groupSubjects = sqliteTable('group_subjects', {
+  groupKey:    text('group_key').notNull(),
+  state:       text('state').notNull(),
+  subjectName: text('subject_name').notNull(),
+  n:           integer('n').notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.groupKey, t.state, t.subjectName] }),
+])
+
 /** The committees a bill was referred to, from central (#471, migration 0116). `isCurrent` marks the one it is pending in. */
 export const billCommittees = sqliteTable('bill_committees', {
   billId:      text('bill_id').notNull().references(() => bills.id, { onDelete: 'cascade' }),

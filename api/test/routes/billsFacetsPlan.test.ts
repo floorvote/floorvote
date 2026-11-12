@@ -290,10 +290,11 @@ describe('GET /bills/facets query plans', () => {
   // The subject facet's statements: the whole count of each (state, subject), and the count of its grouped bills'
   // groups. A subject filter's own EXISTS names bill_subjects too, so they are found by the values they count.
   async function subjectPlans(qs = ''): Promise<{ whole: Planned; grouped: Planned }> {
-    const found = select(await facetPlans(qs), /bs\.subject_name AS v1/)
-    const grouped = found.filter(p => /GROUP BY "m"\."group_key"/.test(p.sql))
+    const found = select(await facetPlans(qs), /bs\.subject_name AS v1|gs\.subject_name AS v1/)
+    // The correction is read from the subjects the groups share (#1030), which the old statement over every grouped bill's rows grouped by its group key.
+    const grouped = found.filter(p => /group_subjects/.test(p.sql))
     // Under a filter most bills meet, the whole count is two statements: every row, and the rows of the bills left out (#1023).
-    const wholes = found.filter(p => !/GROUP BY "m"\."group_key"/.test(p.sql))
+    const wholes = found.filter(p => !/group_subjects/.test(p.sql))
     const whole = wholes.length === 2 ? wholes.filter(p => /\bbills m\b/.test(p.sql)) : wholes
     expect([whole.length, grouped.length], `subject statements for "${qs}": ${found.map(p => p.sql).join(' | ')}`).toEqual([1, 1])
     return { whole: whole[0], grouped: grouped[0] }
@@ -358,13 +359,14 @@ describe('GET /bills/facets query plans', () => {
     }
   })
 
-  it('counts the groups of each subject from the group key index, its rows reached by key', async () => {
+  it('counts the groups of each subject from the shared subjects of the groups the filter keeps, its other rows reached by key', async () => {
     for (const qs of ['', 'status=Passed', 'subject=NJ:Subject%201']) {
       const { grouped } = await subjectPlans(qs)
       const msg = `"${qs}"\n${grouped.sql}\n${grouped.plan}`
       expect(grouped.plan, msg).toMatch(/SEARCH m USING COVERING INDEX idx_bills_group_key \(group_key>\?\)/)
+      expect(grouped.plan, msg).toMatch(/SEARCH gs USING PRIMARY KEY \(group_key=\?\)/)
       expect(grouped.plan, msg).toMatch(/SEARCH bs USING (COVERING )?INDEX (sqlite_autoindex_bill_subjects_1|idx_bill_subjects_bill) \(bill_id=\?\)/)
-      expect(grouped.plan, msg).not.toMatch(/SCAN (bs|m)\b/)
+      expect(grouped.plan, msg).not.toMatch(/SCAN (bs|m|gs)\b/)
     }
   })
 
@@ -555,7 +557,7 @@ describe('GET /bills/facets query plans', () => {
       const stmts = await statementsFor(`${qs}${qs ? '&' : ''}only=subject`)
       const old = stmts.filter(s => /bill_subjects[\s\S]*GROUP BY[^)]*"m"\."group_key"/.test(s.sql))
       const reads: Planned[] = []
-      for (const s of stmts) if (/group_subjects/.test(s.sql)) reads.push({ sql: s.sql.replace(/\s+/g, ' '), plan: await plan(s) })
+      for (const s of stmts) if (/group_subjects/.test(s.sql) && /\bqual\b/.test(s.sql)) reads.push({ sql: s.sql.replace(/\s+/g, ' '), plan: await plan(s) })
       if (old.length > 0) wrong.push(`"${qs}" still reads every grouped bill's subject rows:\n${old[0].sql}`)
       if (reads.length !== 1) { wrong.push(`"${qs}": ${reads.length} statements read the shared subjects`); continue }
       if (!/SEARCH gs USING (COVERING )?INDEX \w+ \(group_key=\?\)|SEARCH gs USING PRIMARY KEY \(group_key=\?\)/.test(reads[0].plan)) wrong.push(`"${qs}" does not seek the shared subjects by group:\n${reads[0].plan}`)

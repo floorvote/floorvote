@@ -49,6 +49,11 @@ export type Counting = {
   freshKeys?: () => Promise<Fresh | undefined>
   /** Whether the bills `where` meets are most of the table, so that counting the ones it leaves out reads fewer rows. */
   broad?: () => Promise<boolean>
+  /**
+   * Whether any group has two bills holding one subject (a row in `group_subjects`, migration 0126), asked once a request.
+   * When none does, the subject count needs no correction for groups.
+   */
+  groupsShareSubjects?: () => Promise<boolean>
 }
 
 /**
@@ -141,6 +146,33 @@ const keyOf = (row: Record<string, unknown>, n: number) => JSON.stringify(Array.
 const valuesOf = (row: Record<string, unknown>, n: number) => Array.from({ length: n }, (_, i) => row[`v${i}`])
 
 /**
+ * The grouped correction of the subject count, read from the subjects the groups share (`group_subjects`, 0126) in place
+ * of the subject rows of every grouped bill. A group counts once under a subject however many of its bills that meet the
+ * filter hold it, so the correction to a subject's count of bills is, for each group, the number of its bills holding the
+ * subject that meet the filter, less one. The rows come back as `bills` (that sum) and `groups` of 0, which the count takes
+ * from the whole count as it takes the statement it replaces.
+ *
+ * `qual` is the grouped bills that meet the filter (and, under OR, are fresh), the filter evaluated once. A group with
+ * every bill in `qual` has its correction summed from the table, a seek in its primary key for each, as every bill of
+ * it holds the subjects the table counts. A group with a bill the filter leaves out has only some of its bills counted, so
+ * its correction is counted from the subject rows of the bills in `qual`, which the table cannot say. Those are the few
+ * groups a filter splits, and the rows read are theirs alone.
+ */
+function sharedSubjectCorrection(db: AppDb, freshCte: SQL | undefined, w: SQL | undefined, fresh: SQL | undefined): Promise<Record<string, unknown>[]> {
+  const conditions = [sql`${m.groupKey} IS NOT NULL`, w, fresh ? sql`(${fresh})` : undefined].filter((c): c is SQL => c !== undefined)
+  const ctes = withCtes([
+    freshCte,
+    sql`qual AS MATERIALIZED (SELECT ${m.id} AS id, ${m.groupKey} AS gk FROM bills m WHERE ${sql.join(conditions, sql` AND `)})`,
+    sql`kept AS MATERIALIZED (SELECT gk, COUNT(*) AS q, (SELECT COUNT(*) FROM bills a WHERE a.group_key = qual.gk) AS size FROM qual GROUP BY gk)`,
+  ])
+  return db.all(sql`${ctes}SELECT v0, v1, COALESCE(SUM(c), 0) AS bills, 0 AS groups FROM (
+    SELECT gs.state AS v0, gs.subject_name AS v1, gs.n - 1 AS c FROM kept k CROSS JOIN group_subjects gs ON gs.group_key = k.gk WHERE k.q = k.size
+    UNION ALL
+    SELECT s AS v0, j AS v1, c - 1 AS c FROM (SELECT bs.state AS s, bs.subject_name AS j, COUNT(*) AS c FROM kept p CROSS JOIN qual q ON q.gk = p.gk CROSS JOIN bill_subjects bs ON bs.bill_id = q.id
+      WHERE p.q < p.size GROUP BY q.gk, bs.state, bs.subject_name HAVING COUNT(*) > 1)) GROUP BY v0, v1`) as Promise<Record<string, unknown>[]>
+}
+
+/**
  * Groups by the values of `values` over `from` (which names the bill `m`), each
  * counted once: the bills as before groups, less the grouped bills, plus their
  * groups. The grouped bills are read through the group key index, in its order
@@ -162,7 +194,7 @@ const valuesOf = (row: Record<string, unknown>, n: number) => Array.from({ lengt
  * each row's bill by key costs a lookup a row. A `where` given with `alone`
  * must test the rows only, never `m`.
  */
-export async function countBy(db: AppDb, c: Counting, source: { values: SQL[]; from: SQL; where?: SQL; alone?: SQL; extras?: SQL[]; noComplement?: true }): Promise<CountRow[]> {
+export async function countBy(db: AppDb, c: Counting, source: { values: SQL[]; from: SQL; where?: SQL; alone?: SQL; extras?: SQL[]; noComplement?: true; groupSubjects?: true }): Promise<CountRow[]> {
   const { values, from } = source
   const filter = c.where(m)
   const w = filter && source.where ? and(source.where, filter) : (source.where ?? filter)
@@ -189,12 +221,16 @@ export async function countBy(db: AppDb, c: Counting, source: { values: SQL[]; f
       return all.map(r => ({ ...r, n: Number(r.n) - (out.get(keyOf(r, values.length)) ?? 0) })).filter(r => fresh !== undefined || r.n > 0)
     })
     : db.all(sql`${cte}SELECT ${select(sql.join([sql`${countOf(fresh)} AS n`, ...extraCols], sql`, `))} FROM ${wholeFrom}${w ? sql` WHERE ${w}` : sql``}${groupBy(values)}`) as Promise<Record<string, unknown>[]>
-  const [whole, grouped] = await Promise.all([
-    wholeRows,
-    db.all(sql`${cte}SELECT ${sql.join([...valueNames(values), sql`COALESCE(SUM(n), 0) AS bills`, sql`${fresh ? sql`COALESCE(SUM(CASE WHEN n > 0 THEN 1 ELSE 0 END), 0)` : sql`COUNT(*)`} AS groups`], sql`, `)}
+  const everyRow = () => db.all(sql`${cte}SELECT ${sql.join([...valueNames(values), sql`COALESCE(SUM(n), 0) AS bills`, sql`${fresh ? sql`COALESCE(SUM(CASE WHEN n > 0 THEN 1 ELSE 0 END), 0)` : sql`COUNT(*)`} AS groups`], sql`, `)}
       FROM (SELECT ${select(sql`${countOf(fresh)} AS n`)} FROM ${from} WHERE ${m.groupKey} IS NOT NULL${w ? sql` AND ${w}` : sql``}
-        GROUP BY ${sql.join([sql`${m.groupKey}`, ...values], sql`, `)})${groupBy(valueNames(values))}`) as Promise<Record<string, unknown>[]>,
-  ])
+        GROUP BY ${sql.join([sql`${m.groupKey}`, ...values], sql`, `)})${groupBy(valueNames(values))}`) as Promise<Record<string, unknown>[]>
+  // The subject count reads the correction from the subjects the groups share (`sharedSubjectCorrection`), and none at all
+  // when no group shares one, since every group then counts once under each subject by the whole count's own rows.
+  const sharing = source.groupSubjects && !source.where && c.groupsShareSubjects
+  const groupedRows = sharing
+    ? c.groupsShareSubjects!().then(shared => (shared ? sharedSubjectCorrection(db, keyed ? undefined : c.fresh?.cte, w, fresh) : []))
+    : everyRow()
+  const [whole, grouped] = await Promise.all([wholeRows, groupedRows])
   const byValue = new Map(grouped.map(r => [keyOf(r, values.length), r]))
   return whole.map(r => {
     const g = byValue.get(keyOf(r, values.length))

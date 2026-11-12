@@ -383,7 +383,7 @@ export const FILTER_TABLE: FilterTable = {
       count: async (fc, own) => {
         // A subject row's bill is deleted with it (ON DELETE CASCADE), so an unnarrowed count reads the rows alone.
         const rows = await countBy(fc.db, fc.counting(own), {
-          values: [sql`bs.state`, sql`bs.subject_name`], from: sql`bills m CROSS JOIN bill_subjects bs ON bs.bill_id = m.id`, alone: sql`bill_subjects bs`,
+          values: [sql`bs.state`, sql`bs.subject_name`], from: sql`bills m CROSS JOIN bill_subjects bs ON bs.bill_id = m.id`, alone: sql`bill_subjects bs`, groupSubjects: true,
         })
         return fc.shift(Object.fromEntries(
           rows
@@ -772,6 +772,9 @@ export function makeFacetContext(req: FacetRequest): FacetContext {
   // Whether most bills meet a facet's filter, asked once for each filter: the count of the bills it meets against the count of
   // all, which the smallest index of bills answers. A count of the rows of the bills a broad filter leaves out reads fewer.
   let totalBills: Promise<number> | undefined
+  // Whether any group has two bills holding a subject, asked once a request: the subject count reads no correction for groups when none does.
+  let sharedOnce: Promise<boolean> | undefined
+  const groupsShareSubjects = () => sharedOnce ??= db.all(sql`SELECT EXISTS (SELECT 1 FROM group_subjects) AS shared`).then(r => Number((r[0] as { shared: number }).shared) > 0)
   const broadByOmit = new Map<string, Promise<boolean>>()
   const broadOf = (key: string, where: SQL | undefined) => () => {
     if (!where) return Promise.resolve(false)
@@ -786,7 +789,7 @@ export function makeFacetContext(req: FacetRequest): FacetContext {
     const where = any ? scopesOnly : composeFilter(parts, { omit: new Set(omit) })
     // Naming only the facts the request filters by, since leaving out another changes nothing.
     const key = any ? '' : omit.filter(o => parts.facts.some(f => f.key === o)).sort().join(',')
-    return { where, fresh, freshKeys, broad: broadOf(key, where(m)) }
+    return { where, fresh, freshKeys, broad: broadOf(key, where(m)), groupsShareSubjects }
   }
 
   // The cube, counted once when a facet asks for it. Under AND its WHERE leaves out the facts on its columns, which
