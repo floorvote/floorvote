@@ -36,9 +36,16 @@ export type BillsFilter = (t: BillsTable) => SQL | undefined
 // json_each also matches array elements exactly, avoiding accidental substring
 // hits. Shared by the list filter (buildBillsFilter) and the facets WHERE so the
 // two can't drift. Caller must pass a non-empty array.
+//
+// The test is marked unlikely(), which changes nothing it answers: it tells the planner the term keeps few
+// bills, so a count grouped by an indexed column (status, state, …) starts from the bills with group tags
+// (idx_bills_group_tags, with hasGroupTags) instead of reading every bill through the grouped column's own
+// index to skip the sort. On an instance where a tenth of the bills carried tags, that read 107,000 rows a
+// count, six counts a facets request, and the request alone spent most of D1's ten-second budget (#1016).
+// groupTagsPlan.test.ts pins the plan.
 export function tagMembership(tagValues: readonly string[], t: BillsTable = bills): SQL {
   // One JSON parameter, however many tags are picked.
-  return sql`EXISTS (SELECT 1 FROM json_each(${t.groupTags}) je WHERE je.value IN (SELECT value FROM json_each(${JSON.stringify(tagValues)})))`
+  return sql`unlikely(EXISTS (SELECT 1 FROM json_each(${t.groupTags}) je WHERE je.value IN (SELECT value FROM json_each(${JSON.stringify(tagValues)}))))`
 }
 
 /**

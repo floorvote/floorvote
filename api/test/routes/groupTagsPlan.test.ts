@@ -88,4 +88,15 @@ describe('tag filter query plans', () => {
     expect(tags.length, 'the facets counted no tags through group tags').toBeGreaterThanOrEqual(2)
     for (const t of tags) expect(t.plan, `${t.sql}\n${t.plan}`).toContain('idx_bills_group_tags')
   })
+
+  // Under a tag filter, every other facet counts from the bills with group tags too (#1016 follow-up): on an
+  // instance where a tenth of the bills carry tags, the planner read every bill through the grouped column's
+  // own index (idx_bills_state, …) to skip the sort, 107,000 rows a count and six counts a request, and the
+  // request alone spent most of D1's ten-second budget.
+  it("counts every facet under a tag filter from the bills with group tags, not from the grouped column's index", async () => {
+    const plans = await plansFor('bills/facets?tag=Energy&omit=subject%2Ccommittee')
+    const counts = plans.filter(p => /COUNT\(|SUM\(/i.test(p.sql) && readsGroupTags(p) && /GROUP BY "m"\."(status|status_stage|state|session|year_start)"/.test(p.sql))
+    expect(counts.length, 'no facet counted under the tag filter').toBeGreaterThanOrEqual(5)
+    for (const c of counts) expect(c.plan, `${c.sql}\n${c.plan}`).toMatch(/SCAN m USING (COVERING )?INDEX idx_bills_group_tags/)
+  })
 })
