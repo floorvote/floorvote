@@ -8,15 +8,16 @@
 -- subject, with the number of the group's bills that hold it. A tenant whose groups share nothing has no row.
 --
 -- The correction under a filter is the sum of (n - 1) over the kept groups' rows, as long as every bill of a group
--- meets the filter. A group with a bill the filter leaves out is counted from the rows of the bills it keeps, as
--- before, so the counts do not change.
+-- meets the filter. A filter on a bill's own columns can leave out one bill of a group, so the facet reads the table
+-- only under a filter that cannot split a group, and otherwise counts from the bills' own rows as before. The counts
+-- do not change.
 --
 -- Five triggers keep it right in the statement that changes what it summarizes. A subject row added, removed, or
 -- changed in place (its bill, state, or name) recomputes that one pair for the bill's group (both, for a change), and a bill that changes group, or is deleted, recomputes the whole
 -- group it left and the one it joined. A bill deleted takes its subject rows with it (ON DELETE CASCADE), and the
 -- recompute reads the bills that remain, so it is right whether the rows go before or after the bill. Each recompute
 -- reads the bills and their subjects as they are, and never adds or removes by a delta, so a statement that changes
--- many rows cannot leave a count behind. A migration that rebuilds bills must drop and recreate the two triggers on
+-- many rows cannot leave a count behind. A migration that rebuilds bills must drop and recreate the three triggers on
 -- bill_subjects too, since their bodies read bills.
 --
 -- The backfill is one set-based statement over every grouped bill, never a per-row recompute, which exceeded D1's CPU
