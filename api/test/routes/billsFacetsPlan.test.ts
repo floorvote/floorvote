@@ -615,4 +615,25 @@ describe('GET /bills/facets query plans', () => {
     }
     expect(wrong, wrong.join('\n\n')).toEqual([])
   })
+
+  // The committee names read the same rows the committee count does when nothing picks a committee, so one statement
+  // reads both (#1023): on the largest instance the separate names statement cost 43 to 128 ms of database time a request.
+  it('reads the committee names in the statement that counts the committees when no committee is picked', async () => {
+    const wrong: string[] = []
+    for (const qs of ['status=Passed', 'year=2025', 'priority=none', 'state=NJ&committeeScope=current', 'tag=Energy&priority=high&position=Support&match=any']) {
+      const reads = (await statementsFor(menu(qs))).map(s => s.sql.replace(/\s+/g, ' '))
+        .filter(sql => /bc\.committee_id AS (v0|id)\b/.test(sql) && !/GROUP BY "m"\."group_key"/.test(sql))
+      const merged = reads.filter(sql => /COUNT\(\*\) AS n/.test(sql) && /MAX\(bc\.name\)/.test(sql))
+      if (merged.length !== 1) wrong.push(`"${qs}": ${merged.length} statements count and name the committees together, and the reads were:\n${reads.join('\n')}`)
+      const named = reads.filter(sql => /MAX\(bc\.name\)/.test(sql))
+      if (named.length !== 1) wrong.push(`"${qs}": ${named.length} statements name the committees`)
+    }
+    expect(wrong, wrong.join('\n\n')).toEqual([])
+  })
+
+  it('still names a picked committee in a read of its own, since the filter may leave it out', async () => {
+    const reads = (await statementsFor(menu('status=Passed&committee=c1'))).map(s => s.sql.replace(/\s+/g, ' '))
+      .filter(sql => /MAX\(bc\.name\)/.test(sql))
+    expect(reads.filter(sql => !/COUNT\(\*\) AS n/.test(sql)), 'the names of a picked committee are read apart from the counts').toHaveLength(1)
+  })
 })

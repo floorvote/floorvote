@@ -112,6 +112,21 @@ describe('GET /bills query plans', () => {
     expect(page.plan, page.plan).not.toMatch(NO_TABLE_SCAN)
   })
 
+  it('keeps the list seeking a year or a stage on that column\'s own index, and its tracked count on the tracked index (#1023)', async () => {
+    // The facets write the year and stage tests as `+column` so they read the facets index whole. The list must not: its
+    // page would then skip-scan an 11-column index that nothing pins, and the tracked count would read the table.
+    for (const [qs, index] of [['year=2025', 'idx_bills_year_start (year_start=?)'], ['stage=passed', 'idx_bills_status_stage (status_stage=?)']]) {
+      const plans = await listPlans(`${qs}&sort=status&dir=desc&pageSize=20`)
+      const page = pageOf(plans)
+      expect(page.plan, `${qs}\n${page.plan}`).toContain(`SEARCH c USING INDEX ${index}`)
+      expect(page.plan, `${qs}\n${page.plan}`).not.toContain('idx_bills_facets')
+      expect(page.plan, `${qs}\n${page.plan}`).not.toMatch(NO_TABLE_SCAN)
+      const tracked = plans.find(p => /WHERE m\.match_type IS NOT NULL/.test(p.sql))
+      expect(tracked, `${qs}: no count of tracked bills`).toBeDefined()
+      expect(tracked!.plan, `${qs}\n${tracked!.plan}`).toMatch(/SEARCH m USING COVERING INDEX idx_bills_(match_type|tracked_cover)/)
+    }
+  })
+
   it('starts a rare filter from the rows that hold it, not from the bills', async () => {
     // Twenty bills have a position, fewer than a page of 30, so the full path runs.
     const page = pageOf(await listPlans('position=Support&pageSize=30'))
