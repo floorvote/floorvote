@@ -159,10 +159,14 @@ describe('migration 0126: the subjects a group shares', () => {
       expect(await table()).toEqual([])
       await env.DB.prepare("UPDATE bill_subjects SET state = 'NJ' WHERE bill_id = 'a2'").run()
       expect(await table()).toEqual([{ group_key: 'g1', state: 'NJ', subject_name: 'S', n: 2 }])
-      // The bill: x1's row (in no group) moves to a1's group, and b1's moves out of its group to a2's.
-      await env.DB.prepare("UPDATE bill_subjects SET bill_id = 'a2' WHERE bill_id = 'b1'").run()
+      // The bill: b1's row (in g2) moves to a2 as V, and x1's row (in no group) moves to a1 as V, so g1 shares V.
+      await env.DB.prepare("UPDATE bill_subjects SET bill_id = 'a2', subject_name = 'V' WHERE bill_id = 'b1'").run()
       expect(await table()).toEqual([{ group_key: 'g1', state: 'NJ', subject_name: 'S', n: 2 }])
-      await env.DB.prepare("UPDATE bill_subjects SET bill_id = 'a1', subject_name = 'U' WHERE bill_id = 'x1'").run()
+      await env.DB.prepare("UPDATE bill_subjects SET bill_id = 'a1', subject_name = 'V' WHERE bill_id = 'x1'").run()
+      expect(await table()).toEqual([
+        { group_key: 'g1', state: 'NJ', subject_name: 'S', n: 2 },
+        { group_key: 'g1', state: 'NJ', subject_name: 'V', n: 2 },
+      ])
       expect(await table()).toEqual(await expected())
     })
 

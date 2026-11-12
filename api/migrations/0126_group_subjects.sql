@@ -11,8 +11,8 @@
 -- meets the filter. A group with a bill the filter leaves out is counted from the rows of the bills it keeps, as
 -- before, so the counts do not change.
 --
--- Four triggers keep it right in the statement that changes what it summarizes. A subject row added or removed
--- recomputes that one pair for the bill's group, and a bill that changes group, or is deleted, recomputes the whole
+-- Five triggers keep it right in the statement that changes what it summarizes. A subject row added, removed, or
+-- changed in place (its bill, state, or name) recomputes that one pair for the bill's group (both, for a change), and a bill that changes group, or is deleted, recomputes the whole
 -- group it left and the one it joined. A bill deleted takes its subject rows with it (ON DELETE CASCADE), and the
 -- recompute reads the bills that remain, so it is right whether the rows go before or after the bill. Each recompute
 -- reads the bills and their subjects as they are, and never adds or removes by a delta, so a statement that changes
@@ -45,6 +45,7 @@ ANALYZE group_subjects;
 
 DROP TRIGGER IF EXISTS bill_subjects_group_subjects_insert;
 DROP TRIGGER IF EXISTS bill_subjects_group_subjects_delete;
+DROP TRIGGER IF EXISTS bill_subjects_group_subjects_update;
 DROP TRIGGER IF EXISTS bills_group_subjects_update;
 DROP TRIGGER IF EXISTS bills_group_subjects_delete;
 
@@ -72,6 +73,28 @@ BEGIN
   WHERE group_key = (SELECT g.group_key FROM bills g WHERE g.id = OLD.bill_id) AND state = OLD.state AND subject_name = OLD.subject_name
     AND (SELECT COUNT(*) FROM bills b JOIN bill_subjects s ON s.bill_id = b.id
          WHERE b.group_key = group_subjects.group_key AND s.state = group_subjects.state AND s.subject_name = group_subjects.subject_name) < 2;
+END;
+
+CREATE TRIGGER bill_subjects_group_subjects_update AFTER UPDATE OF bill_id, state, subject_name ON bill_subjects
+BEGIN
+  INSERT INTO group_subjects (group_key, state, subject_name, n)
+  SELECT b.group_key, OLD.state, OLD.subject_name, COUNT(*)
+  FROM bills b JOIN bill_subjects s ON s.bill_id = b.id
+  WHERE b.group_key = (SELECT g.group_key FROM bills g WHERE g.id = OLD.bill_id) AND s.state = OLD.state AND s.subject_name = OLD.subject_name
+  GROUP BY b.group_key
+  HAVING COUNT(*) >= 2
+  ON CONFLICT (group_key, state, subject_name) DO UPDATE SET n = excluded.n;
+  DELETE FROM group_subjects
+  WHERE group_key = (SELECT g.group_key FROM bills g WHERE g.id = OLD.bill_id) AND state = OLD.state AND subject_name = OLD.subject_name
+    AND (SELECT COUNT(*) FROM bills b JOIN bill_subjects s ON s.bill_id = b.id
+         WHERE b.group_key = group_subjects.group_key AND s.state = group_subjects.state AND s.subject_name = group_subjects.subject_name) < 2;
+  INSERT INTO group_subjects (group_key, state, subject_name, n)
+  SELECT b.group_key, NEW.state, NEW.subject_name, COUNT(*)
+  FROM bills b JOIN bill_subjects s ON s.bill_id = b.id
+  WHERE b.group_key = (SELECT g.group_key FROM bills g WHERE g.id = NEW.bill_id) AND s.state = NEW.state AND s.subject_name = NEW.subject_name
+  GROUP BY b.group_key
+  HAVING COUNT(*) >= 2
+  ON CONFLICT (group_key, state, subject_name) DO UPDATE SET n = excluded.n;
 END;
 
 CREATE TRIGGER bills_group_subjects_update AFTER UPDATE OF group_key ON bills
