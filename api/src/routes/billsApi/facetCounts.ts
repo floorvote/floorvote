@@ -116,7 +116,8 @@ const valuesOf = (row: Record<string, unknown>, n: number) => Array.from({ lengt
  * bills the tag names cost 77 ms and 40,000. `alone`, when given, is those
  * rows without the bill: rows that always have one (ON DELETE CASCADE), which
  * the whole count reads instead when nothing tests the bill, since reaching
- * each row's bill by key costs a lookup a row.
+ * each row's bill by key costs a lookup a row. A `where` given with `alone`
+ * must test the rows only, never `m`.
  */
 export async function countBy(db: AppDb, c: Counting, source: { values: SQL[]; from: SQL; where?: SQL; alone?: SQL }): Promise<CountRow[]> {
   const { values, from } = source

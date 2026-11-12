@@ -10,7 +10,7 @@ import { useState } from 'react'
 export function useLoadingOnOpen(open: boolean, loading: boolean, failed = false): boolean {
   const [landedWhileOpen, setLandedWhileOpen] = useState(false)
   // Adjusting state while rendering, React's pattern for state derived from a change in props.
-  if (!open && landedWhileOpen) setLandedWhileOpen(false)
+  if ((!open || failed) && landedWhileOpen) setLandedWhileOpen(false)
   if (open && !loading && !failed && !landedWhileOpen) setLandedWhileOpen(true)
   return loading && !(open && landedWhileOpen)
 }

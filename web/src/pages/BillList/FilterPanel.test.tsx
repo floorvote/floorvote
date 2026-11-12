@@ -504,6 +504,21 @@ describe('SubjectFilterDropdown', () => {
     expect(screen.queryByText('Couldn’t load subjects.')).toBeNull()
   })
 
+  it('shows Loading, not "No subjects.", when a load after a failure starts in a menu that had counts land while open', () => {
+    const groups = [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }]
+    const props = { selectedSubjects: [], onSubjectChange: () => {} }
+    const { rerender } = render(<SubjectFilterDropdown {...props} subjectGroups={groups} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Subject' }))
+    expect(screen.getByText('Counties')).toBeInTheDocument()
+    rerender(<SubjectFilterDropdown {...props} subjectGroups={groups} loading />) // a pick in it changed the filter
+    expect(screen.getByText('Counties')).toBeInTheDocument()
+    rerender(<SubjectFilterDropdown {...props} subjectGroups={[]} loadFailed />) // and that request failed
+    expect(screen.getByText('Couldn’t load subjects.')).toBeInTheDocument()
+    rerender(<SubjectFilterDropdown {...props} subjectGroups={[]} loading />) // the page asks again
+    expect(screen.getByText('Loading…')).toBeInTheDocument()
+    expect(screen.queryByText('No subjects.')).toBeNull()
+  })
+
   it('keeps the list it showed while open when a new load starts, and shows Loading again after a reopen', () => {
     const { rerender } = renderPanel()
     fireEvent.click(screen.getByRole('button', { name: 'Subject' }))

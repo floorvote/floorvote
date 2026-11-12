@@ -412,6 +412,20 @@ describe('the Committee menu while its counts load', () => {
     expect(screen.queryByText('Couldn’t load committees.')).toBeNull()
   })
 
+  it('shows Loading, not "No committees.", when a load after a failure starts in a menu that had counts land while open', () => {
+    const props = { selected: [], onChange: vi.fn(), scope: 'any' as const, onScopeChange: vi.fn(), showStates: true }
+    const { rerender } = render(<CommitteeFilterDropdown {...props} groups={GROUPS} />)
+    fireEvent.click(screen.getByRole('button', { name: /^Committee/ }))
+    expect(screen.getByText('Judiciary (Senate)')).toBeInTheDocument()
+    rerender(<CommitteeFilterDropdown {...props} groups={GROUPS} loading />) // a pick in it changed the filter
+    expect(screen.getByText('Judiciary (Senate)')).toBeInTheDocument()
+    rerender(<CommitteeFilterDropdown {...props} groups={[]} loadFailed />) // and that request failed
+    expect(screen.getByText('Couldn’t load committees.')).toBeInTheDocument()
+    rerender(<CommitteeFilterDropdown {...props} groups={[]} loading />) // the page asks again
+    expect(screen.getByText('Loading…')).toBeInTheDocument()
+    expect(screen.queryByText('No committees.')).toBeNull()
+  })
+
   it('keeps the list it showed while open when a new load starts', () => {
     const props = { groups: GROUPS, selected: [], onChange: vi.fn(), scope: 'any' as const, onScopeChange: vi.fn(), showStates: true }
     const { rerender } = render(<CommitteeFilterDropdown {...props} />)
