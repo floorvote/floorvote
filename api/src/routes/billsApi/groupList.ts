@@ -295,7 +295,9 @@ async function firstStatesCut(db: AppDb, o: PageOptions, order: Order): Promise<
   const n = o.offset + o.limit
   if (n > STATE_CUT_MAX) return null
   const asc = o.dir === 'asc'
-  const rows = await db.all(sql`SELECT s.state AS state FROM bills s WHERE s.group_key IS NULL ORDER BY s.state ${asc ? sql`ASC` : sql`DESC`} LIMIT 1 OFFSET ${n - 1}`) as { state: string }[]
+  // +group_key keeps the test off every index (the facets index of migration 0124 holds group_key, and the planner
+  // would skip-scan it, then sort), so the ORDER BY alone picks the state index and the read stops after n entries.
+  const rows = await db.all(sql`SELECT s.state AS state FROM bills s WHERE +s.group_key IS NULL ORDER BY s.state ${asc ? sql`ASC` : sql`DESC`} LIMIT 1 OFFSET ${n - 1}`) as { state: string }[]
   return rows.length === 0 ? null : { op: asc ? '<=' : '>=', state: rows[0].state }
 }
 
