@@ -99,4 +99,25 @@ describe('tag filter query plans', () => {
     expect(counts.length, 'no facet counted under the tag filter').toBeGreaterThanOrEqual(5)
     for (const c of counts) expect(c.plan, `${c.sql}\n${c.plan}`).toMatch(/SCAN m USING (COVERING )?INDEX idx_bills_group_tags/)
   })
+
+  // A grouped bill's companions are read through the group key index (#1019): with the priority, its time, and the
+  // group tags added to it (0124), the holder test on a companion and the tag test on a group read the index alone.
+  it('counts the grouped bills under a tag filter from the group key index, a covering one', async () => {
+    const plans = await plansFor('bills/facets?tag=Energy&omit=subject%2Ccommittee')
+    const grouped = plans.filter(p => /COUNT\(/i.test(p.sql) && /GROUP BY "m"\."group_key"/.test(p.sql))
+    expect(grouped.length, 'no grouped count under the tag filter').toBeGreaterThanOrEqual(5)
+    for (const g of grouped) {
+      expect(g.plan, `${g.sql}\n${g.plan}`).toMatch(/USING COVERING INDEX idx_bills_group_key/)
+      expect(g.plan, `${g.sql}\n${g.plan}`).not.toMatch(TABLE_SCAN)
+    }
+  })
+
+  it("tests a priority holder's companions from the group key index alone", async () => {
+    const plans = await plansFor('bills/facets?priority=high&omit=subject%2Ccommittee')
+    const holders = plans.filter(p => /SELECT 1 FROM bills g WHERE g\.group_key/.test(p.sql))
+    expect(holders.length, 'no count tested a holder\'s group').toBeGreaterThan(0)
+    for (const h of holders) {
+      expect(h.plan, `${h.sql}\n${h.plan}`).toMatch(/SEARCH g USING COVERING INDEX idx_bills_group_key \(group_key=\?\)/)
+    }
+  })
 })
