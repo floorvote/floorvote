@@ -37,6 +37,9 @@ const net = vi.hoisted(() => ({
   listOverloaded: false,
   /** While true, the on-demand facets request answers a 503 overload. */
   menuOverloaded: false,
+  /** Requests for the list with no filter wait here until a test answers them. */
+  held: [] as Array<(r: Response) => void>,
+  holdUnfiltered: false,
 }))
 
 const overloaded = () => new Response(JSON.stringify({ error: 'database_overloaded' }), {
@@ -57,6 +60,10 @@ async function fakeFetch(input: RequestInfo | URL): Promise<Response> {
     return json(facetsReply(path, FACETS))
   }
   if (path.startsWith('/bills?')) {
+    if (net.holdUnfiltered && !path.includes('priority=')) return new Promise<Response>(resolve => { net.held.push(resolve) })
+    if (path.includes('priority=')) {
+      return json({ bills: [{ ...BILL, id: 'b2', billNumber: 'HB 2', title: 'Filtered bill' }], pagination: { page: 1, pageSize: 100, total: 1, totalPages: 1 } })
+    }
     if (net.listOverloaded) return overloaded()
     return json({ bills: [BILL], pagination: { page: 1, pageSize: 100, total: 1, totalPages: 1 } })
   }
@@ -85,6 +92,8 @@ beforeEach(() => {
   net.calls = []
   net.listOverloaded = false
   net.menuOverloaded = false
+  net.held = []
+  net.holdUnfiltered = false
   vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver)
   vi.stubGlobal('fetch', vi.fn(fakeFetch))
   vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -108,6 +117,7 @@ function renderPage(url = '/bills') {
     { initialEntries: [url] },
   )
   render(<RouterProvider router={router} />)
+  return router
 }
 
 const listCalls = () => net.calls.filter(p => p.startsWith('/bills?'))
@@ -161,6 +171,27 @@ describe('the list when the database is overloaded', () => {
     const before = listCalls().length
     cleanup()
     await advance(30_000)
+    expect(listCalls().length).toBe(before)
+  })
+
+  // Fetch A (no filter) is still out when the member picks a filter and fetch B answers. A's late 503 must not arm a
+  // retry that later replaces B's list with A's page.
+  it('does not let an earlier request\'s late 503 retry over the list for the filter now showing', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    net.holdUnfiltered = true
+    const router = renderPage()
+    await waitFor(() => expect(net.held.length).toBeGreaterThan(1))
+    await act(async () => { await router.navigate('/bills?priority=high') })
+    await advance(500)
+    expect((await screen.findAllByText('Filtered bill')).length).toBeGreaterThan(0)
+
+    await act(async () => { net.held.forEach(resolve => resolve(overloaded())) })
+    net.holdUnfiltered = false
+    const before = listCalls().length
+    await advance(15_000)
+    expect(screen.getAllByText('Filtered bill').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Default bill')).toBeNull()
+    expect(screen.queryByText('The list could not load. Retrying…')).toBeNull()
     expect(listCalls().length).toBe(before)
   })
 
