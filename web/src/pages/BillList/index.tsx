@@ -302,9 +302,12 @@ export function BillList() {
   // that; a second failure is reported as any other.
   const overloadRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => () => { if (overloadRetryRef.current) clearTimeout(overloadRetryRef.current) }, [])
+  // The newest list request. An earlier one that fails late must not arm a retry over what a later one has shown.
+  const listSeqRef = useRef(0)
 
   const fetchBills = useCallback(async (nextPage: number, append: boolean, isRetry = false): Promise<void> => {
     if (overloadRetryRef.current) { clearTimeout(overloadRetryRef.current); overloadRetryRef.current = null }
+    const seq = ++listSeqRef.current
     const paramsStr = billsApiParams({ filter: f.filter, sortCol, sortDir }, nextPage, PAGE_SIZE)
     const hitCache = nextPage === 1 && !append && !hasFetchedOnce.current && billsListCache?.params === paramsStr
     if (hitCache) {
@@ -332,14 +335,19 @@ export function BillList() {
       }
       hasFetchedOnce.current = true
       setError(null)
+      if (overloadRetryRef.current) { clearTimeout(overloadRetryRef.current); overloadRetryRef.current = null }
       setTotal(data.pagination.total)
       setHasMore(nextPage < data.pagination.totalPages)
       setPage(nextPage)
     } catch (err) {
       if (err instanceof ApiError && err.status === 503 && err.retryAfterMs != null) {
+        if (seq !== listSeqRef.current) return
         if (!isRetry) {
           setError(LIST_RETRYING)
-          overloadRetryRef.current = setTimeout(() => { overloadRetryRef.current = null; void fetchBills(nextPage, append, true) }, err.retryAfterMs)
+          overloadRetryRef.current = setTimeout(() => {
+            overloadRetryRef.current = null
+            if (seq === listSeqRef.current) void fetchBills(nextPage, append, true)
+          }, err.retryAfterMs)
         } else {
           setError(LIST_COULD_NOT_LOAD)
         }

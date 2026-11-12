@@ -192,7 +192,11 @@ describe('the list when the database is overloaded', () => {
     expect(screen.getAllByText('Filtered bill').length).toBeGreaterThan(0)
     expect(screen.queryByText('Default bill')).toBeNull()
     expect(screen.queryByText('The list could not load. Retrying…')).toBeNull()
-    expect(listCalls().length).toBe(before)
+    // The route loader's own prefetch for the first URL retries a 5xx by itself (retryFetch, logged as it does); that
+    // is no write to the page. Every other list request would be the page's.
+    const loaderRetries = (console.warn as unknown as { mock: { calls: unknown[][] } }).mock.calls
+      .filter(([msg]) => String(msg).startsWith('[retryFetch] /bills?page=1&pageSize=100 ')).length
+    expect(listCalls().length - before).toBeLessThanOrEqual(loaderRetries)
   })
 
   it('leaves a 500 as the plain failure: no retry message, no retry', async () => {
