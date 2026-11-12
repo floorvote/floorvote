@@ -523,3 +523,82 @@ describe('the facets of a my bills list with no bills', () => {
     expect(f.status).toEqual({ Passed: 1 })
   })
 })
+
+// The five bill-column facets and the status groups are sums over two statements a request, a cube of the bills by
+// (status, stage, state, session, year) and one of the grouped bills by group key and the five (#1022). These pin the
+// cases where a sum over the cube could count a group differently from a statement of the facet's own, each checked
+// against what the list totals when the value is picked.
+describe('the bill-column facets summed from the cube count what the list totals', () => {
+  beforeEach(reset)
+
+  it('counts a group whose bills are in two states once under each, under both operators', async () => {
+    await seedBill({ id: 'a1', billNumber: 'A1', status: 'Passed', statusStage: 'passed', state: 'NJ', session: 's1', yearStart: 2025 })
+    await seedBill({ id: 'b1', billNumber: 'B1', status: 'Passed', statusStage: 'passed', state: 'TX', session: 's1', yearStart: 2025 })
+    await seedBill({ id: 'c1', billNumber: 'C1', status: 'Introduced', statusStage: 'introduced', state: 'TX', session: 's2', yearStart: 2024 })
+    await seedBill({ id: 'd1', billNumber: 'D1', status: 'Failed', statusStage: 'failed', state: 'UT', session: 's2', yearStart: 2023 })
+    await group('a1', 'b1')
+    expect((await facets()).state).toEqual({ NJ: 1, TX: 2, UT: 1 })
+    expect((await facets('status=Passed')).state).toEqual({ NJ: 1, TX: 1 })
+    for (const base of ['', 'status=Passed', 'sessionName=s1&year=2025', 'status=Failed&year=2024&match=any', 'status=Passed&sessionName=s2&match=any']) {
+      const f = await facets(base)
+      for (const st of ['NJ', 'TX', 'UT']) {
+        expect([base, st, f.state[st] ?? 0]).toEqual([base, st, await total(`${base}${base ? '&' : ''}state=${st}`)])
+      }
+    }
+  })
+
+  it('counts a group in neither facet when its status matches on one bill and its state on another under match=all', async () => {
+    await seedBill({ id: 'a1', billNumber: 'A1', status: 'Passed', statusStage: 'passed', state: 'NJ' })
+    await seedBill({ id: 'b1', billNumber: 'B1', status: 'Introduced', statusStage: 'introduced', state: 'TX' })
+    await group('a1', 'b1')
+    expect(await total('status=Passed&state=TX')).toBe(0)
+    const f = await facets('status=Passed&state=TX')
+    // The state facet keeps the status: only the Passed bill, in NJ. The status facet keeps the state: only the TX bill.
+    expect(f.state).toEqual({ NJ: 1 })
+    expect(f.status).toEqual({ Introduced: 1 })
+    expect(f.stage).toEqual({ introduced: 1 })
+    expect(f.statusGroups).toEqual({ Introduced: { stage: 'introduced', rank: 0 } })
+  })
+
+  it('adds nothing for the other bill of a group already in the result under match=any, and shifts by the current total', async () => {
+    await seedBill({ id: 'a1', billNumber: 'A1', status: 'Passed', statusStage: 'passed', state: 'NJ', yearStart: 2025 })
+    await seedBill({ id: 'b1', billNumber: 'B1', status: 'Introduced', statusStage: 'introduced', state: 'TX', yearStart: 2024 })
+    await seedBill({ id: 'c1', billNumber: 'C1', status: 'Introduced', statusStage: 'introduced', state: 'UT', yearStart: 2023 })
+    await seedBill({ id: 'd1', billNumber: 'D1', status: 'Failed', statusStage: 'failed', state: 'VA', yearStart: 2022 })
+    await group('a1', 'b1')
+    const qs = 'status=Passed&state=UT&match=any'
+    // The group (through its Passed bill) and the UT bill.
+    expect(await total(qs)).toBe(2)
+    const f = await facets(qs)
+    // The group's TX bill and its year are not fresh: picking them changes nothing. Only the VA bill adds a group.
+    expect(f.state).toEqual({ NJ: 2, TX: 2, UT: 2, VA: 3 })
+    expect(f.year).toEqual({ 2022: 3, 2023: 2, 2024: 2, 2025: 2 })
+    expect(f.status).toEqual({ Passed: 2, Introduced: 2, Failed: 3 })
+    expect(f.stage).toEqual({ passed: 2, introduced: 2, failed: 3 })
+    for (const [k, v] of Object.entries(f.year)) expect([k, v]).toEqual([k, await total(`${qs}&year=${k}`)])
+    for (const [k, v] of Object.entries(f.state)) expect([k, v]).toEqual([k, await total(`status=Passed&state=UT&state=${k}&match=any`)])
+  })
+
+  it('gives a label whose bills sit in two stages the stage with more bills, and the later stage in a tie', async () => {
+    await seedBill({ id: 'a1', billNumber: 'A1', status: 'Pending', statusStage: 'in_committee', statusRank: 205, state: 'NJ' })
+    await seedBill({ id: 'b1', billNumber: 'B1', status: 'Pending', statusStage: 'in_committee', statusRank: 207, state: 'TX' })
+    await seedBill({ id: 'c1', billNumber: 'C1', status: 'Pending', statusStage: 'passed', statusRank: 401, state: 'NJ' })
+    await seedBill({ id: 'd1', billNumber: 'D1', status: 'Held', statusStage: 'introduced', statusRank: 110, state: 'NJ' })
+    await seedBill({ id: 'e1', billNumber: 'E1', status: 'Held', statusStage: 'passed', statusRank: 120, state: 'TX' })
+    await group('a1', 'b1')
+    expect((await facets()).statusGroups).toEqual({
+      Pending: { stage: 'in_committee', rank: 401 },
+      Held: { stage: 'passed', rank: 120 },
+    })
+    // Under a filter of another fact the label reads only the bills it keeps: in NJ, Pending is one bill a stage.
+    expect((await facets('state=NJ')).statusGroups).toEqual({
+      Pending: { stage: 'passed', rank: 401 },
+      Held: { stage: 'introduced', rank: 110 },
+    })
+    // Under match=any nothing is kept out, as the counts beside it.
+    expect((await facets('state=NJ&year=2020&match=any')).statusGroups).toEqual({
+      Pending: { stage: 'in_committee', rank: 401 },
+      Held: { stage: 'passed', rank: 120 },
+    })
+  })
+})
