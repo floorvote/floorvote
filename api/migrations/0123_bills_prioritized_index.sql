@@ -1,7 +1,8 @@
 -- A partial index of the prioritized bills, for the sidebar on every page.
 --
 -- GET /stats/sidebar counts the prioritized bills, counts those the member has
--- not voted on, and lists them, each WHERE priority IS NOT NULL. An instance
+-- not voted on, lists them, and, with the upcoming hearings widget on, reads
+-- their ids for central, each WHERE priority IS NOT NULL. An instance
 -- prioritizes a few dozen bills. idx_bills_priority (0060) holds every bill,
 -- NULLs included, because the priority facet counts the unprioritized ones, so
 -- its statistics say a priority is shared by about a quarter of all bills. The
@@ -18,8 +19,9 @@
 -- chooses it with no statistics of its own, so no ANALYZE re-reads the bills.
 --
 -- COUPLING: SQLite uses a partial index only when the query's WHERE clause
--- implies the index's, so these statements must keep priority IS NOT NULL (or
--- a literal priority) in their own SQL.
+-- implies the index's, so these statements must keep priority IS NOT NULL, or
+-- any comparison on priority (such as priority = ?, which no NULL satisfies),
+-- in their own SQL.
 --
 -- idx_bills_priority stays, for the priority facet's whole-population count.
 -- api/test/routes/statsSidebarPlan.test.ts pins the plans of the real request.
