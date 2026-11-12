@@ -347,7 +347,8 @@ export function BillListPane() {
     const filter = values?.filter
     if (!filter || filter.committee.length === 0) return
     let cancelled = false
-    apiFetch<FacetCounts>(`/bills/facets?${billsFacetParams(filter)}`)
+    // Only the committee part: the names are all the summary needs, and the rest of a facets reply is costly.
+    apiFetch<FacetCounts>(`/bills/facets?${billsFacetParams(filter)}&only=committee`)
       .then(facets => {
         if (!cancelled) setCommitteeLabels(committeeLabelsOf(committeeGroups({}, facets.committeeInfo ?? {}, filter.committee)))
       })

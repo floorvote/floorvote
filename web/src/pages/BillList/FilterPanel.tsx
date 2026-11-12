@@ -7,6 +7,7 @@ import { StickyGroupHeader } from '../../components/ui/StickyGroupHeader'
 import { filterDimensionLabel } from '../../lib/filterDimensions'
 import { useMenuAlign } from '../../hooks/useMenuAlign'
 import { isSubjectCapReached, subjectCapHint } from '../../lib/subjectCap'
+import { useLoadingOnOpen } from '../../hooks/useLoadingOnOpen'
 import type { SortColumn, SortDir } from './types'
 import { FILTER_ANY } from '../../../../shared/billFilter'
 import { stageCheckState, toggleStageSelection, type StatusStageGroup } from '../../lib/statusGroups'
@@ -389,11 +390,13 @@ const SUBJECT_PANEL_RESIZE_STEP = 10
 
 /**
  * Subject filter — state-qualified because subject vocabularies aren't
- * comparable across states (see useBillFilters' subjectGroups). Renders
- * nothing when no state in view publishes subjects: absence here must read
- * as "this state does not do that," never as an empty control. Group
- * headings appear only with more than one state present; a single state
- * gets a flat list since the heading would be noise.
+ * comparable across states (see useBillFilters' subjectGroups). The page
+ * offers it only where the instance has subjects (its `subjectStates`) or one
+ * is picked: absence must read as "this state does not do that," never as an
+ * empty control. Its counts load on demand (`onIntent` says someone is about
+ * to use it, `loading` that they are still out), so it draws its trigger with
+ * none loaded. Group headings appear only with more than one state present; a
+ * single state gets a flat list since the heading would be noise.
  *
  * The option list is virtualized (@tanstack/react-virtual, same convention as
  * BillList/index.tsx) because a state's subject vocabulary can run into the
@@ -410,12 +413,19 @@ export function SubjectFilterDropdown({
   subjectGroups,
   selectedSubjects,
   onSubjectChange,
+  loading = false,
+  onIntent,
 }: {
   subjectGroups: SubjectGroup[]
   selectedSubjects: string[]
   onSubjectChange: (next: string[]) => void
+  /** The counts for the current filter have yet to land. */
+  loading?: boolean
+  /** Someone is about to use the control (a hover, a focus, or opening it), so its counts should load. */
+  onIntent?: () => void
 }) {
   const [open, setOpen] = useState(false)
+  const showLoading = useLoadingOnOpen(open, loading)
   const ref = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -510,8 +520,6 @@ export function SubjectFilterDropdown({
     getScrollElement: () => scrollRef.current,
   })
 
-  if (subjectGroups.length === 0) return null
-
   // At the cap the unchecked options are disabled, so a 41st subject (which the
   // API would answer with a 400) cannot be picked. Unchecking one re-enables them.
   const capReached = isSubjectCapReached(selectedSubjects.length)
@@ -529,10 +537,10 @@ export function SubjectFilterDropdown({
   const buttonLabel = hasSelection ? `${subjectLabel} (${selectedSubjects.length})` : subjectLabel
 
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
+    <div ref={ref} style={{ position: 'relative' }} onPointerEnter={onIntent} onFocus={onIntent}>
         <button
           ref={triggerRef}
-          onClick={() => setOpen(o => !o)}
+          onClick={() => { onIntent?.(); setOpen(o => !o) }}
           style={{
             fontSize: fontSize.sm, padding: '6px 10px', borderRadius: radius.md, cursor: 'pointer',
             display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap',
@@ -642,9 +650,13 @@ export function SubjectFilterDropdown({
                 </div>
               )}
             </div>
-            {rows.length === 0 ? (
+            {showLoading ? (
               <div style={{ padding: '16px 12px', fontSize: fontSize.sm, color: color.textMuted }}>
-                No subjects match &ldquo;{search.trim()}&rdquo;.
+                Loading…
+              </div>
+            ) : rows.length === 0 ? (
+              <div style={{ padding: '16px 12px', fontSize: fontSize.sm, color: color.textMuted }}>
+                {search.trim() ? <>No subjects match &ldquo;{search.trim()}&rdquo;.</> : 'No subjects.'}
               </div>
             ) : (
               <div

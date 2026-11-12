@@ -15,6 +15,7 @@ import { buildActiveFilterGroups } from '../pages/BillList/activeFilterGroups'
 import { GroupOperator } from '../pages/BillList/GroupOperator'
 import { CommitteeScopeSwitch } from '../pages/BillList/CommitteeFilter'
 import { committeeLabelsOf, type CommitteeGroup } from '../lib/committeeGroups'
+import { useLoadingOnOpen } from '../hooks/useLoadingOnOpen'
 
 interface FilterSheetProps {
   isOpen: boolean
@@ -74,6 +75,16 @@ interface FilterSheetProps {
   committeeGroups?: CommitteeGroup[]
   onCommitteeChange?: (v: string[]) => void
   onCommitteeScopeChange?: (v: 'current' | 'any') => void
+  /**
+   * Whether to offer the Subject and Committee rows. Their counts load on demand, so the page decides from what the
+   * instance has (its subjectStates and hasCommittees) or what is picked, the same rule its desktop bar follows.
+   * Absent, a row is offered when its options are loaded (or, for Committee, one is picked).
+   */
+  subjectOffered?: boolean
+  committeeOffered?: boolean
+  /** The Subject or Committee counts for the current filter have yet to land: the list is a Loading row. */
+  subjectLoading?: boolean
+  committeeLoading?: boolean
   yearOptions: { value: string; label: string }[]
   totalYearCount?: number
   stateOptions: { value: string; label: string }[]
@@ -272,6 +283,7 @@ export function FilterSheet({
   match, onMatchChange,
   statusOptions, stageOptions, statusGroups, priorityOptions, positionOptions, tagOptions, subjectGroups, yearOptions, totalYearCount, stateOptions,
   committee = [], committeeScope = 'any', committeeGroups = [], onCommitteeChange = () => {}, onCommitteeScopeChange = () => {},
+  subjectOffered, committeeOffered, subjectLoading = false, committeeLoading = false,
   customFieldDefs, field, onFieldChange,
   onStatusChange, onStageChange, onPriorityChange, onPositionChange, onTagChange, onSubjectChange, onYearChange, onStateChange,
   onMinRelevanceChange, onMyBillsChange, onNewMatchesChange, onUnvotedChange, onDraftsChange,
@@ -309,6 +321,10 @@ export function FilterSheet({
   const commitRelevance = () => {
     if (relevanceDraft !== minRelevance) onMinRelevanceChange(relevanceDraft)
   }
+
+  // Drilled into Subject or Committee is that list open, for its Loading row (see useLoadingOnOpen).
+  const showSubjectLoading = useLoadingOnOpen(isOpen && dimension === 'subject', subjectLoading)
+  const showCommitteeLoading = useLoadingOnOpen(isOpen && dimension === 'committee', committeeLoading)
 
   if (!isOpen) return null
 
@@ -653,10 +669,10 @@ export function FilterSheet({
                 {tagOptions.length > 0 && (
                   <DimensionRow label={STATIC_DIMENSION_LABELS.tag} selectedCount={tag.length} onClick={() => setDimension('tag')} buttonRef={rowRef('tag')} />
                 )}
-                {subjectGroups.length > 0 && (
+                {(subjectOffered ?? subjectGroups.length > 0) && (
                   <DimensionRow label={STATIC_DIMENSION_LABELS.subject} selectedCount={subject.length} onClick={() => setDimension('subject')} buttonRef={rowRef('subject')} />
                 )}
-                {(committeeGroups.length > 0 || committee.length > 0) && (
+                {(committeeOffered ?? (committeeGroups.length > 0 || committee.length > 0)) && (
                   <DimensionRow label={STATIC_DIMENSION_LABELS.committee} selectedCount={committee.length} onClick={() => setDimension('committee')} buttonRef={rowRef('committee')} />
                 )}
                 {/* Dropdown custom fields — a drill-down dimension like Status
@@ -824,6 +840,8 @@ export function FilterSheet({
               selected={subject}
               onToggle={(value) => toggleItem(subject, value, onSubjectChange)}
               limitSubjects
+              loading={showSubjectLoading}
+              emptyText="No subjects."
             />
           )}
 
@@ -831,7 +849,10 @@ export function FilterSheet({
           {dimension === 'committee' && (
             <div>
               <CommitteeScopeSwitch scope={committeeScope} onScopeChange={onCommitteeScopeChange} name="committee-scope-sheet" style={{ borderRadius: radius.md }} />
-              {committeeGroups.map(group => (
+              {showCommitteeLoading && (
+                <div style={{ padding: '16px 0', fontSize: fontSize.sm, color: color.textMuted }}>Loading…</div>
+              )}
+              {!showCommitteeLoading && committeeGroups.map(group => (
                 <div key={group.state} style={{ marginTop: 8 }}>
                   {isMultiState && <SectionLabel title={group.state} />}
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>

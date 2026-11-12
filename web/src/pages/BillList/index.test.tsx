@@ -187,7 +187,12 @@ vi.mock('../../lib/api', () => {
       }
       return viewsState.response as T
     }
-    if (path.startsWith('/bills/facets')) return (facetsState.respond ? facetsState.respond(path) : FACETS) as T
+    if (path.startsWith('/bills/facets')) {
+      if (facetsState.respond) return facetsState.respond(path) as T
+      // As the API answers `omit` and `only`: the page loads without the Subject and Committee counts.
+      const { facetsReply } = await import('../../test/facetsContract')
+      return facetsReply(path, FACETS) as T
+    }
     if (init?.method === 'POST' && path === '/bills/bulk-delete') {
       const body = JSON.parse(init.body as string) as BulkDeleteBody
       const shown = (facetsState.bills ?? BILLS) as Array<{ id: string; isDraft?: boolean }>
@@ -503,9 +508,10 @@ describe('BillList page', () => {
       expect(await screen.findByText(CAVEAT)).toBeInTheDocument()
     })
 
+    // The instance has subjects elsewhere (so the control is offered), but not in the one state it covers.
     it('adds the caveat on a single covered state that has no subjects', async () => {
       configState.value = { states: ['NJ'] }
-      FACETS.subjectStates = []
+      FACETS.subjectStates = ['UT']
       await hoverSubjectFilter()
       expect(await screen.findByText(CAVEAT)).toBeInTheDocument()
     })
@@ -547,15 +553,26 @@ describe('BillList page', () => {
 
     it('is just the short text while the config has not loaded', async () => {
       configState.value = null
-      FACETS.subjectStates = []
+      FACETS.subjectStates = ['UT']
       await hoverSubjectFilter()
       expect(await screen.findByText(SHORT)).toBeInTheDocument()
     })
 
+    // Not knowing which states have subjects, the page offers Subject only where one is picked.
     it('is just the short text while the facets carry no subjectStates yet', async () => {
       configState.value = { states: ['NJ', 'UT'] }
       FACETS.subjectStates = undefined
-      await hoverSubjectFilter()
+      render(
+        <MemoryRouter initialEntries={['/bills?subject=UT%3ACounties']}>
+          <ConfigContext value={{ config: configState.value as never, multiState: true, loading: false }}>
+            <AuthProvider>
+              <SidebarRefreshProvider><BillList /></SidebarRefreshProvider>
+            </AuthProvider>
+          </ConfigContext>
+        </MemoryRouter>,
+      )
+      await screen.findByText('Early Voting Centers')
+      fireEvent.pointerEnter(await screen.findByRole('button', { name: 'Subject (1)' }), { pointerType: 'mouse' })
       expect(await screen.findByText(SHORT)).toBeInTheDocument()
     })
   })
@@ -663,8 +680,10 @@ describe('BillList with a link already over the subject limit', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: new RegExp(`Subject.*\\(${MAX_SUBJECT_FILTERS + 1}\\)`) }))
     expect(screen.getByText(`${HINT} This filter has ${MAX_SUBJECT_FILTERS + 1}. Remove 1 to continue.`)).toBeInTheDocument()
-    // The same names also label the active-filter chips, so look only inside the open picker.
+    // The same names also label the active-filter chips, so look only inside the open picker. Its counts load once it
+    // opens.
     const picker = () => within(screen.getByRole('group', { name: /subject/i }))
+    await picker().findByText('Elections')
     const option = (label: string) => picker().getByText(label).closest('label')!.querySelector('input') as HTMLInputElement
     expect(option('Elections').disabled).toBe(true)
 
@@ -677,6 +696,7 @@ describe('BillList with a link already over the subject limit', () => {
     // The toolbar remounts on the new URL, which closes the picker; open it again.
     fireEvent.click(await screen.findByRole('button', { name: new RegExp(`Subject.*\\(${MAX_SUBJECT_FILTERS}\\)`) }))
     expect(screen.getByText(HINT)).toBeInTheDocument()
+    await picker().findByText('Elections')
     expect(option('Elections').disabled).toBe(true)
   })
 })
@@ -1693,6 +1713,34 @@ describe('BillList delete selected drafts', () => {
     expect(screen.getByRole('button', { name: /Apply to 1 bill/ })).toBeInTheDocument()
     // The sidebar's draft count and the Drafts chip are refetched.
     await waitFor(() => expect(refresh).toHaveBeenCalled())
+  })
+
+  // Deleting drafts can change the Subject and Committee counts, so once they were wanted they are asked for again,
+  // under the same filter, and not before.
+  it('asks again for the on-demand Subject and Committee counts after a delete, once they were wanted', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    facetsState.bills = [DRAFT_A, FILED]
+    renderWithSidebarSpy()
+    const lazy = () => apiCalls.filter(c => c.startsWith('/bills/facets') && c.includes('only='))
+    fireEvent.pointerEnter(await screen.findByRole('button', { name: 'Subject' }), { pointerType: 'mouse' })
+    await waitFor(() => expect(lazy()).toHaveLength(1))
+    await select('First Draft')
+    fireEvent.click(await screen.findByRole('button', { name: /Delete drafts \(1\)/ }))
+    await waitFor(() => expect(screen.queryByText('First Draft')).toBeNull())
+    await waitFor(() => expect(lazy()).toHaveLength(2))
+    expect(lazy()[1]).toBe(lazy()[0])
+  })
+
+  it('does not ask for the on-demand counts after a delete when nobody wanted them', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    facetsState.bills = [DRAFT_A, FILED]
+    renderWithSidebarSpy()
+    const pageFacets = () => apiCalls.filter(c => c.startsWith('/bills/facets') && !c.includes('only='))
+    await select('First Draft')
+    const before = pageFacets().length
+    fireEvent.click(await screen.findByRole('button', { name: /Delete drafts \(1\)/ }))
+    await waitFor(() => expect(pageFacets().length).toBeGreaterThan(before))
+    expect(apiCalls.filter(c => c.includes('only='))).toEqual([])
   })
 
   it('leaves the bar once the last selected bill was a deleted draft', async () => {

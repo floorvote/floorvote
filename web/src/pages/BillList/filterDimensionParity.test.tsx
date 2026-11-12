@@ -83,7 +83,11 @@ vi.mock('../../lib/api', () => {
     if (path === '/config/custom-fields') return cfDefsState.defs as T
     if (path.startsWith('/bills/facets')) {
       const stateCounts = Object.fromEntries(facetState.states.map(s => [s, 1]))
-      return {
+      // Answered as the API does for `omit` and `only`: the page loads without the Subject and Committee counts and
+      // asks for them when one of those controls is about to be used. The tenant keys offer the two controls.
+      const { facetsReply } = await import('../../test/facetsContract')
+      return facetsReply(path, {
+        subjectStates: ['RI'], billStates: facetState.states, hasCommittees: true,
         status: { '2': 1 }, stage: { enacted: 1 }, ...(facetState.statusGroups ? { statusGroups: facetState.statusGroups } : {}), priority: {}, sessionName: {}, year: { '2026': 1 }, state: stateCounts, position: {},
         tag: { Education: 1 }, subject: { 'RI:Roads': 1 },
         committee: { 101: 3, 102: 9 },
@@ -91,7 +95,7 @@ vi.mock('../../lib/api', () => {
         field: {}, myBillsCount: 0, newMatchesCount: 3,
         draftCount: draftState.draftCount,
         hasDrafts: draftState.hasDrafts,
-      } as T
+      }) as T
     }
     if (path.startsWith('/bills?')) {
       return { bills: [BILL], pagination: { page: 1, pageSize: 100, total: 1, totalPages: 1 } } as T
@@ -797,7 +801,8 @@ describe('filter UI parity — both surfaces serialize the same bill filter', ()
 
     await renderWithProbe()
     fireEvent.click(screen.getAllByRole('button', { name: new RegExp(`^${filterDimensionLabel('committee')}`) })[0])
-    fireEvent.click(screen.getByText('Judiciary (Senate)'))
+    // The committee counts load once the menu opens.
+    fireEvent.click(await screen.findByText('Judiciary (Senate)'))
     fireEvent.click(screen.getByRole('radio', { name: 'Current committee' }))
     expect(urlSearch()).toBe(expected)
     cleanup()
@@ -806,7 +811,7 @@ describe('filter UI parity — both surfaces serialize the same bill filter', ()
     fireEvent.click(document.querySelector('.mobile-filter-btn') as HTMLElement)
     const rows = screen.getAllByRole('button', { name: new RegExp(`^${filterDimensionLabel('committee')}`) })
     fireEvent.click(rows[rows.length - 1])
-    const options = screen.getAllByText('Judiciary (Senate)')
+    const options = await screen.findAllByText('Judiciary (Senate)')
     fireEvent.click(options[options.length - 1])
     const switches = screen.getAllByRole('radio', { name: 'Current committee' })
     fireEvent.click(switches[switches.length - 1])

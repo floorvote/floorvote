@@ -383,3 +383,38 @@ describe('the Committee menu keyboard', () => {
     expect(focused()).toBe(screen.getByRole('button', { name: /^Committee/ }))
   })
 })
+
+// The Committee counts load on demand (only when someone is about to use the control), so the menu has a loading state.
+describe('the Committee menu while its counts load', () => {
+  it('shows a Loading row, and no committees, while loading', () => {
+    const { menu } = renderMenu({ loading: true })
+    expect(within(menu).getByText('Loading…')).toBeInTheDocument()
+    expect(within(menu).queryAllByRole('checkbox')).toEqual([])
+    expect(within(menu).queryByText('Judiciary (Senate)')).toBeNull()
+  })
+
+  it('keeps the list it showed while open when a new load starts', () => {
+    const props = { groups: GROUPS, selected: [], onChange: vi.fn(), scope: 'any' as const, onScopeChange: vi.fn(), showStates: true }
+    const { rerender } = render(<CommitteeFilterDropdown {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: /^Committee/ }))
+    expect(screen.getByText('Judiciary (Senate)')).toBeInTheDocument()
+    rerender(<CommitteeFilterDropdown {...props} loading />)
+    expect(screen.getByText('Judiciary (Senate)')).toBeInTheDocument()
+    expect(screen.queryByText('Loading…')).toBeNull()
+  })
+
+  it('says someone is about to use it on hover, on focus, and on open', () => {
+    const onIntent = vi.fn()
+    render(<CommitteeFilterDropdown groups={GROUPS} selected={[]} onChange={vi.fn()} scope="any" onScopeChange={vi.fn()} showStates onIntent={onIntent} />)
+    const button = screen.getByRole('button', { name: /^Committee/ })
+    // Each says so on its own (opening also moves focus into the menu, which may say it again; the page asks once).
+    fireEvent.pointerEnter(button, { pointerType: 'mouse' })
+    expect(onIntent).toHaveBeenCalled()
+    onIntent.mockClear()
+    fireEvent.focus(button)
+    expect(onIntent).toHaveBeenCalled()
+    onIntent.mockClear()
+    fireEvent.click(button)
+    expect(onIntent).toHaveBeenCalled()
+  })
+})
