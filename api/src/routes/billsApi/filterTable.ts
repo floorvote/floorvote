@@ -5,9 +5,9 @@ import type { AppDb } from '../../types'
 import {
   billsAs, buildCustomFieldFilters, buildSearchCondition, filterSuppressedSubjects, hasGroupTags, inIds, loadMyBillsInGroups,
   committeeMembership, multiFilter, myBillsCondition, positionCondition, priorityCondition, statusFilterValues, subjectMembership, tagCondition,
-  unvotedCondition, type BillFilterContext, type BillsCondition, type BillsFilter,
+  unindexedIn, unvotedCondition, type BillFilterContext, type BillsCondition, type BillsFilter,
 } from './query'
-import { countBy, countCube, countHolders, cubeCounts, cubeRows, currentOfCube, freshOf, type Counting, type CountRow, type Cube } from './facetCounts'
+import { countBy, countCube, countHolders, cubeCounts, cubeRows, currentOfCube, freshOf, freshOfKeys, loadCurrentKeys, type Counting, type CountRow, type Cube } from './facetCounts'
 import { countGroups } from './groupList'
 import { FILTER_ANY, FILTER_NONE, type BillFilter } from '../../../../shared/billFilter'
 import { stagePosition, type StatusStage } from '../../../../shared/statusStages'
@@ -200,6 +200,27 @@ const committeeRowsAlone = sql`bill_committees bc`
 const currentOnly = (fc: FacetContext) => fc.committeeScope === 'current' ? sql`bc.is_current = 1` : undefined
 
 /**
+ * The committee counts, read once for the counts and the names (`committeeInfo`) of a request. When the counts read the bills'
+ * rows (a filter on the bills, no pick, and no OR freshness test) the names are the same rows' greatest name, state, and chamber,
+ * so the one statement carries them (`extra`), which cost a statement of its own of 43 to 128 ms on the largest instance.
+ * The counts of 13,000 rows are not counted by what a filter leaves out, which would not read the same rows (`noComplement`).
+ */
+const committeeReads = new WeakMap<FacetContext, Map<string, Promise<CountRow[]>>>()
+function committeeCounts(fc: FacetContext, own: string): Promise<CountRow[]> {
+  const reads = committeeReads.get(fc) ?? new Map<string, Promise<CountRow[]>>()
+  committeeReads.set(fc, reads)
+  if (!reads.has(own)) {
+    const counting = fc.counting(own)
+    const named = fc.committeesPicked.length === 0 && counting.fresh === undefined && counting.where(m) !== undefined
+    reads.set(own, countBy(fc.db, counting, {
+      values: [sql`bc.committee_id`], from: committeeRowsOfBills, where: currentOnly(fc), alone: committeeRowsAlone, noComplement: true,
+      extras: named ? [sql`MAX(bc.name)`, sql`MAX(bc.state)`, sql`MAX(bc.chamber)`] : undefined,
+    }))
+  }
+  return reads.get(own)!
+}
+
+/**
  * Each committee counted, with its name, state, and chamber (`committeeInfo`), which the menu labels and groups the
  * counts by. Read from the rows the committee counts are, and from every row of a committee the filter picks, whatever
  * the scope and the other filters, so a picked committee they leave out can still be shown picked and named on its chip. A committee central renamed keeps its old name on a bill
@@ -210,6 +231,11 @@ const committeeInfo: Facet<Record<string, { name: string; state: string; chamber
   response: 'committeeInfo',
   empty: () => ({}),
   count: async (fc, own) => {
+    const read = await committeeCounts(fc, own)
+    // The counts' own statement named them, when it read the same rows.
+    if (read.length > 0 && read.every(r => r.extra !== undefined)) {
+      return Object.fromEntries(read.map(r => [String(r.values[0]), { name: r.extra![0] as string, state: r.extra![1] as string, chamber: (r.extra![2] as string | null) || null }]))
+    }
     const where = fc.counting(own).where(m)
     const current = currentOnly(fc)
     const conditions = [where, current].filter((c): c is SQL => c !== undefined)
@@ -247,7 +273,12 @@ export const FILTER_TABLE: FilterTable = {
     kind: 'fact',
     joins: 'status',
     cube: true,
-    condition: values => values.length > 0 ? t => multiFilter(t.statusStage, values)! : undefined,
+    // For the facets, written non-indexable (`+`): a stage is a broad fact (most bills sit in a few), and the planner reads
+    // idx_bills_status_stage (one column) and the table row for each bill where the covering facets index read whole is cheaper
+    // (#1023). The list keeps the seek: its page and its tracked count are planned on it.
+    condition: (values, ctx) => values.length > 0
+      ? t => ctx.facets ? unindexedIn(t.statusStage, values) : multiFilter(t.statusStage, values)!
+      : undefined,
     facet: billColumn(1),
   },
   // Priority is sparse (bills can have none): "Any" = has a priority, "none" = no priority.
@@ -280,8 +311,10 @@ export const FILTER_TABLE: FilterTable = {
   year: {
     kind: 'fact',
     cube: true,
-    condition: values => values.length > 0
-      ? t => values.length === 1 ? eq(t.yearStart, Number(values[0])) : inArray(t.yearStart, values.map(Number))
+    // For the facets, written non-indexable (`+`) for the reason the stage is: the year most bills share, read through
+    // idx_bills_year_start and the table, cost twice the facets index read whole (#1023). The list keeps the seek.
+    condition: (values, ctx) => values.length > 0
+      ? t => ctx.facets ? unindexedIn(t.yearStart, values.map(Number)) : values.length === 1 ? eq(t.yearStart, Number(values[0])) : inArray(t.yearStart, values.map(Number))
       : undefined,
     facet: billColumn(4, v => v !== null && v !== undefined),
   },
@@ -367,9 +400,7 @@ export const FILTER_TABLE: FilterTable = {
     facet: {
       kind: 'values',
       empty: () => ({}),
-      count: async (fc, own) => fc.shift(countsOf(await countBy(fc.db, fc.counting(own), {
-        values: [sql`bc.committee_id`], from: committeeRowsOfBills, where: currentOnly(fc), alone: committeeRowsAlone,
-      }))),
+      count: async (fc, own) => fc.shift(countsOf(await committeeCounts(fc, own))),
     },
     alsoFacets: [committeeInfo],
   },
@@ -733,7 +764,30 @@ export function makeFacetContext(req: FacetRequest): FacetContext {
   const shiftFacets = any && parts.facts.length > 0
   const fresh = shiftFacets ? freshOf(current) : undefined
   const scopesOnly = composeFilter(parts, { facts: false })
-  const counting = (...omit: string[]): Counting => ({ where: any ? scopesOnly : composeFilter(parts, { omit: new Set(omit) }), fresh })
+  // Under OR the current result, read once as its keys when it is small: every count's freshness test is then a lookup of
+  // them, not the filter tested against every bill again (about 0.4 s a statement on the largest instance).
+  let keysOnce: ReturnType<typeof loadCurrentKeys> | undefined
+  const currentKeys = () => keysOnce ??= loadCurrentKeys(db, currentOnM)
+  const freshKeys = fresh ? () => currentKeys().then(k => (k ? freshOfKeys(k) : undefined)) : undefined
+  // Whether most bills meet a facet's filter, asked once for each filter: the count of the bills it meets against the count of
+  // all, which the smallest index of bills answers. A count of the rows of the bills a broad filter leaves out reads fewer.
+  let totalBills: Promise<number> | undefined
+  const broadByOmit = new Map<string, Promise<boolean>>()
+  const broadOf = (key: string, where: SQL | undefined) => () => {
+    if (!where) return Promise.resolve(false)
+    if (!broadByOmit.has(key)) {
+      totalBills ??= db.all(sql`SELECT COUNT(*) AS total FROM bills`).then(r => Number((r[0] as { total: number }).total))
+      broadByOmit.set(key, Promise.all([db.all(sql`SELECT COUNT(*) AS kept FROM bills m WHERE ${where}`), totalBills])
+        .then(([r, total]) => Number((r[0] as { kept: number }).kept) * 2 > total))
+    }
+    return broadByOmit.get(key)!
+  }
+  const counting = (...omit: string[]): Counting => {
+    const where = any ? scopesOnly : composeFilter(parts, { omit: new Set(omit) })
+    // Naming only the facts the request filters by, since leaving out another changes nothing.
+    const key = any ? '' : omit.filter(o => parts.facts.some(f => f.key === o)).sort().join(',')
+    return { where, fresh, freshKeys, broad: broadOf(key, where(m)) }
+  }
 
   // The cube, counted once when a facet asks for it. Under AND its WHERE leaves out the facts on its columns, which
   // its rows say whether they meet; under OR it counts over the scopes, as every facet does, with the fresh bills.
@@ -742,11 +796,13 @@ export function makeFacetContext(req: FacetRequest): FacetContext {
   const cube = () => cubeOnce ??= countCube(db, {
     where: any ? scopesOnly : composeFilter(parts, { omit: CUBE_FACT_KEYS }),
     fresh,
+    freshKeys,
   }, any ? [] : parts.facts.filter(f => CUBE_FACT_KEYS.has(f.key)).map(f => ({ key: f.key, condition: f.condition(m) })))
 
   // The list's total is only queried at all when shiftFacets is active: under AND mode (or with no bill-fact
   // filter active) the shift is the identity and the value would be thrown away.
-  const currentTotal = !shiftFacets ? Promise.resolve(0) : usesCube ? cube().then(currentOfCube) : countGroups(db, currentOnM)
+  const currentTotal = !shiftFacets ? Promise.resolve(0) : usesCube ? cube().then(currentOfCube)
+    : currentKeys().then(k => (k ? k.ids.length + k.groups.length : countGroups(db, currentOnM)))
   currentTotal.catch(() => undefined)
 
   // Under AND the dimension's own fact is left out, so a dimension that is not filtered shares one count with the others.

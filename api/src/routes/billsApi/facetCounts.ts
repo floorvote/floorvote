@@ -41,6 +41,48 @@ export type Counting = {
   where: BillsFilter
   /** Under OR: the groups to count are those with no bill in the current result. */
   fresh: Fresh | undefined
+  /**
+   * Under OR, when the current result is small: the freshness test built from the keys of the result, read once a
+   * request (`freshOfKeys`), which a statement uses in place of `fresh` so that none tests every bill against the
+   * filter again. Undefined once the result is too big to hold, and then `fresh` is the test.
+   */
+  freshKeys?: () => Promise<Fresh | undefined>
+  /** Whether the bills `where` meets are most of the table, so that counting the ones it leaves out reads fewer rows. */
+  broad?: () => Promise<boolean>
+}
+
+/**
+ * How a count reads a broad filter, and how large a result it holds as keys. Tests set them to run each form.
+ * - `complement`: `auto` counts the rows of the bills a filter leaves out when most bills meet it, and subtracts them from
+ *   the rows of the table, which the subject and committee indexes answer whole. `always` and `never` force a form.
+ * - `keysMax`: the most keys (bills in no group, and groups) of the current result a request holds under match=any, bound
+ *   to a statement as JSON. 0 turns the form off. 5,000 keys of UUIDs are about 190 KB, under D1's limit on a bound value.
+ */
+export const countStrategy: { complement: 'auto' | 'always' | 'never'; keysMax: number } = { complement: 'auto', keysMax: 5000 }
+
+/** The current result under match=any, as the bills in no group it holds and the groups it holds, each once. */
+export type CurrentKeys = { ids: string[]; groups: string[] }
+
+/**
+ * The bills of the current result as keys, read once a request: its ungrouped bills' ids and its groups' keys. Undefined
+ * when there are more than `countStrategy.keysMax`, and the counts test each bill against the filter instead.
+ */
+export async function loadCurrentKeys(db: AppDb, current: SQL | undefined): Promise<CurrentKeys | undefined> {
+  const max = countStrategy.keysMax
+  if (max <= 0 || !current) return undefined
+  const rows = await db.all(sql`SELECT m.id AS id, m.group_key AS gk FROM bills m WHERE ${current} LIMIT ${max + 1}`) as Array<{ id: string; gk: string | null }>
+  if (rows.length > max) return undefined
+  return { ids: rows.filter(r => r.gk === null).map(r => r.id), groups: [...new Set(rows.filter(r => r.gk !== null).map(r => r.gk as string))] }
+}
+
+/** True of a bill in no group of the result keys (`CurrentKeys`), as `freshOf`'s is of the filter, built from them. */
+export function freshOfKeys(keys: CurrentKeys): Fresh {
+  const ids = JSON.stringify(keys.ids)
+  const groups = JSON.stringify(keys.groups)
+  return {
+    test: t => sql`CASE WHEN ${t.groupKey} IS NULL THEN ${t.id} NOT IN (SELECT value FROM json_each(${ids}))
+      ELSE ${t.groupKey} NOT IN (SELECT value FROM json_each(${groups})) END`,
+  }
 }
 
 /**
@@ -50,7 +92,7 @@ export type Counting = {
 export type Fresh = { cte?: SQL; test: (t: BillsTable) => SQL }
 
 /** A group's bills' values of the columns counted, and the number of groups. */
-export type CountRow = { values: unknown[]; n: number }
+export type CountRow = { values: unknown[]; n: number; /** The `extras` of the read, when the whole count read them (`countBy`). */ extra?: unknown[] }
 
 /**
  * The most values the current filter may bind for a statement to hold it twice (`freshOf`). The per-bill form
@@ -120,23 +162,46 @@ const valuesOf = (row: Record<string, unknown>, n: number) => Array.from({ lengt
  * each row's bill by key costs a lookup a row. A `where` given with `alone`
  * must test the rows only, never `m`.
  */
-export async function countBy(db: AppDb, c: Counting, source: { values: SQL[]; from: SQL; where?: SQL; alone?: SQL }): Promise<CountRow[]> {
+export async function countBy(db: AppDb, c: Counting, source: { values: SQL[]; from: SQL; where?: SQL; alone?: SQL; extras?: SQL[]; noComplement?: true }): Promise<CountRow[]> {
   const { values, from } = source
   const filter = c.where(m)
   const w = filter && source.where ? and(source.where, filter) : (source.where ?? filter)
-  const fresh = c.fresh?.test(m)
-  const cte = withCtes([c.fresh?.cte])
+  const keyed = await c.freshKeys?.()
+  const freshTest = keyed ?? c.fresh
+  const fresh = freshTest?.test(m)
+  const cte = withCtes([keyed ? undefined : c.fresh?.cte])
+  const select = (n: SQL) => sql.join([...valueColumns(values), n], sql`, `)
+  // Counting what the filter leaves out and taking it from every row reads fewer rows than joining every bill to its rows
+  // when most bills meet the filter, or, under OR, when most are fresh (the current result is held as keys, a small part).
+  // It needs the rows alone (`alone`) and, under OR, no filter of the facet's own, so that every value has its rows counted.
+  const complement = source.alone !== undefined && !source.noComplement && countStrategy.complement !== 'never' && (
+    fresh ? !filter && keyed !== undefined : filter ? (countStrategy.complement === 'always' || await c.broad?.() === true) : false)
+  // Further columns of the rows the whole count reads (the committee names), only when it reads them from the bills' rows.
+  const extraCols = (source.extras ?? []).map((e, i) => sql`${e} AS ${sql.raw(`x${i}`)}`)
   const wholeFrom = !filter && !fresh && source.alone ? source.alone : from
+  const wholeRows = complement
+    ? Promise.all([
+      db.all(sql`SELECT ${select(sql`COUNT(*) AS n`)} FROM ${source.alone!}${source.where ? sql` WHERE ${source.where}` : sql``}${groupBy(values)}`) as Promise<Record<string, unknown>[]>,
+      db.all(sql`SELECT ${select(sql`COUNT(*) AS n`)} FROM ${from} WHERE ${source.where ? sql`${source.where} AND ` : sql``}COALESCE((${fresh ?? filter!}), 0) = 0${groupBy(values)}`) as Promise<Record<string, unknown>[]>,
+    ]).then(([all, left]) => {
+      const out = new Map(left.map(r => [keyOf(r, values.length), Number(r.n)]))
+      // A value no kept row has is no value of the filter's bills: dropped, as the count over the kept rows never has it.
+      return all.map(r => ({ ...r, n: Number(r.n) - (out.get(keyOf(r, values.length)) ?? 0) })).filter(r => fresh !== undefined || r.n > 0)
+    })
+    : db.all(sql`${cte}SELECT ${select(sql.join([sql`${countOf(fresh)} AS n`, ...extraCols], sql`, `))} FROM ${wholeFrom}${w ? sql` WHERE ${w}` : sql``}${groupBy(values)}`) as Promise<Record<string, unknown>[]>
   const [whole, grouped] = await Promise.all([
-    db.all(sql`${cte}SELECT ${sql.join([...valueColumns(values), sql`${countOf(fresh)} AS n`], sql`, `)} FROM ${wholeFrom}${w ? sql` WHERE ${w}` : sql``}${groupBy(values)}`) as Promise<Record<string, unknown>[]>,
+    wholeRows,
     db.all(sql`${cte}SELECT ${sql.join([...valueNames(values), sql`COALESCE(SUM(n), 0) AS bills`, sql`${fresh ? sql`COALESCE(SUM(CASE WHEN n > 0 THEN 1 ELSE 0 END), 0)` : sql`COUNT(*)`} AS groups`], sql`, `)}
-      FROM (SELECT ${sql.join([...valueColumns(values), sql`${countOf(fresh)} AS n`], sql`, `)} FROM ${from} WHERE ${m.groupKey} IS NOT NULL${w ? sql` AND ${w}` : sql``}
+      FROM (SELECT ${select(sql`${countOf(fresh)} AS n`)} FROM ${from} WHERE ${m.groupKey} IS NOT NULL${w ? sql` AND ${w}` : sql``}
         GROUP BY ${sql.join([sql`${m.groupKey}`, ...values], sql`, `)})${groupBy(valueNames(values))}`) as Promise<Record<string, unknown>[]>,
   ])
   const byValue = new Map(grouped.map(r => [keyOf(r, values.length), r]))
   return whole.map(r => {
     const g = byValue.get(keyOf(r, values.length))
-    return { values: valuesOf(r, values.length), n: Number(r.n) - Number(g?.bills ?? 0) + Number(g?.groups ?? 0) }
+    return {
+      values: valuesOf(r, values.length), n: Number(r.n) - Number(g?.bills ?? 0) + Number(g?.groups ?? 0),
+      extra: extraCols.length > 0 && wholeFrom === from && !complement ? extraCols.map((_, i) => (r as Record<string, unknown>)[`x${i}`]) : undefined,
+    }
   })
 }
 
@@ -150,12 +215,14 @@ export async function countBy(db: AppDb, c: Counting, source: { values: SQL[]; f
  */
 export async function countHolders(db: AppDb, c: Counting, source: { values: SQL[]; from: SQL; holds: SQL }): Promise<CountRow[]> {
   const { values, from, holds } = source
-  const select = sql`SELECT ${sql.join([...valueColumns(values), sql`${countOf(c.fresh?.test(me))} AS n`], sql`, `)} FROM ${from}`
+  const keyed = await c.freshKeys?.()
+  const freshTest = keyed ?? c.fresh
+  const select = sql`SELECT ${sql.join([...valueColumns(values), sql`${countOf(freshTest?.test(me))} AS n`], sql`, `)} FROM ${from}`
   const w = c.where(m)
   const qualifies = w
     ? sql` AND EXISTS (SELECT 1 FROM bills m WHERE (${m.id} = ${me.id} OR ${m.groupKey} = ${me.groupKey}) AND ${w})`
     : sql``
-  const rows = await db.all(sql`${withCtes([c.fresh?.cte])}${select} WHERE ${holds}${qualifies}${groupBy(values)}`) as Record<string, unknown>[]
+  const rows = await db.all(sql`${withCtes([keyed ? undefined : c.fresh?.cte])}${select} WHERE ${holds}${qualifies}${groupBy(values)}`) as Record<string, unknown>[]
   return rows.map(r => ({ values: valuesOf(r, values.length), n: Number(r.n) }))
 }
 
@@ -182,8 +249,9 @@ export type Cube = { facts: string[]; fresh: boolean; whole: CubeRow[]; grouped:
 /** Counts the cube under `c`, `c.where` holding every condition but the facts on the five columns, which are `facts`. */
 export async function countCube(db: AppDb, c: Counting, facts: Array<{ key: string; condition: SQL }>): Promise<Cube> {
   const w = c.where(m)
-  const fresh = c.fresh?.test(m)
-  const cte = withCtes([c.fresh?.cte])
+  const keyed = await c.freshKeys?.()
+  const fresh = (keyed ?? c.fresh)?.test(m)
+  const cte = withCtes([keyed ? undefined : c.fresh?.cte])
   const columns = [
     ...valueColumns(CUBE_COLUMNS),
     sql`COUNT(*) AS n`,

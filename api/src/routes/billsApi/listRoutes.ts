@@ -158,7 +158,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       // condition on one bill, and a companion group meets it when a bill of it does (facetCounts.ts).
       // Bill facts join by the group operator, and the scopes (search, my bills, unvoted, new matches,
       // drafts) always narrow. A dimension's facet leaves its own fact out.
-      const parts = await buildFilterParts(db, bf, { userId: currentUser.id, newMatchMinRelevance, myBillIds: mine, searchIds })
+      const parts = await buildFilterParts(db, bf, { userId: currentUser.id, newMatchMinRelevance, myBillIds: mine, searchIds, facets: true })
 
       // hasDrafts: does this TENANT have any draft at all, completely unfiltered
       // — no dimensional filters, no myBills/unvoted/newMatches scope. This is

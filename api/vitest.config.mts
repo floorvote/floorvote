@@ -36,6 +36,8 @@ const HEAVY_FILE_SECONDS: Record<string, number> = {
   'test/routes/groupFacetsRandom3.test.ts': 10,
   'test/routes/groupFacetsRandom4.test.ts': 10,
   'test/routes/groupFacetsRandom5.test.ts': 9,
+  'test/routes/groupFacetsRandom6.test.ts': 12,
+  'test/routes/groupFacetsRandom7.test.ts': 12,
 }
 const DEFAULT_FILE_SECONDS = 1.5
 
