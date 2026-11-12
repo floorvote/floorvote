@@ -15,8 +15,8 @@ function LocationProbe() {
 // through apiFetch. We route by path and record the calls so we can assert the
 // list both renders the fixture and re-fetches when a filter changes.
 const apiCalls: string[] = []
-// The calls that asked the server to count afresh (Cache-Control: no-cache), as the page does after its own edits.
-const freshCalls: string[] = []
+// While set, an on-demand facets reply (only=) waits for it, so a test can act while that request is out.
+const lazyHold = vi.hoisted(() => ({ gate: null as Promise<void> | null }))
 
 // Lets a test hold the `/bills/:id` prefetch open so it can observe the
 // navigation-pending window (when the body should carry the wait-cursor class).
@@ -151,7 +151,7 @@ vi.mock('../../lib/api', () => {
   }
   async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     apiCalls.push(path)
-    if (/no-cache/.test(String((init?.headers as Record<string, string> | undefined)?.['Cache-Control'] ?? ''))) freshCalls.push(path)
+    if (lazyHold.gate && path.startsWith('/bills/facets') && path.includes('only=')) await lazyHold.gate
     const putViewMatch = init?.method === 'PUT' && path.match(/^\/admin\/views\/([^/]+)$/)
     if (putViewMatch) {
       const body = init?.body ? JSON.parse(init.body as string) : {}
@@ -290,7 +290,7 @@ class FakeIntersectionObserver {
 
 beforeEach(() => {
   apiCalls.length = 0
-  freshCalls.length = 0
+  lazyHold.gate = null
   overwriteCalls.length = 0
   saveViewCalls.length = 0
   deferred.resolveBillDetail = null
@@ -1735,22 +1735,22 @@ describe('BillList delete selected drafts', () => {
     expect(lazy()[1]).toBe(lazy()[0])
   })
 
-  // The server keeps a member's facets for a minute (api/src/lib/facetsCache.ts). After the page's own edit it asks
-  // afresh, so the counts show that edit at once; any other request may be answered from what is kept.
-  it('asks for the counts from the cache on load, and afresh after deleting drafts', async () => {
+  // A request for the on-demand counts already out when the member deletes drafts may be answered with counts from
+  // before the delete (the server keeps a member's counts for a minute), so the delete asks again rather than wait on it.
+  it('asks again for the on-demand counts after a delete, even while an earlier request for them is out', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
+    let release!: () => void
+    lazyHold.gate = new Promise(resolve => { release = resolve })
     facetsState.bills = [DRAFT_A, FILED]
     renderWithSidebarSpy()
-    await waitFor(() => expect(apiCalls.some(c => c.startsWith('/bills/facets'))).toBe(true))
-    expect(freshCalls).toEqual([])
+    const lazy = () => apiCalls.filter(c => c.startsWith('/bills/facets') && c.includes('only='))
     fireEvent.pointerEnter(await screen.findByRole('button', { name: 'Subject' }), { pointerType: 'mouse' })
-    await waitFor(() => expect(apiCalls.filter(c => c.includes('only='))).toHaveLength(1))
-    expect(freshCalls).toEqual([])
+    await waitFor(() => expect(lazy()).toHaveLength(1))
     await select('First Draft')
     fireEvent.click(await screen.findByRole('button', { name: /Delete drafts \(1\)/ }))
     await waitFor(() => expect(screen.queryByText('First Draft')).toBeNull())
-    await waitFor(() => expect(freshCalls.filter(c => c.startsWith('/bills/facets') && c.includes('omit='))).toHaveLength(1))
-    await waitFor(() => expect(freshCalls.filter(c => c.startsWith('/bills/facets') && c.includes('only='))).toHaveLength(1))
+    await waitFor(() => expect(lazy()).toHaveLength(2))
+    release()
   })
 
   it('does not ask for the on-demand counts after a delete when nobody wanted them', async () => {

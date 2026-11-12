@@ -9,8 +9,13 @@
 // bills, unvoted, new matches for an admin), so one member never reads
 // another's. It is the tenant, the member, and the request's parameters in one
 // order. A count may be up to a minute old after someone else's edit. After the
-// member's own edit the page asks with Cache-Control: no-cache, which counts
-// afresh and replaces what is kept, so their own change shows at once.
+// member's own edit the web app asks each facets request once with
+// Cache-Control: no-cache (web/src/lib/facetsFreshness.ts), which counts afresh
+// and replaces what is kept, so their own change shows.
+//
+// Accepted: a request counted before an edit that lands after the fresh one
+// keeps the older counts until the TTL, the last write winning. It needs a page
+// load still in flight when the member's edit and its recount both finish.
 //
 // Backed by the Workers Cache API (`caches.default`), as lib/listCache.ts is.
 // FACETS_CACHE_TTL sets the seconds kept (default 60); 0 turns it off.
@@ -49,8 +54,13 @@ export async function cachedFacets(ttl: number, key: Request, fresh: boolean, co
   const res = await compute()
   if (res.status !== 200) return res
   const body = await res.text()
-  await cache.put(key, new Response(body, {
-    headers: { 'Content-Type': 'application/json', 'Cache-Control': `max-age=${ttl}` },
-  }))
+  try {
+    await cache.put(key, new Response(body, {
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': `max-age=${ttl}` },
+    }))
+  } catch (err) {
+    // The counts are computed: answer them, and count afresh next time.
+    console.warn('[facets-cache] put failed:', err instanceof Error ? err.message : String(err))
+  }
   return new Response(body, { status: 200, headers: res.headers })
 }

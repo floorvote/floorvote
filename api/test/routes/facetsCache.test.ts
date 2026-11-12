@@ -122,4 +122,24 @@ describe('GET /bills/facets, the per-member cache', () => {
     expect(await off()).toBeGreaterThan(0)
     expect(await off()).toBeGreaterThan(0)
   })
+
+  it('keeps each tenant\'s entries apart, since tenants of one zone share its cache', () => {
+    const params = new URLSearchParams('state=NJ')
+    const a = facetsCacheKey({ TENANT_ID: 'one' }, 'u1', params).url
+    const b = facetsCacheKey({ TENANT_ID: 'two' }, 'u1', params).url
+    expect(a).not.toBe(b)
+    // Neither part can reach into another's path.
+    expect(facetsCacheKey({ TENANT_ID: 'one/two' }, 'u1', params).url).not.toBe(facetsCacheKey({ TENANT_ID: 'one' }, 'two/u1', params).url)
+  })
+
+  it('answers the counts it computed when the cache will not keep them', async () => {
+    const put = vi.spyOn(caches.default, 'put').mockRejectedValue(new Error('cache unavailable'))
+    try {
+      const { status, body } = await facets('state=NJ&year=2025')
+      expect(status).toBe(200)
+      expect(body.status).toBeDefined()
+    } finally {
+      put.mockRestore()
+    }
+  })
 })

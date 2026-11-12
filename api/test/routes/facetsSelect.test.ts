@@ -57,7 +57,7 @@ describe('GET /bills/facets, omit and only', () => {
   })
 
   it('answers only the asked-for facets, with the counts the full response has under the same filter', async () => {
-    for (const filter of ['', 'state=NJ', 'committee=301&committeeScope=current', 'subject=NJ:Elections']) {
+    for (const filter of ['', 'state=NJ', 'committee=301&committeeScope=current', 'subject=NJ:Elections', 'status=Passed&match=any&tag=Energy']) {
       const full = (await facets(filter)).body
       const both = (await facets(`${filter}&only=subject,committee`)).body
       expect(Object.keys(both).sort(), filter).toEqual([...LAZY_KEYS, ...TENANT_KEYS].filter(k => k in both).sort())
