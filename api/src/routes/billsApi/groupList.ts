@@ -274,6 +274,31 @@ function trackedStanding(filter: SQL | undefined, filterOnC?: SQL): SQL {
   return sql`${standing} AND EXISTS (SELECT 1 FROM bills m WHERE (m.id = ${c.id} OR m.group_key = ${c.groupKey}) AND ${filter})`
 }
 
+/** The deepest page (offset plus page size) whose groups the bill-number sort reads from the first states only. */
+const STATE_CUT_MAX = 1000
+
+/**
+ * Where the bill-number sort of every group can stop reading (#1021). It orders by the group's state first (the smallest
+ * state among its bills; the sort key `state`), so the page lies in the first states: the n-th bill with no companions
+ * in state order has a state that at least n groups are no later than, and no group in a later state can be in the
+ * first n. `state` says to read the groups no later (ascending) or no earlier (descending) than the returned state.
+ * The read walks the state index from its end, a few more than n bills, with no sort. Without it a page reads every
+ * group: the table, the group's state, and the natural bill number of its lead, for some 90,000 groups on the largest
+ * instance, to keep 20.
+ *
+ * None (the page reads every group) for a sort that is not by bill number, a filter or search (the n-th bill that
+ * meets it is not found in a few reads, and a filter that few bills meet would read the index to its end), the
+ * tracked-first path, a page past STATE_CUT_MAX, and a table with fewer than n bills with no companions.
+ */
+async function firstStatesCut(db: AppDb, o: PageOptions, order: Order): Promise<{ op: '<=' | '>='; state: string } | null> {
+  if (o.col !== 'bill' || o.tracked || o.filter || order.keys.has('boost')) return null
+  const n = o.offset + o.limit
+  if (n > STATE_CUT_MAX) return null
+  const asc = o.dir === 'asc'
+  const rows = await db.all(sql`SELECT s.state AS state FROM bills s WHERE s.group_key IS NULL ORDER BY s.state ${asc ? sql`ASC` : sql`DESC`} LIMIT 1 OFFSET ${n - 1}`) as { state: string }[]
+  return rows.length === 0 ? null : { op: asc ? '<=' : '>=', state: rows[0].state }
+}
+
 /** The keys of the groups on a page, in order. */
 export async function pageOfGroups(db: AppDb, o: PageOptions): Promise<string[]> {
   const order = orderOf(o.col, o.dir, o.search)
@@ -287,7 +312,14 @@ export async function pageOfGroups(db: AppDb, o: PageOptions): Promise<string[]>
 
   // One bill stands for each group, and the bills that do are found three ways:
   let inner: SQL
-  if (o.tracked) {
+  const cut = await firstStatesCut(db, o, order)
+  if (cut) {
+    // The first states only. A bill with no companions is in its own state; a group is in its smallest state, which the
+    // group key index carries, so the groups are found from its covering entries and each key bill read by its key.
+    const op = sql.raw(cut.op)
+    inner = sql`SELECT ${select} FROM bills c WHERE ${c.groupKey} IS NULL AND ${c.state} ${op} ${cut.state}
+      UNION ALL SELECT ${select} FROM bills c WHERE ${c.id} IN (SELECT m.group_key FROM bills m WHERE m.group_key IS NOT NULL GROUP BY m.group_key HAVING MIN(m.state) ${op} ${cut.state})`
+  } else if (o.tracked) {
     // The tracked bills, read through their index (see `trackedStanding`).
     inner = sql`SELECT ${select} FROM bills c WHERE ${trackedStanding(o.filter?.(m), o.twice ? o.filter?.(c) : undefined)}`
   } else if (!o.filter) {

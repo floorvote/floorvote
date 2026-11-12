@@ -139,6 +139,41 @@ describe('GET /bills?sort=bill', () => {
       expect(numbers(await list('sort=bill&dir=desc'))).toEqual(['AB 1', 'SB 7', 'SB 5', 'SB 1'])
     })
 
+    it('keeps a group whose key bill is in a later state than its first, when the page is cut at the first state', async () => {
+      await clearDb()
+      const userId = await seedUser({ role: 'admin' })
+      cookie = `session=${await seedSession(userId)}`
+      // Three bills with no companions in AZ make the first page of three end in AZ. The group's key bill (the smaller
+      // id) is in TX, but its AZ bill puts it in AZ, where its lead (the furthest along, HB 2) sorts it between them.
+      await seedBill({ id: 'a1', billNumber: 'HB 1', state: 'AZ', matchType: null })
+      await seedBill({ id: 'a3', billNumber: 'HB 3', state: 'AZ', matchType: null })
+      await seedBill({ id: 'a5', billNumber: 'HB 5', state: 'AZ', matchType: null })
+      await seedBill({ id: 'c1', billNumber: 'HB 8', state: 'TX', statusRank: 100, matchType: null })
+      await seedBill({ id: 'c2', billNumber: 'HB 2', state: 'AZ', statusRank: 300, matchType: null })
+      await group('c1', 'c2')
+      expect((await list('sort=bill&dir=asc&pageSize=3')).bills.map(b => b.id)).toEqual(['a1', 'c2', 'a3'])
+      expect((await list('sort=bill&dir=asc&pageSize=3&page=2')).bills.map(b => b.id)).toEqual(['a5'])
+    })
+
+    it('cuts a descending page at the last state, keeping its groups and leaving out one that reaches an earlier state', async () => {
+      await clearDb()
+      const userId = await seedUser({ role: 'admin' })
+      cookie = `session=${await seedSession(userId)}`
+      await seedBill({ id: 'w1', billNumber: 'HB 1', state: 'WY', matchType: null })
+      await seedBill({ id: 'w2', billNumber: 'HB 2', state: 'WY', matchType: null })
+      await seedBill({ id: 'w3', billNumber: 'HB 4', state: 'WY', matchType: null })
+      // A group wholly in WY, led by HB 3.
+      await seedBill({ id: 'p1', billNumber: 'HB 3', state: 'WY', statusRank: 300, matchType: null })
+      await seedBill({ id: 'p2', billNumber: 'HB 9', state: 'WY', statusRank: 100, matchType: null })
+      await group('p1', 'p2')
+      // A group with an AZ bill is in AZ, which comes after WY here, whatever the number of its lead.
+      await seedBill({ id: 'q1', billNumber: 'HB 1', state: 'AZ', statusRank: 100, matchType: null })
+      await seedBill({ id: 'q2', billNumber: 'HB 99', state: 'WY', statusRank: 300, matchType: null })
+      await group('q1', 'q2')
+      expect((await list('sort=bill&dir=desc&pageSize=3')).bills.map(b => b.id)).toEqual(['w3', 'p1', 'w2'])
+      expect((await list('sort=bill&dir=desc&pageSize=3&page=2')).bills.map(b => b.id)).toEqual(['w1', 'q2'])
+    })
+
     it("orders a group at its lead's newest-text number, not its key bill's", async () => {
       await clearDb()
       const userId = await seedUser({ role: 'admin' })
