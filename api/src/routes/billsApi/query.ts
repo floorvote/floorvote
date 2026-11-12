@@ -120,6 +120,15 @@ export function statusFilterValues(statuses: readonly string[]): string[] {
   return [...new Set(statuses.flatMap(s => LEGISCAN_CODE_WORDS[s] ? [s, LEGISCAN_CODE_WORDS[s]] : [s]))]
 }
 
+/**
+ * A column equal to one of `values`, written `+column` so that no index of that column alone serves it. The planner
+ * then reads a covering index that holds the column (the facets index) instead of the column's own index and the table
+ * row, which is the cheaper read for a value many bills share. Keep the plus.
+ */
+export function unindexedIn(column: Parameters<typeof eq>[0], values: ReadonlyArray<string | number>): SQL {
+  return values.length === 1 ? sql`+${column} = ${values[0]}` : sql`+${column} IN (${sql.join(values.map(v => sql`${v}`), sql`, `)})`
+}
+
 // Helper: single-value eq or multi-value inArray
 export function multiFilter(column: Parameters<typeof eq>[0], values: readonly string[]): SQL | undefined {
   if (values.length === 0) return undefined

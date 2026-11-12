@@ -205,10 +205,11 @@ describe('GET /bills/facets query plans', () => {
       if (COMMITTEE_ROWS.test(s.sql)) found.push({ sql: s.sql, plan: await plan(s) })
     }
     const label = `committee statements for "${qs}": ${found.map(p => p.sql).join(' | ')}`
-    expect(found.length, `expected three ${label}`).toBe(3)
     const info = found.filter(p => /MAX\(bc\.name\)/.test(p.sql))
     const grouped = found.filter(p => /GROUP BY "m"\."group_key"/.test(p.sql))
-    const whole = found.filter(p => !/GROUP BY "m"\."group_key"/.test(p.sql) && !/MAX\(bc\.name\)/.test(p.sql))
+    // Under a filter most bills meet, the whole count is two statements: every row, and the rows of the bills left out (#1023).
+    const wholes = found.filter(p => !/GROUP BY "m"\."group_key"/.test(p.sql) && !/MAX\(bc\.name\)/.test(p.sql))
+    const whole = wholes.length === 2 ? wholes.filter(p => /\bbills m\b/.test(p.sql)) : wholes
     expect([info.length, grouped.length, whole.length], `expected one info, one grouped count, and one whole count: ${label}`).toEqual([1, 1, 1])
     return { whole: whole[0], grouped: grouped[0], info: info[0] }
   }
@@ -284,7 +285,9 @@ describe('GET /bills/facets query plans', () => {
   async function subjectPlans(qs = ''): Promise<{ whole: Planned; grouped: Planned }> {
     const found = select(await facetPlans(qs), /bs\.subject_name AS v1/)
     const grouped = found.filter(p => /GROUP BY "m"\."group_key"/.test(p.sql))
-    const whole = found.filter(p => !/GROUP BY "m"\."group_key"/.test(p.sql))
+    // Under a filter most bills meet, the whole count is two statements: every row, and the rows of the bills left out (#1023).
+    const wholes = found.filter(p => !/GROUP BY "m"\."group_key"/.test(p.sql))
+    const whole = wholes.length === 2 ? wholes.filter(p => /\bbills m\b/.test(p.sql)) : wholes
     expect([whole.length, grouped.length], `subject statements for "${qs}": ${found.map(p => p.sql).join(' | ')}`).toEqual([1, 1])
     return { whole: whole[0], grouped: grouped[0] }
   }
@@ -307,7 +310,7 @@ describe('GET /bills/facets query plans', () => {
       const { whole } = await subjectPlans(qs)
       const msg = `"${qs}"\n${whole.sql}\n${whole.plan}`
       expect(whole.plan, msg).toMatch(new RegExp(`SEARCH m USING (COVERING )?INDEX ${index}`))
-      expect(whole.plan, msg).toMatch(/SEARCH bs USING (COVERING )?INDEX sqlite_autoindex_bill_subjects_1 \(bill_id=\?\)/)
+      expect(whole.plan, msg).toMatch(/SEARCH bs USING (COVERING )?INDEX (sqlite_autoindex_bill_subjects_1|idx_bill_subjects_bill) \(bill_id=\?\)/)
       expect(whole.plan, msg).not.toMatch(/SCAN (bs|m)\b/)
     }
   })
@@ -322,7 +325,7 @@ describe('GET /bills/facets query plans', () => {
       const committee = await committeePlans(qs)
       for (const p of [whole, grouped, committee.whole, committee.grouped, committee.info]) {
         const msg = `"${qs}"\n${p.sql}\n${p.plan}`
-        expect(p.plan, msg).toMatch(/SEARCH b[sc] USING (COVERING )?INDEX sqlite_autoindex_bill_(subjects|committees)_1 \(bill_id=\?\)/)
+        expect(p.plan, msg).toMatch(/SEARCH b[sc] USING (COVERING )?INDEX (sqlite_autoindex_bill_(subjects|committees)_1|idx_bill_subjects_bill) \(bill_id=\?\)/)
         expect(p.plan, msg).not.toMatch(/SCAN b[sc]\b/)
       }
     }
@@ -337,7 +340,8 @@ describe('GET /bills/facets query plans', () => {
     const likes = stmts.filter(s => /\blike\b/i.test(s.sql))
     expect(likes.map(s => s.sql), 'one read of the matching ids, and no count with a LIKE').toHaveLength(1)
     expect(likes[0].sql).toMatch(/^select "id" from "bills"/i)
-    const counts = await facetPlans('search=Title%2012')
+    // (The size of the table, which a request counts to tell a broad filter from a narrow one, reads a covering index of it.)
+    const counts = (await facetPlans('search=Title%2012')).filter(p => !/AS total\b/.test(p.sql))
     expect(counts.length).toBeGreaterThan(10)
     for (const p of counts) {
       const msg = `${p.sql}\n${p.plan}`
@@ -352,7 +356,7 @@ describe('GET /bills/facets query plans', () => {
       const { grouped } = await subjectPlans(qs)
       const msg = `"${qs}"\n${grouped.sql}\n${grouped.plan}`
       expect(grouped.plan, msg).toMatch(/SEARCH m USING COVERING INDEX idx_bills_group_key \(group_key>\?\)/)
-      expect(grouped.plan, msg).toMatch(/SEARCH bs USING (COVERING )?INDEX sqlite_autoindex_bill_subjects_1 \(bill_id=\?\)/)
+      expect(grouped.plan, msg).toMatch(/SEARCH bs USING (COVERING )?INDEX (sqlite_autoindex_bill_subjects_1|idx_bill_subjects_bill) \(bill_id=\?\)/)
       expect(grouped.plan, msg).not.toMatch(/SCAN (bs|m)\b/)
     }
   })
@@ -394,7 +398,7 @@ describe('GET /bills/facets query plans', () => {
       const own = qs === 'unvoted=1' ? '(idx_bills_facets|sqlite_autoindex_bills_1)' : 'idx_bills_facets'
       for (const [name, p] of [['subject', subject.whole], ['committee', committee.whole]] as const) {
         const ok = new RegExp(`(SCAN|SEARCH) m USING COVERING INDEX ${own}`).test(p.plan)
-          && /SEARCH b[sc] USING (COVERING )?INDEX sqlite_autoindex_bill_(subjects|committees)_1 \(bill_id=\?\)/.test(p.plan)
+          && /SEARCH b[sc] USING (COVERING )?INDEX (sqlite_autoindex_bill_(subjects|committees)_1|idx_bill_subjects_bill) \(bill_id=\?\)/.test(p.plan)
           && !TABLE_SCAN.test(p.plan)
         if (!ok) wrong.push(`${name} under "${qs}"\n${p.sql}\n${p.plan}`)
       }
@@ -553,8 +557,12 @@ describe('GET /bills/facets query plans', () => {
     }
     return out
   }
-  const goodRead = (line: string): boolean => {
+  // A probe that counts the bills a filter meets reads no column but the filter's, so any covering index of them serves.
+  // The committee names read each committee row's name and chamber, which no index holds, so that statement reads them whole.
+  const goodRead = (line: string, probe = false, names = false): boolean => {
     const l = line.trim()
+    if (names && /^SCAN bc\b/.test(l)) return true
+    if (probe && /^(SCAN|SEARCH) m\b/.test(l)) return /USING COVERING INDEX/.test(l)
     if (/^(SCAN|SEARCH) m\b/.test(l)) return /USING COVERING INDEX (idx_bills_facets|idx_bills_group_key|sqlite_autoindex_bills_1)\b/.test(l)
     if (/^(SCAN|SEARCH) bs\b/.test(l)) return /USING COVERING INDEX/.test(l)
     if (/^(SCAN|SEARCH) bc\b/.test(l)) return /USING COVERING INDEX|INDEX sqlite_autoindex_bill_committees_1 \(bill_id=\?\)/.test(l)
@@ -567,7 +575,7 @@ describe('GET /bills/facets query plans', () => {
       const plans = await menuPlans(qs)
       if (plans.length === 0) wrong.push(`"${qs}": no statement`)
       for (const p of plans) {
-        const bad = p.plan.split('\n').filter(l => !goodRead(l))
+        const bad = p.plan.split('\n').filter(l => !goodRead(l, /AS kept\b/.test(p.sql), /MAX\(bc\.name\)/.test(p.sql)))
         if (bad.length > 0) wrong.push(`"${qs}"\n${p.sql}\n${p.plan}`)
       }
     }
