@@ -105,15 +105,20 @@ const valuesOf = (row: Record<string, unknown>, n: number) => Array.from({ lengt
  * counted by a set of its own. With no values, one row counts all groups.
  * `where`, when given, is a further condition on `m`, of the facet rather than
  * of the filter (the tag facets count only bills with group tags).
+ * `alone`, when given, is `from` without the bill: rows that always have one,
+ * which the whole count reads instead when nothing tests the bill. Reaching
+ * each row's bill by key costs a lookup a row, which on a large instance's
+ * subject rows took seconds.
  */
-export async function countBy(db: AppDb, c: Counting, source: { values: SQL[]; from: SQL; where?: SQL }): Promise<CountRow[]> {
+export async function countBy(db: AppDb, c: Counting, source: { values: SQL[]; from: SQL; where?: SQL; alone?: SQL }): Promise<CountRow[]> {
   const { values, from } = source
   const filter = c.where(m)
   const w = filter && source.where ? and(source.where, filter) : (source.where ?? filter)
   const fresh = c.fresh?.test(m)
   const cte = withCtes([c.fresh?.cte])
+  const wholeFrom = !w && !fresh && source.alone ? source.alone : from
   const [whole, grouped] = await Promise.all([
-    db.all(sql`${cte}SELECT ${sql.join([...valueColumns(values), sql`${countOf(fresh)} AS n`], sql`, `)} FROM ${from}${w ? sql` WHERE ${w}` : sql``}${groupBy(values)}`) as Promise<Record<string, unknown>[]>,
+    db.all(sql`${cte}SELECT ${sql.join([...valueColumns(values), sql`${countOf(fresh)} AS n`], sql`, `)} FROM ${wholeFrom}${w ? sql` WHERE ${w}` : sql``}${groupBy(values)}`) as Promise<Record<string, unknown>[]>,
     db.all(sql`${cte}SELECT ${sql.join([...valueNames(values), sql`COALESCE(SUM(n), 0) AS bills`, sql`${fresh ? sql`COALESCE(SUM(CASE WHEN n > 0 THEN 1 ELSE 0 END), 0)` : sql`COUNT(*)`} AS groups`], sql`, `)}
       FROM (SELECT ${sql.join([...valueColumns(values), sql`${countOf(fresh)} AS n`], sql`, `)} FROM ${from} WHERE ${m.groupKey} IS NOT NULL${w ? sql` AND ${w}` : sql``}
         GROUP BY ${sql.join([sql`${m.groupKey}`, ...values], sql`, `)})${groupBy(valueNames(values))}`) as Promise<Record<string, unknown>[]>,

@@ -312,7 +312,10 @@ export const FILTER_TABLE: FilterTable = {
       kind: 'values',
       empty: () => ({}),
       count: async (fc, own) => {
-        const rows = await countBy(fc.db, fc.counting(own), { values: [sql`bs.state`, sql`bs.subject_name`], from: sql`bill_subjects bs JOIN bills m ON m.id = bs.bill_id` })
+        // A subject row's bill is deleted with it (ON DELETE CASCADE), so an unnarrowed count reads the rows alone.
+        const rows = await countBy(fc.db, fc.counting(own), {
+          values: [sql`bs.state`, sql`bs.subject_name`], from: sql`bill_subjects bs JOIN bills m ON m.id = bs.bill_id`, alone: sql`bill_subjects bs`,
+        })
         return fc.shift(Object.fromEntries(
           rows
             .filter(r => !isSubjectsSuppressedForState(fc.suppressedSubjectStates, String(r.values[0])))

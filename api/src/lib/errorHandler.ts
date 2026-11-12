@@ -1,5 +1,6 @@
 import type { Context } from 'hono'
 import { HTTPException } from 'hono/http-exception'
+import { errorText } from '../../../shared/errorText'
 
 /**
  * Hono `onError` handler. Pass HTTPExceptions through with their intended
@@ -11,7 +12,8 @@ export function errorHandler(err: Error, c: Context): Response | Promise<Respons
   if (err instanceof HTTPException) return err.getResponse()
   // Log name + message explicitly: for some runtime errors (notably a D1 backend
   // stall) `err.stack` carries only frames, so logging the object alone leaves
-  // Workers Logs with no statement of what actually failed.
-  console.error('[unhandled]', `${err.name}: ${err.message}`, err.stack)
+  // Workers Logs with no statement of what actually failed. The cause chain
+  // goes with it: Drizzle hangs D1's reason off a "Failed query" wrapper.
+  console.error('[unhandled]', `${err.name}: ${errorText(err)}`, err.stack)
   return c.json({ error: 'internal_error' }, 500)
 }

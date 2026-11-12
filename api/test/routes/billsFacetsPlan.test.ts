@@ -72,6 +72,11 @@ describe('GET /bills/facets query plans', () => {
         SELECT id, 'c' || ((substr(id, 5) + 0) % 40), state, 'Committee ' || ((substr(id, 5) + 0) % 40), CASE WHEN (substr(id, 5) + 0) % 2 = 0 THEN 'H' ELSE 'S' END, 1 FROM bills`),
       env.DB.prepare(`INSERT INTO bill_committees (bill_id, committee_id, state, name, chamber, is_current)
         SELECT id, 'r' || ((substr(id, 5) + 0) % 25), state, 'Referral ' || ((substr(id, 5) + 0) % 25), 'S', 0 FROM bills`),
+      // Two subjects a bill, of 60 names a state, so each (state, name) holds about 300 of the 60,000 rows.
+      env.DB.prepare(`INSERT INTO bill_subjects (bill_id, subject_name, state)
+        SELECT id, 'Subject ' || ((substr(id, 5) + 0) % 60), state FROM bills`),
+      env.DB.prepare(`INSERT INTO bill_subjects (bill_id, subject_name, state)
+        SELECT id, 'Subject ' || ((substr(id, 5) + 30) % 60 + 60), state FROM bills`),
       env.DB.prepare('ANALYZE'),
       // One draft, as a tenant that has any has a few: the stats still say every bill has the same is_draft.
       env.DB.prepare("UPDATE bills SET is_draft = 1 WHERE id = 'bill00002'"),
@@ -262,6 +267,49 @@ describe('GET /bills/facets query plans', () => {
       expect(grouped.plan, `"${qs}"\n${grouped.sql}\n${grouped.plan}`).toMatch(/SEARCH m USING COVERING INDEX idx_bills_group_key \(group_key>\?\)/)
       expect(grouped.plan, `"${qs}"\n${grouped.sql}\n${grouped.plan}`).toMatch(/SEARCH bc USING (COVERING )?INDEX sqlite_autoindex_bill_committees_1 \(bill_id=\?\)/)
       expect(grouped.plan, `"${qs}"\n${grouped.sql}\n${grouped.plan}`).not.toMatch(/SCAN (bc|m)\b(?! USING)/)
+    }
+  })
+
+  // The subject facet's statements: the whole count of each (state, subject), and the count of its grouped bills'
+  // groups. A subject filter's own EXISTS names bill_subjects too, so they are found by the values they count.
+  async function subjectPlans(qs = ''): Promise<{ whole: Planned; grouped: Planned }> {
+    const found = select(await facetPlans(qs), /bs\.subject_name AS v1/)
+    const grouped = found.filter(p => /GROUP BY "m"\."group_key"/.test(p.sql))
+    const whole = found.filter(p => !/GROUP BY "m"\."group_key"/.test(p.sql))
+    expect([whole.length, grouped.length], `subject statements for "${qs}": ${found.map(p => p.sql).join(' | ')}`).toEqual([1, 1])
+    return { whole: whole[0], grouped: grouped[0] }
+  }
+
+  it('counts every subject from the subject index alone when nothing narrows the facet, never reaching a bill', async () => {
+    // A subject row always has its bill (ON DELETE CASCADE), so with nothing to test of a bill the whole count needs
+    // none. Reaching each row's bill by key cost a lookup a row: on an instance with 170,000 subject rows that took
+    // 1.5 to 3 seconds, and a few page loads spent the database's budget so that every query failed (D1 7429).
+    // Picking a subject leaves its own facet unnarrowed, so it reads alike.
+    for (const qs of ['', 'subject=NJ:Subject%201']) {
+      const { whole } = await subjectPlans(qs)
+      const msg = `"${qs}"\n${whole.sql}\n${whole.plan}`
+      expect(whole.sql, msg).not.toMatch(/\bbills\b/)
+      expect(whole.plan, msg).toMatch(/SCAN bs USING COVERING INDEX idx_bill_subjects_name/)
+    }
+  })
+
+  it('starts from the bills a bill-column filter narrows to and reaches their subjects by key', async () => {
+    for (const [qs, index] of [['status=Passed', 'idx_bills_status'], ['state=NJ', 'idx_bills_state']]) {
+      const { whole } = await subjectPlans(qs)
+      const msg = `"${qs}"\n${whole.sql}\n${whole.plan}`
+      expect(whole.plan, msg).toContain(`SEARCH m USING INDEX ${index}`)
+      expect(whole.plan, msg).toMatch(/SEARCH bs USING (COVERING )?INDEX sqlite_autoindex_bill_subjects_1 \(bill_id=\?\)/)
+      expect(whole.plan, msg).not.toMatch(/SCAN (bs|m)\b/)
+    }
+  })
+
+  it('counts the groups of each subject from the group key index, its rows reached by key', async () => {
+    for (const qs of ['', 'status=Passed', 'subject=NJ:Subject%201']) {
+      const { grouped } = await subjectPlans(qs)
+      const msg = `"${qs}"\n${grouped.sql}\n${grouped.plan}`
+      expect(grouped.plan, msg).toMatch(/SEARCH m USING COVERING INDEX idx_bills_group_key \(group_key>\?\)/)
+      expect(grouped.plan, msg).toMatch(/SEARCH bs USING (COVERING )?INDEX sqlite_autoindex_bill_subjects_1 \(bill_id=\?\)/)
+      expect(grouped.plan, msg).not.toMatch(/SCAN (bs|m)\b/)
     }
   })
 
