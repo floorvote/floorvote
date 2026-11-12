@@ -77,6 +77,9 @@ describe('GET /bills/facets query plans', () => {
         SELECT id, 'Subject ' || ((substr(id, 5) + 0) % 60), state FROM bills`),
       env.DB.prepare(`INSERT INTO bill_subjects (bill_id, subject_name, state)
         SELECT id, 'Subject ' || ((substr(id, 5) + 30) % 60 + 60), state FROM bills`),
+      // The two bills of every pair share one of 20 subjects (#1030), so the groups share subjects as the largest instance's do.
+      env.DB.prepare(`INSERT INTO bill_subjects (bill_id, subject_name, state)
+        SELECT id, 'Shared ' || (((substr(id, 5) + 0 + 1) / 2) % 20), 'NJ' FROM bills WHERE substr(id, 5) + 0 <= 7500`),
       // A team's custom field, held by a few bills, so the cube's shapes include one.
       env.DB.prepare(`INSERT INTO custom_field_definitions (id, name, slug, type, options, multiple) VALUES ('field-binary', 'Tracking', 'tracking', 'binary', NULL, 0)`),
       env.DB.prepare(`INSERT INTO bill_custom_field_values (bill_id, field_id, value, set_by) SELECT id, 'field-binary', '1', '${userId}' FROM bills WHERE substr(id, 5) % 1200 = 0`),
@@ -287,10 +290,11 @@ describe('GET /bills/facets query plans', () => {
   // The subject facet's statements: the whole count of each (state, subject), and the count of its grouped bills'
   // groups. A subject filter's own EXISTS names bill_subjects too, so they are found by the values they count.
   async function subjectPlans(qs = ''): Promise<{ whole: Planned; grouped: Planned }> {
-    const found = select(await facetPlans(qs), /bs\.subject_name AS v1/)
-    const grouped = found.filter(p => /GROUP BY "m"\."group_key"/.test(p.sql))
+    const found = select(await facetPlans(qs), /bs\.subject_name AS v1|gs\.subject_name AS v1/)
+    // The correction is read from the subjects the groups share (#1030), which the old statement over every grouped bill's rows grouped by its group key.
+    const grouped = found.filter(p => /group_subjects|GROUP BY "m"."group_key"/.test(p.sql))
     // Under a filter most bills meet, the whole count is two statements: every row, and the rows of the bills left out (#1023).
-    const wholes = found.filter(p => !/GROUP BY "m"\."group_key"/.test(p.sql))
+    const wholes = found.filter(p => !/group_subjects|GROUP BY "m"."group_key"/.test(p.sql))
     const whole = wholes.length === 2 ? wholes.filter(p => /\bbills m\b/.test(p.sql)) : wholes
     expect([whole.length, grouped.length], `subject statements for "${qs}": ${found.map(p => p.sql).join(' | ')}`).toEqual([1, 1])
     return { whole: whole[0], grouped: grouped[0] }
@@ -329,6 +333,12 @@ describe('GET /bills/facets query plans', () => {
       const committee = await committeePlans(qs)
       for (const p of [whole, grouped, committee.whole, committee.grouped, committee.info]) {
         const msg = `"${qs}"\n${p.sql}\n${p.plan}`
+        // A tag is a group's own, so the subject correction is read from the shared subjects, a seek for each group the tag names (#1030).
+        if (/group_subjects/.test(p.sql)) {
+          expect(p.plan, msg).toMatch(/SEARCH gs USING PRIMARY KEY \(group_key=\?\)/)
+          expect(p.plan, msg).not.toMatch(/SCAN (m|bills|gs)\b/)
+          continue
+        }
         expect(p.plan, msg).toMatch(/SEARCH b[sc] USING (COVERING )?INDEX (sqlite_autoindex_bill_(subjects|committees)_1|idx_bill_subjects_bill) \(bill_id=\?\)/)
         expect(p.plan, msg).not.toMatch(/SCAN b[sc]\b/)
       }
@@ -355,8 +365,8 @@ describe('GET /bills/facets query plans', () => {
     }
   })
 
-  it('counts the groups of each subject from the group key index, its rows reached by key', async () => {
-    for (const qs of ['', 'status=Passed', 'subject=NJ:Subject%201']) {
+  it('counts the groups of each subject, under a filter on a bill\'s columns, from the group key index with its rows reached by key', async () => {
+    for (const qs of ['status=Passed', 'year=2025']) {
       const { grouped } = await subjectPlans(qs)
       const msg = `"${qs}"\n${grouped.sql}\n${grouped.plan}`
       expect(grouped.plan, msg).toMatch(/SEARCH m USING COVERING INDEX idx_bills_group_key \(group_key>\?\)/)
@@ -540,6 +550,44 @@ describe('GET /bills/facets query plans', () => {
       const own = (await statementsFor(pageLoad(qs))).filter(s => /GROUP BY "m"\."group_key"\)/.test(s.sql) && !/json_each\("m"\."group_tags"\)/.test(s.sql))
       expect(own.map(s => s.sql), `"${qs}" counts the groups its filter meets by a statement of its own`).toEqual([])
     }
+  })
+
+  // The grouped subject correction (#1030) turns the bills holding a subject into its groups. It was a statement over
+  // every grouped bill's subject rows, into two temporary B-trees of text keys (100 to 230 ms of database time a menu
+  // request on the largest instance). Under a filter that cannot split a group (every fact is a team field, a tag, or a
+  // vote scope, so a group's bills all meet it or none does) it is read from the subjects the groups share (migration 0126),
+  // a seek in the table's primary key for each kept group. A filter on a bill's own columns can leave out one bill of a
+  // group, which the table cannot say, and counting those groups from their rows cost more than the old statement on
+  // the largest instance (a stage 108 to 188 ms), so it keeps the old statement.
+  const OLD_CORRECTION = /bill_subjects[\s\S]*GROUP BY[^)]*"m"\."group_key"/
+  const correctionOf = async (qs: string) => {
+    const stmts = await statementsFor(`${qs}${qs ? '&' : ''}only=subject`)
+    const reads: Planned[] = []
+    for (const s of stmts) if (/group_subjects/.test(s.sql) && /\bkept\b/.test(s.sql)) reads.push({ sql: s.sql.replace(/\s+/g, ' '), plan: await plan(s) })
+    return { old: stmts.filter(s => OLD_CORRECTION.test(s.sql)), reads, tableMentions: stmts.filter(s => /group_subjects/.test(s.sql)) }
+  }
+  it('reads the grouped subject correction from the shared subjects, a seek per kept group, under a filter that cannot split a group', async () => {
+    const wrong: string[] = []
+    for (const qs of ['', 'priority=none', 'position=none', 'unvoted=1', 'tag=Energy', 'priority=high&position=Support', 'subject=NJ:Subject%201', 'tag=Energy&priority=high&position=Support&match=any']) {
+      const { old, reads } = await correctionOf(qs)
+      if (old.length > 0) wrong.push(`"${qs}" still reads every grouped bill's subject rows:\n${old[0].sql}`)
+      if (reads.length !== 1) { wrong.push(`"${qs}": ${reads.length} statements read the shared subjects`); continue }
+      if (!/SEARCH gs USING PRIMARY KEY \(group_key=\?\)/.test(reads[0].plan)) wrong.push(`"${qs}" does not seek the shared subjects by group:\n${reads[0].plan}`)
+      if (/SCAN (gs|bs)\b/.test(reads[0].plan) || /\bbill_subjects\b/.test(reads[0].sql)) wrong.push(`"${qs}" reads subject rows of bills:\n${reads[0].sql}\n${reads[0].plan}`)
+    }
+    expect(wrong, wrong.join('\n\n')).toEqual([])
+  })
+
+  it('keeps the statement over every grouped bill\'s rows under a filter on a bill\'s own columns, which can split a group', async () => {
+    const wrong: string[] = []
+    for (const qs of ['year=2025', 'stage=introduced', 'status=Passed', 'state=NJ', 'sessionName=s1', 'minRelevance=3', 'search=Title', 'drafts=1', 'status=Passed&priority=none', 'status=Passed&state=NJ&match=any']) {
+      const { old, tableMentions } = await correctionOf(qs)
+      if (old.length !== 1) wrong.push(`"${qs}": ${old.length} statements read every grouped bill's subject rows`)
+      // The probe of whether any group shares a subject may still be prepared, and nothing else reads the table.
+      const beyondProbe = tableMentions.filter(s => !/SELECT EXISTS/i.test(s.sql))
+      if (beyondProbe.length > 0) wrong.push(`"${qs}" reads the shared subjects:\n${beyondProbe[0].sql}`)
+    }
+    expect(wrong, wrong.join('\n\n')).toEqual([])
   })
 
   // The menu request (`only=subject,committee`) under a broad filter (#1023). Every statement of it that counts the

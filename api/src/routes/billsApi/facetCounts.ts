@@ -49,6 +49,17 @@ export type Counting = {
   freshKeys?: () => Promise<Fresh | undefined>
   /** Whether the bills `where` meets are most of the table, so that counting the ones it leaves out reads fewer rows. */
   broad?: () => Promise<boolean>
+  /**
+   * Whether any group has two bills holding one subject (a row in `group_subjects`, migration 0126), asked once a request.
+   * When none does, the subject count needs no correction for groups, whatever the filter.
+   */
+  groupsShareSubjects?: () => Promise<boolean>
+  /**
+   * The facet's filter cannot split a group: every bill of a group meets it or none does (a team field, a tag, a vote scope).
+   * The correction is then read from `group_subjects`, where a filter on a bill's own columns, which can leave out one
+   * bill of a group, keeps the statement over the bills' own subject rows.
+   */
+  groupsWhole?: true
 }
 
 /**
@@ -141,6 +152,27 @@ const keyOf = (row: Record<string, unknown>, n: number) => JSON.stringify(Array.
 const valuesOf = (row: Record<string, unknown>, n: number) => Array.from({ length: n }, (_, i) => row[`v${i}`])
 
 /**
+ * The grouped correction of the subject count, read from the subjects the groups share (`group_subjects`, 0126) in place
+ * of the subject rows of every grouped bill. A group counts once under a subject however many of its bills hold it, so
+ * the correction to a subject's count of bills is, for each kept group, the number of its bills holding the subject, less
+ * one: the `n` of its row, less one. The rows come back as `bills` (that sum) and `groups` of 0, which the count takes
+ * from the whole count as it takes the statement it replaces.
+ *
+ * Only for a filter that cannot split a group (`Counting.groupsWhole`): every bill of a kept group
+ * meets it, so the table's count is the count of the bills that qualify. A filter on a bill's own columns can leave out one
+ * bill of a group, and that is counted by the statement over the bills' own rows (`everyRow`) instead.
+ */
+function sharedSubjectCorrection(db: AppDb, freshCte: SQL | undefined, w: SQL | undefined, fresh: SQL | undefined): Promise<Record<string, unknown>[]> {
+  const conditions = [sql`${m.groupKey} IS NOT NULL`, w, fresh ? sql`(${fresh})` : undefined].filter((c): c is SQL => c !== undefined)
+  const ctes = withCtes([
+    freshCte,
+    sql`kept AS MATERIALIZED (SELECT ${m.groupKey} AS gk FROM bills m WHERE ${sql.join(conditions, sql` AND `)} GROUP BY ${m.groupKey})`,
+  ])
+  return db.all(sql`${ctes}SELECT gs.state AS v0, gs.subject_name AS v1, COALESCE(SUM(gs.n - 1), 0) AS bills, 0 AS groups
+    FROM kept k CROSS JOIN group_subjects gs ON gs.group_key = k.gk GROUP BY gs.state, gs.subject_name`) as Promise<Record<string, unknown>[]>
+}
+
+/**
  * Groups by the values of `values` over `from` (which names the bill `m`), each
  * counted once: the bills as before groups, less the grouped bills, plus their
  * groups. The grouped bills are read through the group key index, in its order
@@ -162,7 +194,7 @@ const valuesOf = (row: Record<string, unknown>, n: number) => Array.from({ lengt
  * each row's bill by key costs a lookup a row. A `where` given with `alone`
  * must test the rows only, never `m`.
  */
-export async function countBy(db: AppDb, c: Counting, source: { values: SQL[]; from: SQL; where?: SQL; alone?: SQL; extras?: SQL[]; noComplement?: true }): Promise<CountRow[]> {
+export async function countBy(db: AppDb, c: Counting, source: { values: SQL[]; from: SQL; where?: SQL; alone?: SQL; extras?: SQL[]; noComplement?: true; groupSubjects?: true }): Promise<CountRow[]> {
   const { values, from } = source
   const filter = c.where(m)
   const w = filter && source.where ? and(source.where, filter) : (source.where ?? filter)
@@ -189,12 +221,17 @@ export async function countBy(db: AppDb, c: Counting, source: { values: SQL[]; f
       return all.map(r => ({ ...r, n: Number(r.n) - (out.get(keyOf(r, values.length)) ?? 0) })).filter(r => fresh !== undefined || r.n > 0)
     })
     : db.all(sql`${cte}SELECT ${select(sql.join([sql`${countOf(fresh)} AS n`, ...extraCols], sql`, `))} FROM ${wholeFrom}${w ? sql` WHERE ${w}` : sql``}${groupBy(values)}`) as Promise<Record<string, unknown>[]>
-  const [whole, grouped] = await Promise.all([
-    wholeRows,
-    db.all(sql`${cte}SELECT ${sql.join([...valueNames(values), sql`COALESCE(SUM(n), 0) AS bills`, sql`${fresh ? sql`COALESCE(SUM(CASE WHEN n > 0 THEN 1 ELSE 0 END), 0)` : sql`COUNT(*)`} AS groups`], sql`, `)}
+  const everyRow = () => db.all(sql`${cte}SELECT ${sql.join([...valueNames(values), sql`COALESCE(SUM(n), 0) AS bills`, sql`${fresh ? sql`COALESCE(SUM(CASE WHEN n > 0 THEN 1 ELSE 0 END), 0)` : sql`COUNT(*)`} AS groups`], sql`, `)}
       FROM (SELECT ${select(sql`${countOf(fresh)} AS n`)} FROM ${from} WHERE ${m.groupKey} IS NOT NULL${w ? sql` AND ${w}` : sql``}
-        GROUP BY ${sql.join([sql`${m.groupKey}`, ...values], sql`, `)})${groupBy(valueNames(values))}`) as Promise<Record<string, unknown>[]>,
-  ])
+        GROUP BY ${sql.join([sql`${m.groupKey}`, ...values], sql`, `)})${groupBy(valueNames(values))}`) as Promise<Record<string, unknown>[]>
+  // The subject count reads no correction at all when no group shares a subject, since every group then counts once under each
+  // subject by the whole count's own rows, and reads it from the subjects the groups share (`sharedSubjectCorrection`) when the
+  // filter cannot split a group.
+  const sharing = source.groupSubjects && !source.where && c.groupsShareSubjects
+  const groupedRows = sharing
+    ? c.groupsShareSubjects!().then(shared => (!shared ? [] : c.groupsWhole ? sharedSubjectCorrection(db, keyed ? undefined : c.fresh?.cte, w, fresh) : everyRow()))
+    : everyRow()
+  const [whole, grouped] = await Promise.all([wholeRows, groupedRows])
   const byValue = new Map(grouped.map(r => [keyOf(r, values.length), r]))
   return whole.map(r => {
     const g = byValue.get(keyOf(r, values.length))

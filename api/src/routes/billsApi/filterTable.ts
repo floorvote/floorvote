@@ -383,7 +383,7 @@ export const FILTER_TABLE: FilterTable = {
       count: async (fc, own) => {
         // A subject row's bill is deleted with it (ON DELETE CASCADE), so an unnarrowed count reads the rows alone.
         const rows = await countBy(fc.db, fc.counting(own), {
-          values: [sql`bs.state`, sql`bs.subject_name`], from: sql`bills m CROSS JOIN bill_subjects bs ON bs.bill_id = m.id`, alone: sql`bill_subjects bs`,
+          values: [sql`bs.state`, sql`bs.subject_name`], from: sql`bills m CROSS JOIN bill_subjects bs ON bs.bill_id = m.id`, alone: sql`bill_subjects bs`, groupSubjects: true,
         })
         return fc.shift(Object.fromEntries(
           rows
@@ -571,6 +571,8 @@ export type FilterParts = {
   scopes: BillsCondition[]
   /** "My bills" was asked for by a member with none, so nothing matches whatever else is set. */
   noMatch: boolean
+  /** How many scopes test a bill's own columns (search, drafts, new matches), which can leave out one bill of a group. */
+  billScopes: number
   /** How the facts join: all of them, or any one (the filter's `match`). */
   match: BillFilter['match']
   /** How the committee filter and its facet read a bill's committees (the filter's `committeeScope`). */
@@ -578,6 +580,12 @@ export type FilterParts = {
   /** The committees the filter picks, which the facets always name. */
   committeesPicked: BillFilter['committee']
 }
+
+/** The scopes that test a bill's own columns: a group's other bill may not meet them. The votes scopes (unvoted, my bills) are a group's. */
+const BILL_LEVEL_SCOPES: ReadonlySet<string> = new Set(['search', 'drafts', 'newMatches'])
+/** The facts a group holds as one: its priority, position, tags, and custom field values, so every bill of it meets one or none does. */
+const GROUP_LEVEL_FACTS: ReadonlySet<string> = new Set(['priority', 'position', 'tag'])
+const isGroupLevelFact = (key: string) => GROUP_LEVEL_FACTS.has(key) || key.startsWith(CUSTOM_FIELD_FACT_PREFIX)
 
 const NAMES = Object.keys(FILTER_TABLE) as Array<keyof BillFilter>
 
@@ -654,7 +662,7 @@ function addFact(parts: FilterParts, key: string, condition: BillsCondition) {
  * See docs/superpowers/specs/2026-09-07-filter-group-operator-design.md.
  */
 export async function buildFilterParts(db: AppDb, f: BillFilter, ctx: BillFilterContext): Promise<FilterParts> {
-  const parts: FilterParts = { facts: [], scopes: [], noMatch: false, match: 'all', committeeScope: 'any', committeesPicked: f.committee }
+  const parts: FilterParts = { facts: [], scopes: [], noMatch: false, billScopes: 0, match: 'all', committeeScope: 'any', committeesPicked: f.committee }
   const context: ConditionContext = { ...ctx, db, filter: f }
   for (const name of NAMES) {
     // One entry's condition reads its own filter's value, which the table's type pairs with it.
@@ -674,7 +682,10 @@ export async function buildFilterParts(db: AppDb, f: BillFilter, ctx: BillFilter
       case 'scope': {
         const condition = await entry.condition(value, context)
         if (condition === NO_MATCH) parts.noMatch = true
-        else if (condition) parts.scopes.push(condition)
+        else if (condition) {
+          parts.scopes.push(condition)
+          if (BILL_LEVEL_SCOPES.has(name)) parts.billScopes++
+        }
         break
       }
       case 'operator':
@@ -772,6 +783,9 @@ export function makeFacetContext(req: FacetRequest): FacetContext {
   // Whether most bills meet a facet's filter, asked once for each filter: the count of the bills it meets against the count of
   // all, which the smallest index of bills answers. A count of the rows of the bills a broad filter leaves out reads fewer.
   let totalBills: Promise<number> | undefined
+  // Whether any group has two bills holding a subject, asked once a request: the subject count reads no correction for groups when none does.
+  let sharedOnce: Promise<boolean> | undefined
+  const groupsShareSubjects = () => sharedOnce ??= db.all(sql`SELECT EXISTS (SELECT 1 FROM group_subjects) AS shared`).then(r => Number((r[0] as { shared: number }).shared) > 0)
   const broadByOmit = new Map<string, Promise<boolean>>()
   const broadOf = (key: string, where: SQL | undefined) => () => {
     if (!where) return Promise.resolve(false)
@@ -786,7 +800,10 @@ export function makeFacetContext(req: FacetRequest): FacetContext {
     const where = any ? scopesOnly : composeFilter(parts, { omit: new Set(omit) })
     // Naming only the facts the request filters by, since leaving out another changes nothing.
     const key = any ? '' : omit.filter(o => parts.facts.some(f => f.key === o)).sort().join(',')
-    return { where, fresh, freshKeys, broad: broadOf(key, where(m)) }
+    // The correction is read from the shared subjects only when no group can be split: no scope on a bill's columns, and no fact
+    // of them but a group's own (under OR no fact is in the statement, and a bill-column fact is left to the old statement all the same).
+    const splits = parts.billScopes > 0 || parts.facts.some(f => (any || !omit.includes(f.key)) && !isGroupLevelFact(f.key))
+    return { where, fresh, freshKeys, broad: broadOf(key, where(m)), groupsShareSubjects, groupsWhole: splits ? undefined : true }
   }
 
   // The cube, counted once when a facet asks for it. Under AND its WHERE leaves out the facts on its columns, which
