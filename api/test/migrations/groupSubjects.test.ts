@@ -147,6 +147,33 @@ describe('migration 0126: the subjects a group shares', () => {
       expect(await table()).toEqual(await expected())
     })
 
+    it('follows a subject row changed in place: its name, its state, or its bill', async () => {
+      await env.DB.batch([bill('a1', 'g1'), bill('a2', 'g1'), bill('b1', 'g2'), bill('x1', null),
+        subject('a1', 'NJ', 'S'), subject('a2', 'NJ', 'T'), subject('b1', 'NJ', 'S'), subject('x1', 'NJ', 'S')])
+      expect(await table()).toEqual([])
+      // The name: a2's T becomes S, shared with a1.
+      await env.DB.prepare("UPDATE bill_subjects SET subject_name = 'S' WHERE bill_id = 'a2'").run()
+      expect(await table()).toEqual([{ group_key: 'g1', state: 'NJ', subject_name: 'S', n: 2 }])
+      // The state: a2's row moves to TX, so NJ's S is held by one bill again.
+      await env.DB.prepare("UPDATE bill_subjects SET state = 'TX' WHERE bill_id = 'a2'").run()
+      expect(await table()).toEqual([])
+      await env.DB.prepare("UPDATE bill_subjects SET state = 'NJ' WHERE bill_id = 'a2'").run()
+      expect(await table()).toEqual([{ group_key: 'g1', state: 'NJ', subject_name: 'S', n: 2 }])
+      // The bill: x1's row (in no group) moves to a1's group, and b1's moves out of its group to a2's.
+      await env.DB.prepare("UPDATE bill_subjects SET bill_id = 'a2' WHERE bill_id = 'b1'").run()
+      expect(await table()).toEqual([{ group_key: 'g1', state: 'NJ', subject_name: 'S', n: 2 }])
+      await env.DB.prepare("UPDATE bill_subjects SET bill_id = 'a1', subject_name = 'U' WHERE bill_id = 'x1'").run()
+      expect(await table()).toEqual(await expected())
+    })
+
+    it('has five triggers, three on bill_subjects and two on bills', async () => {
+      const { results } = await env.DB.prepare("SELECT name, tbl_name FROM sqlite_master WHERE type = 'trigger' AND name LIKE '%group_subjects%' ORDER BY name").all<{ name: string; tbl_name: string }>()
+      expect(results.map(r => `${r.tbl_name}:${r.name}`)).toEqual([
+        'bill_subjects:bill_subjects_group_subjects_delete', 'bill_subjects:bill_subjects_group_subjects_insert', 'bill_subjects:bill_subjects_group_subjects_update',
+        'bills:bills_group_subjects_delete', 'bills:bills_group_subjects_update',
+      ])
+    })
+
     it('follows a bill that is deleted, with its subject rows cascading away', async () => {
       await env.DB.batch([bill('a1', 'g1'), bill('a2', 'g1'), bill('a3', 'g1'),
         subject('a1', 'NJ', 'S'), subject('a2', 'NJ', 'S'), subject('a3', 'NJ', 'S'), subject('a1', 'NJ', 'T'), subject('a2', 'NJ', 'T')])
