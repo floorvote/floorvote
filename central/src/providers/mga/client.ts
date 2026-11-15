@@ -92,13 +92,16 @@ export async function getMgaSession(sessionCode: string, etag?: string | null, o
   if (res.status === 404) return null
   if (res.status === 304 && etag) return { unchanged: true }
   if (!res.ok) throw new Error(`MGA HTTP ${res.status} for ${sessionCode}`)
+  const text = await res.text()
+  // A session with no bills yet is served as an empty file: a blank body (2027RS was a bare line break in
+  // November 2026) or `null`, with status 200. Either is an empty file, like [].
+  if (text.trim() === '') return { unchanged: false, records: [], etag: null }
   let data: unknown
   try {
-    data = JSON.parse(await res.text())
+    data = JSON.parse(text)
   } catch {
     throw new Error(`MGA ${sessionCode}: the session file isn't JSON`)
   }
-  // A null body is an empty file, like [].
   if (data === null) return { unchanged: false, records: [], etag: null }
   if (!Array.isArray(data)) throw unexpected(sessionCode, 'not a list')
   for (const record of data) checkRecord(sessionCode, record)
