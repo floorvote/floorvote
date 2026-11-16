@@ -25,6 +25,7 @@ import type { AppEnv } from '../types'
 import { isValidEmail } from '../../../shared/email'
 import { confirmEmailChange, emailChangeLinkStatus, EMAIL_CHANGE_ERRORS } from '../lib/emailChange'
 import { reportNotMe, notMeLinkStatus, NOT_ME_ERRORS } from '../lib/emailChangeReport'
+import { digestDayForNewPeople } from '../lib/notificationEmails'
 
 export const authRoutes = new Hono<AppEnv>()
 
@@ -110,7 +111,7 @@ authRoutes.post('/magic-link', async (c) => {
 
   if (!user && (await isSuperadminEmailViaCentral(c.env, normalizedEmail))) {
     const id = crypto.randomUUID()
-    await db.insert(users).values({ id, email: normalizedEmail, name: '', role: 'admin' })
+    await db.insert(users).values({ id, email: normalizedEmail, name: '', role: 'admin', emailDigestWeeklyDay: await digestDayForNewPeople(db) })
     user = await db.select().from(users).where(eq(users.id, id)).get() ?? undefined
   }
 
@@ -394,6 +395,7 @@ authRoutes.get('/me', async (c) => {
               email: normalizeMemberAddress(payload.email),
               name: payload.name,
               role: 'admin',
+              emailDigestWeeklyDay: await digestDayForNewPeople(db),
             })
             localUser = await db.select().from(users).where(eq(users.id, id)).get()!
           }

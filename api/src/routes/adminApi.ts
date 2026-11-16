@@ -7,7 +7,7 @@ import { pendingInviteBounces } from '../lib/inviteBounces'
 import { users, sessions, magicLinks, associationConfig, bills, comments, commentReactions, memberVotes, notes, feedEvents, officialPositions, roles, userRoles, authEvents } from '../db/schema'
 import { generateToken, hashToken } from '../lib/crypto'
 import { sendSignInLinkLogged } from '../lib/signInLink'
-import { notificationEmailsEnabled, readWeekAheadDay } from '../lib/notificationEmails'
+import { notificationEmailsEnabled, readWeekAheadDay, digestDayForNewPeople } from '../lib/notificationEmails'
 import { registerWithCentral } from '../cron/sync'
 import { matchesKeywords, billMatchText } from '../lib/keywords'
 import { summarizeKeywordMatches } from '../lib/keywordMatchSummary'
@@ -156,7 +156,7 @@ adminApiRouter.get('/members', async (c) => {
 const INVITE_SEND_STAGGER_SECONDS = 3
 const INVITE_SEND_MAX_DELAY_SECONDS = 3600
 const BULK_INVITE_MAX = 500
-const USER_INSERT_CHUNK = 10      // 5 bound params/row (id,email,name,role,invitedBy — default cols aren't bound); 10*5=50, safely under D1's 100-param ceiling
+const USER_INSERT_CHUNK = 9       // 11 bound params/row (id,email,name,role,invitedBy, emailDigestWeeklyDay, and the five columns with a default value, which drizzle binds too), so 9*11=99, under D1's 100-param ceiling
 const QUEUE_SEND_CHUNK = 100      // Cloudflare Queues sendBatch max per call
 
 // POST /admin/members/bulk-invite
@@ -189,9 +189,12 @@ adminApiRouter.post('/members/bulk-invite', async (c) => {
     c.env, db, checks.filter(ch => ch.status === 'available').map(ch => ch.email),
   )
 
+  // People added now start on the instance's old weekly digest day, if it had one.
+  const digestDay = await digestDayForNewPeople(db)
+
   type RowStatus = 'invited' | 'exists' | 'duplicate' | 'invalid' | 'bounced'
   const results: { email: string; status: RowStatus; userId?: string }[] = []
-  const toInsert: { id: string; email: string; name: string; role: 'admin' | 'member'; invitedBy: string }[] = []
+  const toInsert: { id: string; email: string; name: string; role: 'admin' | 'member'; invitedBy: string; emailDigestWeeklyDay: number | null }[] = []
   const created: { userId: string; email: string }[] = []
   const seen = new Set<string>()
 
@@ -203,7 +206,7 @@ adminApiRouter.post('/members/bulk-invite', async (c) => {
     if (status === 'taken') { results.push({ email, status: 'exists' }); return }
     if (bounced.has(email)) { results.push({ email, status: 'bounced' }); return }
     const id = crypto.randomUUID()
-    toInsert.push({ id, email, name: (inv.name ?? '').trim().slice(0, 100), role, invitedBy: inviterId })
+    toInsert.push({ id, email, name: (inv.name ?? '').trim().slice(0, 100), role, invitedBy: inviterId, emailDigestWeeklyDay: digestDay })
     created.push({ userId: id, email })
     results.push({ email, status: 'invited', userId: id })
   })
