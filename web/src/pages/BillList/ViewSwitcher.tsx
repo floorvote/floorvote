@@ -27,7 +27,7 @@ export type SavedView = { id: string; name: string; query: string; slug?: string
 
 /**
  * The envelope on each view row, which follows the view in the member's own email (#449). The parent passes it
- * whenever the team sends the digest (On or Saved views only), so with none there is no envelope. A click follows or
+ * while email to members is on (`notificationEmailsEnabled`), so with it off there is no envelope. A click follows or
  * unfollows the view directly, whatever the member's own switches say (#1035).
  */
 export type DigestControl = {

@@ -1328,7 +1328,7 @@ export function Members() {
               borderRadius: radius.lg,
               background: color.white,
               // Grayed out whole-block for non-owners (view-only), matching the
-              // the dimmed cards on the Notifications page when email to members is off.
+              // dimmed cards on the Notifications page when email to members is off.
               opacity: (demoLocked || !isOwner) ? 0.55 : 1,
             }}
           >

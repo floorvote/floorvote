@@ -10,8 +10,6 @@ interface SwitchControlProps {
   disabled: boolean
   /** A save is in flight. Changes are ignored while it is, and keyboard focus stays on the switch. */
   busy?: boolean
-  /** Where the switch sits isn't known yet. Nothing is drawn in its place, at its size, until it is. */
-  pending?: boolean
   onChange: (next: boolean) => void
   /** Name the switch with exactly one of these. */
   ariaLabel?: string
@@ -25,8 +23,7 @@ interface SwitchControlProps {
  * input is visually hidden (0x0), so the focus ring is drawn on the track
  * that follows it (`.fv-switch-input:focus-visible + span` in mobile.css).
  */
-export function SwitchControl({ checked, disabled, busy = false, pending = false, onChange, ariaLabel, ariaLabelledBy, ariaDescribedBy, id }: SwitchControlProps) {
-  if (pending) return <span aria-hidden="true" style={TRACK_BOX} />
+export function SwitchControl({ checked, disabled, busy = false, onChange, ariaLabel, ariaLabelledBy, ariaDescribedBy, id }: SwitchControlProps) {
   return (
     <span style={{ ...TRACK_BOX, cursor: disabled ? 'not-allowed' : 'pointer' }}>
       <input

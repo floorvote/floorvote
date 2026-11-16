@@ -49,10 +49,10 @@ function useUserSetting<T>(stored: T, field: string, onSaved?: (next: T) => void
   return { value, busy, change }
 }
 
-/** A per-person yes/no kept on the user. A choice not made yet (null or missing) shows as `fallback`. */
-function useUserFlag(stored: boolean | null | undefined, field: string, onSaved?: (next: boolean) => void, fallback = true) {
-  const { value, busy, change } = useUserSetting<boolean | null>(stored ?? null, field, onSaved && ((next) => onSaved(next === true)))
-  return { on: value ?? fallback, busy, change: (next: boolean) => change(next) }
+/** A per-person yes/no kept on the user. Missing (an older API) reads as on, every switch's default. */
+function useUserFlag(stored: boolean | undefined, field: string, onSaved?: (next: boolean) => void) {
+  const { value, busy, change } = useUserSetting<boolean>(stored ?? true, field, onSaved)
+  return { on: value, busy, change }
 }
 
 const capitalize = (phrase: string) => phrase.charAt(0).toUpperCase() + phrase.slice(1)

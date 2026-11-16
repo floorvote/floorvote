@@ -56,7 +56,7 @@ Admins decide whether FloorVote emails members at all, and each person chooses w
 - **Week ahead email.** Next week's hearings on your team's priority bills and events on your team calendar. The card says which day it's sent.
 - **Comments.** Mentions of you always send an email. "Someone replies on a bill you commented on" has your own switch, and covers FloorVote and email.
 
-Everything starts on for every person, with the digest every morning. When an admin has turned off email to members, a line at the top of the tab says so, and the controls are disabled. (If your instance calls its group something else, such as a coalition, the tab uses that word.) Links in emails go straight to the setting that stops them, and older links still land in the right place.
+Everything starts on for every person, with the digest every morning. When an admin has turned off email to members, a line at the top of the tab says so, and the controls are disabled. (If your instance calls its group something else, such as a coalition, the settings on that tab use that word.) Links in emails go straight to the setting that stops them, and older links still land in the right place.
 
 ## Feed
 
