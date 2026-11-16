@@ -119,7 +119,7 @@ describe.each([
     const cf = binding()
     await run(bothProviders(cf))
     const sent = cf.sent[0]
-    expect(sent.headers['List-Unsubscribe']).toContain(`/account#${unsub}`)
+    expect(sent.headers['List-Unsubscribe']).toContain(`/notifications#${unsub}`)
     expect(sent.subject).toMatch(subject)
   })
 

@@ -28,38 +28,6 @@ function mockConfig(modules: Record<string, unknown>) {
   })
 }
 
-describe('Profile notification settings', () => {
-  beforeEach(() => vi.restoreAllMocks())
-
-  it('greys + notes the digest row when the admin has digest off, preserving the member toggle', async () => {
-    mockConfig({ 'email-digest': { enabled: false }, 'week-ahead': { enabled: true } })
-    render(<MemoryRouter><Profile /></MemoryRouter>)
-    expect(await screen.findByText('Turned off by your coalition.')).toBeInTheDocument()
-    const digestSwitch = screen.getByRole('switch', { name: /recent bill activity/i })
-    expect(digestSwitch).toBeDisabled()
-    expect(digestSwitch).toBeChecked() // member's stored preference is preserved
-    const weekAheadSwitch = screen.getByRole('switch', { name: /upcoming hearings and events/i })
-    expect(weekAheadSwitch).not.toBeDisabled()
-  })
-
-  it('greys + notes the week-ahead row when the admin has week-ahead off', async () => {
-    mockConfig({ 'email-digest': { enabled: true, settings: { frequency: 'weekly', weeklyDay: '1' } }, 'week-ahead': { enabled: false } })
-    render(<MemoryRouter><Profile /></MemoryRouter>)
-    expect(await screen.findByText('Turned off by your coalition.')).toBeInTheDocument()
-    const weekAheadSwitch = screen.getByRole('switch', { name: /upcoming hearings and events/i })
-    expect(weekAheadSwitch).toBeDisabled()
-    const digestSwitch = screen.getByRole('switch', { name: /recent bill activity/i })
-    expect(digestSwitch).not.toBeDisabled()
-  })
-
-  it('shows no "turned off" note when both features are enabled', async () => {
-    mockConfig({ 'email-digest': { enabled: true, settings: { frequency: 'daily' } }, 'week-ahead': { enabled: true } })
-    render(<MemoryRouter><Profile /></MemoryRouter>)
-    await screen.findByText('Email digest of recent bill activity')
-    expect(screen.queryByText('Turned off by your coalition.')).not.toBeInTheDocument()
-  })
-})
-
 describe('Profile heading structure', () => {
   beforeEach(() => vi.restoreAllMocks())
 
@@ -71,69 +39,12 @@ describe('Profile heading structure', () => {
     expect(h1s[0]).toHaveTextContent('Profile')
   })
 
-  it('exposes the Notifications, Appearance, and Account section titles as level-2 headings', () => {
+  it('exposes the Appearance and Account section titles as level-2 headings, and no Notifications card', () => {
     mockConfig({})
     render(<MemoryRouter><Profile /></MemoryRouter>)
-    expect(screen.getByRole('heading', { level: 2, name: 'Notifications' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Notifications' })).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 2, name: 'Appearance' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 2, name: 'Account' })).toBeInTheDocument()
-  })
-})
-
-describe('Profile Notifications section', () => {
-  beforeEach(() => {
-    vi.restoreAllMocks()
-    Element.prototype.scrollIntoView = vi.fn()
-  })
-
-  it('holds the replies, digest, and week-ahead switches and states that mention emails are always sent', async () => {
-    mockConfig({ 'email-digest': { enabled: true }, 'week-ahead': { enabled: true } })
-    render(<MemoryRouter><Profile /></MemoryRouter>)
-    const heading = screen.getByRole('heading', { level: 2, name: 'Notifications' })
-    const section = heading.parentElement as HTMLElement
-    const replies = within(section).getByRole('switch', { name: /replies on bills you've commented on/i })
-    expect(replies).toBeChecked()
-    expect(within(section).getByRole('switch', { name: /recent bill activity/i })).toBeInTheDocument()
-    expect(within(section).getByRole('switch', { name: /upcoming hearings and events/i })).toBeInTheDocument()
-    expect(await within(section).findByText("You'll always get an email when someone mentions you or @everyone.")).toBeInTheDocument()
-    expect(within(section).queryByRole('switch', { name: /mention/i })).not.toBeInTheDocument()
-  })
-
-  it('says the replies setting covers both the app and email, and points to Mute for one bill', async () => {
-    mockConfig({})
-    render(<MemoryRouter><Profile /></MemoryRouter>)
-    const section = (screen.getByRole('heading', { level: 2, name: 'Notifications' })).parentElement as HTMLElement
-
-    expect(within(section).getByText("Notify me in FloorVote and by email when someone else comments on a bill I've commented on. To stop them on one bill, select \u201cMute comments\u201d on that bill.")).toBeInTheDocument()
-    expect(within(section).queryByText(/replies still appear in your notifications/i)).not.toBeInTheDocument()
-  })
-
-  it.each([
-    ['setting-email-replies', /replies on bills you've commented on/i],
-    ['setting-email-digest', /recent bill activity/i],
-    ['setting-week-ahead', /upcoming hearings and events/i],
-  ])('email-footer deep link #%s lands on and highlights its switch', async (id, name) => {
-    mockConfig({ 'email-digest': { enabled: true }, 'week-ahead': { enabled: true } })
-    render(<MemoryRouter initialEntries={[`/account#${id}`]}><Profile /></MemoryRouter>)
-    const row = document.getElementById(id) as HTMLElement
-    expect(row).toContainElement(screen.getByRole('switch', { name }))
-    await vi.waitFor(() => expect(row.style.boxShadow).not.toBe(''))
-    expect(Element.prototype.scrollIntoView).toHaveBeenCalled()
-  })
-})
-
-describe('Profile reply-emails switch', () => {
-  beforeEach(() => vi.restoreAllMocks())
-
-  it('saves the member\'s choice', async () => {
-    const fetch = vi.spyOn(api, 'apiFetch').mockImplementation(async () => ({}) as never)
-    render(<MemoryRouter><Profile /></MemoryRouter>)
-    const replies = screen.getByRole('switch', { name: /replies on bills you've commented on/i })
-
-    await userEvent.click(replies)
-
-    expect(fetch).toHaveBeenCalledWith('/users/me', { method: 'PATCH', body: JSON.stringify({ emailRepliesEnabled: false }) })
-    expect(replies).not.toBeChecked()
   })
 })
 

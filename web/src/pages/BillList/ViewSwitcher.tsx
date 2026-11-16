@@ -26,15 +26,13 @@ const MENU_WIDTH = 300
 export type SavedView = { id: string; name: string; query: string; slug?: string; previousSlug?: string | null; subscribed?: boolean }
 
 /**
- * The envelope on each view row, which includes the view in the member's own email digest (#449). The parent
- * passes it only when the instance's digest is on, so with none there is no envelope. `memberOn` is the member's
- * own digest switch: with it off, including a view first offers to turn it on (`onTurnOn`).
+ * The envelope on each view row, which follows the view in the member's own email (#449). The parent passes it
+ * whenever the team sends the digest (On or Saved views only), so with none there is no envelope. A click follows or
+ * unfollows the view directly, whatever the member's own switches say (#1035).
  */
 export type DigestControl = {
   cadence: 'daily' | 'weekly'
-  memberOn: boolean
   onToggle: (id: string, subscribed: boolean) => void | Promise<void>
-  onTurnOn: () => void | Promise<void>
 }
 
 // The envelope's own column: after the count and the same width on every row, so the icons line up.
@@ -89,8 +87,6 @@ export function ViewSwitcher({
   // able to show both confirms at once.
   const [confirmingOverwriteId, setConfirmingOverwriteId] = useState<string | null>(null)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
-  // The row asking "turn on your digest to include this view?", for a member whose digest is off.
-  const [digestPromptId, setDigestPromptId] = useState<string | null>(null)
   // Local, optimistic ordering of `views` — reordered immediately on drop and
   // reverted if onReorder rejects. Reset from props whenever the incoming
   // views identity/order changes (a fresh fetch, a rename/delete reload).
@@ -153,7 +149,6 @@ export function ViewSwitcher({
     setRenamingId(null)
     setConfirmingId(null)
     setConfirmingOverwriteId(null)
-    setDigestPromptId(null)
     setHoveredId(null)
     setFocusedId(null)
   }, [open])
@@ -241,23 +236,10 @@ export function ViewSwitcher({
     }
   }
 
-  // The envelope: remove an included view, include one with the digest on, or ask first with it off.
+  // The envelope: follow the view, or stop following it, with no questions asked.
   function clickEnvelope(v: SavedView) {
     if (!digestControl) return
-    if (v.subscribed) { void digestControl.onToggle(v.id, false); return }
-    if (!digestControl.memberOn) { setDigestPromptId(v.id); return }
-    void digestControl.onToggle(v.id, true)
-  }
-
-  async function turnOnAndInclude(id: string) {
-    if (!digestControl) return
-    try {
-      await digestControl.onTurnOn()
-      await digestControl.onToggle(id, true)
-      setDigestPromptId(null)
-    } catch {
-      // Leave the prompt open so the member can see it didn't take, as a failed delete does.
-    }
+    void digestControl.onToggle(v.id, !v.subscribed)
   }
 
   async function commitReorder(fromIdx: number, toIdx: number) {
@@ -396,18 +378,6 @@ export function ViewSwitcher({
                 </div>
               )
             }
-            if (digestPromptId === v.id && digestControl) {
-              return (
-                <div key={v.id}>
-                  {indicator}
-                  <div style={{ ...rowStyle(false), cursor: 'default', ...dnd.sourceStyle(i) }} {...dropHandlers}>
-                    <span style={{ flex: 1, minWidth: 0, fontWeight: fontWeight.medium }}>{`Turn on your email digest to include "${v.name}"?`}</span>
-                    <button onClick={() => setDigestPromptId(null)} style={smallButtonStyle('cancel')}>Not now</button>
-                    <button onClick={() => { void turnOnAndInclude(v.id) }} style={smallButtonStyle('primary')}>Turn on digest</button>
-                  </div>
-                </div>
-              )
-            }
             const isActive = active?.id === v.id
             // Only draggable via this handle, not the whole row: the row's
             // name button applies the view and closes the menu on click, so
@@ -497,12 +467,12 @@ export function ViewSwitcher({
                   <ViewCountBadge count={viewCounts[v.id]} failed={failedCounts.has(v.id)} inView />
                   {digestControl && (() => {
                     const on = v.subscribed === true
-                    const when = `your ${digestControl.cadence} digest`
                     return (
-                      <HoverTooltip text={`${on ? 'Stop monitoring' : 'Monitor'} bills in this view via your ${digestControl.cadence} email digest`}>
+                      <HoverTooltip text={on ? 'Stop emailing me this view' : `Email me this view ${digestControl.cadence}`}>
                         <button
                           onClick={() => clickEnvelope(v)}
-                          aria-label={`${on ? `Remove "${v.name}" from` : `Include "${v.name}" in`} ${when}`}
+                          // One name in both states: aria-pressed says whether the view is followed. The hover text changes.
+                          aria-label={`Email me "${v.name}" ${digestControl.cadence}`}
                           aria-pressed={on}
                           style={{ ...iconGlyphButtonStyle, width: ENVELOPE_COLUMN_WIDTH, flex: 'none', justifyContent: 'center', color: on ? VIEW_STYLE.text : color.textSecondary }}
                         >
@@ -570,12 +540,11 @@ const iconGlyphButtonStyle: React.CSSProperties = {
   display: 'inline-flex', alignItems: 'center', lineHeight: 1,
 }
 
-function smallButtonStyle(kind: 'danger' | 'cancel' | 'primary'): React.CSSProperties {
+function smallButtonStyle(kind: 'danger' | 'cancel'): React.CSSProperties {
   const base: React.CSSProperties = {
     fontFamily: 'inherit', fontSize: fontSize.xs, padding: '2px 8px',
     borderRadius: radius.sm, cursor: 'pointer', whiteSpace: 'nowrap',
   }
   if (kind === 'danger') return { ...base, border: `1px solid ${color.borderRedChip}`, background: color.white, color: color.textDanger, fontWeight: fontWeight.semibold }
-  if (kind === 'primary') return { ...base, border: `1px solid ${color.accentBlue}`, background: color.white, color: color.accentBlue, fontWeight: fontWeight.semibold }
   return { ...base, border: `1px solid ${color.borderDefault}`, background: color.white, color: color.textSecondary }
 }

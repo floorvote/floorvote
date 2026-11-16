@@ -44,7 +44,8 @@ export async function seedUser(overrides?: {
   title?: string
   canVote?: boolean
   emailDigestEnabled?: boolean
-  emailDigestMatchesEnabled?: boolean
+  /** "Newly found bills": true or false, or null or left out for unset, as a new person starts (#1036). */
+  emailDigestMatchesEnabled?: boolean | null
   emailRepliesEnabled?: boolean
   deactivatedAt?: string | null
   invitedBy?: string | null
@@ -59,7 +60,7 @@ export async function seedUser(overrides?: {
     title: overrides?.title ?? null,
     canVote: overrides?.canVote === false ? 0 : 1,
     emailDigestEnabled: overrides?.emailDigestEnabled === false ? 0 : 1,
-    emailDigestMatchesEnabled: overrides?.emailDigestMatchesEnabled === false ? 0 : 1,
+    emailDigestNewBills: overrides?.emailDigestMatchesEnabled == null ? null : overrides.emailDigestMatchesEnabled ? 1 : 0,
     emailRepliesEnabled: overrides?.emailRepliesEnabled === false ? 0 : 1,
     deactivatedAt: overrides?.deactivatedAt ?? null,
     invitedBy: overrides?.invitedBy ?? null,

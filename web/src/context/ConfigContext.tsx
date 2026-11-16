@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import { apiFetch } from '../lib/api'
 import type { Attribution } from '../../../shared/dataAttribution'
 import type { AttachmentLimits } from '../lib/attachments'
@@ -60,6 +60,8 @@ interface ConfigValue {
   config: AppConfig | null
   multiState: boolean
   loading: boolean
+  /** Replace the app's module settings after an admin saves them, so module-gated UI follows without a reload. */
+  setModules?: (modules: Record<string, unknown>) => void
 }
 
 export const ConfigContext = createContext<ConfigValue>({ config: null, multiState: false, loading: true })
@@ -73,8 +75,11 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
+  const setModules = useCallback((modules: Record<string, unknown>) => {
+    setConfig((c) => (c ? { ...c, modules: modules as AppConfig['modules'] } : c))
+  }, [])
   const multiState = config?.multiState ?? false
-  return <ConfigContext value={{ config, multiState, loading }}>{children}</ConfigContext>
+  return <ConfigContext value={{ config, multiState, loading, setModules }}>{children}</ConfigContext>
 }
 
 export function useConfig(): ConfigValue {

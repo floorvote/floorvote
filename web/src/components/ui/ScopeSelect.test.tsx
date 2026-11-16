@@ -33,4 +33,10 @@ describe('ScopeSelect', () => {
     fireEvent.mouseEnter(screen.getByText('Option B'))
     expect(screen.getByText('the second one')).toBeInTheDocument()
   })
+
+  it('names the button and its options by ariaLabel, keeping the current choice in the button name', () => {
+    render(<ScopeSelect options={OPTS} value="b" onChange={() => {}} ariaLabel="How often" />)
+    fireEvent.click(screen.getByRole('button', { name: 'How often: Option B' }))
+    expect(screen.getByRole('radiogroup', { name: 'How often' })).toBeInTheDocument()
+  })
 })

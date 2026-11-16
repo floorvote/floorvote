@@ -11,7 +11,10 @@ type User = {
   title: string | null
   canVote: boolean
   emailDigestEnabled: boolean
-  emailDigestMatchesEnabled: boolean
+  /** "New bills": the person's own choice, or null until they make one, which follows the team's default for a member and is on for an admin or owner. */
+  emailDigestMatchesEnabled: boolean | null
+  /** The weekday of the person's weekly digest (0 Sunday to 6 Saturday), or null for every morning. Missing from an older API, which reads as every morning. */
+  emailDigestWeeklyDay?: number | null
   emailWeekAheadEnabled: boolean
   emailRepliesEnabled: boolean
   lastSeenFeed: string | null
@@ -34,7 +37,9 @@ type AuthState = {
   setName: (name: string) => void
   setEmailDigestEnabled: (enabled: boolean) => void
   setEmailDigestMatchesEnabled: (enabled: boolean) => void
+  setEmailDigestWeeklyDay: (day: number | null) => void
   setEmailRepliesEnabled: (enabled: boolean) => void
+  setEmailWeekAheadEnabled: (enabled: boolean) => void
   setLastSeenFeed: (ts: string) => void
   setTermsAccepted: () => void
   clearUser: () => void
@@ -42,7 +47,7 @@ type AuthState = {
 
 const AuthContext = createContext<AuthState>({
   user: null, loading: true, authError: false, authProgress: { current: null },
-  setTitle: () => {}, setName: () => {}, setEmailDigestEnabled: () => {}, setEmailDigestMatchesEnabled: () => {}, setEmailRepliesEnabled: () => {}, setLastSeenFeed: () => {},
+  setTitle: () => {}, setName: () => {}, setEmailDigestEnabled: () => {}, setEmailDigestMatchesEnabled: () => {}, setEmailDigestWeeklyDay: () => {}, setEmailRepliesEnabled: () => {}, setEmailWeekAheadEnabled: () => {}, setLastSeenFeed: () => {},
   setTermsAccepted: () => {}, clearUser: () => {},
 })
 
@@ -120,6 +125,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser((prev) => prev ? { ...prev, emailDigestMatchesEnabled: enabled } : prev)
   }
 
+  function setEmailDigestWeeklyDay(day: number | null) {
+    setUser((prev) => prev ? { ...prev, emailDigestWeeklyDay: day } : prev)
+  }
+
+  function setEmailWeekAheadEnabled(enabled: boolean) {
+    setUser((prev) => prev ? { ...prev, emailWeekAheadEnabled: enabled } : prev)
+  }
+
   function setEmailRepliesEnabled(enabled: boolean) {
     setUser((prev) => prev ? { ...prev, emailRepliesEnabled: enabled } : prev)
   }
@@ -151,7 +164,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser((prev) => prev ? { ...prev, termsAcceptanceRequired: false } : prev)
   }
 
-  return <AuthContext value={{ user, loading, authError, authProgress, setTitle, setName, setEmailDigestEnabled, setEmailDigestMatchesEnabled, setEmailRepliesEnabled, setLastSeenFeed, setTermsAccepted, clearUser }}>{children}</AuthContext>
+  return <AuthContext value={{ user, loading, authError, authProgress, setTitle, setName, setEmailDigestEnabled, setEmailDigestMatchesEnabled, setEmailDigestWeeklyDay, setEmailRepliesEnabled, setEmailWeekAheadEnabled, setLastSeenFeed, setTermsAccepted, clearUser }}>{children}</AuthContext>
 }
 
 export function useAuth(): AuthState {

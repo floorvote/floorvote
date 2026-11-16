@@ -2,10 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 
-// The Account page lives at /account, matching its name in Settings. Every
-// digest, week-ahead, and reply email already sent (and each List-Unsubscribe
-// header) links to /profile#<setting>, so the old URL must keep landing on the
-// same setting. Renders the app's real route config in a memory router, as the
+// The Account page lives at /account, matching its name in Settings, and the
+// Notifications page at /notifications. Every digest, week-ahead, and reply
+// email already sent (and each List-Unsubscribe header) links to
+// /profile#<setting> or /account#<setting>, so those URLs must keep landing on
+// the same setting, now on the Notifications page. Renders the app's real route config in a memory router, as the
 // drafts redirect test does.
 vi.mock('./components/Sidebar', () => ({
   Sidebar: ({ containerRef }: { containerRef: { current: HTMLElement | null } }) => <aside data-testid="sidebar" ref={containerRef} />,
@@ -57,23 +58,29 @@ beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn()
 })
 
-describe('the Account page URL', () => {
+describe('the Account and Notifications page URLs', () => {
   it('renders the Account page at /account', async () => {
     const router = renderAt('/account')
-    expect(await screen.findByRole('heading', { level: 2, name: 'Notifications' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 2, name: 'Appearance' })).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/account')
+  })
+
+  it('renders the Notifications page at /notifications', async () => {
+    const router = renderAt('/notifications')
+    expect(await screen.findByRole('heading', { level: 2, name: 'Your notifications' })).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/notifications')
   })
 
   it('sends the old /profile URL to /account', async () => {
     const router = renderAt('/profile')
     await waitFor(() => expect(router.state.location.pathname).toBe('/account'))
-    expect(await screen.findByRole('heading', { level: 2, name: 'Notifications' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 2, name: 'Appearance' })).toBeInTheDocument()
   })
 
-  it("keeps an email link's setting anchor through the redirect", async () => {
+  it("sends an old /profile email link's setting anchor to the Notifications page", async () => {
     const router = renderAt('/profile#setting-email-digest')
     await waitFor(() => {
-      expect(router.state.location.pathname).toBe('/account')
+      expect(router.state.location.pathname).toBe('/notifications')
       expect(router.state.location.hash).toBe('#setting-email-digest')
     })
   })
@@ -81,15 +88,57 @@ describe('the Account page URL', () => {
   it('keeps a query string through the redirect', async () => {
     const router = renderAt('/profile?from=email#setting-email-replies')
     await waitFor(() => {
-      expect(router.state.location.pathname).toBe('/account')
+      expect(router.state.location.pathname).toBe('/notifications')
       expect(router.state.location.search).toBe('?from=email')
       expect(router.state.location.hash).toBe('#setting-email-replies')
     })
   })
 
+  it.each(['setting-email-digest', 'setting-week-ahead', 'setting-email-replies'])('sends /account#%s to the same anchor on /notifications', async (id) => {
+    const router = renderAt(`/account#${id}`)
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe('/notifications')
+      expect(router.state.location.hash).toBe(`#${id}`)
+    })
+  })
+
+  it('lands /account#setting-week-ahead on the week ahead setting, flashed', async () => {
+    renderAt('/account#setting-week-ahead')
+    const row = await waitFor(() => {
+      const el = document.getElementById('setting-week-ahead')
+      expect(el).not.toBeNull()
+      return el as HTMLElement
+    })
+    await waitFor(() => expect(row.style.boxShadow).not.toBe(''))
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalled()
+  })
+
+  it('keeps other /account anchors on the Account page', async () => {
+    const router = renderAt('/account#setting-color-mode')
+    expect(await screen.findByRole('heading', { level: 2, name: 'Appearance' })).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/account')
+  })
+
+  it('sends /admin/notifications to /notifications', async () => {
+    const router = renderAt('/admin/notifications')
+    await waitFor(() => expect(router.state.location.pathname).toBe('/notifications'))
+    expect(await screen.findByRole('heading', { level: 2, name: 'Your notifications' })).toBeInTheDocument()
+  })
+
   it('still redirects with a trailing slash', async () => {
     const router = renderAt('/profile/')
     await waitFor(() => expect(router.state.location.pathname).toBe('/account'))
+  })
+
+  it('replaces the old /account#setting entry, so Back does not return to it and loop', async () => {
+    const router = renderAt('/account#setting-email-digest')
+    await waitFor(() => expect(router.state.location.pathname).toBe('/notifications'))
+    const visited: string[] = []
+    const unsubscribe = router.subscribe(state => { visited.push(state.location.pathname) })
+    await router.navigate(-1)
+    await new Promise(resolve => setTimeout(resolve, 50))
+    unsubscribe()
+    expect(visited).not.toContain('/account')
   })
 
   it('replaces the old entry, so Back does not return to /profile and loop', async () => {

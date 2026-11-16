@@ -16,6 +16,8 @@ import { billsAs } from './billsApi/query'
 import { getNewMatchMinRelevance, newMatchWhere } from '../lib/newMatch'
 import { pendingInviteWhere } from '../lib/pendingInvite'
 import { errorText } from '../../../shared/errorText'
+import { isModuleEnabled } from '../../../shared/modules'
+import { readModules } from '../lib/modulesConfig'
 
 const statsRouter = new Hono<AppEnv>()
 
@@ -164,23 +166,9 @@ async function fetchUpcomingHearings(
   // client so the value can be shown (and made UI-configurable) later.
   const DEFAULT_LOOKAHEAD_DAYS = 30
 
-  // Load modules config
-  const modulesRow = await db
-    .select({ value: associationConfig.value })
-    .from(associationConfig)
-    .where(eq(associationConfig.key, 'modules'))
-    .get()
-  let modules: Record<string, unknown> = {}
-  if (modulesRow) {
-    try {
-      const parsed = JSON.parse(modulesRow.value) as unknown
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        modules = parsed as Record<string, unknown>
-      }
-    } catch { /* ignore */ }
-  }
+  const modules = await readModules(db)
   const m = modules['upcoming-hearings']
-  const enabled = m === true || (typeof m === 'object' && m !== null && (m as { enabled?: unknown }).enabled === true)
+  const enabled = isModuleEnabled(modules, 'upcoming-hearings')
 
   // Honor settings.lookaheadDays when set (clamped); otherwise default. Not
   // user-editable in the UI yet — the value is plumbed through for display.

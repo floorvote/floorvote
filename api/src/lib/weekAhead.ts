@@ -7,6 +7,7 @@ import { senderFor, unsubscribeHeaders } from './email'
 import { nowDb } from './dbTime'
 import { prioritizedBillEntry, billEntryGroupKey } from './calendarVisibility'
 import { loadDateFieldEvents } from './dateFieldEvents'
+import { readModules } from './modulesConfig'
 import { groupHasPriority, loadGroupPriorities, priorityWorn } from './teamFields'
 import type { AppDb, Env } from '../types'
 import { isModuleEnabled, getModuleSetting } from '../../../shared/modules'
@@ -37,10 +38,7 @@ async function stampLastWeekAhead(db: AppDb, now: string): Promise<void> {
 /** Returns `{ skipped }` when it did no work, and why: the module is off, or it isn't the email's day. Either way the run can't mark a failed run's alert resolved, and 'off' ends that alert's conversation (lib/jobAlert.ts). */
 export async function runWeekAhead(env: Env, db: AppDb): Promise<JobSkipped | undefined> {
   // Module gate
-  const modulesRow = await db.select().from(associationConfig).where(eq(associationConfig.key, 'modules')).get()
-  const modules = modulesRow?.value
-    ? (() => { try { return JSON.parse(modulesRow.value) } catch { return undefined } })()
-    : undefined
+  const modules = await readModules(db)
   if (!isModuleEnabled(modules, 'week-ahead')) return { skipped: 'off' }
 
   // Weekday gate — only send on configured day (default Monday = 1)

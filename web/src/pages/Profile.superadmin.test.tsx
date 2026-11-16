@@ -79,7 +79,7 @@ describe('Profile page for a superadmin', () => {
 
   it('leaves the preferences below the card editable', () => {
     setup()
-    expect(screen.getByRole('switch', { name: /email digest of recent bill activity/i })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Dark' })).toBeEnabled()
   })
 })
 

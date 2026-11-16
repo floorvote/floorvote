@@ -8,6 +8,7 @@ import { associationConfig, customFieldDefinitions } from '../../src/db/schema'
 import { computeMultiState } from '../../src/routes/configApi'
 import { app } from '../../src/index'
 import { signSuperadminJwt } from '../../../shared/superadminJwt'
+import { DEFAULT_MODULES } from '../../../shared/modules'
 
 // Throwaway ES256 test keypair (no production value); its public half is set as
 // SUPERADMIN_JWT_PUBLIC_KEY in vitest.config.mts so signed tokens verify in tests.
@@ -43,6 +44,19 @@ describe('GET /config', () => {
     const userId = await seedUser({ role: 'member' })
     const token = await seedSession(userId)
     cookie = `session=${token}`
+  })
+
+  it('tells every member whether conversation emails are on, on by default', async () => {
+    const res = await SELF.fetch('http://localhost/api/config', { headers: { Cookie: cookie } })
+    const body = await res.json() as { mentionEmailsEnabled: boolean }
+    expect(body.mentionEmailsEnabled).toBe(true)
+  })
+
+  it('tells a member when the admins turned conversation emails off', async () => {
+    await getDb(env.DB).insert(associationConfig).values({ key: 'mention_emails_enabled', value: JSON.stringify(false) })
+    const res = await SELF.fetch('http://localhost/api/config', { headers: { Cookie: cookie } })
+    const body = await res.json() as { mentionEmailsEnabled: boolean }
+    expect(body.mentionEmailsEnabled).toBe(false)
   })
 
   it('returns states: [] when no STATE env and no state_coverage row', async () => {
@@ -98,13 +112,13 @@ describe('GET /config', () => {
     expect(body.multiState).toBe(false)
   })
 
-  it('returns modules as an empty object when no modules row exists', async () => {
+  it('returns the modules a new instance starts with when no modules row exists', async () => {
     const res = await SELF.fetch('http://localhost/api/config', {
       headers: { Cookie: cookie },
     })
     expect(res.status).toBe(200)
-    const body = await res.json() as { modules: Record<string, boolean> }
-    expect(body.modules).toEqual({})
+    const body = await res.json() as { modules: unknown }
+    expect(body.modules).toEqual(DEFAULT_MODULES)
   })
 
   it('returns modules from the modules row when present', async () => {

@@ -5,6 +5,8 @@ import { getDb } from '../db/client'
 import { associationConfig, customFieldDefinitions } from '../db/schema'
 import { ensureAssociationName } from '../lib/associationName'
 import { getAccountDeletionEnabled } from '../lib/accountDeletion'
+import { mentionEmailsEnabled } from '../lib/mentions'
+import { readModules } from '../lib/modulesConfig'
 import { attachmentsEnabled, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS_PER_COMMENT } from '../lib/attachments'
 import { loadEffectiveTaxonomy } from '../lib/taxonomy'
 import { centralFetch } from '../lib/centralFetch'
@@ -49,13 +51,14 @@ configRouter.get('/', async (c) => {
   await ensureAssociationName(c.env, db)
   const accountDeletionEnabled = await getAccountDeletionEnabled(db)
 
-  const [nameRow, sessionsRow, posLabelRow, coverageRow, posVocabRow, modulesRow, orgNounRow, demoBannerRow, demoResetAtRow, taxonomyItems, knownCapabilities, knownAttribution, centralDashboardUrl] = await Promise.all([
+  const [nameRow, sessionsRow, posLabelRow, coverageRow, posVocabRow, modules, orgNounRow, demoBannerRow, demoResetAtRow, taxonomyItems, knownCapabilities, knownAttribution, centralDashboardUrl, conversationEmailsOn] = await Promise.all([
     db.select().from(associationConfig).where(eq(associationConfig.key, 'association_name')).get(),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'sessions')).get(),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'position_label')).get(),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'state_coverage')).get(),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'position_vocabulary')).get(),
-    db.select().from(associationConfig).where(eq(associationConfig.key, 'modules')).get(),
+    // Each module is `true` (legacy) or `{ enabled, settings }`, passed through as saved, or the defaults for a new instance.
+    readModules(db),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'org_noun')).get(),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'demo_banner')).get(),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'demo_reset_at')).get(),
@@ -63,6 +66,8 @@ configRouter.get('/', async (c) => {
     readStateCapabilities(db),
     readStateAttribution(db),
     readCentralDashboardUrl(db),
+    // The conversation-email switch: a member's Notifications page says when the team turned it off.
+    mentionEmailsEnabled(db),
   ])
 
   let associationName: string
@@ -171,21 +176,6 @@ configRouter.get('/', async (c) => {
   // POST /api/internal/demo-reset is the repair mechanism.
   const demoLocked = demoMode
 
-  // Modules can be `Record<string, boolean>` (legacy) or
-  // `Record<string, { enabled: boolean, settings?: Record<string, unknown> }>` (new).
-  // Pass through opaquely — clients handle both shapes.
-  let modules: Record<string, unknown> = {}
-  if (modulesRow) {
-    try {
-      const parsed = JSON.parse(modulesRow.value) as unknown
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        modules = parsed as Record<string, unknown>
-      }
-    } catch {
-      // malformed JSON — fall through with modules = {}
-    }
-  }
-
   // NOTE: sourceUrl is deliberately NOT normalized to '' like its neighbours
   // above. It carries three states and the frontend needs all three: absent
   // means "operator said nothing, use the built-in default", '' means "operator
@@ -227,7 +217,7 @@ configRouter.get('/', async (c) => {
   // reset, and on every non-demo tenant.
   const demoResetAt = demoResetAtRow?.value
 
-  return c.json({ associationName, positionVocabulary, state: c.env.STATE ?? '', states, multiState, sessions, orgNoun, instanceDomains, demoMode, demoLocked, demoResetAt, modules, operator, attribution, centralDashboardUrl: centralDashboardUrl ?? undefined, accountDeletionEnabled, tagTaxonomy, demoBanner, capabilities,
+  return c.json({ associationName, positionVocabulary, state: c.env.STATE ?? '', states, multiState, sessions, orgNoun, instanceDomains, demoMode, demoLocked, demoResetAt, modules, operator, attribution, centralDashboardUrl: centralDashboardUrl ?? undefined, accountDeletionEnabled, mentionEmailsEnabled: conversationEmailsOn, tagTaxonomy, demoBanner, capabilities,
     // Comment attachments (#465): their limits, or null while they are off.
     attachments: attachmentsEnabled(c.env) ? { maxBytes: MAX_ATTACHMENT_BYTES, maxPerComment: MAX_ATTACHMENTS_PER_COMMENT } : null,
   })

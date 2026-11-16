@@ -139,17 +139,6 @@ describe('Profile name is optional', () => {
     expect(auth.setTitle).toHaveBeenCalledWith('Policy lead')
   })
 
-  it('sends no name when only the digest setting is toggled', async () => {
-    const { patches } = mockApi()
-    setup()
-    const user = userEvent.setup()
-    await user.click(screen.getByRole('switch', { name: 'Toggle Email digest of recent bill activity' }))
-    await waitFor(() => expect(patches).toHaveLength(1))
-    expect(patches[0]).not.toHaveProperty('name')
-    expect(patches[0]).not.toHaveProperty('title')
-    expect(auth.setName).not.toHaveBeenCalled()
-  })
-
   it('still saves a changed, non-blank name', async () => {
     const { patches } = mockApi()
     const { user, card } = setup()

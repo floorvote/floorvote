@@ -68,3 +68,8 @@ export const SR_ONLY: React.CSSProperties = {
   whiteSpace: 'nowrap',
   border: 0,
 }
+
+// A button drawn as a link: the link blue, no border or background, in the surrounding font. For an inline "Retry".
+export const LINK_BUTTON: React.CSSProperties = {
+  color: color.linkBlue, background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit',
+}

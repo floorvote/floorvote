@@ -1328,7 +1328,7 @@ export function Members() {
               borderRadius: radius.lg,
               background: color.white,
               // Grayed out whole-block for non-owners (view-only), matching the
-              // admin-disabled email-digest box on the Account page.
+              // admin-disabled email-digest box on the Notifications page.
               opacity: (demoLocked || !isOwner) ? 0.55 : 1,
             }}
           >

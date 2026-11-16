@@ -365,10 +365,19 @@ describe('runDigest: saved views', () => {
     expect(mine.subject).toBe('Your daily digest: 1 bill in your saved views')
   })
 
-  it('does not send a digest to a member who has turned theirs off', async () => {
-    const off = await person('off@example.com', 'member', { digest: false })
+  // #1035: a followed view is its own opt-in, so it does not wait on the priority switch.
+  it('sends a member who turned off the priority part, and follows a view, that view alone', async () => {
+    const off = await person('off@example.com', 'member', { digest: false, matches: false })
     await seedBill({ billNumber: 'V 1', state: 'RI', session: '2026' })
     await subscribe(off.cookie, 'v-ri')
+    await runDigest(env as never, db())
+    expect(to('off@example.com')).toHaveLength(1)
+    expect(to('off@example.com')[0].subject).toBe('Your daily digest: 1 bill in your saved views')
+  })
+
+  it('sends a member who turned off the priority part and follows no view nothing', async () => {
+    await person('off@example.com', 'member', { digest: false, matches: false })
+    await seedBill({ billNumber: 'V 1', state: 'RI', session: '2026' })
     await runDigest(env as never, db())
     expect(to('off@example.com')).toHaveLength(0)
   })

@@ -122,23 +122,30 @@ describe("members' digests: new matches", () => {
     expect(sentEmails()).toHaveLength(0)
   })
 
-  it('sends a member who turned the digest off nothing, whatever the option says', async () => {
+  // #1035: the option no longer waits on the priority switch. Each part is its own.
+  it('gives a member with the priority switch off and the option on the new matches alone, and one with both off nothing', async () => {
     await member('quiet@e.com', { digest: false, matches: true })
+    await member('silent@e.com', { digest: false, matches: false })
     await member('on@e.com')
     await routine('NM 9')
 
     await runDigest(env as any, getDb(env.DB))
 
-    expect(to('quiet@e.com')).toHaveLength(0)
+    expect(to('quiet@e.com')).toHaveLength(1)
+    expect(to('quiet@e.com')[0].html).toContain('NM 9')
+    expect(to('quiet@e.com')[0].subject).toBe('Your daily digest: 1 new match')
+    expect(to('silent@e.com')).toHaveLength(0)
     expect(to('on@e.com')).toHaveLength(1)
   })
 
-  it('leaves an admin unaffected by the option: admins always get the section', async () => {
-    const admin = await seedUser({ email: 'admin@e.com', role: 'admin', emailDigestMatchesEnabled: false }); await seedSession(admin)
+  it('treats an admin like a member: the section is theirs when the option is on, and not when it is off', async () => {
+    const off = await seedUser({ email: 'off@e.com', role: 'admin', emailDigestMatchesEnabled: false }); await seedSession(off)
+    const on = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(on)
     await routine('NM 10')
 
     await runDigest(env as any, getDb(env.DB))
 
+    expect(to('off@e.com')).toHaveLength(0)
     expect(to('admin@e.com')).toHaveLength(1)
     expect(to('admin@e.com')[0].html).toContain('NM 10')
   })

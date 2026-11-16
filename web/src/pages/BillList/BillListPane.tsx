@@ -12,7 +12,7 @@ import { StatusChip } from '../../components/StatusChip'
 import { SessionChip } from '../../components/SessionChip'
 import { RelevanceChip } from '../../components/RelevanceChip'
 import { LastActionChip } from '../../components/LastActionChip'
-import { SECTION_LABEL, CHROME_TEXT, SR_ONLY, BILL_TITLE_TEXT } from '../../lib/textStyles'
+import { SECTION_LABEL, CHROME_TEXT, SR_ONLY, BILL_TITLE_TEXT, LINK_BUTTON } from '../../lib/textStyles'
 import { color, fontSize, fontWeight } from '../../styles/tokens'
 import { billDisplayTitle } from '../../../../shared/billTitle'
 import { billsApiParamsFromSearch, billsFacetParams, billsQueryFromSearch, searchFromListUrl } from './billsQuery'
@@ -448,7 +448,7 @@ export function BillListPane() {
               {loadingMore ? <span role="status">Loading…</span> : loadMoreFailed ? (
                 <>
                   Couldn’t load more{' '}
-                  <button type="button" onClick={loadMore} style={{ color: color.linkBlue, background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit' }}>Retry</button>
+                  <button type="button" onClick={loadMore} style={LINK_BUTTON}>Retry</button>
                 </>
               ) : ''}
             </li>

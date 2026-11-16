@@ -3,7 +3,7 @@ import { env } from 'cloudflare:test'
 import { eq, inArray } from 'drizzle-orm'
 import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { feedEvents, associationConfig, bills } from '../../src/db/schema'
+import { feedEvents, associationConfig, bills, users } from '../../src/db/schema'
 import { runDigest } from '../../src/lib/digest'
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
@@ -28,6 +28,7 @@ describe('runDigest', () => {
   it('no-ops (no send) when the module is disabled', async () => {
     const f = vi.fn(); vi.stubGlobal('fetch', f)
     const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'email-digest': { enabled: false } }) })
     await addEvent(db, billId, 'bill_updated', JSON.stringify({ changes: [{ changeType: 'status_change', oldValue: 'Introduced', newValue: 'Engrossed', detail: null }] }))
     const result = await runDigest(env as any, db)
     expect(f).not.toHaveBeenCalled()
@@ -136,13 +137,13 @@ describe('runDigest', () => {
     expect(result).toEqual({ ok: true, recipients: 0, sent: 0, failed: 0 })
   })
 
+  // The digest on, with everyone seeded so far on a weekly digest on that weekday (each person's own choice).
   async function enableWeekly(db: ReturnType<typeof getDb>, weeklyDay: string) {
-    const v = JSON.stringify({ 'email-digest': { enabled: true, settings: { frequency: 'weekly', weeklyDay } } })
-    await db.insert(associationConfig).values({ key: 'modules', value: v })
-      .onConflictDoUpdate({ target: associationConfig.key, set: { value: v } })
+    await enableModule(db)
+    await db.update(users).set({ emailDigestWeeklyDay: Number(weeklyDay) })
   }
 
-  it('weekly: skips and does NOT stamp last_digest_at on a non-matching weekday', async () => {
+  it('weekly: sends a weekly person nothing on a non-matching weekday, and keeps the weekly window', async () => {
     const db = getDb(env.DB)
     // 2026-06-03 is a Wednesday (getUTCDay() === 3); configure weekly on Monday (1).
     vi.useFakeTimers(); vi.setSystemTime(new Date('2026-06-03T11:00:00Z'))
@@ -151,8 +152,8 @@ describe('runDigest', () => {
     const f = vi.fn(); vi.stubGlobal('fetch', f)
     const result = await runDigest(env as any, db)
     expect(f).not.toHaveBeenCalled()
-    expect(result).toEqual({ ok: true, recipients: 0, sent: 0, failed: 0, skipped: 'not-today' })
-    const stamp = await db.select().from(associationConfig).where(eq(associationConfig.key, 'last_digest_at')).get()
+    expect(result).toEqual({ ok: true, recipients: 0, sent: 0, failed: 0 })
+    const stamp = await db.select().from(associationConfig).where(eq(associationConfig.key, 'last_weekly_digest_at_1')).get()
     expect(stamp).toBeUndefined()           // never stamped → window preserved
   })
 
@@ -166,7 +167,7 @@ describe('runDigest', () => {
     const result = await runDigest(env as any, db)
     expect(calls).toHaveLength(1)
     expect(result).toEqual({ ok: true, recipients: 1, sent: 1, failed: 0 })
-    const stamp = await db.select().from(associationConfig).where(eq(associationConfig.key, 'last_digest_at')).get()
+    const stamp = await db.select().from(associationConfig).where(eq(associationConfig.key, 'last_weekly_digest_at_3')).get()
     expect(stamp?.value).toBeTruthy()
   })
 
@@ -197,7 +198,7 @@ describe('runDigest', () => {
     const db = getDb(env.DB)
     vi.useFakeTimers(); vi.setSystemTime(new Date('2026-06-03T11:00:00Z'))  // Wednesday
     await enableWeekly(db, '3')
-    await db.insert(associationConfig).values({ key: 'last_digest_at', value: '2026-05-27 11:00:00' })
+    await db.insert(associationConfig).values({ key: 'last_weekly_digest_at_3', value: '2026-05-27 11:00:00' })
     await addEvent(db, billId, 'position_set', JSON.stringify({ position: 'Support' }))
     const calls: any[] = []
     vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
@@ -289,7 +290,7 @@ describe('runDigest', () => {
     const db = getDb(env.DB)
     vi.useFakeTimers(); vi.setSystemTime(new Date('2026-06-03T11:00:00Z'))
     await enableWeekly(db, '3')
-    await db.insert(associationConfig).values({ key: 'last_digest_at', value: '2026-05-27 11:00:00' })
+    await db.insert(associationConfig).values({ key: 'last_weekly_digest_at_3', value: '2026-05-27 11:00:00' })
     await addEvent(db, billId, 'position_set', JSON.stringify({ position: 'Support' }))
     await newMatch('NM 1')
     const calls = capture()

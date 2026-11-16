@@ -14,7 +14,7 @@ import { HoverTooltip } from '../../components/HoverTooltip'
 import { useSidebarRefresh } from '../../context/SidebarRefreshContext'
 import { useDemo } from '../../context/DemoContext'
 import { useConfig } from '../../context/ConfigContext'
-import { isModuleEnabled, digestFrequency } from '../../lib/modules'
+import { isModuleEnabled } from '../../lib/modules'
 import { CARD } from '../../lib/cardStyle'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { billUrl } from '../../lib/sessionSlug'
@@ -229,7 +229,7 @@ export function BillList() {
   const hasFetchedOnce = useRef(false)
   const [customFieldDefs, setCustomFieldDefs] = useState<CustomFieldDef[]>(cachedCustomFieldDefs ?? [])
 
-  const { user, setEmailDigestEnabled } = useAuth()
+  const { user } = useAuth()
   const isAdmin = user?.role === 'admin' || user?.role === 'owner'
   const refreshSidebar = useSidebarRefresh()
   const { demoMode, settled } = useDemo()
@@ -555,18 +555,6 @@ export function BillList() {
     }
   }, [])
 
-  // The envelope's "Turn on digest": the member's own switch, as Profile saves it. A failure is thrown so the
-  // prompt stays open and the view is not included.
-  const turnOnDigest = useCallback(async () => {
-    try {
-      await apiFetch('/users/me', { method: 'PATCH', body: JSON.stringify({ emailDigestEnabled: true }) })
-      setEmailDigestEnabled(true)
-    } catch {
-      setError('Failed to turn on your digest.')
-      throw new Error('Failed to turn on your digest.')
-    }
-  }, [setEmailDigestEnabled])
-
   // Apply a view: sets filter state from its stored query and lets the sync
   // effect in useBillFilters serialize it, writing the short `?view=<id>`
   // bookmark rather than the view's expanded params — that bookmark then
@@ -872,10 +860,9 @@ export function BillList() {
           isAdmin={isAdmin}
           onApply={applyView}
           digest={isModuleEnabled(config?.modules, 'email-digest') ? {
-            cadence: digestFrequency(config?.modules),
-            memberOn: user?.emailDigestEnabled ?? true,
+            // The person's own: every morning, or once a week on a weekday they picked.
+            cadence: user?.emailDigestWeeklyDay != null ? 'weekly' : 'daily',
             onToggle: toggleViewDigest,
-            onTurnOn: turnOnDigest,
           } : undefined}
           onRename={async (id, name) => {
             try {

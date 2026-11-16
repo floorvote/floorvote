@@ -138,7 +138,7 @@ const FACETS = {
 const configState: { value: { states: string[]; modules?: Record<string, unknown> } | null } = { value: null }
 
 // #449: the member's own digest switch as GET /auth/me reports it, and what the envelope on a view row sent.
-const digestState = { memberOn: false }
+const digestState = { memberOn: false, weeklyDay: null as number | null }
 const digestCalls: Array<{ method: string; path: string; body: unknown }> = []
 
 // The signed-in user's role as GET /auth/me reports it. Defaults to an owner, which
@@ -174,7 +174,7 @@ vi.mock('../../lib/api', () => {
     }
     if (path === '/auth/me') {
       return { id: 'demo-user', email: 'demo@example.com', name: 'Demo', role: authState.role,
-        title: null, canVote: true, emailDigestEnabled: digestState.memberOn, lastSeenFeed: null } as T
+        title: null, canVote: true, emailDigestEnabled: digestState.memberOn, emailDigestMatchesEnabled: digestState.memberOn, emailDigestWeeklyDay: digestState.weeklyDay, lastSeenFeed: null } as T
     }
     if (path === '/config') return CONFIG as T
     if (path === '/users/me/bills') return [] as T
@@ -314,6 +314,7 @@ beforeEach(() => {
   resolveCustomFields = null
   configState.value = null
   digestState.memberOn = false
+  digestState.weeklyDay = null
   digestCalls.length = 0
   authState.role = 'owner'
   FACETS.subject = { 'UT:Counties': 1 }
@@ -841,8 +842,9 @@ describe('BillList mobile filter sheet — reset', () => {
   })
 })
 
-// #449: the envelope on a view row includes the view in the member's own digest. It is
-// offered only where the instance's digest is on, and asks first when the member's is off.
+// #449, #1035: the envelope on a view row follows the view in the member's own email. It is
+// offered wherever the team sends the digest (On or Saved views only), and a click follows or unfollows directly,
+// whatever the member's own switches say.
 describe('BillList saved views — include in the digest', () => {
   const VIEW = { id: 'v1', name: 'Passed bills', query: 'status=4', slug: 'passed-bills', subscribed: false }
   const digestOn = { states: ['RI'], modules: { 'email-digest': { enabled: true } } }
@@ -858,14 +860,15 @@ describe('BillList saved views — include in the digest', () => {
     viewsState.response = { views: [VIEW] }
     configState.value = { states: ['RI'], modules: { 'email-digest': { enabled: false } } }
     await openMenu()
-    expect(screen.queryByRole('button', { name: /in your daily digest/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Email me ".*" daily$/ })).toBeNull()
   })
 
-  it('offers an envelope when the instance digest is on, and the cadence follows its setting', async () => {
+  it("offers an envelope when the instance digest is on, and the cadence follows the person's own choice", async () => {
+    digestState.weeklyDay = 5
     viewsState.response = { views: [VIEW] }
-    configState.value = { states: ['RI'], modules: { 'email-digest': { enabled: true, settings: { frequency: 'weekly' } } } }
+    configState.value = { states: ['RI'], modules: { 'email-digest': { enabled: true, settings: { frequency: 'daily' } } } }
     await openMenu()
-    expect(screen.getByRole('button', { name: 'Include "Passed bills" in your weekly digest' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Email me "Passed bills" weekly' })).toBeInTheDocument()
   })
 
   it('includes the view for a member whose digest is on: saves it and fills the envelope', async () => {
@@ -874,9 +877,9 @@ describe('BillList saved views — include in the digest', () => {
     configState.value = digestOn
     await openMenu()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Include "Passed bills" in your daily digest' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Email me "Passed bills" daily' }))
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Remove "Passed bills" from your daily digest' })).toHaveAttribute('aria-pressed', 'true'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Email me "Passed bills" daily' })).toHaveAttribute('aria-pressed', 'true'))
     expect(digestCalls).toEqual([{ method: 'PUT', path: '/views/v1/subscription', body: { subscribed: true } }])
   })
 
@@ -886,26 +889,35 @@ describe('BillList saved views — include in the digest', () => {
     configState.value = digestOn
     await openMenu()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove "Passed bills" from your daily digest' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Email me "Passed bills" daily' }))
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Include "Passed bills" in your daily digest' })).toHaveAttribute('aria-pressed', 'false'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Email me "Passed bills" daily' })).toHaveAttribute('aria-pressed', 'false'))
     expect(digestCalls).toEqual([{ method: 'PUT', path: '/views/v1/subscription', body: { subscribed: false } }])
   })
 
-  it('offers to turn the digest on for a member whose digest is off, then turns it on and includes the view', async () => {
+  it('follows the view in one click, with no prompt, for a member with both parts off', async () => {
+    digestState.memberOn = false
     viewsState.response = { views: [VIEW] }
     configState.value = digestOn
     await openMenu()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Include "Passed bills" in your daily digest' }))
-    expect(digestCalls).toEqual([])
-    fireEvent.click(screen.getByRole('button', { name: 'Turn on digest' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Email me "Passed bills" daily' }))
 
-    await waitFor(() => expect(digestCalls).toHaveLength(2))
-    expect(digestCalls).toEqual([
-      { method: 'PATCH', path: '/users/me', body: { emailDigestEnabled: true } },
-      { method: 'PUT', path: '/views/v1/subscription', body: { subscribed: true } },
-    ])
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Email me "Passed bills" daily' })).toHaveAttribute('aria-pressed', 'true'))
+    expect(screen.queryByText(/turn on your email digest/i)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Turn on digest' })).toBeNull()
+    expect(digestCalls).toEqual([{ method: 'PUT', path: '/views/v1/subscription', body: { subscribed: true } }])
+  })
+
+  it('offers the envelope, and follows in one click, when the team chose Saved views only', async () => {
+    viewsState.response = { views: [VIEW] }
+    digestState.weeklyDay = 5
+    configState.value = { states: ['RI'], modules: { 'email-digest': { enabled: true, settings: { frequency: 'weekly', teamUpdates: false } } } }
+    await openMenu()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Email me "Passed bills" weekly' }))
+
+    await waitFor(() => expect(digestCalls).toEqual([{ method: 'PUT', path: '/views/v1/subscription', body: { subscribed: true } }]))
   })
 })
 

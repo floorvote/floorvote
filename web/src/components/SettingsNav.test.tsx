@@ -13,7 +13,7 @@ function mockAdminUser() {
     authProgress: { current: null },
     setTitle: vi.fn(),
     setName: vi.fn(),
-    setEmailDigestEnabled: vi.fn(), setEmailDigestMatchesEnabled: vi.fn(), setEmailRepliesEnabled: vi.fn(),
+    setEmailDigestEnabled: vi.fn(), setEmailDigestMatchesEnabled: vi.fn(), setEmailDigestWeeklyDay: vi.fn(), setEmailRepliesEnabled: vi.fn(), setEmailWeekAheadEnabled: vi.fn(),
     setLastSeenFeed: vi.fn(),
     setTermsAccepted: vi.fn(),
     clearUser: vi.fn(),
@@ -30,7 +30,7 @@ function stubScrollMetrics(nav: HTMLElement, { scrollWidth, clientWidth, scrollL
 }
 
 describe('SettingsNav', () => {
-  it('shows a Team notifications tab (the default org noun) and no Modules tab', () => {
+  it('shows a Notifications tab and no Modules tab', () => {
     vi.spyOn(AuthContext, 'useAuth').mockReturnValue({
       user: { id: '1', email: 'a@b.com', name: 'Admin', role: 'admin', title: null, canVote: true, emailDigestEnabled: true, emailDigestMatchesEnabled: true, emailWeekAheadEnabled: true, emailRepliesEnabled: true, lastSeenFeed: null, isLastOwner: false, termsAcceptanceRequired: false, termsAcceptanceKind: 'existing_member' as const },
       loading: false,
@@ -38,17 +38,17 @@ describe('SettingsNav', () => {
       authProgress: { current: null },
       setTitle: vi.fn(),
       setName: vi.fn(),
-      setEmailDigestEnabled: vi.fn(), setEmailDigestMatchesEnabled: vi.fn(), setEmailRepliesEnabled: vi.fn(),
+      setEmailDigestEnabled: vi.fn(), setEmailDigestMatchesEnabled: vi.fn(), setEmailDigestWeeklyDay: vi.fn(), setEmailRepliesEnabled: vi.fn(), setEmailWeekAheadEnabled: vi.fn(),
       setLastSeenFeed: vi.fn(),
     setTermsAccepted: vi.fn(),
     clearUser: vi.fn(),
     })
     render(<MemoryRouter><SettingsNav /></MemoryRouter>)
-    expect(screen.getByRole('link', { name: 'Team notifications' })).toHaveAttribute('href', '/admin/notifications')
+    expect(screen.getByRole('link', { name: 'Notifications' })).toHaveAttribute('href', '/notifications')
     expect(screen.queryByRole('link', { name: 'Modules' })).not.toBeInTheDocument()
   })
 
-  it('orders admin tabs Account, Config, Members, Team notifications and drops the pipe divider', () => {
+  it('orders admin tabs Account, Notifications, Config, Members and drops the pipe divider', () => {
     vi.spyOn(AuthContext, 'useAuth').mockReturnValue({
       user: { id: '1', email: 'a@b.com', name: 'Admin', role: 'admin', title: null, canVote: true, emailDigestEnabled: true, emailDigestMatchesEnabled: true, emailWeekAheadEnabled: true, emailRepliesEnabled: true, lastSeenFeed: null, isLastOwner: false, termsAcceptanceRequired: false, termsAcceptanceKind: 'existing_member' as const },
       loading: false,
@@ -56,7 +56,7 @@ describe('SettingsNav', () => {
       authProgress: { current: null },
       setTitle: vi.fn(),
       setName: vi.fn(),
-      setEmailDigestEnabled: vi.fn(), setEmailDigestMatchesEnabled: vi.fn(), setEmailRepliesEnabled: vi.fn(),
+      setEmailDigestEnabled: vi.fn(), setEmailDigestMatchesEnabled: vi.fn(), setEmailDigestWeeklyDay: vi.fn(), setEmailRepliesEnabled: vi.fn(), setEmailWeekAheadEnabled: vi.fn(),
       setLastSeenFeed: vi.fn(),
     setTermsAccepted: vi.fn(),
     clearUser: vi.fn(),
@@ -66,9 +66,9 @@ describe('SettingsNav', () => {
     const links = screen.getAllByRole('link')
     expect(links.map((el) => el.textContent)).toEqual([
       'Account',
+      'Notifications',
       'Config',
       'Members',
-      'Team notifications',
     ])
 
     // Drafts are created and found on the Bills page now; Settings has no tab for them.
@@ -177,11 +177,17 @@ describe('SettingsNav', () => {
     expect(screen.queryByRole('link', { name: 'Calendar events' })).not.toBeInTheDocument()
     expect(document.querySelector('a[href="/admin/calendar-events"]')).toBeNull()
     // The rest of the tabs are as they were.
-    expect(screen.getAllByRole('link').map(a => a.textContent)).toEqual(['Account', 'Config', 'Members', 'Team notifications'])
+    expect(screen.getAllByRole('link').map(a => a.textContent)).toEqual(['Account', 'Notifications', 'Config', 'Members'])
   })
-  describe('admin notifications tab is named after the org noun', () => {
-    function renderWithNoun(orgNoun: string | undefined, path = '/admin/config') {
-      mockAdminUser()
+  describe('Notifications tab', () => {
+    function renderAs(role: 'admin' | 'member', orgNoun: string | undefined, path = '/account') {
+      vi.spyOn(AuthContext, 'useAuth').mockReturnValue({
+        user: { id: '2', email: 'm@b.com', name: 'Someone', role, title: null, canVote: true, emailDigestEnabled: true, emailDigestMatchesEnabled: true, emailWeekAheadEnabled: true, emailRepliesEnabled: true, lastSeenFeed: null, isLastOwner: false, termsAcceptanceRequired: false, termsAcceptanceKind: 'existing_member' as const },
+        loading: false, authError: false, authProgress: { current: null },
+        setTitle: vi.fn(), setName: vi.fn(),
+        setEmailDigestEnabled: vi.fn(), setEmailDigestMatchesEnabled: vi.fn(), setEmailDigestWeeklyDay: vi.fn(), setEmailRepliesEnabled: vi.fn(), setEmailWeekAheadEnabled: vi.fn(),
+        setLastSeenFeed: vi.fn(), setTermsAccepted: vi.fn(), clearUser: vi.fn(),
+      })
       return render(
         <ConfigContext value={{ config: { states: ['DC'], ...(orgNoun === undefined ? {} : { orgNoun }) }, multiState: false, loading: false }}>
           <MemoryRouter initialEntries={[path]}><SettingsNav /></MemoryRouter>
@@ -189,91 +195,29 @@ describe('SettingsNav', () => {
       )
     }
 
-    it('reads "Association notifications" for a configured noun', () => {
-      renderWithNoun('association')
-      expect(screen.getByRole('link', { name: 'Association notifications' })).toHaveAttribute('href', '/admin/notifications')
+    it('shows every member a Notifications tab after Account', () => {
+      renderAs('member', 'association')
+      expect(screen.getAllByRole('link').map((el) => el.textContent)).toEqual(['Account', 'Notifications'])
+      expect(screen.getByRole('link', { name: 'Notifications' })).toHaveAttribute('href', '/notifications')
     })
 
-    it('reads "Coalition notifications" for another configured noun', () => {
-      renderWithNoun('coalition')
-      expect(screen.getByRole('link', { name: 'Coalition notifications' })).toBeInTheDocument()
+    it('shows an admin the Notifications tab before the admin tabs, with no "{org noun} notifications" tab', () => {
+      renderAs('admin', 'association')
+      expect(screen.getAllByRole('link').map((el) => el.textContent)).toEqual(['Account', 'Notifications', 'Config', 'Members'])
+      expect(screen.queryByRole('link', { name: /association notifications/i })).not.toBeInTheDocument()
+      expect(document.querySelector('a[href="/admin/notifications"]')).toBeNull()
     })
 
-    it('uses the default noun when the config has no org noun', () => {
-      renderWithNoun(undefined)
-      expect(screen.getByRole('link', { name: 'Team notifications' })).toBeInTheDocument()
+    it('keeps the tab named "Notifications" whatever the org noun is', () => {
+      renderAs('admin', 'coalition')
+      expect(screen.getByRole('link', { name: 'Notifications' })).toBeInTheDocument()
+      expect(screen.queryByRole('link', { name: /coalition/i })).not.toBeInTheDocument()
     })
 
-    it('uses the default noun when the org noun is an empty string', () => {
-      renderWithNoun('')
-      expect(screen.getByRole('link', { name: 'Team notifications' })).toBeInTheDocument()
-    })
-
-    it('uses the default noun while the config has not loaded', () => {
-      mockAdminUser()
-      render(
-        <ConfigContext value={{ config: null, multiState: false, loading: true }}>
-          <MemoryRouter><SettingsNav /></MemoryRouter>
-        </ConfigContext>,
-      )
-      expect(screen.getByRole('link', { name: 'Team notifications' })).toBeInTheDocument()
-    })
-
-    it('capitalizes only the first word: a noun already in lowercase gains a leading capital and "notifications" stays lowercase', () => {
-      renderWithNoun('chapter')
-      const link = screen.getByRole('link', { name: 'Chapter notifications' })
-      expect(link.textContent).toBe('Chapter notifications')
-    })
-
-    it('normalizes a noun with a capital in the middle to lowercase before capitalizing the first letter', () => {
-      renderWithNoun('cOaLiTiOn')
-      expect(screen.getByRole('link', { name: 'Coalition notifications' })).toBeInTheDocument()
-    })
-
-    it('normalizes an all-caps noun the same way', () => {
-      renderWithNoun('LEAGUE')
-      expect(screen.getByRole('link', { name: 'League notifications' })).toBeInTheDocument()
-    })
-
-    it('keeps only the first word of a multi-word noun, so a second word is never capitalized', () => {
-      renderWithNoun('Chapter Office')
-      expect(screen.getByRole('link', { name: 'Chapter notifications' })).toBeInTheDocument()
-    })
-
-    it('no longer shows a bare "Notifications" tab', () => {
-      renderWithNoun('association')
-      expect(screen.queryByRole('link', { name: 'Notifications' })).not.toBeInTheDocument()
-    })
-
-    it('keeps the tab in the same slot, right after Members, as the last tab', () => {
-      renderWithNoun('association')
-      expect(screen.getAllByRole('link').map((el) => el.textContent)).toEqual([
-        'Account', 'Config', 'Members', 'Association notifications',
-      ])
-    })
-
-    it('keeps the route at /admin/notifications and marks the tab current there', () => {
-      renderWithNoun('association', '/admin/notifications')
-      const link = screen.getByRole('link', { name: 'Association notifications' })
-      expect(link).toHaveAttribute('href', '/admin/notifications')
-      expect(link).toHaveAttribute('aria-current', 'page')
-    })
-
-    it('does not rename the tab for non-admins (they see no admin tabs)', () => {
-      vi.spyOn(AuthContext, 'useAuth').mockReturnValue({
-        user: { id: '2', email: 'm@b.com', name: 'Member', role: 'member', title: null, canVote: true, emailDigestEnabled: true, emailDigestMatchesEnabled: true, emailWeekAheadEnabled: true, emailRepliesEnabled: true, lastSeenFeed: null, isLastOwner: false, termsAcceptanceRequired: false, termsAcceptanceKind: 'existing_member' as const },
-        loading: false, authError: false, authProgress: { current: null },
-        setTitle: vi.fn(), setName: vi.fn(),
-        setEmailDigestEnabled: vi.fn(), setEmailDigestMatchesEnabled: vi.fn(), setEmailRepliesEnabled: vi.fn(),
-        setLastSeenFeed: vi.fn(), setTermsAccepted: vi.fn(), clearUser: vi.fn(),
-      })
-      render(
-        <ConfigContext value={{ config: { states: ['DC'], orgNoun: 'association' }, multiState: false, loading: false }}>
-          <MemoryRouter><SettingsNav /></MemoryRouter>
-        </ConfigContext>,
-      )
-      expect(screen.queryByRole('link', { name: /notifications/i })).not.toBeInTheDocument()
-      expect(screen.getByRole('link', { name: 'Account' })).toBeInTheDocument()
+    it('marks the tab current at /notifications', () => {
+      renderAs('member', undefined, '/notifications')
+      expect(screen.getByRole('link', { name: 'Notifications' })).toHaveAttribute('aria-current', 'page')
+      expect(screen.getByRole('link', { name: 'Account' })).not.toHaveAttribute('aria-current')
     })
   })
 })
