@@ -72,7 +72,7 @@ const EXPORT_CONFIG_KEYS = [
   'org_noun', 'position_label', 'position_vocabulary',
   'relevance_question', 'tag_taxonomy',
   'modules', 'sync_frequency',
-  'mention_emails_enabled', 'state_coverage',
+  'notification_emails_enabled', 'week_ahead_day', 'state_coverage',
 ] as const
 
 // Per-table base filter applied in addition to cursor pagination. Only the

@@ -36,8 +36,6 @@ async function priorityUpdate(billNumber: string) {
 beforeEach(async () => {
   await clearDb()
   resend = stubResend()
-  const db = getDb(env.DB)
-  await db.insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'email-digest': true }) })
 })
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 

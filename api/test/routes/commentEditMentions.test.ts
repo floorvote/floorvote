@@ -194,7 +194,7 @@ describe('editing a comment re-notifies only newly mentioned people', () => {
   })
 
   it('does not email anyone on edit when mention emails are disabled, but still records them', async () => {
-    await env.DB.prepare("INSERT INTO association_config (key, value) VALUES ('mention_emails_enabled', 'false')").run()
+    await env.DB.prepare("INSERT INTO association_config (key, value) VALUES ('notification_emails_enabled', 'false')").run()
     const commentId = await create(`<p>${user(ids.jane, 'Jane')}</p>`)
 
     await edit(commentId, `<p>${user(ids.jane, 'Jane')} ${user(ids.bob, 'Bob')}</p>`)

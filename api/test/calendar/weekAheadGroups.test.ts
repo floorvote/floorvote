@@ -31,7 +31,7 @@ describe('the week-ahead email: companion groups', () => {
     await clearDb()
     await seedSession(await seedUser({ email: 'member@b.com' }))
     const weekday = String(new Date().getUTCDay())
-    await db().insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'week-ahead': { enabled: true, settings: { weeklyDay: weekday } } }) })
+    await db().insert(associationConfig).values({ key: 'week_ahead_day', value: weekday })
     resetMail()
     // Ids sort a < b, so the group's key is a's id. Only the house bill holds the priority.
     await seedBill({ id: 'a-house', billNumber: 'HB 101', state: 'DC', priority: 'high', externalId: 'legiscan:1' })

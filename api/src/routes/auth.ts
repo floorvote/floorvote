@@ -25,7 +25,6 @@ import type { AppEnv } from '../types'
 import { isValidEmail } from '../../../shared/email'
 import { confirmEmailChange, emailChangeLinkStatus, EMAIL_CHANGE_ERRORS } from '../lib/emailChange'
 import { reportNotMe, notMeLinkStatus, NOT_ME_ERRORS } from '../lib/emailChangeReport'
-import { newBillsChoice } from '../lib/newBillsChoice'
 
 export const authRoutes = new Hono<AppEnv>()
 
@@ -427,8 +426,7 @@ authRoutes.get('/me', async (c) => {
             title: localUser!.title,
             canVote: !!localUser!.canVote,
             emailDigestEnabled: localUser!.emailDigestEnabled === 1,
-            // Keeps the old `emailDigestMatchesEnabled` name so a stale web bundle still saves correctly; it now holds the three-state newly found choice.
-            emailDigestMatchesEnabled: newBillsChoice(localUser!.emailDigestNewBills),
+            emailDigestMatchesEnabled: localUser!.emailDigestMatchesEnabled === 1,
             emailDigestWeeklyDay: localUser!.emailDigestWeeklyDay ?? null,
             emailWeekAheadEnabled: localUser!.emailWeekAheadEnabled === 1,
             emailRepliesEnabled: localUser!.emailRepliesEnabled === 1,
@@ -457,7 +455,7 @@ authRoutes.get('/me', async (c) => {
       title: users.title,
       canVote: users.canVote,
       emailDigestEnabled: users.emailDigestEnabled,
-      emailDigestNewBills: users.emailDigestNewBills,
+      emailDigestMatchesEnabled: users.emailDigestMatchesEnabled,
       emailDigestWeeklyDay: users.emailDigestWeeklyDay,
       emailWeekAheadEnabled: users.emailWeekAheadEnabled,
       emailRepliesEnabled: users.emailRepliesEnabled,
@@ -518,8 +516,7 @@ authRoutes.get('/me', async (c) => {
     title: sessionWithUser.title,
     canVote: !!sessionWithUser.canVote,
     emailDigestEnabled: sessionWithUser.emailDigestEnabled === 1,
-    // Keeps the old `emailDigestMatchesEnabled` name so a stale web bundle still saves correctly; it now holds the three-state newly found choice.
-    emailDigestMatchesEnabled: newBillsChoice(sessionWithUser.emailDigestNewBills),
+    emailDigestMatchesEnabled: sessionWithUser.emailDigestMatchesEnabled === 1,
     emailDigestWeeklyDay: sessionWithUser.emailDigestWeeklyDay ?? null,
     emailWeekAheadEnabled: sessionWithUser.emailWeekAheadEnabled === 1,
     emailRepliesEnabled: sessionWithUser.emailRepliesEnabled === 1,

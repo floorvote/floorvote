@@ -8,7 +8,7 @@ import { runDigest } from '../../src/lib/digest'
 import { mail, resetMail } from '../mail'
 
 // Each person chooses how often they get the email digest: every morning (users.email_digest_weekly_day null), or once a
-// week on a weekday they pick (0 Sunday to 6 Saturday, in UTC). The team sets neither. Each schedule keeps its own window:
+// week on a weekday they pick (0 Sunday to 6 Saturday, in UTC). The admin sets neither. Each schedule keeps its own window:
 // last_digest_at for the daily digest, and last_weekly_digest_at_<day> for each weekday, which starts a week back when it
 // has never been sent.
 
@@ -24,9 +24,6 @@ const sent = () => mail.sent() as Array<{ to: string[]; subject: string }>
 const subjects = (addr: string) => sent().filter(m => m.to[0] === addr).map(m => m.subject)
 const stamp = async (key: string) => (await db().select().from(associationConfig).where(eq(associationConfig.key, key)).get())?.value
 
-async function team(settings: Record<string, unknown> = {}) {
-  await db().insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'email-digest': { enabled: true, settings } }) })
-}
 const weeklyKey = (day: number) => `last_weekly_digest_at_${day}`
 async function setStamp(key: string, value: string) {
   await db().insert(associationConfig).values({ key, value }).onConflictDoUpdate({ target: associationConfig.key, set: { value } })
@@ -52,7 +49,6 @@ describe("each person's digest schedule", () => {
   })
 
   it("sends a daily person the day, a person weekly on today the week, and a person weekly on another day nothing", async () => {
-    await team()
     await setStamp('last_digest_at', daysAgo(1))
     await setStamp(weeklyKey(today()), daysAgo(7))
     await person('daily@example.com', null)
@@ -69,20 +65,7 @@ describe("each person's digest schedule", () => {
     expect(subjects('other@example.com')).toEqual([])
   })
 
-  it("no longer reads the team's how often or weekly day", async () => {
-    await team({ frequency: 'weekly', weeklyDay: String(otherDay()) })
-    await person('daily@example.com', null)
-    await person('today@example.com', today())
-    await changedBill('H 1', fmt(Date.now() - 3600_000))
-
-    await runDigest(env as never, db())
-
-    expect(subjects('daily@example.com')).toEqual(['Your daily digest: 1 updated bill'])
-    expect(subjects('today@example.com')).toEqual(['Your weekly digest: 1 updated bill'])
-  })
-
   it('gives a weekly digest that was never sent the last seven days', async () => {
-    await team()
     await setStamp('last_digest_at', daysAgo(1))
     await person('weekly@example.com', today())
     await changedBill('H 1', daysAgo(6))
@@ -94,7 +77,6 @@ describe("each person's digest schedule", () => {
   })
 
   it("stamps the daily window and today's weekly window, and leaves other days' windows alone", async () => {
-    await team()
     await person('daily@example.com', null)
     await person('other@example.com', otherDay())
 
@@ -106,7 +88,6 @@ describe("each person's digest schedule", () => {
   })
 
   it('sends everyone on a send-now run, whatever the day', async () => {
-    await team()
     await person('daily@example.com', null)
     await person('other@example.com', otherDay())
     await changedBill('H 1', fmt(Date.now() - 3600_000))

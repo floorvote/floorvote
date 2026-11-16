@@ -187,7 +187,6 @@ describe('runDigest: saved views', () => {
   beforeEach(async () => {
     await clearDb()
     resend = stubResend()
-    await db().insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'email-digest': true }) })
     const a = await person('admin@example.com', 'admin'); admin = a.id; adminCookie = a.cookie
     ada = await person('ada@example.com', 'member', { matches: false })
     ben = await person('ben@example.com', 'member', { matches: false })
@@ -382,8 +381,8 @@ describe('runDigest: saved views', () => {
     expect(to('off@example.com')).toHaveLength(0)
   })
 
-  it('sends nothing when the instance digest is off', async () => {
-    await db().update(associationConfig).set({ value: JSON.stringify({ 'email-digest': false }) }).where(eq(associationConfig.key, 'modules'))
+  it('sends nothing when notification emails are off', async () => {
+    await db().insert(associationConfig).values({ key: 'notification_emails_enabled', value: 'false' })
     await seedBill({ billNumber: 'V 1', state: 'RI', session: '2026' })
     await subscribe(ada.cookie, 'v-ri')
     await runDigest(env as never, db())

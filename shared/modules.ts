@@ -50,41 +50,7 @@ export const MODULES: ModuleDef[] = [
     name: 'Upcoming hearings',
     description: 'Show hearings for prioritized bills in the next 30 days.',
   },
-  {
-    id: 'week-ahead',
-    type: 'section' as const,
-    name: 'Week ahead email',
-    description: 'Send members a weekly preview of upcoming hearings and calendar events grouped by day.',
-    settings: [
-      {
-        key: 'weeklyDay',
-        type: 'select' as const,
-        label: 'Day of week',
-        default: '1',
-        options: [
-          { value: '0', label: 'Sunday' },
-          { value: '1', label: 'Monday' },
-          { value: '2', label: 'Tuesday' },
-          { value: '3', label: 'Wednesday' },
-          { value: '4', label: 'Thursday' },
-          { value: '5', label: 'Friday' },
-          { value: '6', label: 'Saturday' },
-        ],
-      },
-    ],
-  },
 ]
-
-/**
- * The modules a new instance starts with, read whenever an instance has never saved its own (api/src/lib/modulesConfig.ts).
- * The team's emails: the email digest with priority bills and saved views, with new bills off for members unless they
- * turn them on, and the week ahead email on Fridays. How often the digest comes is each person's own choice. Migration 0129 saved an empty set for every instance
- * that already had people, so these reach only new ones.
- */
-export const DEFAULT_MODULES: ModulesConfig = {
-  'email-digest': { enabled: true, settings: { teamUpdates: true, newBillsDefault: false } },
-  'week-ahead': { enabled: true, settings: { weeklyDay: '5' } },
-}
 
 export function isModuleEnabled(
   modules: ModulesConfig | undefined,
@@ -109,8 +75,6 @@ export function getModuleSetting<T extends ModuleSettingValue>(
   return fallback
 }
 
-const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-
 /** Settings to render for a module, dropping any whose `showWhen` condition isn't met. */
 export function visibleModuleSettings(m: ModuleDef, modules: ModulesConfig | undefined): ModuleSettingDef[] {
   if (!m.settings) return []
@@ -122,48 +86,7 @@ export function visibleModuleSettings(m: ModuleDef, modules: ModulesConfig | und
   })
 }
 
-/**
- * What the team chose for the email digest: "on" (priority bills, newly found bills, and saved views), "views"
- * (only the saved views each person follows), or "off" (no one gets it). Stored as the module's `enabled` plus
- * `teamUpdates`, which is on unless it is set to false, so a module saved before the choice existed reads as "on".
- */
-export type DigestTeamChoice = 'on' | 'views' | 'off'
-export function digestTeamChoice(modules: ModulesConfig | undefined): DigestTeamChoice {
-  if (!isModuleEnabled(modules, 'email-digest')) return 'off'
-  return getModuleSetting<boolean>(modules, 'email-digest', 'teamUpdates', true) === false ? 'views' : 'on'
-}
-
-/**
- * What members get unless they change it (#1036): "Members get them" (true) or "Members don't get
- * them" (false), under "Newly found bills, unless a member changes it". Stored as the email-digest module's `newBillsDefault`, which is on unless it is set to false.
- */
-export function newBillsDefault(modules: ModulesConfig | undefined): boolean {
-  return getModuleSetting<boolean>(modules, 'email-digest', 'newBillsDefault', true) !== false
-}
-
-/**
- * Whether a person's "Newly found bills" part is on: their own choice once they made one. With none (null), a member
- * follows the team's default, and an admin or owner gets the part, since they decide which new bills the team follows.
- */
-export function newlyFoundOn(choice: boolean | null | undefined, role: string, modules: ModulesConfig | undefined): boolean {
-  if (typeof choice === 'boolean') return choice
-  return role === 'admin' || role === 'owner' || newBillsDefault(modules)
-}
-
-/** When a person's email digest is sent, as a phrase for a sentence: "every morning", or "every Friday morning" for one weekly on a weekday (0 Sunday to 6 Saturday). */
-export function digestSentPhrase(weeklyDay: number | null | undefined): string {
-  if (weeklyDay == null || !WEEKDAYS[weeklyDay]) return 'every morning'
-  return `every ${WEEKDAYS[weeklyDay]} morning`
-}
-
-/** When the week ahead email is sent, as a phrase for a sentence: "every Monday morning" unless another day is set. */
-export function weekAheadSentPhrase(modules: ModulesConfig | undefined): string {
-  const day = WEEKDAYS[Number(getModuleSetting(modules, 'week-ahead', 'weeklyDay', '1'))] ?? 'Monday'
-  return `every ${day} morning`
-}
-
 /** Maps a module type to a human-readable kind label. */
 export function moduleKindLabel(type: ModuleType): string {
   return type === 'widget' ? 'Widget' : 'Page'
 }
-

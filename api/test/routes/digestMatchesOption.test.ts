@@ -43,4 +43,21 @@ describe('the digest new-match option', () => {
     await patchMe(token, { emailDigestEnabled: false })
     expect(await me(token)).toMatchObject({ emailDigestEnabled: false, emailDigestMatchesEnabled: false })
   })
+
+  it('reads and saves how often the digest comes: every morning by default, or a weekday from 0 to 6', async () => {
+    const token = await seedSession(await seedUser())
+    expect((await me(token)).emailDigestWeeklyDay).toBeNull()
+    const res = await patchMe(token, { emailDigestWeeklyDay: 4 })
+    expect(await res.json()).toEqual({ emailDigestWeeklyDay: 4 })
+    expect((await me(token)).emailDigestWeeklyDay).toBe(4)
+    await patchMe(token, { emailDigestWeeklyDay: null })
+    expect((await me(token)).emailDigestWeeklyDay).toBeNull()
+  })
+
+  it.each([7, -1, 2.5, '3'])('ignores %j as the digest day', async (day) => {
+    const token = await seedSession(await seedUser())
+    await patchMe(token, { emailDigestWeeklyDay: 2 })
+    await patchMe(token, { emailDigestWeeklyDay: day })
+    expect((await me(token)).emailDigestWeeklyDay).toBe(2)
+  })
 })

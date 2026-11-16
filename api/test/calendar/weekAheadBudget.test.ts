@@ -27,7 +27,7 @@ beforeEach(async () => {
   userId = await seedUser({ email: 'member@b.com', role: 'admin' })
   token = await seedSession(userId)
   const weekday = String(new Date().getUTCDay())
-  await getDb(env.DB).insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'week-ahead': { enabled: true, settings: { weeklyDay: weekday } } }) })
+  await getDb(env.DB).insert(associationConfig).values({ key: 'week_ahead_day', value: weekday })
   resetMail()
 })
 

@@ -8,11 +8,6 @@ import { runDigest } from '../../src/lib/digest'
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 
-async function enableModule(db: ReturnType<typeof getDb>) {
-  const v = JSON.stringify({ 'email-digest': true })
-  await db.insert(associationConfig).values({ key: 'modules', value: v })
-    .onConflictDoUpdate({ target: associationConfig.key, set: { value: v } })
-}
 async function addEvent(db: ReturnType<typeof getDb>, billId: string, type: string, metadata: string) {
   await db.insert(feedEvents).values({ id: crypto.randomUUID(), type: type as any, billId, userId: 'system', metadata })
 }
@@ -25,10 +20,10 @@ describe('runDigest', () => {
     billId = await seedBill({ billNumber: 'H 1', state: 'RI', session: '2026', priority: 'high' })
   })
 
-  it('no-ops (no send) when the module is disabled', async () => {
+  it('no-ops (no send) when notification emails are off', async () => {
     const f = vi.fn(); vi.stubGlobal('fetch', f)
     const db = getDb(env.DB)
-    await db.insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'email-digest': { enabled: false } }) })
+    await db.insert(associationConfig).values({ key: 'notification_emails_enabled', value: 'false' })
     await addEvent(db, billId, 'bill_updated', JSON.stringify({ changes: [{ changeType: 'status_change', oldValue: 'Introduced', newValue: 'Engrossed', detail: null }] }))
     const result = await runDigest(env as any, db)
     expect(f).not.toHaveBeenCalled()
@@ -36,7 +31,7 @@ describe('runDigest', () => {
   })
 
   it('sends a batch when enabled + priority bill has activity + active opted-in recipient', async () => {
-    const db = getDb(env.DB); await enableModule(db)
+    const db = getDb(env.DB)
     await addEvent(db, billId, 'bill_updated', JSON.stringify({ changes: [{ changeType: 'status_change', oldValue: 'Introduced', newValue: 'Engrossed', detail: null }] }))
     const calls: any[] = []
     vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
@@ -51,7 +46,7 @@ describe('runDigest', () => {
   })
 
   it('sends nothing when no qualifying activity', async () => {
-    const db = getDb(env.DB); await enableModule(db)
+    const db = getDb(env.DB)
     const f = vi.fn(); vi.stubGlobal('fetch', f)
     const result = await runDigest(env as any, db)
     expect(f).not.toHaveBeenCalled()
@@ -59,7 +54,7 @@ describe('runDigest', () => {
   })
 
   it('excludes events on non-priority bills', async () => {
-    const db = getDb(env.DB); await enableModule(db)
+    const db = getDb(env.DB)
     const plain = await seedBill({ billNumber: 'H 999', state: 'RI', session: '2026' })
     await addEvent(db, plain, 'bill_updated', '{"changes":[{"changeType":"status_change","oldValue":"a","newValue":"b","detail":null}]}')
     const f = vi.fn(); vi.stubGlobal('fetch', f)
@@ -69,7 +64,7 @@ describe('runDigest', () => {
   })
 
   it('includes comment_added on priority bills', async () => {
-    const db = getDb(env.DB); await enableModule(db)
+    const db = getDb(env.DB)
     await addEvent(db, billId, 'comment_added', JSON.stringify({ preview: 'We should testify against this at the hearing.', commentId: 'c-test-1' }))
     const calls: any[] = []
     vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
@@ -81,7 +76,7 @@ describe('runDigest', () => {
   })
 
   it('includes priority_set on priority bills', async () => {
-    const db = getDb(env.DB); await enableModule(db)
+    const db = getDb(env.DB)
     await addEvent(db, billId, 'priority_set', JSON.stringify({ priority: 'high' }))
     const calls: any[] = []
     vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
@@ -94,7 +89,7 @@ describe('runDigest', () => {
 
   it('respects per-user opt-out (no recipients → no send)', async () => {
     await clearDb()
-    const db = getDb(env.DB); await enableModule(db)
+    const db = getDb(env.DB)
     const u = await seedUser({ email: 'out@e.com', emailDigestEnabled: false }); await seedSession(u)
     const b = await seedBill({ billNumber: 'H 2', state: 'RI', session: '2026', priority: 'high' })
     await addEvent(db, b, 'position_set', JSON.stringify({ position: 'Support' }))
@@ -105,7 +100,7 @@ describe('runDigest', () => {
   })
 
   it('returns nonzero failed when the email provider rejects a send', async () => {
-    const db = getDb(env.DB); await enableModule(db)
+    const db = getDb(env.DB)
     await addEvent(db, billId, 'bill_updated', JSON.stringify({ changes: [{ changeType: 'status_change', oldValue: 'Introduced', newValue: 'Engrossed', detail: null }] }))
     // Mock fetch to return a non-200 status — sendBatch counts this as failed.
     vi.stubGlobal('fetch', vi.fn(async () => new Response('rate limited', { status: 429 })))
@@ -114,7 +109,7 @@ describe('runDigest', () => {
   })
 
   it('includes same-day DB-format events after an ISO last_digest_at cursor (format-agnostic)', async () => {
-    const db = getDb(env.DB); await enableModule(db)
+    const db = getDb(env.DB)
     // Cursor set to 1 hour ago in ISO format (same day).
     const isoCursor = new Date(Date.now() - 3600_000).toISOString()
     await db.insert(associationConfig).values({ key: 'last_digest_at', value: isoCursor })
@@ -129,7 +124,7 @@ describe('runDigest', () => {
   })
 
   it('excludes suppressed events', async () => {
-    const db = getDb(env.DB); await enableModule(db)
+    const db = getDb(env.DB)
     await db.insert(feedEvents).values({ id: crypto.randomUUID(), type: 'position_set' as any, billId, userId: 'system', metadata: JSON.stringify({ position: 'Support' }), suppressed: true })
     const f = vi.fn(); vi.stubGlobal('fetch', f)
     const result = await runDigest(env as any, db)
@@ -139,7 +134,6 @@ describe('runDigest', () => {
 
   // The digest on, with everyone seeded so far on a weekly digest on that weekday (each person's own choice).
   async function enableWeekly(db: ReturnType<typeof getDb>, weeklyDay: string) {
-    await enableModule(db)
     await db.update(users).set({ emailDigestWeeklyDay: Number(weeklyDay) })
   }
 
@@ -184,7 +178,7 @@ describe('runDigest', () => {
   })
 
   it('daily: the summary line says the last day', async () => {
-    const db = getDb(env.DB); await enableModule(db)
+    const db = getDb(env.DB)
     vi.useFakeTimers(); vi.setSystemTime(new Date('2026-06-03T11:00:00Z'))
     await db.insert(associationConfig).values({ key: 'last_digest_at', value: '2026-06-02 11:00:00' })
     await addEvent(db, billId, 'position_set', JSON.stringify({ position: 'Support' }))
@@ -211,7 +205,7 @@ describe('runDigest', () => {
   const recentMatch = () => new Date(Date.now() - 3600_000).toISOString().slice(0, 19).replace('T', ' ')
 
   it('admins and members (option on by default) get the new-match section', async () => {
-    const db = getDb(env.DB); await enableModule(db)
+    const db = getDb(env.DB)
     const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
     // priority event so BOTH the member (a@e.com from beforeEach) and admin get a base digest
     await addEvent(db, billId, 'position_set', JSON.stringify({ position: 'Support' }))
@@ -229,7 +223,7 @@ describe('runDigest', () => {
   })
 
   it('a window with only new matches sends a digest to the admin and to the member with the option on', async () => {
-    const db = getDb(env.DB); await enableModule(db)
+    const db = getDb(env.DB)
     const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
     await seedBill({ billNumber: 'NM 7', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 50 })
     const calls: any[] = []
@@ -241,7 +235,7 @@ describe('runDigest', () => {
   })
 
   it('caps the admin new-match section at the 10 most relevant, with the full count and a "See all N new matches" link', async () => {
-    const db = getDb(env.DB); await enableModule(db)
+    const db = getDb(env.DB)
     const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
     for (let i = 1; i <= 12; i++) {
       await seedBill({ billNumber: `NM ${100 + i}`, state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 50 + i })
@@ -271,7 +265,7 @@ describe('runDigest', () => {
     seedBill({ billNumber, state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 70, ...extra })
 
   it('subject: an admin whose digest has both kinds sees both counts, a member with the option off sees only updates', async () => {
-    const db = getDb(env.DB); await enableModule(db)
+    const db = getDb(env.DB)
     const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
     const off = await seedUser({ email: 'off@e.com', role: 'member', emailDigestMatchesEnabled: false }); await seedSession(off)
     await addEvent(db, billId, 'position_set', JSON.stringify({ position: 'Support' }))
@@ -300,7 +294,7 @@ describe('runDigest', () => {
   })
 
   it('subject: updates only, daily', async () => {
-    const db = getDb(env.DB); await enableModule(db)
+    const db = getDb(env.DB)
     await addEvent(db, billId, 'position_set', JSON.stringify({ position: 'Support' }))
     const calls = capture()
     await runDigest(env as any, db)
@@ -308,7 +302,7 @@ describe('runDigest', () => {
   })
 
   it('subject: counts distinct updated bills, not events', async () => {
-    const db = getDb(env.DB); await enableModule(db)
+    const db = getDb(env.DB)
     const other = await seedBill({ billNumber: 'H 2', state: 'RI', session: '2026', priority: 'low' })
     await addEvent(db, billId, 'position_set', JSON.stringify({ position: 'Support' }))
     await addEvent(db, billId, 'comment_added', JSON.stringify({ preview: 'Noted.' }))
@@ -319,7 +313,7 @@ describe('runDigest', () => {
   })
 
   it('a new match\'s summary reaches its card, and a match with none gets no preview', async () => {
-    const db = getDb(env.DB); await enableModule(db)
+    const db = getDb(env.DB)
     const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
     await newMatch('NM 1', { tenantSummary: 'Lets counties start mail ballot processing early.' })
     await newMatch('NM 2')
@@ -332,7 +326,7 @@ describe('runDigest', () => {
   })
 
   it('no digest, to an admin or a member, ever says "keyword"', async () => {
-    const db = getDb(env.DB); await enableModule(db)
+    const db = getDb(env.DB)
     const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
     await addEvent(db, billId, 'position_set', JSON.stringify({ position: 'Support' }))
     for (let i = 1; i <= 11; i++) await newMatch(`NM ${i}`, { relevanceScore: 50 + i })
@@ -346,7 +340,7 @@ describe('runDigest', () => {
   })
 
   it('excludes prioritized and dismissed bills from the new-match section', async () => {
-    const db = getDb(env.DB); await enableModule(db)
+    const db = getDb(env.DB)
     const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
     // PRI 1 is prioritized, which latches triaged_at (setting a priority is an act of triage).
     await seedBill({ billNumber: 'PRI 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), priority: 'high', triagedAt: recentMatch(), relevanceScore: 90 })
@@ -361,7 +355,7 @@ describe('runDigest', () => {
   })
 
   it('excludes new matches before the last_digest_at window', async () => {
-    const db = getDb(env.DB); await enableModule(db)
+    const db = getDb(env.DB)
     const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
     const since = new Date(Date.now() - 3600_000).toISOString() // 1h ago
     await db.insert(associationConfig).values({ key: 'last_digest_at', value: since })
@@ -375,7 +369,7 @@ describe('runDigest', () => {
   })
 
   it('respects new_match_min_relevance for the digest section', async () => {
-    const db = getDb(env.DB); await enableModule(db)
+    const db = getDb(env.DB)
     await db.insert(associationConfig).values({ key: 'new_match_min_relevance', value: '60' })
     const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
     await seedBill({ billNumber: 'LOW 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 30 })
@@ -400,7 +394,7 @@ describe('runDigest', () => {
     }
 
     it('leaves out a routine new match whose companion in the same group was triaged', async () => {
-      const db = getDb(env.DB); await enableModule(db)
+      const db = getDb(env.DB)
       const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
       const fresh = await seedBill({ billNumber: 'GRP 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 90 })
       const triaged = await seedBill({ billNumber: 'GRP 2', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 90, triagedAt: recentMatch() })
@@ -415,7 +409,7 @@ describe('runDigest', () => {
     })
 
     it('leaves out the match but still lists an ungrouped new match beside it', async () => {
-      const db = getDb(env.DB); await enableModule(db)
+      const db = getDb(env.DB)
       const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
       const fresh = await seedBill({ billNumber: 'GRP 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 90 })
       // The triaged companion is not itself a new match (it has no newMatchAt).
@@ -436,7 +430,7 @@ describe('runDigest', () => {
     })
 
     it('lists a routine new match in a group where no member is triaged', async () => {
-      const db = getDb(env.DB); await enableModule(db)
+      const db = getDb(env.DB)
       const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
       const first = await seedBill({ billNumber: 'GRP 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 90 })
       // A companion that is not a new match (no newMatchAt) and not triaged either.
@@ -454,7 +448,7 @@ describe('runDigest', () => {
     })
 
     it('lists every routine new match of an untriaged group as one new match naming each bill', async () => {
-      const db = getDb(env.DB); await enableModule(db)
+      const db = getDb(env.DB)
       const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
       const first = await seedBill({ billNumber: 'GRP 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 90 })
       const second = await seedBill({ billNumber: 'GRP 2', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 80 })
@@ -473,7 +467,7 @@ describe('runDigest', () => {
     })
 
     it('does not let a triaged bill in another group affect a new match', async () => {
-      const db = getDb(env.DB); await enableModule(db)
+      const db = getDb(env.DB)
       const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
       const fresh = await seedBill({ billNumber: 'GRP 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 90 })
       const freshMate = await seedBill({ billNumber: 'GRP 2', state: 'RI', session: '2026', matchType: 'keyword', relevanceScore: 90 })
@@ -499,7 +493,7 @@ describe('runDigest', () => {
         seedBill({ billNumber, state: 'RI', session: '2026', matchType: null, aiProcessedAt: recentMatch(), tenantSummary: 'Analyzed through its group', relevanceScore: 90, ...more })
 
       it('is left out of the new-match section, for an admin and for a member', async () => {
-        const db = getDb(env.DB); await enableModule(db)
+        const db = getDb(env.DB)
         const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
         const tracked = await seedBill({ billNumber: 'TRK 1', state: 'RI', session: '2026', matchType: 'manual', relevanceScore: 90 })
         const companion = await pulled('PUL 1')
@@ -513,7 +507,7 @@ describe('runDigest', () => {
       })
 
       it('is left out beside a routine new match, which is still listed', async () => {
-        const db = getDb(env.DB); await enableModule(db)
+        const db = getDb(env.DB)
         const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
         const tracked = await seedBill({ billNumber: 'TRK 1', state: 'RI', session: '2026', matchType: 'manual', relevanceScore: 90 })
         const companion = await pulled('PUL 1')
@@ -532,7 +526,7 @@ describe('runDigest', () => {
       })
 
       it('is left out of a group whose tracked bill is itself a routine new match, which counts once', async () => {
-        const db = getDb(env.DB); await enableModule(db)
+        const db = getDb(env.DB)
         const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
         const tracked = await seedBill({ billNumber: 'TRK 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 90 })
         const companion = await pulled('PUL 1')
@@ -550,7 +544,7 @@ describe('runDigest', () => {
       })
 
       it('is left out even when a declaration had leaked onto its row, since it has no match type', async () => {
-        const db = getDb(env.DB); await enableModule(db)
+        const db = getDb(env.DB)
         const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
         const tracked = await seedBill({ billNumber: 'TRK 1', state: 'RI', session: '2026', matchType: 'manual', relevanceScore: 90 })
         const companion = await pulled('PUL 1', { matchProvenance: 'routine', newMatchAt: recentMatch() })
@@ -564,7 +558,7 @@ describe('runDigest', () => {
       })
 
       it('is listed once it matches on its own with a routine declaration', async () => {
-        const db = getDb(env.DB); await enableModule(db)
+        const db = getDb(env.DB)
         const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
         const tracked = await seedBill({ billNumber: 'TRK 1', state: 'RI', session: '2026', matchType: 'manual', relevanceScore: 90 })
         const companion = await pulled('PUL 1')

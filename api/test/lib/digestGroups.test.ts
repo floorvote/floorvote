@@ -146,7 +146,6 @@ describe('runDigest: companion groups', () => {
   beforeEach(async () => {
     await clearDb()
     resend = stubResend()
-    await db().insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'email-digest': true }) })
     await seedSession(await seedUser({ email: 'ada@example.com', role: 'admin' }))
     // Ids sort a < b < c, so a group's key is its first bill's id.
     await seedBill({ id: 'a-house', billNumber: 'H 101', state: 'RI', session: '2026', priority: 'high' })

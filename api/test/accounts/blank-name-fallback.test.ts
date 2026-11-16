@@ -113,7 +113,6 @@ describe('a cleared name falls back to the email', () => {
 
   it('in the daily digest email', async () => {
     const db = getDb(env.DB)
-    await db.insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'email-digest': true }) })
     await db.insert(feedEvents).values({
       id: crypto.randomUUID(), type: 'comment_added', billId, userId: clearedId,
       metadata: JSON.stringify({ preview: 'Digest preview text' }),

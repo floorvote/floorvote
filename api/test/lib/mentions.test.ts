@@ -1,10 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { env } from 'cloudflare:test'
-import { extractMentions, mentionEmailsEnabled } from '../../src/lib/mentions'
+import { describe, it, expect } from 'vitest'
+import { extractMentions } from '../../src/lib/mentions'
 import { stripHtml } from '../../src/lib/stripHtml'
-import { clearDb } from '../helpers'
-import { getDb } from '../../src/db/client'
-import { associationConfig } from '../../src/db/schema'
 
 describe('extractMentions', () => {
   it('extracts user mentions', () => {
@@ -90,23 +86,5 @@ describe('stripHtml', () => {
 
   it('handles empty string', () => {
     expect(stripHtml('')).toBe('')
-  })
-})
-
-describe('mentionEmailsEnabled', () => {
-  beforeEach(async () => { await clearDb() })
-
-  it('defaults to true when the flag is unset', async () => {
-    expect(await mentionEmailsEnabled(getDb(env.DB))).toBe(true)
-  })
-  it('is false only when explicitly set to false', async () => {
-    const db = getDb(env.DB)
-    await db.insert(associationConfig).values({ key: 'mention_emails_enabled', value: JSON.stringify(false) })
-    expect(await mentionEmailsEnabled(db)).toBe(false)
-  })
-  it('is true when explicitly set to true', async () => {
-    const db = getDb(env.DB)
-    await db.insert(associationConfig).values({ key: 'mention_emails_enabled', value: JSON.stringify(true) })
-    expect(await mentionEmailsEnabled(db)).toBe(true)
   })
 })

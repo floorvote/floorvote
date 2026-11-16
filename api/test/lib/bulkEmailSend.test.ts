@@ -46,8 +46,6 @@ async function stats() {
 
 async function enableDigest(recipients: string[]) {
   const db = getDb(env.DB)
-  const v = JSON.stringify({ 'email-digest': true })
-  await db.insert(associationConfig).values({ key: 'modules', value: v })
   for (const email of recipients) await seedSession(await seedUser({ email }))
   const billId = await seedBill({ billNumber: 'H 1', state: 'RI', session: '2026', priority: 'high' })
   await db.insert(feedEvents).values({
@@ -58,7 +56,7 @@ async function enableDigest(recipients: string[]) {
 async function enableWeekAhead(recipients: string[]) {
   const db = getDb(env.DB)
   const weekday = String(new Date().getUTCDay())
-  await db.insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'week-ahead': { enabled: true, settings: { weeklyDay: weekday } } }) })
+  await db.insert(associationConfig).values({ key: 'week_ahead_day', value: weekday })
   for (const email of recipients) await seedSession(await seedUser({ email }))
   const bill = await seedBill({ billNumber: 'HB 100', state: 'DC', priority: 'high' })
   await seedCalendarEvent(bill, { kind: 'hearing', date: isoDay(2), description: 'Public Hearing on HB 100' })

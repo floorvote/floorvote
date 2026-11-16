@@ -7,10 +7,9 @@ import { senderFor, unsubscribeHeaders } from './email'
 import { nowDb } from './dbTime'
 import { prioritizedBillEntry, billEntryGroupKey } from './calendarVisibility'
 import { loadDateFieldEvents } from './dateFieldEvents'
-import { readModules } from './modulesConfig'
+import { notificationEmailsEnabled, readWeekAheadDay } from './notificationEmails'
 import { groupHasPriority, loadGroupPriorities, priorityWorn } from './teamFields'
 import type { AppDb, Env } from '../types'
-import { isModuleEnabled, getModuleSetting } from '../../../shared/modules'
 import { PRODUCT_NAME } from '../../../shared/brand'
 import { billDisplayTitle } from '../../../shared/billTitle'
 
@@ -35,15 +34,13 @@ async function stampLastWeekAhead(db: AppDb, now: string): Promise<void> {
     .onConflictDoUpdate({ target: associationConfig.key, set: { value: now } })
 }
 
-/** Returns `{ skipped }` when it did no work, and why: the module is off, or it isn't the email's day. Either way the run can't mark a failed run's alert resolved, and 'off' ends that alert's conversation (lib/jobAlert.ts). */
+/** Returns `{ skipped }` when it did no work, and why: notification emails are off, or it isn't the email's day. Either way the run can't mark a failed run's alert resolved, and 'off' ends that alert's conversation (lib/jobAlert.ts). */
 export async function runWeekAhead(env: Env, db: AppDb): Promise<JobSkipped | undefined> {
-  // Module gate
-  const modules = await readModules(db)
-  if (!isModuleEnabled(modules, 'week-ahead')) return { skipped: 'off' }
+  // The admin's one switch for notification emails
+  if (!(await notificationEmailsEnabled(db))) return { skipped: 'off' }
 
-  // Weekday gate — only send on configured day (default Monday = 1)
-  const weeklyDay = getModuleSetting<string>(modules, 'week-ahead', 'weeklyDay', '1')
-  if (String(new Date().getUTCDay()) !== String(weeklyDay)) return { skipped: 'not-today' }
+  // Weekday gate: only send on the instance's week ahead day (Friday unless an admin chose another)
+  if (new Date().getUTCDay() !== await readWeekAheadDay(db)) return { skipped: 'not-today' }
 
   const todayIso = isoDate(0)
   const endIso = isoDate(7)  // exclusive

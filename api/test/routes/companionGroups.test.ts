@@ -117,7 +117,7 @@ describe('bill routes across a companion group', () => {
       await db().delete(comments).where(eq(comments.id, 'c3'))
       // In-app only (the instance's conversation emails are off), so no reply
       // email is still sending when the next test resets the database.
-      await db().insert(associationConfig).values({ key: 'mention_emails_enabled', value: 'false' })
+      await db().insert(associationConfig).values({ key: 'notification_emails_enabled', value: 'false' })
       const res = await as('ben', '/bills/b1713/comments', { method: 'POST', body: JSON.stringify({ content: '<p>reply</p>' }) })
       expect(res.status).toBe(201)
       const rows = await db().select().from(notifications).where(and(eq(notifications.recipientId, user.ann), eq(notifications.kind, 'reply'))).all()

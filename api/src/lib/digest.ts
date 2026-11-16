@@ -7,15 +7,13 @@ import { nowDb } from './dbTime'
 import { getNewMatchMinRelevance, routineNewMatchWhere } from './newMatch'
 import { groupHasPriority, loadGroupPriorities, priorityWorn } from './teamFields'
 import { activeUser } from './accountDeletion'
-import { newBillsChoice } from './newBillsChoice'
-import { readModules } from './modulesConfig'
+import { notificationEmailsEnabled } from './notificationEmails'
 import type { AppDb, Env } from '../types'
-import { digestTeamChoice, newlyFoundOn, type DigestTeamChoice, type ModulesConfig } from '../../../shared/modules'
 import { PRODUCT_NAME } from '../../../shared/brand'
 import { userDisplayNameSql } from './displayName'
 
 /**
- * A digest schedule (migration 0130). Each person gets the digest every morning (weeklyDay null) or once a week on the
+ * A digest schedule (migration 0127). Each person gets the digest every morning (weeklyDay null) or once a week on the
  * weekday they picked (users.email_digest_weekly_day, 0 Sunday to 6 Saturday, UTC). Each schedule keeps its own window:
  * `lastKey` holds where its last one ended, and a schedule that has never been sent reaches back `firstDays`.
  */
@@ -28,7 +26,7 @@ async function stampLast(db: AppDb, schedule: Schedule, now: string): Promise<vo
     .onConflictDoUpdate({ target: associationConfig.key, set: { value: now } })
 }
 
-/** A digest run's counts. `skipped: 'off'` marks a run that did no work because the team turned the digest off, which can't mark a failed run's alert resolved and ends that alert's conversation (lib/jobAlert.ts). */
+/** A digest run's counts. `skipped: 'off'` marks a run that did no work because an admin turned notification emails off, which can't mark a failed run's alert resolved and ends that alert's conversation (lib/jobAlert.ts). */
 export type DigestResult = { ok: true; recipients: number; sent: number; failed: number; skipped?: 'off' }
 
 export async function runDigest(
@@ -37,13 +35,11 @@ export async function runDigest(
   // Note: demo instances never actually send — the bulk purpose is suppressed
   // when DEMO_MODE is set. The digest still shows as enabled
   // (read-only) in the demo UI.
-  const modules = await readModules(db)
-  // Off: no one gets it, followed views included. Saved views only: the priority and newly found parts are no one's.
-  const teamChoice = digestTeamChoice(modules)
-  if (teamChoice === 'off') return { ok: true, recipients: 0, sent: 0, failed: 0, skipped: 'off' }
+  // The admin's one switch for notification emails. Off: no one gets the digest, followed views included.
+  if (!(await notificationEmailsEnabled(db))) return { ok: true, recipients: 0, sent: 0, failed: 0, skipped: 'off' }
 
   const people = await db.select({
-      id: users.id, email: users.email, role: users.role, newBills: users.emailDigestNewBills, priorityEnabled: users.emailDigestEnabled,
+      id: users.id, email: users.email, role: users.role, matchesEnabled: users.emailDigestMatchesEnabled, priorityEnabled: users.emailDigestEnabled,
       weeklyDay: users.emailDigestWeeklyDay,
     }).from(users)
     .where(exists(db.select({ id: sessions.id }).from(sessions).where(eq(sessions.userId, users.id))))
@@ -53,7 +49,7 @@ export async function runDigest(
   const days = opts.ignoreSchedule ? [0, 1, 2, 3, 4, 5, 6] : [new Date().getUTCDay()]
   const total: DigestResult = { ok: true, recipients: 0, sent: 0, failed: 0 }
   for (const schedule of [DAILY, ...days.map(weekly)]) {
-    const r = await sendSchedule(env, db, { modules, teamChoice, schedule, recipients: people.filter(p => (p.weeklyDay ?? null) === schedule.weeklyDay) })
+    const r = await sendSchedule(env, db, { schedule, recipients: people.filter(p => (p.weeklyDay ?? null) === schedule.weeklyDay) })
     total.recipients += r.recipients
     total.sent += r.sent
     total.failed += r.failed
@@ -61,12 +57,12 @@ export async function runDigest(
   return total
 }
 
-type Recipient = { id: string; email: string; role: string; newBills: number | null; priorityEnabled: number }
+type Recipient = { id: string; email: string; role: string; matchesEnabled: number; priorityEnabled: number }
 
 /** One schedule's digest: what changed in its window, sent to the people on it. The window moves on whether or not anything went out. */
 async function sendSchedule(
   env: Env, db: AppDb,
-  { modules, teamChoice, schedule, recipients }: { modules: ModulesConfig; teamChoice: DigestTeamChoice; schedule: Schedule; recipients: Recipient[] },
+  { schedule, recipients }: { schedule: Schedule; recipients: Recipient[] },
 ): Promise<{ recipients: number; sent: number; failed: number }> {
   const now = nowDb()
   const none = { recipients: 0, sent: 0, failed: 0 }
@@ -77,8 +73,7 @@ async function sendSchedule(
   // via datetime() at the query below — keep it space format.
   const since = lastRow?.value ?? new Date(Date.now() - schedule.firstDays * 86400_000).toISOString().slice(0, 19).replace('T', ' ')
 
-  const teamSendsParts = teamChoice === 'on'
-  const eventRows = !teamSendsParts ? [] : await db
+  const eventRows = await db
     .select({
       type: feedEvents.type, metadata: feedEvents.metadata, createdAt: feedEvents.createdAt,
       billId: bills.id, billNumber: bills.billNumber, billTitle: bills.title,
@@ -105,7 +100,7 @@ async function sendSchedule(
   // triage list and out of the digest. All of them are passed on:
   // renderDigestEmail counts the lot, then ranks and caps what it lists.
   const threshold = await getNewMatchMinRelevance(db)
-  const newMatches: NewMatchDigestItem[] = !teamSendsParts ? [] : await db.select({
+  const newMatches: NewMatchDigestItem[] = await db.select({
       billId: bills.id, billNumber: bills.billNumber, billTitle: bills.title,
       billState: bills.state, billSession: bills.session, billSessionSlug: bills.sessionSlug, relevanceScore: bills.relevanceScore,
       summary: bills.tenantSummary, billGroupKey: bills.groupKey,
@@ -119,11 +114,10 @@ async function sendSchedule(
     ))
     .all()
 
-  // Which parts a person gets (#1035). Priority bills and newly found bills need the team choice On and the person's
-  // own switch for each. A newly found choice that is unset follows the team's default for a member and is on for an
-  // admin or owner (#1036). A followed view is always theirs.
-  const hasPriorityPart = (r: Recipient) => teamSendsParts && r.priorityEnabled === 1
-  const hasFoundPart = (r: Recipient) => teamSendsParts && newlyFoundOn(newBillsChoice(r.newBills), r.role, modules)
+  // Which parts a person gets (#1035). Priority bills and new bills each follow the person's own switch, for every role.
+  // A followed view is always theirs.
+  const hasPriorityPart = (r: Recipient) => r.priorityEnabled === 1
+  const hasFoundPart = (r: Recipient) => r.matchesEnabled === 1
   const recipientById = new Map(recipients.map(r => [r.id, r]))
   // Saved views a recipient included (#449): each view's news in the window, minus what their digest already shows
   // as a priority bill, so a bill appears once. Someone without the priority part sees it in the view.

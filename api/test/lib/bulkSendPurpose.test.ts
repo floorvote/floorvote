@@ -27,7 +27,6 @@ beforeEach(async () => {
 
 async function seedDigest(recipients: string[]) {
   const db = getDb(env.DB)
-  await db.insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'email-digest': true }) })
   for (const email of recipients) await seedSession(await seedUser({ email }))
   const billId = await seedBill({ billNumber: 'H 1', state: 'RI', session: '2026', priority: 'high' })
   await db.insert(feedEvents).values({ id: crypto.randomUUID(), type: 'priority_set' as any, billId, userId: 'system', metadata: JSON.stringify({ priority: 'high' }) })
@@ -35,7 +34,7 @@ async function seedDigest(recipients: string[]) {
 
 async function seedWeekAhead(recipients: string[]) {
   const db = getDb(env.DB)
-  await db.insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'week-ahead': { enabled: true, settings: { weeklyDay: String(new Date().getUTCDay()) } } }) })
+  await db.insert(associationConfig).values({ key: 'week_ahead_day', value: String(new Date().getUTCDay()) })
   for (const email of recipients) await seedSession(await seedUser({ email }))
   const bill = await seedBill({ billNumber: 'HB 100', state: 'DC', priority: 'high' })
   await seedCalendarEvent(bill, { kind: 'hearing', date: isoDay(2), description: 'Public Hearing on HB 100' })

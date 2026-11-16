@@ -282,7 +282,7 @@ describe('replying to a bill notifies its other commenters', () => {
   it('keeps gating the mention email of a member who turned the setting off on the instance switch', async () => {
     await member('Ivy', { emailRepliesEnabled: false })
     await comment('ivy', '<p>First</p>')
-    await getDb(env.DB).insert(associationConfig).values({ key: 'mention_emails_enabled', value: 'false' })
+    await getDb(env.DB).insert(associationConfig).values({ key: 'notification_emails_enabled', value: 'false' })
     send.mockClear()
 
     const commentId = await comment('ann', `<p>${mention(ids.ivy, 'Ivy')} thoughts?</p>`)
@@ -320,7 +320,7 @@ describe('replying to a bill notifies its other commenters', () => {
 
   it('stops reply emails but not in-app replies when the instance turned conversation emails off', async () => {
     await comment('ben', '<p>First</p>')
-    await getDb(env.DB).insert(associationConfig).values({ key: 'mention_emails_enabled', value: 'false' })
+    await getDb(env.DB).insert(associationConfig).values({ key: 'notification_emails_enabled', value: 'false' })
     send.mockClear()
 
     const commentId = await comment('ann', '<p>Second</p>')

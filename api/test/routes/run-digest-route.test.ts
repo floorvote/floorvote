@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { env } from 'cloudflare:test'
+import { eq } from 'drizzle-orm'
 import app from '../../src/index'
 import { clearDb, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { associationConfig, feedEvents } from '../../src/db/schema'
+import { associationConfig, feedEvents, users } from '../../src/db/schema'
 
 const TEST_ENV: any = { ...env, CENTRAL_ADMIN_SECRET: 'sek' }
 
@@ -49,11 +50,9 @@ describe('POST /api/internal/run-digest', () => {
   it('forces a send on a non-matching weekly day (ignoreSchedule)', async () => {
     const db = getDb(env.DB)
     vi.useFakeTimers(); vi.setSystemTime(new Date('2026-06-03T11:00:00Z'))  // Wednesday (UTC day 3)
-    // Email digest module: weekly on Monday (1) — i.e. NOT today.
-    const v = JSON.stringify({ 'email-digest': { enabled: true, settings: { frequency: 'weekly', weeklyDay: '1' } } })
-    await db.insert(associationConfig).values({ key: 'modules', value: v })
-      .onConflictDoUpdate({ target: associationConfig.key, set: { value: v } })
+    // The person's digest is weekly on Monday (1), which is NOT today.
     const u = await seedUser({ email: 'r@e.com' }); await seedSession(u)
+    await db.update(users).set({ emailDigestWeeklyDay: 1 }).where(eq(users.id, u))
     const billId = await seedBill({ billNumber: 'H 7', state: 'RI', session: '2026', priority: 'high' })
     await db.insert(feedEvents).values({ id: crypto.randomUUID(), type: 'position_set' as any, billId, userId: 'system', metadata: JSON.stringify({ position: 'Support' }) })
 

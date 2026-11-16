@@ -24,7 +24,6 @@ describe('runDigest and the no-priority updates row', () => {
   beforeEach(async () => {
     await clearDb()
     resend = stubResend()
-    await db().insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'email-digest': true }) })
     await seedSession(await seedUser({ email: 'ada@example.com', role: 'admin' }))
   })
   afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })

@@ -23,7 +23,7 @@ beforeEach(async () => {
   await clearDb()
   await seedSession(await seedUser({ email: 'member@b.com' }))
   const weekday = String(new Date().getUTCDay())
-  await getDb(env.DB).insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'week-ahead': { enabled: true, settings: { weeklyDay: weekday } } }) })
+  await getDb(env.DB).insert(associationConfig).values({ key: 'week_ahead_day', value: weekday })
   resetMail()
 })
 
@@ -170,7 +170,7 @@ describe('the week-ahead email, capped at 30 body events (#675)', () => {
     const seed = async (ids: number[]) => {
       await clearDb()
       await seedSession(await seedUser({ email: 'member@b.com' }))
-      await db.insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'week-ahead': { enabled: true, settings: { weeklyDay: String(new Date().getUTCDay()) } } }) })
+      await db.insert(associationConfig).values({ key: 'week_ahead_day', value: String(new Date().getUTCDay()) })
       for (const i of ids) {
         await db.insert(calendarEvents).values({ id: `tie-${String(i).padStart(2, '0')}`, uid: `tie-${i}@test`, billId: null, source: 'body', sequence: 0, date: isoDay(2), time: '10:00:00', description: label(i), status: 'confirmed', ruleMatch: null })
       }

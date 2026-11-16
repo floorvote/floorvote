@@ -45,6 +45,25 @@ describe('GET /config', () => {
     cookie = `session=${token}`
   })
 
+  it('tells every member the notification emails switch and the week ahead day, on and Friday by default', async () => {
+    const res = await SELF.fetch('http://localhost/api/config', { headers: { Cookie: cookie } })
+    const body = await res.json() as Record<string, unknown>
+    expect(body.notificationEmailsEnabled).toBe(true)
+    expect(body.weekAheadDay).toBe(5)
+    expect(body).not.toHaveProperty('mentionEmailsEnabled')
+  })
+
+  it('tells a member the saved switch and week ahead day', async () => {
+    await getDb(env.DB).insert(associationConfig).values([
+      { key: 'notification_emails_enabled', value: 'false' },
+      { key: 'week_ahead_day', value: '0' },
+    ])
+    const res = await SELF.fetch('http://localhost/api/config', { headers: { Cookie: cookie } })
+    const body = await res.json() as { notificationEmailsEnabled: boolean; weekAheadDay: number }
+    expect(body.notificationEmailsEnabled).toBe(false)
+    expect(body.weekAheadDay).toBe(0)
+  })
+
   it('returns states: [] when no STATE env and no state_coverage row', async () => {
     const res = await SELF.fetch('http://localhost/api/config', {
       headers: { Cookie: cookie },

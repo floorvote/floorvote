@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm'
 import { env } from 'cloudflare:test'
 import { clearDb, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { associationConfig, calendarEvents, calendarEventBills } from '../../src/db/schema'
+import { associationConfig, calendarEvents, calendarEventBills, users } from '../../src/db/schema'
 import { runWeekAhead } from '../../src/lib/weekAhead'
 import { resetMail, lastBatch } from '../mail'
 
@@ -19,7 +19,7 @@ beforeEach(async () => {
   await clearDb()
   await seedSession(await seedUser({ email: 'member@b.com' }))
   const weekday = String(new Date().getUTCDay())
-  await getDb(env.DB).insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'week-ahead': { enabled: true, settings: { weeklyDay: weekday } } }) })
+  await getDb(env.DB).insert(associationConfig).values({ key: 'week_ahead_day', value: weekday })
   resetMail()
 })
 
@@ -99,23 +99,43 @@ describe('the week-ahead email, for a bill\'s own calendar entries', () => {
   })
 })
 
-// A run that isn't the email's weekday, or with the module off, says it
+// A run that isn't the email's weekday, or with notification emails off, says it
 // skipped, so it can't mark a failed run's alert resolved (lib/jobAlert.ts).
 describe('whether a run did its work', () => {
-  const setModules = (value: unknown) =>
-    getDb(env.DB).update(associationConfig).set({ value: JSON.stringify(value) }).where(eq(associationConfig.key, 'modules'))
+  const save = (key: string, value: string) =>
+    getDb(env.DB).insert(associationConfig).values({ key, value }).onConflictDoUpdate({ target: associationConfig.key, set: { value } })
 
   it('says it skipped on a day that is not its weekday', async () => {
-    await setModules({ 'week-ahead': { enabled: true, settings: { weeklyDay: String((new Date().getUTCDay() + 1) % 7) } } })
+    await save('week_ahead_day', String((new Date().getUTCDay() + 1) % 7))
     expect(await runWeekAhead(env as any, getDb(env.DB))).toEqual({ skipped: 'not-today' })
   })
 
-  it('says it skipped with the module off', async () => {
-    await setModules({ 'week-ahead': { enabled: false } })
+  it('says it skipped with notification emails off', async () => {
+    await save('notification_emails_enabled', 'false')
     expect(await runWeekAhead(env as any, getDb(env.DB))).toEqual({ skipped: 'off' })
   })
 
   it('says nothing about skipping on its day', async () => {
     expect(await runWeekAhead(env as any, getDb(env.DB))).toBeUndefined()
+  })
+
+  it('goes out on Friday when no day was saved, and is not-today on any other day', async () => {
+    await getDb(env.DB).delete(associationConfig).where(eq(associationConfig.key, 'week_ahead_day'))
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-11-20T11:00:00Z'))  // Friday
+      expect(await runWeekAhead(env as any, getDb(env.DB))).toBeUndefined()
+      vi.setSystemTime(new Date('2026-11-21T11:00:00Z'))  // Saturday
+      expect(await runWeekAhead(env as any, getDb(env.DB))).toEqual({ skipped: 'not-today' })
+    } finally { vi.useRealTimers() }
+  })
+
+  it('sends to people with the week ahead on, and not to one who turned it off', async () => {
+    await getDb(env.DB).update(users).set({ emailWeekAheadEnabled: 0 }).where(eq(users.email, 'member@b.com'))
+    await seedSession(await seedUser({ email: 'on@b.com' }))
+    const bill = await seedBill({ billNumber: 'HB 5', state: 'DC', priority: 'high' })
+    await seedCalendarEvent(bill, { kind: 'hearing', date: isoDay(2), description: 'Public Hearing on HB 5' })
+    await runWeekAhead(env as any, getDb(env.DB))
+    expect(lastBatch().flatMap(m => m.to)).toEqual(['on@b.com'])
   })
 })

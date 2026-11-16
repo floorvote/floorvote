@@ -140,7 +140,7 @@ describe('processCentralNotification: a pulled companion in a group', () => {
 
   it('lists its hearing in the week-ahead email, under the group\'s priority marker', async () => {
     const weekday = String(new Date().getUTCDay())
-    await db().insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'week-ahead': { enabled: true, settings: { weeklyDay: weekday } } }) })
+    await db().insert(associationConfig).values({ key: 'week_ahead_day', value: weekday })
     sendBatch.mockClear()
     serve(COMPANION, 'S 200', '2026-06-03T00:00:00Z')
     await deliver(COMPANION, { calendar: calendarBlock(2) })

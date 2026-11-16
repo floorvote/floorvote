@@ -8,8 +8,8 @@ import { runDigest } from '../../src/lib/digest'
 import { mail, resetMail } from '../mail'
 
 // #1035: the email digest is three parts, each its own: changes to priority bills (the person's digest switch),
-// newly found bills (their new-match switch, for every role), and the saved views they follow (always). The team
-// choice is On, Saved views only (module `teamUpdates` off), or Off (module `enabled` off). Seam: runDigest with the
+// new bills (their new-match switch, for every role), and the saved views they follow (always). An admin's one switch
+// for notification emails stops all of it. Seam: runDigest with the
 // recording sender, so a test sees who got an email, its subject, its unsubscribe header, and which parts it holds.
 
 vi.mock('../../src/lib/email', async (importOriginal) =>
@@ -21,13 +21,6 @@ const ago = (h: number) => fmt(Date.now() - h * 3600_000)
 const sent = () => mail.sent() as Array<{ to: string[]; subject: string; html: string; headers?: Record<string, string> }>
 const to = (addr: string) => sent().filter(m => m.to[0] === addr)
 const text = (html: string) => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
-
-async function modules(value: unknown) {
-  await db().insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'email-digest': value }) })
-}
-const teamOn = () => modules(true)
-const teamViewsOnly = () => modules({ enabled: true, settings: { teamUpdates: false } })
-const teamOff = () => modules({ enabled: false, settings: { teamUpdates: true } })
 
 async function person(email: string, role: 'admin' | 'member' | 'owner', opts: { priority?: boolean; found?: boolean } = {}) {
   const id = await seedUser({ email, role, emailDigestEnabled: opts.priority !== false, emailDigestMatchesEnabled: opts.found !== false })
@@ -62,7 +55,6 @@ beforeEach(async () => {
 
 describe('runDigest: the three parts', () => {
   it('sends a person with both switches off who follows a view one email with only that view, a views-only subject, and an unsubscribe link to the saved views', async () => {
-    await teamOn()
     await makeView('v-ri', 'Transportation', 'state=RI')
     const ada = await person('ada@example.com', 'member', { priority: false, found: false })
     await follow(ada, 'v-ri')
@@ -86,7 +78,6 @@ describe('runDigest: the three parts', () => {
   })
 
   it('keeps the digest unsubscribe link and header on an email that holds priority bills', async () => {
-    await teamOn()
     await person('pat@example.com', 'member')
     await event(await settled({ billNumber: 'P 1', state: 'UT', session: '2026', priority: 'high' }))
 
@@ -98,7 +89,6 @@ describe('runDigest: the three parts', () => {
   })
 
   it('sends the newly found bills part and no priority part to a person with priority off and newly found on', async () => {
-    await teamOn()
     await person('nia@example.com', 'member', { priority: false, found: true })
     await event(await settled({ billNumber: 'P 1', state: 'UT', session: '2026', priority: 'high' }))
     await routine('NM 7')
@@ -113,7 +103,6 @@ describe('runDigest: the three parts', () => {
   })
 
   it('sends no priority part to a person with priority off, and the priority part to one with it on', async () => {
-    await teamOn()
     await person('off@example.com', 'member', { priority: false, found: false })
     await person('on@example.com', 'member', { priority: true, found: false })
     await event(await settled({ billNumber: 'P 1', state: 'UT', session: '2026', priority: 'high' }))
@@ -125,7 +114,6 @@ describe('runDigest: the three parts', () => {
   })
 
   it('leaves the newly found part out of an admin who turned it off, and puts it in when on', async () => {
-    await teamOn()
     await person('off@example.com', 'admin', { found: false })
     await person('on@example.com', 'owner', { found: true })
     await event(await settled({ billNumber: 'P 1', state: 'UT', session: '2026', priority: 'high' }))
@@ -140,7 +128,6 @@ describe('runDigest: the three parts', () => {
   })
 
   it('sends an admin whose priority switch is off, and newly found on, the newly found part', async () => {
-    await teamOn()
     await person('boss@example.com', 'admin', { priority: false, found: true })
     await routine('NM 7')
 
@@ -151,7 +138,6 @@ describe('runDigest: the three parts', () => {
   })
 
   it('shows a priority bill once, under priority bills, to a person who gets that part, and in the view to one who does not', async () => {
-    await teamOn()
     await makeView('v-ri', 'Transportation', 'state=RI')
     const withPart = await person('with@example.com', 'member', { priority: true, found: false })
     const without = await person('without@example.com', 'member', { priority: false, found: false })
@@ -172,7 +158,6 @@ describe('runDigest: the three parts', () => {
   })
 
   it('includes a followed view\'s activity a few seconds after the last run\'s stamp', async () => {
-    await teamOn()
     await makeView('v-ri', 'Transportation', 'state=RI')
     const ada = await person('ada@example.com', 'member', { priority: false, found: false })
     await follow(ada, 'v-ri')
@@ -187,7 +172,6 @@ describe('runDigest: the three parts', () => {
   })
 
   it('leaves out a followed view\'s activity a few seconds before the last run\'s stamp', async () => {
-    await teamOn()
     await makeView('v-ri', 'Transportation', 'state=RI')
     const ada = await person('ada@example.com', 'member', { priority: false, found: false })
     await follow(ada, 'v-ri')
@@ -202,7 +186,6 @@ describe('runDigest: the three parts', () => {
   })
 
   it('includes a followed view\'s activity on a first run, with no stamp', async () => {
-    await teamOn()
     await makeView('v-ri', 'Transportation', 'state=RI')
     const ada = await person('ada@example.com', 'member', { priority: false, found: false })
     await follow(ada, 'v-ri')
@@ -215,7 +198,7 @@ describe('runDigest: the three parts', () => {
   })
 })
 
-describe('runDigest: the team choice', () => {
+describe('runDigest: the notification emails switch', () => {
   async function seedWorld() {
     await makeView('v-ri', 'Transportation', 'state=RI')
     const follower = await person('follower@example.com', 'member')
@@ -228,37 +211,8 @@ describe('runDigest: the team choice', () => {
     await routine('NM 7')
   }
 
-  it('under Saved views only sends no priority or newly found parts, still sends followed views, and sends nothing to a person who follows none', async () => {
-    await teamViewsOnly()
-    await seedWorld()
-
-    await runDigest(env as never, db())
-
-    expect(to('plain@example.com')).toHaveLength(0)
-    for (const who of ['follower@example.com', 'admin@example.com']) {
-      expect(to(who)).toHaveLength(1)
-      expect(to(who)[0].subject).toBe('Your daily digest: 1 bill in your saved views')
-      expect(text(to(who)[0].html)).toContain('H 101')
-      expect(text(to(who)[0].html)).not.toContain('P 1')
-      expect(text(to(who)[0].html)).not.toContain('NM 7')
-    }
-  })
-
-  it('under Saved views only still shows a priority bill in the view that holds it', async () => {
-    await teamViewsOnly()
-    await makeView('v-ut', 'Elections', 'state=UT')
-    const ada = await person('ada@example.com', 'member')
-    await follow(ada, 'v-ut')
-    await event(await settled({ billNumber: 'P 1', state: 'UT', session: '2026', priority: 'high' }))
-
-    await runDigest(env as never, db())
-
-    expect(text(to('ada@example.com')[0].html)).toContain('P 1')
-    expect(text(to('ada@example.com')[0].html)).toContain('In your Elections view')
-  })
-
-  it('under Off sends nothing, followed views included', async () => {
-    await teamOff()
+  it('sends nothing when an admin turned notification emails off, followed views and priority bills included', async () => {
+    await db().insert(associationConfig).values({ key: 'notification_emails_enabled', value: 'false' })
     await seedWorld()
 
     const result = await runDigest(env as never, db())
@@ -267,13 +221,16 @@ describe('runDigest: the team choice', () => {
     expect(result).toEqual({ ok: true, recipients: 0, sent: 0, failed: 0, skipped: 'off' })
   })
 
-  it('treats a module with no teamUpdates as On', async () => {
-    await modules({ enabled: true, settings: { frequency: 'daily' } })
-    await person('pat@example.com', 'member')
-    await event(await settled({ billNumber: 'P 1', state: 'UT', session: '2026', priority: 'high' }))
+  it('sends every part to people whose switches are on when nothing is saved', async () => {
+    await seedWorld()
 
     await runDigest(env as never, db())
 
-    expect(to('pat@example.com')).toHaveLength(1)
+    for (const who of ['follower@example.com', 'admin@example.com']) {
+      expect(text(to(who)[0].html)).toContain('H 101')
+      expect(text(to(who)[0].html)).toContain('P 1')
+      expect(text(to(who)[0].html)).toContain('NM 7')
+    }
+    expect(text(to('plain@example.com')[0].html)).toContain('NM 7')
   })
 })

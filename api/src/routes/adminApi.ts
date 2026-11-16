@@ -7,6 +7,7 @@ import { pendingInviteBounces } from '../lib/inviteBounces'
 import { users, sessions, magicLinks, associationConfig, bills, comments, commentReactions, memberVotes, notes, feedEvents, officialPositions, roles, userRoles, authEvents } from '../db/schema'
 import { generateToken, hashToken } from '../lib/crypto'
 import { sendSignInLinkLogged } from '../lib/signInLink'
+import { notificationEmailsEnabled, readWeekAheadDay } from '../lib/notificationEmails'
 import { registerWithCentral } from '../cron/sync'
 import { matchesKeywords, billMatchText } from '../lib/keywords'
 import { summarizeKeywordMatches } from '../lib/keywordMatchSummary'
@@ -770,7 +771,7 @@ adminApiRouter.delete('/roles/:id', async (c) => {
   return new Response(null, { status: 204 })
 })
 
-const ALLOWED_CONFIG_KEYS = ['association_name', 'sync_frequency', 'keywords', 'org_noun', 'position_label', 'ai_context', 'relevance_question', 'tag_taxonomy', 'modules', 'mention_emails_enabled', 'new_match_min_relevance'] as const
+const ALLOWED_CONFIG_KEYS = ['association_name', 'sync_frequency', 'keywords', 'org_noun', 'position_label', 'ai_context', 'relevance_question', 'tag_taxonomy', 'modules', 'notification_emails_enabled', 'week_ahead_day', 'new_match_min_relevance'] as const
 
 // GET /admin/config
 adminApiRouter.get('/config', async (c) => {
@@ -806,6 +807,8 @@ adminApiRouter.get('/config', async (c) => {
     typeof result.position_label === 'string' ? result.position_label : null,
   )
   result.accountDeletionEnabled = await getAccountDeletionEnabled(db)
+  result.notification_emails_enabled = await notificationEmailsEnabled(db)
+  result.week_ahead_day = await readWeekAheadDay(db)
   const claimLinks = await readClaimLinksSetting(db)
   result.claim_links_enabled = claimLinks.enabled
   result.claim_links_changed_at = claimLinks.changedAt
@@ -857,6 +860,16 @@ adminApiRouter.put('/config', async (c) => {
     const nonModuleKeys = Object.keys(body).filter((k) => k !== 'modules')
     if (nonModuleKeys.length > 0) {
       return c.json({ error: 'Configuration is locked in demo mode' }, 403)
+    }
+  }
+
+  if ('notification_emails_enabled' in body && typeof body.notification_emails_enabled !== 'boolean') {
+    return c.json({ error: 'notification_emails_enabled must be a boolean' }, 400)
+  }
+  if ('week_ahead_day' in body) {
+    const d = body.week_ahead_day
+    if (typeof d !== 'number' || !Number.isInteger(d) || d < 0 || d > 6) {
+      return c.json({ error: 'week_ahead_day must be a whole number from 0 (Sunday) to 6 (Saturday)' }, 400)
     }
   }
 
