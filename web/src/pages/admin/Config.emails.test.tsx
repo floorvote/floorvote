@@ -78,7 +78,8 @@ function renderConfig() {
 }
 
 const COPY = 'The email digest, the week ahead email, and emails about mentions and replies. Each person chooses which of these they get on their Notifications tab. Sign-in links and invites always send.'
-const DAY_COPY = 'The day the week ahead email goes out, so you know when events need to be on the calendar.'
+// The week ahead email's own description, as the old team card had it under the day. The mocked config has no org noun, so it reads "team".
+const DAY_COPY = "Next week's hearings on your team's priority bills and events on your team calendar."
 const CONFIRM = 'Turn off email to members? No one will get the email digest, the week ahead email, or comment emails until you turn it back on. Sign-in links and invites still send.'
 const SAVE_ERROR = "Couldn't save that change. Try again."
 const toggle = () => screen.findByRole('switch', { name: 'Send email to members' })

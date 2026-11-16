@@ -8,6 +8,8 @@ import { CARD_TITLE } from '../../lib/textStyles'
 import { settingBox, SETTING_BOX_HEADER, SETTING_BOX_TITLE, SETTING_BOX_DESC } from '../../lib/settingBoxStyle'
 import { IosToggle } from '../../components/ui/IosToggle'
 import { ScopeSelect } from '../../components/ui/ScopeSelect'
+import { DEFAULT_ORG_NOUN } from '../../lib/orgNoun'
+import { weekAheadDescription } from '../notifications/copy'
 import { color, fontSize } from '../../styles/tokens'
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -31,7 +33,8 @@ interface Props {
  */
 export function EmailsSection({ emailsEnabled, weekAheadDay }: Props) {
   const { demoLocked } = useDemo()
-  const { patchConfig } = useConfig()
+  const { config, patchConfig } = useConfig()
+  const orgNoun = config?.orgNoun ?? DEFAULT_ORG_NOUN
   const [on, setOn] = useState(emailsEnabled !== false)
   const [day, setDay] = useState(weekAheadDay ?? DEFAULT_WEEK_AHEAD_DAY)
   const [saving, setSaving] = useState(false)
@@ -89,7 +92,7 @@ export function EmailsSection({ emailsEnabled, weekAheadDay }: Props) {
         <div style={SETTING_BOX_HEADER}>
           <div>
             <div style={SETTING_BOX_TITLE}>Week ahead email day</div>
-            <div style={SETTING_BOX_DESC}>The day the week ahead email goes out, so you know when events need to be on the calendar.</div>
+            <div style={SETTING_BOX_DESC}>{weekAheadDescription(orgNoun)}</div>
           </div>
           <div style={{ flexShrink: 0 }}>
             <ScopeSelect
