@@ -188,12 +188,13 @@ Admins gate email and members choose. No email has both a team switch and a pers
 **Migration `0127_notification_settings_per_person` keeps everyone's email as it was.**
 
 - **New bills switch.** Set to what each person got: off with the digest switch off, on for an admin or owner with it on, and unchanged for a member.
+- **Followed views of someone with the digest switch off** are unfollowed. They got no digest at all, views included, and a followed view now sends on its own.
 - **An instance whose digest was weekly:** everyone goes weekly on its day (Monday if none was saved). That day's window carries on from `last_digest_at` as `last_weekly_digest_at_<day>`, and people added later start on that day.
 - **An instance whose digest was off,** including one that never saved its modules: each person's digest switches go off, and their followed views are unfollowed. Turning email on again later doesn't bring them back.
 - **An instance whose week ahead email was off:** each person's week ahead switch goes off.
 - **The week ahead day** moves to `week_ahead_day`: the saved day, or Monday when none was saved, as before. An instance with no people saves nothing and gets Friday, so a new database has the defaults.
 - **Comment emails:** an instance that had them off gets them back on, because the switch is gone, unless an admin turns off email to members.
 
-**Removed keys.** The `email-digest` and `week-ahead` entries leave `modules`, and `mention_emails_enabled` is deleted. The module `frequency`, `weeklyDay`, and `teamUpdates` settings are gone with them.
+**Removed keys.** The `email-digest` and `week-ahead` entries leave `modules`, and `mention_emails_enabled` is deleted. The module `frequency` and `weeklyDay` settings are gone with them.
 
 **Rolling back.** An earlier build after this migration sends no digest and no week ahead email, because their module entries are gone, and it sends comment emails again. It ignores each person's How often and the Send email to members switch. Redeploy the new build to bring the digest and week ahead email back.

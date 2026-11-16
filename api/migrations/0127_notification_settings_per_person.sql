@@ -11,6 +11,10 @@
 UPDATE users SET email_digest_matches_enabled = 0 WHERE email_digest_enabled = 0;
 UPDATE users SET email_digest_matches_enabled = 1 WHERE email_digest_enabled = 1 AND role IN ('admin', 'owner');
 
+-- A followed view is sent on its own now. Someone with the digest switch off got no digest at all, their views
+-- included, so their follows go too, or they would start getting views they didn't get before.
+DELETE FROM saved_view_subscriptions WHERE user_id IN (SELECT id FROM users WHERE email_digest_enabled = 0);
+
 -- 2. How often the digest comes is each person's: NULL every morning, or a weekday 0 (Sunday) to 6 (Saturday), UTC.
 ALTER TABLE users ADD COLUMN email_digest_weekly_day INTEGER;
 

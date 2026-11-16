@@ -72,6 +72,21 @@ describe('migration 0127_notification_settings_per_person', () => {
     expect(await subscriptions()).toBe(0)
   })
 
+  // On upstream a person with their own digest switch off got no digest at all, followed views included. A followed view
+  // is sent on its own now, so their follows go, or they'd start getting views they didn't get before.
+  it("removes the followed views of a person whose own digest switch was off, and keeps everyone else's", async () => {
+    await saveModules(modules(daily, weekAheadOn))
+    await addUser('off', 'member', { digest: 0 })
+    await addUser('on', 'member')
+    await env.DB.prepare("INSERT INTO saved_views (id, name, query) VALUES ('v1', 'View', 'q=x')").run()
+    await env.DB.prepare("INSERT INTO saved_view_subscriptions (user_id, view_id) VALUES ('off', 'v1'), ('on', 'v1')").run()
+
+    await applyMigrations()
+
+    const followers = (await env.DB.prepare('SELECT user_id FROM saved_view_subscriptions ORDER BY user_id').all<{ user_id: string }>()).results.map(r => r.user_id)
+    expect(followers).toEqual(['on'])
+  })
+
   it('reads a missing modules row as both emails off, with Monday as the week ahead day', async () => {
     await addUser('a', 'admin')
     await addUser('m', 'member')
