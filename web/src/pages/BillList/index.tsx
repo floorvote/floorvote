@@ -14,7 +14,6 @@ import { HoverTooltip } from '../../components/HoverTooltip'
 import { useSidebarRefresh } from '../../context/SidebarRefreshContext'
 import { useDemo } from '../../context/DemoContext'
 import { useConfig } from '../../context/ConfigContext'
-import { isModuleEnabled } from '../../lib/modules'
 import { CARD } from '../../lib/cardStyle'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { billUrl } from '../../lib/sessionSlug'
@@ -859,7 +858,7 @@ export function BillList() {
           currentSearch={location.search}
           isAdmin={isAdmin}
           onApply={applyView}
-          digest={isModuleEnabled(config?.modules, 'email-digest') ? {
+          digest={config?.notificationEmailsEnabled !== false ? {
             // The person's own: every morning, or once a week on a weekday they picked.
             cadence: user?.emailDigestWeeklyDay != null ? 'weekly' : 'daily',
             onToggle: toggleViewDigest,

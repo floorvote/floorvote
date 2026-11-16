@@ -56,7 +56,7 @@ describe('ViewSwitcher: include a view in the digest', () => {
     })
   })
 
-  it('shows no envelope when the digest control is not offered (the instance digest is off)', () => {
+  it('shows no envelope when the digest control is not offered (email to members is off)', () => {
     const offered = renderSwitcher({})
     expect(screen.getAllByText('mail')).toHaveLength(2)
     offered.unmount()

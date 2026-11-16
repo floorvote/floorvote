@@ -87,12 +87,12 @@ describe('getModuleSetting', () => {
 })
 
 describe('visibleModuleSettings', () => {
-  // Define a local module def since email-digest was removed from the registry
-  const emailDigest: ModuleDef = {
-    id: 'email-digest',
+  // A local module def with a setting that shows only for some values of another, since no registered module has one now
+  const scheduled: ModuleDef = {
+    id: 'scheduled',
     type: 'section',
-    name: 'Email digest',
-    description: 'Email digest',
+    name: 'Scheduled',
+    description: 'Scheduled',
     settings: [
       { key: 'frequency', type: 'select', label: 'Frequency', default: 'daily', options: [{ value: 'daily', label: 'Daily' }, { value: 'weekly', label: 'Weekly' }] },
       { key: 'weeklyDay', type: 'select', label: 'Day of week', default: '1', options: [], showWhen: { key: 'frequency', equals: 'weekly' } },
@@ -100,13 +100,13 @@ describe('visibleModuleSettings', () => {
   }
 
   it('hides weeklyDay when frequency is daily (default/unset)', () => {
-    const visible = visibleModuleSettings(emailDigest, {})
+    const visible = visibleModuleSettings(scheduled, {})
     expect(visible.map((s) => s.key)).toEqual(['frequency'])
   })
 
   it('shows weeklyDay when frequency is weekly', () => {
-    const cfg = { 'email-digest': { enabled: true, settings: { frequency: 'weekly' } } }
-    const visible = visibleModuleSettings(emailDigest, cfg)
+    const cfg = { scheduled: { enabled: true, settings: { frequency: 'weekly' } } }
+    const visible = visibleModuleSettings(scheduled, cfg)
     expect(visible.map((s) => s.key)).toEqual(['frequency', 'weeklyDay'])
   })
 })

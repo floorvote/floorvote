@@ -74,7 +74,7 @@ describe.each(['member', 'admin', 'owner'] as const)('the Notifications page, as
   it('is personal only: no team section, no "Turned off by" notes, no default note, no radios, no info icons', async () => {
     renderPage()
     await screen.findByRole('switch', { name: T })
-    expect(screen.queryByText(/For your whole/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/your whole/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/Turned off by/)).not.toBeInTheDocument()
     expect(screen.queryByText(/default/i)).not.toBeInTheDocument()
     expect(screen.queryByRole('radio')).not.toBeInTheDocument()

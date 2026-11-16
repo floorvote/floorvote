@@ -135,7 +135,7 @@ const FACETS = {
 // What the instance covers, as GET /config reports it, handed to BillList
 // through ConfigContext. Null = config not loaded, which is what every test
 // that doesn't care about covered states gets.
-const configState: { value: { states: string[]; modules?: Record<string, unknown> } | null } = { value: null }
+const configState: { value: { states: string[]; modules?: Record<string, unknown>; notificationEmailsEnabled?: boolean } | null } = { value: null }
 
 // #449: the member's own digest switch as GET /auth/me reports it, and what the envelope on a view row sent.
 const digestState = { memberOn: false, weeklyDay: null as number | null }
@@ -843,11 +843,11 @@ describe('BillList mobile filter sheet — reset', () => {
 })
 
 // #449, #1035: the envelope on a view row follows the view in the member's own email. It is
-// offered wherever the team sends the digest (On or Saved views only), and a click follows or unfollows directly,
-// whatever the member's own switches say.
+// offered while the admin's "Send email to members" is on (or not heard from), and a click follows or unfollows
+// directly, whatever the member's own switches say.
 describe('BillList saved views — include in the digest', () => {
   const VIEW = { id: 'v1', name: 'Passed bills', query: 'status=4', slug: 'passed-bills', subscribed: false }
-  const digestOn = { states: ['RI'], modules: { 'email-digest': { enabled: true } } }
+  const digestOn = { states: ['RI'], notificationEmailsEnabled: true }
 
   async function openMenu() {
     render(<BillList />, { wrapper: Wrapper })
@@ -856,19 +856,26 @@ describe('BillList saved views — include in the digest', () => {
     await screen.findByText('Passed bills')
   }
 
-  it('offers no envelope when the admin has turned the digest off for the instance', async () => {
+  it('offers no envelope when the admin has turned off email to members', async () => {
     viewsState.response = { views: [VIEW] }
-    configState.value = { states: ['RI'], modules: { 'email-digest': { enabled: false } } }
+    configState.value = { states: ['RI'], notificationEmailsEnabled: false }
     await openMenu()
-    expect(screen.queryByRole('button', { name: /^Email me ".*" daily$/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Email me ".*" (daily|weekly)$/ })).toBeNull()
   })
 
-  it("offers an envelope when the instance digest is on, and the cadence follows the person's own choice", async () => {
+  it("offers an envelope when email to members is on, and the cadence follows the person's own choice", async () => {
     digestState.weeklyDay = 5
     viewsState.response = { views: [VIEW] }
-    configState.value = { states: ['RI'], modules: { 'email-digest': { enabled: true, settings: { frequency: 'daily' } } } }
+    configState.value = digestOn
     await openMenu()
     expect(screen.getByRole('button', { name: 'Email me "Passed bills" weekly' })).toBeInTheDocument()
+  })
+
+  it('offers the envelope, daily for someone with no weekday, when the setting is missing from the config', async () => {
+    viewsState.response = { views: [VIEW] }
+    configState.value = { states: ['RI'] }
+    await openMenu()
+    expect(screen.getByRole('button', { name: 'Email me "Passed bills" daily' })).toBeInTheDocument()
   })
 
   it('includes the view for a member whose digest is on: saves it and fills the envelope', async () => {
@@ -907,17 +914,6 @@ describe('BillList saved views — include in the digest', () => {
     expect(screen.queryByText(/turn on your email digest/i)).toBeNull()
     expect(screen.queryByRole('button', { name: 'Turn on digest' })).toBeNull()
     expect(digestCalls).toEqual([{ method: 'PUT', path: '/views/v1/subscription', body: { subscribed: true } }])
-  })
-
-  it('offers the envelope, and follows in one click, when the team chose Saved views only', async () => {
-    viewsState.response = { views: [VIEW] }
-    digestState.weeklyDay = 5
-    configState.value = { states: ['RI'], modules: { 'email-digest': { enabled: true, settings: { frequency: 'weekly', teamUpdates: false } } } }
-    await openMenu()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Email me "Passed bills" weekly' }))
-
-    await waitFor(() => expect(digestCalls).toEqual([{ method: 'PUT', path: '/views/v1/subscription', body: { subscribed: true } }]))
   })
 })
 
