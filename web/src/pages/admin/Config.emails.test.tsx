@@ -80,7 +80,7 @@ function renderConfig() {
 const COPY = 'The email digest, the week ahead email, and emails about mentions and replies. Each person chooses which of these they get on their Notifications tab. Sign-in links and invites always send.'
 // The week ahead email's own description, as the old team card had it under the day. The mocked config has no org noun, so it reads "team".
 const DAY_COPY = "Next week's hearings on your team's priority bills and events on your team calendar."
-const CONFIRM = 'Turn off email to members? No one will get the email digest, the week ahead email, or comment emails until you turn it back on. Sign-in links and invites still send.'
+const CONFIRM = 'Turn off email to members? No one will get the email digest, the week ahead email, or mention and reply emails until you turn it back on. Sign-in links and invites still send.'
 const SAVE_ERROR = "Couldn't save that change. Try again."
 const toggle = () => screen.findByRole('switch', { name: 'Send email to members' })
 // The day is the app's own dropdown (ScopeSelect), like How often on the Notifications tab: a button named
@@ -216,6 +216,24 @@ describe('Config: the Emails box', () => {
     expect(await screen.findByText(SAVE_ERROR)).toBeInTheDocument()
     expect(await daySelect()).toHaveAccessibleName('Week ahead email day: Friday')
     expect(patchConfig).not.toHaveBeenCalled()
+  })
+
+  // Like the other sections, it waits for the saved settings rather than showing a default an admin could save over.
+  it('shows Loading… and no controls until the saved settings arrive', async () => {
+    let answer: (v: unknown) => void = () => {}
+    mockFetch.mockImplementation((path: string) => {
+      if (path === '/admin/config') return new Promise((resolve) => { answer = resolve })
+      if (path === '/admin/custom-fields') return Promise.resolve([])
+      if (path === '/bills/drafts') return Promise.resolve({ drafts: [] })
+      return Promise.reject(new Error('unexpected path: ' + path))
+    })
+    renderConfig()
+    const box = (await screen.findByRole('heading', { level: 2, name: 'Emails' })).parentElement!
+    expect(within(box).getByText('Loading…')).toBeInTheDocument()
+    expect(within(box).queryByRole('switch')).not.toBeInTheDocument()
+    expect(within(box).queryByRole('button', { name: /^Week ahead email day/ })).not.toBeInTheDocument()
+    answer({ ...BASE_CONFIG, week_ahead_day: 1 })
+    expect(await daySelect()).toHaveAccessibleName('Week ahead email day: Monday')
   })
 
   it('disables both controls in a locked demo', async () => {

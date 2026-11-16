@@ -1103,7 +1103,7 @@ export function Config() {
       </div>
 
       {/* Emails */}
-      <EmailsSection emailsEnabled={emailsEnabled} weekAheadDay={weekAheadDay} />
+      <EmailsSection loading={loading} emailsEnabled={emailsEnabled} weekAheadDay={weekAheadDay} />
 
       {/* Custom fields */}
       <div style={sectionCard}>
