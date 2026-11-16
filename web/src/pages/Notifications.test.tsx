@@ -64,6 +64,7 @@ beforeEach(() => {
 
 const T = 'New bills that may be relevant to your coalition'
 const SAVED_VIEWS = "A saved view is a filtered list of bills. Follow one with the envelope beside it in the Views menu on the Bills page."
+const REPLIES = 'Someone replies on a bill you commented on'
 const OFF_LINE = "Your coalition has turned off email to members, so none of these emails are sent."
 const card = (name: string) => screen.getByRole('heading', { level: 2, name }).closest('section') as HTMLElement
 const digestMenu = () => screen.getByRole('button', { name: /^How often: / })
@@ -255,17 +256,31 @@ describe('when the admin turned off email to members', () => {
     expect(line.compareDocumentPosition(card('Email digest')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it.each(['member', 'admin'] as const)('disables every switch, the How often menu, and the view chips for a %s, and dims the cards', async (role) => {
+  it.each(['member', 'admin'] as const)('disables every email switch, the How often menu, and the view chips for a %s, and dims those cards', async (role) => {
     signIn(role)
     mock({ views })
     renderPage()
     await screen.findByRole('button', { name: 'Remove Courts' })
-    for (const sw of screen.getAllByRole('switch')) expect(sw).toBeDisabled()
+    for (const sw of screen.getAllByRole('switch').filter(sw => sw.getAttribute('aria-label') !== REPLIES)) expect(sw).toBeDisabled()
     expect(digestMenu()).toBeDisabled()
     for (const b of screen.getAllByRole('button', { name: /^Remove / })) expect(b).toBeDisabled()
-    for (const name of ['Email digest', 'Week ahead email', 'Comments']) expect(Number(card(name).style.opacity)).toBeLessThan(1)
+    for (const name of ['Email digest', 'Week ahead email']) expect(Number(card(name).style.opacity)).toBeLessThan(1)
     // The person's own choices stay as saved.
     expect(screen.getByRole('switch', { name: T })).toBeChecked()
+  })
+
+  // Replies also reach people in FloorVote, so their switch still does something with email off. It stays live, and
+  // its card isn't dimmed, so nothing looks off that isn't.
+  it('leaves the replies switch working, and its card undimmed, and saves a change to it', async () => {
+    signIn('member')
+    renderPage()
+    await screen.findByText(OFF_LINE)
+    expect(Number(card('Comments').style.opacity || 1)).toBe(1)
+    const replies = screen.getByRole('switch', { name: REPLIES })
+    expect(replies).toBeEnabled()
+    await userEvent.click(replies)
+    await waitFor(() => expect(vi.mocked(api.apiFetch)).toHaveBeenCalledWith('/users/me', { method: 'PATCH', body: JSON.stringify({ emailRepliesEnabled: false }) }))
+    expect(replies).not.toBeChecked()
   })
 
   it('sends nothing when a disabled switch or its sentence is clicked', async () => {

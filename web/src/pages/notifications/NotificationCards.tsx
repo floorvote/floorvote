@@ -72,8 +72,9 @@ export function NotificationCards({ flashed }: Props) {
   const { config } = useConfig()
   const orgNoun = config?.orgNoun ?? DEFAULT_ORG_NOUN
   const isAdmin = user?.role === 'admin' || user?.role === 'owner'
-  // When the admin turned off email to members, nothing here is sent, so every control is disabled and the cards dim.
-  // A missing setting (an older API, or a failed config read) reads as on.
+  // When the admin turned off email to members, no email here is sent, so the email controls are disabled and their
+  // cards dim. The replies switch is the exception: it also covers replies in FloorVote, so it stays live and its card
+  // stays bright. A missing setting (an older API, or a failed config read) reads as on.
   const emailsOn = config?.notificationEmailsEnabled !== false
   const locked = demoLocked || !emailsOn
 
@@ -232,7 +233,7 @@ export function NotificationCards({ flashed }: Props) {
         />
       </SettingCard>
 
-      <SettingCard dimmed={locked}>
+      <SettingCard dimmed={demoLocked}>
         <h2 style={CARD_TITLE}>Comments</h2>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5 }}>
           <div>
@@ -255,7 +256,7 @@ export function NotificationCards({ flashed }: Props) {
             ariaLabel="Someone replies on a bill you commented on"
             description={emailsOn ? REPLIES_DESCRIPTION : REPLIES_DESCRIPTION_APP_ONLY}
             checked={replies.on}
-            disabled={locked}
+            disabled={demoLocked}
             busy={replies.busy}
             onChange={(next) => { void replies.change(next) }}
           />
