@@ -175,12 +175,7 @@ export function NotificationCards({ flashed }: Props) {
             transition: 'box-shadow 0.6s ease',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 16, fontSize: fontSize.sm }}>
-            <span style={PART_TITLE}>Saved views you follow</span>
-            {followed !== null && followed.length > 0 && (
-              <span style={{ color: color.textSecondary }}>{followed.length} {followed.length === 1 ? 'view' : 'views'}</span>
-            )}
-          </div>
+          <div style={PART_TITLE}>Saved views you follow</div>
           <div style={{ fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5 }}>
             {SAVED_VIEWS_DESCRIPTION.before}
             <Link to="/bills" style={{ color: color.linkBlue }}>{SAVED_VIEWS_DESCRIPTION.link}</Link>

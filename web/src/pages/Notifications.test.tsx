@@ -209,19 +209,19 @@ describe.each(['member', 'admin', 'owner'] as const)('the Notifications page, as
 describe('the saved views you follow', () => {
   beforeEach(() => signIn('member'))
 
-  it('shows two followed views as chips with "2 views", and removing one sends the unfollow and drops its chip', async () => {
+  it('shows two followed views as chips, with no count beside the title, and removing one sends the unfollow and drops its chip', async () => {
     mock({ views })
     renderPage()
     const digest = document.getElementById('setting-email-digest') as HTMLElement
-    expect(await within(digest).findByText('2 views')).toBeInTheDocument()
-    const list = within(digest).getByRole('list', { name: 'Saved views you follow' })
+    const list = await within(digest).findByRole('list', { name: 'Saved views you follow' })
+    expect(within(digest).queryByText(/^\d+ views?$/)).not.toBeInTheDocument()
     expect(within(list).getAllByRole('listitem').map(li => li.textContent?.replace('×', ''))).toEqual(['Transportation', 'Courts'])
 
     await userEvent.click(within(digest).getByRole('button', { name: 'Remove Transportation' }))
 
     expect(api.apiFetch).toHaveBeenCalledWith('/views/v1/subscription', { method: 'PUT', body: JSON.stringify({ subscribed: false }) })
     await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(1))
-    expect(within(digest).getByText('1 view')).toBeInTheDocument()
+    expect(within(digest).queryByText(/^\d+ views?$/)).not.toBeInTheDocument()
   })
 
   it('says where to follow a view when the person follows none', async () => {
@@ -339,7 +339,7 @@ describe('the Notifications page, on a demo', () => {
     signIn(role)
     mock({ views })
     renderPage()
-    await screen.findByText('2 views')
+    await screen.findByRole('button', { name: 'Remove Courts' })
     const controls = [...screen.getAllByRole('switch'), digestMenu(), screen.getByRole('button', { name: 'Remove Courts' })]
     expect(controls.length).toBeGreaterThan(3)
     for (const c of controls) expect(c).toBeDisabled()
