@@ -10,7 +10,7 @@ import * as api from '../lib/api'
 
 const auth = vi.hoisted(() => ({ user: {} as Record<string, unknown> }))
 const demo = vi.hoisted(() => ({ demoLocked: false }))
-const cfg = vi.hoisted(() => ({ config: {} as Record<string, unknown> }))
+const cfg = vi.hoisted(() => ({ config: {} as Record<string, unknown> | null }))
 
 vi.mock('../context/AuthContext', () => ({
   useAuth: () => ({
@@ -128,6 +128,15 @@ describe.each(['member', 'admin', 'owner'] as const)('the Notifications page, as
     cfg.config = { orgNoun: 'coalition', notificationEmailsEnabled: true, weekAheadDay: day }
     renderPage()
     expect(await screen.findByText(`Next week's hearings on your coalition's priority bills and events on your coalition calendar. Sent every ${word} morning.`)).toBeInTheDocument()
+  })
+
+  // The app reads its settings once, after the page first draws. Until then the day isn't known, so the sentence that
+  // names it waits rather than showing Friday, the default, on an instance with another day.
+  it('leaves out the day until the app settings arrive', async () => {
+    cfg.config = null
+    renderPage()
+    expect(await screen.findByText("Next week's hearings on your team's priority bills and events on your team calendar.")).toBeInTheDocument()
+    expect(screen.queryByText(/Sent every/)).not.toBeInTheDocument()
   })
 
   it('names the new bills switch by its visible title', async () => {

@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useConfig } from '../../context/ConfigContext'
 import { useDemo } from '../../context/DemoContext'
 import { apiFetch } from '../../lib/api'
-import { digestSentPhrase, weekAheadSentPhrase, DEFAULT_WEEK_AHEAD_DAY } from '../../lib/notifications'
+import { digestSentPhrase, weekAheadSentPhrase } from '../../lib/notifications'
 import { DEFAULT_ORG_NOUN } from '../../lib/orgNoun'
 import { CARD_TITLE } from '../../lib/textStyles'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
@@ -84,7 +84,9 @@ export function NotificationCards({ flashed }: Props) {
   const digestDay = useUserSetting<number | null>(user?.emailDigestWeeklyDay ?? null, 'emailDigestWeeklyDay', setEmailDigestWeeklyDay)
   const weekAhead = useUserFlag(user?.emailWeekAheadEnabled, 'emailWeekAheadEnabled', setEmailWeekAheadEnabled)
   const replies = useUserFlag(user?.emailRepliesEnabled, 'emailRepliesEnabled', setEmailRepliesEnabled)
-  const weekAheadDay = config?.weekAheadDay ?? DEFAULT_WEEK_AHEAD_DAY
+  // Unknown until the app's settings arrive (or from an older API). The sentence naming the day waits for it, rather
+  // than show the default day on an instance that chose another.
+  const weekAheadDay = config?.weekAheadDay
 
   // How many roles this person is in, for the always-on mention line. Until /roles answers,
   // or if it fails, the line leaves roles out.
@@ -223,7 +225,7 @@ export function NotificationCards({ flashed }: Props) {
           titleVariant="card"
           title="Week ahead email"
           ariaLabel="Get the week ahead email"
-          description={`${weekAheadDescription(orgNoun)} Sent ${weekAheadSentPhrase(weekAheadDay)}.`}
+          description={weekAheadDay === undefined ? weekAheadDescription(orgNoun) : `${weekAheadDescription(orgNoun)} Sent ${weekAheadSentPhrase(weekAheadDay)}.`}
           checked={weekAhead.on}
           disabled={locked}
           busy={weekAhead.busy}
