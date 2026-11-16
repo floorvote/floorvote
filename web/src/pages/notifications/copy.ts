@@ -13,7 +13,12 @@ export const weekAheadDescription = (orgNoun: string) => `Next week's hearings o
 /** The part's title, which reads the same in the switch's name. */
 export const newlyFoundTitle = (orgNoun: string) => `New bills that may be relevant to your ${orgNoun}`
 
-export const SAVED_VIEWS_DESCRIPTION = "A saved view is a filtered list of bills. Follow one with the envelope beside it in the Views menu on the Bills page."
+/** The saved views line, in three pieces so "Bills page" can link there. */
+export const SAVED_VIEWS_DESCRIPTION = {
+  before: 'A saved view is a filtered list of bills. Follow one with the envelope beside it in the Views menu on the ',
+  link: 'Bills page',
+  after: '.',
+} as const
 
 const MUTE_HINT = 'To stop them on one bill, select “Mute comments” on that bill.'
 

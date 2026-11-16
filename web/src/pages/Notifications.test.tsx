@@ -64,6 +64,8 @@ beforeEach(() => {
 
 const T = 'New bills that may be relevant to your coalition'
 const SAVED_VIEWS = "A saved view is a filtered list of bills. Follow one with the envelope beside it in the Views menu on the Bills page."
+// The line holds a link, so match the element whose whole text is the line, not its own text nodes alone.
+const savedViewsLine = () => screen.findByText((_, el) => el?.tagName === 'DIV' && el.textContent === SAVED_VIEWS)
 const REPLIES = 'Someone replies on a bill you commented on'
 const OFF_LINE = "Your coalition has turned off email to members, so none of these emails are sent."
 const card = (name: string) => screen.getByRole('heading', { level: 2, name }).closest('section') as HTMLElement
@@ -113,7 +115,7 @@ describe.each(['member', 'admin', 'owner'] as const)('the Notifications page, as
 
   it('puts the explanation of each digest part in view, with no info icons', async () => {
     renderPage()
-    expect(await screen.findByText(SAVED_VIEWS)).toBeInTheDocument()
+    expect(await savedViewsLine()).toBeInTheDocument()
     expect(screen.getByText('One email that sums up what changed on your bills since the last one.')).toBeInTheDocument()
     // The digest card no longer says when it's sent; How often beside the heading says that.
     expect(screen.queryByText(/Sent only when something changed/)).not.toBeInTheDocument()
@@ -137,6 +139,12 @@ describe.each(['member', 'admin', 'owner'] as const)('the Notifications page, as
     renderPage()
     expect(await screen.findByText("Next week's hearings on your team's priority bills and events on your team calendar.")).toBeInTheDocument()
     expect(screen.queryByText(/Sent every/)).not.toBeInTheDocument()
+  })
+
+  it('links "Bills page" in the saved views line to the Bills page', async () => {
+    renderPage()
+    const line = await savedViewsLine()
+    expect(within(line).getByRole('link', { name: 'Bills page' })).toHaveAttribute('href', '/bills')
   })
 
   it('names the new bills switch by its visible title', async () => {

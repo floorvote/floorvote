@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useConfig } from '../../context/ConfigContext'
 import { useDemo } from '../../context/DemoContext'
@@ -180,7 +181,11 @@ export function NotificationCards({ flashed }: Props) {
               <span style={{ color: color.textSecondary }}>{followed.length} {followed.length === 1 ? 'view' : 'views'}</span>
             )}
           </div>
-          <div style={{ fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5 }}>{SAVED_VIEWS_DESCRIPTION}</div>
+          <div style={{ fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5 }}>
+            {SAVED_VIEWS_DESCRIPTION.before}
+            <Link to="/bills" style={{ color: color.linkBlue }}>{SAVED_VIEWS_DESCRIPTION.link}</Link>
+            {SAVED_VIEWS_DESCRIPTION.after}
+          </div>
           {followedFailed && (
             <div role="alert" style={{ marginTop: 4, fontSize: fontSize.sm, color: color.textErrorRed }}>Couldn't load the saved views you follow.</div>
           )}
