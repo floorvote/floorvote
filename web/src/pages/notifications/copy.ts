@@ -14,7 +14,7 @@ export const newlyFoundTitle = (orgNoun: string) => `New bills that may be relev
 
 export const newBillsDescription = (orgNoun: string) => `Bills that just matched your ${orgNoun}'s keywords.`
 
-export const SAVED_VIEWS_DESCRIPTION = "A saved view is a filtered list of bills. Follow one with the envelope beside it in the Views menu on the Bills page. You'll get what changed in each one you follow, even with the two parts above off, and a bill already under priority bills isn't repeated."
+export const SAVED_VIEWS_DESCRIPTION = "A saved view is a filtered list of bills. Follow one with the envelope beside it in the Views menu on the Bills page."
 
 const MUTE_HINT = 'To stop them on one bill, select “Mute comments” on that bill.'
 

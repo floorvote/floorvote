@@ -63,7 +63,7 @@ beforeEach(() => {
 })
 
 const T = 'New bills that may be relevant to your coalition'
-const SAVED_VIEWS = "A saved view is a filtered list of bills. Follow one with the envelope beside it in the Views menu on the Bills page. You'll get what changed in each one you follow, even with the two parts above off, and a bill already under priority bills isn't repeated."
+const SAVED_VIEWS = "A saved view is a filtered list of bills. Follow one with the envelope beside it in the Views menu on the Bills page."
 const OFF_LINE = "Your coalition has turned off email to members, so none of these emails are sent."
 const card = (name: string) => screen.getByRole('heading', { level: 2, name }).closest('section') as HTMLElement
 const digestMenu = () => screen.getByRole('button', { name: /^How often: / })
