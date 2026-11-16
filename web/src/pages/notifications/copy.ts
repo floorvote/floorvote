@@ -4,9 +4,6 @@
 /** What "digest" means, since the word is the name of the email in people's inboxes. */
 export const DIGEST_DEFINITION = 'One email that sums up what changed on your bills since the last one.'
 
-/** After the definition on a person's digest card. How often is the menu under it. */
-export const DIGEST_ONLY_WHEN_CHANGED = 'Sent only when something changed.'
-
 // The group is named the way the instance names it (its org noun: team, coalition, association), so these are functions.
 export const priorityDescription = (orgNoun: string) => `Status changes, hearings, positions, and comments on bills your ${orgNoun} marked as a priority.`
 

@@ -74,7 +74,7 @@ describe("a person's digest schedule", () => {
       'Every Thursday morning', 'Every Friday morning', 'Every Saturday morning', 'Every Sunday morning',
     ])
     expect(within(list).getByRole('radio', { name: 'Every morning' })).toBeChecked()
-    expect(await screen.findByText('One email that sums up what changed on your bills since the last one. Sent only when something changed.')).toBeInTheDocument()
+    expect(await screen.findByText('One email that sums up what changed on your bills since the last one.')).toBeInTheDocument()
   })
 
   it('opens its list below the button, not over it', async () => {
@@ -88,7 +88,7 @@ describe("a person's digest schedule", () => {
     const row = screen.getByRole('heading', { level: 2, name: 'Email digest' }).parentElement as HTMLElement
     expect(row).toContainElement(await button())
     expect(row.style.alignItems).toBe('center')
-    const definition = await screen.findByText('One email that sums up what changed on your bills since the last one. Sent only when something changed.')
+    const definition = await screen.findByText('One email that sums up what changed on your bills since the last one.')
     expect(row).not.toContainElement(definition)
     expect(definition.parentElement).toBe(row.parentElement)
   })

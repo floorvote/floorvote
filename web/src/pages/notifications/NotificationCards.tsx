@@ -9,7 +9,7 @@ import { CARD_TITLE } from '../../lib/textStyles'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { PART_TITLE, SettingCard, SwitchRow } from './SettingCard'
 import { ScopeSelect } from '../../components/ui/ScopeSelect'
-import { DIGEST_DEFINITION, DIGEST_ONLY_WHEN_CHANGED, newBillsDescription, newlyFoundTitle, priorityDescription, REPLIES_DESCRIPTION, REPLIES_DESCRIPTION_APP_ONLY, SAVED_VIEWS_DESCRIPTION, weekAheadDescription } from './copy'
+import { DIGEST_DEFINITION, newBillsDescription, newlyFoundTitle, priorityDescription, REPLIES_DESCRIPTION, REPLIES_DESCRIPTION_APP_ONLY, SAVED_VIEWS_DESCRIPTION, weekAheadDescription } from './copy'
 
 interface Props {
   /** The setting id being flashed after a deep link, if any. */
@@ -136,7 +136,7 @@ export function NotificationCards({ flashed }: Props) {
           </div>
         </div>
         <div style={{ marginTop: 2, fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5 }}>
-          {`${DIGEST_DEFINITION} ${DIGEST_ONLY_WHEN_CHANGED}`}
+          {DIGEST_DEFINITION}
         </div>
 
         <div style={DIVIDER}>

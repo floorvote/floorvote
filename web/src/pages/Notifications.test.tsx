@@ -114,7 +114,9 @@ describe.each(['member', 'admin', 'owner'] as const)('the Notifications page, as
     renderPage()
     expect(await screen.findByText("Bills that just matched your coalition's keywords.")).toBeInTheDocument()
     expect(screen.getByText(SAVED_VIEWS)).toBeInTheDocument()
-    expect(screen.getByText('One email that sums up what changed on your bills since the last one. Sent only when something changed.')).toBeInTheDocument()
+    expect(screen.getByText('One email that sums up what changed on your bills since the last one.')).toBeInTheDocument()
+    // The digest card no longer says when it's sent; How often beside the heading says that.
+    expect(screen.queryByText(/Sent only when something changed/)).not.toBeInTheDocument()
     expect(screen.getByRole('switch', { name: T })).toHaveAccessibleDescription("Bills that just matched your coalition's keywords.")
   })
 
