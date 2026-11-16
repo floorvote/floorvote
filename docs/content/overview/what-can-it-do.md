@@ -41,18 +41,22 @@ Once the team has talked a bill through, admins can set the team's official posi
 
 ## Notifications
 
-Every email setting is on one tab, **Notifications**, next to Account. Everyone sees **Your notifications**. Admins and owners also see **For your whole team** above it, where they turn an email off for the whole team, choose what the digest includes, and choose which day the week ahead email goes out. Both sections list the emails in the same order, and each setting says what it does.
+Admins decide whether FloorVote emails members at all, and each person chooses which emails they get.
 
-- **Email digest.** One email that sums up what changed on your bills since the last one. Each person chooses how often, in the menu beside its heading: every morning, or once a week on a weekday they pick. It's sent only when something changed. It has three parts. Each person turns the first two on or off and chooses which views to follow:
+**Admins:** in the **Emails** box on the Config page, **Send email to members** is the one switch. Turn it off and FloorVote stops the email digest, the week ahead email, and mention and reply emails for everyone, after asking you to confirm. Sign-in links, invites, and email-change confirmations still send, and people still see mentions and replies in FloorVote. The same box sets **Week ahead email day**, the day that email goes out for everyone, so you know when events need to be on the calendar. It starts on Friday for a new instance.
+
+**Everyone:** each person's own settings are on the **Notifications** tab, next to Account. It looks the same for every role, and each setting says what it does.
+
+- **Email digest.** One email that sums up what changed on your bills since the last one, sent only when something changed. In the menu beside its heading, each person chooses how often: every morning, or once a week on a weekday they pick. It has three parts:
   - **Changes to priority bills:** status changes, hearings, positions, and comments on bills your team marked as a priority.
-  - **New bills that may be relevant to your team:** hover the info icon for "Bills that just matched your team's keywords." Until a member changes it, it follows what the team chose for members and reads "Your team's default." Admins and owners get them until they turn them off.
-  - **Saved views you follow:** you get an email with what changed in each one you follow, even with the other two parts off. A saved view is a filtered list of bills; follow one by clicking the envelope beside it in the Views menu on the Bills page. They show as chips with a count, and you can remove one there.
+  - **New bills that may be relevant to your team:** bills that just matched your team's keywords.
+  - **Saved views you follow:** you get what changed in each one you follow, even with the other two parts off. A saved view is a filtered list of bills; follow one by clicking the envelope beside it in the Views menu on the Bills page. They show as chips, and you can remove one there.
 
-  Admins and owners choose one of four for the whole team. **Priority bills, new bills, and saved views** lets each person unsubscribe from any of them. **Priority bills and saved views** leaves new bills off by default for members, who can turn them on, while admins still get them by default. **Saved views only** includes only the saved views each person follows, and **Off** means no one gets the digest. A bill with a priority that's also in a view you follow appears once, under priority bills. If you've turned that part off, it appears in the view. A new instance starts with **Priority bills and saved views**, and each person starts at every morning.
-- **Week ahead email.** Next week's hearings on your team's priority bills and events on your team calendar, sent on a day your team chooses. A new instance starts with it on, sent on Fridays.
-- **Comments.** "Someone mentions you" is always on, unless your team turns comment emails off. Then the mention email stops, and you still see it in FloorVote. "Someone replies on a bill you commented on" has your switch, and covers FloorVote and email.
+  A bill with a priority that's also in a view you follow appears once, under priority bills. If you've turned that part off, it appears in the view.
+- **Week ahead email.** Next week's hearings on your team's priority bills and events on your team calendar. The card says which day it's sent.
+- **Comments.** Mentions of you always send an email. "Someone replies on a bill you commented on" has your own switch, and covers FloorVote and email.
 
-When your team turns an email or a part of it off, it reads "Turned off by your team." and its switches are disabled. (The Comments card reads "Comment emails are turned off by your team.") The switch for replies on a bill you commented on stays usable, since it also covers FloorVote. (If your instance calls its group something else, such as a coalition, the sentence uses that word.) Links in emails go straight to the setting that stops them, and older links still land in the right place.
+Everything starts on for every person, with the digest every morning. When an admin has turned off email to members, a line at the top of the tab says so, and the controls are disabled. (If your instance calls its group something else, such as a coalition, the tab uses that word.) Links in emails go straight to the setting that stops them, and older links still land in the right place.
 
 ## Feed
 
@@ -72,7 +76,7 @@ Each newly matched bill waits for an admin to give it a priority or dismiss it, 
 
 ### Saved views
 
-Save any combination of filters as a named view the whole team shares, such as one per committee, issue area, or member's beat. A view can be bookmarked, sent as a link, or followed: the envelope beside a view emails you what changed in it, on the digest's schedule, with one click.
+Save any combination of filters as a named view the whole team shares, such as one per committee, issue area, or member's beat. A view can be bookmarked, sent as a link, or followed: the envelope beside a view emails you what changed in it, on your digest's schedule, with one click. The envelope shows while your team sends email to members.
 
 ### Bulk edit bills
 
