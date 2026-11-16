@@ -5,7 +5,8 @@
 export const DIGEST_DEFINITION = 'One email that sums up what changed on your bills since the last one.'
 
 // The group is named the way the instance names it (its org noun: team, coalition, association), so these are functions.
-export const priorityDescription = (orgNoun: string) => `Status changes, hearings, positions, and comments on bills your ${orgNoun} marked as a priority.`
+/** The priority part's title, which reads the same in the switch's name. */
+export const priorityTitle = (orgNoun: string) => `Changes to bills marked as priorities by your ${orgNoun}`
 
 export const weekAheadDescription = (orgNoun: string) => `Next week's hearings on your ${orgNoun}'s priority bills and events on your ${orgNoun} calendar.`
 

@@ -48,7 +48,7 @@ Admins decide whether FloorVote emails members at all, and each person chooses w
 **Everyone:** each person's own settings are on the **Notifications** tab, next to Account. It looks the same for every role, and each setting says what it does.
 
 - **Email digest.** One email that sums up what changed on your bills since the last one, sent only when something changed. In the menu beside its heading, each person chooses how often: every morning, or once a week on a weekday they pick. It has three parts:
-  - **Changes to priority bills:** status changes, hearings, positions, and comments on bills your team marked as a priority.
+  - **Changes to bills marked as priorities by your team:** status changes, hearings, positions, and comments on them.
   - **New bills that may be relevant to your team:** bills that just matched your team's keywords.
   - **Saved views you follow:** you get what changed in each one you follow, even with the other two parts off. A saved view is a filtered list of bills; follow one by clicking the envelope beside it in the Views menu on the Bills page. They show as chips, and you can remove one there.
 
@@ -56,7 +56,7 @@ Admins decide whether FloorVote emails members at all, and each person chooses w
 - **Week ahead email.** Next week's hearings on your team's priority bills and events on your team calendar. The card says which day it's sent.
 - **Comments.** Mentions of you always send an email. "Someone replies on a bill you commented on" has your own switch, and covers FloorVote and email.
 
-Everything starts on for every person, with the digest every morning. When an admin has turned off email to members, a line at the top of the tab says so, and the controls are disabled. (If your instance calls its group something else, such as a coalition, the settings on that tab use that word.) Links in emails go straight to the setting that stops them, and older links still land in the right place.
+Everything starts on for every person, with the digest every morning. When an admin has turned off email to members, a line at the top of the tab says so, and the email settings are disabled. The replies switch still works, since it also covers FloorVote. (If your instance calls its group something else, such as a coalition, the settings on that tab use that word.) Links in emails go straight to the setting that stops them, and older links still land in the right place.
 
 ## Feed
 

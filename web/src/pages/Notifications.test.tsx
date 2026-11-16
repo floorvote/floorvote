@@ -117,7 +117,9 @@ describe.each(['member', 'admin', 'owner'] as const)('the Notifications page, as
     expect(screen.getByText('One email that sums up what changed on your bills since the last one.')).toBeInTheDocument()
     // The digest card no longer says when it's sent; How often beside the heading says that.
     expect(screen.queryByText(/Sent only when something changed/)).not.toBeInTheDocument()
-    // New bills has its title alone, no line under it.
+    // The priority part and New bills each have their title alone, no line under it.
+    expect(screen.queryByText(/^Status changes, hearings/)).not.toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: 'Changes to bills marked as priorities by your coalition' })).toHaveAccessibleDescription('')
     expect(screen.queryByText(/just matched/)).not.toBeInTheDocument()
     expect(screen.getByRole('switch', { name: T })).toHaveAccessibleDescription('')
   })
@@ -137,7 +139,7 @@ describe.each(['member', 'admin', 'owner'] as const)('the Notifications page, as
   it('lets each part be turned off on its own: new bills stays on with the priority part off', async () => {
     signIn(role, { emailDigestEnabled: false })
     renderPage()
-    expect(await screen.findByRole('switch', { name: 'Changes to priority bills' })).not.toBeChecked()
+    expect(await screen.findByRole('switch', { name: 'Changes to bills marked as priorities by your coalition' })).not.toBeChecked()
     expect(screen.getByRole('switch', { name: T })).toBeChecked()
     expect(screen.getByRole('switch', { name: T })).not.toBeDisabled()
   })
@@ -154,7 +156,7 @@ describe.each(['member', 'admin', 'owner'] as const)('the Notifications page, as
   })
 
   it.each([
-    ['setting-email-digest', 'Changes to priority bills'],
+    ['setting-email-digest', 'Changes to bills marked as priorities by your coalition'],
     ['setting-week-ahead', 'Get the week ahead email'],
     ['setting-email-replies', 'Someone replies on a bill you commented on'],
   ])('lands #%s on its setting and flashes it', async (id, name) => {

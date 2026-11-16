@@ -50,7 +50,7 @@ const renderPage = () => render(<MemoryRouter><Notifications /></MemoryRouter>)
 
 // A switch's name, a line of its visible sentence to click, and the field it saves.
 const SWITCHES = [
-  { key: 'priority bills', name: 'Changes to priority bills', sentence: /^Status changes, hearings, positions, and comments/, field: 'emailDigestEnabled' },
+  { key: 'priority bills', name: 'Changes to bills marked as priorities by your coalition', sentence: /^Changes to bills marked as priorities by your coalition$/, field: 'emailDigestEnabled' },
   { key: 'new bills', name: "New bills that may be relevant to your coalition", sentence: /^New bills that may be relevant to your coalition$/, field: 'emailDigestMatchesEnabled' },
   { key: 'week ahead', name: 'Get the week ahead email', sentence: /^Next week's hearings on your coalition's priority bills/, field: 'emailWeekAheadEnabled' },
   { key: 'replies', name: 'Someone replies on a bill you commented on', sentence: /^You get these in FloorVote and by email/, field: 'emailRepliesEnabled' },
@@ -145,7 +145,7 @@ describe('Notifications: your switches', () => {
     renderPage()
     const sw = await screen.findByRole('switch', { name: "New bills that may be relevant to your coalition" })
     expect(sw).not.toBeDisabled()
-    expect(screen.getByRole('switch', { name: 'Changes to priority bills' })).not.toBeChecked()
+    expect(screen.getByRole('switch', { name: 'Changes to bills marked as priorities by your coalition' })).not.toBeChecked()
     await userEvent.click(screen.getByText(SWITCHES[1].sentence))
     await waitFor(() => expect(sw).not.toBeChecked())
     expect(api.apiFetch).toHaveBeenCalledWith('/users/me', { method: 'PATCH', body: JSON.stringify({ emailDigestMatchesEnabled: false }) })
