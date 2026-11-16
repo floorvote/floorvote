@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useConfig } from '../../context/ConfigContext'
 import { useDemo } from '../../context/DemoContext'
 import { apiFetch } from '../../lib/api'
@@ -33,6 +33,18 @@ interface Props {
  * Each saves at once. What each person gets is their own choice on the Notifications tab.
  */
 export function EmailsSection({ loading, emailsEnabled, weekAheadDay }: Props) {
+  return (
+    <div style={{ ...CARD, padding: 24, marginBottom: 20 }}>
+      <h2 style={CARD_TITLE}>Emails</h2>
+      {loading
+        ? <div style={{ ...HELPER_TEXT, marginTop: 4 }}>Loading…</div>
+        // Drawn only once the saved settings are in, so its first draw already shows them.
+        : <EmailsControls emailsEnabled={emailsEnabled} weekAheadDay={weekAheadDay} />}
+    </div>
+  )
+}
+
+function EmailsControls({ emailsEnabled, weekAheadDay }: Omit<Props, 'loading'>) {
   const { demoLocked } = useDemo()
   const { config, patchConfig } = useConfig()
   const orgNoun = config?.orgNoun ?? DEFAULT_ORG_NOUN
@@ -40,9 +52,6 @@ export function EmailsSection({ loading, emailsEnabled, weekAheadDay }: Props) {
   const [day, setDay] = useState(weekAheadDay ?? DEFAULT_WEEK_AHEAD_DAY)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(false)
-  // The settings arrive after the page first draws, so follow them when they do.
-  useEffect(() => { setOn(emailsEnabled !== false) }, [emailsEnabled])
-  useEffect(() => { setDay(weekAheadDay ?? DEFAULT_WEEK_AHEAD_DAY) }, [weekAheadDay])
 
   async function save(body: Record<string, unknown>, onSaved: () => void, putBack: () => void) {
     setError(false)
@@ -74,45 +83,38 @@ export function EmailsSection({ loading, emailsEnabled, weekAheadDay }: Props) {
   }
 
   return (
-    <div style={{ ...CARD, padding: 24, marginBottom: 20 }}>
-      <h2 style={CARD_TITLE}>Emails</h2>
-      {loading ? (
-        <div style={{ ...HELPER_TEXT, marginTop: 4 }}>Loading…</div>
-      ) : (
-        <>
-          <div style={settingBox(demoLocked)}>
-            <div style={SETTING_BOX_HEADER}>
-              <div>
-                <div style={SETTING_BOX_TITLE}>Send email to members</div>
-                <div style={SETTING_BOX_DESC}>
-                  The email digest, the week ahead email, and emails about mentions and replies. Each person chooses which of these they get on their Notifications tab. Sign-in links and invites always send.
-                </div>
-              </div>
-              <IosToggle checked={on} disabled={demoLocked} busy={saving} onChange={changeEmails} ariaLabel="Send email to members" />
+    <>
+      <div style={settingBox(demoLocked)}>
+        <div style={SETTING_BOX_HEADER}>
+          <div>
+            <div style={SETTING_BOX_TITLE}>Send email to members</div>
+            <div style={SETTING_BOX_DESC}>
+              The email digest, the week ahead email, and emails about mentions and replies. Each person chooses which of these they get on their Notifications tab. Sign-in links and invites always send.
             </div>
           </div>
-          {/* One row, like the switch above and How often on the Notifications tab: the title and what it is for on the
-              left, the app's own dropdown on the right. */}
-          <div style={{ ...settingBox(demoLocked), marginTop: 10 }}>
-            <div style={SETTING_BOX_HEADER}>
-              <div>
-                <div style={SETTING_BOX_TITLE}>Week ahead email day</div>
-                <div style={SETTING_BOX_DESC}>{weekAheadDescription(orgNoun)}</div>
-              </div>
-              <div style={{ flexShrink: 0 }}>
-                <ScopeSelect
-                  ariaLabel="Week ahead email day"
-                  options={DAY_OPTIONS}
-                  value={String(day)}
-                  disabled={demoLocked || saving}
-                  onChange={(v) => changeDay(Number(v))}
-                />
-              </div>
-            </div>
+          <IosToggle checked={on} disabled={demoLocked} busy={saving} onChange={changeEmails} ariaLabel="Send email to members" />
+        </div>
+      </div>
+      {/* One row, like the switch above and How often on the Notifications tab: the title and what it is for on the
+          left, the app's own dropdown on the right. */}
+      <div style={{ ...settingBox(demoLocked), marginTop: 10 }}>
+        <div style={SETTING_BOX_HEADER}>
+          <div>
+            <div style={SETTING_BOX_TITLE}>Week ahead email day</div>
+            <div style={SETTING_BOX_DESC}>{weekAheadDescription(orgNoun)}</div>
           </div>
-          {error && <div role="alert" style={{ marginTop: 8, fontSize: fontSize.sm, color: color.textErrorRed }}>{SAVE_ERROR}</div>}
-        </>
-      )}
-    </div>
+          <div style={{ flexShrink: 0 }}>
+            <ScopeSelect
+              ariaLabel="Week ahead email day"
+              options={DAY_OPTIONS}
+              value={String(day)}
+              disabled={demoLocked || saving}
+              onChange={(v) => changeDay(Number(v))}
+            />
+          </div>
+        </div>
+      </div>
+      {error && <div role="alert" style={{ marginTop: 8, fontSize: fontSize.sm, color: color.textErrorRed }}>{SAVE_ERROR}</div>}
+    </>
   )
 }

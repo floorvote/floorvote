@@ -55,7 +55,8 @@ interface SwitchRowProps {
 /** A title and description on the left, a switch on the right, all one <label> so the sentence toggles the switch. */
 export function SwitchRow({ title, titleVariant = 'part', titleId, description, descriptionId, ariaLabel, checked, disabled, busy, onChange }: SwitchRowProps) {
   const ownDescriptionId = useId()
-  const describedBy = descriptionId ?? ownDescriptionId
+  // A row with no description (New bills) gets no empty slot and no aria-describedby.
+  const describedBy = description === undefined ? undefined : descriptionId ?? ownDescriptionId
   const switchId = useId()
   return (
     <label htmlFor={switchId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, cursor: disabled ? 'not-allowed' : 'pointer' }}>
@@ -63,7 +64,7 @@ export function SwitchRow({ title, titleVariant = 'part', titleId, description, 
         {titleVariant === 'card'
           ? <h2 id={titleId} style={CARD_TITLE}>{title}</h2>
           : <div id={titleId} style={PART_TITLE}>{title}</div>}
-        <div id={describedBy}>{description}</div>
+        {description !== undefined && <div id={describedBy}>{description}</div>}
       </div>
       <SwitchControl
         checked={checked}
