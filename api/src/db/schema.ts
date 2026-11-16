@@ -14,11 +14,10 @@ export const users = sqliteTable('users', {
   deactivatedAt: text('deactivated_at'),
   canVote: integer('can_vote').notNull().default(1),
   emailDigestEnabled: integer('email_digest_enabled').notNull().default(1),
-  // "Newly found bills" (migration 0128): 1 on, 0 off, null unset, which follows the team's default for a member and is
-  // on for an admin or owner. It replaced email_digest_matches_enabled, which stays in the table, unread.
-  emailDigestNewBills: integer('email_digest_new_bills'),
-  // How often the person gets the email digest (migration 0130): null every morning, or the weekday of a weekly one
-  // (0 Sunday to 6 Saturday, UTC).
+  // The "New bills" part of the digest, for every role.
+  emailDigestMatchesEnabled: integer('email_digest_matches_enabled').notNull().default(1),
+  // How often the person gets the email digest: null every morning, else the weekday of a weekly one (0 Sunday to 6
+  // Saturday, UTC). Migration 0127.
   emailDigestWeeklyDay: integer('email_digest_weekly_day'),
   emailWeekAheadEnabled: integer('email_week_ahead_enabled').notNull().default(1),
   emailRepliesEnabled: integer('email_replies_enabled').notNull().default(1),

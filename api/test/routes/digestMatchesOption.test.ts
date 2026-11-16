@@ -21,10 +21,9 @@ describe('the digest new-match option', () => {
   const me = async (token: string) =>
     (await SELF.fetch('http://localhost/api/auth/me', { headers: { Cookie: `session=${token}` } })).json() as Promise<Record<string, unknown>>
 
-  // #1036: a new person has no choice yet (null), so a member follows the team's default and an admin or owner gets the part.
-  it('is unset for a new person', async () => {
+  it('is on by default', async () => {
     const token = await seedSession(await seedUser())
-    expect((await me(token)).emailDigestMatchesEnabled).toBeNull()
+    expect((await me(token)).emailDigestMatchesEnabled).toBe(true)
   })
 
   it('turns off and back on through PATCH /users/me, echoed and read back by /auth/me', async () => {
