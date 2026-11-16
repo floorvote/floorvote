@@ -4,17 +4,19 @@ import { useDemo } from '../../context/DemoContext'
 import { apiFetch } from '../../lib/api'
 import { DEFAULT_WEEK_AHEAD_DAY } from '../../lib/notifications'
 import { CARD } from '../../lib/cardStyle'
-import { CARD_TITLE, HELPER_TEXT } from '../../lib/textStyles'
+import { CARD_TITLE } from '../../lib/textStyles'
 import { settingBox, SETTING_BOX_HEADER, SETTING_BOX_TITLE, SETTING_BOX_DESC } from '../../lib/settingBoxStyle'
 import { IosToggle } from '../../components/ui/IosToggle'
-import { color, radius, fontSize } from '../../styles/tokens'
+import { ScopeSelect } from '../../components/ui/ScopeSelect'
+import { color, fontSize } from '../../styles/tokens'
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+// The dropdown's choices, Sunday (0) to Saturday (6), as week_ahead_day stores them.
+const DAY_OPTIONS = DAYS.map((label, i) => ({ value: String(i), label }))
 
 const CONFIRM_OFF = 'Turn off email to members? No one will get the email digest, the week ahead email, or comment emails until you turn it back on. Sign-in links and invites still send.'
 const SAVE_ERROR = "Couldn't save that change. Try again."
 
-const SELECT: React.CSSProperties = { fontSize: fontSize.sm, padding: '8px 10px', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, boxSizing: 'border-box', fontFamily: 'inherit', color: color.textSlate, background: color.white }
 
 interface Props {
   /** From the /admin/config load. Missing reads as on. */
@@ -81,18 +83,24 @@ export function EmailsSection({ emailsEnabled, weekAheadDay }: Props) {
           <IosToggle checked={on} disabled={demoLocked} busy={saving} onChange={changeEmails} ariaLabel="Send email to members" />
         </div>
       </div>
-      <div style={{ marginTop: 14 }}>
-        <label htmlFor="week-ahead-day" style={{ ...SETTING_BOX_TITLE, display: 'block', marginBottom: 4 }}>Week ahead email day</label>
-        <select
-          id="week-ahead-day"
-          value={day}
-          disabled={demoLocked || saving}
-          onChange={(e) => changeDay(Number(e.target.value))}
-          style={{ ...SELECT, cursor: demoLocked ? 'not-allowed' : 'pointer' }}
-        >
-          {DAYS.map((name, i) => <option key={name} value={i}>{name}</option>)}
-        </select>
-        <div style={{ ...HELPER_TEXT, marginTop: 4 }}>The day the week ahead email goes out, so you know when events need to be on the calendar.</div>
+      {/* One row, like the switch above and How often on the Notifications tab: the title and what it is for on the
+          left, the app's own dropdown on the right. */}
+      <div style={{ ...settingBox(demoLocked), marginTop: 10 }}>
+        <div style={SETTING_BOX_HEADER}>
+          <div>
+            <div style={SETTING_BOX_TITLE}>Week ahead email day</div>
+            <div style={SETTING_BOX_DESC}>The day the week ahead email goes out, so you know when events need to be on the calendar.</div>
+          </div>
+          <div style={{ flexShrink: 0 }}>
+            <ScopeSelect
+              ariaLabel="Week ahead email day"
+              options={DAY_OPTIONS}
+              value={String(day)}
+              disabled={demoLocked || saving}
+              onChange={(v) => changeDay(Number(v))}
+            />
+          </div>
+        </div>
       </div>
       {error && <div role="alert" style={{ marginTop: 8, fontSize: fontSize.sm, color: color.textErrorRed }}>{SAVE_ERROR}</div>}
     </div>

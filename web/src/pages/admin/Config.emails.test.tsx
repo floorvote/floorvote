@@ -82,7 +82,13 @@ const DAY_COPY = 'The day the week ahead email goes out, so you know when events
 const CONFIRM = 'Turn off email to members? No one will get the email digest, the week ahead email, or comment emails until you turn it back on. Sign-in links and invites still send.'
 const SAVE_ERROR = "Couldn't save that change. Try again."
 const toggle = () => screen.findByRole('switch', { name: 'Send email to members' })
-const daySelect = () => screen.findByRole('combobox', { name: 'Week ahead email day' })
+// The day is the app's own dropdown (ScopeSelect), like How often on the Notifications tab: a button named
+// "Week ahead email day: <day>" that opens a radio group of the seven days.
+const daySelect = () => screen.findByRole('button', { name: /^Week ahead email day: / })
+const pickDay = async (name: string) => {
+  await userEvent.click(await daySelect())
+  await userEvent.click(within(screen.getByRole('radiogroup', { name: 'Week ahead email day' })).getByText(name))
+}
 const puts = () => mockFetch.mock.calls.filter(([p, init]) => p === '/admin/config' && (init as RequestInit | undefined)?.method === 'PUT')
 const putBodies = () => puts().map(([, init]) => JSON.parse((init as RequestInit).body as string) as Put)
 
@@ -169,31 +175,45 @@ describe('Config: the Emails box', () => {
   ])('shows the saved week ahead day (%i) as %s, with the seven days to pick from and what it is for', async (day, name) => {
     mockConfig({ week_ahead_day: day })
     renderConfig()
-    const select = await daySelect()
-    await waitFor(() => expect(select).toHaveDisplayValue(name))
-    expect(within(select).getAllByRole('option').map(o => o.textContent)).toEqual(['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'])
+    await waitFor(async () => expect(await daySelect()).toHaveAccessibleName(`Week ahead email day: ${name}`))
+    await userEvent.click(await daySelect())
+    const list = screen.getByRole('radiogroup', { name: 'Week ahead email day' })
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    expect(within(list).getAllByRole('radio')).toHaveLength(7)
+    for (const d of days) expect(within(list).getByRole('radio', { name: d })).toBeInTheDocument()
     expect(screen.getByText(DAY_COPY)).toBeInTheDocument()
+  })
+
+  it('puts the day on one row: its title and what it is for on the left, the dropdown on the right', async () => {
+    mockConfig({ week_ahead_day: 5 })
+    renderConfig()
+    const menu = await daySelect()
+    const title = screen.getByText('Week ahead email day')
+    // The title sits in the row's left column, so the row is two levels up. The dropdown is its last child, on the right.
+    const row = title.parentElement!.parentElement!
+    expect(row).toContainElement(menu)
+    expect(row).toContainElement(screen.getByText(DAY_COPY))
+    expect(row.lastElementChild).toContainElement(menu)
+    expect(row.style.justifyContent).toBe('space-between')
   })
 
   it('saves a new day and tells the rest of the app', async () => {
     mockConfig({ week_ahead_day: 5 })
     renderConfig()
-    const select = await daySelect()
-    await waitFor(() => expect(select).toHaveDisplayValue('Friday'))
-    await userEvent.selectOptions(select, 'Monday')
+    await waitFor(async () => expect(await daySelect()).toHaveAccessibleName('Week ahead email day: Friday'))
+    await pickDay('Monday')
     await waitFor(() => expect(putBodies()).toEqual([{ week_ahead_day: 1 }]))
     expect(patchConfig).toHaveBeenCalledWith({ weekAheadDay: 1 })
-    expect(select).toHaveDisplayValue('Monday')
+    expect(await daySelect()).toHaveAccessibleName('Week ahead email day: Monday')
   })
 
   it('puts the day back and says so when the save fails', async () => {
     mockConfig({ week_ahead_day: 5 }, () => { throw new Error('offline') })
     renderConfig()
-    const select = await daySelect()
-    await waitFor(() => expect(select).toHaveDisplayValue('Friday'))
-    await userEvent.selectOptions(select, 'Monday')
+    await waitFor(async () => expect(await daySelect()).toHaveAccessibleName('Week ahead email day: Friday'))
+    await pickDay('Monday')
     expect(await screen.findByText(SAVE_ERROR)).toBeInTheDocument()
-    expect(select).toHaveDisplayValue('Friday')
+    expect(await daySelect()).toHaveAccessibleName('Week ahead email day: Friday')
     expect(patchConfig).not.toHaveBeenCalled()
   })
 
