@@ -30,6 +30,7 @@ import { MissingRequiredReason, useRequiredSubmit } from '../../components/Requi
 import TagTaxonomyTable from './TagTaxonomyTable'
 import { KeywordMatchSummary } from './KeywordMatchSummary'
 import { AttachmentStorage } from './AttachmentStorage'
+import { EmailsSection } from './EmailsSection'
 import { rowsFromTaxonomy, rowsToTaxonomy, type TaxonomyRow } from './taxonomyRows'
 
 type ChangedBy = { id: string; name: string | null; email: string } | null
@@ -48,6 +49,8 @@ type ConfigData = {
   prioritized_bills_count?: number
   new_match_min_relevance?: number
   claim_links_enabled?: boolean
+  notification_emails_enabled?: boolean
+  week_ahead_day?: number
 } & Partial<AiSettingRecords>
 
 type CustomFieldDef = {
@@ -165,6 +168,9 @@ export function Config() {
   // The claim links setting (#570). It saves the moment it's toggled, apart from
   // the AI instructions above it, so it never rides along with unsaved edits.
   const [claimLinks, setClaimLinks] = useState(true)
+  // The Emails box: both come from the same load, and the box keeps its own copy once it has them.
+  const [emailsEnabled, setEmailsEnabled] = useState<boolean | undefined>(undefined)
+  const [weekAheadDay, setWeekAheadDay] = useState<number | undefined>(undefined)
   // Who last changed each AI setting (#602). Empty for a setting nobody has changed.
   const [aiRecords, setAiRecords] = useState<Partial<AiSettingRecords>>({})
   const [savingClaimLinks, setSavingClaimLinks] = useState(false)
@@ -274,6 +280,8 @@ export function Config() {
         setNewMatchMinRelevance(newMatchMinRelevanceValue)
         // On unless an admin turned it off, as the server reads it.
         setClaimLinks(data.claim_links_enabled !== false)
+        setEmailsEnabled(data.notification_emails_enabled)
+        setWeekAheadDay(data.week_ahead_day)
         setAiRecords(pickAiRecords(data))
         const loadedRows = rowsFromTaxonomy(
           Array.isArray(data.tag_taxonomy) ? data.tag_taxonomy as TaxonomyItem[] : [],
@@ -1093,6 +1101,9 @@ export function Config() {
           </>
         )}
       </div>
+
+      {/* Emails */}
+      <EmailsSection emailsEnabled={emailsEnabled} weekAheadDay={weekAheadDay} />
 
       {/* Custom fields */}
       <div style={sectionCard}>
