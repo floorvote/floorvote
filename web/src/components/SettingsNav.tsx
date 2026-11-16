@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 import { usePrefersReducedMotion } from '../lib/usePrefersReducedMotion'
 
-// Every signed-in person sees these. Notifications holds an admin's team-wide
-// email settings too, so it has no admin tab of its own.
+// Every signed-in person sees these. Notifications is each person's own email settings.
+// The admin's switch for them is on Config.
 const MEMBER_TABS = [
   { to: '/account', label: 'Account' },
   { to: '/notifications', label: 'Notifications' },

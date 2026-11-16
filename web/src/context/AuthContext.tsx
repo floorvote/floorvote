@@ -11,8 +11,8 @@ type User = {
   title: string | null
   canVote: boolean
   emailDigestEnabled: boolean
-  /** "New bills": the person's own choice, or null until they make one, which follows the team's default for a member and is on for an admin or owner. */
-  emailDigestMatchesEnabled: boolean | null
+  /** "New bills," the part of the email digest for bills that just matched the keywords: the person's own choice, on until they turn it off. */
+  emailDigestMatchesEnabled: boolean
   /** The weekday of the person's weekly digest (0 Sunday to 6 Saturday), or null for every morning. Missing from an older API, which reads as every morning. */
   emailDigestWeeklyDay?: number | null
   emailWeekAheadEnabled: boolean

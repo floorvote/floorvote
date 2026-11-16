@@ -67,7 +67,7 @@ describe('the Account and Notifications page URLs', () => {
 
   it('renders the Notifications page at /notifications', async () => {
     const router = renderAt('/notifications')
-    expect(await screen.findByRole('heading', { level: 2, name: 'Your notifications' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 2, name: 'Email digest' })).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/notifications')
   })
 
@@ -122,7 +122,7 @@ describe('the Account and Notifications page URLs', () => {
   it('sends /admin/notifications to /notifications', async () => {
     const router = renderAt('/admin/notifications')
     await waitFor(() => expect(router.state.location.pathname).toBe('/notifications'))
-    expect(await screen.findByRole('heading', { level: 2, name: 'Your notifications' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 2, name: 'Email digest' })).toBeInTheDocument()
   })
 
   it('still redirects with a trailing slash', async () => {

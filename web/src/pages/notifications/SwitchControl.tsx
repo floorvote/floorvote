@@ -6,7 +6,7 @@ interface SwitchControlProps {
   /** The input's id, for a label that names it with `htmlFor`. */
   id?: string
   checked: boolean
-  /** Not available: the demo is locked, or the team turned the email off. Shows the not-allowed cursor. */
+  /** Not available: the demo is locked, or email to members is turned off. Shows the not-allowed cursor. */
   disabled: boolean
   /** A save is in flight. Changes are ignored while it is, and keyboard focus stays on the switch. */
   busy?: boolean

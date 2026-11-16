@@ -33,7 +33,6 @@ function mockRoles(roles: Role[] | Error) {
       if (roles instanceof Error) throw roles
       return roles as never
     }
-    if (path === '/config') return { modules: {}, mentionEmailsEnabled: true } as never
     return {} as never
   })
 }
@@ -42,7 +41,7 @@ const me = { id: 'u1', name: 'A', title: null }
 const other = { id: 'u2', name: 'B', title: null }
 
 function notificationsSection() {
-  return screen.getByRole('heading', { level: 2, name: 'Your notifications' }).parentElement as HTMLElement
+  return screen.getByRole('heading', { level: 2, name: 'Comments' }).closest('section') as HTMLElement
 }
 
 async function expectLine(text: string) {

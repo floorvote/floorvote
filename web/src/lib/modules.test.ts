@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { MODULES, isModuleEnabled, getModuleSetting, visibleModuleSettings, digestSentPhrase, weekAheadSentPhrase, moduleKindLabel, digestTeamChoice } from './modules'
+import { MODULES, isModuleEnabled, getModuleSetting, visibleModuleSettings, moduleKindLabel } from './modules'
 import type { ModuleDef } from './modules'
 
 describe('MODULES registry', () => {
@@ -116,15 +116,11 @@ describe('MODULES registry (post-rework)', () => {
     const ids = MODULES.filter(m => m.type === 'widget').map(m => m.id).sort()
     expect(ids).toEqual(['upcoming-hearings', 'waiting-for-vote'])
   })
-  it('week-ahead is a section-type module', () => {
-    const m = MODULES.find(x => x.id === 'week-ahead')
-    expect(m).toBeDefined()
-    expect(m?.type).toBe('section')
-  })
-  it('no longer lists calendar, email-digest, or polls', () => {
+  it('no longer lists calendar, the email modules, or polls', () => {
     const ids = MODULES.map(m => m.id)
     expect(ids).not.toContain('calendar')
     expect(ids).not.toContain('email-digest')
+    expect(ids).not.toContain('week-ahead')
     expect(ids).not.toContain('polls')
   })
   it('maps module type to a human kind label', () => {
@@ -143,51 +139,5 @@ describe('upcoming-hearings widget config', () => {
 
   it('has no configurable settings (always prioritized bills, next 30 days)', () => {
     expect(m.settings).toBeUndefined()
-  })
-})
-
-describe('digestSentPhrase', () => {
-  it('says every morning for a daily digest', () => {
-    expect(digestSentPhrase(null)).toBe('every morning')
-    expect(digestSentPhrase(undefined)).toBe('every morning')
-  })
-
-  it('names the weekday of a weekly digest, from Sunday (0) to Saturday (6)', () => {
-    expect(digestSentPhrase(0)).toBe('every Sunday morning')
-    expect(digestSentPhrase(3)).toBe('every Wednesday morning')
-    expect(digestSentPhrase(6)).toBe('every Saturday morning')
-  })
-
-  it('says every morning for a day that is not a weekday', () => {
-    expect(digestSentPhrase(7)).toBe('every morning')
-  })
-})
-
-describe('digestTeamChoice', () => {
-  it('is On for an enabled digest with no teamUpdates setting, or with it on', () => {
-    expect(digestTeamChoice({ 'email-digest': true })).toBe('on')
-    expect(digestTeamChoice({ 'email-digest': { enabled: true } })).toBe('on')
-    expect(digestTeamChoice({ 'email-digest': { enabled: true, settings: { frequency: 'daily' } } })).toBe('on')
-    expect(digestTeamChoice({ 'email-digest': { enabled: true, settings: { teamUpdates: true } } })).toBe('on')
-  })
-
-  it('is Saved views only for an enabled digest with teamUpdates off', () => {
-    expect(digestTeamChoice({ 'email-digest': { enabled: true, settings: { teamUpdates: false } } })).toBe('views')
-  })
-
-  it('is Off for a disabled or missing digest, whatever teamUpdates says', () => {
-    expect(digestTeamChoice(undefined)).toBe('off')
-    expect(digestTeamChoice({})).toBe('off')
-    expect(digestTeamChoice({ 'email-digest': false })).toBe('off')
-    expect(digestTeamChoice({ 'email-digest': { enabled: false, settings: { teamUpdates: true } } })).toBe('off')
-    expect(digestTeamChoice({ 'email-digest': { enabled: false, settings: { teamUpdates: false } } })).toBe('off')
-  })
-})
-
-describe('weekAheadSentPhrase', () => {
-  it('names the weekday, Monday when no day is set', () => {
-    expect(weekAheadSentPhrase({ 'week-ahead': { enabled: true } })).toBe('every Monday morning')
-    expect(weekAheadSentPhrase(undefined)).toBe('every Monday morning')
-    expect(weekAheadSentPhrase({ 'week-ahead': { enabled: true, settings: { weeklyDay: '4' } } })).toBe('every Thursday morning')
   })
 })

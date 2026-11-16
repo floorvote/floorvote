@@ -7,7 +7,7 @@ import { resolve } from 'node:path'
 import { Notifications } from './Notifications'
 import * as api from '../lib/api'
 
-// Every switch under "Your notifications" saves as it did on the Account page,
+// Every switch on the Notifications page saves as it did on the Account page,
 // takes a click on its sentence, has a 24px target, and shows a keyboard focus ring.
 
 const auth = vi.hoisted(() => ({ user: {} as Record<string, unknown> }))
@@ -21,12 +21,10 @@ vi.mock('../context/AuthContext', () => ({
   }),
 }))
 vi.mock('../context/ConfigContext', () => ({
-  useConfig: () => ({ config: { orgNoun: 'coalition' }, multiState: false, loading: false }),
+  useConfig: () => ({ config: { orgNoun: 'coalition', notificationEmailsEnabled: true, weekAheadDay: 5 }, multiState: false, loading: false }),
 }))
 
 const mobileCss = readFileSync(resolve(__dirname, '../styles/mobile.css'), 'utf8')
-
-const BOTH_ON = { 'email-digest': { enabled: true, settings: { frequency: 'weekly', weeklyDay: '1' } }, 'week-ahead': { enabled: true } }
 
 function signIn(over: Record<string, unknown> = {}) {
   auth.user = {
@@ -36,9 +34,8 @@ function signIn(over: Record<string, unknown> = {}) {
   }
 }
 
-function mockConfig(modules: Record<string, unknown> = BOTH_ON) {
+function mockConfig() {
   vi.spyOn(api, 'apiFetch').mockImplementation(async (path: string) => {
-    if (path === '/config') return { modules, mentionEmailsEnabled: true } as never
     if (path === '/views') return { views: [] } as never
     if (path === '/roles') return [] as never
     return {} as never
@@ -152,24 +149,6 @@ describe('Notifications: your switches', () => {
     await userEvent.click(screen.getByText(SWITCHES[1].sentence))
     await waitFor(() => expect(sw).not.toBeChecked())
     expect(api.apiFetch).toHaveBeenCalledWith('/users/me', { method: 'PATCH', body: JSON.stringify({ emailDigestMatchesEnabled: false }) })
-  })
-
-  it.each([
-    ['the team turned the digest off', { 'email-digest': { enabled: false }, 'week-ahead': { enabled: false } }],
-    ['the team chose saved views only', { 'email-digest': { enabled: true, settings: { teamUpdates: false } }, 'week-ahead': { enabled: false } }],
-  ])('does not toggle a part or email that is turned off, from its switch or its sentence, when %s', async (_l, modules) => {
-    mockConfig(modules)
-    renderPage()
-    const priority = await screen.findByRole<HTMLInputElement>('switch', { name: 'Changes to priority bills' })
-    const found = screen.getByRole<HTMLInputElement>('switch', { name: "New bills that may be relevant to your coalition" })
-    const week = screen.getByRole<HTMLInputElement>('switch', { name: 'Get the week ahead email' })
-    await waitFor(() => expect(priority).toBeDisabled())
-    await userEvent.click(screen.getByText(SWITCHES[0].sentence))
-    await userEvent.click(screen.getByText(SWITCHES[1].sentence))
-    await userEvent.click(screen.getByText(SWITCHES[2].sentence))
-    // Each shows the team's off, and stays off: the person's own choice (on) stays saved.
-    expect([priority.checked, found.checked, week.checked]).toEqual([false, false, false])
-    expect(patches()).toHaveLength(0)
   })
 
   it('names the new bills switch by its visible title', async () => {
