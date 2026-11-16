@@ -112,12 +112,13 @@ describe.each(['member', 'admin', 'owner'] as const)('the Notifications page, as
 
   it('puts the explanation of each digest part in view, with no info icons', async () => {
     renderPage()
-    expect(await screen.findByText("Bills that just matched your coalition's keywords.")).toBeInTheDocument()
-    expect(screen.getByText(SAVED_VIEWS)).toBeInTheDocument()
+    expect(await screen.findByText(SAVED_VIEWS)).toBeInTheDocument()
     expect(screen.getByText('One email that sums up what changed on your bills since the last one.')).toBeInTheDocument()
     // The digest card no longer says when it's sent; How often beside the heading says that.
     expect(screen.queryByText(/Sent only when something changed/)).not.toBeInTheDocument()
-    expect(screen.getByRole('switch', { name: T })).toHaveAccessibleDescription("Bills that just matched your coalition's keywords.")
+    // New bills has its title alone, no line under it.
+    expect(screen.queryByText(/just matched/)).not.toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: T })).toHaveAccessibleDescription('')
   })
 
   it.each([[5, 'Friday'], [1, 'Monday']])('says the week ahead email is sent on its day (%i)', async (day, word) => {
@@ -271,7 +272,7 @@ describe('when the admin turned off email to members', () => {
     signIn('member')
     renderPage()
     await screen.findByText(OFF_LINE)
-    await userEvent.click(screen.getByText("Bills that just matched your coalition's keywords."))
+    await userEvent.click(screen.getByText(T))
     await userEvent.click(screen.getByRole('switch', { name: T }))
     expect(vi.mocked(api.apiFetch).mock.calls.filter(([, o]) => (o as { method?: string } | undefined)?.method === 'PATCH')).toEqual([])
   })

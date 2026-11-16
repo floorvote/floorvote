@@ -12,8 +12,6 @@ export const weekAheadDescription = (orgNoun: string) => `Next week's hearings o
 /** The part's title, which reads the same in the switch's name. */
 export const newlyFoundTitle = (orgNoun: string) => `New bills that may be relevant to your ${orgNoun}`
 
-export const newBillsDescription = (orgNoun: string) => `Bills that just matched your ${orgNoun}'s keywords.`
-
 export const SAVED_VIEWS_DESCRIPTION = "A saved view is a filtered list of bills. Follow one with the envelope beside it in the Views menu on the Bills page."
 
 const MUTE_HINT = 'To stop them on one bill, select “Mute comments” on that bill.'

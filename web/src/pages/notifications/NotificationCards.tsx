@@ -9,7 +9,7 @@ import { CARD_TITLE } from '../../lib/textStyles'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { PART_TITLE, SettingCard, SwitchRow } from './SettingCard'
 import { ScopeSelect } from '../../components/ui/ScopeSelect'
-import { DIGEST_DEFINITION, newBillsDescription, newlyFoundTitle, priorityDescription, REPLIES_DESCRIPTION, REPLIES_DESCRIPTION_APP_ONLY, SAVED_VIEWS_DESCRIPTION, weekAheadDescription } from './copy'
+import { DIGEST_DEFINITION, newlyFoundTitle, priorityDescription, REPLIES_DESCRIPTION, REPLIES_DESCRIPTION_APP_ONLY, SAVED_VIEWS_DESCRIPTION, weekAheadDescription } from './copy'
 
 interface Props {
   /** The setting id being flashed after a deep link, if any. */
@@ -156,8 +156,6 @@ export function NotificationCards({ flashed }: Props) {
           <SwitchRow
             title={newlyFoundTitle(orgNoun)}
             titleId="newly-found-title"
-            description={newBillsDescription(orgNoun)}
-            descriptionId="newly-found-description"
             checked={newlyFound.on}
             disabled={locked}
             busy={newlyFound.busy}
