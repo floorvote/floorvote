@@ -5,8 +5,8 @@ import { ViewSwitcher, type SavedView } from './ViewSwitcher'
 import * as api from '../../lib/api'
 
 // #449: each saved view row ends with an envelope that includes the view in the
-// member's email digest. Outlined when off, filled when on, in a column after the
-// count. Its hover says what a click does: monitor the view, or stop monitoring it.
+// member's email. Outlined when off, filled when on, in a column after the count. A click
+// follows or unfollows the view directly (#1035). Its hover names the schedule, or says a click stops it.
 
 const demoState = vi.hoisted(() => ({ demoMode: false, settled: true }))
 vi.mock('../../context/DemoContext', () => ({
@@ -22,7 +22,6 @@ type Digest = NonNullable<Parameters<typeof ViewSwitcher>[0]['digest']>
 
 function renderSwitcher(digest: Partial<Digest> | undefined, over: Partial<Parameters<typeof ViewSwitcher>[0]> = {}) {
   const onToggle = vi.fn()
-  const onTurnOn = vi.fn()
   const utils = render(
     <ViewSwitcher
       views={VIEWS}
@@ -33,15 +32,15 @@ function renderSwitcher(digest: Partial<Digest> | undefined, over: Partial<Param
       onDelete={vi.fn()}
       onReorder={vi.fn()}
       onOverwrite={vi.fn()}
-      digest={digest === undefined ? undefined : { cadence: 'daily', memberOn: true, onToggle, onTurnOn, ...digest }}
+      digest={digest === undefined ? undefined : { cadence: 'daily', onToggle, ...digest }}
       {...over}
     />,
   )
   fireEvent.click(screen.getByRole('button', { name: /^views$/i }))
-  return { ...utils, onToggle, onTurnOn }
+  return { ...utils, onToggle }
 }
 
-const envelope = (name: string) => screen.getByRole('button', { name: new RegExp(`"${name}" (in|from) your (daily|weekly) digest`, 'i') })
+const envelope = (name: string) => screen.getByRole('button', { name: new RegExp(`^Email me "${name}" (daily|weekly)$`) })
 const glyph = (el: HTMLElement) => within(el).getByText('mail')
 
 describe('ViewSwitcher: include a view in the digest', () => {
@@ -57,7 +56,7 @@ describe('ViewSwitcher: include a view in the digest', () => {
     })
   })
 
-  it('shows no envelope when the digest control is not offered (the instance digest is off)', () => {
+  it('shows no envelope when the digest control is not offered (email to members is off)', () => {
     const offered = renderSwitcher({})
     expect(screen.getAllByText('mail')).toHaveLength(2)
     offered.unmount()
@@ -92,67 +91,68 @@ describe('ViewSwitcher: include a view in the digest', () => {
     expect(widths[0]).toBe(widths[1])
   })
 
-  it('says on hover what a click does: monitor a view not included, stop monitoring one that is', async () => {
+  it('names the schedule on hover for a view not followed, and says a click stops it for one that is', async () => {
     renderSwitcher({})
     await waitFor(() => expect(screen.getByText('42')).toBeInTheDocument())
     await userEvent.hover(envelope('Clerk bills'))
-    expect(await screen.findByText('Monitor bills in this view via your daily email digest')).toBeInTheDocument()
-    expect(screen.queryByText(/^Stop monitoring/)).not.toBeInTheDocument()
+    expect(await screen.findByText('Email me this view daily')).toBeInTheDocument()
+    expect(screen.queryByText(/^Stop emailing/)).not.toBeInTheDocument()
     await userEvent.unhover(envelope('Clerk bills'))
     await userEvent.hover(envelope('Auditor bills'))
-    expect(await screen.findByText('Stop monitoring bills in this view via your daily email digest')).toBeInTheDocument()
-    expect(screen.queryByText(/^Monitor bills/)).not.toBeInTheDocument()
+    expect(await screen.findByText('Stop emailing me this view')).toBeInTheDocument()
+    expect(screen.queryByText(/^Email me this view/)).not.toBeInTheDocument()
   })
 
   it('changes the hover as soon as the view is included or removed, while the pointer is still on the envelope', async () => {
-    const { rerender, onToggle, onTurnOn } = renderSwitcher({})
+    const { rerender, onToggle } = renderSwitcher({})
     const props = (views: SavedView[]) => (
       <ViewSwitcher
         views={views} currentSearch="" isAdmin={false}
         onApply={vi.fn()} onRename={vi.fn()} onDelete={vi.fn()} onReorder={vi.fn()} onOverwrite={vi.fn()}
-        digest={{ cadence: 'daily', memberOn: true, onToggle, onTurnOn }}
+        digest={{ cadence: 'daily', onToggle }}
       />
     )
     await userEvent.hover(envelope('Clerk bills'))
-    expect(await screen.findByText('Monitor bills in this view via your daily email digest')).toBeInTheDocument()
+    expect(await screen.findByText('Email me this view daily')).toBeInTheDocument()
     await userEvent.click(envelope('Clerk bills'))
     expect(onToggle).toHaveBeenCalledWith('v1', true)
     rerender(props(VIEWS.map(v => v.id === 'v1' ? { ...v, subscribed: true } : v)))
-    expect(await screen.findByText('Stop monitoring bills in this view via your daily email digest')).toBeInTheDocument()
-    expect(screen.queryByText(/^Monitor bills/)).not.toBeInTheDocument()
+    expect(await screen.findByText('Stop emailing me this view')).toBeInTheDocument()
+    expect(screen.queryByText(/^Email me this view/)).not.toBeInTheDocument()
     await userEvent.click(envelope('Clerk bills'))
     expect(onToggle).toHaveBeenCalledWith('v1', false)
     rerender(props(VIEWS))
-    expect(await screen.findByText('Monitor bills in this view via your daily email digest')).toBeInTheDocument()
-    expect(screen.queryByText(/^Stop monitoring/)).not.toBeInTheDocument()
+    expect(await screen.findByText('Email me this view daily')).toBeInTheDocument()
+    expect(screen.queryByText(/^Stop emailing/)).not.toBeInTheDocument()
   })
 
   it('follows the instance cadence in the envelope hover and the name, on and off', async () => {
     renderSwitcher({ cadence: 'weekly' })
     await waitFor(() => expect(screen.getByText('42')).toBeInTheDocument())
-    expect(envelope('Clerk bills')).toHaveAccessibleName('Include "Clerk bills" in your weekly digest')
+    expect(envelope('Clerk bills')).toHaveAccessibleName('Email me "Clerk bills" weekly')
     await userEvent.hover(envelope('Clerk bills'))
-    expect(await screen.findByText('Monitor bills in this view via your weekly email digest')).toBeInTheDocument()
+    expect(await screen.findByText('Email me this view weekly')).toBeInTheDocument()
     await userEvent.unhover(envelope('Clerk bills'))
-    expect(envelope('Auditor bills')).toHaveAccessibleName('Remove "Auditor bills" from your weekly digest')
+    expect(envelope('Auditor bills')).toHaveAccessibleName('Email me "Auditor bills" weekly')
+    expect(envelope('Auditor bills')).toHaveAttribute('aria-pressed', 'true')
     await userEvent.hover(envelope('Auditor bills'))
-    expect(await screen.findByText('Stop monitoring bills in this view via your weekly email digest')).toBeInTheDocument()
+    expect(await screen.findByText('Stop emailing me this view')).toBeInTheDocument()
   })
 
   it('ends the envelope hover with no period, like the app\'s other tooltips, on and off', async () => {
     renderSwitcher({})
     await userEvent.hover(envelope('Clerk bills'))
-    expect((await screen.findByText(/^Monitor bills in this view/)).textContent).not.toMatch(/[.]$/)
+    expect((await screen.findByText(/^Email me this view/)).textContent).not.toMatch(/[.]$/)
     await userEvent.unhover(envelope('Clerk bills'))
     await userEvent.hover(envelope('Auditor bills'))
-    expect((await screen.findByText(/^Stop monitoring bills in this view/)).textContent).not.toMatch(/[.]$/)
+    expect((await screen.findByText(/^Stop emailing me this view/)).textContent).not.toMatch(/[.]$/)
   })
 
   it('no longer puts the bill count on the envelope hover', async () => {
     renderSwitcher({})
     await waitFor(() => expect(screen.getByText('42')).toBeInTheDocument())
     await userEvent.hover(envelope('Clerk bills'))
-    await screen.findByText(/^Monitor bills in this view/)
+    await screen.findByText(/^Email me this view/)
     expect(screen.queryByText(/bills now/)).not.toBeInTheDocument()
     expect(envelope('Clerk bills')).not.toHaveAttribute('title', expect.stringMatching(/bills? now/))
   })
@@ -230,49 +230,13 @@ describe('ViewSwitcher: include a view in the digest', () => {
     expect(onToggle).toHaveBeenCalledWith('v1', true)
   })
 
-  it('offers to turn the digest on when the member has it off, and includes nothing yet', () => {
-    const { onToggle, onTurnOn } = renderSwitcher({ memberOn: false })
+  it('never asks to turn the digest on: a click follows the view directly, with no prompt', () => {
+    const { onToggle } = renderSwitcher({})
     fireEvent.click(envelope('Clerk bills'))
-    expect(screen.getByText(/turn on your email digest to include "clerk bills"/i)).toBeInTheDocument()
-    expect(onToggle).not.toHaveBeenCalled()
-    expect(onTurnOn).not.toHaveBeenCalled()
-  })
-
-  it('turns the digest on and then includes the view, on "Turn on digest"', async () => {
-    const calls: string[] = []
-    const { onToggle, onTurnOn } = renderSwitcher({ memberOn: false })
-    onTurnOn.mockImplementation(async () => { calls.push('on') })
-    onToggle.mockImplementation(async () => { calls.push('toggle') })
-    fireEvent.click(envelope('Clerk bills'))
-    fireEvent.click(screen.getByRole('button', { name: 'Turn on digest' }))
-    await waitFor(() => expect(onToggle).toHaveBeenCalledWith('v1', true))
-    expect(calls).toEqual(['on', 'toggle'])
-    await waitFor(() => expect(screen.queryByText(/turn on your email digest/i)).not.toBeInTheDocument())
-  })
-
-  it('includes nothing and turns nothing on when the member says "Not now"', () => {
-    const { onToggle, onTurnOn } = renderSwitcher({ memberOn: false })
-    fireEvent.click(envelope('Clerk bills'))
-    fireEvent.click(screen.getByRole('button', { name: 'Not now' }))
-    expect(onToggle).not.toHaveBeenCalled()
-    expect(onTurnOn).not.toHaveBeenCalled()
+    expect(onToggle).toHaveBeenCalledWith('v1', true)
     expect(screen.queryByText(/turn on your email digest/i)).not.toBeInTheDocument()
-  })
-
-  it('does not include the view when turning the digest on fails', async () => {
-    const { onToggle, onTurnOn } = renderSwitcher({ memberOn: false })
-    onTurnOn.mockRejectedValue(new Error('boom'))
-    fireEvent.click(envelope('Clerk bills'))
-    fireEvent.click(screen.getByRole('button', { name: 'Turn on digest' }))
-    await waitFor(() => expect(onTurnOn).toHaveBeenCalled())
-    expect(onToggle).not.toHaveBeenCalled()
-  })
-
-  it('lets a member with the digest off still remove a view they included earlier, with no prompt', () => {
-    const { onToggle } = renderSwitcher({ memberOn: false })
-    fireEvent.click(envelope('Auditor bills'))
-    expect(onToggle).toHaveBeenCalledWith('v2', false)
-    expect(screen.queryByText(/turn on your email digest/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Turn on digest' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Not now' })).not.toBeInTheDocument()
   })
 
   it('shows no envelope on a demo tenant, where the digest never sends', () => {

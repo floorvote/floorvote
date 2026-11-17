@@ -1,5 +1,5 @@
 import { getDb } from '../db/client'
-import { notifications, type MentionNotificationData, userRoles, users, bills, roles, sessions, associationConfig, comments } from '../db/schema'
+import { notifications, type MentionNotificationData, userRoles, users, bills, roles, sessions, comments } from '../db/schema'
 import { writeNotifications, mentionData } from './notifications'
 import { chunk, D1_MAX_PARAMS } from './chunk'
 import { eq, inArray, exists, and } from 'drizzle-orm'
@@ -15,13 +15,7 @@ import { renderBillCardOpen, BILL_CARD_CLOSE, renderCommentRow, formatEmailDateT
 import { renderEmailShell, emailButton, emailFooterLink } from './emailShell'
 import { sanitizeCommentHtml } from './sanitizeHtml'
 import { displayName } from './displayName'
-
-/** @mention emails are on unless an admin explicitly disabled them. */
-export async function mentionEmailsEnabled(db: ReturnType<typeof getDb>): Promise<boolean> {
-  const row = await db.select().from(associationConfig).where(eq(associationConfig.key, 'mention_emails_enabled')).get()
-  if (!row) return true
-  try { return JSON.parse(row.value) !== false } catch { return true }
-}
+import { notificationEmailsEnabled } from './notificationEmails'
 
 type Mention = {
   type: 'user' | 'role' | 'admins' | 'everyone'
@@ -321,7 +315,7 @@ async function recordAndEmail(
   })))
   const toEmail = newTargets.filter(t => written.has(t.userId))
 
-  if (toEmail.length > 0 && await mentionEmailsEnabled(db)) {
+  if (toEmail.length > 0 && await notificationEmailsEnabled(db)) {
     const emailTask = sendMentionEmails(toEmail, authorUserId, billId, commentId, html, env)
     if (waitUntil) {
       waitUntil(emailTask)

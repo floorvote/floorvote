@@ -158,7 +158,7 @@ Central's sync failure emails change in four ways.
 Job alerts, from central and from each instance, and an instance's email-outage alerts now group in the inbox. A job's `cron failed: <job>` emails and the `resolved: <job>` email that ends them are one conversation, and so are an outage's email-health alerts, from the first to the recovery. Cloudflare Email Service doesn't let a sender set `Message-ID`, so each email of a conversation carries the same made-up `In-Reply-To` and `References`, plus the `Thread-Index` and `Thread-Topic` that Outlook groups on. Outlook and Apple Mail keep the resolved email in the conversation although its subject differs. Other mail apps weren't checked. An alert that no provider takes with these headers goes once more without them.
 
 - **One conversation per outage.** A job's next failure after a resolved email starts a new conversation, unless that email listed other sessions in the job as still failing (for a calendar job, another state that still fails to warm), or couldn't read whether any were. A central job that crashes outright never sends a resolved email, so its conversation also ends after three days with no alert. An email outage's conversation ends with its recovery.
-- **An instance's job alerts name the instance, and say when they're resolved.** Their subject is now `cron failed: <job> on <host>`. Once the job next runs and does its work, it sends `resolved: <job> on <host>` in the same conversation. A run that isn't the job's day (a weekly digest, or the week-ahead email) doesn't count, and a run that finds the job switched off ends its conversation without an email. No amount of time ends an instance's conversation, so a weekly job's failed weeks stay one conversation. Only the daily digest, the week-ahead email, and a demo's reset can alert. The hourly jobs log their errors and retry.
+- **An instance's job alerts name the instance, and say when they're resolved.** Their subject is now `cron failed: <job> on <host>`. Once the job next runs and does its work, it sends `resolved: <job> on <host>` in the same conversation. A run that isn't the job's day (the week-ahead email) doesn't count, and a run that finds the job switched off ends its conversation without an email. No amount of time ends an instance's conversation, so a weekly job's failed weeks stay one conversation. Only the daily digest, the week-ahead email, and a demo's reset can alert. The hourly jobs log their errors and retry.
 - **One migration on each instance, and nothing to configure.** `0122_job_alert_threads` adds a table, one row a job, and applies with the deploy. Central keeps its jobs' open conversations in its `settings` table, one `alert-thread:` row a job.
 
 ## The hourly text sweep no longer stalls central's other jobs
@@ -172,3 +172,29 @@ Workers Logs drops the message of an error passed to `console.error` and keeps o
 ## Congress committee meetings no longer fail on a batch update
 
 Congress.gov's committee-meeting list orders meetings that share an update time differently on every request, so where a page of the list ended inside such a batch, some meetings came back twice and others never. The meeting read then fell short of the list's own count and failed every pass, and a central syncing Congress from GovInfo sent `cron failed: govinfo-body-events` every four hours. Central now reads each such update time again on its own and merges it in. A pass makes one more Congress.gov request for each page that ends inside a batch, usually a handful. Nothing to configure.
+
+## Email to members, and a Notifications tab that is each person's own
+
+Admins gate email and members choose. No email has both a team switch and a personal switch. This replaces the admin notifications tab, the Notifications card on the Account page, and the `email-digest` and `week-ahead` modules (floorvote/floorvote#1033).
+
+- **One admin switch, "Send email to members," in a new Emails box on the Config page.** It is `association_config.notification_emails_enabled`, on unless saved false. Off stops the email digest, the week ahead email, and mention and reply emails. Sign-in links, invites, and email-change confirmations keep sending. Turning it off asks first.
+- **The week ahead day is the admin's, for everyone.** "Week ahead email day" in the same box stores `week_ahead_day` (0 Sunday to 6 Saturday, UTC). A new instance reads Friday.
+- **Everything else is each person's own, on the Notifications tab** (`/notifications`, next to Account), the same for every role: the email digest with a How often menu (every morning, or once a week on a weekday each person picks, `users.email_digest_weekly_day`) and three parts ("Changes to priority bills," "New bills that may be relevant to your {org noun}," and the saved views they follow), the week ahead email, and comments. Mentions always email; the replies switch covers FloorVote and email. Admins and owners can now turn off new bills, which they always got before. When email to members is off, one line at the top says so and every control is disabled.
+- **Defaults are the same for every role:** every digest part on, every morning, week ahead on, replies on. A person added later starts on the instance's old weekly digest day, if its digest was weekly (`digest_weekly_day_for_new_people`).
+- **A followed view is sent on its own,** needing only email to members on. The envelope on the Bills page follows a view in one click and shows only while email to members is on.
+- **Each digest schedule keeps its own window:** `last_digest_at` for daily, `last_weekly_digest_at_<day>` for each weekday. A digest run does work every day, so it no longer reports `not-today`.
+- **Links moved.** Email footers and List-Unsubscribe headers link to `/notifications#setting-…`. `/admin/notifications`, and the old `/account#setting-…` and `/profile#setting-…` anchors, redirect there. The Account page no longer has notification settings.
+
+**Migration `0127_notification_settings_per_person` keeps everyone's email as it was.**
+
+- **New bills switch.** Set to what each person got: off with the digest switch off, on for an admin or owner with it on, and unchanged for a member.
+- **Followed views of someone with the digest switch off** are unfollowed. They got no digest at all, views included, and a followed view now sends on its own.
+- **An instance whose digest was weekly:** everyone goes weekly on its day (Monday if none was saved). That day's window carries on from `last_digest_at` as `last_weekly_digest_at_<day>`, and people added later start on that day.
+- **An instance whose digest was off,** including one that never saved its modules: each person's digest switches go off, and their followed views are unfollowed. Turning email on again later doesn't bring them back.
+- **An instance whose week ahead email was off:** each person's week ahead switch goes off.
+- **The week ahead day** moves to `week_ahead_day`: the saved day, or Monday when none was saved, as before. An instance with no people saves nothing and gets Friday, so a new database has the defaults.
+- **Comment emails:** an instance that had them off gets them back on, because the switch is gone, unless an admin turns off email to members.
+
+**Removed keys.** The `email-digest` and `week-ahead` entries leave `modules`, and `mention_emails_enabled` is deleted. The module `frequency` and `weeklyDay` settings are gone with them.
+
+**Rolling back.** An earlier build after this migration sends no digest and no week ahead email, because their module entries are gone, and it sends comment emails again. It ignores each person's How often and the Send email to members switch. Redeploy the new build to bring the digest and week ahead email back.

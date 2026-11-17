@@ -68,8 +68,8 @@ usersRouter.patch('/me', async (c) => {
   if (('name' in raw || 'title' in raw) && await isSuperadminUser(c, currentUser.email)) {
     return c.json({ error: SUPERADMIN_PROFILE_MANAGED_ERROR }, 403)
   }
-  const updates: { title?: string | null; name?: string; emailDigestEnabled?: number; emailDigestMatchesEnabled?: number; emailWeekAheadEnabled?: number; emailRepliesEnabled?: number } = {}
-  const echo: { title?: string | null; name?: string; emailDigestEnabled?: boolean; emailDigestMatchesEnabled?: boolean; emailWeekAheadEnabled?: boolean; emailRepliesEnabled?: boolean } = {}
+  const updates: { title?: string | null; name?: string; emailDigestEnabled?: number; emailDigestMatchesEnabled?: number; emailDigestWeeklyDay?: number | null; emailWeekAheadEnabled?: number; emailRepliesEnabled?: number } = {}
+  const echo: { title?: string | null; name?: string; emailDigestEnabled?: boolean; emailDigestMatchesEnabled?: boolean; emailDigestWeeklyDay?: number | null; emailWeekAheadEnabled?: boolean; emailRepliesEnabled?: boolean } = {}
 
   if ('name' in raw) {
     if (raw.name !== null && typeof raw.name !== 'string') {
@@ -99,6 +99,11 @@ usersRouter.patch('/me', async (c) => {
   if (typeof raw.emailDigestMatchesEnabled === 'boolean') {
     updates.emailDigestMatchesEnabled = raw.emailDigestMatchesEnabled ? 1 : 0
     echo.emailDigestMatchesEnabled = raw.emailDigestMatchesEnabled
+  }
+  // How often the person gets the digest: null for every morning, or the weekday of a weekly one (0 Sunday to 6 Saturday).
+  const day = raw.emailDigestWeeklyDay
+  if (day === null || (Number.isInteger(day) && (day as number) >= 0 && (day as number) <= 6)) {
+    updates.emailDigestWeeklyDay = echo.emailDigestWeeklyDay = day as number | null
   }
   if (typeof raw.emailWeekAheadEnabled === 'boolean') {
     updates.emailWeekAheadEnabled = raw.emailWeekAheadEnabled ? 1 : 0

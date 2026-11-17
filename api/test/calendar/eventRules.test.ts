@@ -303,7 +303,7 @@ describe('event rules', () => {
 describe('the week-ahead email', () => {
   beforeEach(async () => {
     const weekday = String(new Date().getUTCDay())
-    await getDb(env.DB).insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'week-ahead': { enabled: true, settings: { weeklyDay: weekday } } }) })
+    await getDb(env.DB).insert(associationConfig).values({ key: 'week_ahead_day', value: weekday })
   })
 
   const emailed = () => {
@@ -334,7 +334,7 @@ describe('the week-ahead email and the calendar, under the Calendar page\'s one 
 
   beforeEach(async () => {
     const weekday = String(new Date().getUTCDay())
-    await getDb(env.DB).insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'week-ahead': { enabled: true, settings: { weeklyDay: weekday } } }) })
+    await getDb(env.DB).insert(associationConfig).values({ key: 'week_ahead_day', value: weekday })
   })
 
   // The control saves committees and nothing else. A rule saved earlier may also carry kinds, event types, topics, or tracked bills.
@@ -532,7 +532,7 @@ describe('event rules, for companion groups', () => {
   })
 
   it('lists the same events in the week-ahead email and on the calendar', async () => {
-    await db().insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'week-ahead': { enabled: true, settings: { weeklyDay: String(new Date().getUTCDay()) } } }) })
+    await db().insert(associationConfig).values({ key: 'week_ahead_day', value: String(new Date().getUTCDay()) })
     await sync()
     await saveRules(RULES)
     expect(await calendarUids()).toContain(COMPANION)

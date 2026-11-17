@@ -115,7 +115,7 @@ export type DemoSeedCalendarEvent = {
 
 /**
  * One entry in a seed's `modules` map, keyed by module id ('calendar',
- * 'email-digest', 'waiting-for-vote', 'upcoming-hearings'). A bare boolean is the
+ * 'waiting-for-vote', 'upcoming-hearings'). A bare boolean is the
  * legacy shape and still valid; the object shape carries per-module settings.
  * Written verbatim to association_config.modules, which GET /config passes through
  * opaquely because both shapes are live in the field.

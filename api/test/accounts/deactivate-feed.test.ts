@@ -65,18 +65,12 @@ describe('/api/feed nav-dot signal (latestEventAt) excludes deactivated authors'
 })
 
 describe('runDigest excludes feed events authored by a deactivated member', () => {
-  async function enableModule(db: ReturnType<typeof getDb>) {
-    const v = JSON.stringify({ 'email-digest': true })
-    await db.insert(associationConfig).values({ key: 'modules', value: v })
-      .onConflictDoUpdate({ target: associationConfig.key, set: { value: v } })
-  }
-
   beforeEach(async () => {
     await clearDb()
   })
 
   it('sends nothing when the sole qualifying event was authored by a deactivated member', async () => {
-    const db = getDb(env.DB); await enableModule(db)
+    const db = getDb(env.DB)
     const recipient = await seedUser({ email: 'r1@e.com' }); await seedSession(recipient)
     const gone = await seedUser({ email: 'gone3@e.com', deactivatedAt: new Date().toISOString() })
     const billId = await seedBill({ billNumber: 'H 3', title: 'Digest bill', priority: 'high' })
@@ -91,7 +85,7 @@ describe('runDigest excludes feed events authored by a deactivated member', () =
   })
 
   it('reactivating the author includes the event in the next digest', async () => {
-    const db = getDb(env.DB); await enableModule(db)
+    const db = getDb(env.DB)
     const recipient = await seedUser({ email: 'r2@e.com' }); await seedSession(recipient)
     const gone = await seedUser({ email: 'gone4@e.com', deactivatedAt: new Date().toISOString() })
     const billId = await seedBill({ billNumber: 'H 4', title: 'Digest bill 2', priority: 'high' })

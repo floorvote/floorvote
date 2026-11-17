@@ -50,29 +50,6 @@ export const MODULES: ModuleDef[] = [
     name: 'Upcoming hearings',
     description: 'Show hearings for prioritized bills in the next 30 days.',
   },
-  {
-    id: 'week-ahead',
-    type: 'section' as const,
-    name: 'Week ahead email',
-    description: 'Send members a weekly preview of upcoming hearings and calendar events grouped by day.',
-    settings: [
-      {
-        key: 'weeklyDay',
-        type: 'select' as const,
-        label: 'Day of week',
-        default: '1',
-        options: [
-          { value: '0', label: 'Sunday' },
-          { value: '1', label: 'Monday' },
-          { value: '2', label: 'Tuesday' },
-          { value: '3', label: 'Wednesday' },
-          { value: '4', label: 'Thursday' },
-          { value: '5', label: 'Friday' },
-          { value: '6', label: 'Saturday' },
-        ],
-      },
-    ],
-  },
 ]
 
 export function isModuleEnabled(
@@ -98,8 +75,6 @@ export function getModuleSetting<T extends ModuleSettingValue>(
   return fallback
 }
 
-const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-
 /** Settings to render for a module, dropping any whose `showWhen` condition isn't met. */
 export function visibleModuleSettings(m: ModuleDef, modules: ModulesConfig | undefined): ModuleSettingDef[] {
   if (!m.settings) return []
@@ -111,47 +86,7 @@ export function visibleModuleSettings(m: ModuleDef, modules: ModulesConfig | und
   })
 }
 
-/** Human description of the recent-bill-activity digest cadence for the Account page. */
-export function digestCadenceDescription(modules: ModulesConfig | undefined, includesSavedViews = false): string {
-  // The saved views are the member's own (#449), so the sentence names them only once one is included.
-  const subject = `recent activity on priority bills${includesSavedViews ? ' and bills in saved views' : ''}`
-  // When the admin has the digest turned off, do not assert a cadence — the
-  // Account row shows a "Turned off by your {org noun}." note instead.
-  if (!isModuleEnabled(modules, 'email-digest')) return `A summary of ${subject}.`
-  const frequency = getModuleSetting<string>(modules, 'email-digest', 'frequency', 'daily')
-  if (frequency !== 'weekly') return `A daily summary of ${subject}.`
-  const day = WEEKDAYS[Number(getModuleSetting(modules, 'email-digest', 'weeklyDay', '1'))] ?? 'Monday'
-  return `A weekly summary of ${subject}, sent every ${day} morning.`
-}
-
-/**
- * Visible label (and accessible name) of the member's "include newly matched
- * bills" switch. It names the digest's period, which is an instance setting, so
- * it reads the same frequency as digestCadenceDescription: anything but "weekly"
- * (missing, unknown, or the module off) is daily.
- */
-export function digestMatchesLabel(modules: ModulesConfig | undefined): string {
-  const frequency = getModuleSetting<string>(modules, 'email-digest', 'frequency', 'daily')
-  const period = frequency === 'weekly' ? 'weeks' : 'days'
-  return `Also include newly matched bills in the digest, and send the digest on ${period} with only those.`
-}
-
-/** Human description of the week-ahead (upcoming hearings & events) digest cadence for the Account page. */
-export function weekAheadCadenceDescription(modules: ModulesConfig | undefined): string {
-  const subject = 'upcoming hearings and events'
-  // When the admin has it turned off, do not assert a cadence — the Account row
-  // shows a "Turned off by your {org noun}." note instead.
-  if (!isModuleEnabled(modules, 'week-ahead')) return `A preview of ${subject}.`
-  const day = WEEKDAYS[Number(getModuleSetting(modules, 'week-ahead', 'weeklyDay', '1'))] ?? 'Monday'
-  return `A weekly preview of ${subject}, sent every ${day} morning.`
-}
-
 /** Maps a module type to a human-readable kind label. */
 export function moduleKindLabel(type: ModuleType): string {
   return type === 'widget' ? 'Widget' : 'Page'
-}
-
-/** The digest's cadence as the Views menu words it: weekly only for a weekly digest, daily otherwise (as digestCadenceDescription reads it). */
-export function digestFrequency(modules: ModulesConfig | undefined): 'daily' | 'weekly' {
-  return getModuleSetting<string>(modules, 'email-digest', 'frequency', 'daily') === 'weekly' ? 'weekly' : 'daily'
 }

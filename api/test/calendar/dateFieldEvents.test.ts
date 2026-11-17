@@ -313,7 +313,7 @@ describe('GET /api/stats, for date custom fields', () => {
 describe('the week-ahead email, for date custom fields', () => {
   beforeEach(async () => {
     const weekday = String(new Date().getUTCDay())
-    await getDb(env.DB).insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'week-ahead': { enabled: true, settings: { weeklyDay: weekday } } }) })
+    await getDb(env.DB).insert(associationConfig).values({ key: 'week_ahead_day', value: weekday })
   })
 
   async function emailed(): Promise<string> {

@@ -78,9 +78,9 @@ describe('renderWeekAheadEmail', () => {
     expect(html).not.toContain('/api/calendar/ics')
   })
 
-  it('includes unsubscribe link to /account', () => {
+  it('includes unsubscribe link to /notifications', () => {
     const html = render()
-    expect(html).toContain('https://example.com/account#setting-week-ahead')
+    expect(html).toContain('https://example.com/notifications#setting-week-ahead')
   })
 
   it('escapes HTML in event description', () => {
@@ -138,7 +138,7 @@ describe('renderWeekAheadEmail', () => {
   })
 
   it('points the unsubscribe footer link at the week-ahead setting anchor', () => {
-    expect(render()).toContain('/account#setting-week-ahead')
+    expect(render()).toContain('/notifications#setting-week-ahead')
   })
 
   it('shows the link with the scheme and www stripped', () => {

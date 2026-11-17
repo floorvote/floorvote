@@ -5,6 +5,7 @@ import { getDb } from '../db/client'
 import { associationConfig, customFieldDefinitions } from '../db/schema'
 import { ensureAssociationName } from '../lib/associationName'
 import { getAccountDeletionEnabled } from '../lib/accountDeletion'
+import { notificationEmailsEnabled, readWeekAheadDay } from '../lib/notificationEmails'
 import { attachmentsEnabled, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS_PER_COMMENT } from '../lib/attachments'
 import { loadEffectiveTaxonomy } from '../lib/taxonomy'
 import { centralFetch } from '../lib/centralFetch'
@@ -49,7 +50,7 @@ configRouter.get('/', async (c) => {
   await ensureAssociationName(c.env, db)
   const accountDeletionEnabled = await getAccountDeletionEnabled(db)
 
-  const [nameRow, sessionsRow, posLabelRow, coverageRow, posVocabRow, modulesRow, orgNounRow, demoBannerRow, demoResetAtRow, taxonomyItems, knownCapabilities, knownAttribution, centralDashboardUrl] = await Promise.all([
+  const [nameRow, sessionsRow, posLabelRow, coverageRow, posVocabRow, modulesRow, orgNounRow, demoBannerRow, demoResetAtRow, taxonomyItems, knownCapabilities, knownAttribution, centralDashboardUrl, emailsOn, weekAheadDay] = await Promise.all([
     db.select().from(associationConfig).where(eq(associationConfig.key, 'association_name')).get(),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'sessions')).get(),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'position_label')).get(),
@@ -63,6 +64,9 @@ configRouter.get('/', async (c) => {
     readStateCapabilities(db),
     readStateAttribution(db),
     readCentralDashboardUrl(db),
+    // Every signed-in person's Notifications page shows the admin's switch and the week ahead day.
+    notificationEmailsEnabled(db),
+    readWeekAheadDay(db),
   ])
 
   let associationName: string
@@ -227,7 +231,7 @@ configRouter.get('/', async (c) => {
   // reset, and on every non-demo tenant.
   const demoResetAt = demoResetAtRow?.value
 
-  return c.json({ associationName, positionVocabulary, state: c.env.STATE ?? '', states, multiState, sessions, orgNoun, instanceDomains, demoMode, demoLocked, demoResetAt, modules, operator, attribution, centralDashboardUrl: centralDashboardUrl ?? undefined, accountDeletionEnabled, tagTaxonomy, demoBanner, capabilities,
+  return c.json({ associationName, positionVocabulary, state: c.env.STATE ?? '', states, multiState, sessions, orgNoun, instanceDomains, demoMode, demoLocked, demoResetAt, modules, operator, attribution, centralDashboardUrl: centralDashboardUrl ?? undefined, accountDeletionEnabled, notificationEmailsEnabled: emailsOn, weekAheadDay, tagTaxonomy, demoBanner, capabilities,
     // Comment attachments (#465): their limits, or null while they are off.
     attachments: attachmentsEnabled(c.env) ? { maxBytes: MAX_ATTACHMENT_BYTES, maxPerComment: MAX_ATTACHMENTS_PER_COMMENT } : null,
   })

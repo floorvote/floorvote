@@ -187,7 +187,6 @@ describe('runDigest: saved views', () => {
   beforeEach(async () => {
     await clearDb()
     resend = stubResend()
-    await db().insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'email-digest': true }) })
     const a = await person('admin@example.com', 'admin'); admin = a.id; adminCookie = a.cookie
     ada = await person('ada@example.com', 'member', { matches: false })
     ben = await person('ben@example.com', 'member', { matches: false })
@@ -365,16 +364,25 @@ describe('runDigest: saved views', () => {
     expect(mine.subject).toBe('Your daily digest: 1 bill in your saved views')
   })
 
-  it('does not send a digest to a member who has turned theirs off', async () => {
-    const off = await person('off@example.com', 'member', { digest: false })
+  // #1035: a followed view is its own opt-in, so it does not wait on the priority switch.
+  it('sends a member who turned off the priority part, and follows a view, that view alone', async () => {
+    const off = await person('off@example.com', 'member', { digest: false, matches: false })
     await seedBill({ billNumber: 'V 1', state: 'RI', session: '2026' })
     await subscribe(off.cookie, 'v-ri')
+    await runDigest(env as never, db())
+    expect(to('off@example.com')).toHaveLength(1)
+    expect(to('off@example.com')[0].subject).toBe('Your daily digest: 1 bill in your saved views')
+  })
+
+  it('sends a member who turned off the priority part and follows no view nothing', async () => {
+    await person('off@example.com', 'member', { digest: false, matches: false })
+    await seedBill({ billNumber: 'V 1', state: 'RI', session: '2026' })
     await runDigest(env as never, db())
     expect(to('off@example.com')).toHaveLength(0)
   })
 
-  it('sends nothing when the instance digest is off', async () => {
-    await db().update(associationConfig).set({ value: JSON.stringify({ 'email-digest': false }) }).where(eq(associationConfig.key, 'modules'))
+  it('sends nothing when notification emails are off', async () => {
+    await db().insert(associationConfig).values({ key: 'notification_emails_enabled', value: 'false' })
     await seedBill({ billNumber: 'V 1', state: 'RI', session: '2026' })
     await subscribe(ada.cookie, 'v-ri')
     await runDigest(env as never, db())

@@ -49,7 +49,6 @@ beforeEach(async () => {
   }))
   const db = getDb(env.DB)
   await db.insert(associationConfig).values([
-    { key: 'modules', value: JSON.stringify({ 'email-digest': true }) },
     { key: 'keywords', value: JSON.stringify(['election']) },
   ])
   const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)

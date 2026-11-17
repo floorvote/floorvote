@@ -45,8 +45,6 @@ const MODULES: Record<string, DemoSeedModule> = {
   'waiting-for-vote': false,
   'upcoming-hearings': false,
   calendar: true,
-  // Shown enabled but locked; runDigest hard-stops before sending in demo mode.
-  'email-digest': { enabled: true, settings: { frequency: 'daily', weeklyDay: '1' } },
 }
 
 export const LM_ORG = {

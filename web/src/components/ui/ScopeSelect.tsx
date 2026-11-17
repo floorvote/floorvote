@@ -26,6 +26,7 @@ export function ScopeSelect<V extends string = string>({
   disabled = false,
   align = 'right',
   panelMinWidth = 220,
+  ariaLabel,
 }: {
   options: ScopeSelectOption<V>[]
   value: V
@@ -34,6 +35,8 @@ export function ScopeSelect<V extends string = string>({
   disabled?: boolean
   align?: 'left' | 'right'
   panelMinWidth?: number
+  /** What the choice is, such as "How often". It names the options, and the button as "How often: <current label>". */
+  ariaLabel?: string
 }) {
   const current = options.find(o => o.value === value) ?? options[0]
   const highlighted = defaultValue !== undefined && value !== defaultValue
@@ -46,9 +49,11 @@ export function ScopeSelect<V extends string = string>({
       onChange={(v) => { if (v !== null) onChange(v as V) }}
       align={align}
       panelMinWidth={panelMinWidth}
+      ariaLabel={ariaLabel}
       trigger={({ open, toggle }) => (
         <button
           type="button"
+          aria-label={ariaLabel ? `${ariaLabel}: ${current.label}` : undefined}
           disabled={disabled}
           onClick={toggle}
           style={{

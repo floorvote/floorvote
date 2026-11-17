@@ -1,9 +1,8 @@
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 
 // Shared styles for a boxed setting: a bordered box holding a title, a
-// description, and a toggle on the right of the header. The admin Notifications
-// page and the AI settings on the Config page use them, so boxed toggles look
-// alike. Keep the key order: tests compare the rendered style attribute.
+// description, and a toggle on the right of the header. The Config page's AI
+// settings and its Emails box use them, so boxed toggles look alike. Keep the key order: tests compare the rendered style attribute.
 
 export const SETTING_BOX = {
   padding: '12px 14px',

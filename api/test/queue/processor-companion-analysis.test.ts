@@ -257,7 +257,6 @@ describe('companions that didn\'t match are analyzed through their group', () =>
     it('isn\'t in the digest', async () => {
       await expectCompanionAnalyzed()
       const db = getDb(env.DB)
-      await db.insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'email-digest': true }) })
       await seedSession(await seedUser({ role: 'admin', email: 'admin@example.com' }))
       const sent: unknown[] = []
       vi.stubGlobal('fetch', vi.fn(async (_u: string, init: RequestInit) => { sent.push(JSON.parse(String(init.body))); return new Response('{}', { status: 200 }) }))
@@ -427,7 +426,6 @@ describe('companions that didn\'t match are analyzed through their group', () =>
       it('is not in the digest', async () => {
         await expectCompanionAnalyzed()
         const db = getDb(env.DB)
-        await db.insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'email-digest': true }) })
         await seedSession(await seedUser({ role: 'admin', email: 'admin@example.com' }))
         const sent: unknown[] = []
         stubFetch((_u, init) => { sent.push(JSON.parse(String(init?.body))); return new Response('{}', { status: 200 }) })
@@ -441,7 +439,6 @@ describe('companions that didn\'t match are analyzed through their group', () =>
         await pull()
         await expectCompanionAnalyzed()
         const db = getDb(env.DB)
-        await db.insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'email-digest': true }) })
         await seedSession(await seedUser({ role: 'admin', email: 'admin@example.com' }))
         await seedSession(await seedUser({ role: 'member', email: 'member@example.com', emailDigestEnabled: true, emailDigestMatchesEnabled: true }))
         const sent: Array<{ html: string }> = []
@@ -453,7 +450,6 @@ describe('companions that didn\'t match are analyzed through their group', () =>
       it('lists the companion once it matches on its own with a routine declaration, and not before', async () => {
         await pull()
         const db = getDb(env.DB)
-        await db.insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'email-digest': true }) })
         await seedSession(await seedUser({ role: 'member', email: 'member@example.com', emailDigestEnabled: true, emailDigestMatchesEnabled: true }))
         const sent: Array<{ html: string }> = []
         // Mail is captured, and central's answers to the delivery below still come from the suite's own stub.

@@ -327,7 +327,7 @@ function renderNewMatchCard(card: NewMatchCard, appUrl: string, forMember: boole
   return `${renderBillCardOpen({ model, billHref, appUrl, chip: pill, otherBadges })}${BILL_CARD_CLOSE}`
 }
 
-// New-match section (admins always, members who haven't opted out). Not
+// The newly found bills part: everyone whose own switch for it is on, whatever their role (#1035). Not
 // priority-gated and rendered from bills (not feed events), so it lists matches
 // awaiting triage. The header counts every match; only the top NEW_MATCH_LIMIT
 // by relevance get a card (unscored last), with a link to the full list for the
@@ -371,7 +371,10 @@ function renderViewSection(section: ViewDigestSection, index: number, appUrl: st
 ${html}${more}`
 }
 
-export function renderDigestEmail(input: { events: DigestEvent[]; assocName: string; appUrl: string; periodStart?: string; periodEnd?: string; newMatches?: NewMatchDigestItem[]; views?: ViewDigestSection[]; forMember?: boolean }): string {
+/** Where an email's footer link and List-Unsubscribe header lead on the Notifications page. */
+export type DigestSettingsAnchor = 'setting-email-digest' | 'setting-saved-views'
+
+export function renderDigestEmail(input: { events: DigestEvent[]; assocName: string; appUrl: string; periodStart?: string; periodEnd?: string; newMatches?: NewMatchDigestItem[]; views?: ViewDigestSection[]; forMember?: boolean; settingsAnchor?: DigestSettingsAnchor }): string {
   // Group events by card (a bill, or its companion group), preserving first-seen order
   const billOrder: string[] = []
   const billGroups = new Map<string, DigestEvent[]>()
@@ -434,6 +437,8 @@ ${billOrder.map(id => renderBillCard(billGroups.get(id)!, input.appUrl)).join('\
     dateLabel: range,
     bodyHtml: `${contentsBox}${updatesSection}\n${newMatchSection}${viewSections ? `\n${viewSections}` : ''}`,
     ctaHtml,
-    footerHtml: emailFooterLink(`${input.appUrl}/account#setting-email-digest`, 'Manage email settings'),
+    // An email of saved views alone is stopped on the views list, anything else on the digest's own setting. The sender
+    // decides this once and passes it, so the List-Unsubscribe header and this link can't disagree.
+    footerHtml: emailFooterLink(`${input.appUrl}/notifications#${input.settingsAnchor ?? (!hasUpdates && !hasMatches && hasViews ? 'setting-saved-views' : 'setting-email-digest')}`, 'Manage email settings'),
   })
 }

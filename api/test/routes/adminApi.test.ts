@@ -779,6 +779,25 @@ describe('Admin Config API', () => {
   })
 
   describe('GET /admin/config', () => {
+
+    it('returns the notification emails switch and the week ahead day, on and Friday when nothing is saved', async () => {
+      const res = await app.request('/api/admin/config', { headers: { Cookie: adminCookie } }, env)
+      const body = await res.json() as Record<string, unknown>
+      expect(body.notification_emails_enabled).toBe(true)
+      expect(body.week_ahead_day).toBe(5)
+    })
+
+    it('returns the saved notification emails switch and week ahead day', async () => {
+      const db = getDb(env.DB)
+      await db.insert(associationConfig).values([
+        { key: 'notification_emails_enabled', value: 'false' },
+        { key: 'week_ahead_day', value: '2' },
+      ])
+      const res = await app.request('/api/admin/config', { headers: { Cookie: adminCookie } }, env)
+      const body = await res.json() as Record<string, unknown>
+      expect(body.notification_emails_enabled).toBe(false)
+      expect(body.week_ahead_day).toBe(2)
+    })
     it('returns 403 for a member', async () => {
       const res = await app.request('/api/admin/config', { headers: { Cookie: memberCookie } }, env)
       expect(res.status).toBe(403)
@@ -818,6 +837,40 @@ describe('Admin Config API', () => {
   })
 
   describe('PUT /admin/config', () => {
+
+    const putConfig = (body: unknown) => app.request(
+      '/api/admin/config',
+      { method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: adminCookie }, body: JSON.stringify(body) },
+      env,
+    )
+    const savedConfig = async (key: string) =>
+      (await getDb(env.DB).select().from(associationConfig).where(eq(associationConfig.key, key)).get())?.value
+
+    it('saves the notification emails switch as a boolean', async () => {
+      expect((await putConfig({ notification_emails_enabled: false })).status).toBe(200)
+      expect(await savedConfig('notification_emails_enabled')).toBe('false')
+    })
+
+    it.each(['no', 0, 1])('refuses %j as the notification emails switch', async (value) => {
+      expect((await putConfig({ notification_emails_enabled: value })).status).toBe(400)
+      expect(await savedConfig('notification_emails_enabled')).toBeUndefined()
+    })
+
+    it('saves the week ahead day as an integer from 0 to 6', async () => {
+      expect((await putConfig({ week_ahead_day: 3 })).status).toBe(200)
+      expect(await savedConfig('week_ahead_day')).toBe('3')
+    })
+
+    it.each([7, -1, 2.5, '3', true])('refuses %j as the week ahead day', async (value) => {
+      expect((await putConfig({ week_ahead_day: value })).status).toBe(400)
+      expect(await savedConfig('week_ahead_day')).toBeUndefined()
+    })
+
+    it('no longer takes mention_emails_enabled', async () => {
+      const res = await putConfig({ mention_emails_enabled: false })
+      expect(res.status).toBe(400)
+      expect(await savedConfig('mention_emails_enabled')).toBeUndefined()
+    })
     it('returns 403 for a member', async () => {
       const res = await app.request(
         '/api/admin/config',

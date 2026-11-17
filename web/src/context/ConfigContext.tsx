@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import { apiFetch } from '../lib/api'
 import type { Attribution } from '../../../shared/dataAttribution'
 import type { AttachmentLimits } from '../lib/attachments'
@@ -37,6 +37,10 @@ export interface AppConfig {
   /** Where central's admin dashboard lives, once central has said. Absent = unknown, so don't link to it. */
   centralDashboardUrl?: string
   accountDeletionEnabled?: boolean
+  /** The admin's "Send email to members" switch. Missing (an older API, or a failed config read) reads as on. */
+  notificationEmailsEnabled?: boolean
+  /** The day the week ahead email goes out, 0 (Sunday) to 6 (Saturday). Friday when an admin never chose one. */
+  weekAheadDay?: number
   /** Comment attachments (#465): their limits, or null while off (no bucket bound, or a demo). */
   attachments?: AttachmentLimits | null
   /**
@@ -60,6 +64,8 @@ interface ConfigValue {
   config: AppConfig | null
   multiState: boolean
   loading: boolean
+  /** Change app settings in place after an admin saves them, so the rest of the app follows without a reload. */
+  patchConfig?: (patch: Partial<AppConfig>) => void
 }
 
 export const ConfigContext = createContext<ConfigValue>({ config: null, multiState: false, loading: true })
@@ -73,8 +79,11 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
+  const patchConfig = useCallback((patch: Partial<AppConfig>) => {
+    setConfig((c) => (c ? { ...c, ...patch } : c))
+  }, [])
   const multiState = config?.multiState ?? false
-  return <ConfigContext value={{ config, multiState, loading }}>{children}</ConfigContext>
+  return <ConfigContext value={{ config, multiState, loading, patchConfig }}>{children}</ConfigContext>
 }
 
 export function useConfig(): ConfigValue {

@@ -41,7 +41,10 @@ describe('migration 0121_feed_events_no_priority_updates', () => {
     beforeEach(async () => {
       await resetDb()
       await applyMigrations({ before: '0121' })
-      userId = await seedUser()
+      // seedUser writes every users column, including ones added after 0121, so a
+      // member who predates this migration is inserted with the columns it had.
+      userId = crypto.randomUUID()
+      await env.DB.prepare('INSERT INTO users (id, email, name) VALUES (?, ?, ?)').bind(userId, `${userId}@example.com`, 'Test User').run()
       bill = await seedBill({ billNumber: 'HB 1' })
       for (const [i, type] of EXISTING_TYPES.entries()) {
         const billless = type === 'new_matches'

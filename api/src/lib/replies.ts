@@ -26,7 +26,8 @@ import { and, eq, exists, isNull, ne, notExists, type SQL } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { users, bills, sessions, comments, billMutes } from '../db/schema'
 import { writeNotifications } from './notifications'
-import { mentionEmailsEnabled, tiptapToEmailHtml } from './mentions'
+import { tiptapToEmailHtml } from './mentions'
+import { notificationEmailsEnabled } from './notificationEmails'
 import { senderFor, resolveAssocName } from './email'
 import type { NotificationMessage } from '../../../shared/emailSender'
 import { activeUser } from './accountDeletion'
@@ -137,7 +138,7 @@ export async function notifyParticipantsOfReply(
   })))
 
   const toEmail = recipients.filter(p => written.has(p.id))
-  if (toEmail.length === 0 || !(await mentionEmailsEnabled(db))) return
+  if (toEmail.length === 0 || !(await notificationEmailsEnabled(db))) return
 
   const emailTask = sendReplyEmails(db, toEmail, comment, authorUserId, billId, env)
   if (waitUntil) waitUntil(emailTask)
@@ -191,7 +192,7 @@ export function renderReplyEmail(input: ReplyEmailInput): string {
     ctaHtml: emailButton(escHtml(`${billHref}#comment-${comment.id}`), 'View comment'),
     footerHtml: [
       emailFooterLink(escHtml(muteUrl), 'Mute this bill'),
-      emailFooterLink(escHtml(`${appUrl}/account#setting-email-replies`), 'Turn off reply notifications'),
+      emailFooterLink(escHtml(`${appUrl}/notifications#setting-email-replies`), 'Turn off reply notifications'),
       emailFooterLink(escHtml(appUrl), PRODUCT_NAME),
     ].join(' &nbsp;·&nbsp; '),
   })

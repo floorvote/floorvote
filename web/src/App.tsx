@@ -21,7 +21,7 @@ import { RootErrorBoundary } from './components/RootErrorBoundary'
 import { Profile } from './pages/Profile'
 import { Members } from './pages/admin/Members'
 import { Config } from './pages/admin/Config'
-import { Notifications } from './pages/admin/Notifications'
+import { Notifications } from './pages/Notifications'
 import { CalendarEventsMoved } from './pages/admin/CalendarEventsMoved'
 import { Calendar, calendarLoader } from './pages/Calendar'
 import { useAuth } from './hooks/useAuth'
@@ -181,9 +181,24 @@ function RootHydrateFallback() {
   return <LoadingState variant="full" progress={{ current: null }} />
 }
 
+// The email settings moved from the Account page to the Notifications page. Every
+// digest, week ahead, and reply email already sent links to one of these anchors on
+// /account (or on /profile, the Account page's older URL), so those links keep working.
+const EMAIL_SETTING_HASHES = ['#setting-email-digest', '#setting-week-ahead', '#setting-email-replies']
+
+function pathForHash(hash: string) {
+  return EMAIL_SETTING_HASHES.includes(hash) ? '/notifications' : '/account'
+}
+
 function AccountMoved() {
   const { search, hash } = useLocation()
-  return <Navigate to={{ pathname: '/account', search, hash }} replace />
+  return <Navigate to={{ pathname: pathForHash(hash), search, hash }} replace />
+}
+
+function AccountRoute() {
+  const { search, hash } = useLocation()
+  if (pathForHash(hash) === '/notifications') return <Navigate to={{ pathname: '/notifications', search, hash }} replace />
+  return <Profile />
 }
 
 // Marks the bill detail routes for AppLayout's split pane (BillListPane).
@@ -217,10 +232,14 @@ export const routes = createRoutesFromElements(
         <Route path="bills" element={<BillList />} loader={billListLoader} />
         <Route path="bills/:billId" element={<BillDetail />} loader={billDetailLoader} errorElement={<BillDetailError />} handle={BILL_ROUTE_HANDLE} />
         <Route path="calendar" element={<Calendar />} loader={calendarLoader} />
-        <Route path="account" element={<Profile />} />
+        <Route path="account" element={<AccountRoute />} />
+        <Route path="notifications" element={<Notifications />} />
         {/* The Account page's old URL. Sent emails and their List-Unsubscribe
             headers link to /profile#<setting>, so the hash and query carry over. */}
         <Route path="profile" element={<AccountMoved />} />
+        {/* The admin tab's old URL. It sits outside RequireAdmin like admin/drafts: the
+            page it lands on is for every signed-in member. */}
+        <Route path="admin/notifications" element={<Navigate to="/notifications" replace />} />
         {/* The Settings → Draft bills page is retired: drafts are created from
             the Bills page and listed there under the Drafts filter, so old
             links and bookmarks land on that filtered list. Outside
@@ -233,7 +252,6 @@ export const routes = createRoutesFromElements(
           <Route path="admin" element={<Navigate to="/admin/members" replace />} />
           <Route path="admin/members" element={<Members />} />
           <Route path="admin/config" element={<Config />} />
-          <Route path="admin/notifications" element={<Notifications />} />
           <Route path="admin/calendar-events" element={<CalendarEventsMoved />} />
         </Route>
         {/* Canonical + legacy bill URLs — greedy param routes; React Router
