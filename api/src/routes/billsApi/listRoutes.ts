@@ -84,7 +84,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       // Phase 1: counts — always get total; get the tracked count when optimizing
       const [totalGroups, trackedCount] = await Promise.all([
         countGroups(db, filtered, bf.newMatches || bf.drafts || bf.myBills),
-        optimize ? trackedBills(db, filtered) : 0,
+        optimize ? trackedBills(db, filter(billsAs('m'), { trackedCount: true })) : 0,
       ])
       total = totalGroups
 
