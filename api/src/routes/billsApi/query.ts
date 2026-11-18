@@ -24,8 +24,15 @@ export function billsAs(name: string): BillsTable {
   return alias(bills, name) as unknown as BillsTable
 }
 
+/**
+ * How one statement reads a filter, for the few tests whose best index depends on the statement. `trackedCount` is the
+ * count of tracked bills (`trackedBills`), which the tracked index answers: a stage is then written non-indexable
+ * (`unindexedIn`), so the planner can't take the stage's own index for it, as newer SQLite builds do.
+ */
+export type FilterUse = { trackedCount?: boolean }
+
 /** Any filter, applied to one reference to `bills` (the table, or an alias of it). */
-export type BillsFilter = (t: BillsTable) => SQL | undefined
+export type BillsFilter = (t: BillsTable, use?: FilterUse) => SQL | undefined
 
 // Membership test: the bill's group tags (the JSON array of its companion
 // group's current analysis's tags, its own when it's in no group: migration
@@ -274,7 +281,7 @@ export type BillFilterContext = {
 }
 
 /** A condition on one reference to `bills`: the table itself, or an alias of it. */
-export type BillsCondition = (t: BillsTable) => SQL
+export type BillsCondition = (t: BillsTable, use?: FilterUse) => SQL
 
 /**
  * Priority filter values (a level, "any" for has a priority, "none" for no

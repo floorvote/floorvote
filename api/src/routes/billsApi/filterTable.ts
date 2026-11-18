@@ -275,9 +275,11 @@ export const FILTER_TABLE: FilterTable = {
     cube: true,
     // For the facets, written non-indexable (`+`): a stage is a broad fact (most bills sit in a few), and the planner reads
     // idx_bills_status_stage (one column) and the table row for each bill where the covering facets index read whole is cheaper
-    // (#1023). The list keeps the seek: its page and its tracked count are planned on it.
+    // (#1023). The list's page keeps the seek. Its count of tracked bills does not: a stage is no more selective than the tracked
+    // bills are, and which of the two indexes the planner takes for it differs between SQLite builds, so the count pins it by
+    // writing the stage non-indexable too (`FilterUse.trackedCount`), leaving the tracked index.
     condition: (values, ctx) => values.length > 0
-      ? t => ctx.facets ? unindexedIn(t.statusStage, values) : multiFilter(t.statusStage, values)!
+      ? (t, use) => ctx.facets || use?.trackedCount ? unindexedIn(t.statusStage, values) : multiFilter(t.statusStage, values)!
       : undefined,
     facet: billColumn(1),
   },
@@ -646,7 +648,7 @@ function addFact(parts: FilterParts, key: string, condition: BillsCondition) {
   const existing = parts.facts.find(f => f.key === key)
   if (!existing) { parts.facts.push({ key, condition }); return }
   const joined = existing.condition
-  existing.condition = t => or(joined(t), condition(t))!
+  existing.condition = (t, use) => or(joined(t, use), condition(t, use))!
 }
 
 /**
@@ -707,15 +709,15 @@ export async function buildFilterParts(db: AppDb, f: BillFilter, ctx: BillFilter
 export function composeFilter(parts: FilterParts, opts: { omit?: ReadonlySet<string>; facts?: boolean } = {}): BillsFilter {
   if (parts.noMatch) return () => sql`1 = 0`
   const kept = opts.facts === false ? [] : parts.facts.filter(f => !opts.omit?.has(f.key))
-  return t => {
-    const facts = kept.map(f => f.condition(t))
+  return (t, use) => {
+    const facts = kept.map(f => f.condition(t, use))
     const factCond = facts.length === 0
       ? undefined
       : facts.length === 1
         ? facts[0]
         : (parts.match === 'any' ? or(...facts)! : and(...facts)!)
 
-    const all = [...(factCond ? [factCond] : []), ...parts.scopes.map(f => f(t))]
+    const all = [...(factCond ? [factCond] : []), ...parts.scopes.map(f => f(t, use))]
     if (all.length === 0) return undefined
     return all.length === 1 ? all[0] : and(...all)!
   }

@@ -127,6 +127,22 @@ describe('GET /bills query plans', () => {
     }
   })
 
+  it("counts the tracked bills of a stage from the tracked index whatever else the filter holds, and still counts them right", async () => {
+    // The stage test is written non-indexable in this count, as one value or several, alone or joined with a status
+    // (which ORs into the same fact) or a year. The plans may differ between SQLite builds; the count may not.
+    for (const qs of ['stage=passed&stage=introduced', 'stage=passed&status=Introduced', 'stage=passed&year=2025']) {
+      const tracked = (await listPlans(`${qs}&pageSize=20`)).find(p => /WHERE m\.match_type IS NOT NULL/.test(p.sql))
+      expect(tracked, `${qs}: no count of tracked bills`).toBeDefined()
+      expect(tracked!.plan, `${qs}\n${tracked!.plan}`).not.toMatch(NO_TABLE_SCAN)
+      expect(tracked!.plan, `${qs}\n${tracked!.plan}`).not.toContain('idx_bills_facets')
+    }
+    // Tracked bills (every 30th of 30,000) in the stage "passed" (every 5th): every 30th is a multiple of 5.
+    const passed = await statementsFor('stage=passed&pageSize=20')
+    const countStmt = passed.find(s => /WHERE m\.match_type IS NOT NULL/.test(s.sql))!
+    const { results } = await env.DB.prepare(countStmt.sql).bind(...countStmt.params).all<{ n: number }>()
+    expect(results[0].n).toBe(1000)
+  })
+
   it('starts a rare filter from the rows that hold it, not from the bills', async () => {
     // Twenty bills have a position, fewer than a page of 30, so the full path runs.
     const page = pageOf(await listPlans('position=Support&pageSize=30'))
